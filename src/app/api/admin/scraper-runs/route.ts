@@ -9,9 +9,33 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = request.nextUrl;
   const { page, pageSize, skip } = paginationParams(searchParams);
-  const status = searchParams.get("status") as ScraperRunStatus | null;
+  const statusParam = searchParams.get("status");
   const from = searchParams.get("from");
   const to = searchParams.get("to");
+
+  const validStatuses = Object.values(ScraperRunStatus);
+  if (statusParam && !validStatuses.includes(statusParam as ScraperRunStatus)) {
+    return Response.json(
+      { error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` },
+      { status: 400 }
+    );
+  }
+
+  if (from && isNaN(new Date(from).getTime())) {
+    return Response.json(
+      { error: "Invalid 'from' date format" },
+      { status: 400 }
+    );
+  }
+
+  if (to && isNaN(new Date(to).getTime())) {
+    return Response.json(
+      { error: "Invalid 'to' date format" },
+      { status: 400 }
+    );
+  }
+
+  const status = statusParam as ScraperRunStatus | null;
 
   const where = {
     ...(status ? { status } : {}),

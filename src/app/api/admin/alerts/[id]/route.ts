@@ -10,7 +10,16 @@ export async function PATCH(
   if (error) return error;
 
   const { id } = await params;
-  const body = await request.json();
+
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json(
+      { error: "Invalid JSON body" },
+      { status: 400 }
+    );
+  }
 
   const alert = await prisma.dataQualityAlert.findUnique({ where: { id } });
   if (!alert) {

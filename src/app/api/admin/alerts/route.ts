@@ -9,9 +9,28 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = request.nextUrl;
   const { page, pageSize, skip } = paginationParams(searchParams);
-  const alertType = searchParams.get("type") as AlertType | null;
-  const severity = searchParams.get("severity") as AlertSeverity | null;
+  const typeParam = searchParams.get("type");
+  const severityParam = searchParams.get("severity");
   const resolved = searchParams.get("resolved");
+
+  const validTypes = Object.values(AlertType);
+  if (typeParam && !validTypes.includes(typeParam as AlertType)) {
+    return Response.json(
+      { error: `Invalid type. Must be one of: ${validTypes.join(", ")}` },
+      { status: 400 }
+    );
+  }
+
+  const validSeverities = Object.values(AlertSeverity);
+  if (severityParam && !validSeverities.includes(severityParam as AlertSeverity)) {
+    return Response.json(
+      { error: `Invalid severity. Must be one of: ${validSeverities.join(", ")}` },
+      { status: 400 }
+    );
+  }
+
+  const alertType = typeParam as AlertType | null;
+  const severity = severityParam as AlertSeverity | null;
 
   const where = {
     ...(alertType ? { alertType } : {}),
