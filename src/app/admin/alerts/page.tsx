@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
+import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { AlertType, AlertSeverity } from "@/generated/prisma/client";
+import { requireAdmin } from "@/lib/admin";
 
 const severityColors: Record<string, string> = {
   CRITICAL: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
@@ -121,8 +123,16 @@ export default async function AlertsPage({
                 </div>
                 {!alert.resolvedAt && (
                   <form
-                    action={`/api/admin/alerts/${alert.id}`}
-                    method="POST"
+                    action={async () => {
+                      "use server";
+                      const { error } = await requireAdmin();
+                      if (error) throw new Error("Unauthorized");
+                      await prisma.dataQualityAlert.update({
+                        where: { id: alert.id },
+                        data: { resolvedAt: new Date() },
+                      });
+                      revalidatePath("/admin/alerts");
+                    }}
                   >
                     <button
                       type="submit"
