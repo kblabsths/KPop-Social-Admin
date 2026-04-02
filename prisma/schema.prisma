@@ -7,6 +7,11 @@ datasource db {
   provider = "postgresql"
 }
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
 model User {
   id              String    @id @default(cuid())
   name            String?
@@ -14,6 +19,7 @@ model User {
   emailVerified   DateTime?
   image           String?
   bio             String?
+  role            UserRole  @default(USER)
   favoriteArtists    String[]
   favoriteArtistIds  Artist[]  @relation("UserFavoriteArtists")
   accounts           Account[]
@@ -186,4 +192,82 @@ model Concert {
   @@index([date])
   @@index([status])
   @@index([venueId])
+}
+
+// --- Scraper tracking & admin models ---
+
+enum ScraperRunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
+enum LogLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+enum AlertType {
+  MISSING_FIELD
+  DUPLICATE
+  STALE_DATA
+  INCONSISTENCY
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model ScraperRun {
+  id             String           @id @default(cuid())
+  scraperName    String
+  status         ScraperRunStatus @default(RUNNING)
+  startedAt      DateTime         @default(now())
+  finishedAt     DateTime?
+  recordsCreated Int              @default(0)
+  recordsUpdated Int              @default(0)
+  recordsFailed  Int              @default(0)
+  errorMessage   String?          @db.Text
+  logs           ScraperLog[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([scraperName])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model ScraperLog {
+  id           String     @id @default(cuid())
+  scraperRunId String
+  scraperRun   ScraperRun @relation(fields: [scraperRunId], references: [id], onDelete: Cascade)
+  level        LogLevel
+  message      String     @db.Text
+  metadata     Json?
+  createdAt    DateTime   @default(now())
+
+  @@index([scraperRunId])
+  @@index([level])
+}
+
+model DataQualityAlert {
+  id         String        @id @default(cuid())
+  alertType  AlertType
+  severity   AlertSeverity
+  entityType String
+  entityId   String
+  message    String        @db.Text
+  resolvedAt DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@index([alertType])
+  @@index([severity])
+  @@index([entityType, entityId])
+  @@index([resolvedAt])
 }
