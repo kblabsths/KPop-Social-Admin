@@ -1,0 +1,120 @@
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import Navbar from "@/app/components/navbar";
+
+export default async function ProfilePage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const session = await auth();
+
+  const user = await prisma.user.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+      bio: true,
+      favoriteArtists: true,
+      createdAt: true,
+    },
+  });
+
+  if (!user) {
+    notFound();
+  }
+
+  const isOwnProfile = session?.user?.id === user.id;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-purple-50 to-pink-50 dark:from-gray-950 dark:to-purple-950">
+      <Navbar />
+      <main className="mx-auto max-w-2xl px-4 py-10">
+        <div className="rounded-2xl bg-white p-8 shadow-lg dark:bg-gray-900">
+          <div className="flex items-start gap-6">
+            {user.image ? (
+              <img
+                src={user.image}
+                alt={user.name ?? "User avatar"}
+                className="h-20 w-20 rounded-full object-cover"
+              />
+            ) : (
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-purple-400 to-pink-400 text-2xl font-bold text-white">
+                {(user.name ?? "?")[0]?.toUpperCase()}
+              </div>
+            )}
+
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {user.name ?? "Anonymous"}
+                </h1>
+                {isOwnProfile && (
+                  <Link
+                    href={`/profile/${user.id}/edit`}
+                    className="rounded-lg bg-purple-100 px-4 py-2 text-sm font-medium text-purple-700 transition hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+                  >
+                    Edit Profile
+                  </Link>
+                )}
+              </div>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Joined{" "}
+                {new Date(user.createdAt).toLocaleDateString("en-US", {
+                  month: "long",
+                  year: "numeric",
+                })}
+              </p>
+            </div>
+          </div>
+
+          {user.bio && (
+            <div className="mt-6">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Bio
+              </h2>
+              <p className="mt-2 text-gray-700 dark:text-gray-300">
+                {user.bio}
+              </p>
+            </div>
+          )}
+
+          {user.favoriteArtists.length > 0 && (
+            <div className="mt-6">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Favorite Artists
+              </h2>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {user.favoriteArtists.map((artist) => (
+                  <span
+                    key={artist}
+                    className="rounded-full bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1 text-sm font-medium text-purple-700 dark:from-purple-900/30 dark:to-pink-900/30 dark:text-purple-300"
+                  >
+                    {artist}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!user.bio && user.favoriteArtists.length === 0 && isOwnProfile && (
+            <p className="mt-6 text-center text-gray-400 dark:text-gray-500">
+              Your profile is empty.{" "}
+              <Link
+                href={`/profile/${user.id}/edit`}
+                className="text-purple-600 hover:underline dark:text-purple-400"
+              >
+                Add some details!
+              </Link>
+            </p>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
