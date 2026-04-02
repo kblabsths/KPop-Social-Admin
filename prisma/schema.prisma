@@ -19,6 +19,8 @@ model User {
   sessions        Session[]
   createdGroups   Group[]       @relation("CreatedGroups")
   groupMemberships GroupMember[]
+  posts           Post[]        @relation("UserPosts")
+  postLikes       PostLike[]
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }
@@ -83,6 +85,7 @@ model Group {
   createdById String
   createdBy   User          @relation("CreatedGroups", fields: [createdById], references: [id], onDelete: Cascade)
   members     GroupMember[]
+  posts       Post[]
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 }
@@ -97,4 +100,32 @@ model GroupMember {
   joinedAt DateTime @default(now())
 
   @@unique([userId, groupId])
+}
+
+model Post {
+  id        String     @id @default(cuid())
+  content   String     @db.Text
+  imageUrl  String?
+  linkUrl   String?
+  authorId  String
+  author    User       @relation("UserPosts", fields: [authorId], references: [id], onDelete: Cascade)
+  groupId   String
+  group     Group      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  parentId  String?
+  parent    Post?      @relation("PostReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Post[]     @relation("PostReplies")
+  likes     PostLike[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model PostLike {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postId])
 }

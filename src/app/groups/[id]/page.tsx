@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import JoinLeaveButton from "./join-leave-button";
+import CreatePostForm from "./create-post-form";
+import PostCard from "@/app/components/post-card";
 
 export default async function GroupDetailPage({
   params,
@@ -31,6 +33,17 @@ export default async function GroupDetailPage({
   const isMember = session?.user?.id
     ? group.members.some((m) => m.userId === session.user!.id)
     : false;
+
+  const posts = await prisma.post.findMany({
+    where: { groupId: id, parentId: null },
+    include: {
+      author: { select: { id: true, name: true, image: true } },
+      group: { select: { id: true, name: true } },
+      _count: { select: { replies: true, likes: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-8">
@@ -83,6 +96,29 @@ export default async function GroupDetailPage({
             )}
           </div>
         </div>
+
+        {/* Posts Section */}
+        <h2 className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
+          Discussion
+        </h2>
+
+        {isMember && <div className="mb-6"><CreatePostForm groupId={id} /></div>}
+
+        {posts.length > 0 ? (
+          <div className="mb-8 space-y-4">
+            {posts.map((post) => (
+              <PostCard
+                key={post.id}
+                post={{ ...post, createdAt: post.createdAt.toISOString() }}
+                currentUserId={session?.user?.id}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="mb-8 text-center text-gray-500 dark:text-gray-400">
+            No posts yet. {isMember ? "Be the first to share something!" : "Join the group to start a discussion."}
+          </p>
+        )}
 
         <h2 className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
           Members ({group.members.length})
