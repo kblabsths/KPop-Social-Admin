@@ -17,6 +17,8 @@ model User {
   favoriteArtists String[]
   accounts        Account[]
   sessions        Session[]
+  createdGroups   Group[]       @relation("CreatedGroups")
+  groupMemberships GroupMember[]
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }
@@ -54,4 +56,45 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model Artist {
+  id          String   @id @default(cuid())
+  name        String
+  koreanName  String?
+  type        String   @default("group") // "group" or "solo"
+  company     String?
+  description String?  @db.Text
+  image       String?
+  debutDate   DateTime?
+  groups      Group[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Group {
+  id          String        @id @default(cuid())
+  name        String
+  description String?       @db.Text
+  image       String?
+  artistId    String?
+  artist      Artist?       @relation(fields: [artistId], references: [id], onDelete: SetNull)
+  isOfficial  Boolean       @default(false)
+  createdById String
+  createdBy   User          @relation("CreatedGroups", fields: [createdById], references: [id], onDelete: Cascade)
+  members     GroupMember[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model GroupMember {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId  String
+  group    Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  role     String   @default("member") // "admin" or "member"
+  joinedAt DateTime @default(now())
+
+  @@unique([userId, groupId])
 }

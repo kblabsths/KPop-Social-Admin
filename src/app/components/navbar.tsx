@@ -15,6 +15,18 @@ export default async function Navbar() {
         </Link>
 
         <div className="flex items-center gap-4">
+          <Link
+            href="/artists"
+            className="text-sm font-medium text-gray-700 hover:text-purple-600 dark:text-gray-300 dark:hover:text-purple-400"
+          >
+            Artists
+          </Link>
+          <Link
+            href="/groups"
+            className="text-sm font-medium text-gray-700 hover:text-purple-600 dark:text-gray-300 dark:hover:text-purple-400"
+          >
+            Groups
+          </Link>
           {session?.user ? (
             <>
               <Link
