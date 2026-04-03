@@ -8,6 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "scrape": "tsx scripts/scrape-production.ts",
+    "scrape:scheduled": "tsx scripts/scrape-scheduled.ts",
+    "scrape:force": "tsx scripts/scrape-scheduled.ts --force",
+    "scrape:check": "tsx scripts/scrape-scheduled.ts --check-only",
     "seed": "npx tsx scripts/seed-concerts.ts"
   },
   "dependencies": {
