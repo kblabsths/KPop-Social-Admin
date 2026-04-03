@@ -3,202 +3,351 @@ import { prisma } from "@/lib/prisma";
 const STALE_THRESHOLD_HOURS = 24;
 
 export default async function AdminOverview() {
-  const [users, artists, venues, concerts, scraperRuns, activeAlerts] =
-    await Promise.all([
-      prisma.user.count(),
-      prisma.artist.count(),
-      prisma.venue.count(),
-      prisma.concert.count(),
-      prisma.scraperRun.count(),
-      prisma.dataQualityAlert.count({ where: { resolvedAt: null } }),
-    ]);
+  const [
+    totalConcerts,
+    concertsWithVenue,
+    concertsWithArtists,
+    concertsWithDates,
+    totalArtists,
+    totalVenues,
+    totalUsers,
+    activeAlerts,
+    latestRun,
+    scraperStats,
+    recentRuns,
+    recentAlerts,
+  ] = await Promise.all([
+    prisma.concert.count(),
+    prisma.concert.count({ where: { venueId: { not: undefined } } }),
+    prisma.concert.count({
+      where: { artists: { some: {} } },
+    }),
+    prisma.concert.count({
+      where: { date: { not: undefined } },
+    }),
+    prisma.artist.count(),
+    prisma.venue.count(),
+    prisma.user.count(),
+    prisma.dataQualityAlert.count({ where: { resolvedAt: null } }),
+    prisma.scraperRun.findFirst({ orderBy: { startedAt: "desc" } }),
+    prisma.scraperRun.groupBy({
+      by: ["scraperName"],
+      _count: { _all: true },
+      _sum: { recordsCreated: true, recordsUpdated: true, recordsFailed: true },
+    }),
+    prisma.scraperRun.findMany({
+      orderBy: { startedAt: "desc" },
+      take: 10,
+    }),
+    prisma.dataQualityAlert.findMany({
+      where: { resolvedAt: null },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    }),
+  ]);
 
-  const recentRuns = await prisma.scraperRun.findMany({
-    orderBy: { startedAt: "desc" },
-    take: 5,
-  });
+  // Per-scraper latest run and success rate
+  const scraperNames = scraperStats.map((s) => s.scraperName);
+  const scraperLatestRuns = await Promise.all(
+    scraperNames.map((name) =>
+      prisma.scraperRun.findFirst({
+        where: { scraperName: name },
+        orderBy: { startedAt: "desc" },
+      })
+    )
+  );
+  const scraperSuccessCounts = await Promise.all(
+    scraperNames.map((name) =>
+      prisma.scraperRun.count({
+        where: { scraperName: name, status: "SUCCESS" },
+      })
+    )
+  );
 
-  const alertsBySeverity = await prisma.dataQualityAlert.groupBy({
-    by: ["severity"],
-    where: { resolvedAt: null },
-    _count: true,
-  });
-
-  const latestRun = recentRuns[0] ?? null;
-  const successfulRuns = await prisma.scraperRun.count({
-    where: { scraperName: "kpopofficial", status: "SUCCESS" },
-  });
   const hoursSinceLastRun = latestRun
     ? (Date.now() - latestRun.startedAt.getTime()) / (60 * 60 * 1000)
     : null;
   const isStale =
-    !latestRun || (hoursSinceLastRun !== null && hoursSinceLastRun > STALE_THRESHOLD_HOURS);
-  const successRate =
-    scraperRuns > 0 ? Math.round((successfulRuns / scraperRuns) * 1000) / 10 : 0;
+    !latestRun ||
+    (hoursSinceLastRun !== null && hoursSinceLastRun > STALE_THRESHOLD_HOURS);
 
-  const stats = [
-    { label: "Users", value: users },
-    { label: "Artists", value: artists },
-    { label: "Venues", value: venues },
-    { label: "Concerts", value: concerts },
-    { label: "Scraper Runs", value: scraperRuns },
-    { label: "Active Alerts", value: activeAlerts },
-  ];
+  // Completeness percentages
+  const pctVenue =
+    totalConcerts > 0
+      ? Math.round((concertsWithVenue / totalConcerts) * 1000) / 10
+      : 0;
+  const pctArtists =
+    totalConcerts > 0
+      ? Math.round((concertsWithArtists / totalConcerts) * 1000) / 10
+      : 0;
+  const pctDates =
+    totalConcerts > 0
+      ? Math.round((concertsWithDates / totalConcerts) * 1000) / 10
+      : 0;
 
-  const severityColors: Record<string, string> = {
-    CRITICAL: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-    HIGH: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
-    MEDIUM: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
-    LOW: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-  };
+  // Merge recent runs + alerts into activity feed, sorted by time
+  const activityFeed = [
+    ...recentRuns.map((r) => ({
+      type: "scraper" as const,
+      time: r.startedAt,
+      label: `${r.scraperName} — ${r.status}`,
+      detail: `${r.recordsCreated} created, ${r.recordsUpdated} updated${r.recordsFailed > 0 ? `, ${r.recordsFailed} failed` : ""}`,
+      status: r.status,
+    })),
+    ...recentAlerts.map((a) => ({
+      type: "alert" as const,
+      time: a.createdAt,
+      label: `${a.severity} ${a.alertType}`,
+      detail: a.message,
+      status: a.severity,
+    })),
+  ]
+    .sort((a, b) => b.time.getTime() - a.time.getTime())
+    .slice(0, 10);
 
-  const statusColors: Record<string, string> = {
-    RUNNING: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-    SUCCESS: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-    FAILED: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-    PARTIAL: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  const statusColor: Record<string, string> = {
+    SUCCESS: "text-green-600 dark:text-green-400",
+    FAILED: "text-red-600 dark:text-red-400",
+    RUNNING: "text-blue-600 dark:text-blue-400",
+    PARTIAL: "text-yellow-600 dark:text-yellow-400",
+    CRITICAL: "text-red-600 dark:text-red-400",
+    HIGH: "text-orange-600 dark:text-orange-400",
+    MEDIUM: "text-yellow-600 dark:text-yellow-400",
+    LOW: "text-blue-600 dark:text-blue-400",
   };
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-        Dashboard Overview
+    <div className="space-y-4">
+      <h1 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+        Overview
       </h1>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-        {stats.map((stat) => (
-          <div
-            key={stat.label}
-            className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900"
-          >
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {stat.label}
-            </p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">
-              {stat.value}
-            </p>
-          </div>
-        ))}
-      </div>
-
+      {/* Freshness bar */}
       <div
-        className={`rounded-lg border p-4 mb-6 ${
+        className={`w-full border-l-4 px-3 py-2 text-xs font-mono ${
           isStale
-            ? "border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950"
-            : "border-green-300 bg-green-50 dark:border-green-800 dark:bg-green-950"
+            ? "border-red-500 bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-300"
+            : "border-green-500 bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-300"
         }`}
       >
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Data Freshness
-          </h2>
-          <span
-            className={`rounded-full px-3 py-1 text-xs font-bold ${
-              isStale
-                ? "bg-red-200 text-red-800 dark:bg-red-900 dark:text-red-200"
-                : "bg-green-200 text-green-800 dark:bg-green-900 dark:text-green-200"
-            }`}
-          >
-            {isStale ? "STALE" : "FRESH"}
+        <span className="font-bold">{isStale ? "⚠ DATA STALE" : "✓ DATA FRESH"}</span>
+        {latestRun && (
+          <span className="ml-3">
+            Last scrape: {latestRun.startedAt.toISOString().replace("T", " ").slice(0, 19)} UTC
+            {hoursSinceLastRun !== null && (
+              <span className="ml-1 opacity-70">
+                ({hoursSinceLastRun < 1
+                  ? `${Math.round(hoursSinceLastRun * 60)}m ago`
+                  : `${Math.round(hoursSinceLastRun * 10) / 10}h ago`})
+              </span>
+            )}
           </span>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div>
-            <p className="text-gray-500 dark:text-gray-400">Last Scrape</p>
-            <p className="font-medium text-gray-900 dark:text-white">
-              {latestRun
-                ? latestRun.startedAt.toLocaleString()
-                : "Never"}
-            </p>
-          </div>
-          <div>
-            <p className="text-gray-500 dark:text-gray-400">Time Ago</p>
-            <p className="font-medium text-gray-900 dark:text-white">
-              {hoursSinceLastRun !== null
-                ? hoursSinceLastRun < 1
-                  ? `${Math.round(hoursSinceLastRun * 60)}m`
-                  : `${Math.round(hoursSinceLastRun * 10) / 10}h`
-                : "N/A"}
-            </p>
-          </div>
-          <div>
-            <p className="text-gray-500 dark:text-gray-400">Success Rate</p>
-            <p className="font-medium text-gray-900 dark:text-white">
-              {successRate}%
-            </p>
-          </div>
-          <div>
-            <p className="text-gray-500 dark:text-gray-400">Last Run Events</p>
-            <p className="font-medium text-gray-900 dark:text-white">
-              {latestRun
-                ? `${latestRun.recordsCreated} new, ${latestRun.recordsUpdated} updated`
-                : "N/A"}
-            </p>
-          </div>
-        </div>
-        {isStale && (
-          <p className="mt-2 text-xs text-red-700 dark:text-red-300">
-            Data has not been refreshed in over {STALE_THRESHOLD_HOURS} hours.
-            Run <code className="bg-red-100 dark:bg-red-900 px-1 rounded">npm run scrape:scheduled</code> or set up a cron job.
-          </p>
         )}
+        {isStale && !latestRun && <span className="ml-3">No scraper runs recorded.</span>}
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-            Recent Scraper Runs
-          </h2>
-          {recentRuns.length === 0 ? (
-            <p className="text-sm text-gray-500">No scraper runs yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {recentRuns.map((run) => (
-                <div
-                  key={run.id}
-                  className="flex items-center justify-between rounded-md border border-gray-100 p-2 dark:border-gray-800"
-                >
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {run.scraperName}
-                  </span>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[run.status] || ""}`}
-                  >
-                    {run.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-            Active Alerts by Severity
-          </h2>
-          {alertsBySeverity.length === 0 ? (
-            <p className="text-sm text-gray-500">No active alerts.</p>
-          ) : (
-            <div className="space-y-2">
-              {alertsBySeverity.map((group) => (
-                <div
-                  key={group.severity}
-                  className="flex items-center justify-between"
-                >
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityColors[group.severity] || ""}`}
-                  >
-                    {group.severity}
-                  </span>
-                  <span className="text-sm font-bold text-gray-900 dark:text-white">
-                    {group._count}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      {/* Data completeness panels */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+        <CompletenessCard label="Concerts w/ venue" value={pctVenue} count={concertsWithVenue} total={totalConcerts} />
+        <CompletenessCard label="Concerts w/ artist" value={pctArtists} count={concertsWithArtists} total={totalConcerts} />
+        <CompletenessCard label="Concerts w/ date" value={pctDates} count={concertsWithDates} total={totalConcerts} />
+        <StatCard label="Total concerts" value={totalConcerts} />
+        <StatCard label="Total artists" value={totalArtists} />
+        <StatCard label="Total venues" value={totalVenues} />
       </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <StatCard label="Users" value={totalUsers} />
+        <StatCard label="Active alerts" value={activeAlerts} alert={activeAlerts > 0} />
+        <StatCard label="Scraper runs" value={recentRuns.length > 0 ? `${recentRuns.length} recent` : "0"} />
+        <StatCard
+          label="Latest status"
+          value={latestRun?.status ?? "NONE"}
+          color={statusColor[latestRun?.status ?? ""] ?? "text-gray-600 dark:text-gray-400"}
+        />
+      </div>
+
+      {/* Data source assessment table */}
+      <section>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+          Data Sources
+        </h2>
+        <div className="border border-gray-300 dark:border-gray-700 overflow-hidden">
+          <table className="w-full text-xs font-mono">
+            <thead>
+              <tr className="bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-left">
+                <th className="px-3 py-1.5 font-medium">Source</th>
+                <th className="px-3 py-1.5 font-medium text-right">Total Runs</th>
+                <th className="px-3 py-1.5 font-medium text-right">Records</th>
+                <th className="px-3 py-1.5 font-medium text-right">Success Rate</th>
+                <th className="px-3 py-1.5 font-medium">Last Run</th>
+                <th className="px-3 py-1.5 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scraperStats.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-3 py-2 text-gray-400 text-center">
+                    No scraper data yet.
+                  </td>
+                </tr>
+              ) : (
+                scraperStats.map((stat, i) => {
+                  const latest = scraperLatestRuns[i];
+                  const totalRuns = stat._count._all;
+                  const successCount = scraperSuccessCounts[i];
+                  const rate =
+                    totalRuns > 0 ? Math.round((successCount / totalRuns) * 1000) / 10 : 0;
+                  const totalRecords =
+                    (stat._sum.recordsCreated ?? 0) + (stat._sum.recordsUpdated ?? 0);
+                  return (
+                    <tr
+                      key={stat.scraperName}
+                      className="border-t border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900"
+                    >
+                      <td className="px-3 py-1.5 text-gray-800 dark:text-gray-200">
+                        {stat.scraperName}
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-gray-600 dark:text-gray-400">
+                        {totalRuns}
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-gray-600 dark:text-gray-400">
+                        {totalRecords}
+                      </td>
+                      <td className="px-3 py-1.5 text-right">
+                        <span
+                          className={
+                            rate >= 90
+                              ? "text-green-600 dark:text-green-400"
+                              : rate >= 70
+                                ? "text-yellow-600 dark:text-yellow-400"
+                                : "text-red-600 dark:text-red-400"
+                          }
+                        >
+                          {rate}%
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-gray-500 dark:text-gray-400">
+                        {latest
+                          ? latest.startedAt.toISOString().replace("T", " ").slice(0, 16)
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <span className={statusColor[latest?.status ?? ""] ?? "text-gray-400"}>
+                          {latest?.status ?? "—"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Recent activity feed */}
+      <section>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+          Recent Activity
+        </h2>
+        <div className="border border-gray-300 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-800">
+          {activityFeed.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-gray-400 text-center font-mono">
+              No recent activity.
+            </div>
+          ) : (
+            activityFeed.map((item, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-3 px-3 py-1.5 text-xs font-mono hover:bg-gray-50 dark:hover:bg-gray-900"
+              >
+                <span className="shrink-0 text-gray-400 dark:text-gray-500 w-32">
+                  {item.time.toISOString().replace("T", " ").slice(0, 16)}
+                </span>
+                <span
+                  className={`shrink-0 w-4 text-center ${
+                    item.type === "alert" ? "text-orange-500" : "text-blue-500"
+                  }`}
+                >
+                  {item.type === "alert" ? "▲" : "⟳"}
+                </span>
+                <span className={`font-semibold ${statusColor[item.status] ?? "text-gray-600 dark:text-gray-300"}`}>
+                  {item.label}
+                </span>
+                <span className="text-gray-500 dark:text-gray-400 truncate">
+                  {item.detail}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CompletenessCard({
+  label,
+  value,
+  count,
+  total,
+}: {
+  label: string;
+  value: number;
+  count: number;
+  total: number;
+}) {
+  return (
+    <div className="border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2">
+      <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">
+        {label}
+      </p>
+      <p
+        className={`text-lg font-bold font-mono ${
+          value >= 90
+            ? "text-green-600 dark:text-green-400"
+            : value >= 70
+              ? "text-yellow-600 dark:text-yellow-400"
+              : "text-red-600 dark:text-red-400"
+        }`}
+      >
+        {value}%
+      </p>
+      <p className="text-[10px] font-mono text-gray-400">
+        {count}/{total}
+      </p>
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  alert,
+  color,
+}: {
+  label: string;
+  value: string | number;
+  alert?: boolean;
+  color?: string;
+}) {
+  return (
+    <div className="border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2">
+      <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">
+        {label}
+      </p>
+      <p
+        className={`text-lg font-bold font-mono ${
+          color
+            ? color
+            : alert
+              ? "text-red-600 dark:text-red-400"
+              : "text-gray-800 dark:text-gray-200"
+        }`}
+      >
+        {value}
+      </p>
     </div>
   );
 }
