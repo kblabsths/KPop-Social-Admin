@@ -18,11 +18,17 @@ export default function ConcertRsvpButtons({
 
   useEffect(() => {
     fetch(`/api/concerts/${concertId}/rsvp`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then((data) => {
         setInterested(data.interested);
         setGoing(data.going);
         setUserStatus(data.userStatus ?? null);
+      })
+      .catch(() => {
+        // Gracefully degrade — counts stay at 0
       });
   }, [concertId]);
 

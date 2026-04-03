@@ -15,10 +15,16 @@ export default function FollowButton({
 
   useEffect(() => {
     fetch(`/api/artists/${artistId}/follow`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then((data) => {
         setFollowerCount(data.followerCount);
         setIsFollowing(data.isFollowing);
+      })
+      .catch(() => {
+        // Gracefully degrade — count stays at 0
       });
   }, [artistId]);
 
