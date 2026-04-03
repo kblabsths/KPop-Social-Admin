@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import FollowButton from "./follow-button";
 
 export default async function ArtistPage({
   params,
@@ -9,7 +11,8 @@ export default async function ArtistPage({
 }) {
   const { id } = await params;
 
-  const artist = await prisma.artist.findUnique({
+  const [artist, session] = await Promise.all([
+    prisma.artist.findUnique({
     where: { id },
     include: {
       groups: {
@@ -19,9 +22,12 @@ export default async function ArtistPage({
         orderBy: { members: { _count: "desc" } },
       },
     },
-  });
+  }),
+    auth(),
+  ]);
 
   if (!artist) notFound();
+  const loggedIn = !!session?.user;
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-8">
@@ -70,6 +76,9 @@ export default async function ArtistPage({
                 {artist.description}
               </p>
             )}
+            <div className="mt-3">
+              <FollowButton artistId={artist.id} loggedIn={loggedIn} />
+            </div>
           </div>
         </div>
 
