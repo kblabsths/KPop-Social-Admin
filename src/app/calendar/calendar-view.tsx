@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 type Concert = {
@@ -11,6 +12,18 @@ type Concert = {
   eventType: string;
   artists: { id: string; name: string }[];
   venue: { id: string; name: string; city: string; country: string };
+};
+
+type Artist = {
+  id: string;
+  name: string;
+};
+
+type Venue = {
+  id: string;
+  name: string;
+  city: string;
+  country: string;
 };
 
 const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -61,26 +74,66 @@ function isToday(date: Date) {
 const MAX_VISIBLE_CONCERTS = 2;
 
 export function CalendarView() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [concerts, setConcerts] = useState<Concert[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [artists, setArtists] = useState<Artist[]>([]);
+  const [venues, setVenues] = useState<Venue[]>([]);
+
+  const artistId = searchParams.get("artistId") || "";
+  const venueId = searchParams.get("venueId") || "";
+
+  const updateFilters = useCallback(
+    (newArtistId: string, newVenueId: string) => {
+      const params = new URLSearchParams();
+      if (newArtistId) params.set("artistId", newArtistId);
+      if (newVenueId) params.set("venueId", newVenueId);
+      const qs = params.toString();
+      router.push(`/calendar${qs ? `?${qs}` : ""}`, { scroll: false });
+    },
+    [router],
+  );
+
+  // Fetch artists and venues for dropdowns
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/artists?limit=100").then((r) => r.json()),
+      fetch("/api/venues?limit=100").then((r) => r.json()),
+    ]).then(([artistData, venueData]) => {
+      setArtists(artistData);
+      setVenues(venueData);
+    });
+  }, []);
+
+  // Fetch concerts for the current month with filters
   useEffect(() => {
     setLoading(true);
     const dateFrom = `${year}-${String(month + 1).padStart(2, "0")}-01`;
     const lastDay = new Date(year, month + 1, 0).getDate();
     const dateTo = `${year}-${String(month + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
-    fetch(`/api/concerts?dateFrom=${dateFrom}&dateTo=${dateTo}&limit=100`)
+    const params = new URLSearchParams({
+      dateFrom,
+      dateTo,
+      limit: "100",
+    });
+    if (artistId) params.set("artistId", artistId);
+    if (venueId) params.set("venueId", venueId);
+
+    fetch(`/api/concerts?${params.toString()}`)
       .then((res) => res.json())
       .then((data) => {
         setConcerts(data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [year, month]);
+  }, [year, month, artistId, venueId]);
 
   const days = getMonthDays(year, month);
 
@@ -117,6 +170,8 @@ export function CalendarView() {
     setMonth(now.getMonth());
   }
 
+  const hasFilters = artistId || venueId;
+
   const monthLabel = new Date(year, month).toLocaleDateString("en-US", {
     month: "long",
     year: "numeric",
@@ -124,6 +179,50 @@ export function CalendarView() {
 
   return (
     <div>
+      {/* Filter bar */}
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/50">
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          Artist
+          <select
+            value={artistId}
+            onChange={(e) => updateFilters(e.target.value, venueId)}
+            className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+          >
+            <option value="">All artists</option>
+            {artists.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          Venue
+          <select
+            value={venueId}
+            onChange={(e) => updateFilters(artistId, e.target.value)}
+            className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+          >
+            <option value="">All venues</option>
+            {venues.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name} — {v.city}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {hasFilters && (
+          <button
+            onClick={() => updateFilters("", "")}
+            className="rounded-md bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 transition hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
       {/* Month navigation */}
       <div className="mb-4 flex items-center justify-between">
         <button
