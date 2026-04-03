@@ -10,7 +10,7 @@
 
 import "dotenv/config";
 import * as cheerio from "cheerio";
-import { PrismaClient } from "@/generated/prisma/client";
+import { PrismaClient, Prisma } from "@/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
@@ -206,7 +206,7 @@ async function log(
   metadata?: Record<string, unknown>
 ) {
   await prisma.scraperLog.create({
-    data: { scraperRunId, level, message, metadata: metadata ?? undefined },
+    data: { scraperRunId, level, message, metadata: (metadata ?? undefined) as Prisma.InputJsonValue | undefined },
   });
 }
 
