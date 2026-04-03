@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { auth, signOut } from "@/lib/auth";
+import SearchBar from "./search-bar";
 
 export default async function Navbar() {
   const session = await auth();
@@ -15,6 +16,7 @@ export default async function Navbar() {
         </Link>
 
         <div className="flex items-center gap-4">
+          <SearchBar />
           <Link
             href="/artists"
             className="text-sm font-medium text-gray-700 hover:text-purple-600 dark:text-gray-300 dark:hover:text-purple-400"
