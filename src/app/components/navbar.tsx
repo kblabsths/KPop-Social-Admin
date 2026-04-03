@@ -42,12 +42,20 @@ export default async function Navbar() {
             Venues
           </Link>
           {session?.user && (
-            <Link
-              href="/feed"
-              className="text-sm font-medium text-gray-700 hover:text-purple-600 dark:text-gray-300 dark:hover:text-purple-400"
-            >
-              Feed
-            </Link>
+            <>
+              <Link
+                href="/my-concerts"
+                className="text-sm font-medium text-gray-700 hover:text-purple-600 dark:text-gray-300 dark:hover:text-purple-400"
+              >
+                My Concerts
+              </Link>
+              <Link
+                href="/feed"
+                className="text-sm font-medium text-gray-700 hover:text-purple-600 dark:text-gray-300 dark:hover:text-purple-400"
+              >
+                Feed
+              </Link>
+            </>
           )}
           {session?.user ? (
             <>
