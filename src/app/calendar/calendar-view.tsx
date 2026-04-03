@@ -250,90 +250,161 @@ export function CalendarView() {
         </button>
       </div>
 
-      {/* Calendar grid */}
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        {/* Day of week headers */}
-        <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-800">
-          {DAYS_OF_WEEK.map((day) => (
-            <div
-              key={day}
-              className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
-            >
-              {day}
-            </div>
-          ))}
-        </div>
+      {/* Calendar grid — hidden on mobile, shown on md+ */}
+      <div className="hidden md:block">
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+          {/* Day of week headers */}
+          <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-800">
+            {DAYS_OF_WEEK.map((day) => (
+              <div
+                key={day}
+                className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+              >
+                {day}
+              </div>
+            ))}
+          </div>
 
-        {/* Day cells */}
+          {/* Day cells */}
+          {loading ? (
+            <div className="flex h-96 items-center justify-center">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Loading concerts...
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-7">
+              {days.map((day, i) => {
+                const key = formatDateKey(day.date);
+                const dayConcerts = concertsByDate[key] || [];
+                const visibleConcerts = dayConcerts.slice(
+                  0,
+                  MAX_VISIBLE_CONCERTS,
+                );
+                const overflow = dayConcerts.length - MAX_VISIBLE_CONCERTS;
+                const today = isToday(day.date);
+
+                return (
+                  <div
+                    key={i}
+                    className={`min-h-[100px] border-b border-r border-gray-100 p-1.5 dark:border-gray-800 ${
+                      !day.isCurrentMonth
+                        ? "bg-gray-50 dark:bg-gray-950"
+                        : ""
+                    } ${
+                      today
+                        ? "ring-2 ring-inset ring-purple-500 dark:ring-purple-400"
+                        : ""
+                    }`}
+                  >
+                    <div
+                      className={`mb-1 text-xs font-medium ${
+                        !day.isCurrentMonth
+                          ? "text-gray-300 dark:text-gray-700"
+                          : today
+                            ? "font-bold text-purple-600 dark:text-purple-400"
+                            : "text-gray-600 dark:text-gray-400"
+                      }`}
+                    >
+                      {day.date.getDate()}
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      {visibleConcerts.map((concert) => (
+                        <Link
+                          key={concert.id}
+                          href={`/concerts/${concert.id}`}
+                          className="block truncate rounded bg-purple-100 px-1 py-0.5 text-[10px] font-medium leading-tight text-purple-700 transition hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+                          title={`${concert.title} — ${concert.artists.map((a) => a.name).join(", ")}`}
+                        >
+                          {concert.title}
+                        </Link>
+                      ))}
+                      {overflow > 0 && (
+                        <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500">
+                          +{overflow} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Mobile list view — shown on small screens, hidden on md+ */}
+      <div className="md:hidden">
         {loading ? (
-          <div className="flex h-96 items-center justify-center">
+          <div className="flex h-48 items-center justify-center">
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Loading concerts...
             </p>
           </div>
+        ) : concerts.length === 0 ? (
+          <p className="py-8 text-center text-gray-500 dark:text-gray-400">
+            No concerts scheduled for {monthLabel}.
+          </p>
         ) : (
-          <div className="grid grid-cols-7">
-            {days.map((day, i) => {
-              const key = formatDateKey(day.date);
-              const dayConcerts = concertsByDate[key] || [];
-              const visibleConcerts = dayConcerts.slice(
-                0,
-                MAX_VISIBLE_CONCERTS,
-              );
-              const overflow = dayConcerts.length - MAX_VISIBLE_CONCERTS;
-              const today = isToday(day.date);
+          <div className="space-y-6">
+            {Object.entries(concertsByDate)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([dateKey, dayConcerts]) => {
+                const dateObj = new Date(dateKey + "T00:00:00");
+                const fullDate = dateObj.toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                });
+                const today = isToday(dateObj);
 
-              return (
-                <div
-                  key={i}
-                  className={`min-h-[100px] border-b border-r border-gray-100 p-1.5 dark:border-gray-800 ${
-                    !day.isCurrentMonth
-                      ? "bg-gray-50 dark:bg-gray-950"
-                      : ""
-                  } ${
-                    today
-                      ? "ring-2 ring-inset ring-purple-500 dark:ring-purple-400"
-                      : ""
-                  }`}
-                >
-                  <div
-                    className={`mb-1 text-xs font-medium ${
-                      !day.isCurrentMonth
-                        ? "text-gray-300 dark:text-gray-700"
-                        : today
-                          ? "font-bold text-purple-600 dark:text-purple-400"
-                          : "text-gray-600 dark:text-gray-400"
-                    }`}
-                  >
-                    {day.date.getDate()}
+                return (
+                  <div key={dateKey}>
+                    <h3
+                      className={`mb-2 text-sm font-semibold ${
+                        today
+                          ? "text-purple-600 dark:text-purple-400"
+                          : "text-gray-700 dark:text-gray-300"
+                      }`}
+                    >
+                      {fullDate}
+                      {today && (
+                        <span className="ml-2 rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                          Today
+                        </span>
+                      )}
+                    </h3>
+                    <div className="space-y-2">
+                      {dayConcerts.map((concert) => (
+                        <Link
+                          key={concert.id}
+                          href={`/concerts/${concert.id}`}
+                          className="block rounded-lg border border-gray-200 bg-white p-3 transition hover:border-purple-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-purple-700"
+                        >
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {concert.title}
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            {concert.artists.map((a) => a.name).join(", ")}
+                          </p>
+                          <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+                            {concert.venue.name} — {concert.venue.city},{" "}
+                            {concert.venue.country}
+                          </p>
+                        </Link>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-0.5">
-                    {visibleConcerts.map((concert) => (
-                      <Link
-                        key={concert.id}
-                        href={`/concerts/${concert.id}`}
-                        className="block truncate rounded bg-purple-100 px-1 py-0.5 text-[10px] font-medium leading-tight text-purple-700 transition hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
-                        title={`${concert.title} — ${concert.artists.map((a) => a.name).join(", ")}`}
-                      >
-                        {concert.title}
-                      </Link>
-                    ))}
-                    {overflow > 0 && (
-                      <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500">
-                        +{overflow} more
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         )}
       </div>
 
-      {/* Empty state */}
+      {/* Empty state — desktop only (mobile has its own) */}
       {!loading && concerts.length === 0 && (
-        <p className="mt-8 text-center text-gray-500 dark:text-gray-400">
+        <p className="mt-8 hidden text-center text-gray-500 md:block dark:text-gray-400">
           No concerts scheduled for {monthLabel}.
         </p>
       )}

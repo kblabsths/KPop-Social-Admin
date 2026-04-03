@@ -36,6 +36,12 @@ export default async function Navbar() {
             Concerts
           </Link>
           <Link
+            href="/calendar"
+            className="text-sm font-medium text-gray-700 hover:text-purple-600 dark:text-gray-300 dark:hover:text-purple-400"
+          >
+            Calendar
+          </Link>
+          <Link
             href="/venues"
             className="text-sm font-medium text-gray-700 hover:text-purple-600 dark:text-gray-300 dark:hover:text-purple-400"
           >
