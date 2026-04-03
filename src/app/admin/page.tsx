@@ -5,9 +5,9 @@ const STALE_THRESHOLD_HOURS = 24;
 export default async function AdminOverview() {
   const [
     totalConcerts,
-    concertsWithVenue,
+    concertsWithDescription,
     concertsWithArtists,
-    concertsWithDates,
+    concertsWithTicketUrl,
     totalArtists,
     totalVenues,
     totalUsers,
@@ -18,12 +18,12 @@ export default async function AdminOverview() {
     recentAlerts,
   ] = await Promise.all([
     prisma.concert.count(),
-    prisma.concert.count({ where: { venueId: { not: undefined } } }),
+    prisma.concert.count({ where: { description: { not: null } } }),
     prisma.concert.count({
       where: { artists: { some: {} } },
     }),
     prisma.concert.count({
-      where: { date: { not: undefined } },
+      where: { ticketUrl: { not: null } },
     }),
     prisma.artist.count(),
     prisma.venue.count(),
@@ -72,17 +72,17 @@ export default async function AdminOverview() {
     (hoursSinceLastRun !== null && hoursSinceLastRun > STALE_THRESHOLD_HOURS);
 
   // Completeness percentages
-  const pctVenue =
+  const pctDescription =
     totalConcerts > 0
-      ? Math.round((concertsWithVenue / totalConcerts) * 1000) / 10
+      ? Math.round((concertsWithDescription / totalConcerts) * 1000) / 10
       : 0;
   const pctArtists =
     totalConcerts > 0
       ? Math.round((concertsWithArtists / totalConcerts) * 1000) / 10
       : 0;
-  const pctDates =
+  const pctTicketUrl =
     totalConcerts > 0
-      ? Math.round((concertsWithDates / totalConcerts) * 1000) / 10
+      ? Math.round((concertsWithTicketUrl / totalConcerts) * 1000) / 10
       : 0;
 
   // Merge recent runs + alerts into activity feed, sorted by time
@@ -148,9 +148,9 @@ export default async function AdminOverview() {
 
       {/* Data completeness panels */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-        <CompletenessCard label="Concerts w/ venue" value={pctVenue} count={concertsWithVenue} total={totalConcerts} />
+        <CompletenessCard label="Concerts w/ description" value={pctDescription} count={concertsWithDescription} total={totalConcerts} />
         <CompletenessCard label="Concerts w/ artist" value={pctArtists} count={concertsWithArtists} total={totalConcerts} />
-        <CompletenessCard label="Concerts w/ date" value={pctDates} count={concertsWithDates} total={totalConcerts} />
+        <CompletenessCard label="Concerts w/ ticket URL" value={pctTicketUrl} count={concertsWithTicketUrl} total={totalConcerts} />
         <StatCard label="Total concerts" value={totalConcerts} />
         <StatCard label="Total artists" value={totalArtists} />
         <StatCard label="Total venues" value={totalVenues} />
