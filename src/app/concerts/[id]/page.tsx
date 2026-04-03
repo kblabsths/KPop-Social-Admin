@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import ConcertRsvpButtons from "./concert-rsvp-buttons";
 
 export default async function ConcertDetailPage({
   params,
@@ -9,15 +11,19 @@ export default async function ConcertDetailPage({
 }) {
   const { id } = await params;
 
-  const concert = await prisma.concert.findUnique({
-    where: { id },
-    include: {
-      artists: true,
-      venue: true,
-    },
-  });
+  const [concert, session] = await Promise.all([
+    prisma.concert.findUnique({
+      where: { id },
+      include: {
+        artists: true,
+        venue: true,
+      },
+    }),
+    auth(),
+  ]);
 
   if (!concert) notFound();
+  const loggedIn = !!session?.user;
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-8">
@@ -69,6 +75,9 @@ export default async function ConcertDetailPage({
               &ndash; {new Date(concert.endDate).toLocaleDateString()}
             </span>
           )}
+        </div>
+        <div className="mt-4">
+          <ConcertRsvpButtons concertId={concert.id} loggedIn={loggedIn} />
         </div>
         {concert.description && (
           <p className="mt-4 text-gray-600 dark:text-gray-300">
