@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { auth } from "@/lib/auth";
 import { NextRequest } from "next/server";
 
@@ -6,13 +6,19 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const supabase = getSupabaseAdmin();
   const { id } = await params;
   const session = await auth();
   if (!session?.user?.id) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const concert = await prisma.concert.findUnique({ where: { id } });
+  const { data: concert } = await supabase
+    .from("concerts")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle();
+
   if (!concert) {
     return Response.json({ error: "Concert not found" }, { status: 404 });
   }
@@ -27,19 +33,34 @@ export async function POST(
     );
   }
 
-  const rsvp = await prisma.userConcert.upsert({
-    where: {
-      userId_concertId: { userId: session.user.id, concertId: id },
-    },
-    create: {
-      userId: session.user.id,
-      concertId: id,
-      status,
-    },
-    update: {
-      status,
-    },
-  });
+  // Check for existing RSVP
+  const { data: existing } = await supabase
+    .from("user_concerts")
+    .select("id")
+    .eq("user_id", session.user.id)
+    .eq("concert_id", id)
+    .maybeSingle();
+
+  let rsvp;
+  if (existing) {
+    const { data, error } = await supabase
+      .from("user_concerts")
+      .update({ status })
+      .eq("user_id", session.user.id)
+      .eq("concert_id", id)
+      .select()
+      .single();
+    if (error) return Response.json({ error: error.message }, { status: 500 });
+    rsvp = data;
+  } else {
+    const { data, error } = await supabase
+      .from("user_concerts")
+      .insert({ id: crypto.randomUUID(), user_id: session.user.id, concert_id: id, status })
+      .select()
+      .single();
+    if (error) return Response.json({ error: error.message }, { status: 500 });
+    rsvp = data;
+  }
 
   return Response.json(rsvp);
 }
@@ -48,27 +69,31 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const supabase = getSupabaseAdmin();
   const { id } = await params;
   const session = await auth();
   if (!session?.user?.id) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const existing = await prisma.userConcert.findUnique({
-    where: {
-      userId_concertId: { userId: session.user.id, concertId: id },
-    },
-  });
+  const { data: existing } = await supabase
+    .from("user_concerts")
+    .select("id")
+    .eq("user_id", session.user.id)
+    .eq("concert_id", id)
+    .maybeSingle();
 
   if (!existing) {
     return Response.json({ error: "RSVP not found" }, { status: 404 });
   }
 
-  await prisma.userConcert.delete({
-    where: {
-      userId_concertId: { userId: session.user.id, concertId: id },
-    },
-  });
+  const { error } = await supabase
+    .from("user_concerts")
+    .delete()
+    .eq("user_id", session.user.id)
+    .eq("concert_id", id);
+
+  if (error) return Response.json({ error: error.message }, { status: 500 });
 
   return Response.json({ removed: true });
 }
@@ -77,27 +102,45 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const supabase = getSupabaseAdmin();
   const { id } = await params;
 
   try {
-    const concert = await prisma.concert.findUnique({ where: { id } });
+    const { data: concert } = await supabase
+      .from("concerts")
+      .select("id")
+      .eq("id", id)
+      .maybeSingle();
+
     if (!concert) {
       return Response.json({ error: "Concert not found" }, { status: 404 });
     }
 
-    const [interested, going] = await Promise.all([
-      prisma.userConcert.count({ where: { concertId: id, status: "interested" } }),
-      prisma.userConcert.count({ where: { concertId: id, status: "going" } }),
+    const [interestedResult, goingResult] = await Promise.all([
+      supabase
+        .from("user_concerts")
+        .select("*", { count: "exact", head: true })
+        .eq("concert_id", id)
+        .eq("status", "interested"),
+      supabase
+        .from("user_concerts")
+        .select("*", { count: "exact", head: true })
+        .eq("concert_id", id)
+        .eq("status", "going"),
     ]);
+
+    const interested = interestedResult.count ?? 0;
+    const going = goingResult.count ?? 0;
 
     let userStatus: string | null = null;
     const session = await auth();
     if (session?.user?.id) {
-      const userRsvp = await prisma.userConcert.findUnique({
-        where: {
-          userId_concertId: { userId: session.user.id, concertId: id },
-        },
-      });
+      const { data: userRsvp } = await supabase
+        .from("user_concerts")
+        .select("status")
+        .eq("user_id", session.user.id)
+        .eq("concert_id", id)
+        .maybeSingle();
       userStatus = userRsvp?.status ?? null;
     }
 

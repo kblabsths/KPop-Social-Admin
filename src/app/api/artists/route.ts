@@ -1,30 +1,27 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { NextRequest } from "next/server";
 
 export async function GET(request: NextRequest) {
+  const supabase = getSupabaseAdmin();
   const { searchParams } = request.nextUrl;
   const query = searchParams.get("q") || "";
   const type = searchParams.get("type") || undefined;
 
-  const artists = await prisma.artist.findMany({
-    where: {
-      AND: [
-        query
-          ? {
-              OR: [
-                { name: { contains: query, mode: "insensitive" } },
-                { koreanName: { contains: query, mode: "insensitive" } },
-              ],
-            }
-          : {},
-        type ? { type } : {},
-      ],
-    },
-    include: {
-      _count: { select: { groups: true } },
-    },
-    orderBy: { name: "asc" },
-  });
+  let queryBuilder = supabase
+    .from("artists")
+    .select("*")
+    .order("name", { ascending: true });
 
-  return Response.json(artists);
+  if (type) queryBuilder = queryBuilder.eq("type", type);
+
+  if (query) {
+    queryBuilder = queryBuilder.or(
+      `name.ilike.%${query}%,korean_name.ilike.%${query}%`
+    );
+  }
+
+  const { data: artists, error } = await queryBuilder;
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+
+  return Response.json(artists ?? []);
 }
