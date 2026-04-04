@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth, signOut } from "@/lib/auth";
 import SearchBar from "./search-bar";
+import NotificationBell from "./notification-bell";
 
 export default async function Navbar() {
   const session = await auth();
@@ -62,6 +63,9 @@ export default async function Navbar() {
                 Feed
               </Link>
             </>
+          )}
+          {session?.user && (
+            <NotificationBell userId={session.user.id!} />
           )}
           {session?.user ? (
             <>
