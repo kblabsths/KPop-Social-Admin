@@ -3,6 +3,16 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import Navbar from "@/app/components/navbar";
+import ProfileActivityTabs from "./ProfileActivityTabs";
+import InlineEditProfile from "./InlineEditProfile";
+
+async function fetchActivity(userId: string, baseUrl: string) {
+  const res = await fetch(`${baseUrl}/api/users/${userId}/activity`, {
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
 
 export default async function ProfilePage({
   params,
@@ -31,11 +41,19 @@ export default async function ProfilePage({
 
   const isOwnProfile = session?.user?.id === user.id;
 
+  // Fetch activity server-side
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXTAUTH_URL ||
+    "http://localhost:3000";
+  const activity = await fetchActivity(user.id, appUrl);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-50 to-pink-50 dark:from-gray-950 dark:to-purple-950">
       <Navbar />
       <main className="mx-auto max-w-2xl px-4 py-10">
         <div className="rounded-2xl bg-white p-8 shadow-lg dark:bg-gray-900">
+          {/* Header: avatar + name */}
           <div className="flex items-start gap-6">
             {user.image ? (
               <img
@@ -73,44 +91,58 @@ export default async function ProfilePage({
             </div>
           </div>
 
-          {user.bio && (
-            <div className="mt-6">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Bio
-              </h2>
-              <p className="mt-2 text-gray-700 dark:text-gray-300">
-                {user.bio}
-              </p>
-            </div>
+          {/* Bio and favorite artists — inline-editable for own profile */}
+          {isOwnProfile ? (
+            <InlineEditProfile
+              userId={user.id}
+              initialBio={user.bio}
+              initialFavoriteArtists={user.favoriteArtists}
+            />
+          ) : (
+            <>
+              {user.bio && (
+                <div className="mt-6">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Bio
+                  </h2>
+                  <p className="mt-2 text-gray-700 dark:text-gray-300">
+                    {user.bio}
+                  </p>
+                </div>
+              )}
+
+              {user.favoriteArtists.length > 0 && (
+                <div className="mt-6">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Favorite Artists
+                  </h2>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {user.favoriteArtists.map((artist) => (
+                      <span
+                        key={artist}
+                        className="rounded-full bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1 text-sm font-medium text-purple-700 dark:from-purple-900/30 dark:to-pink-900/30 dark:text-purple-300"
+                      >
+                        {artist}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!user.bio && user.favoriteArtists.length === 0 && (
+                <p className="mt-6 text-center text-gray-400 dark:text-gray-500">
+                  This user hasn&apos;t added any details yet.
+                </p>
+              )}
+            </>
           )}
 
-          {user.favoriteArtists.length > 0 && (
-            <div className="mt-6">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Favorite Artists
-              </h2>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {user.favoriteArtists.map((artist) => (
-                  <span
-                    key={artist}
-                    className="rounded-full bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1 text-sm font-medium text-purple-700 dark:from-purple-900/30 dark:to-pink-900/30 dark:text-purple-300"
-                  >
-                    {artist}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {!user.bio && user.favoriteArtists.length === 0 && isOwnProfile && (
-            <p className="mt-6 text-center text-gray-400 dark:text-gray-500">
-              Your profile is empty.{" "}
-              <Link
-                href={`/profile/${user.id}/edit`}
-                className="text-purple-600 hover:underline dark:text-purple-400"
-              >
-                Add some details!
-              </Link>
+          {/* Activity sections */}
+          {activity ? (
+            <ProfileActivityTabs activity={activity} />
+          ) : (
+            <p className="mt-8 text-center text-sm text-gray-400 dark:text-gray-500">
+              Activity data unavailable.
             </p>
           )}
         </div>
