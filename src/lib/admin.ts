@@ -1,5 +1,5 @@
 import { auth } from "./auth";
-import { prisma } from "./prisma";
+import { getSupabaseAdmin } from "./supabase";
 
 export async function requireAdmin() {
   const session = await auth();
@@ -7,10 +7,12 @@ export async function requireAdmin() {
     return { error: Response.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { id: true, role: true },
-  });
+  const supabase = getSupabaseAdmin();
+  const { data: user } = await supabase
+    .from("web_users")
+    .select("id, role")
+    .eq("id", session.user.id)
+    .maybeSingle();
 
   if (!user || user.role !== "ADMIN") {
     return { error: Response.json({ error: "Forbidden" }, { status: 403 }) };

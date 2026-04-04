@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 
 /**
  * Creates a notification for a user when a followed artist has a new concert.
@@ -8,20 +8,21 @@ export async function createConcertNotification(
   userId: string,
   concertId: string
 ): Promise<void> {
-  const concert = await prisma.concert.findUnique({
-    where: { id: concertId },
-    select: { title: true },
-  });
+  const supabase = getSupabaseAdmin();
+  const { data: concert } = await supabase
+    .from("concerts")
+    .select("title")
+    .eq("id", concertId)
+    .maybeSingle();
   if (!concert) return;
 
-  await prisma.notification.create({
-    data: {
-      userId,
-      type: "new_concert",
-      title: "New concert announced",
-      body: concert.title,
-      link: `/concerts/${concertId}`,
-    },
+  await supabase.from("web_notifications").insert({
+    id: crypto.randomUUID(),
+    user_id: userId,
+    type: "new_concert",
+    title: "New concert announced",
+    body: concert.title,
+    link: `/concerts/${concertId}`,
   });
 }
 
@@ -34,23 +35,26 @@ export async function createGroupPostNotification(
   groupId: string,
   postId: string
 ): Promise<void> {
-  const [group, members] = await Promise.all([
-    prisma.group.findUnique({ where: { id: groupId }, select: { name: true } }),
-    prisma.groupMember.findMany({
-      where: { groupId, userId: { not: authorId } },
-      select: { userId: true },
-    }),
+  const supabase = getSupabaseAdmin();
+  const [{ data: group }, { data: members }] = await Promise.all([
+    supabase.from("groups").select("name").eq("id", groupId).maybeSingle(),
+    supabase
+      .from("group_members")
+      .select("user_id")
+      .eq("group_id", groupId)
+      .neq("user_id", authorId),
   ]);
 
-  if (!group || members.length === 0) return;
+  if (!group || !members || members.length === 0) return;
 
-  await prisma.notification.createMany({
-    data: members.map(({ userId }) => ({
-      userId,
-      type: "group_post" as const,
+  await supabase.from("web_notifications").insert(
+    members.map(({ user_id }) => ({
+      id: crypto.randomUUID(),
+      user_id,
+      type: "group_post",
       title: `New post in ${group.name}`,
       body: "Someone posted in a group you belong to.",
       link: `/groups/${groupId}/posts/${postId}`,
-    })),
-  });
+    }))
+  );
 }
