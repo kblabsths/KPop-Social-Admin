@@ -1,6 +1,8 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+
+export const dynamic = "force-dynamic";
 
 const statusColors: Record<string, string> = {
   RUNNING: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
@@ -21,20 +23,25 @@ export default async function ScraperRunDetail({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const supabase = getSupabaseAdmin();
   const { id } = await params;
 
-  const run = await prisma.scraperRun.findUnique({
-    where: { id },
-    include: {
-      logs: { orderBy: { createdAt: "asc" } },
-    },
-  });
+  const { data: run } = await supabase
+    .from("scraper_runs")
+    .select("*, scraper_logs(*)")
+    .eq("id", id)
+    .maybeSingle();
 
   if (!run) notFound();
 
+  const logs = (run.scraper_logs ?? []).sort(
+    (a: { created_at: string }, b: { created_at: string }) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+
   const duration =
-    run.finishedAt
-      ? `${Math.floor((run.finishedAt.getTime() - run.startedAt.getTime()) / 1000)}s`
+    run.finished_at
+      ? `${Math.floor((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000)}s`
       : "Running...";
 
   return (
@@ -48,7 +55,7 @@ export default async function ScraperRunDetail({
 
       <div className="flex items-center gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-          {run.scraperName}
+          {run.scraper_name}
         </h1>
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[run.status] || ""}`}
@@ -61,7 +68,7 @@ export default async function ScraperRunDetail({
         <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
           <p className="text-xs text-gray-500">Started</p>
           <p className="text-sm font-medium text-gray-900 dark:text-white">
-            {run.startedAt.toLocaleString()}
+            {new Date(run.started_at).toLocaleString()}
           </p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
@@ -72,22 +79,22 @@ export default async function ScraperRunDetail({
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
           <p className="text-xs text-gray-500">Records Created</p>
-          <p className="text-sm font-medium text-green-600">{run.recordsCreated}</p>
+          <p className="text-sm font-medium text-green-600">{run.records_created}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
           <p className="text-xs text-gray-500">Records Updated</p>
-          <p className="text-sm font-medium text-blue-600">{run.recordsUpdated}</p>
+          <p className="text-sm font-medium text-blue-600">{run.records_updated}</p>
         </div>
       </div>
 
-      {run.recordsFailed > 0 && (
+      {run.records_failed > 0 && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950">
           <p className="text-sm text-red-800 dark:text-red-200">
-            <strong>{run.recordsFailed}</strong> records failed
+            <strong>{run.records_failed}</strong> records failed
           </p>
-          {run.errorMessage && (
+          {run.error_message && (
             <p className="mt-1 text-sm text-red-700 dark:text-red-300">
-              {run.errorMessage}
+              {run.error_message}
             </p>
           )}
         </div>
@@ -95,16 +102,16 @@ export default async function ScraperRunDetail({
 
       <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
         <h2 className="border-b border-gray-200 px-4 py-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
-          Logs ({run.logs.length})
+          Logs ({logs.length})
         </h2>
-        {run.logs.length === 0 ? (
+        {logs.length === 0 ? (
           <p className="p-4 text-sm text-gray-500">No log entries.</p>
         ) : (
           <div className="max-h-96 overflow-y-auto p-4 font-mono text-xs">
-            {run.logs.map((log) => (
+            {logs.map((log: { id: string; created_at: string; level: string; message: string }) => (
               <div key={log.id} className="flex gap-3 py-1">
                 <span className="shrink-0 text-gray-400">
-                  {log.createdAt.toLocaleTimeString()}
+                  {new Date(log.created_at).toLocaleTimeString()}
                 </span>
                 <span
                   className={`shrink-0 w-12 font-bold ${logLevelColors[log.level] || ""}`}

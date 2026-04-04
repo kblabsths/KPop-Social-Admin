@@ -1,71 +1,121 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
+
+export const dynamic = "force-dynamic";
 
 const STALE_THRESHOLD_HOURS = 24;
 
 export default async function AdminOverview() {
+  const supabase = getSupabaseAdmin();
+
   const [
-    totalConcerts,
-    concertsWithDescription,
-    concertsWithArtists,
-    concertsWithTicketUrl,
-    totalArtists,
-    totalVenues,
-    totalUsers,
-    activeAlerts,
-    latestRun,
-    scraperStats,
-    recentRuns,
-    recentAlerts,
+    totalConcertsResult,
+    concertsWithDescriptionResult,
+    concertsWithArtistsResult,
+    concertsWithTicketUrlResult,
+    totalArtistsResult,
+    totalVenuesResult,
+    totalUsersResult,
+    activeAlertsResult,
+    latestRunResult,
+    allRunsResult,
+    recentAlertsResult,
   ] = await Promise.all([
-    prisma.concert.count(),
-    prisma.concert.count({ where: { description: { not: null } } }),
-    prisma.concert.count({
-      where: { artists: { some: {} } },
-    }),
-    prisma.concert.count({
-      where: { ticketUrl: { not: null } },
-    }),
-    prisma.artist.count(),
-    prisma.venue.count(),
-    prisma.user.count(),
-    prisma.dataQualityAlert.count({ where: { resolvedAt: null } }),
-    prisma.scraperRun.findFirst({ orderBy: { startedAt: "desc" } }),
-    prisma.scraperRun.groupBy({
-      by: ["scraperName"],
-      _count: { _all: true },
-      _sum: { recordsCreated: true, recordsUpdated: true, recordsFailed: true },
-    }),
-    prisma.scraperRun.findMany({
-      orderBy: { startedAt: "desc" },
-      take: 10,
-    }),
-    prisma.dataQualityAlert.findMany({
-      where: { resolvedAt: null },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    }),
+    supabase.from("concerts").select("*", { count: "exact", head: true }),
+    supabase
+      .from("concerts")
+      .select("*", { count: "exact", head: true })
+      .not("description", "is", null),
+    supabase
+      .from("concerts")
+      .select("id, concert_artists!inner(concert_id)", { count: "exact", head: true }),
+    supabase
+      .from("concerts")
+      .select("*", { count: "exact", head: true })
+      .not("ticket_url", "is", null),
+    supabase.from("artists").select("*", { count: "exact", head: true }),
+    supabase.from("venues").select("*", { count: "exact", head: true }),
+    supabase.from("web_users").select("*", { count: "exact", head: true }),
+    supabase
+      .from("data_quality_alerts")
+      .select("*", { count: "exact", head: true })
+      .is("resolved_at", null),
+    supabase
+      .from("scraper_runs")
+      .select("*")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    // Fetch all runs to compute per-scraper stats + recent activity + avg duration
+    supabase
+      .from("scraper_runs")
+      .select("id, scraper_name, status, started_at, finished_at, records_created, records_updated, records_failed, error_message")
+      .order("started_at", { ascending: false }),
+    supabase
+      .from("data_quality_alerts")
+      .select("*")
+      .is("resolved_at", null)
+      .order("created_at", { ascending: false })
+      .limit(10),
   ]);
 
-  // Per-scraper latest run and success rate
-  const scraperNames = scraperStats.map((s) => s.scraperName);
-  const scraperLatestRuns = await Promise.all(
-    scraperNames.map((name) =>
-      prisma.scraperRun.findFirst({
-        where: { scraperName: name },
-        orderBy: { startedAt: "desc" },
-      })
-    )
+  const totalConcerts = totalConcertsResult.count ?? 0;
+  const concertsWithDescription = concertsWithDescriptionResult.count ?? 0;
+  const concertsWithArtists = concertsWithArtistsResult.count ?? 0;
+  const concertsWithTicketUrl = concertsWithTicketUrlResult.count ?? 0;
+  const totalArtists = totalArtistsResult.count ?? 0;
+  const totalVenues = totalVenuesResult.count ?? 0;
+  const totalUsers = totalUsersResult.count ?? 0;
+  const activeAlerts = activeAlertsResult.count ?? 0;
+  const latestRun = latestRunResult.data;
+  const allRuns = allRunsResult.data ?? [];
+  const recentAlerts = recentAlertsResult.data ?? [];
+
+  // Aggregate per-scraper stats from all runs
+  const scraperMap = new Map<
+    string,
+    { count: number; recordsCreated: number; recordsUpdated: number; recordsFailed: number }
+  >();
+  for (const run of allRuns) {
+    const existing = scraperMap.get(run.scraper_name) ?? {
+      count: 0,
+      recordsCreated: 0,
+      recordsUpdated: 0,
+      recordsFailed: 0,
+    };
+    scraperMap.set(run.scraper_name, {
+      count: existing.count + 1,
+      recordsCreated: existing.recordsCreated + (run.records_created ?? 0),
+      recordsUpdated: existing.recordsUpdated + (run.records_updated ?? 0),
+      recordsFailed: existing.recordsFailed + (run.records_failed ?? 0),
+    });
+  }
+  const scraperNames = Array.from(scraperMap.keys());
+
+  // Per-scraper: latest run and success count
+  const scraperLatestRuns = scraperNames.map((name) =>
+    allRuns.find((r) => r.scraper_name === name) ?? null
   );
-  const scraperSuccessCounts = await Promise.all(
-    scraperNames.map((name) =>
-      prisma.scraperRun.count({
-        where: { scraperName: name, status: "SUCCESS" },
-      })
-    )
+  const scraperSuccessCounts = scraperNames.map(
+    (name) => allRuns.filter((r) => r.scraper_name === name && r.status === "SUCCESS").length
   );
 
+  const scraperStats = scraperNames.map((name) => ({
+    scraperName: name,
+    ...scraperMap.get(name)!,
+  }));
+
+  // Recent 10 runs for activity feed
+  const recentRuns = allRuns.slice(0, 10);
+
+  // Avg duration from completed runs
+  const completedRuns = allRuns.filter((r) => r.finished_at).slice(0, 100);
+  const durations = completedRuns.map(
+    (r) => new Date(r.finished_at!).getTime() - new Date(r.started_at).getTime()
+  );
+  // (unused here but kept for parity — avg duration shown in scrapers page)
+
   const hoursSinceLastRun = latestRun
-    ? (Date.now() - latestRun.startedAt.getTime()) / (60 * 60 * 1000)
+    ? (Date.now() - new Date(latestRun.started_at).getTime()) / (60 * 60 * 1000)
     : null;
   const isStale =
     !latestRun ||
@@ -89,15 +139,15 @@ export default async function AdminOverview() {
   const activityFeed = [
     ...recentRuns.map((r) => ({
       type: "scraper" as const,
-      time: r.startedAt,
-      label: `${r.scraperName} — ${r.status}`,
-      detail: `${r.recordsCreated} created, ${r.recordsUpdated} updated${r.recordsFailed > 0 ? `, ${r.recordsFailed} failed` : ""}`,
+      time: new Date(r.started_at),
+      label: `${r.scraper_name} — ${r.status}`,
+      detail: `${r.records_created} created, ${r.records_updated} updated${r.records_failed > 0 ? `, ${r.records_failed} failed` : ""}`,
       status: r.status,
     })),
     ...recentAlerts.map((a) => ({
       type: "alert" as const,
-      time: a.createdAt,
-      label: `${a.severity} ${a.alertType}`,
+      time: new Date(a.created_at),
+      label: `${a.severity} ${a.alert_type}`,
       detail: a.message,
       status: a.severity,
     })),
@@ -133,7 +183,7 @@ export default async function AdminOverview() {
         <span className="font-bold">{isStale ? "⚠ DATA STALE" : "✓ DATA FRESH"}</span>
         {latestRun && (
           <span className="ml-3">
-            Last scrape: {latestRun.startedAt.toISOString().replace("T", " ").slice(0, 19)} UTC
+            Last scrape: {new Date(latestRun.started_at).toISOString().replace("T", " ").slice(0, 19)} UTC
             {hoursSinceLastRun !== null && (
               <span className="ml-1 opacity-70">
                 ({hoursSinceLastRun < 1
@@ -194,12 +244,11 @@ export default async function AdminOverview() {
               ) : (
                 scraperStats.map((stat, i) => {
                   const latest = scraperLatestRuns[i];
-                  const totalRuns = stat._count._all;
+                  const totalRuns = stat.count;
                   const successCount = scraperSuccessCounts[i];
                   const rate =
                     totalRuns > 0 ? Math.round((successCount / totalRuns) * 1000) / 10 : 0;
-                  const totalRecords =
-                    (stat._sum.recordsCreated ?? 0) + (stat._sum.recordsUpdated ?? 0);
+                  const totalRecords = stat.recordsCreated + stat.recordsUpdated;
                   return (
                     <tr
                       key={stat.scraperName}
@@ -229,7 +278,7 @@ export default async function AdminOverview() {
                       </td>
                       <td className="px-3 py-1.5 text-gray-500 dark:text-gray-400">
                         {latest
-                          ? latest.startedAt.toISOString().replace("T", " ").slice(0, 16)
+                          ? new Date(latest.started_at).toISOString().replace("T", " ").slice(0, 16)
                           : "—"}
                       </td>
                       <td className="px-3 py-1.5">

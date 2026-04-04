@@ -1,5 +1,7 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import Link from "next/link";
+
+export const dynamic = "force-dynamic";
 
 const statusColors: Record<string, string> = {
   RUNNING: "text-blue-600 dark:text-blue-400",
@@ -15,9 +17,9 @@ const statusBadgeColors: Record<string, string> = {
   PARTIAL: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
 };
 
-function formatDuration(start: Date, end: Date | null) {
+function formatDuration(start: string, end: string | null) {
   if (!end) return "Running...";
-  const ms = end.getTime() - start.getTime();
+  const ms = new Date(end).getTime() - new Date(start).getTime();
   const secs = Math.floor(ms / 1000);
   if (secs < 60) return `${secs}s`;
   const mins = Math.floor(secs / 60);
@@ -36,46 +38,73 @@ export default async function ScrapersPage({
 }: {
   searchParams: Promise<{ status?: string; page?: string }>;
 }) {
+  const supabase = getSupabaseAdmin();
   const params = await searchParams;
   const page = Math.max(1, parseInt(params.page || "1", 10));
   const pageSize = 25;
   const statusFilter = params.status || undefined;
 
-  const where = statusFilter
-    ? { status: statusFilter as "RUNNING" | "SUCCESS" | "FAILED" | "PARTIAL" }
-    : {};
+  // Paginated runs with optional status filter
+  let pageQueryBuilder = supabase
+    .from("scraper_runs")
+    .select("*", { count: "exact" })
+    .order("started_at", { ascending: false })
+    .range((page - 1) * pageSize, page * pageSize - 1);
+  if (statusFilter) pageQueryBuilder = pageQueryBuilder.eq("status", statusFilter);
 
-  const [runs, total, totalAllRuns, successCount, failedCount, lastSuccess, completedRuns] =
-    await Promise.all([
-      prisma.scraperRun.findMany({
-        where,
-        orderBy: { startedAt: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      prisma.scraperRun.count({ where }),
-      prisma.scraperRun.count(),
-      prisma.scraperRun.count({ where: { status: "SUCCESS" } }),
-      prisma.scraperRun.count({ where: { status: "FAILED" } }),
-      prisma.scraperRun.findFirst({
-        where: { status: "SUCCESS" },
-        orderBy: { finishedAt: "desc" },
-        select: { finishedAt: true },
-      }),
-      prisma.scraperRun.findMany({
-        where: { finishedAt: { not: null } },
-        select: { startedAt: true, finishedAt: true },
-        orderBy: { startedAt: "desc" },
-        take: 100,
-      }),
-    ]);
+  // Aggregate stats queries
+  let totalFilteredBuilder = supabase
+    .from("scraper_runs")
+    .select("*", { count: "exact", head: true });
+  if (statusFilter) totalFilteredBuilder = totalFilteredBuilder.eq("status", statusFilter);
+
+  const [
+    pageResult,
+    totalAllRunsResult,
+    successCountResult,
+    failedCountResult,
+    lastSuccessResult,
+    completedRunsResult,
+  ] = await Promise.all([
+    pageQueryBuilder,
+    supabase.from("scraper_runs").select("*", { count: "exact", head: true }),
+    supabase
+      .from("scraper_runs")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "SUCCESS"),
+    supabase
+      .from("scraper_runs")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "FAILED"),
+    supabase
+      .from("scraper_runs")
+      .select("finished_at")
+      .eq("status", "SUCCESS")
+      .order("finished_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("scraper_runs")
+      .select("started_at, finished_at")
+      .not("finished_at", "is", null)
+      .order("started_at", { ascending: false })
+      .limit(100),
+  ]);
+
+  const runs = pageResult.data ?? [];
+  const total = statusFilter ? (pageResult.count ?? 0) : (totalAllRunsResult.count ?? 0);
+  const totalAllRuns = totalAllRunsResult.count ?? 0;
+  const successCount = successCountResult.count ?? 0;
+  const failedCount = failedCountResult.count ?? 0;
+  const lastSuccess = lastSuccessResult.data;
+  const completedRuns = completedRunsResult.data ?? [];
 
   const totalPages = Math.ceil(total / pageSize);
 
   // Compute average duration from completed runs
   const durations = completedRuns
-    .filter((r) => r.finishedAt)
-    .map((r) => r.finishedAt!.getTime() - r.startedAt.getTime());
+    .filter((r) => r.finished_at)
+    .map((r) => new Date(r.finished_at!).getTime() - new Date(r.started_at).getTime());
   const avgDurationMs =
     durations.length > 0
       ? durations.reduce((a, b) => a + b, 0) / durations.length
@@ -122,8 +151,8 @@ export default async function ScrapersPage({
         <StatCard
           label="Last Success"
           value={
-            lastSuccess?.finishedAt
-              ? lastSuccess.finishedAt.toISOString().replace("T", " ").slice(0, 16)
+            lastSuccess?.finished_at
+              ? new Date(lastSuccess.finished_at).toISOString().replace("T", " ").slice(0, 16)
               : "--"
           }
         />
@@ -191,7 +220,7 @@ export default async function ScrapersPage({
                       href={`/admin/scrapers/${run.id}`}
                       className="font-medium text-purple-600 hover:underline dark:text-purple-400"
                     >
-                      {run.scraperName}
+                      {run.scraper_name}
                     </Link>
                   </td>
                   <td className="px-2 py-1.5">
@@ -202,28 +231,28 @@ export default async function ScrapersPage({
                     </span>
                   </td>
                   <td className="px-2 py-1.5 text-gray-500 dark:text-gray-400">
-                    {run.startedAt.toISOString().replace("T", " ").slice(0, 16)}
+                    {new Date(run.started_at).toISOString().replace("T", " ").slice(0, 16)}
                   </td>
                   <td className="px-2 py-1.5 text-gray-500 dark:text-gray-400">
-                    {formatDuration(run.startedAt, run.finishedAt)}
+                    {formatDuration(run.started_at, run.finished_at)}
                   </td>
                   <td className="px-2 py-1.5 text-right text-gray-500 dark:text-gray-400">
-                    {run.recordsCreated}
+                    {run.records_created}
                   </td>
                   <td className="px-2 py-1.5 text-right text-gray-500 dark:text-gray-400">
-                    {run.recordsUpdated}
+                    {run.records_updated}
                   </td>
                   <td className="px-2 py-1.5 text-right text-gray-500 dark:text-gray-400">
-                    {run.recordsFailed > 0 ? (
-                      <span className="text-red-600 dark:text-red-400">{run.recordsFailed}</span>
+                    {run.records_failed > 0 ? (
+                      <span className="text-red-600 dark:text-red-400">{run.records_failed}</span>
                     ) : (
-                      run.recordsFailed
+                      run.records_failed
                     )}
                   </td>
                   <td className="px-2 py-1.5 max-w-48 truncate text-red-500 dark:text-red-400">
-                    {run.errorMessage ? (
-                      <span title={run.errorMessage}>
-                        {run.errorMessage.slice(0, 60)}{run.errorMessage.length > 60 ? "..." : ""}
+                    {run.error_message ? (
+                      <span title={run.error_message}>
+                        {run.error_message.slice(0, 60)}{run.error_message.length > 60 ? "..." : ""}
                       </span>
                     ) : (
                       <span className="text-gray-300 dark:text-gray-700">--</span>

@@ -1,5 +1,7 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import Link from "next/link";
+
+export const dynamic = "force-dynamic";
 
 const MODELS = [
   { key: "user", label: "Users" },
@@ -15,26 +17,51 @@ const MODELS = [
 
 type ModelKey = (typeof MODELS)[number]["key"];
 
-async function getModelStats(modelKey: ModelKey) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const delegate = (prisma as any)[modelKey];
-  const total: number = await delegate.count();
+const MODEL_TO_TABLE: Record<ModelKey, string> = {
+  user: "web_users",
+  artist: "artists",
+  venue: "venues",
+  concert: "concerts",
+  group: "groups",
+  post: "posts",
+  scraperRun: "scraper_runs",
+  scraperLog: "scraper_logs",
+  dataQualityAlert: "data_quality_alerts",
+};
 
-  let newest: Date | null = null;
-  let oldest: Date | null = null;
-  if (total > 0) {
+async function getModelStats(tableName: string) {
+  const supabase = getSupabaseAdmin();
+  const { count: total } = await supabase
+    .from(tableName)
+    .select("*", { count: "exact", head: true });
+
+  let newest: string | null = null;
+  let oldest: string | null = null;
+  if ((total ?? 0) > 0) {
     const [newestRec, oldestRec] = await Promise.all([
-      delegate.findFirst({ orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
-      delegate.findFirst({ orderBy: { createdAt: "asc" }, select: { createdAt: true } }),
+      supabase
+        .from(tableName)
+        .select("created_at")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from(tableName)
+        .select("created_at")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle(),
     ]);
-    newest = newestRec?.createdAt ?? null;
-    oldest = oldestRec?.createdAt ?? null;
+    newest = newestRec.data?.created_at ?? null;
+    oldest = oldestRec.data?.created_at ?? null;
   }
 
-  return { total, newest, oldest };
+  return { total: total ?? 0, newest, oldest };
 }
 
 async function getFieldCompleteness() {
+  const supabase = getSupabaseAdmin();
+
   const [
     totalConcerts,
     concertsWithTourName,
@@ -52,64 +79,64 @@ async function getFieldCompleteness() {
     artistsWithDebutDate,
     totalVenues,
     venuesWithState,
-    venuesWithLatLng,
+    venuesWithLat,
     venuesWithCapacity,
     venuesWithType,
     venuesWithAddress,
   ] = await Promise.all([
-    prisma.concert.count(),
-    prisma.concert.count({ where: { tourName: { not: null } } }),
-    prisma.concert.count({ where: { endDate: { not: null } } }),
-    prisma.concert.count({ where: { doorsOpen: { not: null } } }),
-    prisma.concert.count({ where: { ticketUrl: { not: null } } }),
-    prisma.concert.count({ where: { description: { not: null } } }),
-    prisma.concert.count({ where: { imageUrl: { not: null } } }),
-    prisma.concert.count({ where: { source: { not: null } } }),
-    prisma.artist.count(),
-    prisma.artist.count({ where: { koreanName: { not: null } } }),
-    prisma.artist.count({ where: { company: { not: null } } }),
-    prisma.artist.count({ where: { description: { not: null } } }),
-    prisma.artist.count({ where: { image: { not: null } } }),
-    prisma.artist.count({ where: { debutDate: { not: null } } }),
-    prisma.venue.count(),
-    prisma.venue.count({ where: { state: { not: null } } }),
-    prisma.venue.count({ where: { latitude: { not: null }, longitude: { not: null } } }),
-    prisma.venue.count({ where: { capacity: { not: null } } }),
-    prisma.venue.count({ where: { type: { not: null } } }),
-    prisma.venue.count({ where: { address: { not: null } } }),
+    supabase.from("concerts").select("*", { count: "exact", head: true }),
+    supabase.from("concerts").select("*", { count: "exact", head: true }).not("tour_name", "is", null),
+    supabase.from("concerts").select("*", { count: "exact", head: true }).not("end_date", "is", null),
+    supabase.from("concerts").select("*", { count: "exact", head: true }).not("doors_open", "is", null),
+    supabase.from("concerts").select("*", { count: "exact", head: true }).not("ticket_url", "is", null),
+    supabase.from("concerts").select("*", { count: "exact", head: true }).not("description", "is", null),
+    supabase.from("concerts").select("*", { count: "exact", head: true }).not("image_url", "is", null),
+    supabase.from("concerts").select("*", { count: "exact", head: true }).not("source", "is", null),
+    supabase.from("artists").select("*", { count: "exact", head: true }),
+    supabase.from("artists").select("*", { count: "exact", head: true }).not("korean_name", "is", null),
+    supabase.from("artists").select("*", { count: "exact", head: true }).not("company", "is", null),
+    supabase.from("artists").select("*", { count: "exact", head: true }).not("description", "is", null),
+    supabase.from("artists").select("*", { count: "exact", head: true }).not("image", "is", null),
+    supabase.from("artists").select("*", { count: "exact", head: true }).not("debut_date", "is", null),
+    supabase.from("venues").select("*", { count: "exact", head: true }),
+    supabase.from("venues").select("*", { count: "exact", head: true }).not("state", "is", null),
+    supabase.from("venues").select("*", { count: "exact", head: true }).not("latitude", "is", null).not("longitude", "is", null),
+    supabase.from("venues").select("*", { count: "exact", head: true }).not("capacity", "is", null),
+    supabase.from("venues").select("*", { count: "exact", head: true }).not("type", "is", null),
+    supabase.from("venues").select("*", { count: "exact", head: true }).not("address", "is", null),
   ]);
 
   return {
     concert: {
-      total: totalConcerts,
+      total: totalConcerts.count ?? 0,
       fields: [
-        { label: "tourName", filled: concertsWithTourName },
-        { label: "endDate", filled: concertsWithEndDate },
-        { label: "doorsOpen", filled: concertsWithDoorsOpen },
-        { label: "ticketUrl", filled: concertsWithTicketUrl },
-        { label: "description", filled: concertsWithDescription },
-        { label: "imageUrl", filled: concertsWithImageUrl },
-        { label: "source", filled: concertsWithSource },
+        { label: "tourName", filled: concertsWithTourName.count ?? 0 },
+        { label: "endDate", filled: concertsWithEndDate.count ?? 0 },
+        { label: "doorsOpen", filled: concertsWithDoorsOpen.count ?? 0 },
+        { label: "ticketUrl", filled: concertsWithTicketUrl.count ?? 0 },
+        { label: "description", filled: concertsWithDescription.count ?? 0 },
+        { label: "imageUrl", filled: concertsWithImageUrl.count ?? 0 },
+        { label: "source", filled: concertsWithSource.count ?? 0 },
       ],
     },
     artist: {
-      total: totalArtists,
+      total: totalArtists.count ?? 0,
       fields: [
-        { label: "koreanName", filled: artistsWithKoreanName },
-        { label: "company", filled: artistsWithCompany },
-        { label: "description", filled: artistsWithDescription },
-        { label: "image", filled: artistsWithImage },
-        { label: "debutDate", filled: artistsWithDebutDate },
+        { label: "koreanName", filled: artistsWithKoreanName.count ?? 0 },
+        { label: "company", filled: artistsWithCompany.count ?? 0 },
+        { label: "description", filled: artistsWithDescription.count ?? 0 },
+        { label: "image", filled: artistsWithImage.count ?? 0 },
+        { label: "debutDate", filled: artistsWithDebutDate.count ?? 0 },
       ],
     },
     venue: {
-      total: totalVenues,
+      total: totalVenues.count ?? 0,
       fields: [
-        { label: "state", filled: venuesWithState },
-        { label: "lat/lng", filled: venuesWithLatLng },
-        { label: "capacity", filled: venuesWithCapacity },
-        { label: "type", filled: venuesWithType },
-        { label: "address", filled: venuesWithAddress },
+        { label: "state", filled: venuesWithState.count ?? 0 },
+        { label: "lat/lng", filled: venuesWithLat.count ?? 0 },
+        { label: "capacity", filled: venuesWithCapacity.count ?? 0 },
+        { label: "type", filled: venuesWithType.count ?? 0 },
+        { label: "address", filled: venuesWithAddress.count ?? 0 },
       ],
     },
   };
@@ -125,9 +152,14 @@ function pctColor(value: number): string {
   return "text-red-600 dark:text-red-400";
 }
 
-function formatDate(d: Date | null): string {
+function formatDate(d: string | null): string {
   if (!d) return "--";
-  return d.toISOString().replace("T", " ").slice(0, 16);
+  return d.replace("T", " ").slice(0, 16);
+}
+
+function isDateString(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  return /^\d{4}-\d{2}-\d{2}T/.test(value) || /^\d{4}-\d{2}-\d{2} /.test(value);
 }
 
 export default async function DatabasePage({
@@ -135,6 +167,7 @@ export default async function DatabasePage({
 }: {
   searchParams: Promise<{ model?: string; page?: string }>;
 }) {
+  const supabase = getSupabaseAdmin();
   const params = await searchParams;
   const selectedModel = (params.model || "user") as ModelKey;
   const page = Math.max(1, parseInt(params.page || "1", 10));
@@ -145,21 +178,30 @@ export default async function DatabasePage({
     return <p className="text-red-600">Invalid model selected.</p>;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const delegate = (prisma as any)[selectedModel];
+  const tableName = MODEL_TO_TABLE[selectedModel];
 
-  const [records, total, allModelStats, completeness] = await Promise.all([
-    delegate.findMany({
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      orderBy: { createdAt: "desc" },
-    }),
-    delegate.count(),
-    Promise.all(MODELS.map((m) => getModelStats(m.key).then((s) => ({ key: m.key, label: m.label, ...s })))),
+  const [recordsResult, allModelStats, completeness] = await Promise.all([
+    supabase
+      .from(tableName)
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range((page - 1) * pageSize, page * pageSize - 1),
+    Promise.all(
+      MODELS.map((m) =>
+        getModelStats(MODEL_TO_TABLE[m.key]).then((s) => ({
+          key: m.key,
+          label: m.label,
+          ...s,
+        }))
+      )
+    ),
     getFieldCompleteness(),
   ]);
 
+  const records = recordsResult.data ?? [];
+  const total = recordsResult.count ?? 0;
   const totalPages = Math.ceil(total / pageSize);
+
   const columns =
     records.length > 0
       ? Object.keys(records[0]).filter(
@@ -198,9 +240,9 @@ export default async function DatabasePage({
               <div className="text-[9px] font-mono text-gray-400 dark:text-gray-500 leading-tight">
                 {s.newest ? (
                   <>
-                    <span>new: {s.newest.toISOString().slice(0, 10)}</span>
+                    <span>new: {s.newest.slice(0, 10)}</span>
                     <br />
-                    <span>old: {s.oldest?.toISOString().slice(0, 10)}</span>
+                    <span>old: {s.oldest?.slice(0, 10)}</span>
                   </>
                 ) : (
                   <span>no records</span>
@@ -315,8 +357,8 @@ export default async function DatabasePage({
                       className="px-2 py-1 text-gray-600 dark:text-gray-400 max-w-40 truncate whitespace-nowrap"
                       title={String(record[col] ?? "")}
                     >
-                      {record[col] instanceof Date
-                        ? formatDate(record[col] as Date)
+                      {isDateString(record[col])
+                        ? formatDate(record[col] as string)
                         : String(record[col] ?? "")}
                     </td>
                   ))}

@@ -1,27 +1,36 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
+import { AdminNav } from "./AdminNav";
+
+export const dynamic = "force-dynamic";
 
 const STALE_THRESHOLD_HOURS = 24;
-
-const navItems = [
-  { href: "/admin", label: "Overview", icon: "◈" },
-  { href: "/admin/scrapers", label: "Scrapers", icon: "⟳" },
-  { href: "/admin/alerts", label: "Alerts", icon: "▲" },
-  { href: "/admin/database", label: "Database", icon: "◻" },
-];
 
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [activeAlerts, latestRun] = await Promise.all([
-    prisma.dataQualityAlert.count({ where: { resolvedAt: null } }),
-    prisma.scraperRun.findFirst({ orderBy: { startedAt: "desc" } }),
+  const supabase = getSupabaseAdmin();
+
+  const [activeAlertsResult, latestRunResult] = await Promise.all([
+    supabase
+      .from("data_quality_alerts")
+      .select("*", { count: "exact", head: true })
+      .is("resolved_at", null),
+    supabase
+      .from("scraper_runs")
+      .select("*")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
+  const activeAlerts = activeAlertsResult.count ?? 0;
+  const latestRun = latestRunResult.data;
+
   const hoursSinceLastRun = latestRun
-    ? (Date.now() - latestRun.startedAt.getTime()) / (60 * 60 * 1000)
+    ? (Date.now() - new Date(latestRun.started_at).getTime()) / (60 * 60 * 1000)
     : null;
   const isStale =
     !latestRun ||
@@ -37,23 +46,7 @@ export default async function AdminLayout({
             Admin Panel
           </h2>
         </div>
-        <nav className="px-1 py-1 flex flex-col gap-0.5 flex-1">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="flex items-center gap-2 rounded px-2 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200 transition-colors"
-            >
-              <span className="text-[10px] opacity-60">{item.icon}</span>
-              {item.label}
-              {item.label === "Alerts" && activeAlerts > 0 && (
-                <span className="ml-auto rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white leading-none">
-                  {activeAlerts}
-                </span>
-              )}
-            </Link>
-          ))}
-        </nav>
+        <AdminNav activeAlerts={activeAlerts} />
         <div className="px-3 py-2 border-t border-gray-300 dark:border-gray-800">
           <Link
             href="/"
