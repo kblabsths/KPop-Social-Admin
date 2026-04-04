@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { createGroupPostNotification } from "@/lib/notifications";
 import { NextRequest } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -66,6 +67,9 @@ export async function POST(request: NextRequest) {
       _count: { select: { replies: true, likes: true } },
     },
   });
+
+  // Fire-and-forget: notify group members of the new post
+  void createGroupPostNotification(session.user.id, groupId, post.id);
 
   return Response.json(post, { status: 201 });
 }

@@ -13,23 +13,26 @@ enum UserRole {
 }
 
 model User {
-  id              String    @id @default(cuid())
-  name            String?
-  email           String?   @unique
-  emailVerified   DateTime?
-  image           String?
-  bio             String?
-  role            UserRole  @default(USER)
-  favoriteArtists    String[]
-  favoriteArtistIds  Artist[]  @relation("UserFavoriteArtists")
-  accounts           Account[]
-  sessions        Session[]
-  createdGroups   Group[]       @relation("CreatedGroups")
-  groupMemberships GroupMember[]
-  posts           Post[]        @relation("UserPosts")
-  postLikes       PostLike[]
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                String        @id @default(cuid())
+  name              String?
+  email             String?       @unique
+  emailVerified     DateTime?
+  image             String?
+  bio               String?
+  role              UserRole      @default(USER)
+  favoriteArtists   String[]
+  favoriteArtistIds Artist[]      @relation("UserFavoriteArtists")
+  accounts          Account[]
+  sessions          Session[]
+  createdGroups     Group[]       @relation("CreatedGroups")
+  groupMemberships  GroupMember[]
+  posts             Post[]        @relation("UserPosts")
+  postLikes         PostLike[]
+  concerts          UserConcert[]
+  artistFollows     UserArtistFollow[]
+  notifications     Notification[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 }
 
 model Account {
@@ -85,6 +88,7 @@ model Artist {
   groups      Group[]
   concerts    Concert[] @relation("ConcertArtists")
   favoritedBy User[]    @relation("UserFavoriteArtists")
+  followers   UserArtistFollow[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
@@ -155,7 +159,7 @@ model Venue {
   latitude    Float?
   longitude   Float?
   capacity    Int?
-  type        String?   // "arena" | "stadium" | "theater" | "convention_center"
+  type        String? // "arena" | "stadium" | "theater" | "convention_center"
   address     String?
   imageUrl    String?
   timezone    String?
@@ -183,6 +187,7 @@ model Concert {
   venueId      String
   venue        Venue     @relation(fields: [venueId], references: [id])
   artists      Artist[]  @relation("ConcertArtists")
+  rsvps        UserConcert[]
   source       String?
   sourceUrl    String?
   lastSyncedAt DateTime?
@@ -192,6 +197,55 @@ model Concert {
   @@index([date])
   @@index([status])
   @@index([venueId])
+}
+
+model UserConcert {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  concertId String
+  concert   Concert  @relation(fields: [concertId], references: [id], onDelete: Cascade)
+  status    String   // "interested" or "going"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, concertId])
+  @@index([concertId])
+  @@index([status])
+}
+
+model UserArtistFollow {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  artistId  String
+  artist    Artist   @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, artistId])
+}
+
+// --- Notifications ---
+
+enum NotificationType {
+  new_concert
+  group_post
+  concert_reminder
+  new_follower
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  link      String
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, read, createdAt])
 }
 
 // --- Scraper tracking & admin models ---
