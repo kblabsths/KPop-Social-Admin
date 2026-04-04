@@ -1,8 +1,9 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { auth } from "@/lib/auth";
 import { NextRequest } from "next/server";
 
 export async function GET(request: NextRequest) {
+  const supabase = getSupabaseAdmin();
   const session = await auth();
   if (!session?.user?.id) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -15,100 +16,122 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "20", 10)));
   const skip = (page - 1) * limit;
 
-  const now = new Date();
-  const dateFilter = showPast ? { lt: now } : { gte: now };
+  const now = new Date().toISOString();
 
   // 1. Get concerts the user RSVP'd to
-  const [rsvpConcerts, rsvpTotal] = await Promise.all([
-    prisma.userConcert.findMany({
-      where: {
-        userId,
-        concert: { date: dateFilter },
-      },
-      include: {
-        concert: {
-          include: {
-            venue: { select: { id: true, name: true, city: true, country: true } },
-            artists: { select: { id: true, name: true, slug: true, image: true } },
-          },
-        },
-      },
-      orderBy: { concert: { date: "asc" } },
-    }),
-    prisma.userConcert.count({
-      where: {
-        userId,
-        concert: { date: dateFilter },
-      },
-    }),
-  ]);
+  let rsvpQuery = supabase
+    .from("user_concerts")
+    .select(`
+      id, status, concert_id,
+      concert:concerts(
+        *,
+        venue:venues(id, name, city, country),
+        artists:concert_artists(artist:artists(id, name, slug, image))
+      )
+    `)
+    .eq("user_id", userId)
+    .order("concert(date)", { ascending: true });
+
+  if (showPast) {
+    rsvpQuery = rsvpQuery.lt("concert.date", now);
+  } else {
+    rsvpQuery = rsvpQuery.gte("concert.date", now);
+  }
+
+  const { data: rsvpConcerts } = await rsvpQuery;
+  const validRsvps = (rsvpConcerts ?? []).filter((r) => r.concert !== null);
+
+  const rsvpConcertIds = validRsvps.map((r) => r.concert_id);
 
   // 2. Get concerts from followed artists that the user hasn't RSVP'd to
-  const followedArtistIds = await prisma.userArtistFollow.findMany({
-    where: { userId },
-    select: { artistId: true },
-  });
+  const { data: followedArtistRows } = await supabase
+    .from("user_artist_follows")
+    .select("artist_id")
+    .eq("user_id", userId);
 
-  const artistIds = followedArtistIds.map((f) => f.artistId);
+  const artistIds = (followedArtistRows ?? []).map((f) => f.artist_id);
 
-  const rsvpConcertIds = rsvpConcerts.map((r) => r.concertId);
-
-  let followedArtistConcerts: Array<{
-    concert: typeof rsvpConcerts[number]["concert"];
+  type FollowedConcertItem = {
+    concert: Record<string, unknown>;
     source: "followed_artist";
-  }> = [];
+  };
+
+  let followedArtistConcerts: FollowedConcertItem[] = [];
 
   if (artistIds.length > 0) {
-    const faConcerts = await prisma.concert.findMany({
-      where: {
-        date: dateFilter,
-        artists: { some: { id: { in: artistIds } } },
-        id: { notIn: rsvpConcertIds },
-      },
-      include: {
-        venue: { select: { id: true, name: true, city: true, country: true } },
-        artists: { select: { id: true, name: true, slug: true, image: true } },
-      },
-      orderBy: { date: "asc" },
-    });
+    // Find concert IDs that have these artists
+    const { data: concertArtistLinks } = await supabase
+      .from("concert_artists")
+      .select("concert_id")
+      .in("artist_id", artistIds);
 
-    followedArtistConcerts = faConcerts.map((concert) => ({
-      concert,
-      source: "followed_artist" as const,
-    }));
+    const matchingConcertIds = [...new Set((concertArtistLinks ?? []).map((ca) => ca.concert_id))];
+    const eligibleIds = matchingConcertIds.filter((cid) => !rsvpConcertIds.includes(cid));
+
+    if (eligibleIds.length > 0) {
+      let faQuery = supabase
+        .from("concerts")
+        .select(`
+          *,
+          venue:venues(id, name, city, country),
+          artists:concert_artists(artist:artists(id, name, slug, image))
+        `)
+        .in("id", eligibleIds)
+        .order("date", { ascending: true });
+
+      if (showPast) {
+        faQuery = faQuery.lt("date", now);
+      } else {
+        faQuery = faQuery.gte("date", now);
+      }
+
+      const { data: faConcerts } = await faQuery;
+      followedArtistConcerts = (faConcerts ?? []).map((c) => ({
+        concert: c as Record<string, unknown>,
+        source: "followed_artist" as const,
+      }));
+    }
   }
+
+  const flatConcert = (c: Record<string, unknown>) => ({
+    ...c,
+    artists: ((c.artists as { artist: unknown }[]) ?? []).map((a) => a.artist),
+  });
 
   // 3. Merge and sort by date
   const allItems = [
-    ...rsvpConcerts.map((r) => ({
-      id: r.concert.id,
-      title: r.concert.title,
-      slug: r.concert.slug,
-      date: r.concert.date,
-      endDate: r.concert.endDate,
-      status: r.concert.status,
-      eventType: r.concert.eventType,
-      imageUrl: r.concert.imageUrl,
-      venue: r.concert.venue,
-      artists: r.concert.artists,
-      rsvpStatus: r.status,
-      source: "rsvp" as const,
-    })),
+    ...validRsvps.map((r) => {
+      const concert = r.concert as unknown as Record<string, unknown>;
+      return {
+        id: concert.id as string,
+        title: concert.title,
+        slug: concert.slug,
+        date: concert.date,
+        end_date: concert.end_date,
+        status: concert.status,
+        event_type: concert.event_type,
+        image_url: concert.image_url,
+        venue: concert.venue,
+        artists: ((concert.artists as { artist: unknown }[]) ?? []).map((a) => a.artist),
+        rsvpStatus: r.status,
+        source: "rsvp" as const,
+      };
+    }),
     ...followedArtistConcerts.map((f) => ({
-      id: f.concert.id,
+      id: f.concert.id as string,
       title: f.concert.title,
       slug: f.concert.slug,
       date: f.concert.date,
-      endDate: f.concert.endDate,
+      end_date: f.concert.end_date,
       status: f.concert.status,
-      eventType: f.concert.eventType,
-      imageUrl: f.concert.imageUrl,
+      event_type: f.concert.event_type,
+      image_url: f.concert.image_url,
       venue: f.concert.venue,
-      artists: f.concert.artists,
+      artists: ((f.concert.artists as { artist: unknown }[]) ?? []).map((a) => a.artist),
       rsvpStatus: null,
       source: f.source,
     })),
-  ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  ].sort((a, b) => new Date(a.date as string).getTime() - new Date(b.date as string).getTime());
 
   const total = allItems.length;
   const paginated = allItems.slice(skip, skip + limit);

@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { auth } from "@/lib/auth";
 import { NextRequest } from "next/server";
 
@@ -6,6 +6,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const supabase = getSupabaseAdmin();
   const { id } = await params;
 
   const session = await auth();
@@ -14,25 +15,28 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const data: { bio?: string | null; name?: string | null; favoriteArtists?: string[] } = {};
+  const updateData: { bio?: string | null; name?: string | null; favorite_artists?: string[] } = {};
 
   if ("bio" in body) {
-    data.bio = typeof body.bio === "string" ? body.bio.trim() || null : null;
+    updateData.bio = typeof body.bio === "string" ? body.bio.trim() || null : null;
   }
   if ("name" in body) {
-    data.name = typeof body.name === "string" ? body.name.trim() || null : null;
+    updateData.name = typeof body.name === "string" ? body.name.trim() || null : null;
   }
   if ("favoriteArtists" in body && Array.isArray(body.favoriteArtists)) {
-    data.favoriteArtists = body.favoriteArtists.filter(
+    updateData.favorite_artists = body.favoriteArtists.filter(
       (a: unknown) => typeof a === "string"
     );
   }
 
-  const user = await prisma.user.update({
-    where: { id },
-    data,
-    select: { id: true, name: true, bio: true, favoriteArtists: true },
-  });
+  const { data: user, error } = await supabase
+    .from("web_users")
+    .update({ ...updateData, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("id, name, bio, favorite_artists")
+    .single();
+
+  if (error) return Response.json({ error: error.message }, { status: 500 });
 
   return Response.json(user);
 }

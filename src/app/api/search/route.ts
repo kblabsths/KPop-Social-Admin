@@ -1,7 +1,8 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { NextRequest } from "next/server";
 
 export async function GET(request: NextRequest) {
+  const supabase = getSupabaseAdmin();
   const { searchParams } = request.nextUrl;
   const query = searchParams.get("q") || "";
 
@@ -9,39 +10,35 @@ export async function GET(request: NextRequest) {
     return Response.json({ concerts: [], artists: [], venues: [] });
   }
 
-  const [concerts, artists, venues] = await Promise.all([
-    prisma.concert.findMany({
-      where: {
-        title: { contains: query, mode: "insensitive" },
-      },
-      include: {
-        artists: true,
-        venue: true,
-      },
-      orderBy: { date: "asc" },
-      take: 10,
-    }),
-    prisma.artist.findMany({
-      where: {
-        OR: [
-          { name: { contains: query, mode: "insensitive" } },
-          { koreanName: { contains: query, mode: "insensitive" } },
-        ],
-      },
-      orderBy: { name: "asc" },
-      take: 10,
-    }),
-    prisma.venue.findMany({
-      where: {
-        OR: [
-          { name: { contains: query, mode: "insensitive" } },
-          { city: { contains: query, mode: "insensitive" } },
-        ],
-      },
-      orderBy: { name: "asc" },
-      take: 10,
-    }),
+  const [concertsResult, artistsResult, venuesResult] = await Promise.all([
+    supabase
+      .from("concerts")
+      .select("*, venue:venues(*), artists:concert_artists(artist:artists(*))")
+      .ilike("title", `%${query}%`)
+      .order("date", { ascending: true })
+      .limit(10),
+    supabase
+      .from("artists")
+      .select("*")
+      .or(`name.ilike.%${query}%,korean_name.ilike.%${query}%`)
+      .order("name", { ascending: true })
+      .limit(10),
+    supabase
+      .from("venues")
+      .select("*")
+      .or(`name.ilike.%${query}%,city.ilike.%${query}%`)
+      .order("name", { ascending: true })
+      .limit(10),
   ]);
 
-  return Response.json({ concerts, artists, venues });
+  const concerts = (concertsResult.data ?? []).map((c) => ({
+    ...c,
+    artists: (c.artists as { artist: unknown }[]).map((a) => a.artist),
+  }));
+
+  return Response.json({
+    concerts,
+    artists: artistsResult.data ?? [],
+    venues: venuesResult.data ?? [],
+  });
 }

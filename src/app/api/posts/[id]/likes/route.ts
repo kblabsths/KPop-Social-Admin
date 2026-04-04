@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { auth } from "@/lib/auth";
 import { NextRequest } from "next/server";
 
@@ -6,41 +6,68 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const supabase = getSupabaseAdmin();
   const { id } = await params;
   const session = await auth();
   if (!session?.user?.id) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const post = await prisma.post.findUnique({ where: { id } });
+  const { data: post } = await supabase
+    .from("posts")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle();
+
   if (!post) {
     return Response.json({ error: "Post not found" }, { status: 404 });
   }
 
-  await prisma.postLike.upsert({
-    where: { userId_postId: { userId: session.user.id, postId: id } },
-    create: { userId: session.user.id, postId: id },
-    update: {},
-  });
+  // Upsert: insert only if not already liked
+  const { data: existing } = await supabase
+    .from("post_likes")
+    .select("id")
+    .eq("user_id", session.user.id)
+    .eq("post_id", id)
+    .maybeSingle();
 
-  const count = await prisma.postLike.count({ where: { postId: id } });
-  return Response.json({ liked: true, count });
+  if (!existing) {
+    await supabase.from("post_likes").insert({
+      id: crypto.randomUUID(),
+      user_id: session.user.id,
+      post_id: id,
+    });
+  }
+
+  const { count } = await supabase
+    .from("post_likes")
+    .select("*", { count: "exact", head: true })
+    .eq("post_id", id);
+
+  return Response.json({ liked: true, count: count ?? 0 });
 }
 
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const supabase = getSupabaseAdmin();
   const { id } = await params;
   const session = await auth();
   if (!session?.user?.id) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  await prisma.postLike.deleteMany({
-    where: { userId: session.user.id, postId: id },
-  });
+  await supabase
+    .from("post_likes")
+    .delete()
+    .eq("user_id", session.user.id)
+    .eq("post_id", id);
 
-  const count = await prisma.postLike.count({ where: { postId: id } });
-  return Response.json({ liked: false, count });
+  const { count } = await supabase
+    .from("post_likes")
+    .select("*", { count: "exact", head: true })
+    .eq("post_id", id);
+
+  return Response.json({ liked: false, count: count ?? 0 });
 }

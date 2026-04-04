@@ -121,10 +121,12 @@ export async function POST(request: NextRequest) {
 
   // Fire-and-forget: notify followers of each artist on this concert
   if (artistIds?.length) {
-    supabase
-      .from("user_artist_follows")
-      .select("user_id")
-      .in("artist_id", artistIds as string[])
+    Promise.resolve(
+      supabase
+        .from("user_artist_follows")
+        .select("user_id")
+        .in("artist_id", artistIds as string[])
+    )
       .then(({ data: follows }) => {
         if (!follows) return;
         const userIds = [...new Set(follows.map((f) => f.user_id))];

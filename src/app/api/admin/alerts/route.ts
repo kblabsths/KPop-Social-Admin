@@ -1,9 +1,12 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { requireAdmin, paginationParams } from "@/lib/admin";
 import { NextRequest } from "next/server";
-import { AlertType, AlertSeverity } from "@/generated/prisma/client";
+
+const VALID_TYPES = ["STALE_DATA", "MISSING_DATA", "DUPLICATE_DATA", "VALIDATION_ERROR"] as const;
+const VALID_SEVERITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
 
 export async function GET(request: NextRequest) {
+  const supabase = getSupabaseAdmin();
   const { error } = await requireAdmin();
   if (error) return error;
 
@@ -13,44 +16,33 @@ export async function GET(request: NextRequest) {
   const severityParam = searchParams.get("severity");
   const resolved = searchParams.get("resolved");
 
-  const validTypes = Object.values(AlertType);
-  if (typeParam && !validTypes.includes(typeParam as AlertType)) {
+  if (typeParam && !VALID_TYPES.includes(typeParam as typeof VALID_TYPES[number])) {
     return Response.json(
-      { error: `Invalid type. Must be one of: ${validTypes.join(", ")}` },
+      { error: `Invalid type. Must be one of: ${VALID_TYPES.join(", ")}` },
       { status: 400 }
     );
   }
 
-  const validSeverities = Object.values(AlertSeverity);
-  if (severityParam && !validSeverities.includes(severityParam as AlertSeverity)) {
+  if (severityParam && !VALID_SEVERITIES.includes(severityParam as typeof VALID_SEVERITIES[number])) {
     return Response.json(
-      { error: `Invalid severity. Must be one of: ${validSeverities.join(", ")}` },
+      { error: `Invalid severity. Must be one of: ${VALID_SEVERITIES.join(", ")}` },
       { status: 400 }
     );
   }
 
-  const alertType = typeParam as AlertType | null;
-  const severity = severityParam as AlertSeverity | null;
+  let queryBuilder = supabase
+    .from("data_quality_alerts")
+    .select("*", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(skip, skip + pageSize - 1);
 
-  const where = {
-    ...(alertType ? { alertType } : {}),
-    ...(severity ? { severity } : {}),
-    ...(resolved === "true"
-      ? { resolvedAt: { not: null } }
-      : resolved === "false"
-        ? { resolvedAt: null }
-        : {}),
-  };
+  if (typeParam) queryBuilder = queryBuilder.eq("alert_type", typeParam);
+  if (severityParam) queryBuilder = queryBuilder.eq("severity", severityParam);
+  if (resolved === "true") queryBuilder = queryBuilder.not("resolved_at", "is", null);
+  if (resolved === "false") queryBuilder = queryBuilder.is("resolved_at", null);
 
-  const [data, total] = await Promise.all([
-    prisma.dataQualityAlert.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      skip,
-      take: pageSize,
-    }),
-    prisma.dataQualityAlert.count({ where }),
-  ]);
+  const { data, count: total, error: queryError } = await queryBuilder;
+  if (queryError) return Response.json({ error: queryError.message }, { status: 500 });
 
-  return Response.json({ data, total, page, pageSize });
+  return Response.json({ data: data ?? [], total: total ?? 0, page, pageSize });
 }

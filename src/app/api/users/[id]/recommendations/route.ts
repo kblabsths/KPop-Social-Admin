@@ -1,108 +1,138 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { NextRequest } from "next/server";
 
 const CONCERT_LIMIT = 10;
-
-const concertSelect = {
-  id: true,
-  title: true,
-  slug: true,
-  date: true,
-  imageUrl: true,
-  status: true,
-  venue: { select: { id: true, name: true, city: true, country: true } },
-  artists: { select: { id: true, name: true, slug: true, image: true } },
-  _count: { select: { rsvps: true } },
-} as const;
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const supabase = getSupabaseAdmin();
   const { id: userId } = await params;
-  const now = new Date();
+  const now = new Date().toISOString();
 
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const { data: user } = await supabase
+    .from("web_users")
+    .select("id")
+    .eq("id", userId)
+    .maybeSingle();
+
   if (!user) {
     return Response.json({ error: "User not found" }, { status: 404 });
   }
 
-  const [follows, rsvps] = await Promise.all([
-    prisma.userArtistFollow.findMany({
-      where: { userId },
-      select: { artistId: true, artist: { select: { id: true, name: true } } },
-    }),
-    prisma.userConcert.findMany({
-      where: { userId },
-      select: { concertId: true },
-    }),
+  const [followsResult, rsvpsResult] = await Promise.all([
+    supabase
+      .from("user_artist_follows")
+      .select("artist_id, artist:artists(id, name)")
+      .eq("user_id", userId),
+    supabase
+      .from("user_concerts")
+      .select("concert_id")
+      .eq("user_id", userId),
   ]);
 
-  const rsvpdConcertIds = rsvps.map((r) => r.concertId);
-  const followedArtistIds = follows.map((f) => f.artistId);
-  const artistNameById = new Map(follows.map((f) => [f.artistId, f.artist.name]));
+  const rsvpdConcertIds = (rsvpsResult.data ?? []).map((r) => r.concert_id);
+  const followedArtistIds = (followsResult.data ?? []).map((f) => f.artist_id);
+  const artistNameById = new Map(
+    (followsResult.data ?? []).map((f) => [
+      f.artist_id,
+      (f.artist as unknown as { id: string; name: string } | null)?.name ?? "",
+    ])
+  );
+
+  type ConcertRow = Record<string, unknown>;
+  type ConcertResult = { concert: ConcertRow; reason: string };
+
+  const flattenConcert = (c: ConcertRow): ConcertRow => ({
+    ...c,
+    artists: ((c.artists as { artist: unknown }[]) ?? []).map((a) => a.artist),
+  });
 
   // Fallback for users with no followed artists
   if (followedArtistIds.length === 0) {
-    const popular = await prisma.concert.findMany({
-      where: {
-        date: { gte: now },
-        status: { not: "cancelled" },
-        id: { notIn: rsvpdConcertIds },
-      },
-      select: concertSelect,
-      orderBy: [{ rsvps: { _count: "desc" } }, { date: "asc" }],
-      take: CONCERT_LIMIT,
-    });
+    let popularQuery = supabase
+      .from("concerts")
+      .select("*, venue:venues(id, name, city, country), artists:concert_artists(artist:artists(id, name, slug, image)), rsvp_count:user_concerts(count)")
+      .gte("date", now)
+      .neq("status", "cancelled")
+      .order("date", { ascending: true })
+      .limit(CONCERT_LIMIT);
 
-    if (popular.length === 0) {
+    if (rsvpdConcertIds.length > 0) {
+      popularQuery = popularQuery.not("id", "in", `(${rsvpdConcertIds.join(",")})`);
+    }
+
+    const { data: popular } = await popularQuery;
+    if (!popular || popular.length === 0) {
       return Response.json([]);
     }
 
     return Response.json(
-      popular.map((c) => ({ concert: c, reason: "Popular upcoming concert" }))
+      popular.map((c) => ({ concert: flattenConcert(c as ConcertRow), reason: "Popular upcoming concert" }))
     );
   }
 
   // Primary: concerts featuring followed artists, excluding already-RSVPd ones
-  const directMatches = await prisma.concert.findMany({
-    where: {
-      date: { gte: now },
-      status: { not: "cancelled" },
-      id: { notIn: rsvpdConcertIds },
-      artists: { some: { id: { in: followedArtistIds } } },
-    },
-    select: concertSelect,
-    orderBy: { date: "asc" },
-    take: CONCERT_LIMIT,
-  });
+  // We need to find concerts that have at least one of the followed artists
+  // Fetch concerts from concert_artists join for the followed artist IDs
+  const { data: concertArtistLinks } = await supabase
+    .from("concert_artists")
+    .select("concert_id")
+    .in("artist_id", followedArtistIds);
 
-  type ConcertResult = { concert: (typeof directMatches)[0]; reason: string };
+  const matchingConcertIds = [...new Set((concertArtistLinks ?? []).map((ca) => ca.concert_id))];
+
+  let directMatches: ConcertRow[] = [];
+
+  if (matchingConcertIds.length > 0) {
+    const eligibleIds = matchingConcertIds.filter((cid) => !rsvpdConcertIds.includes(cid));
+
+    if (eligibleIds.length > 0) {
+      let directQuery = supabase
+        .from("concerts")
+        .select("*, venue:venues(id, name, city, country), artists:concert_artists(artist:artists(id, name, slug, image))")
+        .in("id", eligibleIds)
+        .gte("date", now)
+        .neq("status", "cancelled")
+        .order("date", { ascending: true })
+        .limit(CONCERT_LIMIT);
+
+      const { data } = await directQuery;
+      directMatches = (data ?? []) as ConcertRow[];
+    }
+  }
+
   const results: ConcertResult[] = [];
   const usedIds = new Set<string>();
 
   for (const concert of directMatches) {
-    const matched = concert.artists.find((a) => followedArtistIds.includes(a.id));
+    const flatArtists = ((concert.artists as { artist: { id: string; name: string } }[]) ?? []).map((a) => a.artist);
+    const matched = flatArtists.find((a) => followedArtistIds.includes(a.id));
     const artistName = matched ? (artistNameById.get(matched.id) ?? matched.name) : "";
-    results.push({ concert, reason: `Because you follow ${artistName}` });
-    usedIds.add(concert.id);
+    results.push({ concert: flattenConcert(concert), reason: `Because you follow ${artistName}` });
+    usedIds.add(concert.id as string);
   }
 
   // Fill remaining slots with popular concerts
   if (results.length < CONCERT_LIMIT) {
     const excludeIds = [...rsvpdConcertIds, ...usedIds];
-    const popular = await prisma.concert.findMany({
-      where: {
-        date: { gte: now },
-        status: { not: "cancelled" },
-        id: { notIn: excludeIds },
-      },
-      select: concertSelect,
-      orderBy: [{ rsvps: { _count: "desc" } }, { date: "asc" }],
-      take: CONCERT_LIMIT - results.length,
-    });
-    for (const c of popular) {
-      results.push({ concert: c, reason: "Popular with KPop fans" });
+
+    let popularQuery = supabase
+      .from("concerts")
+      .select("*, venue:venues(id, name, city, country), artists:concert_artists(artist:artists(id, name, slug, image))")
+      .gte("date", now)
+      .neq("status", "cancelled")
+      .order("date", { ascending: true })
+      .limit(CONCERT_LIMIT - results.length);
+
+    if (excludeIds.length > 0) {
+      popularQuery = popularQuery.not("id", "in", `(${excludeIds.join(",")})`);
+    }
+
+    const { data: popular } = await popularQuery;
+    for (const c of popular ?? []) {
+      results.push({ concert: flattenConcert(c as ConcertRow), reason: "Popular with KPop fans" });
     }
   }
 

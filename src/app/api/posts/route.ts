@@ -1,9 +1,10 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { auth } from "@/lib/auth";
 import { createGroupPostNotification } from "@/lib/notifications";
 import { NextRequest } from "next/server";
 
 export async function GET(request: NextRequest) {
+  const supabase = getSupabaseAdmin();
   const { searchParams } = request.nextUrl;
   const groupId = searchParams.get("groupId");
 
@@ -11,20 +12,36 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "groupId is required" }, { status: 400 });
   }
 
-  const posts = await prisma.post.findMany({
-    where: { groupId, parentId: null },
-    include: {
-      author: { select: { id: true, name: true, image: true } },
-      _count: { select: { replies: true, likes: true } },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  const { data: posts, error } = await supabase
+    .from("posts")
+    .select(`
+      *,
+      author:web_users(id, name, image),
+      replies_count:posts!parent_id(count),
+      likes_count:post_likes(count)
+    `)
+    .eq("group_id", groupId)
+    .is("parent_id", null)
+    .order("created_at", { ascending: false })
+    .limit(50);
 
-  return Response.json(posts);
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+
+  const result = (posts ?? []).map((p) => ({
+    ...p,
+    _count: {
+      replies: (p.replies_count as { count: number }[])?.[0]?.count ?? 0,
+      likes: (p.likes_count as { count: number }[])?.[0]?.count ?? 0,
+    },
+    replies_count: undefined,
+    likes_count: undefined,
+  }));
+
+  return Response.json(result);
 }
 
 export async function POST(request: NextRequest) {
+  const supabase = getSupabaseAdmin();
   const session = await auth();
   if (!session?.user?.id) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -42,9 +59,12 @@ export async function POST(request: NextRequest) {
   }
 
   // Verify user is a member of the group
-  const membership = await prisma.groupMember.findUnique({
-    where: { userId_groupId: { userId: session.user.id, groupId } },
-  });
+  const { data: membership } = await supabase
+    .from("group_members")
+    .select("id")
+    .eq("user_id", session.user.id)
+    .eq("group_id", groupId)
+    .maybeSingle();
 
   if (!membership) {
     return Response.json(
@@ -53,23 +73,41 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const post = await prisma.post.create({
-    data: {
+  const postId = crypto.randomUUID();
+
+  const { data: post, error } = await supabase
+    .from("posts")
+    .insert({
+      id: postId,
       content: content.trim(),
-      imageUrl: imageUrl || null,
-      linkUrl: linkUrl || null,
-      authorId: session.user.id,
-      groupId,
-      parentId: parentId || null,
+      image_url: imageUrl || null,
+      link_url: linkUrl || null,
+      author_id: session.user.id,
+      group_id: groupId,
+      parent_id: parentId || null,
+    })
+    .select(`
+      *,
+      author:web_users(id, name, image),
+      replies_count:posts!parent_id(count),
+      likes_count:post_likes(count)
+    `)
+    .single();
+
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+
+  const result = {
+    ...post,
+    _count: {
+      replies: (post.replies_count as { count: number }[])?.[0]?.count ?? 0,
+      likes: (post.likes_count as { count: number }[])?.[0]?.count ?? 0,
     },
-    include: {
-      author: { select: { id: true, name: true, image: true } },
-      _count: { select: { replies: true, likes: true } },
-    },
-  });
+    replies_count: undefined,
+    likes_count: undefined,
+  };
 
   // Fire-and-forget: notify group members of the new post
-  void createGroupPostNotification(session.user.id, groupId, post.id);
+  void createGroupPostNotification(session.user.id, groupId, postId);
 
-  return Response.json(post, { status: 201 });
+  return Response.json(result, { status: 201 });
 }

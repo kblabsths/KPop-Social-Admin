@@ -1,9 +1,11 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { requireAdmin, paginationParams } from "@/lib/admin";
 import { NextRequest } from "next/server";
-import { ScraperRunStatus } from "@/generated/prisma/client";
+
+const VALID_STATUSES = ["RUNNING", "SUCCESS", "FAILED", "PARTIAL"] as const;
 
 export async function GET(request: NextRequest) {
+  const supabase = getSupabaseAdmin();
   const { error } = await requireAdmin();
   if (error) return error;
 
@@ -13,10 +15,9 @@ export async function GET(request: NextRequest) {
   const from = searchParams.get("from");
   const to = searchParams.get("to");
 
-  const validStatuses = Object.values(ScraperRunStatus);
-  if (statusParam && !validStatuses.includes(statusParam as ScraperRunStatus)) {
+  if (statusParam && !VALID_STATUSES.includes(statusParam as typeof VALID_STATUSES[number])) {
     return Response.json(
-      { error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` },
+      { error: `Invalid status. Must be one of: ${VALID_STATUSES.join(", ")}` },
       { status: 400 }
     );
   }
@@ -35,29 +36,18 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const status = statusParam as ScraperRunStatus | null;
+  let queryBuilder = supabase
+    .from("scraper_runs")
+    .select("*", { count: "exact" })
+    .order("started_at", { ascending: false })
+    .range(skip, skip + pageSize - 1);
 
-  const where = {
-    ...(status ? { status } : {}),
-    ...(from || to
-      ? {
-          startedAt: {
-            ...(from ? { gte: new Date(from) } : {}),
-            ...(to ? { lte: new Date(to) } : {}),
-          },
-        }
-      : {}),
-  };
+  if (statusParam) queryBuilder = queryBuilder.eq("status", statusParam);
+  if (from) queryBuilder = queryBuilder.gte("started_at", new Date(from).toISOString());
+  if (to) queryBuilder = queryBuilder.lte("started_at", new Date(to).toISOString());
 
-  const [data, total] = await Promise.all([
-    prisma.scraperRun.findMany({
-      where,
-      orderBy: { startedAt: "desc" },
-      skip,
-      take: pageSize,
-    }),
-    prisma.scraperRun.count({ where }),
-  ]);
+  const { data, count: total, error: queryError } = await queryBuilder;
+  if (queryError) return Response.json({ error: queryError.message }, { status: 500 });
 
-  return Response.json({ data, total, page, pageSize });
+  return Response.json({ data: data ?? [], total: total ?? 0, page, pageSize });
 }

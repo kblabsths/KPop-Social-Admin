@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { auth } from "@/lib/auth";
 import { NextRequest } from "next/server";
 
@@ -6,6 +6,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const supabase = getSupabaseAdmin();
   const { id } = await params;
 
   const session = await auth();
@@ -18,19 +19,18 @@ export async function GET(
   const offset = Number(searchParams.get("offset")) || 0;
   const readFilter = searchParams.get("read");
 
-  const where: { userId: string; read?: boolean } = { userId: id };
-  if (readFilter === "true") where.read = true;
-  if (readFilter === "false") where.read = false;
+  let queryBuilder = supabase
+    .from("web_notifications")
+    .select("*", { count: "exact" })
+    .eq("user_id", id)
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
 
-  const [notifications, total] = await Promise.all([
-    prisma.notification.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: limit,
-      skip: offset,
-    }),
-    prisma.notification.count({ where }),
-  ]);
+  if (readFilter === "true") queryBuilder = queryBuilder.eq("read", true);
+  if (readFilter === "false") queryBuilder = queryBuilder.eq("read", false);
 
-  return Response.json({ notifications, total, limit, offset });
+  const { data: notifications, count: total, error } = await queryBuilder;
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+
+  return Response.json({ notifications: notifications ?? [], total: total ?? 0, limit, offset });
 }

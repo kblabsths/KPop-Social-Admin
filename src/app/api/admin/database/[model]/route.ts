@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { requireAdmin, paginationParams } from "@/lib/admin";
 import type { NextRequest } from "next/server";
 
@@ -16,10 +16,23 @@ const ALLOWED_MODELS = [
 
 type AllowedModel = (typeof ALLOWED_MODELS)[number];
 
+const MODEL_TO_TABLE: Record<AllowedModel, string> = {
+  user: "web_users",
+  artist: "artists",
+  venue: "venues",
+  concert: "concerts",
+  group: "groups",
+  post: "posts",
+  scraperRun: "scraper_runs",
+  scraperLog: "scraper_logs",
+  dataQualityAlert: "data_quality_alerts",
+};
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ model: string }> }
 ) {
+  const supabase = getSupabaseAdmin();
   const { error } = await requireAdmin();
   if (error) return error;
 
@@ -32,20 +45,18 @@ export async function GET(
     );
   }
 
+  const tableName = MODEL_TO_TABLE[model as AllowedModel];
+
   const { searchParams } = request.nextUrl;
   const { page, pageSize, skip } = paginationParams(searchParams);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const delegate = (prisma as any)[model];
+  const { data, count: total, error: queryError } = await supabase
+    .from(tableName)
+    .select("*", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(skip, skip + pageSize - 1);
 
-  const [data, total] = await Promise.all([
-    delegate.findMany({
-      skip,
-      take: pageSize,
-      orderBy: { createdAt: "desc" },
-    }),
-    delegate.count(),
-  ]);
+  if (queryError) return Response.json({ error: queryError.message }, { status: 500 });
 
-  return Response.json({ data, total, page, pageSize });
+  return Response.json({ data: data ?? [], total: total ?? 0, page, pageSize });
 }

@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/admin";
 import type { NextRequest } from "next/server";
 
@@ -6,6 +6,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const supabase = getSupabaseAdmin();
   const { error } = await requireAdmin();
   if (error) return error;
 
@@ -21,17 +22,26 @@ export async function PATCH(
     );
   }
 
-  const alert = await prisma.dataQualityAlert.findUnique({ where: { id } });
+  const { data: alert } = await supabase
+    .from("data_quality_alerts")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle();
+
   if (!alert) {
     return Response.json({ error: "Alert not found" }, { status: 404 });
   }
 
-  const updated = await prisma.dataQualityAlert.update({
-    where: { id },
-    data: {
-      resolvedAt: body.resolved ? new Date() : null,
-    },
-  });
+  const { data: updated, error: updateError } = await supabase
+    .from("data_quality_alerts")
+    .update({
+      resolved_at: body.resolved ? new Date().toISOString() : null,
+    })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (updateError) return Response.json({ error: updateError.message }, { status: 500 });
 
   return Response.json(updated);
 }

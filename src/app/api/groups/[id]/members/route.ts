@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { auth } from "@/lib/auth";
 import { NextRequest } from "next/server";
 
@@ -6,6 +6,7 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const supabase = getSupabaseAdmin();
   const session = await auth();
   if (!session?.user?.id) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -13,28 +14,38 @@ export async function POST(
 
   const { id } = await params;
 
-  const group = await prisma.group.findUnique({ where: { id } });
+  const { data: group } = await supabase
+    .from("groups")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle();
+
   if (!group) {
     return Response.json({ error: "Group not found" }, { status: 404 });
   }
 
-  const existing = await prisma.groupMember.findUnique({
-    where: { userId_groupId: { userId: session.user.id, groupId: id } },
-  });
+  const { data: existing } = await supabase
+    .from("group_members")
+    .select("id")
+    .eq("user_id", session.user.id)
+    .eq("group_id", id)
+    .maybeSingle();
 
   if (existing) {
     return Response.json({ error: "Already a member" }, { status: 409 });
   }
 
-  const member = await prisma.groupMember.create({
-    data: {
-      userId: session.user.id,
-      groupId: id,
-    },
-    include: {
-      user: { select: { id: true, name: true, image: true } },
-    },
-  });
+  const { data: member, error } = await supabase
+    .from("group_members")
+    .insert({
+      id: crypto.randomUUID(),
+      user_id: session.user.id,
+      group_id: id,
+    })
+    .select("*, user:web_users(id, name, image)")
+    .single();
+
+  if (error) return Response.json({ error: error.message }, { status: 500 });
 
   return Response.json(member, { status: 201 });
 }
@@ -43,6 +54,7 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const supabase = getSupabaseAdmin();
   const session = await auth();
   if (!session?.user?.id) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -50,17 +62,23 @@ export async function DELETE(
 
   const { id } = await params;
 
-  const membership = await prisma.groupMember.findUnique({
-    where: { userId_groupId: { userId: session.user.id, groupId: id } },
-  });
+  const { data: membership } = await supabase
+    .from("group_members")
+    .select("id")
+    .eq("user_id", session.user.id)
+    .eq("group_id", id)
+    .maybeSingle();
 
   if (!membership) {
     return Response.json({ error: "Not a member" }, { status: 404 });
   }
 
-  await prisma.groupMember.delete({
-    where: { id: membership.id },
-  });
+  const { error } = await supabase
+    .from("group_members")
+    .delete()
+    .eq("id", membership.id);
+
+  if (error) return Response.json({ error: error.message }, { status: 500 });
 
   return Response.json({ success: true });
 }
