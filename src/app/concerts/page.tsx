@@ -1,5 +1,16 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
+
+type ConcertItem = {
+  id: string;
+  title: string;
+  date: string;
+  image_url: string | null;
+  event_type: string;
+  status: string;
+  venue: { city: string; country: string };
+  artists: { id: string; name: string }[];
+};
 
 export default async function ConcertsPage({
   searchParams,
@@ -7,22 +18,28 @@ export default async function ConcertsPage({
   searchParams: Promise<{ q?: string; eventType?: string }>;
 }) {
   const { q, eventType } = await searchParams;
+  const supabase = getSupabaseAdmin();
 
-  const concerts = await prisma.concert.findMany({
-    where: {
-      AND: [
-        q
-          ? { title: { contains: q, mode: "insensitive" } }
-          : {},
-        eventType ? { eventType } : {},
-      ],
-    },
-    include: {
-      artists: true,
-      venue: true,
-    },
-    orderBy: { date: "asc" },
-  });
+  let queryBuilder = supabase
+    .from("concerts")
+    .select("*, venue:venues(*), artists:concert_artists(artist:artists(*))")
+    .order("date", { ascending: true });
+
+  if (q) queryBuilder = queryBuilder.ilike("title", `%${q}%`);
+  if (eventType) queryBuilder = queryBuilder.eq("event_type", eventType);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await queryBuilder as any;
+  const concerts: ConcertItem[] = (data ?? []).map((c: Record<string, unknown>) => ({
+    id: c.id as string,
+    title: c.title as string,
+    date: c.date as string,
+    image_url: c.image_url as string | null,
+    event_type: c.event_type as string,
+    status: c.status as string,
+    venue: c.venue as { city: string; country: string },
+    artists: ((c.artists as { artist: { id: string; name: string } }[]) ?? []).map((a) => a.artist),
+  }));
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-8">
@@ -73,9 +90,9 @@ export default async function ConcertsPage({
               href={`/concerts/${concert.id}`}
               className="group rounded-xl border border-gray-200 bg-white p-5 transition hover:border-purple-300 hover:shadow-lg dark:border-gray-800 dark:bg-gray-900 dark:hover:border-purple-700"
             >
-              {concert.imageUrl && (
+              {concert.image_url && (
                 <img
-                  src={concert.imageUrl}
+                  src={concert.image_url}
                   alt={concert.title}
                   className="mb-3 h-40 w-full rounded-lg object-cover"
                 />
@@ -92,7 +109,7 @@ export default async function ConcertsPage({
               </p>
               <div className="mt-3 flex items-center gap-2 text-xs">
                 <span className="rounded-full bg-purple-100 px-2 py-0.5 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
-                  {concert.eventType.replace("_", " ")}
+                  {concert.event_type.replace("_", " ")}
                 </span>
                 <span
                   className={`rounded-full px-2 py-0.5 ${

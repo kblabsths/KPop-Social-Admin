@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 
 export default async function ArtistsPage({
   searchParams,
@@ -7,26 +7,21 @@ export default async function ArtistsPage({
   searchParams: Promise<{ q?: string; type?: string }>;
 }) {
   const { q, type } = await searchParams;
+  const supabase = getSupabaseAdmin();
 
-  const artists = await prisma.artist.findMany({
-    where: {
-      AND: [
-        q
-          ? {
-              OR: [
-                { name: { contains: q, mode: "insensitive" } },
-                { koreanName: { contains: q, mode: "insensitive" } },
-              ],
-            }
-          : {},
-        type ? { type } : {},
-      ],
-    },
-    include: {
-      _count: { select: { groups: true } },
-    },
-    orderBy: { name: "asc" },
-  });
+  let queryBuilder = supabase
+    .from("artists")
+    .select("*, groups_count:groups(count)")
+    .order("name", { ascending: true });
+
+  if (type) queryBuilder = queryBuilder.eq("type", type);
+  if (q) queryBuilder = queryBuilder.or(`name.ilike.%${q}%,korean_name.ilike.%${q}%`);
+
+  const { data } = await queryBuilder;
+  const artists = (data ?? []).map((a) => ({
+    ...a,
+    groupsCount: ((a.groups_count as { count: number }[])?.[0]?.count ?? 0),
+  }));
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-8">
@@ -69,39 +64,39 @@ export default async function ArtistsPage({
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {artists.map((artist) => (
               <Link
-                key={artist.id}
+                key={artist.id as string}
                 href={`/artists/${artist.id}`}
                 className="group rounded-xl border border-gray-200 bg-white p-5 transition hover:border-purple-300 hover:shadow-lg dark:border-gray-800 dark:bg-gray-900 dark:hover:border-purple-700"
               >
                 <div className="mb-3 flex items-center gap-3">
                   {artist.image ? (
                     <img
-                      src={artist.image}
-                      alt={artist.name}
+                      src={artist.image as string}
+                      alt={artist.name as string}
                       className="h-12 w-12 rounded-full object-cover"
                     />
                   ) : (
                     <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-purple-400 to-pink-400 text-lg font-bold text-white">
-                      {artist.name[0]}
+                      {(artist.name as string)[0]}
                     </div>
                   )}
                   <div>
                     <h2 className="font-semibold text-gray-900 group-hover:text-purple-600 dark:text-white dark:group-hover:text-purple-400">
-                      {artist.name}
+                      {artist.name as string}
                     </h2>
-                    {artist.koreanName && (
+                    {artist.korean_name && (
                       <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {artist.koreanName}
+                        {artist.korean_name as string}
                       </p>
                     )}
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
                   <span className="rounded-full bg-purple-100 px-2 py-0.5 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
-                    {artist.type}
+                    {artist.type as string}
                   </span>
-                  {artist.company && <span>{artist.company}</span>}
-                  <span>{artist._count.groups} fan groups</span>
+                  {artist.company && <span>{artist.company as string}</span>}
+                  <span>{artist.groupsCount} fan groups</span>
                 </div>
               </Link>
             ))}

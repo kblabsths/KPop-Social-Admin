@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { auth } from "@/lib/auth";
 import Navbar from "@/app/components/navbar";
 import PostCard from "@/app/components/post-card";
@@ -9,26 +9,47 @@ export default async function FeedPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const memberships = await prisma.groupMember.findMany({
-    where: { userId: session.user.id },
-    select: { groupId: true },
-  });
+  const supabase = getSupabaseAdmin();
 
-  const groupIds = memberships.map((m) => m.groupId);
+  const { data: memberships } = await supabase
+    .from("group_members")
+    .select("group_id")
+    .eq("user_id", session.user.id);
 
-  const posts =
+  const groupIds = (memberships ?? []).map((m: { group_id: string }) => m.group_id);
+
+  const postRows =
     groupIds.length > 0
-      ? await prisma.post.findMany({
-          where: { groupId: { in: groupIds }, parentId: null },
-          include: {
-            author: { select: { id: true, name: true, image: true } },
-            group: { select: { id: true, name: true } },
-            _count: { select: { replies: true, likes: true } },
-          },
-          orderBy: { createdAt: "desc" },
-          take: 50,
-        })
+      ? (
+          await supabase
+            .from("posts")
+            .select(`
+              *,
+              author:web_users(id, name, image),
+              group:groups(id, name),
+              replies_count:posts!parent_id(count),
+              likes_count:post_likes(count)
+            `)
+            .in("group_id", groupIds)
+            .is("parent_id", null)
+            .order("created_at", { ascending: false })
+            .limit(50)
+        ).data ?? []
       : [];
+
+  const posts = postRows.map((p) => ({
+    id: p.id as string,
+    content: p.content as string,
+    imageUrl: p.image_url as string | null,
+    linkUrl: p.link_url as string | null,
+    createdAt: p.created_at as string,
+    author: p.author as { id: string; name: string | null; image: string | null },
+    group: p.group as { id: string; name: string },
+    _count: {
+      replies: ((p.replies_count as { count: number }[])?.[0]?.count ?? 0),
+      likes: ((p.likes_count as { count: number }[])?.[0]?.count ?? 0),
+    },
+  }));
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-b from-purple-50 to-pink-50 dark:from-gray-950 dark:to-purple-950">
@@ -43,7 +64,7 @@ export default async function FeedPage() {
             {posts.map((post) => (
               <PostCard
                 key={post.id}
-                post={{ ...post, createdAt: post.createdAt.toISOString() }}
+                post={post}
                 showGroup
                 currentUserId={session.user!.id}
               />

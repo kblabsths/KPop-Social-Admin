@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { auth } from "@/lib/auth";
 import Navbar from "@/app/components/navbar";
 import ProfileActivityTabs from "./ProfileActivityTabs";
@@ -20,20 +20,14 @@ export default async function ProfilePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const supabase = getSupabaseAdmin();
   const session = await auth();
 
-  const user = await prisma.user.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      image: true,
-      bio: true,
-      favoriteArtists: true,
-      createdAt: true,
-    },
-  });
+  const { data: user } = await supabase
+    .from("web_users")
+    .select("id, name, email, image, bio, favorite_artists, created_at")
+    .eq("id", id)
+    .maybeSingle();
 
   if (!user) {
     notFound();
@@ -41,7 +35,6 @@ export default async function ProfilePage({
 
   const isOwnProfile = session?.user?.id === user.id;
 
-  // Fetch activity server-side
   const appUrl =
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.NEXTAUTH_URL ||
@@ -57,7 +50,7 @@ export default async function ProfilePage({
           <div className="flex items-start gap-6">
             {user.image ? (
               <img
-                src={user.image}
+                src={user.image as string}
                 alt={user.name ?? "User avatar"}
                 className="h-20 w-20 rounded-full object-cover"
               />
@@ -83,7 +76,7 @@ export default async function ProfilePage({
               </div>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 Joined{" "}
-                {new Date(user.createdAt).toLocaleDateString("en-US", {
+                {new Date(user.created_at as string).toLocaleDateString("en-US", {
                   month: "long",
                   year: "numeric",
                 })}
@@ -94,9 +87,9 @@ export default async function ProfilePage({
           {/* Bio and favorite artists — inline-editable for own profile */}
           {isOwnProfile ? (
             <InlineEditProfile
-              userId={user.id}
-              initialBio={user.bio}
-              initialFavoriteArtists={user.favoriteArtists}
+              userId={user.id as string}
+              initialBio={user.bio as string | null}
+              initialFavoriteArtists={user.favorite_artists as string[]}
             />
           ) : (
             <>
@@ -106,18 +99,18 @@ export default async function ProfilePage({
                     Bio
                   </h2>
                   <p className="mt-2 text-gray-700 dark:text-gray-300">
-                    {user.bio}
+                    {user.bio as string}
                   </p>
                 </div>
               )}
 
-              {user.favoriteArtists.length > 0 && (
+              {(user.favorite_artists as string[]).length > 0 && (
                 <div className="mt-6">
                   <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Favorite Artists
                   </h2>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {user.favoriteArtists.map((artist) => (
+                    {(user.favorite_artists as string[]).map((artist) => (
                       <span
                         key={artist}
                         className="rounded-full bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1 text-sm font-medium text-purple-700 dark:from-purple-900/30 dark:to-pink-900/30 dark:text-purple-300"
@@ -129,7 +122,7 @@ export default async function ProfilePage({
                 </div>
               )}
 
-              {!user.bio && user.favoriteArtists.length === 0 && (
+              {!user.bio && (user.favorite_artists as string[]).length === 0 && (
                 <p className="mt-6 text-center text-gray-400 dark:text-gray-500">
                   This user hasn&apos;t added any details yet.
                 </p>

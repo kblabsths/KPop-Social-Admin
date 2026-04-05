@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { auth } from "@/lib/auth";
 import JoinLeaveButton from "./join-leave-button";
 import CreatePostForm from "./create-post-form";
@@ -12,38 +12,65 @@ export default async function GroupDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const supabase = getSupabaseAdmin();
   const session = await auth();
 
-  const group = await prisma.group.findUnique({
-    where: { id },
-    include: {
-      artist: true,
-      createdBy: { select: { id: true, name: true, image: true } },
-      members: {
-        include: {
-          user: { select: { id: true, name: true, image: true } },
-        },
-        orderBy: { joinedAt: "asc" },
-      },
-    },
-  });
+  const { data: group } = await supabase
+    .from("groups")
+    .select(`
+      *,
+      artist:artists(*),
+      created_by:web_users!groups_created_by_id_fkey(id, name, image),
+      members:group_members(*, user:web_users(id, name, image))
+    `)
+    .eq("id", id)
+    .maybeSingle();
 
   if (!group) notFound();
 
+  type RawMember = {
+    id: string;
+    user_id: string;
+    role: string;
+    joined_at: string;
+    user: { id: string; name: string | null; image: string | null };
+  };
+
+  const members = ((group.members as RawMember[]) ?? []).sort(
+    (a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime()
+  );
+
   const isMember = session?.user?.id
-    ? group.members.some((m) => m.userId === session.user!.id)
+    ? members.some((m) => m.user_id === session.user!.id)
     : false;
 
-  const posts = await prisma.post.findMany({
-    where: { groupId: id, parentId: null },
-    include: {
-      author: { select: { id: true, name: true, image: true } },
-      group: { select: { id: true, name: true } },
-      _count: { select: { replies: true, likes: true } },
+  const { data: postRows } = await supabase
+    .from("posts")
+    .select(`
+      *,
+      author:web_users(id, name, image),
+      group:groups(id, name),
+      replies_count:posts!parent_id(count),
+      likes_count:post_likes(count)
+    `)
+    .eq("group_id", id)
+    .is("parent_id", null)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  const posts = (postRows ?? []).map((p) => ({
+    id: p.id as string,
+    content: p.content as string,
+    imageUrl: p.image_url as string | null,
+    linkUrl: p.link_url as string | null,
+    createdAt: p.created_at as string,
+    author: p.author as { id: string; name: string | null; image: string | null },
+    group: p.group as { id: string; name: string },
+    _count: {
+      replies: ((p.replies_count as { count: number }[])?.[0]?.count ?? 0),
+      likes: ((p.likes_count as { count: number }[])?.[0]?.count ?? 0),
     },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  }));
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-8">
@@ -59,40 +86,40 @@ export default async function GroupDetailPage({
             <div className="flex items-start gap-4">
               {group.image ? (
                 <img
-                  src={group.image}
-                  alt={group.name}
+                  src={group.image as string}
+                  alt={group.name as string}
                   className="h-20 w-20 rounded-xl object-cover"
                 />
               ) : (
                 <div className="flex h-20 w-20 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-2xl font-bold text-white">
-                  {group.name[0]}
+                  {(group.name as string)[0]}
                 </div>
               )}
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {group.name}
+                  {group.name as string}
                 </h1>
                 {group.artist && (
                   <Link
-                    href={`/artists/${group.artist.id}`}
+                    href={`/artists/${(group.artist as { id: string }).id}`}
                     className="text-sm text-purple-600 hover:underline dark:text-purple-400"
                   >
-                    {group.artist.name}
+                    {(group.artist as { name: string }).name}
                   </Link>
                 )}
                 {group.description && (
                   <p className="mt-2 text-gray-600 dark:text-gray-300">
-                    {group.description}
+                    {group.description as string}
                   </p>
                 )}
                 <p className="mt-2 text-sm text-gray-400 dark:text-gray-500">
-                  Created by {group.createdBy.name || "Unknown"} &middot;{" "}
-                  {group.members.length} members
+                  Created by {(group.created_by as { name: string | null } | null)?.name || "Unknown"} &middot;{" "}
+                  {members.length} members
                 </p>
               </div>
             </div>
             {session?.user && (
-              <JoinLeaveButton groupId={group.id} isMember={isMember} />
+              <JoinLeaveButton groupId={group.id as string} isMember={isMember} />
             )}
           </div>
         </div>
@@ -109,7 +136,7 @@ export default async function GroupDetailPage({
             {posts.map((post) => (
               <PostCard
                 key={post.id}
-                post={{ ...post, createdAt: post.createdAt.toISOString() }}
+                post={post}
                 currentUserId={session?.user?.id}
               />
             ))}
@@ -121,10 +148,10 @@ export default async function GroupDetailPage({
         )}
 
         <h2 className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
-          Members ({group.members.length})
+          Members ({members.length})
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {group.members.map((member) => (
+          {members.map((member) => (
             <Link
               key={member.id}
               href={`/profile/${member.user.id}`}

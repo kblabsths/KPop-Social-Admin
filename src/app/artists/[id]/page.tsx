@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { auth } from "@/lib/auth";
 import FollowButton from "./follow-button";
 
@@ -10,24 +10,34 @@ export default async function ArtistPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const supabase = getSupabaseAdmin();
 
-  const [artist, session] = await Promise.all([
-    prisma.artist.findUnique({
-    where: { id },
-    include: {
-      groups: {
-        include: {
-          _count: { select: { members: true } },
-        },
-        orderBy: { members: { _count: "desc" } },
-      },
-    },
-  }),
+  const [{ data: artist }, session] = await Promise.all([
+    supabase
+      .from("artists")
+      .select("*, groups(*, member_count:group_members(count))")
+      .eq("id", id)
+      .maybeSingle(),
     auth(),
   ]);
 
   if (!artist) notFound();
   const loggedIn = !!session?.user;
+
+  type RawGroup = {
+    id: string;
+    name: string;
+    description: string | null;
+    member_count: { count: number }[];
+    [key: string]: unknown;
+  };
+
+  const groups = ((artist.groups as RawGroup[]) ?? [])
+    .map((g) => ({
+      ...g,
+      _count: { members: g.member_count?.[0]?.count ?? 0 },
+    }))
+    .sort((a, b) => b._count.members - a._count.members);
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-8">
@@ -41,50 +51,50 @@ export default async function ArtistPage({
         <div className="mb-8 flex items-start gap-5">
           {artist.image ? (
             <img
-              src={artist.image}
-              alt={artist.name}
+              src={artist.image as string}
+              alt={artist.name as string}
               className="h-24 w-24 rounded-xl object-cover"
             />
           ) : (
             <div className="flex h-24 w-24 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-3xl font-bold text-white">
-              {artist.name[0]}
+              {(artist.name as string)[0]}
             </div>
           )}
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-              {artist.name}
+              {artist.name as string}
             </h1>
-            {artist.koreanName && (
+            {artist.korean_name && (
               <p className="text-lg text-gray-500 dark:text-gray-400">
-                {artist.koreanName}
+                {artist.korean_name as string}
               </p>
             )}
             <div className="mt-2 flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
               <span className="rounded-full bg-purple-100 px-2 py-0.5 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
-                {artist.type}
+                {artist.type as string}
               </span>
-              {artist.company && <span>{artist.company}</span>}
-              {artist.debutDate && (
+              {artist.company && <span>{artist.company as string}</span>}
+              {artist.debut_date && (
                 <span>
                   Debut:{" "}
-                  {new Date(artist.debutDate).toLocaleDateString()}
+                  {new Date(artist.debut_date as string).toLocaleDateString()}
                 </span>
               )}
             </div>
             {artist.description && (
               <p className="mt-3 text-gray-600 dark:text-gray-300">
-                {artist.description}
+                {artist.description as string}
               </p>
             )}
             <div className="mt-3">
-              <FollowButton artistId={artist.id} loggedIn={loggedIn} />
+              <FollowButton artistId={artist.id as string} loggedIn={loggedIn} />
             </div>
           </div>
         </div>
 
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-            Fan Groups ({artist.groups.length})
+            Fan Groups ({groups.length})
           </h2>
           <Link
             href={`/groups/create?artistId=${artist.id}`}
@@ -94,13 +104,13 @@ export default async function ArtistPage({
           </Link>
         </div>
 
-        {artist.groups.length === 0 ? (
+        {groups.length === 0 ? (
           <p className="text-center text-gray-500 dark:text-gray-400 py-8">
             No fan groups yet. Be the first to create one!
           </p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
-            {artist.groups.map((group) => (
+            {groups.map((group) => (
               <Link
                 key={group.id}
                 href={`/groups/${group.id}`}

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import Navbar from "@/app/components/navbar";
 import NotificationsClient from "./notifications-client";
 
@@ -11,19 +11,25 @@ export default async function NotificationsPage() {
   if (!session?.user?.id) redirect("/login");
 
   const userId = session.user.id;
+  const supabase = getSupabaseAdmin();
 
-  const [notifications, total] = await Promise.all([
-    prisma.notification.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      take: PAGE_SIZE,
-    }),
-    prisma.notification.count({ where: { userId } }),
+  const [{ data: notifications, count: total }] = await Promise.all([
+    supabase
+      .from("web_notifications")
+      .select("*", { count: "exact" })
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(PAGE_SIZE),
   ]);
 
-  const serialized = notifications.map((n) => ({
-    ...n,
-    createdAt: n.createdAt.toISOString(),
+  const serialized = (notifications ?? []).map((n) => ({
+    id: n.id as string,
+    type: n.type as "new_concert" | "group_post" | "concert_reminder" | "new_follower",
+    title: n.title as string,
+    body: n.body as string,
+    link: n.link as string,
+    read: n.read as boolean,
+    createdAt: n.created_at as string,
   }));
 
   return (
@@ -33,7 +39,7 @@ export default async function NotificationsPage() {
         <NotificationsClient
           userId={userId}
           initialNotifications={serialized}
-          initialTotal={total}
+          initialTotal={total ?? 0}
         />
       </main>
     </div>

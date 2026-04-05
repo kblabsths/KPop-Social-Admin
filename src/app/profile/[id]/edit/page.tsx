@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { auth } from "@/lib/auth";
 import Navbar from "@/app/components/navbar";
 
@@ -15,15 +15,12 @@ export default async function EditProfilePage({
     redirect("/login");
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      name: true,
-      bio: true,
-      favoriteArtists: true,
-    },
-  });
+  const supabase = getSupabaseAdmin();
+  const { data: user } = await supabase
+    .from("web_users")
+    .select("id, name, bio, favorite_artists")
+    .eq("id", id)
+    .maybeSingle();
 
   if (!user) {
     notFound();
@@ -45,10 +42,11 @@ export default async function EditProfilePage({
       .map((s) => s.trim())
       .filter(Boolean);
 
-    await prisma.user.update({
-      where: { id },
-      data: { name, bio, favoriteArtists },
-    });
+    const supabaseServer = getSupabaseAdmin();
+    await supabaseServer
+      .from("web_users")
+      .update({ name, bio, favorite_artists: favoriteArtists, updated_at: new Date().toISOString() })
+      .eq("id", id);
 
     redirect(`/profile/${id}`);
   }
@@ -109,7 +107,7 @@ export default async function EditProfilePage({
                 id="favoriteArtists"
                 name="favoriteArtists"
                 type="text"
-                defaultValue={user.favoriteArtists.join(", ")}
+                defaultValue={(user.favorite_artists as string[] ?? []).join(", ")}
                 placeholder="BTS, BLACKPINK, aespa, NewJeans..."
                 className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 transition focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:focus:border-purple-400"
               />
