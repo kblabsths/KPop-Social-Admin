@@ -103,8 +103,10 @@ export default async function AdminOverview() {
 
   const recentRuns = allRuns.slice(0, 10);
 
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now();
   const hoursSinceLastRun = latestRun
-    ? (Date.now() - new Date(latestRun.started_at).getTime()) / (60 * 60 * 1000)
+    ? (now - new Date(latestRun.started_at).getTime()) / (60 * 60 * 1000)
     : null;
   const isStale =
     !latestRun ||

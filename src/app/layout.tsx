@@ -46,8 +46,10 @@ export default async function RootLayout({
   const activeAlerts = activeAlertsResult.count ?? 0;
   const latestRun = latestRunResult.data;
 
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now();
   const hoursSinceLastRun = latestRun
-    ? (Date.now() - new Date(latestRun.started_at).getTime()) / (60 * 60 * 1000)
+    ? (now - new Date(latestRun.started_at).getTime()) / (60 * 60 * 1000)
     : null;
   const isStale =
     !latestRun ||
