@@ -14,44 +14,61 @@
  */
 
 import "dotenv/config";
-import { PrismaClient } from "@/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { createClient } from "@supabase/supabase-js";
 import { execSync } from "child_process";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-const prisma = new PrismaClient({ adapter });
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { persistSession: false } }
+);
 
 const STALE_THRESHOLD_HOURS = 24;
 
 async function getLatestRun() {
-  return prisma.scraperRun.findFirst({
-    where: { scraperName: "kpopofficial" },
-    orderBy: { startedAt: "desc" },
-  });
+  const { data } = await supabase
+    .from("scraper_runs")
+    .select("*")
+    .eq("scraper_name", "kpopofficial")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data;
 }
 
 async function getScraperStats() {
-  const [latestRun, totalRuns, successfulRuns, totalConcerts] =
+  const [latestRun, totalRunsResult, successfulRunsResult, totalConcertsResult] =
     await Promise.all([
       getLatestRun(),
-      prisma.scraperRun.count({ where: { scraperName: "kpopofficial" } }),
-      prisma.scraperRun.count({
-        where: { scraperName: "kpopofficial", status: "SUCCESS" },
-      }),
-      prisma.concert.count(),
+      supabase
+        .from("scraper_runs")
+        .select("id", { count: "exact", head: true })
+        .eq("scraper_name", "kpopofficial"),
+      supabase
+        .from("scraper_runs")
+        .select("id", { count: "exact", head: true })
+        .eq("scraper_name", "kpopofficial")
+        .eq("status", "SUCCESS"),
+      supabase
+        .from("concerts")
+        .select("id", { count: "exact", head: true }),
     ]);
+
+  const totalRuns = totalRunsResult.count ?? 0;
+  const successfulRuns = successfulRunsResult.count ?? 0;
+  const totalConcerts = totalConcertsResult.count ?? 0;
 
   const isStale =
     !latestRun ||
-    Date.now() - latestRun.startedAt.getTime() >
+    Date.now() - new Date(latestRun.started_at).getTime() >
       STALE_THRESHOLD_HOURS * 60 * 60 * 1000;
 
   const hoursSinceLastRun = latestRun
-    ? (Date.now() - latestRun.startedAt.getTime()) / (60 * 60 * 1000)
+    ? (Date.now() - new Date(latestRun.started_at).getTime()) / (60 * 60 * 1000)
     : null;
 
   return {
@@ -66,42 +83,41 @@ async function getScraperStats() {
 }
 
 async function createStaleAlert() {
-  const existing = await prisma.dataQualityAlert.findFirst({
-    where: {
-      alertType: "STALE_DATA",
-      entityType: "ScraperRun",
-      entityId: "kpopofficial",
-      resolvedAt: null,
-    },
-  });
+  const { data: existing } = await supabase
+    .from("data_quality_alerts")
+    .select("id")
+    .eq("alert_type", "STALE_DATA")
+    .eq("entity_type", "ScraperRun")
+    .eq("entity_id", "kpopofficial")
+    .is("resolved_at", null)
+    .maybeSingle();
 
   if (!existing) {
-    await prisma.dataQualityAlert.create({
-      data: {
-        alertType: "STALE_DATA",
-        severity: "HIGH",
-        entityType: "ScraperRun",
-        entityId: "kpopofficial",
-        message: `Scraper data is stale. No successful scrape in the last ${STALE_THRESHOLD_HOURS} hours.`,
-      },
+    await supabase.from("data_quality_alerts").insert({
+      id: crypto.randomUUID(),
+      alert_type: "STALE_DATA",
+      severity: "HIGH",
+      entity_type: "ScraperRun",
+      entity_id: "kpopofficial",
+      message: `Scraper data is stale. No successful scrape in the last ${STALE_THRESHOLD_HOURS} hours.`,
     });
     console.log("[ALERT] Created STALE_DATA alert for kpopofficial scraper");
   }
 }
 
 async function resolveStaleAlerts() {
-  const resolved = await prisma.dataQualityAlert.updateMany({
-    where: {
-      alertType: "STALE_DATA",
-      entityType: "ScraperRun",
-      entityId: "kpopofficial",
-      resolvedAt: null,
-    },
-    data: { resolvedAt: new Date() },
-  });
+  const { data: resolved } = await supabase
+    .from("data_quality_alerts")
+    .update({ resolved_at: new Date().toISOString() })
+    .eq("alert_type", "STALE_DATA")
+    .eq("entity_type", "ScraperRun")
+    .eq("entity_id", "kpopofficial")
+    .is("resolved_at", null)
+    .select("id");
 
-  if (resolved.count > 0) {
-    console.log(`[ALERT] Resolved ${resolved.count} STALE_DATA alert(s)`);
+  const count = resolved?.length ?? 0;
+  if (count > 0) {
+    console.log(`[ALERT] Resolved ${count} STALE_DATA alert(s)`);
   }
 }
 
@@ -138,7 +154,7 @@ async function main() {
 
   if (stats.latestRun) {
     console.log(
-      `[STATUS] Last run: ${stats.latestRun.startedAt.toISOString()} (${stats.hoursSinceLastRun?.toFixed(1)}h ago) — ${stats.latestRun.status}`
+      `[STATUS] Last run: ${stats.latestRun.started_at} (${stats.hoursSinceLastRun?.toFixed(1)}h ago) — ${stats.latestRun.status}`
     );
   } else {
     console.log(`[STATUS] No previous runs found`);
@@ -152,7 +168,6 @@ async function main() {
 
   if (checkOnly) {
     console.log(`[SCHEDULED] Check-only mode, exiting`);
-    await prisma.$disconnect();
     process.exit(stats.isStale ? 1 : 0);
   }
 
@@ -160,7 +175,6 @@ async function main() {
     console.log(
       `[SCHEDULED] Data is fresh (${stats.hoursSinceLastRun?.toFixed(1)}h old), skipping scrape`
     );
-    await prisma.$disconnect();
     process.exit(0);
   }
 
@@ -170,39 +184,15 @@ async function main() {
       : `[SCHEDULED] Data is stale, running scraper`
   );
 
-  // Disconnect before spawning child process (it creates its own connection)
-  await prisma.$disconnect();
-
   const success = await runScraper();
 
-  // Reconnect to handle post-scrape alerts
-  const postAdapter = new PrismaPg({
-    connectionString: process.env.DATABASE_URL,
-  });
-  const postPrisma = new PrismaClient({ adapter: postAdapter });
-
   if (success) {
-    // Resolve stale alerts after a successful scrape
-    const resolved = await postPrisma.dataQualityAlert.updateMany({
-      where: {
-        alertType: "STALE_DATA",
-        entityType: "ScraperRun",
-        entityId: "kpopofficial",
-        resolvedAt: null,
-      },
-      data: { resolvedAt: new Date() },
-    });
-    if (resolved.count > 0) {
-      console.log(
-        `[ALERT] Resolved ${resolved.count} STALE_DATA alert(s) after successful scrape`
-      );
-    }
+    await resolveStaleAlerts();
     console.log(`[SCHEDULED] Scrape completed successfully`);
   } else {
     console.error(`[SCHEDULED] Scrape failed`);
   }
 
-  await postPrisma.$disconnect();
   process.exit(success ? 0 : 1);
 }
 

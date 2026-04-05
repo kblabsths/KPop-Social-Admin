@@ -3,18 +3,20 @@
  *
  * Integrates the PoC scraper with ScraperRun tracking and direct DB writes.
  * Creates ScraperRun, ScraperLog, and DataQualityAlert records.
- * Upserts Artist, Venue, and Concert records via Prisma.
+ * Upserts Artist, Venue, and Concert records via Supabase.
  *
  * Usage: npx tsx scripts/scrape-production.ts
  */
 
 import "dotenv/config";
 import * as cheerio from "cheerio";
-import { PrismaClient, Prisma } from "@/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-const prisma = new PrismaClient({ adapter });
+const supabase: SupabaseClient = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { persistSession: false } }
+);
 
 const TARGET_URL = "https://kpopofficial.com/kpop-concerts/";
 const SCRAPER_NAME = "kpopofficial";
@@ -205,8 +207,12 @@ async function log(
   message: string,
   metadata?: Record<string, unknown>
 ) {
-  await prisma.scraperLog.create({
-    data: { scraperRunId, level, message, metadata: (metadata ?? undefined) as Prisma.InputJsonValue | undefined },
+  await supabase.from("scraper_logs").insert({
+    id: crypto.randomUUID(),
+    scraper_run_id: scraperRunId,
+    level,
+    message,
+    metadata: metadata ?? null,
   });
 }
 
@@ -217,19 +223,31 @@ async function createAlert(
   entityId: string,
   message: string
 ) {
-  await prisma.dataQualityAlert.create({
-    data: { alertType, severity, entityType, entityId, message },
+  await supabase.from("data_quality_alerts").insert({
+    id: crypto.randomUUID(),
+    alert_type: alertType,
+    severity,
+    entity_type: entityType,
+    entity_id: entityId,
+    message,
   });
 }
 
 async function upsertArtist(name: string): Promise<string> {
   const slug = slugify(name);
-  const artist = await prisma.artist.upsert({
-    where: { slug },
-    create: { name, slug },
-    update: { updatedAt: new Date() },
-  });
-  return artist.id;
+  const { data: existing } = await supabase
+    .from("artists")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (existing) return existing.id;
+
+  const id = crypto.randomUUID();
+  const { error } = await supabase
+    .from("artists")
+    .insert({ id, name, slug, updated_at: new Date().toISOString() });
+  if (error) throw error;
+  return id;
 }
 
 async function upsertVenue(
@@ -238,22 +256,38 @@ async function upsertVenue(
 ): Promise<string> {
   const venueName = country ? `${city}, ${country}` : city;
   const slug = slugify(venueName);
-  const venue = await prisma.venue.upsert({
-    where: { slug },
-    create: { name: venueName, slug, city, country: country || "Unknown" },
-    update: { updatedAt: new Date() },
+  const { data: existing } = await supabase
+    .from("venues")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (existing) return existing.id;
+
+  const id = crypto.randomUUID();
+  const { error } = await supabase.from("venues").insert({
+    id,
+    name: venueName,
+    slug,
+    city,
+    country: country || "Unknown",
+    updated_at: new Date().toISOString(),
   });
-  return venue.id;
+  if (error) throw error;
+  return id;
 }
 
 async function main() {
   console.log("=== KPop Concert Production Scraper ===\n");
 
   // Step 1: Create ScraperRun
-  const run = await prisma.scraperRun.create({
-    data: { scraperName: SCRAPER_NAME, status: "RUNNING" },
+  const runId = crypto.randomUUID();
+  const { error: runError } = await supabase.from("scraper_runs").insert({
+    id: runId,
+    scraper_name: SCRAPER_NAME,
+    status: "RUNNING",
   });
-  console.log(`ScraperRun created: ${run.id}`);
+  if (runError) throw runError;
+  console.log(`ScraperRun created: ${runId}`);
 
   let recordsCreated = 0;
   let recordsUpdated = 0;
@@ -261,12 +295,12 @@ async function main() {
 
   try {
     // Step 2: Fetch and parse
-    await log(run.id, "INFO", `Starting scrape of ${TARGET_URL}`);
+    await log(runId, "INFO", `Starting scrape of ${TARGET_URL}`);
     const html = await fetchPage(TARGET_URL);
-    await log(run.id, "INFO", `Fetched ${html.length} bytes of HTML`);
+    await log(runId, "INFO", `Fetched ${html.length} bytes of HTML`);
 
     const concerts = parseConcertsIndex(html);
-    await log(run.id, "INFO", `Parsed ${concerts.length} concert entries`);
+    await log(runId, "INFO", `Parsed ${concerts.length} concert entries`);
     console.log(`Parsed ${concerts.length} concert entries\n`);
 
     // Step 3: Process each concert
@@ -278,7 +312,7 @@ async function main() {
 
         // Check for duplicate slugs within this run
         if (seenSlugs.has(concertSlug)) {
-          await log(run.id, "WARN", `Duplicate concert entry: ${concert.concertTitle}`, {
+          await log(runId, "WARN", `Duplicate concert entry: ${concert.concertTitle}`, {
             slug: concertSlug,
           });
           await createAlert(
@@ -317,70 +351,83 @@ async function main() {
         let artistId: string | null = null;
         if (concert.artistName) {
           artistId = await upsertArtist(concert.artistName);
-          await log(run.id, "INFO", `Upserted artist: ${concert.artistName}`, {
+          await log(runId, "INFO", `Upserted artist: ${concert.artistName}`, {
             artistId,
           });
         } else {
-          await log(run.id, "WARN", `No artist name for: ${concert.concertTitle}`);
+          await log(runId, "WARN", `No artist name for: ${concert.concertTitle}`);
         }
 
         // Upsert Venue (use city or fallback)
         const venueCity = concert.city || "Unknown";
         const venueId = await upsertVenue(venueCity, concert.country);
-        await log(run.id, "INFO", `Upserted venue: ${venueCity}, ${concert.country ?? "Unknown"}`, {
+        await log(runId, "INFO", `Upserted venue: ${venueCity}, ${concert.country ?? "Unknown"}`, {
           venueId,
         });
 
         // Upsert Concert
-        const existing = await prisma.concert.findUnique({
-          where: { slug: concertSlug },
-        });
+        const { data: existing } = await supabase
+          .from("concerts")
+          .select("id")
+          .eq("slug", concertSlug)
+          .maybeSingle();
 
         if (existing) {
-          await prisma.concert.update({
-            where: { slug: concertSlug },
-            data: {
+          const { error: updateError } = await supabase
+            .from("concerts")
+            .update({
               title: concert.concertTitle,
               status: concert.status,
-              eventType: concert.eventType,
+              event_type: concert.eventType,
               source: concert.source,
-              sourceUrl: concert.sourceUrl,
-              imageUrl: concert.imageUrl,
-              venueId,
-              lastSyncedAt: new Date(),
-            },
-          });
+              source_url: concert.sourceUrl,
+              image_url: concert.imageUrl,
+              venue_id: venueId,
+              last_synced_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("slug", concertSlug);
+          if (updateError) throw updateError;
+
           if (artistId) {
-            await prisma.concert.update({
-              where: { slug: concertSlug },
-              data: { artists: { set: [{ id: artistId }] } },
-            });
+            // Upsert the artist link (ignore if already exists)
+            await supabase.from("concert_artists").upsert(
+              { concert_id: existing.id, artist_id: artistId },
+              { onConflict: "concert_id,artist_id", ignoreDuplicates: true }
+            );
           }
           recordsUpdated++;
-          await log(run.id, "INFO", `Updated concert: ${concert.concertTitle}`, {
+          await log(runId, "INFO", `Updated concert: ${concert.concertTitle}`, {
             concertId: existing.id,
           });
         } else {
-          const created = await prisma.concert.create({
-            data: {
+          const concertId = crypto.randomUUID();
+          const { error: insertError } = await supabase
+            .from("concerts")
+            .insert({
+              id: concertId,
               title: concert.concertTitle,
               slug: concertSlug,
-              date: new Date(), // placeholder — date extraction requires individual page scraping
+              date: new Date().toISOString(), // placeholder — date extraction requires individual page scraping
               status: concert.status,
-              eventType: concert.eventType,
+              event_type: concert.eventType,
               source: concert.source,
-              sourceUrl: concert.sourceUrl,
-              imageUrl: concert.imageUrl,
-              venueId,
-              lastSyncedAt: new Date(),
-              ...(artistId
-                ? { artists: { connect: [{ id: artistId }] } }
-                : {}),
-            },
-          });
+              source_url: concert.sourceUrl,
+              image_url: concert.imageUrl,
+              venue_id: venueId,
+              last_synced_at: new Date().toISOString(),
+            });
+          if (insertError) throw insertError;
+
+          if (artistId) {
+            await supabase.from("concert_artists").insert({
+              concert_id: concertId,
+              artist_id: artistId,
+            });
+          }
           recordsCreated++;
-          await log(run.id, "INFO", `Created concert: ${concert.concertTitle}`, {
-            concertId: created.id,
+          await log(runId, "INFO", `Created concert: ${concert.concertTitle}`, {
+            concertId,
           });
         }
 
@@ -392,7 +439,7 @@ async function main() {
         const message =
           err instanceof Error ? err.message : String(err);
         await log(
-          run.id,
+          runId,
           "ERROR",
           `Failed to process: ${concert.concertTitle} — ${message}`,
           { concert }
@@ -411,19 +458,20 @@ async function main() {
           ? "FAILED"
           : "SUCCESS";
 
-    await prisma.scraperRun.update({
-      where: { id: run.id },
-      data: {
+    await supabase
+      .from("scraper_runs")
+      .update({
         status: finalStatus,
-        finishedAt: new Date(),
-        recordsCreated,
-        recordsUpdated,
-        recordsFailed,
-      },
-    });
+        finished_at: new Date().toISOString(),
+        records_created: recordsCreated,
+        records_updated: recordsUpdated,
+        records_failed: recordsFailed,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", runId);
 
     await log(
-      run.id,
+      runId,
       "INFO",
       `Scraper finished: ${finalStatus} — created: ${recordsCreated}, updated: ${recordsUpdated}, failed: ${recordsFailed}`
     );
@@ -435,22 +483,21 @@ async function main() {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await prisma.scraperRun.update({
-      where: { id: run.id },
-      data: {
+    await supabase
+      .from("scraper_runs")
+      .update({
         status: "FAILED",
-        finishedAt: new Date(),
-        recordsCreated,
-        recordsUpdated,
-        recordsFailed,
-        errorMessage: message,
-      },
-    });
-    await log(run.id, "ERROR", `Scraper failed: ${message}`);
+        finished_at: new Date().toISOString(),
+        records_created: recordsCreated,
+        records_updated: recordsUpdated,
+        records_failed: recordsFailed,
+        error_message: message,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", runId);
+    await log(runId, "ERROR", `Scraper failed: ${message}`);
     console.error(`\nScraper FAILED: ${message}`);
     process.exit(1);
-  } finally {
-    await prisma.$disconnect();
   }
 }
 

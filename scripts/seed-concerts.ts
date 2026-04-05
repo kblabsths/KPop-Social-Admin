@@ -1,11 +1,13 @@
 import "dotenv/config";
-import { PrismaClient } from "@/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { createClient } from "@supabase/supabase-js";
 import * as fs from "fs";
 import * as path from "path";
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-const prisma = new PrismaClient({ adapter });
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { persistSession: false } }
+);
 
 interface ScrapedConcert {
   title: string;
@@ -32,6 +34,43 @@ function slugify(text: string): string {
     .trim();
 }
 
+async function upsertArtist(name: string, slug: string): Promise<string> {
+  const { data: existing } = await supabase
+    .from("artists")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (existing) return existing.id;
+
+  const id = crypto.randomUUID();
+  const { error } = await supabase
+    .from("artists")
+    .insert({ id, name, slug, type: "group" });
+  if (error) throw error;
+  return id;
+}
+
+async function upsertVenue(
+  name: string,
+  slug: string,
+  city: string,
+  country: string
+): Promise<string> {
+  const { data: existing } = await supabase
+    .from("venues")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (existing) return existing.id;
+
+  const id = crypto.randomUUID();
+  const { error } = await supabase
+    .from("venues")
+    .insert({ id, name, slug, city, country });
+  if (error) throw error;
+  return id;
+}
+
 async function main() {
   const dataPath = path.join(__dirname, "..", "data", "scraped-concerts.json");
   const raw = fs.readFileSync(dataPath, "utf-8");
@@ -46,12 +85,8 @@ async function main() {
   const artistMap = new Map<string, string>(); // name -> id
   for (const name of artistNames) {
     const slug = slugify(name);
-    const artist = await prisma.artist.upsert({
-      where: { slug },
-      create: { name, slug, type: "group" },
-      update: {},
-    });
-    artistMap.set(name, artist.id);
+    const id = await upsertArtist(name, slug);
+    artistMap.set(name, id);
   }
   console.log(`Upserted ${artistMap.size} artists`);
 
@@ -71,12 +106,8 @@ async function main() {
   const venueMap = new Map<string, string>(); // "city|country" -> id
   for (const [key, { city, country }] of venueKeys) {
     const slug = slugify(`${city}-${country}`);
-    const venue = await prisma.venue.upsert({
-      where: { slug },
-      create: { name: city, slug, city, country },
-      update: {},
-    });
-    venueMap.set(key, venue.id);
+    const id = await upsertVenue(city, slug, city, country);
+    venueMap.set(key, id);
   }
   console.log(`Upserted ${venueMap.size} venues`);
 
@@ -105,13 +136,15 @@ async function main() {
     }
 
     // All dates are null in this dataset; use a placeholder date
-    const concertDate = c.date ? new Date(c.date) : new Date("2026-12-31");
+    const concertDate = c.date ? new Date(c.date).toISOString() : new Date("2026-12-31").toISOString();
     const slug = slugify(c.title) || slugify(`${c.artist.name}-${city}`);
 
     // Use sourceUrl as unique key to avoid duplicates
-    const existing = await prisma.concert.findFirst({
-      where: { sourceUrl: c.sourceUrl },
-    });
+    const { data: existing } = await supabase
+      .from("concerts")
+      .select("id")
+      .eq("source_url", c.sourceUrl)
+      .maybeSingle();
 
     if (existing) {
       skipped++;
@@ -119,35 +152,44 @@ async function main() {
     }
 
     // Ensure slug uniqueness by appending city if needed
-    const existingSlug = await prisma.concert.findUnique({
-      where: { slug },
-    });
+    const { data: existingSlug } = await supabase
+      .from("concerts")
+      .select("id")
+      .eq("slug", slug)
+      .maybeSingle();
     const finalSlug = existingSlug ? slugify(`${c.title}-${city}`) : slug;
 
     // Check again for slug collision
-    const existingFinalSlug = await prisma.concert.findUnique({
-      where: { slug: finalSlug },
-    });
+    const { data: existingFinalSlug } = await supabase
+      .from("concerts")
+      .select("id")
+      .eq("slug", finalSlug)
+      .maybeSingle();
     if (existingFinalSlug) {
-      // Already exists with this slug, skip
       skipped++;
       continue;
     }
 
-    await prisma.concert.create({
-      data: {
-        title: c.title,
-        slug: finalSlug,
-        date: concertDate,
-        status: c.status || "scheduled",
-        eventType: c.eventType || "concert",
-        source: "kpopofficial.com",
-        sourceUrl: c.sourceUrl,
-        imageUrl: c.imageUrl,
-        venueId,
-        artists: { connect: [{ id: artistId }] },
-      },
+    const concertId = crypto.randomUUID();
+    const { error: insertError } = await supabase.from("concerts").insert({
+      id: concertId,
+      title: c.title,
+      slug: finalSlug,
+      date: concertDate,
+      status: c.status || "scheduled",
+      event_type: c.eventType || "concert",
+      source: "kpopofficial.com",
+      source_url: c.sourceUrl,
+      image_url: c.imageUrl,
+      venue_id: venueId,
     });
+    if (insertError) throw insertError;
+
+    const { error: junctionError } = await supabase
+      .from("concert_artists")
+      .insert({ concert_id: concertId, artist_id: artistId });
+    if (junctionError) throw junctionError;
+
     created++;
   }
 
@@ -156,9 +198,7 @@ async function main() {
   );
 }
 
-main()
-  .catch((e) => {
-    console.error("Seed failed:", e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+main().catch((e) => {
+  console.error("Seed failed:", e);
+  process.exit(1);
+});
