@@ -1,158 +1,142 @@
 import { getSupabaseAdmin } from "@/lib/supabase";
+import Link from "next/link";
 
 export const revalidate = 30;
 
 const STALE_THRESHOLD_HOURS = 24;
+
+function formatAge(isoString: string): string {
+  const ms = Date.now() - new Date(isoString).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function formatDuration(start: string, end: string | null | undefined): string {
+  if (!end) return "running…";
+  const ms = new Date(end).getTime() - new Date(start).getTime();
+  const secs = Math.floor(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  return `${Math.floor(secs / 60)}m ${secs % 60}s`;
+}
 
 export default async function AdminOverview() {
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
 
   const [
-    // Legacy: concerts (may not exist in all envs)
-    totalConcertsResult,
-    concertsWithDescriptionResult,
-    concertsWithArtistsResult,
-    concertsWithTicketUrlResult,
     // Current entities
     totalGroupsResult,
     activeGroupsResult,
     totalIdolsResult,
     totalEventsResult,
     upcomingEventsResult,
-    // Scraper sources
-    bitScrapedResult,
-    tmScrapedResult,
-    ebScrapedResult,
-    // Shared
-    totalArtistsResult,
-    totalVenuesResult,
     totalUsersResult,
+    // Data completeness — events
+    eventsWithImageResult,
+    eventsWithTicketUrlResult,
+    eventsWithVenueResult,
+    // Data completeness — groups / idols
+    groupsWithImageResult,
+    idolsWithImageResult,
+    // Alerts
     activeAlertsResult,
-    allRunsResult,
+    criticalAlertsResult,
     recentAlertsResult,
+    // Scraper runs
+    allRunsResult,
   ] = await Promise.all([
-    supabase.from("concerts").select("*", { count: "exact", head: true }),
-    supabase
-      .from("concerts")
-      .select("*", { count: "exact", head: true })
-      .not("description", "is", null),
-    supabase
-      .from("concerts")
-      .select("id, concert_artists!inner(concert_id)", { count: "exact", head: true }),
-    supabase
-      .from("concerts")
-      .select("*", { count: "exact", head: true })
-      .not("ticket_url", "is", null),
     supabase.from("groups").select("*", { count: "exact", head: true }),
     supabase.from("groups").select("*", { count: "exact", head: true }).eq("status", "active"),
     supabase.from("idols").select("*", { count: "exact", head: true }),
     supabase.from("events").select("*", { count: "exact", head: true }),
     supabase.from("events").select("*", { count: "exact", head: true }).gte("date", now),
-    supabase.from("scraped_events").select("*", { count: "exact", head: true }).eq("source", "bandsintown"),
-    supabase.from("scraped_events").select("*", { count: "exact", head: true }).eq("source", "ticketmaster"),
-    supabase.from("scraped_events").select("*", { count: "exact", head: true }).eq("source", "eventbrite"),
-    supabase.from("artists").select("*", { count: "exact", head: true }),
-    supabase.from("venues").select("*", { count: "exact", head: true }),
     supabase.from("web_users").select("*", { count: "exact", head: true }),
+    supabase.from("events").select("*", { count: "exact", head: true }).not("image_url", "is", null),
+    supabase.from("events").select("*", { count: "exact", head: true }).not("ticket_url", "is", null),
+    supabase.from("events").select("*", { count: "exact", head: true }).not("venue_id", "is", null),
+    supabase.from("groups").select("*", { count: "exact", head: true }).not("image_url", "is", null),
+    supabase.from("idols").select("*", { count: "exact", head: true }).not("image_url", "is", null),
     supabase
       .from("data_quality_alerts")
       .select("*", { count: "exact", head: true })
       .is("resolved_at", null),
     supabase
-      .from("scraper_runs")
-      .select("id, source, status, started_at, completed_at, events_new, events_updated, events_errored")
-      .order("started_at", { ascending: false })
-      .limit(100),
+      .from("data_quality_alerts")
+      .select("*", { count: "exact", head: true })
+      .is("resolved_at", null)
+      .in("severity", ["CRITICAL", "HIGH"]),
     supabase
       .from("data_quality_alerts")
       .select("*")
       .is("resolved_at", null)
       .order("created_at", { ascending: false })
-      .limit(10),
+      .limit(5),
+    supabase
+      .from("scraper_runs")
+      .select("id, source, status, started_at, completed_at, events_new, events_updated, events_errored")
+      .order("started_at", { ascending: false })
+      .limit(200),
   ]);
 
-  const totalConcerts = totalConcertsResult.count ?? 0;
-  const concertsWithDescription = concertsWithDescriptionResult.count ?? 0;
-  const concertsWithArtists = concertsWithArtistsResult.count ?? 0;
-  const concertsWithTicketUrl = concertsWithTicketUrlResult.count ?? 0;
   const totalGroups = totalGroupsResult.count ?? 0;
   const activeGroups = activeGroupsResult.count ?? 0;
   const totalIdols = totalIdolsResult.count ?? 0;
   const totalEvents = totalEventsResult.count ?? 0;
   const upcomingEvents = upcomingEventsResult.count ?? 0;
-  const bitCount = bitScrapedResult.count ?? 0;
-  const tmCount = tmScrapedResult.count ?? 0;
-  const ebCount = ebScrapedResult.count ?? 0;
-  const totalArtists = totalArtistsResult.count ?? 0;
-  const totalVenues = totalVenuesResult.count ?? 0;
   const totalUsers = totalUsersResult.count ?? 0;
+
+  const eventsWithImage = eventsWithImageResult.count ?? 0;
+  const eventsWithTicketUrl = eventsWithTicketUrlResult.count ?? 0;
+  const eventsWithVenue = eventsWithVenueResult.count ?? 0;
+  const groupsWithImage = groupsWithImageResult.count ?? 0;
+  const idolsWithImage = idolsWithImageResult.count ?? 0;
+
   const activeAlerts = activeAlertsResult.count ?? 0;
-  const allRuns = allRunsResult.data ?? [];
-  const latestRun = allRuns[0] ?? null;
+  const criticalAlerts = criticalAlertsResult.count ?? 0;
   const recentAlerts = recentAlertsResult.data ?? [];
 
-  const scraperMap = new Map<
-    string,
-    { count: number; recordsCreated: number; recordsUpdated: number; recordsFailed: number }
-  >();
+  const allRuns = allRunsResult.data ?? [];
+  const latestRun = allRuns[0] ?? null;
+
+  // ── Per-source health ──────────────────────────────────────────────────────
+  type SourceHealth = {
+    source: string;
+    totalRuns: number;
+    successCount: number;
+    lastRun: (typeof allRuns)[0] | null;
+  };
+  const sourceMap = new Map<string, SourceHealth>();
   for (const run of allRuns) {
-    const existing = scraperMap.get(run.source) ?? {
-      count: 0,
-      recordsCreated: 0,
-      recordsUpdated: 0,
-      recordsFailed: 0,
+    const entry = sourceMap.get(run.source) ?? {
+      source: run.source,
+      totalRuns: 0,
+      successCount: 0,
+      lastRun: null,
     };
-    scraperMap.set(run.source, {
-      count: existing.count + 1,
-      recordsCreated: existing.recordsCreated + (run.events_new ?? 0),
-      recordsUpdated: existing.recordsUpdated + (run.events_updated ?? 0),
-      recordsFailed: existing.recordsFailed + (run.events_errored ?? 0),
-    });
+    entry.totalRuns += 1;
+    if (run.status === "completed") entry.successCount += 1;
+    if (entry.lastRun === null) entry.lastRun = run; // already ordered desc
+    sourceMap.set(run.source, entry);
   }
-  const scraperNames = Array.from(scraperMap.keys());
+  const sourceHealthList = Array.from(sourceMap.values());
 
-  const scraperLatestRuns = scraperNames.map((name) =>
-    allRuns.find((r) => r.source === name) ?? null
-  );
-  const scraperSuccessCounts = scraperNames.map(
-    (name) => allRuns.filter((r) => r.source === name && r.status === "completed").length
-  );
-
-  const scraperStats = scraperNames.map((name) => ({
-    scraperName: name,
-    ...scraperMap.get(name)!,
-  }));
-
-  const recentRuns = allRuns.slice(0, 10);
-
-  const nowMs = Date.now();
+  // ── Overall freshness ─────────────────────────────────────────────────────
   const hoursSinceLastRun = latestRun
-    ? (nowMs - new Date(latestRun.started_at).getTime()) / (60 * 60 * 1000)
+    ? (Date.now() - new Date(latestRun.started_at).getTime()) / 3600000
     : null;
-  const isStale =
-    !latestRun ||
-    (hoursSinceLastRun !== null && hoursSinceLastRun > STALE_THRESHOLD_HOURS);
+  const isStale = !latestRun || (hoursSinceLastRun ?? Infinity) > STALE_THRESHOLD_HOURS;
 
-  const pctDescription =
-    totalConcerts > 0
-      ? Math.round((concertsWithDescription / totalConcerts) * 1000) / 10
-      : 0;
-  const pctArtists =
-    totalConcerts > 0
-      ? Math.round((concertsWithArtists / totalConcerts) * 1000) / 10
-      : 0;
-  const pctTicketUrl =
-    totalConcerts > 0
-      ? Math.round((concertsWithTicketUrl / totalConcerts) * 1000) / 10
-      : 0;
-
+  // ── Activity feed (last 10) ────────────────────────────────────────────────
+  const recentRuns = allRuns.slice(0, 10);
   const activityFeed = [
     ...recentRuns.map((r) => ({
       type: "scraper" as const,
       time: new Date(r.started_at),
       label: `${r.source} — ${r.status}`,
-      detail: `${r.events_new} created, ${r.events_updated} updated${r.events_errored > 0 ? `, ${r.events_errored} failed` : ""}`,
+      detail: `+${r.events_new ?? 0} new, ~${r.events_updated ?? 0} updated${(r.events_errored ?? 0) > 0 ? `, ${r.events_errored} err` : ""}`,
       status: r.status,
     })),
     ...recentAlerts.map((a) => ({
@@ -173,8 +157,18 @@ export default async function AdminOverview() {
     CRITICAL: "text-red-600 dark:text-red-400",
     HIGH: "text-orange-600 dark:text-orange-400",
     MEDIUM: "text-yellow-600 dark:text-yellow-400",
-    LOW: "text-blue-600 dark:text-blue-400",
+    LOW: "text-blue-500 dark:text-blue-400",
   };
+
+  const statusBadge: Record<string, string> = {
+    completed: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+    failed: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+    running: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  };
+
+  function pct(n: number, total: number) {
+    return total > 0 ? Math.round((n / total) * 1000) / 10 : 0;
+  }
 
   return (
     <div className="space-y-4">
@@ -182,178 +176,181 @@ export default async function AdminOverview() {
         Overview
       </h1>
 
-      {/* Freshness bar */}
+      {/* ── Freshness bar ── */}
       <div
-        className={`w-full border-l-4 px-3 py-2 text-xs font-mono ${
+        className={`w-full border-l-4 px-3 py-2 text-xs font-mono flex flex-wrap items-center gap-x-4 gap-y-1 ${
           isStale
             ? "border-red-500 bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-300"
             : "border-green-500 bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-300"
         }`}
       >
         <span className="font-bold">{isStale ? "⚠ DATA STALE" : "✓ DATA FRESH"}</span>
-        {latestRun && (
-          <span className="ml-3">
-            Last scrape: {new Date(latestRun.started_at).toISOString().replace("T", " ").slice(0, 19)} UTC
-            {hoursSinceLastRun !== null && (
-              <span className="ml-1 opacity-70">
-                ({hoursSinceLastRun < 1
-                  ? `${Math.round(hoursSinceLastRun * 60)}m ago`
-                  : `${Math.round(hoursSinceLastRun * 10) / 10}h ago`})
-              </span>
-            )}
+        {latestRun ? (
+          <span className="opacity-80">
+            Last scrape: {new Date(latestRun.started_at).toISOString().replace("T", " ").slice(0, 16)} UTC
+            &nbsp;({formatAge(latestRun.started_at)})
+          </span>
+        ) : (
+          <span className="opacity-80">No scraper runs recorded.</span>
+        )}
+        {criticalAlerts > 0 && (
+          <span className="font-semibold text-red-700 dark:text-red-300">
+            ▲ {criticalAlerts} critical alert{criticalAlerts !== 1 ? "s" : ""}
           </span>
         )}
-        {isStale && !latestRun && <span className="ml-3">No scraper runs recorded.</span>}
       </div>
 
-      {/* Primary entity counts */}
+      {/* ── Entity counts ── */}
       <section>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
-          Current Entities
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+          Entities
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
           <StatCard label="Groups" value={totalGroups} />
-          <StatCard
-            label="Active Groups"
-            value={activeGroups}
-            color="text-green-600 dark:text-green-400"
-          />
+          <StatCard label="Active Groups" value={activeGroups} color="text-green-600 dark:text-green-400" />
           <StatCard label="Idols" value={totalIdols} />
           <StatCard label="Events" value={totalEvents} />
-          <StatCard
-            label="Upcoming Events"
-            value={upcomingEvents}
-            color="text-blue-600 dark:text-blue-400"
-          />
-        </div>
-      </section>
-
-      {/* Scraper source health */}
-      <section>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
-          Scraper Source Health
-        </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <StatCard label="Bandsintown" value={bitCount} color="text-purple-600 dark:text-purple-400" />
-          <StatCard label="Ticketmaster" value={tmCount} color="text-blue-600 dark:text-blue-400" />
-          <StatCard label="Eventbrite" value={ebCount} color="text-orange-600 dark:text-orange-400" />
-          <StatCard label="Venues" value={totalVenues} />
-        </div>
-      </section>
-
-      {/* Data completeness panels */}
-      <section>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
-          Data Completeness
-        </h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-          <CompletenessCard label="Concerts w/ description" value={pctDescription} count={concertsWithDescription} total={totalConcerts} />
-          <CompletenessCard label="Concerts w/ artist" value={pctArtists} count={concertsWithArtists} total={totalConcerts} />
-          <CompletenessCard label="Concerts w/ ticket URL" value={pctTicketUrl} count={concertsWithTicketUrl} total={totalConcerts} />
-          <StatCard label="Total concerts" value={totalConcerts} />
-          <StatCard label="Artists (legacy)" value={totalArtists} color="text-gray-400 dark:text-gray-600" />
+          <StatCard label="Upcoming" value={upcomingEvents} color="text-blue-600 dark:text-blue-400" />
           <StatCard label="Users" value={totalUsers} />
         </div>
       </section>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <StatCard label="Active alerts" value={activeAlerts} alert={activeAlerts > 0} />
-        <StatCard label="Scraper runs" value={recentRuns.length > 0 ? `${recentRuns.length} recent` : "0"} />
-        <StatCard
-          label="Latest status"
-          value={latestRun?.status ?? "NONE"}
-          color={statusColor[latestRun?.status ?? ""] ?? "text-gray-600 dark:text-gray-400"}
-        />
-      </div>
+      {/* ── Alerts ── */}
+      {activeAlerts > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Active Alerts
+          </h2>
+          <div className="grid grid-cols-2 gap-2 md:max-w-xs">
+            <StatCard label="Total Active" value={activeAlerts} alert={activeAlerts > 0} />
+            <StatCard label="Critical / High" value={criticalAlerts} alert={criticalAlerts > 0} />
+          </div>
+          {recentAlerts.length > 0 && (
+            <div className="mt-2 border border-gray-300 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-800">
+              {recentAlerts.map((a) => (
+                <div key={a.id} className="flex items-start gap-3 px-3 py-1.5 text-xs font-mono hover:bg-gray-50 dark:hover:bg-gray-900">
+                  <span className={`shrink-0 font-semibold w-20 ${statusColor[a.severity] ?? ""}`}>{a.severity}</span>
+                  <span className="shrink-0 text-gray-500 dark:text-gray-400 w-28">{a.alert_type}</span>
+                  <span className="truncate text-gray-700 dark:text-gray-300">{a.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="mt-1 text-[10px] font-mono text-gray-400">
+            <Link href="/alerts" className="underline hover:text-gray-600">View all alerts →</Link>
+          </p>
+        </section>
+      )}
 
-      {/* Data source assessment table */}
+      {/* ── Scraper source health ── */}
       <section>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
-          Data Sources
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+          Scraper Health
         </h2>
-        <div className="border border-gray-300 dark:border-gray-700 overflow-hidden">
-          <table className="w-full text-xs font-mono">
-            <thead>
-              <tr className="bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-left">
-                <th className="px-3 py-1.5 font-medium">Source</th>
-                <th className="px-3 py-1.5 font-medium text-right">Total Runs</th>
-                <th className="px-3 py-1.5 font-medium text-right">Records</th>
-                <th className="px-3 py-1.5 font-medium text-right">Success Rate</th>
-                <th className="px-3 py-1.5 font-medium">Last Run</th>
-                <th className="px-3 py-1.5 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {scraperStats.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-3 py-2 text-gray-400 text-center">
-                    No scraper data yet.
-                  </td>
+        {sourceHealthList.length === 0 ? (
+          <div className="border border-gray-300 dark:border-gray-700 px-3 py-4 text-center text-xs font-mono text-gray-400">
+            No scraper runs recorded yet.
+          </div>
+        ) : (
+          <div className="border border-gray-300 dark:border-gray-700 overflow-hidden">
+            <table className="w-full text-xs font-mono">
+              <thead>
+                <tr className="bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-left">
+                  <th className="px-3 py-1.5 font-medium">Source</th>
+                  <th className="px-3 py-1.5 font-medium">Last Run</th>
+                  <th className="px-3 py-1.5 font-medium">Status</th>
+                  <th className="px-3 py-1.5 font-medium">Duration</th>
+                  <th className="px-3 py-1.5 font-medium text-right">+New</th>
+                  <th className="px-3 py-1.5 font-medium text-right">~Upd</th>
+                  <th className="px-3 py-1.5 font-medium text-right">Err</th>
+                  <th className="px-3 py-1.5 font-medium text-right">Success Rate</th>
+                  <th className="px-3 py-1.5 font-medium text-right">Total Runs</th>
                 </tr>
-              ) : (
-                scraperStats.map((stat, i) => {
-                  const latest = scraperLatestRuns[i];
-                  const totalRuns = stat.count;
-                  const successCount = scraperSuccessCounts[i];
-                  const rate =
-                    totalRuns > 0 ? Math.round((successCount / totalRuns) * 1000) / 10 : 0;
-                  const totalRecords = stat.recordsCreated + stat.recordsUpdated;
+              </thead>
+              <tbody>
+                {sourceHealthList.map((s) => {
+                  const lr = s.lastRun;
+                  const rate = s.totalRuns > 0 ? Math.round((s.successCount / s.totalRuns) * 1000) / 10 : 0;
+                  const rateColor =
+                    rate >= 90
+                      ? "text-green-600 dark:text-green-400"
+                      : rate >= 70
+                        ? "text-yellow-600 dark:text-yellow-400"
+                        : "text-red-600 dark:text-red-400";
                   return (
-                    <tr
-                      key={stat.scraperName}
-                      className="border-t border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900"
-                    >
-                      <td className="px-3 py-1.5 text-gray-800 dark:text-gray-200">
-                        {stat.scraperName}
-                      </td>
-                      <td className="px-3 py-1.5 text-right text-gray-600 dark:text-gray-400">
-                        {totalRuns}
-                      </td>
-                      <td className="px-3 py-1.5 text-right text-gray-600 dark:text-gray-400">
-                        {totalRecords}
-                      </td>
-                      <td className="px-3 py-1.5 text-right">
-                        <span
-                          className={
-                            rate >= 90
-                              ? "text-green-600 dark:text-green-400"
-                              : rate >= 70
-                                ? "text-yellow-600 dark:text-yellow-400"
-                                : "text-red-600 dark:text-red-400"
-                          }
-                        >
-                          {rate}%
-                        </span>
+                    <tr key={s.source} className="border-t border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900">
+                      <td className="px-3 py-1.5 font-medium text-gray-800 dark:text-gray-200">
+                        <Link href="/scrapers" className="hover:underline">{s.source}</Link>
                       </td>
                       <td className="px-3 py-1.5 text-gray-500 dark:text-gray-400">
-                        {latest
-                          ? new Date(latest.started_at).toISOString().replace("T", " ").slice(0, 16)
-                          : "—"}
+                        {lr ? formatAge(lr.started_at) : "—"}
                       </td>
                       <td className="px-3 py-1.5">
-                        <span className={statusColor[latest?.status ?? ""] ?? "text-gray-400"}>
-                          {latest?.status ?? "—"}
-                        </span>
+                        {lr ? (
+                          <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${statusBadge[lr.status] ?? ""}`}>
+                            {lr.status}
+                          </span>
+                        ) : "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-gray-500 dark:text-gray-400">
+                        {lr ? formatDuration(lr.started_at, lr.completed_at) : "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-green-700 dark:text-green-400">
+                        {lr ? `+${lr.events_new ?? 0}` : "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">
+                        {lr ? `~${lr.events_updated ?? 0}` : "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-right">
+                        {lr && (lr.events_errored ?? 0) > 0 ? (
+                          <span className="text-red-600 dark:text-red-400">{lr.events_errored}</span>
+                        ) : (
+                          <span className="text-gray-300 dark:text-gray-700">{lr ? "0" : "—"}</span>
+                        )}
+                      </td>
+                      <td className={`px-3 py-1.5 text-right font-semibold ${rateColor}`}>
+                        {rate}%
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-gray-500 dark:text-gray-400">
+                        {s.totalRuns}
                       </td>
                     </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="mt-1 text-[10px] font-mono text-gray-400">
+          <Link href="/scrapers" className="underline hover:text-gray-600">View all scraper runs →</Link>
+        </p>
       </section>
 
-      {/* Recent activity feed */}
+      {/* ── Data completeness ── */}
       <section>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+          Data Completeness
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+          <CompletenessCard label="Events w/ Image" value={pct(eventsWithImage, totalEvents)} count={eventsWithImage} total={totalEvents} />
+          <CompletenessCard label="Events w/ Ticket URL" value={pct(eventsWithTicketUrl, totalEvents)} count={eventsWithTicketUrl} total={totalEvents} />
+          <CompletenessCard label="Events w/ Venue" value={pct(eventsWithVenue, totalEvents)} count={eventsWithVenue} total={totalEvents} />
+          <CompletenessCard label="Groups w/ Image" value={pct(groupsWithImage, totalGroups)} count={groupsWithImage} total={totalGroups} />
+          <CompletenessCard label="Idols w/ Image" value={pct(idolsWithImage, totalIdols)} count={idolsWithImage} total={totalIdols} />
+        </div>
+        <p className="mt-1 text-[10px] font-mono text-gray-400">
+          <Link href="/database" className="underline hover:text-gray-600">Full field-level completeness →</Link>
+        </p>
+      </section>
+
+      {/* ── Recent activity feed ── */}
+      <section>
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
           Recent Activity
         </h2>
         <div className="border border-gray-300 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-800">
           {activityFeed.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-gray-400 text-center font-mono">
-              No recent activity.
-            </div>
+            <div className="px-3 py-2 text-xs text-gray-400 text-center font-mono">No recent activity.</div>
           ) : (
             activityFeed.map((item, i) => (
               <div
@@ -363,19 +360,13 @@ export default async function AdminOverview() {
                 <span className="shrink-0 text-gray-400 dark:text-gray-500 w-32">
                   {item.time.toISOString().replace("T", " ").slice(0, 16)}
                 </span>
-                <span
-                  className={`shrink-0 w-4 text-center ${
-                    item.type === "alert" ? "text-orange-500" : "text-blue-500"
-                  }`}
-                >
+                <span className={`shrink-0 w-4 text-center ${item.type === "alert" ? "text-orange-500" : "text-blue-500"}`}>
                   {item.type === "alert" ? "▲" : "⟳"}
                 </span>
-                <span className={`font-semibold ${statusColor[item.status] ?? "text-gray-600 dark:text-gray-300"}`}>
+                <span className={`shrink-0 font-semibold ${statusColor[item.status] ?? "text-gray-600 dark:text-gray-300"}`}>
                   {item.label}
                 </span>
-                <span className="text-gray-500 dark:text-gray-400 truncate">
-                  {item.detail}
-                </span>
+                <span className="text-gray-500 dark:text-gray-400 truncate">{item.detail}</span>
               </div>
             ))
           )}
@@ -398,9 +389,7 @@ function CompletenessCard({
 }) {
   return (
     <div className="border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2">
-      <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">
-        {label}
-      </p>
+      <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">{label}</p>
       <p
         className={`text-lg font-bold font-mono ${
           value >= 90
@@ -412,9 +401,7 @@ function CompletenessCard({
       >
         {value}%
       </p>
-      <p className="text-[10px] font-mono text-gray-400">
-        {count}/{total}
-      </p>
+      <p className="text-[10px] font-mono text-gray-400">{count}/{total}</p>
     </div>
   );
 }
@@ -432,16 +419,10 @@ function StatCard({
 }) {
   return (
     <div className="border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2">
-      <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">
-        {label}
-      </p>
+      <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">{label}</p>
       <p
         className={`text-lg font-bold font-mono ${
-          color
-            ? color
-            : alert
-              ? "text-red-600 dark:text-red-400"
-              : "text-gray-800 dark:text-gray-200"
+          color ? color : alert ? "text-red-600 dark:text-red-400" : "text-gray-800 dark:text-gray-200"
         }`}
       >
         {value}
