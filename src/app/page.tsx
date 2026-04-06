@@ -6,12 +6,25 @@ const STALE_THRESHOLD_HOURS = 24;
 
 export default async function AdminOverview() {
   const supabase = getSupabaseAdmin();
+  const now = new Date().toISOString();
 
   const [
+    // Legacy: concerts (may not exist in all envs)
     totalConcertsResult,
     concertsWithDescriptionResult,
     concertsWithArtistsResult,
     concertsWithTicketUrlResult,
+    // Current entities
+    totalGroupsResult,
+    activeGroupsResult,
+    totalIdolsResult,
+    totalEventsResult,
+    upcomingEventsResult,
+    // Scraper sources
+    bitScrapedResult,
+    tmScrapedResult,
+    ebScrapedResult,
+    // Shared
     totalArtistsResult,
     totalVenuesResult,
     totalUsersResult,
@@ -31,6 +44,14 @@ export default async function AdminOverview() {
       .from("concerts")
       .select("*", { count: "exact", head: true })
       .not("ticket_url", "is", null),
+    supabase.from("groups").select("*", { count: "exact", head: true }),
+    supabase.from("groups").select("*", { count: "exact", head: true }).eq("status", "active"),
+    supabase.from("idols").select("*", { count: "exact", head: true }),
+    supabase.from("events").select("*", { count: "exact", head: true }),
+    supabase.from("events").select("*", { count: "exact", head: true }).gte("date", now),
+    supabase.from("scraped_events").select("*", { count: "exact", head: true }).eq("source", "bandsintown"),
+    supabase.from("scraped_events").select("*", { count: "exact", head: true }).eq("source", "ticketmaster"),
+    supabase.from("scraped_events").select("*", { count: "exact", head: true }).eq("source", "eventbrite"),
     supabase.from("artists").select("*", { count: "exact", head: true }),
     supabase.from("venues").select("*", { count: "exact", head: true }),
     supabase.from("web_users").select("*", { count: "exact", head: true }),
@@ -55,6 +76,14 @@ export default async function AdminOverview() {
   const concertsWithDescription = concertsWithDescriptionResult.count ?? 0;
   const concertsWithArtists = concertsWithArtistsResult.count ?? 0;
   const concertsWithTicketUrl = concertsWithTicketUrlResult.count ?? 0;
+  const totalGroups = totalGroupsResult.count ?? 0;
+  const activeGroups = activeGroupsResult.count ?? 0;
+  const totalIdols = totalIdolsResult.count ?? 0;
+  const totalEvents = totalEventsResult.count ?? 0;
+  const upcomingEvents = upcomingEventsResult.count ?? 0;
+  const bitCount = bitScrapedResult.count ?? 0;
+  const tmCount = tmScrapedResult.count ?? 0;
+  const ebCount = ebScrapedResult.count ?? 0;
   const totalArtists = totalArtistsResult.count ?? 0;
   const totalVenues = totalVenuesResult.count ?? 0;
   const totalUsers = totalUsersResult.count ?? 0;
@@ -97,9 +126,9 @@ export default async function AdminOverview() {
 
   const recentRuns = allRuns.slice(0, 10);
 
-  const now = Date.now();
+  const nowMs = Date.now();
   const hoursSinceLastRun = latestRun
-    ? (now - new Date(latestRun.started_at).getTime()) / (60 * 60 * 1000)
+    ? (nowMs - new Date(latestRun.started_at).getTime()) / (60 * 60 * 1000)
     : null;
   const isStale =
     !latestRun ||
@@ -178,18 +207,57 @@ export default async function AdminOverview() {
         {isStale && !latestRun && <span className="ml-3">No scraper runs recorded.</span>}
       </div>
 
+      {/* Primary entity counts */}
+      <section>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+          Current Entities
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
+          <StatCard label="Groups" value={totalGroups} />
+          <StatCard
+            label="Active Groups"
+            value={activeGroups}
+            color="text-green-600 dark:text-green-400"
+          />
+          <StatCard label="Idols" value={totalIdols} />
+          <StatCard label="Events" value={totalEvents} />
+          <StatCard
+            label="Upcoming Events"
+            value={upcomingEvents}
+            color="text-blue-600 dark:text-blue-400"
+          />
+        </div>
+      </section>
+
+      {/* Scraper source health */}
+      <section>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+          Scraper Source Health
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <StatCard label="Bandsintown" value={bitCount} color="text-purple-600 dark:text-purple-400" />
+          <StatCard label="Ticketmaster" value={tmCount} color="text-blue-600 dark:text-blue-400" />
+          <StatCard label="Eventbrite" value={ebCount} color="text-orange-600 dark:text-orange-400" />
+          <StatCard label="Venues" value={totalVenues} />
+        </div>
+      </section>
+
       {/* Data completeness panels */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-        <CompletenessCard label="Concerts w/ description" value={pctDescription} count={concertsWithDescription} total={totalConcerts} />
-        <CompletenessCard label="Concerts w/ artist" value={pctArtists} count={concertsWithArtists} total={totalConcerts} />
-        <CompletenessCard label="Concerts w/ ticket URL" value={pctTicketUrl} count={concertsWithTicketUrl} total={totalConcerts} />
-        <StatCard label="Total concerts" value={totalConcerts} />
-        <StatCard label="Total artists" value={totalArtists} />
-        <StatCard label="Total venues" value={totalVenues} />
-      </div>
+      <section>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+          Data Completeness
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+          <CompletenessCard label="Concerts w/ description" value={pctDescription} count={concertsWithDescription} total={totalConcerts} />
+          <CompletenessCard label="Concerts w/ artist" value={pctArtists} count={concertsWithArtists} total={totalConcerts} />
+          <CompletenessCard label="Concerts w/ ticket URL" value={pctTicketUrl} count={concertsWithTicketUrl} total={totalConcerts} />
+          <StatCard label="Total concerts" value={totalConcerts} />
+          <StatCard label="Artists (legacy)" value={totalArtists} color="text-gray-400 dark:text-gray-600" />
+          <StatCard label="Users" value={totalUsers} />
+        </div>
+      </section>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <StatCard label="Users" value={totalUsers} />
         <StatCard label="Active alerts" value={activeAlerts} alert={activeAlerts > 0} />
         <StatCard label="Scraper runs" value={recentRuns.length > 0 ? `${recentRuns.length} recent` : "0"} />
         <StatCard
