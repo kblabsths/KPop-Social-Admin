@@ -5,17 +5,9 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 const statusColors: Record<string, string> = {
-  RUNNING: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-  SUCCESS: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-  FAILED: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-  PARTIAL:
-    "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
-};
-
-const logLevelColors: Record<string, string> = {
-  INFO: "text-gray-500",
-  WARN: "text-yellow-600 dark:text-yellow-400",
-  ERROR: "text-red-600 dark:text-red-400",
+  running: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  completed: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  failed: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
 };
 
 export default async function ScraperRunDetail({
@@ -28,21 +20,20 @@ export default async function ScraperRunDetail({
 
   const { data: run } = await supabase
     .from("scraper_runs")
-    .select("*, scraper_logs(*)")
+    .select("*")
     .eq("id", id)
     .maybeSingle();
 
   if (!run) notFound();
 
-  const logs = (run.scraper_logs ?? []).sort(
-    (a: { created_at: string }, b: { created_at: string }) =>
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-  );
-
   const duration =
-    run.finished_at
-      ? `${Math.floor((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000)}s`
+    run.completed_at
+      ? `${Math.floor((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 1000)}s`
       : "Running...";
+
+  // error_log is a jsonb array of {message, step, timestamp, source_event_id?}
+  const errorLog: Array<{ message: string; step?: string; timestamp?: string; source_event_id?: string | null }> =
+    Array.isArray(run.error_log) ? run.error_log : [];
 
   return (
     <div>
@@ -55,13 +46,14 @@ export default async function ScraperRunDetail({
 
       <div className="flex items-center gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-          {run.scraper_name}
+          {run.source}
         </h1>
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[run.status] || ""}`}
         >
           {run.status}
         </span>
+        <span className="text-xs text-gray-400 font-mono">{run.scrape_mode}</span>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -78,49 +70,70 @@ export default async function ScraperRunDetail({
           </p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-          <p className="text-xs text-gray-500">Records Created</p>
-          <p className="text-sm font-medium text-green-600">{run.records_created}</p>
+          <p className="text-xs text-gray-500">Events New</p>
+          <p className="text-sm font-medium text-green-600">{run.events_new}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-          <p className="text-xs text-gray-500">Records Updated</p>
-          <p className="text-sm font-medium text-blue-600">{run.records_updated}</p>
+          <p className="text-xs text-gray-500">Events Updated</p>
+          <p className="text-sm font-medium text-blue-600">{run.events_updated}</p>
         </div>
       </div>
 
-      {run.records_failed > 0 && (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
+          <p className="text-xs text-gray-500">Events Found</p>
+          <p className="text-sm font-medium text-gray-900 dark:text-white">{run.events_found}</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
+          <p className="text-xs text-gray-500">Events Parsed</p>
+          <p className="text-sm font-medium text-gray-900 dark:text-white">{run.events_parsed}</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
+          <p className="text-xs text-gray-500">Events Skipped</p>
+          <p className="text-sm font-medium text-gray-900 dark:text-white">{run.events_skipped}</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
+          <p className="text-xs text-gray-500">Events Errored</p>
+          <p className={`text-sm font-medium ${run.events_errored > 0 ? "text-red-600" : "text-gray-900 dark:text-white"}`}>
+            {run.events_errored}
+          </p>
+        </div>
+      </div>
+
+      {run.errors > 0 && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950">
           <p className="text-sm text-red-800 dark:text-red-200">
-            <strong>{run.records_failed}</strong> records failed
+            <strong>{run.errors}</strong> error{run.errors !== 1 ? "s" : ""} recorded
           </p>
-          {run.error_message && (
-            <p className="mt-1 text-sm text-red-700 dark:text-red-300">
-              {run.error_message}
-            </p>
-          )}
         </div>
       )}
 
       <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
         <h2 className="border-b border-gray-200 px-4 py-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
-          Logs ({logs.length})
+          Error Log ({errorLog.length})
         </h2>
-        {logs.length === 0 ? (
-          <p className="p-4 text-sm text-gray-500">No log entries.</p>
+        {errorLog.length === 0 ? (
+          <p className="p-4 text-sm text-gray-500">No error log entries.</p>
         ) : (
           <div className="max-h-96 overflow-y-auto p-4 font-mono text-xs">
-            {logs.map((log: { id: string; created_at: string; level: string; message: string }) => (
-              <div key={log.id} className="flex gap-3 py-1">
-                <span className="shrink-0 text-gray-400">
-                  {new Date(log.created_at).toLocaleTimeString()}
+            {errorLog.map((entry, i) => (
+              <div key={i} className="flex gap-3 py-1 border-b border-gray-100 dark:border-gray-800 last:border-0">
+                {entry.timestamp && (
+                  <span className="shrink-0 text-gray-400">
+                    {new Date(entry.timestamp).toLocaleTimeString()}
+                  </span>
+                )}
+                {entry.step && (
+                  <span className="shrink-0 w-20 font-bold text-yellow-600 dark:text-yellow-400">
+                    {entry.step}
+                  </span>
+                )}
+                <span className="text-red-700 dark:text-red-300 break-all">
+                  {entry.message}
                 </span>
-                <span
-                  className={`shrink-0 w-12 font-bold ${logLevelColors[log.level] || ""}`}
-                >
-                  {log.level}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300 break-all">
-                  {log.message}
-                </span>
+                {entry.source_event_id && (
+                  <span className="shrink-0 text-gray-400">({entry.source_event_id})</span>
+                )}
               </div>
             ))}
           </div>

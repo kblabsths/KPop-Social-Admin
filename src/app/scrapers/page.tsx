@@ -4,20 +4,18 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 const statusColors: Record<string, string> = {
-  RUNNING: "text-blue-600 dark:text-blue-400",
-  SUCCESS: "text-green-600 dark:text-green-400",
-  FAILED: "text-red-600 dark:text-red-400",
-  PARTIAL: "text-yellow-600 dark:text-yellow-400",
+  running: "text-blue-600 dark:text-blue-400",
+  completed: "text-green-600 dark:text-green-400",
+  failed: "text-red-600 dark:text-red-400",
 };
 
 const statusBadgeColors: Record<string, string> = {
-  RUNNING: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-  SUCCESS: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-  FAILED: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-  PARTIAL: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  running: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  completed: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  failed: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
 };
 
-function formatDuration(start: string, end: string | null) {
+function formatDuration(start: string, end: string | null | undefined) {
   if (!end) return "Running...";
   const ms = new Date(end).getTime() - new Date(start).getTime();
   const secs = Math.floor(ms / 1000);
@@ -52,12 +50,6 @@ export default async function ScrapersPage({
     .range((page - 1) * pageSize, page * pageSize - 1);
   if (statusFilter) pageQueryBuilder = pageQueryBuilder.eq("status", statusFilter);
 
-  // Aggregate stats queries
-  let totalFilteredBuilder = supabase
-    .from("scraper_runs")
-    .select("*", { count: "exact", head: true });
-  if (statusFilter) totalFilteredBuilder = totalFilteredBuilder.eq("status", statusFilter);
-
   const [
     pageResult,
     totalAllRunsResult,
@@ -71,22 +63,22 @@ export default async function ScrapersPage({
     supabase
       .from("scraper_runs")
       .select("*", { count: "exact", head: true })
-      .eq("status", "SUCCESS"),
+      .eq("status", "completed"),
     supabase
       .from("scraper_runs")
       .select("*", { count: "exact", head: true })
-      .eq("status", "FAILED"),
+      .eq("status", "failed"),
     supabase
       .from("scraper_runs")
-      .select("finished_at")
-      .eq("status", "SUCCESS")
-      .order("finished_at", { ascending: false })
+      .select("completed_at")
+      .eq("status", "completed")
+      .order("completed_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
     supabase
       .from("scraper_runs")
-      .select("started_at, finished_at")
-      .not("finished_at", "is", null)
+      .select("started_at, completed_at")
+      .not("completed_at", "is", null)
       .order("started_at", { ascending: false })
       .limit(100),
   ]);
@@ -103,8 +95,8 @@ export default async function ScrapersPage({
 
   // Compute average duration from completed runs
   const durations = completedRuns
-    .filter((r) => r.finished_at)
-    .map((r) => new Date(r.finished_at!).getTime() - new Date(r.started_at).getTime());
+    .filter((r) => r.completed_at)
+    .map((r) => new Date(r.completed_at!).getTime() - new Date(r.started_at).getTime());
   const avgDurationMs =
     durations.length > 0
       ? durations.reduce((a, b) => a + b, 0) / durations.length
@@ -151,8 +143,8 @@ export default async function ScrapersPage({
         <StatCard
           label="Last Success"
           value={
-            lastSuccess?.finished_at
-              ? new Date(lastSuccess.finished_at).toISOString().replace("T", " ").slice(0, 16)
+            lastSuccess?.completed_at
+              ? new Date(lastSuccess.completed_at).toISOString().replace("T", " ").slice(0, 16)
               : "--"
           }
         />
@@ -170,7 +162,7 @@ export default async function ScrapersPage({
         >
           All ({totalAllRuns})
         </Link>
-        {(["RUNNING", "SUCCESS", "FAILED", "PARTIAL"] as const).map((s) => (
+        {(["running", "completed", "failed"] as const).map((s) => (
           <Link
             key={s}
             href={`/scrapers?status=${s}`}
@@ -199,14 +191,14 @@ export default async function ScrapersPage({
           <table className="w-full text-[11px] font-mono">
             <thead>
               <tr className="bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-left">
-                <th className="px-2 py-1.5 font-medium">Name</th>
+                <th className="px-2 py-1.5 font-medium">Source</th>
                 <th className="px-2 py-1.5 font-medium">Status</th>
                 <th className="px-2 py-1.5 font-medium">Started</th>
                 <th className="px-2 py-1.5 font-medium">Duration</th>
-                <th className="px-2 py-1.5 font-medium text-right">Created</th>
+                <th className="px-2 py-1.5 font-medium text-right">New</th>
                 <th className="px-2 py-1.5 font-medium text-right">Updated</th>
-                <th className="px-2 py-1.5 font-medium text-right">Failed</th>
-                <th className="px-2 py-1.5 font-medium">Error</th>
+                <th className="px-2 py-1.5 font-medium text-right">Errored</th>
+                <th className="px-2 py-1.5 font-medium">Errors</th>
               </tr>
             </thead>
             <tbody>
@@ -220,7 +212,7 @@ export default async function ScrapersPage({
                       href={`/scrapers/${run.id}`}
                       className="font-medium text-purple-600 hover:underline dark:text-purple-400"
                     >
-                      {run.scraper_name}
+                      {run.source}
                     </Link>
                   </td>
                   <td className="px-2 py-1.5">
@@ -234,26 +226,24 @@ export default async function ScrapersPage({
                     {new Date(run.started_at).toISOString().replace("T", " ").slice(0, 16)}
                   </td>
                   <td className="px-2 py-1.5 text-gray-500 dark:text-gray-400">
-                    {formatDuration(run.started_at, run.finished_at)}
+                    {formatDuration(run.started_at, run.completed_at)}
                   </td>
                   <td className="px-2 py-1.5 text-right text-gray-500 dark:text-gray-400">
-                    {run.records_created}
+                    {run.events_new}
                   </td>
                   <td className="px-2 py-1.5 text-right text-gray-500 dark:text-gray-400">
-                    {run.records_updated}
+                    {run.events_updated}
                   </td>
                   <td className="px-2 py-1.5 text-right text-gray-500 dark:text-gray-400">
-                    {run.records_failed > 0 ? (
-                      <span className="text-red-600 dark:text-red-400">{run.records_failed}</span>
+                    {run.events_errored > 0 ? (
+                      <span className="text-red-600 dark:text-red-400">{run.events_errored}</span>
                     ) : (
-                      run.records_failed
+                      run.events_errored
                     )}
                   </td>
                   <td className="px-2 py-1.5 max-w-48 truncate text-red-500 dark:text-red-400">
-                    {run.error_message ? (
-                      <span title={run.error_message}>
-                        {run.error_message.slice(0, 60)}{run.error_message.length > 60 ? "..." : ""}
-                      </span>
+                    {run.errors > 0 ? (
+                      <span className="text-red-600 dark:text-red-400">{run.errors} error{run.errors !== 1 ? "s" : ""}</span>
                     ) : (
                       <span className="text-gray-300 dark:text-gray-700">--</span>
                     )}

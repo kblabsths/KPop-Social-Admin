@@ -2,7 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 import { requireAdmin, paginationParams } from "@/lib/admin";
 import { NextRequest } from "next/server";
 
-const VALID_STATUSES = ["RUNNING", "SUCCESS", "FAILED", "PARTIAL"] as const;
+const VALID_STATUSES = ["running", "completed", "failed"] as const;
 
 export async function GET(request: NextRequest) {
   const supabase = getSupabaseAdmin();

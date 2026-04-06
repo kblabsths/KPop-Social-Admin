@@ -42,49 +42,18 @@ export default async function IdolsPage({
   if (genderFilter) pageQuery = pageQuery.eq("gender", genderFilter);
   if (query) pageQuery = pageQuery.ilike("stage_name", `%${query}%`);
 
-  // Count queries for stats
-  const [
-    pageResult,
-    totalResult,
-    maleResult,
-    femaleResult,
-    noGroupResult,
-  ] = await Promise.all([
+  const [pageResult, maleResult, femaleResult, totalResult] = await Promise.all([
     pageQuery,
-    supabase.from("idols").select("*", { count: "exact", head: true }),
     supabase.from("idols").select("*", { count: "exact", head: true }).eq("gender", "M"),
     supabase.from("idols").select("*", { count: "exact", head: true }).eq("gender", "F"),
-    supabase.from("idols").select("*", { count: "exact", head: true }).is("group_id", null),
+    supabase.from("idols").select("*", { count: "exact", head: true }),
   ]);
-
-  // Top groups by idol count (limited to avoid unbounded fetch)
-  const topGroupsResult = await supabase
-    .from("idols")
-    .select("group_id, groups(name)")
-    .not("group_id", "is", null)
-    .limit(500);
 
   const idols = (pageResult.data ?? []) as unknown as IdolRow[];
   const total = pageResult.count ?? 0;
-  const totalIdols = totalResult.count ?? 0;
   const maleCount = maleResult.count ?? 0;
   const femaleCount = femaleResult.count ?? 0;
-  const noGroupCount = noGroupResult.count ?? 0;
-
-  // Compute top groups from raw data
-  const groupCountMap = new Map<string, { name: string; count: number }>();
-  for (const row of (topGroupsResult.data ?? []) as unknown as { group_id: string; groups: { name: string } | null }[]) {
-    if (!row.group_id || !row.groups) continue;
-    const existing = groupCountMap.get(row.group_id);
-    if (existing) {
-      existing.count++;
-    } else {
-      groupCountMap.set(row.group_id, { name: row.groups.name, count: 1 });
-    }
-  }
-  const topGroups = Array.from(groupCountMap.values())
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5);
+  const totalIdols = totalResult.count ?? 0;
 
   const totalPages = Math.ceil(total / pageSize);
 
@@ -107,45 +76,6 @@ export default async function IdolsPage({
       <h1 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
         Idols
       </h1>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
-        <StatCard label="Total Idols" value={totalIdols.toLocaleString()} />
-        <StatCard
-          label="Male"
-          value={maleCount.toLocaleString()}
-          color="text-blue-600 dark:text-blue-400"
-        />
-        <StatCard
-          label="Female"
-          value={femaleCount.toLocaleString()}
-          color="text-pink-600 dark:text-pink-400"
-        />
-        <StatCard
-          label="Soloists / No Group"
-          value={noGroupCount.toLocaleString()}
-          color="text-gray-600 dark:text-gray-400"
-        />
-      </div>
-
-      {/* Top groups */}
-      {topGroups.length > 0 && (
-        <div className="border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1.5">
-            Top Groups by Idol Count
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {topGroups.map((g) => (
-              <span
-                key={g.name}
-                className="rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[11px] font-mono text-gray-700 dark:text-gray-300"
-              >
-                {g.name} <span className="text-gray-400">{g.count}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Gender filter */}
       <div className="flex gap-1">
