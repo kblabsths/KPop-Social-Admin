@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase";
 import Link from "next/link";
+import { EditableCell } from "@/app/components/EditableCell";
 
 export const dynamic = "force-dynamic";
 
@@ -376,18 +377,24 @@ export default async function EventsPage({
                       key={event.id}
                       className="border-t border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900"
                     >
-                      <td className="px-2 py-1.5 max-w-48 truncate text-gray-800 dark:text-gray-200" title={event.title}>
-                        {event.title}
+                      <td className="px-2 py-1.5 max-w-48 truncate text-gray-800 dark:text-gray-200">
+                        <EditableCell value={event.title} recordId={event.id} field="title" apiPath="/api/admin/events" />
                       </td>
-                      <td className="px-2 py-1.5 text-gray-600 dark:text-gray-400">{event.artist}</td>
-                      <td className="px-2 py-1.5 max-w-32 truncate text-gray-500 dark:text-gray-500" title={event.venue ?? ""}>
-                        {event.venue || "—"}
+                      <td className="px-2 py-1.5 text-gray-600 dark:text-gray-400">
+                        <EditableCell value={event.artist} recordId={event.id} field="artist" apiPath="/api/admin/events" />
                       </td>
-                      <td className="px-2 py-1.5 text-gray-500 dark:text-gray-500">{event.city || "—"}</td>
+                      <td className="px-2 py-1.5 max-w-32 truncate text-gray-500 dark:text-gray-500">
+                        <EditableCell value={event.venue} recordId={event.id} field="venue" apiPath="/api/admin/events" />
+                      </td>
+                      <td className="px-2 py-1.5 text-gray-500 dark:text-gray-500">
+                        <EditableCell value={event.city} recordId={event.id} field="city" apiPath="/api/admin/events" />
+                      </td>
                       <td className="px-2 py-1.5 text-gray-500 dark:text-gray-400">
                         {formatDate(event.date)}
                       </td>
-                      <td className="px-2 py-1.5 text-gray-500 dark:text-gray-400">{event.type || "—"}</td>
+                      <td className="px-2 py-1.5 text-gray-500 dark:text-gray-400">
+                        <EditableCell value={event.type} recordId={event.id} field="type" apiPath="/api/admin/events" />
+                      </td>
                       <td className="px-2 py-1.5 text-gray-400 dark:text-gray-600">
                         {event.last_scraped_at ? formatDate(event.last_scraped_at) : "—"}
                       </td>

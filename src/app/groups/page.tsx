@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase";
 import Link from "next/link";
+import { EditableCell } from "@/app/components/EditableCell";
 
 export const dynamic = "force-dynamic";
 
@@ -227,16 +228,16 @@ export default async function GroupsPage({
                   className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50"
                 >
                   <td className="px-2 py-1.5 text-gray-800 dark:text-gray-200 whitespace-nowrap">
-                    {group.name}
+                    <EditableCell value={group.name} recordId={group.id} field="name" apiPath="/api/admin/groups" />
                     {group.short_name && (
                       <span className="ml-1 text-gray-400">({group.short_name})</span>
                     )}
                   </td>
                   <td className="px-2 py-1.5 text-gray-500 dark:text-gray-400">
-                    {group.korean_name ?? "—"}
+                    <EditableCell value={group.korean_name} recordId={group.id} field="korean_name" apiPath="/api/admin/groups" />
                   </td>
                   <td className="px-2 py-1.5 text-gray-600 dark:text-gray-400 max-w-[160px] truncate">
-                    {group.company ?? "—"}
+                    <EditableCell value={group.company} recordId={group.id} field="company" apiPath="/api/admin/groups" />
                   </td>
                   <td className="px-2 py-1.5">
                     {group.status ? (

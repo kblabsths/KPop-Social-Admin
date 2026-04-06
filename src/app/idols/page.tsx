@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase";
 import Link from "next/link";
+import { EditableCell } from "@/app/components/EditableCell";
 
 export const dynamic = "force-dynamic";
 
@@ -220,13 +221,13 @@ export default async function IdolsPage({
                   className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50"
                 >
                   <td className="px-2 py-1.5 text-gray-800 dark:text-gray-200 whitespace-nowrap">
-                    {idol.stage_name}
+                    <EditableCell value={idol.stage_name} recordId={idol.id} field="stage_name" apiPath="/api/admin/idols" />
                     {idol.korean_name && (
                       <span className="ml-1 text-gray-400">({idol.korean_name})</span>
                     )}
                   </td>
                   <td className="px-2 py-1.5 text-gray-500 dark:text-gray-400">
-                    {idol.real_name ?? "—"}
+                    <EditableCell value={idol.real_name} recordId={idol.id} field="real_name" apiPath="/api/admin/idols" />
                   </td>
                   <td className="px-2 py-1.5 text-gray-600 dark:text-gray-400">
                     {idol.groups?.name ? (
@@ -241,10 +242,10 @@ export default async function IdolsPage({
                     )}
                   </td>
                   <td className="px-2 py-1.5 text-gray-500 dark:text-gray-400 max-w-[140px] truncate">
-                    {idol.position ?? "—"}
+                    <EditableCell value={idol.position} recordId={idol.id} field="position" apiPath="/api/admin/idols" />
                   </td>
                   <td className="px-2 py-1.5 text-gray-500 dark:text-gray-400">
-                    {idol.nationality ?? "—"}
+                    <EditableCell value={idol.nationality} recordId={idol.id} field="nationality" apiPath="/api/admin/idols" />
                   </td>
                   <td className="px-2 py-1.5">
                     {idol.gender ? (
