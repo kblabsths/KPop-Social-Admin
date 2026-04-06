@@ -6,9 +6,6 @@ import { getSupabaseAdmin } from "./supabase";
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   providers: [GitHub, Google],
-  pages: {
-    signIn: "/login",
-  },
   callbacks: {
     async signIn({ user }) {
       if (!user.email) return true;
