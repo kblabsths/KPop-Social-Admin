@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 
 const navItems = [
   { href: "/", label: "Overview", icon: "◈" },
@@ -40,6 +41,15 @@ export function AdminNav({ activeAlerts }: { activeAlerts: number }) {
           </Link>
         );
       })}
+      <div className="mt-auto px-1 pb-2 pt-1 border-t border-gray-300 dark:border-gray-800">
+        <button
+          onClick={() => signOut({ callbackUrl: "/login" })}
+          className="w-full flex items-center gap-2 rounded px-2 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200 transition-colors"
+        >
+          <span className="text-[10px] opacity-60">⏻</span>
+          Sign Out
+        </button>
+      </div>
     </nav>
   );
 }
