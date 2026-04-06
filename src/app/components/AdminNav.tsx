@@ -9,7 +9,7 @@ const navItems = [
   { href: "/data-management", label: "Data Management", icon: "◫" },
   { href: "/scrapers", label: "Scrapers", icon: "⟳" },
   { href: "/alerts", label: "Alerts", icon: "▲" },
-  { href: "/database", label: "Database", icon: "◻" },
+  { href: "/analytics", label: "Analytics", icon: "◈̈" },
 ];
 
 export function AdminNav({ activeAlerts }: { activeAlerts: number }) {
