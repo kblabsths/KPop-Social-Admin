@@ -44,35 +44,10 @@ export default async function GroupsPage({
   if (typeFilter) pageQuery = pageQuery.eq("type", typeFilter);
   if (query) pageQuery = pageQuery.ilike("name", `%${query}%`);
 
-  const [
-    pageResult,
-    totalResult,
-    activeResult,
-    disbandedResult,
-    hiatusResult,
-    boyGroupResult,
-    girlGroupResult,
-    coEdResult,
-  ] = await Promise.all([
-    pageQuery,
-    supabase.from("groups").select("*", { count: "exact", head: true }),
-    supabase.from("groups").select("*", { count: "exact", head: true }).eq("status", "active"),
-    supabase.from("groups").select("*", { count: "exact", head: true }).eq("status", "disbanded"),
-    supabase.from("groups").select("*", { count: "exact", head: true }).eq("status", "hiatus"),
-    supabase.from("groups").select("*", { count: "exact", head: true }).eq("type", "boy_group"),
-    supabase.from("groups").select("*", { count: "exact", head: true }).eq("type", "girl_group"),
-    supabase.from("groups").select("*", { count: "exact", head: true }).eq("type", "co_ed"),
-  ]);
+  const pageResult = await pageQuery;
 
   const groups = pageResult.data ?? [];
   const total = pageResult.count ?? 0;
-  const totalGroups = totalResult.count ?? 0;
-  const activeCount = activeResult.count ?? 0;
-  const disbandedCount = disbandedResult.count ?? 0;
-  const hiatusCount = hiatusResult.count ?? 0;
-  const boyGroupCount = boyGroupResult.count ?? 0;
-  const girlGroupCount = girlGroupResult.count ?? 0;
-  const coEdCount = coEdResult.count ?? 0;
 
   const totalPages = Math.ceil(total / pageSize);
 
@@ -97,33 +72,6 @@ export default async function GroupsPage({
         Groups
       </h1>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
-        <StatCard label="Total Groups" value={totalGroups.toLocaleString()} />
-        <StatCard
-          label="Active"
-          value={activeCount.toLocaleString()}
-          color="text-green-600 dark:text-green-400"
-        />
-        <StatCard
-          label="Disbanded"
-          value={disbandedCount.toLocaleString()}
-          color="text-red-600 dark:text-red-400"
-        />
-        <StatCard
-          label="Hiatus"
-          value={hiatusCount.toLocaleString()}
-          color="text-yellow-600 dark:text-yellow-400"
-        />
-      </div>
-
-      {/* Type breakdown */}
-      <div className="grid grid-cols-3 gap-1.5">
-        <StatCard label="Boy Groups" value={boyGroupCount.toLocaleString()} color="text-blue-600 dark:text-blue-400" />
-        <StatCard label="Girl Groups" value={girlGroupCount.toLocaleString()} color="text-pink-600 dark:text-pink-400" />
-        <StatCard label="Co-Ed" value={coEdCount.toLocaleString()} color="text-purple-600 dark:text-purple-400" />
-      </div>
-
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
         {/* Status filter */}
@@ -138,7 +86,7 @@ export default async function GroupsPage({
                   : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
               }`}
             >
-              {s === undefined ? `All (${totalGroups})` : s}
+              {s === undefined ? "All" : s}
             </Link>
           ))}
         </div>
@@ -299,23 +247,3 @@ export default async function GroupsPage({
   );
 }
 
-function StatCard({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: string;
-  color?: string;
-}) {
-  return (
-    <div className="border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5">
-      <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-0.5">
-        {label}
-      </p>
-      <p className={`text-sm font-bold font-mono ${color ?? "text-gray-800 dark:text-gray-200"}`}>
-        {value}
-      </p>
-    </div>
-  );
-}
