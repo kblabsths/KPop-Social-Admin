@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from "./supabase";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
+  pages: { signIn: "/login" },
   providers: [Google],
   callbacks: {
     authorized({ auth: session }) {
