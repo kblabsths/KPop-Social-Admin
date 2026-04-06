@@ -1,8 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase";
 import Link from "next/link";
 
-export const dynamic = "force-dynamic";
-
 const genderBadgeColors: Record<string, string> = {
   M: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
   F: "bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200",
@@ -59,11 +57,12 @@ export default async function IdolsPage({
     supabase.from("idols").select("*", { count: "exact", head: true }).is("group_id", null),
   ]);
 
-  // Top groups by idol count
+  // Top groups by idol count (limited to avoid unbounded fetch)
   const topGroupsResult = await supabase
     .from("idols")
     .select("group_id, groups(name)")
-    .not("group_id", "is", null);
+    .not("group_id", "is", null)
+    .limit(500);
 
   const idols = (pageResult.data ?? []) as unknown as IdolRow[];
   const total = pageResult.count ?? 0;

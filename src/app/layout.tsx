@@ -5,7 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import "./globals.css";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

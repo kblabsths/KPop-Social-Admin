@@ -1,7 +1,6 @@
+import { unstable_cache } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import Link from "next/link";
-
-export const dynamic = "force-dynamic";
 
 const MODELS = [
   { key: "user", label: "Users" },
@@ -33,33 +32,48 @@ const MODEL_TO_TABLE: Record<ModelKey, string> = {
 
 async function getModelStats(tableName: string) {
   const supabase = getSupabaseAdmin();
-  const { count: total } = await supabase
-    .from(tableName)
-    .select("*", { count: "exact", head: true });
-
-  let newest: string | null = null;
-  let oldest: string | null = null;
-  if ((total ?? 0) > 0) {
-    const [newestRec, oldestRec] = await Promise.all([
-      supabase
-        .from(tableName)
-        .select("created_at")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from(tableName)
-        .select("created_at")
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle(),
-    ]);
-    newest = newestRec.data?.created_at ?? null;
-    oldest = oldestRec.data?.created_at ?? null;
-  }
-
-  return { total: total ?? 0, newest, oldest };
+  const [totalResult, newestRec, oldestRec] = await Promise.all([
+    supabase.from(tableName).select("*", { count: "exact", head: true }),
+    supabase
+      .from(tableName)
+      .select("created_at")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from(tableName)
+      .select("created_at")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  return {
+    total: totalResult.count ?? 0,
+    newest: newestRec.data?.created_at ?? null,
+    oldest: oldestRec.data?.created_at ?? null,
+  };
 }
+
+const getCachedAllModelStats = unstable_cache(
+  async () =>
+    Promise.all(
+      MODELS.map((m) =>
+        getModelStats(MODEL_TO_TABLE[m.key]).then((s) => ({
+          key: m.key,
+          label: m.label,
+          ...s,
+        }))
+      )
+    ),
+  ["db-all-model-stats"],
+  { revalidate: 60 }
+);
+
+const getCachedFieldCompleteness = unstable_cache(
+  getFieldCompleteness,
+  ["db-field-completeness"],
+  { revalidate: 60 }
+);
 
 async function getFieldCompleteness() {
   const supabase = getSupabaseAdmin();
@@ -188,16 +202,8 @@ export default async function DatabasePage({
       .select("*", { count: "exact" })
       .order("created_at", { ascending: false })
       .range((page - 1) * pageSize, page * pageSize - 1),
-    Promise.all(
-      MODELS.map((m) =>
-        getModelStats(MODEL_TO_TABLE[m.key]).then((s) => ({
-          key: m.key,
-          label: m.label,
-          ...s,
-        }))
-      )
-    ),
-    getFieldCompleteness(),
+    getCachedAllModelStats(),
+    getCachedFieldCompleteness(),
   ]);
 
   const records = recordsResult.data ?? [];

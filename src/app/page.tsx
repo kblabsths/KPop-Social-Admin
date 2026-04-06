@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 const STALE_THRESHOLD_HOURS = 24;
 
@@ -16,7 +16,6 @@ export default async function AdminOverview() {
     totalVenuesResult,
     totalUsersResult,
     activeAlertsResult,
-    latestRunResult,
     allRunsResult,
     recentAlertsResult,
   ] = await Promise.all([
@@ -41,14 +40,9 @@ export default async function AdminOverview() {
       .is("resolved_at", null),
     supabase
       .from("scraper_runs")
-      .select("*")
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("scraper_runs")
       .select("id, scraper_name, status, started_at, finished_at, records_created, records_updated, records_failed, error_message")
-      .order("started_at", { ascending: false }),
+      .order("started_at", { ascending: false })
+      .limit(100),
     supabase
       .from("data_quality_alerts")
       .select("*")
@@ -65,8 +59,8 @@ export default async function AdminOverview() {
   const totalVenues = totalVenuesResult.count ?? 0;
   const totalUsers = totalUsersResult.count ?? 0;
   const activeAlerts = activeAlertsResult.count ?? 0;
-  const latestRun = latestRunResult.data;
   const allRuns = allRunsResult.data ?? [];
+  const latestRun = allRuns[0] ?? null;
   const recentAlerts = recentAlertsResult.data ?? [];
 
   const scraperMap = new Map<
