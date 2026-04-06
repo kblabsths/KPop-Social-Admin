@@ -7,6 +7,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   providers: [GitHub, Google],
   callbacks: {
+    authorized({ auth: session }) {
+      // Returning false causes the middleware to redirect to the sign-in page
+      return !!session?.user;
+    },
     async signIn({ user }) {
       if (!user.email) return true;
       // Upsert the user into web_users on first sign-in
