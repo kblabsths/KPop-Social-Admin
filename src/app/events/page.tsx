@@ -6,7 +6,13 @@ export const dynamic = "force-dynamic";
 const EVENT_TYPES = ["concert", "fanmeet", "festival", "online", "other"] as const;
 const SCRAPED_SOURCES = ["bandsintown", "ticketmaster", "eventbrite"] as const;
 const SCRAPED_STATUSES = ["pending", "matched", "created", "skipped", "error"] as const;
-const PAGE_SIZE = 25;
+const PAGE_SIZES = [25, 50, 100] as const;
+
+const CANONICAL_SORTS = ["title", "artist", "venue", "city", "date", "type"] as const;
+type CanonicalSort = typeof CANONICAL_SORTS[number];
+
+const SCRAPED_SORTS = ["source", "title", "artist", "venue", "city", "date", "status", "created_at"] as const;
+type ScrapedSort = typeof SCRAPED_SORTS[number];
 
 function formatDate(d: string | null): string {
   if (!d) return "—";
@@ -24,6 +30,12 @@ export default async function EventsPage({
     status?: string;
     page?: string;
     spage?: string;
+    sort?: string;
+    dir?: string;
+    ssort?: string;
+    sdir?: string;
+    limit?: string;
+    slimit?: string;
   }>;
 }) {
   const supabase = getSupabaseAdmin();
@@ -40,6 +52,10 @@ export default async function EventsPage({
     ? params.when
     : undefined;
   const page = Math.max(1, parseInt(params.page || "1", 10));
+  const limitParam = parseInt(params.limit || "25", 10);
+  const pageSize = PAGE_SIZES.includes(limitParam as typeof PAGE_SIZES[number]) ? limitParam : 25;
+  const sortCol: CanonicalSort = CANONICAL_SORTS.includes(params.sort as CanonicalSort) ? (params.sort as CanonicalSort) : "date";
+  const sortDir = params.dir === "asc" ? true : false; // default desc for date
 
   // ── Scraped events filters ──────────────────────────────────────────────────
   const srcFilter = params.source && SCRAPED_SOURCES.includes(params.source as typeof SCRAPED_SOURCES[number])
@@ -49,6 +65,10 @@ export default async function EventsPage({
     ? params.status
     : undefined;
   const spage = Math.max(1, parseInt(params.spage || "1", 10));
+  const slimitParam = parseInt(params.slimit || "25", 10);
+  const spageSize = PAGE_SIZES.includes(slimitParam as typeof PAGE_SIZES[number]) ? slimitParam : 25;
+  const ssortCol: ScrapedSort = SCRAPED_SORTS.includes(params.ssort as ScrapedSort) ? (params.ssort as ScrapedSort) : "created_at";
+  const ssortDir = params.sdir === "asc" ? true : false;
 
   // ── Stats queries ────────────────────────────────────────────────────────────
   const [
@@ -87,8 +107,8 @@ export default async function EventsPage({
       "id, title, artist, venue, city, country, date, type, last_scraped_at, artist_id, venue_id",
       { count: "exact" }
     )
-    .order("date", { ascending: false })
-    .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+    .order(sortCol, { ascending: sortDir })
+    .range((page - 1) * pageSize, page * pageSize - 1);
 
   if (typeFilter) eventsQuery = eventsQuery.eq("type", typeFilter);
   if (whenFilter === "upcoming") eventsQuery = eventsQuery.gte("date", now);
@@ -97,7 +117,7 @@ export default async function EventsPage({
   const eventsResult = await eventsQuery;
   const events = eventsResult.data ?? [];
   const eventsTotal = eventsResult.count ?? 0;
-  const eventsPages = Math.ceil(eventsTotal / PAGE_SIZE);
+  const eventsPages = Math.ceil(eventsTotal / pageSize);
 
   // ── Scraped events table ─────────────────────────────────────────────────────
   let scrapedQuery = supabase
@@ -106,8 +126,8 @@ export default async function EventsPage({
       "id, source, source_event_id, title, artist, venue, city, country, date, status, matched_event_id, scraper_run_id, created_at",
       { count: "exact" }
     )
-    .order("created_at", { ascending: false })
-    .range((spage - 1) * PAGE_SIZE, spage * PAGE_SIZE - 1);
+    .order(ssortCol, { ascending: ssortDir })
+    .range((spage - 1) * spageSize, spage * spageSize - 1);
 
   if (srcFilter) scrapedQuery = scrapedQuery.eq("source", srcFilter);
   if (stFilter) scrapedQuery = scrapedQuery.eq("status", stFilter);
@@ -115,31 +135,64 @@ export default async function EventsPage({
   const scrapedResult = await scrapedQuery;
   const scrapedEvents = scrapedResult.data ?? [];
   const scrapedTotal = scrapedResult.count ?? 0;
-  const scrapedPages = Math.ceil(scrapedTotal / PAGE_SIZE);
+  const scrapedPages = Math.ceil(scrapedTotal / spageSize);
 
-  // ── Build filter URL helper ──────────────────────────────────────────────────
+  // ── Build filter URL helpers ──────────────────────────────────────────────────
   function eventsUrl(overrides: Record<string, string | undefined>) {
-    const p: Record<string, string> = { tab: "canonical" };
-    if (typeFilter) p.type = typeFilter;
-    if (whenFilter) p.when = whenFilter;
-    if (page > 1) p.page = String(page);
+    const p: Record<string, string | undefined> = {
+      tab: "canonical",
+      type: typeFilter,
+      when: whenFilter,
+      page: page > 1 ? String(page) : undefined,
+      sort: sortCol !== "date" ? sortCol : undefined,
+      dir: sortDir ? "asc" : undefined,
+      limit: pageSize !== 25 ? String(pageSize) : undefined,
+    };
     Object.assign(p, overrides);
     const q = new URLSearchParams(
-      Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)) as Record<string, string>
+      Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== "")) as Record<string, string>
     );
     return `/events?${q}`;
   }
 
   function scrapedUrl(overrides: Record<string, string | undefined>) {
-    const p: Record<string, string> = { tab: "raw" };
-    if (srcFilter) p.source = srcFilter;
-    if (stFilter) p.status = stFilter;
-    if (spage > 1) p.spage = String(spage);
+    const p: Record<string, string | undefined> = {
+      tab: "raw",
+      source: srcFilter,
+      status: stFilter,
+      spage: spage > 1 ? String(spage) : undefined,
+      ssort: ssortCol !== "created_at" ? ssortCol : undefined,
+      sdir: ssortDir ? "asc" : undefined,
+      slimit: spageSize !== 25 ? String(spageSize) : undefined,
+    };
     Object.assign(p, overrides);
     const q = new URLSearchParams(
-      Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)) as Record<string, string>
+      Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== "")) as Record<string, string>
     );
     return `/events?${q}`;
+  }
+
+  function canonicalSortHref(col: CanonicalSort) {
+    const isCurrent = sortCol === col;
+    // default is desc; toggle: if current & desc → asc, else desc
+    const newDir = isCurrent && !sortDir ? "asc" : undefined;
+    return eventsUrl({ sort: col, dir: newDir, page: "1" });
+  }
+
+  function scrapedSortHref(col: ScrapedSort) {
+    const isCurrent = ssortCol === col;
+    const newDir = isCurrent && !ssortDir ? "asc" : undefined;
+    return scrapedUrl({ ssort: col, sdir: newDir, spage: "1" });
+  }
+
+  function canonicalSortIndicator(col: CanonicalSort) {
+    if (sortCol !== col) return <span className="text-gray-300 dark:text-gray-700 ml-0.5">↕</span>;
+    return <span className="ml-0.5 text-purple-500">{sortDir ? "↑" : "↓"}</span>;
+  }
+
+  function scrapedSortIndicator(col: ScrapedSort) {
+    if (ssortCol !== col) return <span className="text-gray-300 dark:text-gray-700 ml-0.5">↕</span>;
+    return <span className="ml-0.5 text-purple-500">{ssortDir ? "↑" : "↓"}</span>;
   }
 
   const statusBadge: Record<string, string> = {
@@ -149,6 +202,9 @@ export default async function EventsPage({
     skipped: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400",
     error: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
   };
+
+  const thClass = "px-2 py-1.5 font-medium text-left whitespace-nowrap";
+  const sortLinkClass = "hover:text-gray-200 inline-flex items-center";
 
   return (
     <div className="space-y-4">
@@ -219,8 +275,8 @@ export default async function EventsPage({
 
       {tab === "canonical" ? (
         <section className="space-y-2">
-          {/* Filters */}
-          <div className="flex flex-wrap gap-1">
+          {/* Filters + rows per page */}
+          <div className="flex flex-wrap gap-1 items-center">
             <span className="text-[11px] font-mono text-gray-400 self-center">When:</span>
             {(["", "upcoming", "past"] as const).map((w) => (
               <Link
@@ -259,6 +315,22 @@ export default async function EventsPage({
                 {t}
               </Link>
             ))}
+            <div className="ml-auto flex items-center gap-1">
+              <span className="text-[11px] font-mono text-gray-400">Rows:</span>
+              {PAGE_SIZES.map((n) => (
+                <Link
+                  key={n}
+                  href={eventsUrl({ limit: String(n), page: "1" })}
+                  className={`rounded px-2 py-0.5 text-[11px] font-mono ${
+                    pageSize === n
+                      ? "bg-purple-600 text-white"
+                      : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+                  }`}
+                >
+                  {n}
+                </Link>
+              ))}
+            </div>
           </div>
 
           <p className="text-[11px] font-mono text-gray-400">
@@ -277,13 +349,25 @@ export default async function EventsPage({
               <table className="w-full text-[11px] font-mono">
                 <thead>
                   <tr className="bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-left">
-                    <th className="px-2 py-1.5 font-medium">Title</th>
-                    <th className="px-2 py-1.5 font-medium">Artist</th>
-                    <th className="px-2 py-1.5 font-medium">Venue</th>
-                    <th className="px-2 py-1.5 font-medium">City</th>
-                    <th className="px-2 py-1.5 font-medium">Date</th>
-                    <th className="px-2 py-1.5 font-medium">Type</th>
-                    <th className="px-2 py-1.5 font-medium">Scraped</th>
+                    {(
+                      [
+                        { label: "Title", col: "title" },
+                        { label: "Artist", col: "artist" },
+                        { label: "Venue", col: "venue" },
+                        { label: "City", col: "city" },
+                        { label: "Date", col: "date" },
+                        { label: "Type", col: "type" },
+                        { label: "Scraped", col: null },
+                      ] as { label: string; col: CanonicalSort | null }[]
+                    ).map(({ label, col }) => (
+                      <th key={label} className={thClass}>
+                        {col ? (
+                          <Link href={canonicalSortHref(col)} className={sortLinkClass}>
+                            {label}{canonicalSortIndicator(col)}
+                          </Link>
+                        ) : label}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -315,7 +399,15 @@ export default async function EventsPage({
           )}
 
           {eventsPages > 1 && (
-            <div className="flex justify-center gap-2">
+            <div className="flex justify-center gap-2 items-center">
+              {page > 1 && (
+                <Link
+                  href={eventsUrl({ page: "1" })}
+                  className="rounded bg-gray-100 px-2 py-1 text-[11px] font-mono dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
+                >
+                  «
+                </Link>
+              )}
               {page > 1 && (
                 <Link
                   href={eventsUrl({ page: String(page - 1) })}
@@ -335,13 +427,21 @@ export default async function EventsPage({
                   Next
                 </Link>
               )}
+              {page < eventsPages && (
+                <Link
+                  href={eventsUrl({ page: String(eventsPages) })}
+                  className="rounded bg-gray-100 px-2 py-1 text-[11px] font-mono dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
+                >
+                  »
+                </Link>
+              )}
             </div>
           )}
         </section>
       ) : (
         <section className="space-y-2">
-          {/* Scraped filters */}
-          <div className="flex flex-wrap gap-1">
+          {/* Scraped filters + rows per page */}
+          <div className="flex flex-wrap gap-1 items-center">
             <span className="text-[11px] font-mono text-gray-400 self-center">Source:</span>
             <Link
               href={scrapedUrl({ source: undefined, spage: "1" })}
@@ -390,6 +490,22 @@ export default async function EventsPage({
                 {s}
               </Link>
             ))}
+            <div className="ml-auto flex items-center gap-1">
+              <span className="text-[11px] font-mono text-gray-400">Rows:</span>
+              {PAGE_SIZES.map((n) => (
+                <Link
+                  key={n}
+                  href={scrapedUrl({ slimit: String(n), spage: "1" })}
+                  className={`rounded px-2 py-0.5 text-[11px] font-mono ${
+                    spageSize === n
+                      ? "bg-purple-600 text-white"
+                      : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+                  }`}
+                >
+                  {n}
+                </Link>
+              ))}
+            </div>
           </div>
 
           <p className="text-[11px] font-mono text-gray-400">
@@ -408,14 +524,24 @@ export default async function EventsPage({
               <table className="w-full text-[11px] font-mono">
                 <thead>
                   <tr className="bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-left">
-                    <th className="px-2 py-1.5 font-medium">Source</th>
-                    <th className="px-2 py-1.5 font-medium">Title</th>
-                    <th className="px-2 py-1.5 font-medium">Artist</th>
-                    <th className="px-2 py-1.5 font-medium">Venue</th>
-                    <th className="px-2 py-1.5 font-medium">City</th>
-                    <th className="px-2 py-1.5 font-medium">Date</th>
-                    <th className="px-2 py-1.5 font-medium">Status</th>
-                    <th className="px-2 py-1.5 font-medium">Ingested</th>
+                    {(
+                      [
+                        { label: "Source", col: "source" },
+                        { label: "Title", col: "title" },
+                        { label: "Artist", col: "artist" },
+                        { label: "Venue", col: "venue" },
+                        { label: "City", col: "city" },
+                        { label: "Date", col: "date" },
+                        { label: "Status", col: "status" },
+                        { label: "Ingested", col: "created_at" },
+                      ] as { label: string; col: ScrapedSort }[]
+                    ).map(({ label, col }) => (
+                      <th key={label} className={thClass}>
+                        <Link href={scrapedSortHref(col)} className={sortLinkClass}>
+                          {label}{scrapedSortIndicator(col)}
+                        </Link>
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -454,7 +580,15 @@ export default async function EventsPage({
           )}
 
           {scrapedPages > 1 && (
-            <div className="flex justify-center gap-2">
+            <div className="flex justify-center gap-2 items-center">
+              {spage > 1 && (
+                <Link
+                  href={scrapedUrl({ spage: "1" })}
+                  className="rounded bg-gray-100 px-2 py-1 text-[11px] font-mono dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
+                >
+                  «
+                </Link>
+              )}
               {spage > 1 && (
                 <Link
                   href={scrapedUrl({ spage: String(spage - 1) })}
@@ -472,6 +606,14 @@ export default async function EventsPage({
                   className="rounded bg-gray-100 px-2 py-1 text-[11px] font-mono dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
                 >
                   Next
+                </Link>
+              )}
+              {spage < scrapedPages && (
+                <Link
+                  href={scrapedUrl({ spage: String(scrapedPages) })}
+                  className="rounded bg-gray-100 px-2 py-1 text-[11px] font-mono dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
+                >
+                  »
                 </Link>
               )}
             </div>
