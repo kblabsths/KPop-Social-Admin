@@ -149,28 +149,56 @@ create table if not exists public.user_favorite_artists (
 );
 
 -- ============================================================
--- GROUPS (Fan groups)
+-- GROUPS (KPop bands — canonical schema shared with mobile app)
+-- Source of truth: mobile migration 20260406000002_groups_idols_schema.sql
+-- Defined here with IF NOT EXISTS so admin-only deploys bootstrap correctly.
+-- The stale fan-groups definition has been removed; groups = KPop bands.
 -- ============================================================
 create table if not exists public.groups (
-  id            text primary key,
-  name          text not null,
-  description   text,
-  image         text,
-  artist_id     text references public.artists(id) on delete set null,
-  is_official   boolean not null default false,
-  created_by_id text not null references public.web_users(id) on delete cascade,
+  id            uuid primary key default gen_random_uuid(),
+  name          text not null unique,
+  short_name    text,
+  korean_name   text,
+  image_url     text,
+  bio           text,
+  company       text,
+  debut_date    date,
+  status        text default 'active'
+                check (status in ('active', 'disbanded', 'hiatus')),
+  type          text
+                check (type in ('boy_group', 'girl_group', 'co_ed')),
+  member_count  integer,
+  fanclub_name  text,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
 
-create table if not exists public.group_members (
-  id        text primary key,
-  user_id   text not null references public.web_users(id) on delete cascade,
-  group_id  text not null references public.groups(id)    on delete cascade,
-  role      text not null default 'member' check (role in ('admin', 'member')),
-  joined_at timestamptz not null default now(),
-  unique (user_id, group_id)
+create index if not exists idx_groups_name   on public.groups (name);
+create index if not exists idx_groups_status on public.groups (status);
+create index if not exists idx_groups_type   on public.groups (type);
+
+-- ============================================================
+-- IDOLS (individual KPop idol records — canonical schema shared with mobile app)
+-- Source of truth: mobile migration 20260406000002_groups_idols_schema.sql
+-- ============================================================
+create table if not exists public.idols (
+  id           uuid primary key default gen_random_uuid(),
+  group_id     uuid references public.groups(id),
+  stage_name   text not null,
+  real_name    text,
+  korean_name  text,
+  image_url    text,
+  position     text,
+  birth_date   date,
+  nationality  text,
+  gender       text
+               check (gender in ('M', 'F')),
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
 );
+
+create index if not exists idx_idols_group_id   on public.idols (group_id);
+create index if not exists idx_idols_stage_name on public.idols (stage_name);
 
 -- ============================================================
 -- POSTS & LIKES
@@ -181,7 +209,7 @@ create table if not exists public.posts (
   image_url  text,
   link_url   text,
   author_id  text not null references public.web_users(id) on delete cascade,
-  group_id   text not null references public.groups(id)    on delete cascade,
+  group_id   uuid not null references public.groups(id)    on delete cascade,
   parent_id  text references public.posts(id)              on delete cascade,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
