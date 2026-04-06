@@ -61,7 +61,7 @@ export default async function AdminOverview() {
       .is("resolved_at", null),
     supabase
       .from("scraper_runs")
-      .select("id, scraper_name, status, started_at, finished_at, records_created, records_updated, records_failed, error_message")
+      .select("id, source, status, started_at, completed_at, events_new, events_updated, events_errored")
       .order("started_at", { ascending: false })
       .limit(100),
     supabase
@@ -97,26 +97,26 @@ export default async function AdminOverview() {
     { count: number; recordsCreated: number; recordsUpdated: number; recordsFailed: number }
   >();
   for (const run of allRuns) {
-    const existing = scraperMap.get(run.scraper_name) ?? {
+    const existing = scraperMap.get(run.source) ?? {
       count: 0,
       recordsCreated: 0,
       recordsUpdated: 0,
       recordsFailed: 0,
     };
-    scraperMap.set(run.scraper_name, {
+    scraperMap.set(run.source, {
       count: existing.count + 1,
-      recordsCreated: existing.recordsCreated + (run.records_created ?? 0),
-      recordsUpdated: existing.recordsUpdated + (run.records_updated ?? 0),
-      recordsFailed: existing.recordsFailed + (run.records_failed ?? 0),
+      recordsCreated: existing.recordsCreated + (run.events_new ?? 0),
+      recordsUpdated: existing.recordsUpdated + (run.events_updated ?? 0),
+      recordsFailed: existing.recordsFailed + (run.events_errored ?? 0),
     });
   }
   const scraperNames = Array.from(scraperMap.keys());
 
   const scraperLatestRuns = scraperNames.map((name) =>
-    allRuns.find((r) => r.scraper_name === name) ?? null
+    allRuns.find((r) => r.source === name) ?? null
   );
   const scraperSuccessCounts = scraperNames.map(
-    (name) => allRuns.filter((r) => r.scraper_name === name && r.status === "SUCCESS").length
+    (name) => allRuns.filter((r) => r.source === name && r.status === "completed").length
   );
 
   const scraperStats = scraperNames.map((name) => ({
@@ -151,8 +151,8 @@ export default async function AdminOverview() {
     ...recentRuns.map((r) => ({
       type: "scraper" as const,
       time: new Date(r.started_at),
-      label: `${r.scraper_name} — ${r.status}`,
-      detail: `${r.records_created} created, ${r.records_updated} updated${r.records_failed > 0 ? `, ${r.records_failed} failed` : ""}`,
+      label: `${r.source} — ${r.status}`,
+      detail: `${r.events_new} created, ${r.events_updated} updated${r.events_errored > 0 ? `, ${r.events_errored} failed` : ""}`,
       status: r.status,
     })),
     ...recentAlerts.map((a) => ({
@@ -167,10 +167,9 @@ export default async function AdminOverview() {
     .slice(0, 10);
 
   const statusColor: Record<string, string> = {
-    SUCCESS: "text-green-600 dark:text-green-400",
-    FAILED: "text-red-600 dark:text-red-400",
-    RUNNING: "text-blue-600 dark:text-blue-400",
-    PARTIAL: "text-yellow-600 dark:text-yellow-400",
+    completed: "text-green-600 dark:text-green-400",
+    failed: "text-red-600 dark:text-red-400",
+    running: "text-blue-600 dark:text-blue-400",
     CRITICAL: "text-red-600 dark:text-red-400",
     HIGH: "text-orange-600 dark:text-orange-400",
     MEDIUM: "text-yellow-600 dark:text-yellow-400",
