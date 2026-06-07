@@ -7,6 +7,7 @@ const subNavItems = [
   { href: "/data-management/groups", label: "Groups" },
   { href: "/data-management/idols", label: "Idols" },
   { href: "/data-management/events", label: "Events" },
+  { href: "/data-management/completeness", label: "Completeness" },
 ];
 
 export default function DataManagementLayout({

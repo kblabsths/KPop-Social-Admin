@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 
 const ALLOWED_FIELDS = new Set([
   "name", "korean_name", "short_name", "company", "status", "type", "member_count", "debut_date",
+  "image_url", "bio",
 ]);
 
 export async function PATCH(

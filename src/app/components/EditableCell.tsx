@@ -9,14 +9,23 @@ type Props = {
   apiPath: string; // e.g. "/api/admin/groups"
   className?: string;
   placeholder?: string;
+  multiline?: boolean; // render a textarea (e.g. for bio)
 };
 
-export function EditableCell({ value, recordId, field, apiPath, className = "", placeholder = "—" }: Props) {
+export function EditableCell({
+  value,
+  recordId,
+  field,
+  apiPath,
+  className = "",
+  placeholder = "—",
+  multiline = false,
+}: Props) {
   const [editing, setEditing] = useState(false);
   const [current, setCurrent] = useState(value ?? "");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
   function startEdit() {
     setEditing(true);
@@ -44,8 +53,9 @@ export function EditableCell({ value, recordId, field, apiPath, className = "", 
     }
   }
 
-  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter") save();
+  function onKeyDown(e: React.KeyboardEvent) {
+    // In multiline mode, Enter inserts a newline; save on blur instead.
+    if (e.key === "Enter" && !multiline) save();
     if (e.key === "Escape") {
       setCurrent(value ?? "");
       setEditing(false);
@@ -53,15 +63,27 @@ export function EditableCell({ value, recordId, field, apiPath, className = "", 
   }
 
   if (editing) {
-    return (
+    const cls = `w-full bg-white dark:bg-gray-900 border border-purple-400 rounded px-1 py-0.5 text-xs font-mono outline-none ${className}`;
+    return multiline ? (
+      <textarea
+        ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+        autoFocus
+        rows={4}
+        value={current}
+        onChange={(e) => setCurrent(e.target.value)}
+        onBlur={save}
+        onKeyDown={onKeyDown}
+        className={cls}
+      />
+    ) : (
       <input
-        ref={inputRef}
+        ref={inputRef as React.RefObject<HTMLInputElement>}
         autoFocus
         value={current}
         onChange={(e) => setCurrent(e.target.value)}
         onBlur={save}
         onKeyDown={onKeyDown}
-        className={`w-full bg-white dark:bg-gray-900 border border-purple-400 rounded px-1 py-0.5 text-xs font-mono outline-none ${className}`}
+        className={cls}
       />
     );
   }
@@ -76,7 +98,11 @@ export function EditableCell({ value, recordId, field, apiPath, className = "", 
         error ? "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300" : ""
       } ${className}`}
     >
-      {current || <span className="text-gray-400">{placeholder}</span>}
+      {current ? (
+        multiline && current.length > 60 ? `${current.slice(0, 60)}…` : current
+      ) : (
+        <span className="text-gray-400">{placeholder}</span>
+      )}
     </span>
   );
 }
