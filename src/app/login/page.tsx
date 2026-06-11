@@ -34,7 +34,7 @@ function LoginForm() {
 
   async function handleSignIn() {
     setLoading(true);
-    await signIn("google", { callbackUrl: "/" });
+    await signIn("google", { redirectTo: "/" });
   }
 
   return (

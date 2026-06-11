@@ -1,36 +1,42 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# kspace Admin
 
-## Getting Started
+Internal admin dashboard for the kspace app: catalog management (groups, idols, events) and scraper
+operations (raw scraped events, scraper runs, reconciliation review) on top of a shared Supabase project.
 
-First, run the development server:
+Built with Next.js (App Router), Tailwind CSS, and next-auth v5. All data access goes through the
+Supabase **service-role** client (`src/lib/supabase.ts`) in server components and API routes — there is
+no client-side Supabase usage.
+
+## Authentication
+
+Sign-in is Google OAuth via next-auth, gated by an allowlist: an email must exist in the
+`admin_allowed_emails` table in Supabase (matched case-insensitively) or sign-in is rejected.
+There is no self-serve signup — add rows to that table to grant access.
+
+## Environment variables
+
+Copy `.env.example` to `.env.local` and fill in:
+
+| Variable | Purpose |
+| --- | --- |
+| `SUPABASE_URL` | Supabase project URL (server-side only, no `NEXT_PUBLIC_` prefix) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service-role key — bypasses RLS, never expose to the client |
+| `AUTH_SECRET` | next-auth secret (`npx auth secret`) |
+| `AUTH_URL` | Public app URL (`http://localhost:3000` in dev, Railway domain in prod) |
+| `AUTH_GOOGLE_ID` | Google OAuth client ID |
+| `AUTH_GOOGLE_SECRET` | Google OAuth client secret |
+
+## Development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev   # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`npm run build` / `npm run start` for a production build, `npm run lint` for ESLint.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deployment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Deployed on Railway. Set the env vars above in the Railway service (point `AUTH_URL` at the public
+Railway domain, e.g. `https://your-app.up.railway.app`) and add that domain as an authorized redirect
+URI on the Google OAuth client (`<AUTH_URL>/api/auth/callback/google`).

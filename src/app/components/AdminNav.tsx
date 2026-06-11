@@ -8,11 +8,12 @@ const navItems = [
   { href: "/", label: "Overview", icon: "◈" },
   { href: "/data-management", label: "Data Management", icon: "◫" },
   { href: "/scrapers", label: "Scrapers", icon: "⟳" },
-  { href: "/alerts", label: "Alerts", icon: "▲" },
+  { href: "/review", label: "Review Queue", icon: "▲" },
+  { href: "/database", label: "Database", icon: "≣" },
   { href: "/analytics", label: "Analytics", icon: "◈̈" },
 ];
 
-export function AdminNav({ activeAlerts }: { activeAlerts: number }) {
+export function AdminNav({ reviewCount }: { reviewCount: number }) {
   const pathname = usePathname();
 
   return (
@@ -34,9 +35,9 @@ export function AdminNav({ activeAlerts }: { activeAlerts: number }) {
           >
             <span className="text-[10px] opacity-60">{item.icon}</span>
             {item.label}
-            {item.label === "Alerts" && activeAlerts > 0 && (
+            {item.label === "Review Queue" && reviewCount > 0 && (
               <span className="ml-auto rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white leading-none">
-                {activeAlerts}
+                {reviewCount}
               </span>
             )}
           </Link>
@@ -44,7 +45,7 @@ export function AdminNav({ activeAlerts }: { activeAlerts: number }) {
       })}
       <div className="mt-auto px-1 pb-2 pt-1 border-t border-gray-300 dark:border-gray-800">
         <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
+          onClick={() => signOut({ redirectTo: "/login" })}
           className="w-full flex items-center gap-2 rounded px-2 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200 transition-colors"
         >
           <span className="text-[10px] opacity-60">⏻</span>

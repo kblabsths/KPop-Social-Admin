@@ -5,7 +5,8 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import "./globals.css";
 
-export const revalidate = 60;
+// NOTE: no `revalidate` — auth() reads headers, which forces dynamic
+// rendering of every route anyway.
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -46,11 +47,11 @@ export default async function RootLayout({
 
   const supabase = getSupabaseAdmin();
 
-  const [activeAlertsResult, latestRunResult] = await Promise.all([
+  const [needsReviewResult, latestRunResult] = await Promise.all([
     supabase
-      .from("data_quality_alerts")
+      .from("scraped_events")
       .select("*", { count: "exact", head: true })
-      .is("resolved_at", null),
+      .eq("status", "needs_review"),
     supabase
       .from("scraper_runs")
       .select("*")
@@ -59,7 +60,7 @@ export default async function RootLayout({
       .maybeSingle(),
   ]);
 
-  const activeAlerts = activeAlertsResult.count ?? 0;
+  const needsReview = needsReviewResult.count ?? 0;
   const latestRun = latestRunResult.data;
 
   // eslint-disable-next-line react-hooks/purity
@@ -81,7 +82,7 @@ export default async function RootLayout({
             Admin Panel
           </h2>
         </div>
-        <AdminNav activeAlerts={activeAlerts} />
+        <AdminNav reviewCount={needsReview} />
       </aside>
 
       {/* Main content area */}
@@ -118,15 +119,15 @@ export default async function RootLayout({
           <span className="text-gray-300 dark:text-gray-700">|</span>
 
           <div className="flex items-center gap-1.5">
-            <span className="text-gray-500 dark:text-gray-400">Alerts:</span>
+            <span className="text-gray-500 dark:text-gray-400">Review:</span>
             <span
               className={`font-semibold ${
-                activeAlerts > 0
+                needsReview > 0
                   ? "text-orange-600 dark:text-orange-400"
                   : "text-gray-600 dark:text-gray-400"
               }`}
             >
-              {activeAlerts}
+              {needsReview}
             </span>
           </div>
 

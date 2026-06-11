@@ -1,7 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase";
 import Link from "next/link";
 
-export const revalidate = 30;
+// No `revalidate`: the root layout's auth() forces dynamic rendering anyway.
 
 const STALE_THRESHOLD_HOURS = 24;
 
@@ -41,10 +41,8 @@ export default async function AdminOverview() {
     // Data completeness — groups / idols
     groupsWithImageResult,
     idolsWithImageResult,
-    // Alerts
-    activeAlertsResult,
-    criticalAlertsResult,
-    recentAlertsResult,
+    // Review queue
+    needsReviewResult,
     // Scraper runs
     allRunsResult,
   ] = await Promise.all([
@@ -53,27 +51,16 @@ export default async function AdminOverview() {
     supabase.from("idols").select("*", { count: "exact", head: true }),
     supabase.from("events").select("*", { count: "exact", head: true }),
     supabase.from("events").select("*", { count: "exact", head: true }).gte("date", now),
-    supabase.from("web_users").select("*", { count: "exact", head: true }),
+    supabase.from("profiles").select("*", { count: "exact", head: true }),
     supabase.from("events").select("*", { count: "exact", head: true }).not("image_url", "is", null),
     supabase.from("events").select("*", { count: "exact", head: true }).not("ticket_url", "is", null),
     supabase.from("events").select("*", { count: "exact", head: true }).not("venue_id", "is", null),
     supabase.from("groups").select("*", { count: "exact", head: true }).not("image_url", "is", null),
     supabase.from("idols").select("*", { count: "exact", head: true }).not("image_url", "is", null),
     supabase
-      .from("data_quality_alerts")
+      .from("scraped_events")
       .select("*", { count: "exact", head: true })
-      .is("resolved_at", null),
-    supabase
-      .from("data_quality_alerts")
-      .select("*", { count: "exact", head: true })
-      .is("resolved_at", null)
-      .in("severity", ["CRITICAL", "HIGH"]),
-    supabase
-      .from("data_quality_alerts")
-      .select("*")
-      .is("resolved_at", null)
-      .order("created_at", { ascending: false })
-      .limit(5),
+      .eq("status", "needs_review"),
     supabase
       .from("scraper_runs")
       .select("id, source, status, started_at, completed_at, events_new, events_updated, events_errored")
@@ -94,9 +81,7 @@ export default async function AdminOverview() {
   const groupsWithImage = groupsWithImageResult.count ?? 0;
   const idolsWithImage = idolsWithImageResult.count ?? 0;
 
-  const activeAlerts = activeAlertsResult.count ?? 0;
-  const criticalAlerts = criticalAlertsResult.count ?? 0;
-  const recentAlerts = recentAlertsResult.data ?? [];
+  const needsReview = needsReviewResult.count ?? 0;
 
   const allRuns = allRunsResult.data ?? [];
   const latestRun = allRuns[0] ?? null;
@@ -130,34 +115,18 @@ export default async function AdminOverview() {
   const isStale = !latestRun || (hoursSinceLastRun ?? Infinity) > STALE_THRESHOLD_HOURS;
 
   // ── Activity feed (last 10) ────────────────────────────────────────────────
-  const recentRuns = allRuns.slice(0, 10);
-  const activityFeed = [
-    ...recentRuns.map((r) => ({
-      type: "scraper" as const,
-      time: new Date(r.started_at),
-      label: `${r.source} — ${r.status}`,
-      detail: `+${r.events_new ?? 0} new, ~${r.events_updated ?? 0} updated${(r.events_errored ?? 0) > 0 ? `, ${r.events_errored} err` : ""}`,
-      status: r.status,
-    })),
-    ...recentAlerts.map((a) => ({
-      type: "alert" as const,
-      time: new Date(a.created_at),
-      label: `${a.severity} ${a.alert_type}`,
-      detail: a.message,
-      status: a.severity,
-    })),
-  ]
-    .sort((a, b) => b.time.getTime() - a.time.getTime())
-    .slice(0, 10);
+  const activityFeed = allRuns.slice(0, 10).map((r) => ({
+    type: "scraper" as const,
+    time: new Date(r.started_at),
+    label: `${r.source} — ${r.status}`,
+    detail: `+${r.events_new ?? 0} new, ~${r.events_updated ?? 0} updated${(r.events_errored ?? 0) > 0 ? `, ${r.events_errored} err` : ""}`,
+    status: r.status,
+  }));
 
   const statusColor: Record<string, string> = {
     completed: "text-green-600 dark:text-green-400",
     failed: "text-red-600 dark:text-red-400",
     running: "text-blue-600 dark:text-blue-400",
-    CRITICAL: "text-red-600 dark:text-red-400",
-    HIGH: "text-orange-600 dark:text-orange-400",
-    MEDIUM: "text-yellow-600 dark:text-yellow-400",
-    LOW: "text-blue-500 dark:text-blue-400",
   };
 
   const statusBadge: Record<string, string> = {
@@ -193,10 +162,10 @@ export default async function AdminOverview() {
         ) : (
           <span className="opacity-80">No scraper runs recorded.</span>
         )}
-        {criticalAlerts > 0 && (
-          <span className="font-semibold text-red-700 dark:text-red-300">
-            ▲ {criticalAlerts} critical alert{criticalAlerts !== 1 ? "s" : ""}
-          </span>
+        {needsReview > 0 && (
+          <Link href="/review" className="font-semibold text-orange-700 dark:text-orange-300 underline">
+            ▲ {needsReview} event{needsReview !== 1 ? "s" : ""} awaiting review
+          </Link>
         )}
       </div>
 
@@ -215,29 +184,17 @@ export default async function AdminOverview() {
         </div>
       </section>
 
-      {/* ── Alerts ── */}
-      {activeAlerts > 0 && (
+      {/* ── Review queue ── */}
+      {needsReview > 0 && (
         <section>
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Active Alerts
+            Review Queue
           </h2>
           <div className="grid grid-cols-2 gap-2 md:max-w-xs">
-            <StatCard label="Total Active" value={activeAlerts} alert={activeAlerts > 0} />
-            <StatCard label="Critical / High" value={criticalAlerts} alert={criticalAlerts > 0} />
+            <StatCard label="Awaiting Review" value={needsReview} alert />
           </div>
-          {recentAlerts.length > 0 && (
-            <div className="mt-2 border border-gray-300 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-800">
-              {recentAlerts.map((a) => (
-                <div key={a.id} className="flex items-start gap-3 px-3 py-1.5 text-xs font-mono hover:bg-gray-50 dark:hover:bg-gray-900">
-                  <span className={`shrink-0 font-semibold w-20 ${statusColor[a.severity] ?? ""}`}>{a.severity}</span>
-                  <span className="shrink-0 text-gray-500 dark:text-gray-400 w-28">{a.alert_type}</span>
-                  <span className="truncate text-gray-700 dark:text-gray-300">{a.message}</span>
-                </div>
-              ))}
-            </div>
-          )}
           <p className="mt-1 text-[10px] font-mono text-gray-400">
-            <Link href="/alerts" className="underline hover:text-gray-600">View all alerts →</Link>
+            <Link href="/review" className="underline hover:text-gray-600">Open review queue →</Link>
           </p>
         </section>
       )}
@@ -360,9 +317,7 @@ export default async function AdminOverview() {
                 <span className="shrink-0 text-gray-400 dark:text-gray-500 w-32">
                   {item.time.toISOString().replace("T", " ").slice(0, 16)}
                 </span>
-                <span className={`shrink-0 w-4 text-center ${item.type === "alert" ? "text-orange-500" : "text-blue-500"}`}>
-                  {item.type === "alert" ? "▲" : "⟳"}
-                </span>
+                <span className="shrink-0 w-4 text-center text-blue-500">⟳</span>
                 <span className={`shrink-0 font-semibold ${statusColor[item.status] ?? "text-gray-600 dark:text-gray-300"}`}>
                   {item.label}
                 </span>

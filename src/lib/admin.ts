@@ -14,7 +14,7 @@ export async function requireAdmin() {
   const { data: allowed, error: lookupError } = await supabase
     .from("admin_allowed_emails")
     .select("id")
-    .eq("email", session.user.email)
+    .ilike("email", session.user.email)
     .maybeSingle();
 
   if (lookupError || !allowed) {

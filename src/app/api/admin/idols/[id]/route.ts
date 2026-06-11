@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/admin";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 const ALLOWED_FIELDS = new Set([
@@ -12,8 +12,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { error: authError } = await requireAdmin();
+  if (authError) return authError;
 
   const { id } = await params;
   const body = await request.json();
