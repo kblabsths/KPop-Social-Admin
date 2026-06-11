@@ -12,7 +12,7 @@ export async function GET() {
     latestRunResult,
     totalRunsResult,
     successfulRunsResult,
-    totalConcertsResult,
+    totalEventsResult,
   ] = await Promise.all([
     supabase
       .from("scraper_runs")
@@ -27,13 +27,13 @@ export async function GET() {
       .from("scraper_runs")
       .select("*", { count: "exact", head: true })
       .eq("status", "completed"),
-    supabase.from("concerts").select("*", { count: "exact", head: true }),
+    supabase.from("events").select("*", { count: "exact", head: true }),
   ]);
 
   const latestRun = latestRunResult.data;
   const totalRuns = totalRunsResult.count ?? 0;
   const successfulRuns = successfulRunsResult.count ?? 0;
-  const totalConcerts = totalConcertsResult.count ?? 0;
+  const totalEvents = totalEventsResult.count ?? 0;
 
   const lastScrapeTime = latestRun?.started_at ?? null;
   const lastScrapeStatus = latestRun?.status ?? null;
@@ -50,13 +50,13 @@ export async function GET() {
   return Response.json({
     lastScrapeTime,
     lastScrapeStatus,
-    hoursSinceLastRun: hoursSinceLastRun ? Math.round(hoursSinceLastRun * 10) / 10 : null,
+    hoursSinceLastRun: hoursSinceLastRun !== null ? Math.round(hoursSinceLastRun * 10) / 10 : null,
     isStale,
     staleThresholdHours: STALE_THRESHOLD_HOURS,
     totalRuns,
     successRate: Math.round(successRate * 1000) / 10,
     totalEventsScraped,
-    totalConcertsInDb: totalConcerts,
+    totalEventsInDb: totalEvents,
     lastRunRecords: latestRun
       ? {
           created: latestRun.events_new ?? 0,

@@ -27,22 +27,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return "/login?error=AccessDenied";
       }
 
-      // Upsert the web_users record for allowlisted users only
-      const { data: existing } = await supabase
-        .from("web_users")
-        .select("id")
-        .eq("email", user.email)
-        .maybeSingle();
-
-      if (!existing) {
-        await supabase.from("web_users").insert({
-          id: user.id,
-          name: user.name ?? null,
-          email: user.email,
-          image: user.image ?? null,
-        });
-      }
-
+      // No user record is persisted: the allowlist is the source of truth
+      // (the old `web_users` table was never created in the shared project).
       return true;
     },
     jwt({ token, user }) {

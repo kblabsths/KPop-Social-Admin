@@ -2,63 +2,74 @@ import { unstable_cache } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import Link from "next/link";
 
+// Models map 1:1 to tables that actually exist in the shared Supabase
+// project (the old web_users/artists/concerts/scraper_logs/
+// data_quality_alerts tables were never created there).
 const MODELS = [
-  { key: "user", label: "Users" },
-  { key: "artist", label: "Artists" },
-  { key: "venue", label: "Venues" },
-  { key: "concert", label: "Concerts" },
+  { key: "user", label: "Profiles" },
   { key: "group", label: "Groups" },
   { key: "idol", label: "Idols" },
+  { key: "venue", label: "Venues" },
+  { key: "event", label: "Events" },
+  { key: "scrapedEvent", label: "Scraped Events" },
   { key: "post", label: "Posts" },
   { key: "scraperRun", label: "Scraper Runs" },
-  { key: "scraperLog", label: "Scraper Logs" },
-  { key: "dataQualityAlert", label: "Data Quality Alerts" },
 ] as const;
 
 type ModelKey = (typeof MODELS)[number]["key"];
 
 const MODEL_TO_TABLE: Record<ModelKey, string> = {
-  user: "web_users",
-  artist: "artists",
-  venue: "venues",
-  concert: "concerts",
+  user: "profiles",
   group: "groups",
   idol: "idols",
+  venue: "venues",
+  event: "events",
+  scrapedEvent: "scraped_events",
   post: "posts",
   scraperRun: "scraper_runs",
-  scraperLog: "scraper_logs",
-  dataQualityAlert: "data_quality_alerts",
 };
 
-async function getModelStats(tableName: string) {
+// scraper_runs has no created_at column
+const MODEL_ORDER_COLUMN: Record<ModelKey, string> = {
+  user: "created_at",
+  group: "created_at",
+  idol: "created_at",
+  venue: "created_at",
+  event: "created_at",
+  scrapedEvent: "created_at",
+  post: "created_at",
+  scraperRun: "started_at",
+};
+
+async function getModelStats(modelKey: ModelKey) {
   const supabase = getSupabaseAdmin();
+  const tableName = MODEL_TO_TABLE[modelKey];
+  const orderColumn = MODEL_ORDER_COLUMN[modelKey];
   const [totalResult, newestRec, oldestRec] = await Promise.all([
     supabase.from(tableName).select("*", { count: "exact", head: true }),
     supabase
       .from(tableName)
-      .select("created_at")
-      .order("created_at", { ascending: false })
+      .select(orderColumn)
+      .order(orderColumn, { ascending: false })
       .limit(1)
       .maybeSingle(),
     supabase
       .from(tableName)
-      .select("created_at")
-      .order("created_at", { ascending: true })
+      .select(orderColumn)
+      .order(orderColumn, { ascending: true })
       .limit(1)
       .maybeSingle(),
   ]);
-  return {
-    total: totalResult.count ?? 0,
-    newest: newestRec.data?.created_at ?? null,
-    oldest: oldestRec.data?.created_at ?? null,
-  };
+  const newest = (newestRec.data as Record<string, string> | null)?.[orderColumn] ?? null;
+  const oldest = (oldestRec.data as Record<string, string> | null)?.[orderColumn] ?? null;
+  return { total: totalResult.count ?? 0, newest, oldest };
 }
 
 const getCachedAllModelStats = unstable_cache(
   async () =>
     Promise.all(
       MODELS.map((m) =>
-        getModelStats(MODEL_TO_TABLE[m.key]).then((s) => ({
+        getModelStats(m.key).then((s) => ({
           key: m.key,
           label: m.label,
           ...s,
@@ -68,105 +79,6 @@ const getCachedAllModelStats = unstable_cache(
   ["db-all-model-stats"],
   { revalidate: 60 }
 );
-
-const getCachedFieldCompleteness = unstable_cache(
-  getFieldCompleteness,
-  ["db-field-completeness"],
-  { revalidate: 60 }
-);
-
-async function getFieldCompleteness() {
-  const supabase = getSupabaseAdmin();
-
-  const [
-    totalConcerts,
-    concertsWithTourName,
-    concertsWithEndDate,
-    concertsWithDoorsOpen,
-    concertsWithTicketUrl,
-    concertsWithDescription,
-    concertsWithImageUrl,
-    concertsWithSource,
-    totalArtists,
-    artistsWithKoreanName,
-    artistsWithCompany,
-    artistsWithDescription,
-    artistsWithImage,
-    artistsWithDebutDate,
-    totalVenues,
-    venuesWithState,
-    venuesWithLat,
-    venuesWithCapacity,
-    venuesWithType,
-    venuesWithAddress,
-  ] = await Promise.all([
-    supabase.from("concerts").select("*", { count: "exact", head: true }),
-    supabase.from("concerts").select("*", { count: "exact", head: true }).not("tour_name", "is", null),
-    supabase.from("concerts").select("*", { count: "exact", head: true }).not("end_date", "is", null),
-    supabase.from("concerts").select("*", { count: "exact", head: true }).not("doors_open", "is", null),
-    supabase.from("concerts").select("*", { count: "exact", head: true }).not("ticket_url", "is", null),
-    supabase.from("concerts").select("*", { count: "exact", head: true }).not("description", "is", null),
-    supabase.from("concerts").select("*", { count: "exact", head: true }).not("image_url", "is", null),
-    supabase.from("concerts").select("*", { count: "exact", head: true }).not("source", "is", null),
-    supabase.from("artists").select("*", { count: "exact", head: true }),
-    supabase.from("artists").select("*", { count: "exact", head: true }).not("korean_name", "is", null),
-    supabase.from("artists").select("*", { count: "exact", head: true }).not("company", "is", null),
-    supabase.from("artists").select("*", { count: "exact", head: true }).not("description", "is", null),
-    supabase.from("artists").select("*", { count: "exact", head: true }).not("image", "is", null),
-    supabase.from("artists").select("*", { count: "exact", head: true }).not("debut_date", "is", null),
-    supabase.from("venues").select("*", { count: "exact", head: true }),
-    supabase.from("venues").select("*", { count: "exact", head: true }).not("state", "is", null),
-    supabase.from("venues").select("*", { count: "exact", head: true }).not("latitude", "is", null).not("longitude", "is", null),
-    supabase.from("venues").select("*", { count: "exact", head: true }).not("capacity", "is", null),
-    supabase.from("venues").select("*", { count: "exact", head: true }).not("type", "is", null),
-    supabase.from("venues").select("*", { count: "exact", head: true }).not("address", "is", null),
-  ]);
-
-  return {
-    concert: {
-      total: totalConcerts.count ?? 0,
-      fields: [
-        { label: "tourName", filled: concertsWithTourName.count ?? 0 },
-        { label: "endDate", filled: concertsWithEndDate.count ?? 0 },
-        { label: "doorsOpen", filled: concertsWithDoorsOpen.count ?? 0 },
-        { label: "ticketUrl", filled: concertsWithTicketUrl.count ?? 0 },
-        { label: "description", filled: concertsWithDescription.count ?? 0 },
-        { label: "imageUrl", filled: concertsWithImageUrl.count ?? 0 },
-        { label: "source", filled: concertsWithSource.count ?? 0 },
-      ],
-    },
-    artist: {
-      total: totalArtists.count ?? 0,
-      fields: [
-        { label: "koreanName", filled: artistsWithKoreanName.count ?? 0 },
-        { label: "company", filled: artistsWithCompany.count ?? 0 },
-        { label: "description", filled: artistsWithDescription.count ?? 0 },
-        { label: "image", filled: artistsWithImage.count ?? 0 },
-        { label: "debutDate", filled: artistsWithDebutDate.count ?? 0 },
-      ],
-    },
-    venue: {
-      total: totalVenues.count ?? 0,
-      fields: [
-        { label: "state", filled: venuesWithState.count ?? 0 },
-        { label: "lat/lng", filled: venuesWithLat.count ?? 0 },
-        { label: "capacity", filled: venuesWithCapacity.count ?? 0 },
-        { label: "type", filled: venuesWithType.count ?? 0 },
-        { label: "address", filled: venuesWithAddress.count ?? 0 },
-      ],
-    },
-  };
-}
-
-function pct(filled: number, total: number): number {
-  return total > 0 ? Math.round((filled / total) * 1000) / 10 : 0;
-}
-
-function pctColor(value: number): string {
-  if (value >= 90) return "text-green-600 dark:text-green-400";
-  if (value >= 70) return "text-yellow-600 dark:text-yellow-400";
-  return "text-red-600 dark:text-red-400";
-}
 
 function formatDate(d: string | null): string {
   if (!d) return "--";
@@ -196,14 +108,13 @@ export default async function DatabasePage({
 
   const tableName = MODEL_TO_TABLE[selectedModel];
 
-  const [recordsResult, allModelStats, completeness] = await Promise.all([
+  const [recordsResult, allModelStats] = await Promise.all([
     supabase
       .from(tableName)
       .select("*", { count: "exact" })
-      .order("created_at", { ascending: false })
+      .order(MODEL_ORDER_COLUMN[selectedModel], { ascending: false })
       .range((page - 1) * pageSize, page * pageSize - 1),
     getCachedAllModelStats(),
-    getCachedFieldCompleteness(),
   ]);
 
   const records = recordsResult.data ?? [];
@@ -261,52 +172,7 @@ export default async function DatabasePage({
         </div>
       </section>
 
-      {/* Field completeness for key models */}
-      <section>
-        <h2 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1.5">
-          Field Completeness
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          {(["concert", "artist", "venue"] as const).map((modelName) => {
-            const data = completeness[modelName];
-            return (
-              <div
-                key={modelName}
-                className="border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900"
-              >
-                <div className="px-2 py-1.5 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {modelName} ({data.total})
-                  </span>
-                </div>
-                <div className="px-2 py-1">
-                  {data.fields.map((f) => {
-                    const p = pct(f.filled, data.total);
-                    return (
-                      <div
-                        key={f.label}
-                        className="flex items-center justify-between py-0.5 text-[11px] font-mono"
-                      >
-                        <span className="text-gray-500 dark:text-gray-400">
-                          {f.label}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-400 dark:text-gray-500">
-                            {f.filled}/{data.total}
-                          </span>
-                          <span className={`font-semibold w-12 text-right ${pctColor(p)}`}>
-                            {p}%
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      {/* Field completeness lives at /data-management/completeness (prod views) */}
 
       {/* Model selector tabs */}
       <div className="flex flex-wrap gap-1">

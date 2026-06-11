@@ -136,11 +136,11 @@ export default async function RootLayout({
             <span className="text-gray-500 dark:text-gray-400">Last scrape:</span>
             <span
               className={`font-semibold ${
-                lastScrapeStatus === "SUCCESS"
+                lastScrapeStatus === "completed"
                   ? "text-green-600 dark:text-green-400"
-                  : lastScrapeStatus === "FAILED"
+                  : lastScrapeStatus === "failed"
                     ? "text-red-600 dark:text-red-400"
-                    : lastScrapeStatus === "RUNNING"
+                    : lastScrapeStatus === "running"
                       ? "text-blue-600 dark:text-blue-400"
                       : "text-gray-600 dark:text-gray-400"
               }`}

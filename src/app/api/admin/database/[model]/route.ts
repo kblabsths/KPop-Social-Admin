@@ -2,30 +2,42 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 import { requireAdmin, paginationParams } from "@/lib/admin";
 import type { NextRequest } from "next/server";
 
+// Kept in sync with src/app/database/page.tsx — tables that actually exist
+// in the shared Supabase project.
 const ALLOWED_MODELS = [
   "user",
-  "artist",
-  "venue",
-  "concert",
   "group",
+  "idol",
+  "venue",
+  "event",
+  "scrapedEvent",
   "post",
   "scraperRun",
-  "scraperLog",
-  "dataQualityAlert",
 ] as const;
 
 type AllowedModel = (typeof ALLOWED_MODELS)[number];
 
 const MODEL_TO_TABLE: Record<AllowedModel, string> = {
-  user: "web_users",
-  artist: "artists",
-  venue: "venues",
-  concert: "concerts",
+  user: "profiles",
   group: "groups",
+  idol: "idols",
+  venue: "venues",
+  event: "events",
+  scrapedEvent: "scraped_events",
   post: "posts",
   scraperRun: "scraper_runs",
-  scraperLog: "scraper_logs",
-  dataQualityAlert: "data_quality_alerts",
+};
+
+// scraper_runs has no created_at column
+const MODEL_ORDER_COLUMN: Record<AllowedModel, string> = {
+  user: "created_at",
+  group: "created_at",
+  idol: "created_at",
+  venue: "created_at",
+  event: "created_at",
+  scrapedEvent: "created_at",
+  post: "created_at",
+  scraperRun: "started_at",
 };
 
 export async function GET(
@@ -53,7 +65,7 @@ export async function GET(
   const { data, count: total, error: queryError } = await supabase
     .from(tableName)
     .select("*", { count: "exact" })
-    .order("created_at", { ascending: false })
+    .order(MODEL_ORDER_COLUMN[model as AllowedModel], { ascending: false })
     .range(skip, skip + pageSize - 1);
 
   if (queryError) return Response.json({ error: queryError.message }, { status: 500 });

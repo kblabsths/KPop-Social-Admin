@@ -6,22 +6,24 @@ export async function GET() {
   const { error } = await requireAdmin();
   if (error) return error;
 
-  const [usersResult, artistsResult, venuesResult, concertsResult, scraperRunsResult, activeAlertsResult] =
+  // Counts come from the tables that exist in the shared Supabase project
+  // (the catalog is groups/idols; app users live in profiles).
+  const [usersResult, groupsResult, idolsResult, venuesResult, eventsResult, scraperRunsResult] =
     await Promise.all([
-      supabase.from("web_users").select("*", { count: "exact", head: true }),
-      supabase.from("artists").select("*", { count: "exact", head: true }),
+      supabase.from("profiles").select("*", { count: "exact", head: true }),
+      supabase.from("groups").select("*", { count: "exact", head: true }),
+      supabase.from("idols").select("*", { count: "exact", head: true }),
       supabase.from("venues").select("*", { count: "exact", head: true }),
-      supabase.from("concerts").select("*", { count: "exact", head: true }),
+      supabase.from("events").select("*", { count: "exact", head: true }),
       supabase.from("scraper_runs").select("*", { count: "exact", head: true }),
-      supabase.from("data_quality_alerts").select("*", { count: "exact", head: true }).is("resolved_at", null),
     ]);
 
   return Response.json({
     users: usersResult.count ?? 0,
-    artists: artistsResult.count ?? 0,
+    groups: groupsResult.count ?? 0,
+    idols: idolsResult.count ?? 0,
     venues: venuesResult.count ?? 0,
-    concerts: concertsResult.count ?? 0,
+    events: eventsResult.count ?? 0,
     scraperRuns: scraperRunsResult.count ?? 0,
-    activeAlerts: activeAlertsResult.count ?? 0,
   });
 }
