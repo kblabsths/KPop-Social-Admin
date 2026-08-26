@@ -12,20 +12,24 @@ export default async function AnalyticsPage() {
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  // ── User counts ─────────────────────────────────────────────────────────────
-  const [totalUsersResult, newLast7Result, newLast30Result, recentUsersResult] = await Promise.all([
-    supabase.from("web_users").select("*", { count: "exact", head: true }),
-    supabase.from("web_users").select("*", { count: "exact", head: true }).gte("created_at", sevenDaysAgo),
-    supabase.from("web_users").select("*", { count: "exact", head: true }).gte("created_at", thirtyDaysAgo),
-    supabase.from("web_users").select("id, name, email, created_at").order("created_at", { ascending: false }).limit(50),
-  ]);
+  // ── User counts (app users live in `profiles`) ─────────────────────────────
+  const [totalUsersResult, newLast7Result, newLast30Result, recentUsersResult, signupRowsResult] =
+    await Promise.all([
+      supabase.from("profiles").select("*", { count: "exact", head: true }),
+      supabase.from("profiles").select("*", { count: "exact", head: true }).gte("created_at", sevenDaysAgo),
+      supabase.from("profiles").select("*", { count: "exact", head: true }).gte("created_at", thirtyDaysAgo),
+      supabase.from("profiles").select("id, name, email, created_at").order("created_at", { ascending: false }).limit(50),
+      // All signups in the last 30 days — only created_at, no row cap
+      supabase.from("profiles").select("created_at").gte("created_at", thirtyDaysAgo),
+    ]);
 
   const totalUsers = totalUsersResult.count ?? 0;
   const newLast7 = newLast7Result.count ?? 0;
   const newLast30 = newLast30Result.count ?? 0;
   const recentUsers = recentUsersResult.data ?? [];
+  const signupRows = signupRowsResult.data ?? [];
 
-  // ── Build signups per day (last 30 days) from recentUsers ───────────────────
+  // ── Build signups per day (last 30 days) ────────────────────────────────────
   // Build a map of date -> count for the bar chart
   const signupsByDay: Record<string, number> = {};
   for (let i = 29; i >= 0; i--) {
@@ -33,8 +37,8 @@ export default async function AnalyticsPage() {
     const key = d.toISOString().slice(0, 10);
     signupsByDay[key] = 0;
   }
-  for (const user of recentUsers) {
-    const key = new Date(user.created_at).toISOString().slice(0, 10);
+  for (const row of signupRows) {
+    const key = new Date(row.created_at).toISOString().slice(0, 10);
     if (key in signupsByDay) signupsByDay[key]++;
   }
   const signupDays = Object.entries(signupsByDay);
@@ -51,25 +55,12 @@ export default async function AnalyticsPage() {
 
   // ── Upcoming events ──────────────────────────────────────────────────────────
   const upcomingEventsResult = await supabase
-    .from("events")
-    .select("id, title, artist, city, country, date, type")
-    .gte("date", now.toISOString())
-    .order("date", { ascending: true })
+    .from("event_listings")
+    .select("event_id, title, performers_text, city, country, starts_at, event_type")
+    .gte("starts_at", now.toISOString())
+    .order("starts_at", { ascending: true })
     .limit(10);
   const upcomingEvents = upcomingEventsResult.data ?? [];
-
-  // ── Location aggregates from web_users if available ─────────────────────────
-  // Attempt to get location; gracefully handle if column doesn't exist
-  type LocationRow = { country: string; count: number };
-  let locationData: LocationRow[] = [];
-  try {
-    const locResult = await supabase.rpc("user_location_summary").select();
-    if (!locResult.error && locResult.data) {
-      locationData = locResult.data as LocationRow[];
-    }
-  } catch {
-    // location data not available — skip silently
-  }
 
   return (
     <div className="space-y-6">
@@ -162,16 +153,16 @@ export default async function AnalyticsPage() {
               <p className="px-3 py-4 text-xs text-gray-400 font-mono text-center">No upcoming events</p>
             ) : (
               upcomingEvents.map((event) => (
-                <div key={event.id} className="px-3 py-2">
+                <div key={event.event_id} className="px-3 py-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-xs font-mono text-gray-800 dark:text-gray-200 truncate">{event.title}</p>
                       <p className="text-[11px] font-mono text-gray-400">
-                        {event.artist} · {event.city || event.country || "—"}
+                        {event.performers_text || "—"} · {event.city || event.country || "—"}
                       </p>
                     </div>
                     <span className="text-[10px] font-mono text-gray-400 shrink-0 whitespace-nowrap">
-                      {new Date(event.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      {new Date(event.starts_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                     </span>
                   </div>
                 </div>
@@ -180,33 +171,6 @@ export default async function AnalyticsPage() {
           </div>
         </section>
       </div>
-
-      {/* ── Location aggregates (if available) ── */}
-      {locationData.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-[11px] uppercase tracking-wider font-semibold text-gray-400 dark:text-gray-500">
-            User Locations
-          </h2>
-          <div className="border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-            <table className="w-full text-xs font-mono">
-              <thead>
-                <tr className="bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-left">
-                  <th className="px-3 py-1.5">Country</th>
-                  <th className="px-3 py-1.5 text-right">Users</th>
-                </tr>
-              </thead>
-              <tbody>
-                {locationData.map((row) => (
-                  <tr key={row.country} className="border-t border-gray-100 dark:border-gray-800">
-                    <td className="px-3 py-1.5 text-gray-700 dark:text-gray-300">{row.country}</td>
-                    <td className="px-3 py-1.5 text-gray-500 dark:text-gray-400 text-right">{row.count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
 
       {/* ── Recent signups ── */}
       <section className="space-y-2">

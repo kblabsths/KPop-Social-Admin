@@ -16,33 +16,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       const supabase = getSupabaseAdmin();
 
-      // Check allowlist — only emails in admin_allowed_emails may sign in
-      const { data: allowed } = await supabase
+      // Check allowlist — only emails in admin_allowed_emails may sign in.
+      // ilike with the exact string makes the match case-insensitive.
+      const { data: allowed, error } = await supabase
         .from("admin_allowed_emails")
         .select("id")
-        .eq("email", user.email)
+        .ilike("email", user.email)
         .maybeSingle();
 
-      if (!allowed) {
+      // Fail closed: deny on lookup errors as well as missing rows
+      if (error || !allowed) {
         return "/login?error=AccessDenied";
       }
 
-      // Upsert the web_users record for allowlisted users only
-      const { data: existing } = await supabase
-        .from("web_users")
-        .select("id")
-        .eq("email", user.email)
-        .maybeSingle();
-
-      if (!existing) {
-        await supabase.from("web_users").insert({
-          id: user.id,
-          name: user.name ?? null,
-          email: user.email,
-          image: user.image ?? null,
-        });
-      }
-
+      // No user record is persisted: the allowlist is the source of truth
+      // (the old `web_users` table was never created in the shared project).
       return true;
     },
     jwt({ token, user }) {

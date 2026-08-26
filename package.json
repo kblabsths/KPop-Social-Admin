@@ -6,15 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "scrape": "tsx scripts/scrape-production.ts",
-    "scrape:scheduled": "tsx scripts/scrape-scheduled.ts",
-    "scrape:force": "tsx scripts/scrape-scheduled.ts --force",
-    "scrape:check": "tsx scripts/scrape-scheduled.ts --check-only",
-    "seed": "npx tsx scripts/seed-concerts.ts"
+    "lint": "eslint"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.10.0",
     "@supabase/supabase-js": "^2.101.1",
     "next": "16.2.2",
     "next-auth": "^5.0.0-beta.30",
