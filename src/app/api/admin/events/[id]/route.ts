@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
+// Canonical events (events cutover, 2026-08-25): the editable scalars live on the
+// events row. Performers and venue are links (event_performers / venues) and are
+// not field-edited here.
 const ALLOWED_FIELDS = new Set([
-  "title", "artist", "venue", "city", "country", "type",
+  "title", "event_type", "status", "description", "ticket_url", "poster_url",
 ]);
 
 export async function PATCH(
@@ -25,7 +28,7 @@ export async function PATCH(
   const { error } = await supabase
     .from("events")
     .update({ [field]: value === "" ? null : value })
-    .eq("id", id);
+    .eq("event_id", id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });

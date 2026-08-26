@@ -47,31 +47,23 @@ export default async function RootLayout({
 
   const supabase = getSupabaseAdmin();
 
-  const [needsReviewResult, latestRunResult] = await Promise.all([
-    supabase
-      .from("scraped_events")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "needs_review"),
-    supabase
-      .from("scraper_runs")
-      .select("*")
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
-
-  const needsReview = needsReviewResult.count ?? 0;
-  const latestRun = latestRunResult.data;
+  // Catalog freshness = the newest canonical event (intake / adapters write them).
+  const latestEventResult = await supabase
+    .from("events")
+    .select("created_at")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const latestEvent = latestEventResult.data;
 
   // eslint-disable-next-line react-hooks/purity
   const now = Date.now();
-  const hoursSinceLastRun = latestRun
-    ? (now - new Date(latestRun.started_at).getTime()) / (60 * 60 * 1000)
+  const hoursSinceLastEvent = latestEvent
+    ? (now - new Date(latestEvent.created_at).getTime()) / (60 * 60 * 1000)
     : null;
   const isStale =
-    !latestRun ||
-    (hoursSinceLastRun !== null && hoursSinceLastRun > STALE_THRESHOLD_HOURS);
-  const lastScrapeStatus = latestRun?.status ?? "NONE";
+    !latestEvent ||
+    (hoursSinceLastEvent !== null && hoursSinceLastEvent > STALE_THRESHOLD_HOURS);
 
   return htmlWrapper(
     <div className="flex min-h-screen bg-gray-100 dark:bg-gray-950">
@@ -82,7 +74,7 @@ export default async function RootLayout({
             Admin Panel
           </h2>
         </div>
-        <AdminNav reviewCount={needsReview} />
+        <AdminNav />
       </aside>
 
       {/* Main content area */}
@@ -97,7 +89,7 @@ export default async function RootLayout({
                   : "bg-green-500"
               }`}
             />
-            <span className="text-gray-500 dark:text-gray-400">Data:</span>
+            <span className="text-gray-500 dark:text-gray-400">Events:</span>
             <span
               className={`font-semibold ${
                 isStale
@@ -107,47 +99,13 @@ export default async function RootLayout({
             >
               {isStale ? "STALE" : "FRESH"}
             </span>
-            {hoursSinceLastRun !== null && (
+            {hoursSinceLastEvent !== null && (
               <span className="text-gray-400 dark:text-gray-500">
-                ({hoursSinceLastRun < 1
-                  ? `${Math.round(hoursSinceLastRun * 60)}m ago`
-                  : `${Math.round(hoursSinceLastRun * 10) / 10}h ago`})
+                ({hoursSinceLastEvent < 1
+                  ? `${Math.round(hoursSinceLastEvent * 60)}m ago`
+                  : `${Math.round(hoursSinceLastEvent * 10) / 10}h ago`})
               </span>
             )}
-          </div>
-
-          <span className="text-gray-300 dark:text-gray-700">|</span>
-
-          <div className="flex items-center gap-1.5">
-            <span className="text-gray-500 dark:text-gray-400">Review:</span>
-            <span
-              className={`font-semibold ${
-                needsReview > 0
-                  ? "text-orange-600 dark:text-orange-400"
-                  : "text-gray-600 dark:text-gray-400"
-              }`}
-            >
-              {needsReview}
-            </span>
-          </div>
-
-          <span className="text-gray-300 dark:text-gray-700">|</span>
-
-          <div className="flex items-center gap-1.5">
-            <span className="text-gray-500 dark:text-gray-400">Last scrape:</span>
-            <span
-              className={`font-semibold ${
-                lastScrapeStatus === "completed"
-                  ? "text-green-600 dark:text-green-400"
-                  : lastScrapeStatus === "failed"
-                    ? "text-red-600 dark:text-red-400"
-                    : lastScrapeStatus === "running"
-                      ? "text-blue-600 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400"
-              }`}
-            >
-              {lastScrapeStatus}
-            </span>
           </div>
         </header>
 

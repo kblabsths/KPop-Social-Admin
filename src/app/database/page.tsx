@@ -11,9 +11,8 @@ const MODELS = [
   { key: "idol", label: "Idols" },
   { key: "venue", label: "Venues" },
   { key: "event", label: "Events" },
-  { key: "scrapedEvent", label: "Scraped Events" },
+  { key: "scrapedEvent", label: "Scraped Events (archive)" },
   { key: "post", label: "Posts" },
-  { key: "scraperRun", label: "Scraper Runs" },
 ] as const;
 
 type ModelKey = (typeof MODELS)[number]["key"];
@@ -26,10 +25,8 @@ const MODEL_TO_TABLE: Record<ModelKey, string> = {
   event: "events",
   scrapedEvent: "scraped_events",
   post: "posts",
-  scraperRun: "scraper_runs",
 };
 
-// scraper_runs has no created_at column
 const MODEL_ORDER_COLUMN: Record<ModelKey, string> = {
   user: "created_at",
   group: "created_at",
@@ -38,7 +35,6 @@ const MODEL_ORDER_COLUMN: Record<ModelKey, string> = {
   event: "created_at",
   scrapedEvent: "created_at",
   post: "created_at",
-  scraperRun: "started_at",
 };
 
 async function getModelStats(modelKey: ModelKey) {

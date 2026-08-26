@@ -7,13 +7,11 @@ import { signOut } from "next-auth/react";
 const navItems = [
   { href: "/", label: "Overview", icon: "◈" },
   { href: "/data-management", label: "Data Management", icon: "◫" },
-  { href: "/scrapers", label: "Scrapers", icon: "⟳" },
-  { href: "/review", label: "Review Queue", icon: "▲" },
   { href: "/database", label: "Database", icon: "≣" },
   { href: "/analytics", label: "Analytics", icon: "◈̈" },
 ];
 
-export function AdminNav({ reviewCount }: { reviewCount: number }) {
+export function AdminNav() {
   const pathname = usePathname();
 
   return (
@@ -35,11 +33,6 @@ export function AdminNav({ reviewCount }: { reviewCount: number }) {
           >
             <span className="text-[10px] opacity-60">{item.icon}</span>
             {item.label}
-            {item.label === "Review Queue" && reviewCount > 0 && (
-              <span className="ml-auto rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white leading-none">
-                {reviewCount}
-              </span>
-            )}
           </Link>
         );
       })}

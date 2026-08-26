@@ -55,10 +55,10 @@ export default async function AnalyticsPage() {
 
   // ── Upcoming events ──────────────────────────────────────────────────────────
   const upcomingEventsResult = await supabase
-    .from("events")
-    .select("id, title, artist, city, country, date, type")
-    .gte("date", now.toISOString())
-    .order("date", { ascending: true })
+    .from("event_listings")
+    .select("event_id, title, performers_text, city, country, starts_at, event_type")
+    .gte("starts_at", now.toISOString())
+    .order("starts_at", { ascending: true })
     .limit(10);
   const upcomingEvents = upcomingEventsResult.data ?? [];
 
@@ -153,16 +153,16 @@ export default async function AnalyticsPage() {
               <p className="px-3 py-4 text-xs text-gray-400 font-mono text-center">No upcoming events</p>
             ) : (
               upcomingEvents.map((event) => (
-                <div key={event.id} className="px-3 py-2">
+                <div key={event.event_id} className="px-3 py-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-xs font-mono text-gray-800 dark:text-gray-200 truncate">{event.title}</p>
                       <p className="text-[11px] font-mono text-gray-400">
-                        {event.artist} · {event.city || event.country || "—"}
+                        {event.performers_text || "—"} · {event.city || event.country || "—"}
                       </p>
                     </div>
                     <span className="text-[10px] font-mono text-gray-400 shrink-0 whitespace-nowrap">
-                      {new Date(event.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      {new Date(event.starts_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                     </span>
                   </div>
                 </div>
