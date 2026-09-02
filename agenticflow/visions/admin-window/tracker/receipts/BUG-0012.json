@@ -1,0 +1,21 @@
+{
+ "id": "BUG-0012",
+ "created": "2026-09-02T10:43:56Z",
+ "green": true,
+ "git_head": "690e0f000091b1135fc8e9f5d2342feec2e28eec",
+ "scope": [
+  "src/lib/db/gauges.ts",
+  "src/lib/gauges/resolution-latency.ts",
+  "tests/offline/gauges"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 0,
+ "tree_hash": "e33f951638742117d632401d2d57bc0568bc364e6cfd94318669648949cbd5f1",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/gauges/resolution-latency.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-66227\n\n \u2713 |offline| tests/offline/gauges/resolution-latency.test.ts (25 tests) 8ms\n\n Test Files  1 passed (1)\n      Tests  25 passed (25)\n   Start at  03:43:55\n   Duration  368ms (transform 70ms, setup 0ms, collect 98ms, tests 8ms, environment 0ms, prepare 69ms)\n\n(node:66239) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
