@@ -465,6 +465,54 @@ describe("every state renders without throwing", () => {
     expect(cheerio.load(markup)("thead th").length).toBeGreaterThan(0);
   });
 
+  it("names the sources read when the FOURTH leg is the one that refused", async () => {
+    // Browse makes four reads and the sources read is the last of them; it
+    // reports through the provenance slot, so without its own `reading` an
+    // operator would be told the provenance read failed when it did not
+    // (criterion 1's fourth leg, QA on BUG-0016).
+    const markup = await renderBrowse(
+      healthyScript({ [T.sources]: { error: transportFailure() } }),
+    );
+
+    const lines = alerts(markup);
+    expect(lines.some((line) => line.includes(T.sources))).toBe(true);
+    expect(lines.some((line) => line.includes(T.fieldProvenance))).toBe(false);
+    // The events still render: one leg's refusal is not the page's.
+    expect(bodyRows(markup)).toHaveLength(2);
+  });
+
+  it("never renders a credential the client's account quoted", async () => {
+    // The account now carries `details` verbatim onto a screen, so the scrub
+    // in `result.ts` is the only thing between a quoted request and the
+    // markup. Asserted end to end, at the surface, not at the seam.
+    const jwtShaped = [
+      Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url"),
+      Buffer.from(JSON.stringify({ role: "not-a-real-role" })).toString("base64url"),
+      "n0tar3alsignaturevalue",
+    ].join(".");
+    const host = "abcdefghijklmnopqrst.supabase.co";
+
+    const markup = await renderBrowse({
+      [T.events]: {
+        error: {
+          code: "",
+          hint: `retry with sb_secret_000notarealsecret000`,
+          message: "TypeError: fetch failed",
+          details: `GET https://${host}/rest/v1/events?apikey=${jwtShaped} failed`,
+        },
+      },
+    });
+
+    expect(markup).not.toContain(jwtShaped);
+    for (const segment of jwtShaped.split(".")) {
+      expect(markup).not.toContain(segment);
+    }
+    expect(markup).not.toContain("sb_secret_000notarealsecret000");
+    // The host stays: it is what the database could not be reached at.
+    expect(alerts(markup)[0]).toContain(host);
+    expect(alerts(markup)[0]).toContain(T.events);
+  });
+
   it("keeps an absent object gray and unnamed by the red line", async () => {
     // Red means broken, never unavailable: a table-absent code is still the
     // not-provisioned card, not an error line (BUG-0016 criterion 4).

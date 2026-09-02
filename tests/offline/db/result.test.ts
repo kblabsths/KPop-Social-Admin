@@ -211,6 +211,23 @@ describe("the database client's own account", () => {
     expect(result.message).toContain("outer");
   });
 
+  it("survives a cause chain that cycles between TWO errors", () => {
+    // The self-pointing cause above is the easy cycle. A ping-pong between two
+    // errors never repeats a node, so a depth guard is the only thing stopping
+    // it, and each node must still be said exactly once (QA, BUG-0016).
+    const outer: { message: string; cause?: unknown } = { message: "outer" };
+    const inner: { message: string; cause?: unknown } = { message: "inner" };
+    outer.cause = inner;
+    inner.cause = outer;
+
+    const result = classify(outer, T.sources);
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    for (const node of ["outer", "inner"]) {
+      expect(result.message.split(node)).toHaveLength(2);
+    }
+  });
+
   it("names the read that failed, in the spelling the query used", () => {
     for (const table of [T.events, T.fieldProvenance, T.sources]) {
       expect(classify(transportFailure(), table)).toMatchObject({
@@ -286,6 +303,74 @@ describe("the account never carries a credential", () => {
     if (result.kind !== "error") return;
     expect(result.message).not.toContain(secret);
     // The host is what an operator needs in order to know where to look.
+    expect(result.message).toContain(HOST);
+  });
+
+  /**
+   * The rule is about the VALUE, not the field that happened to carry it.
+   *
+   * The cases above all ride `details`, because `details` is the field this
+   * bug taught the account to read. The account now composes `message`,
+   * `details`, `hint`, every `cause` in the chain and the `code`, and a
+   * credential reaching a screen from any of them is the same leak — so the
+   * scrub is asserted per CARRIER, not per case (admin-window/BUG-0016, QA).
+   */
+  const carriers: ReadonlyArray<[string, (secret: string) => unknown]> = [
+    [
+      "message",
+      (secret) => ({
+        code: "",
+        message: `GET https://${HOST}/rest/v1/events rejected apikey ${secret}`,
+      }),
+    ],
+    [
+      "hint",
+      (secret) => ({
+        code: "",
+        message: `TypeError: fetch failed reaching ${HOST}`,
+        hint: `retry with apikey ${secret}`,
+      }),
+    ],
+    [
+      "a thrown Error's cause",
+      (secret) =>
+        new Error(`TypeError: fetch failed reaching ${HOST}`, {
+          cause: new Error(`Authorization: Bearer ${secret}`),
+        }),
+    ],
+    [
+      "a cause three links down the chain",
+      (secret) => ({
+        message: `TypeError: fetch failed reaching ${HOST}`,
+        cause: {
+          message: "socket hang up",
+          cause: {
+            message: "retrying",
+            cause: { message: `apikey ${secret}` },
+          },
+        },
+      }),
+    ],
+    [
+      "the code",
+      (secret) => ({
+        message: `TypeError: fetch failed reaching ${HOST}`,
+        code: secret,
+      }),
+    ],
+  ];
+
+  it.each(carriers)("redacts a JWT arriving in %s", (_label, build) => {
+    const result = classify(build(jwtShaped), T.events);
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+
+    expect(result.message).not.toContain(jwtShaped);
+    // No segment of it either: a key printed in halves is still the key.
+    for (const segment of jwtShaped.split(".")) {
+      expect(result.message).not.toContain(segment);
+    }
+    // Scrubbing must not become swallowing — the rest of the account stays.
     expect(result.message).toContain(HOST);
   });
 });
