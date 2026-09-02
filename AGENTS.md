@@ -11,6 +11,17 @@ Supabase project with the **service role** (server-side only) and lets admins
 **field-edit** catalog records. Deploys from `main` on Railway. Claude Code loads this
 file through `CLAUDE.md`'s `@AGENTS.md` import.
 
+## Rebuild in progress (2026-09-01) — the existing app is deprecated
+
+The dashboard is being rebuilt wholesale as the data ecosystem's window
+(`../designs/admin-observability.md`, approved 2026-09-01). **Every existing
+surface — Overview, Analytics, Data Management, Database — is deprecated:
+reference, not precedent.** Do not extend, fix, or maintain the deprecated
+pages; work on this repo follows the design and its acceptance doc
+(`../builds/admin-build.md`). The sibling `kspace Scraper/` repo is read-only
+reference — a change only it can carry (any migration, any registry edit) is
+a handoff for Ben, never an edit from here (design §10).
+
 ## Data ownership (BINDING) — edit values, never the schema
 
 The catalog (`groups`, `idols`, `events`, `venues`, `event_performers`, `event_stats`)
