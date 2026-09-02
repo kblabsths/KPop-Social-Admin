@@ -15,7 +15,11 @@ import {
   reviewItemSourcePattern,
   sourceRow,
 } from "../../fixtures/rows";
-import { stubClient, type Script } from "../../fixtures/stub-client";
+import {
+  permissionDenied,
+  stubClient,
+  type Script,
+} from "../../fixtures/stub-client";
 
 /**
  * The review-item detail's READS (campaign admin-window/TASK-0011).
@@ -151,6 +155,74 @@ describe("the evidence read", () => {
     expect(result.data.unresolved).toEqual([
       "01920000-0000-7000-8000-0000000009ff",
     ]);
+  });
+
+  /**
+   * The accounting a surface divides — admin-window/BUG-0021.
+   *
+   * `evidence` is appended to on every fold (`contracts/resolver.md` §11) and
+   * carries no uniqueness, so `stored` and `distinct` genuinely differ. The
+   * invariant the whole sentence on the page rests on is asserted here at its
+   * source: the two lists cover the distinct ids exactly — no id in both, none
+   * in neither, and a repeat counted once.
+   */
+  it("reports how many ids were stored and how many it looked at", async () => {
+    const missing = "01920000-0000-7000-8000-0000000009ff";
+    const item = reviewItemDataConflict({
+      evidence: [ID.observationA, missing, ID.observationA, ID.observationB, missing],
+    });
+    const client = stubClient(healthy());
+    const result = await readItemEvidence(item, client.asSupabaseClient());
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.data.ids).toEqual({ stored: 5, distinct: 3 });
+    expect(
+      result.data.claims.length + result.data.unresolved.length,
+      "resolved + unresolved must cover exactly the distinct ids",
+    ).toBe(result.data.ids.distinct);
+    expect(result.data.unresolved).toEqual([missing]);
+  });
+
+  /**
+   * The `sources` leg alone degrades — admin-window/BUG-0021 (QA's second
+   * finding on TASK-0011).
+   *
+   * The registry only LABELS a claim: without it the read's documented
+   * fallback already renders (the source id verbatim, no tier), which is what
+   * it does when the registry row is merely absent. Returning the refusal
+   * instead of the claims would report an item with no evidence when it has
+   * all of it, so the refusal rides along and the caller reports it beside.
+   */
+  it("keeps the claims when the source registry refuses, and carries the refusal", async () => {
+    const failure = permissionDenied(T.sources);
+    const client = stubClient(healthy({ [T.sources]: { error: failure } }));
+    const result = await readItemEvidence(
+      reviewItemDataConflict(),
+      client.asSupabaseClient(),
+    );
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.data.claims).toHaveLength(2);
+    expect(result.data.claims[0].source).toBe(CLAIM_A.source_id);
+    expect(result.data.claims[0].tier).toBeNull();
+
+    const refusal = result.data.sourcesUnavailable;
+    expect(refusal?.kind).toBe("error");
+    if (refusal?.kind !== "error") return;
+    // The object that refused is named, and the database's own words are kept
+    // (admin-window/BUG-0016).
+    expect(refusal.reading).toBe(T.sources);
+    expect(refusal.message).toContain(failure.message);
+  });
+
+  it("carries no refusal when every leg answered", async () => {
+    const result = await readItemEvidence(
+      reviewItemDataConflict(),
+      stubClient(healthy()).asSupabaseClient(),
+    );
+    expect(result.kind === "ok" && result.data.sourcesUnavailable).toBeNull();
   });
 });
 

@@ -267,6 +267,30 @@ function linksOf(item: ReviewItemRow): ItemLink[] {
   return links;
 }
 
+/**
+ * The evidence block's accounting sentence — resolved over the ids the read
+ * actually looked at.
+ *
+ * **Both figures come from `evidence.ids`**, the read's one accounting, so
+ * they cannot disagree: `claims + unresolved === ids.distinct` holds by
+ * construction, and every id the sentence says went unresolved is named below
+ * it. Dividing the deduplicated claim count by `review_items.evidence.length`
+ * is what made `[A, A, B]` report "2 of 3 resolved" while naming no unresolved
+ * id (admin-window/BUG-0021).
+ *
+ * A repeat is not hidden by counting distinct ids, it is stated: `evidence` is
+ * appended to on every fold (`contracts/resolver.md` §11) and has no
+ * uniqueness, so an operator comparing the array with this sentence is told
+ * why the two lengths differ instead of being left to wonder.
+ */
+function accountingOf(evidence: ItemEvidence): string {
+  const { stored, distinct } = evidence.ids;
+  const resolved = `${count(evidence.claims.length)} of ${count(distinct)} evidence ids resolved to a claim, in the order they folded in.`;
+  return stored === distinct
+    ? resolved
+    : `${resolved} It stores ${count(stored)} ids in all: a claim that folded in again is appended, and counts once here.`;
+}
+
 /** The words for an evidence block with nothing in it — the reason decides them. */
 function emptyWords(evidence: ItemEvidence): EmptyWords {
   return evidence.unresolved.length > 0
@@ -438,10 +462,14 @@ export default async function ReviewItemPage({
               // than blanking the evidence that did arrive.
               <StateOf result={buckets} />
             )}
+            {evidence.data.sourcesUnavailable === null ? null : (
+              // Same pattern, one leg down: the registry could not be read, so
+              // every claim shows its source id verbatim and no tier. The
+              // claims are still the item's evidence (admin-window/BUG-0021).
+              <StateOf result={evidence.data.sourcesUnavailable} />
+            )}
             <p className="type-body text-ink-secondary">
-              {count(evidence.data.claims.length)} of{" "}
-              {count(row.evidence.length)} evidence ids resolved to a claim, in
-              the order they folded in.
+              {accountingOf(evidence.data)}
             </p>
           </>
         )}
