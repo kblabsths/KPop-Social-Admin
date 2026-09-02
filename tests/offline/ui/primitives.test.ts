@@ -153,6 +153,18 @@ describe("StatCard", () => {
     expect(html).toContain(EM_DASH);
     expect(html).not.toContain(">0<");
   });
+
+  it("qualifies a truncated count in the app's voice, beside the machine's number", () => {
+    const floor = render(h(StatCard, { label: "items", value: 1234, floor: true }));
+    const exact = render(h(StatCard, { label: "items", value: 1234 }));
+    // the figure is untouched: it is still the one mono number on the card
+    expect(floor).toContain("1,234");
+    expect(classesOf(floor)).toContain("type-figure");
+    // and the qualifier is the app's own words, so it is sans and secondary
+    expect(classesOf(floor)).toContain("type-body");
+    expect(classesOf(exact)).not.toContain("type-body");
+    expect(textOf(floor).length).toBeGreaterThan(textOf(exact).length);
+  });
 });
 
 describe("Badge", () => {

@@ -72,6 +72,37 @@ export function relativeAge(
 }
 
 /**
+ * A LENGTH of time in seconds, on the same unit ladder `relativeAge` climbs:
+ * `45s`, `12m`, `3h`, `2d`. `null` when there is nothing to measure.
+ *
+ * Ages and durations are relative everywhere in this app (LOOK_AND_FEEL, Voice
+ * bar 6) — a gauge that answers "how long" with `86,400` answers it at the
+ * wrong glance, and every gauge distribution is a span of seconds. It lives
+ * here, beside `relativeAge`, because the six gauge surfaces plus the queue
+ * and cycle pages all need it and a second copy would drift from this ladder
+ * (campaign admin-window/TASK-0008).
+ *
+ * Under a minute the value keeps one decimal, so a sub-second latency is not
+ * rounded to `0s`. A NEGATIVE duration is rendered negative rather than
+ * clamped: it means two clocks disagreed, which is a finding, not a zero
+ * (`secondsBetween` in `lib/gauges/gauge.ts` surfaces it the same way).
+ */
+export function duration(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) {
+    return EM_DASH;
+  }
+  const sign = seconds < 0 ? "-" : "";
+  const magnitude = Math.abs(seconds);
+  if (magnitude < 60) {
+    const rounded = Math.round(magnitude * 10) / 10;
+    return `${sign}${rounded}s`;
+  }
+  if (magnitude < 3600) return `${sign}${Math.floor(magnitude / 60)}m`;
+  if (magnitude < 86_400) return `${sign}${Math.floor(magnitude / 3600)}h`;
+  return `${sign}${Math.floor(magnitude / 86_400)}d`;
+}
+
+/**
  * Thousand-separated, in a fixed locale so the same row reads the same on
  * every machine. Counts carry their noun at the call site ("12 open
  * decisions"), never here.

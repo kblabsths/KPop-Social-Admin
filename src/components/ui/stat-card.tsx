@@ -26,6 +26,7 @@ export function StatCard({
   sub,
   tone = "default",
   href,
+  floor = false,
 }: {
   label: string;
   /** A number is thousand-separated here; a string is shown verbatim. */
@@ -34,13 +35,36 @@ export function StatCard({
   sub?: ReactNode;
   tone?: StatTone;
   href?: string;
+  /**
+   * The figure is a FLOOR, not a total — the read it came from was truncated,
+   * so the true count is this or more. The card then qualifies the number in
+   * the app's own voice, beside it, instead of presenting a cut-off count as
+   * complete (campaign admin-window/TASK-0008; `WindowInfo.truncated` in
+   * `lib/gauges/gauge.ts` is what sets it).
+   *
+   * The qualifier is sans and secondary because it is a word the app wrote;
+   * the figure stays the one mono number the card is about, which is why the
+   * honesty goes here rather than into the value string.
+   */
+  floor?: boolean;
 }) {
+  const figure = (
+    <span className={cx("type-figure", TONE[tone])}>
+      {orDash(typeof value === "number" ? count(value) : value)}
+    </span>
+  );
+
   const body = (
     <>
       <span className="type-micro text-ink-secondary">{label}</span>
-      <span className={cx("type-figure", TONE[tone])}>
-        {orDash(typeof value === "number" ? count(value) : value)}
-      </span>
+      {floor ? (
+        <span className="flex items-baseline gap-1">
+          <span className="type-body text-ink-secondary">at least</span>
+          {figure}
+        </span>
+      ) : (
+        figure
+      )}
       {sub ? <span className="type-data text-ink-secondary">{sub}</span> : null}
     </>
   );

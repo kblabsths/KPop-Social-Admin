@@ -2,7 +2,16 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { EM_DASH, absoluteUtc, count, isAbsent, nullDash, orDash, relativeAge } from "@/lib/format";
+import {
+  EM_DASH,
+  absoluteUtc,
+  count,
+  duration,
+  isAbsent,
+  nullDash,
+  orDash,
+  relativeAge,
+} from "@/lib/format";
 
 /**
  * The shared formatting helpers (campaign admin-window, TASK-0004).
@@ -55,6 +64,31 @@ describe("relativeAge", () => {
 
   it("renders absence as the dash with no title", () => {
     expect(relativeAge(null)).toEqual({ text: EM_DASH, title: "" });
+  });
+});
+
+describe("duration", () => {
+  it("climbs the same unit ladder relativeAge climbs", () => {
+    expect(duration(45)).toBe("45s");
+    expect(duration(200)).toBe("3m");
+    expect(duration(7200)).toBe("2h");
+    expect(duration(540_000)).toBe("6d");
+  });
+
+  it("keeps a sub-second span visible rather than rounding it to nothing", () => {
+    expect(duration(0.25)).toBe("0.3s");
+    expect(duration(0)).toBe("0s");
+  });
+
+  it("renders a negative span negative, because two clocks disagreeing is a finding", () => {
+    expect(duration(-200)).toBe("-3m");
+  });
+
+  it("renders absence as the dash, never as zero", () => {
+    expect(duration(null)).toBe(EM_DASH);
+    expect(duration(undefined)).toBe(EM_DASH);
+    expect(duration(Number.NaN)).toBe(EM_DASH);
+    expect(duration(Number.POSITIVE_INFINITY)).toBe(EM_DASH);
   });
 });
 
