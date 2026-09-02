@@ -1,3 +1,5 @@
 2026-09-02T08:52:20Z	TASK-0007	8000	12000	12480	first compaction shrank History ~5%; dense evidence log, irreducible
 2026-09-02T09:40:08Z	TASK-0015	8000	22000	14816	irreducible: remainder is the BUG-0010 reproduction measurement, three named xfail tests, the amended checks and the dead ends; the two architect rulings are already cut to ARCHITECTURE.md pointers
 2026-09-02T09:51:13Z	TASK-0017	8000	14000	16057	irreducible remainder after compaction (13019 -> 11626 History bytes): two verbatim architect rulings (read kinds ARCHITECTURE 4.3, pure-leaf rule 7), QA's BUG-0011 reproduction and the pinned it.fails at tests/offline/edit/route.test.ts:213 are all load-bearing; 5 product files cite this ticket as the home of their reasoning
+2026-09-02T12:43:03Z	TASK-0010	8000	16000	12848	History is verbatim architect briefs a builder must obey (read kinds, four-state contract, check amendments); compaction cannot shrink it honestly
+2026-09-02T12:43:09Z	TASK-0011	8000	16000	14411	History is verbatim architect rulings a builder must obey (test idiom, read kinds, shapeOf note, four-state contract, notFound ruling); compaction cannot shrink it honestly

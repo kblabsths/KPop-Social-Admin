@@ -16,7 +16,7 @@ qa_batch_patience: 0      # dispatch ticks a lone built P2/P3 ticket waits for
                           # bigger projects — QA measured ~45% of role-hours in
                           # batches of one). P0/P1 never wait.
 blocked_recheck_hours: 12 # blocked tickets older than this get re-checked loudly
-compact_threshold_bytes: 8000  # History bytes that trigger a compaction flag (History is
+compact_threshold_bytes: 16000 # History bytes that trigger a compaction flag (History is
                           # the only section the compactor may rewrite; an immutable
                           # body over this bar flags oversized_body informationally,
                           # once per ticket — raise this bar on campaigns whose house
