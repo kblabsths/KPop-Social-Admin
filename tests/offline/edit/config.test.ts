@@ -26,6 +26,15 @@ const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 const CONFIG_MODULE = "src/lib/edit/config.ts";
 const RECORDS_MODULE = "src/lib/db/records.ts";
 const ROUTE_MODULE = "src/app/api/admin/records/[table]/[id]/route.ts";
+/**
+ * The widget's two readers (campaign admin-window/TASK-0018). config.ts's own
+ * docstring names them in advance — "the route, the data layer and (later) the
+ * widget all read this map" — and they READ it: the page resolves the table's
+ * config, `fields.ts` asks `decideEdit` per column. Neither declares a column
+ * list, which is what the rule below is actually about.
+ */
+const PAGE_MODULE = "src/app/records/[table]/[id]/page.tsx";
+const FIELDS_MODULE = "src/components/records/fields.ts";
 
 /* ── the map ──────────────────────────────────────────────────────────────── */
 
@@ -277,18 +286,28 @@ function filesWhereCodeMatches(pattern: RegExp): string[] {
 }
 
 describe("there is no second allowlist", () => {
-  it("contains the three modules these rules are about", () => {
+  it("contains the modules these rules are about", () => {
     const files = sourceFiles();
-    for (const file of [CONFIG_MODULE, RECORDS_MODULE, ROUTE_MODULE]) {
+    for (const file of [
+      CONFIG_MODULE,
+      RECORDS_MODULE,
+      ROUTE_MODULE,
+      PAGE_MODULE,
+      FIELDS_MODULE,
+    ]) {
       expect(files, file).toContain(file);
     }
   });
 
-  it("declares the map in config.ts alone, and reads it in the two consumers", () => {
+  it("declares the map in config.ts alone, and reads it in its consumers", () => {
+    // The write path (route, data layer) and the surface (page, fields) — and
+    // nothing else. A fifth file matching this is a second allowlist growing.
     expect(filesWhereCodeMatches(/EDIT_CONFIG|decideEdit|editConfigFor/)).toEqual([
       ROUTE_MODULE,
       RECORDS_MODULE,
       CONFIG_MODULE,
+      PAGE_MODULE,
+      FIELDS_MODULE,
     ].sort());
   });
 
