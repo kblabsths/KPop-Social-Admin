@@ -36,13 +36,15 @@ import {
  */
 
 /**
- * The sub-line an absence falls back on when the caller passed no `absent`.
+ * The sub-line an absence falls back on when the caller stated no reason.
  *
- * Only reachable where the props union cannot demand a reason (see
- * `GaugeCardProps`): a `string` value the formatters produced, or a `number`
- * that turned out non-finite. Saying "not measured" is thin, but a bare dash
- * with no words at all is the reading LOOK_AND_FEEL forbids — a card that
- * cannot measure says so (admin-window/BUG-0018).
+ * Reached two ways: where the props union cannot demand a reason (see
+ * `GaugeCardProps`) — a `string` value the formatters produced, or a `number`
+ * that turned out non-finite — and where a reason WAS demanded but is itself
+ * an absence, a blank or whitespace-only string the union's third arm accepts
+ * because `""` is a `string` (admin-window/BUG-0019). Saying "not measured" is
+ * thin, but a bare dash with no words at all is the reading LOOK_AND_FEEL
+ * forbids — a card that cannot measure says so (admin-window/BUG-0018).
  */
 const UNSTATED_REASON = "not measured";
 
@@ -134,6 +136,11 @@ export function GaugeCard(props: GaugeCardProps) {
   // formatter returns for a null all mean "nothing was measured here"
   // (`isAbsent`, lib/format.ts — admin-window/BUG-0004 and BUG-0018).
   const unmeasured = isAbsent(value);
+  // The REASON is asked the same definition as the value: a blank or
+  // whitespace-only `absent` states nothing, so it falls back to the words
+  // rather than rendering the dash bare. `??` caught only null/undefined and
+  // let `""` through as a stated reason (admin-window/BUG-0019).
+  const reason = isAbsent(props.absent) ? UNSTATED_REASON : props.absent;
 
   return (
     <StatCard
@@ -146,7 +153,7 @@ export function GaugeCard(props: GaugeCardProps) {
       tone={unmeasured ? "default" : tone}
       // A floor qualifies a figure; there is nothing to qualify about a dash.
       floor={floor && !unmeasured}
-      sub={unmeasured ? (props.absent ?? UNSTATED_REASON) : sub}
+      sub={unmeasured ? reason : sub}
       href={href}
     />
   );
