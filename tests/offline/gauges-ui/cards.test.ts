@@ -25,7 +25,7 @@ import {
   reviewItemDataConflict,
   type ReviewItemRow,
 } from "../../fixtures/rows";
-import { classesOf, h, render, textOf } from "../ui/markup";
+import { classesOf, h, render, tagsOf, textOf } from "../ui/markup";
 
 /**
  * The three gauge components (campaign admin-window/TASK-0008), rendered
@@ -304,6 +304,47 @@ describe("GaugeCard", () => {
     // a reason that does carry words is still the caller's, untouched
     const stated = card({ label: "median duration", value: null, absent: "  no cycle yet  " });
     expect(textOf(stated)).toContain("no cycle yet");
+  });
+
+  // admin-window/BUG-0019, QA's attack pass: the spellings the fix's own case
+  // does not name, and the arm it must never reach.
+  it("treats every spelling of a stated-nothing reason as the same absence, and leaves a measured figure alone", () => {
+    // the reason is asked the app's ONE definition (`isAbsent`), so the
+    // spellings that definition already calls absences — the em dash a
+    // formatter emits, and unicode whitespace `trim` eats — must render the
+    // same card as no reason at all, not a sub-line the eye cannot read
+    const unstated = card({ label: "median duration", value: Number.NaN });
+    for (const absent of [EM_DASH, `  ${EM_DASH}  `, "\u00a0", "\u2003"]) {
+      expect(card({ label: "median duration", value: null, absent }), JSON.stringify(absent)).toBe(
+        unstated,
+      );
+    }
+
+    // and the fallback is unreachable from a MEASURED figure: whatever the
+    // caller left in `absent`, a card that has a number renders exactly the
+    // card it would render without one — the words never appear beside a value
+    for (const value of [0, 12, duration(3200)]) {
+      for (const absent of ["", "   ", "no cycle in this window has finished"]) {
+        expect(
+          card({ label: "median duration", value, absent }),
+          `${JSON.stringify(value)} / ${JSON.stringify(absent)}`,
+        ).toBe(card({ label: "median duration", value }));
+      }
+    }
+    // a measured card's own sub-line survives a stray blank reason
+    expect(textOf(card({ label: "facts examined", value: 7, sub: "12 rows", absent: "" }))).toContain(
+      "12 rows",
+    );
+
+    // a reason is DATA (it can quote a source name), so it reaches the page as
+    // text and never as markup
+    const injected = card({
+      label: "median duration",
+      value: null,
+      absent: '<script>alert("x")</script>',
+    });
+    expect(injected).not.toContain("<script>");
+    expect(tagsOf(injected)).toEqual(["div", "span", "span", "span", "span"]);
   });
 
   it("takes its absence from the app's one definition, not a guard of its own", () => {
