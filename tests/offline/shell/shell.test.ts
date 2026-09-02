@@ -4,8 +4,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { NAV_ITEMS, isFramed, isNavItemActive } from "@/components/shell/nav-items";
+import { Sidebar } from "@/components/shell/shell";
 
-import { classesOf } from "../ui/markup";
+import { classesOf, h } from "../ui/markup";
 
 import BrowsePage from "@/app/browse/page";
 import ClaimsPage from "@/app/claims/page";
@@ -230,5 +231,154 @@ describe("the not-found surface", () => {
     // among them.
     for (const href of hrefs) expect(SIX_ROUTES, href).toContain(href);
     expect(hrefs).toContain("/");
+  });
+});
+
+/**
+ * The Frame's nav states (campaign admin-window/BUG-0015).
+ *
+ * LOOK_AND_FEEL, the Frame: "Active item = chrome-inverse fill … with primary
+ * text". That fill is the window's ONE claim of place, so no other item and no
+ * other state may wear it — the shipped sidebar handed the identical pair to
+ * hover, and two items read as current whenever the pointer was in the
+ * sidebar.
+ *
+ * These assert the invariant, not the palette: whatever classes distinguish
+ * the active item, no element in the Frame may reach them through `hover:`,
+ * and the set an item wears under the pointer is never the set the active item
+ * wears. A retoken of the Look leaves them green; a convergence reddens them.
+ */
+describe("the Frame's nav states", () => {
+  interface Element {
+    readonly tag: string;
+    readonly attrs: string;
+    readonly classes: ReadonlySet<string>;
+  }
+
+  /** Every element the markup emits, with its own class list kept per element. */
+  function elementsOf(html: string): Element[] {
+    return [...html.matchAll(/<([a-z][a-z0-9]*)\s([^>]*?)\/?>/g)].map(([, tag, attrs]) => ({
+      tag,
+      attrs,
+      classes: new Set(
+        (/class="([^"]*)"/.exec(attrs)?.[1] ?? "").split(/\s+/).filter(Boolean),
+      ),
+    }));
+  }
+
+  /**
+   * The classes an element renders with while the pointer is on it.
+   *
+   * A `hover:` utility wins over a resting utility of the same property — a
+   * hovered `hover:text-ink` on a resting `text-ink-secondary` computes one
+   * colour, not two — so this drops the resting class of any property the
+   * hover state also sets. That is what makes the comparison below the same
+   * comparison the designer made in the browser: the pair the pointer
+   * actually computes, against the pair the active item computes.
+   */
+  function underPointer(el: Element): string[] {
+    const property = (c: string): string => c.split("-")[0];
+    const hovered = [...el.classes]
+      .filter((c) => c.startsWith("hover:"))
+      .map((c) => c.slice("hover:".length));
+    const overridden = new Set(hovered.map(property));
+    const rest = [...el.classes].filter(
+      (c) => !c.startsWith("hover:") && !overridden.has(property(c)),
+    );
+    return [...new Set([...rest, ...hovered])].sort();
+  }
+
+  const resting = (el: Element): string[] => [...el.classes].sort();
+
+  function frame(pathname: string) {
+    const markup = renderToStaticMarkup(h(Sidebar, { pathname }));
+    const elements = elementsOf(markup);
+    const links = elements.filter((el) => el.tag === "a");
+    const active = links.filter((el) => el.attrs.includes('aria-current="page"'));
+    const signOut = elements.filter((el) => el.tag === "button");
+    return { markup, elements, links, active, signOut };
+  }
+
+  it("marks exactly one item as the page, on every route", () => {
+    for (const pathname of [...SIX_ROUTES, "/queues/2f0b"]) {
+      const { links, active } = frame(pathname);
+      expect(links.length, pathname).toBe(NAV_ITEMS.length);
+      expect(active.length, pathname).toBe(1);
+    }
+  });
+
+  it("never lets a non-active item wear the active item's rendering, pointer or not", () => {
+    const { links, active } = frame("/");
+    const inactive = links.filter((el) => el !== active[0]);
+    expect(inactive.length).toBeGreaterThan(0);
+    for (const el of inactive) {
+      // The bug: hovered "Queues" computed the same fill and ink as active
+      // "Dashboard". The set an item wears under the pointer must never be
+      // the set the active item wears.
+      expect(underPointer(el)).not.toEqual(resting(active[0]));
+      expect(resting(el)).not.toEqual(resting(active[0]));
+      // …and it must actually change under the pointer, or hover says nothing.
+      expect(underPointer(el)).not.toEqual(resting(el));
+    }
+  });
+
+  it("spends the active item's fill on the active item and on no state of any other", () => {
+    const { links, active, elements } = frame("/");
+    // The Look gives the active item a fill of its own; whatever token that
+    // is, it is the window's claim of place.
+    const fills = (el: Element, prefix = ""): string[] =>
+      [...el.classes].filter((c) => c.startsWith(`${prefix}bg-`));
+    const claim = fills(active[0]);
+    expect(claim.length).toBe(1);
+
+    for (const el of elements) {
+      if (el === active[0]) continue;
+      // No other element rests in it…
+      expect(fills(el), `${el.tag} rests in the active fill`).not.toContain(claim[0]);
+      // …and none — nav item or sign-out — hovers into it.
+      expect(fills(el, "hover:"), `${el.tag} hovers into the active fill`).not.toContain(
+        `hover:${claim[0]}`,
+      );
+    }
+    // The hover fill the items do use is a real fill, not the absence of one:
+    // hover is a state of its own, distinct from resting and from active.
+    const hoverFills = new Set(links.flatMap((el) => fills(el, "hover:")));
+    expect(hoverFills.size).toBe(1);
+  });
+
+  it("keeps sign-out an action, in every state, including under the pointer", () => {
+    const { links, signOut } = frame("/");
+    expect(signOut.length).toBe(1);
+    const control = signOut[0];
+    // It is not a link and never claims a place in the window.
+    expect(control.attrs).not.toContain("href=");
+    expect(control.attrs).not.toContain("aria-current");
+    // It carries none of the nav items' hover classes, so the pointer cannot
+    // dress it as a seventh nav item…
+    const navHover = new Set(
+      links.flatMap((el) => [...el.classes].filter((c) => c.startsWith("hover:"))),
+    );
+    for (const c of navHover) expect(control.classes.has(c)).toBe(false);
+    // …and its rendering is not a nav item's, resting or hovered.
+    for (const el of links) {
+      expect(resting(control)).not.toEqual(resting(el));
+      expect(underPointer(control)).not.toEqual(underPointer(el));
+    }
+  });
+
+  it("keeps the colour transition and touches no focus outline", () => {
+    const { elements } = frame("/");
+    const interactive = elements.filter((el) => el.tag === "a" || el.tag === "button");
+    expect(interactive.length).toBe(NAV_ITEMS.length + 1);
+    for (const el of interactive) {
+      // The Look's whole motion budget here: a colour transition at the
+      // token's 120ms default. Nothing sets its own duration.
+      expect(el.classes.has("transition-colors"), el.tag).toBe(true);
+      expect([...el.classes].filter((c) => c.startsWith("duration-"))).toEqual([]);
+      // Quality bar 9: the focus ring is global CSS and no component opts out
+      // of it, nor carries the hover distinction on a focus utility.
+      expect([...el.classes].filter((c) => c.startsWith("focus"))).toEqual([]);
+      expect(el.classes.has("outline-none")).toBe(false);
+    }
   });
 });

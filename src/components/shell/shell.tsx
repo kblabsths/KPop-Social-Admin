@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import type { ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { NAV_ITEMS, isFramed, isNavItemActive } from "./nav-items";
 
@@ -24,7 +25,26 @@ import { NAV_ITEMS, isFramed, isNavItemActive } from "./nav-items";
  * padding both would put the content at 32px, off the spacing scale.
  */
 
-/** One nav item. A link, so middle-click and Cmd-click behave. */
+/**
+ * One nav item. A link, so middle-click and Cmd-click behave.
+ *
+ * Two renderings, and they are never the same one (admin-window/BUG-0015).
+ * The Look gives the active item a rendering of its own — "Active item =
+ * chrome-inverse fill … with primary text" — and that fill is the window's
+ * only claim of place, so it is spent here and nowhere else: hover is a state,
+ * not a claim, and this file previously handed hover the identical pair, so
+ * two items read as current whenever the pointer was in the sidebar.
+ *
+ * Hover therefore takes the treatment the Look already sanctions for a
+ * non-active interactive row — the data table's "hover fills the row with
+ * chrome", i.e. the surface/chrome pair, one step of the ramp. The sidebar is
+ * already the chrome half of that pair, so the hovered item takes the other
+ * half, `surface`, with its ink lifting from secondary to primary. In both
+ * themes that lands on the opposite side of chrome from `chrome-inverse`
+ * (white vs gray-200 in light, gray-900 vs gray-700 in dark), so a hovered
+ * item can never be mistaken for the active one — no new colour, and nothing
+ * outside the eleven token jobs.
+ */
 function NavLink({ href, label, active }: { href: string; label: string; active: boolean }) {
   return (
     <Link
@@ -34,7 +54,7 @@ function NavLink({ href, label, active }: { href: string; label: string; active:
         "rounded-control px-2 py-1.5 type-body transition-colors",
         active
           ? "bg-chrome-inverse text-ink"
-          : "text-ink-secondary hover:bg-chrome-inverse hover:text-ink",
+          : "text-ink-secondary hover:bg-surface hover:text-ink",
       )}
     >
       {label}
@@ -42,7 +62,14 @@ function NavLink({ href, label, active }: { href: string; label: string; active:
   );
 }
 
-function Sidebar({ pathname }: { pathname: string }) {
+/**
+ * The Frame's chrome, as a pure function of the path.
+ *
+ * Exported so the offline suite can render it and assert what each state
+ * actually emits: `Shell` reads `usePathname`, which needs a router, while
+ * this takes the path as a prop and needs nothing.
+ */
+export function Sidebar({ pathname }: { pathname: string }) {
   return (
     <aside className="flex w-48 shrink-0 flex-col border-r border-hairline bg-chrome">
       <nav aria-label="Sections" className="flex flex-col gap-0.5 p-1">
@@ -56,13 +83,16 @@ function Sidebar({ pathname }: { pathname: string }) {
         ))}
       </nav>
       <div className="mt-auto border-t border-hairline p-1">
-        <button
-          type="button"
-          onClick={() => signOut({ redirectTo: "/login" })}
-          className="w-full rounded-control px-2 py-1.5 text-left type-body text-ink-secondary transition-colors hover:bg-chrome-inverse hover:text-ink"
-        >
+        {/*
+         * Sign out is an action, not a seventh page, so it is the Look's
+         * secondary button — hairline border, transparent fill, primary text —
+         * rather than a nav item with a nav item's states. It carries no nav
+         * hover class in any state, which is what keeps the pointer from
+         * dressing it as a place you can be (admin-window/BUG-0015).
+         */}
+        <Button variant="secondary" className="w-full" onClick={() => signOut({ redirectTo: "/login" })}>
           Sign out
-        </button>
+        </Button>
       </div>
     </aside>
   );
