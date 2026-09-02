@@ -287,9 +287,12 @@ describe("the offline project's time budgets", () => {
  * and deletes a probe under that same tree ~20 times a run while other files
  * walk it in parallel workers (admin-window/BUG-0032).
  *
- * These cases plant into a TEMP base, never the shared tree, so this file can
- * keep running in parallel with everything else. The end-to-end half — the
- * real probe path, a child vitest, and a real churn loop — is
+ * These cases WRITE only into a TEMP base, never the shared tree, so this file
+ * can keep running in parallel with everything else. The one case that reads
+ * the real `src/` asserts a relationship that holds whether or not the probe
+ * is on disk, never an equality between the two walks over it
+ * (admin-window/BUG-0033). The end-to-end half — the real probe path, a child
+ * vitest, and a real churn loop — is
  * `tests/isolated/probe-race.isolated.test.ts`, which cannot.
  */
 describe("the source-tree walk", () => {
@@ -300,7 +303,9 @@ describe("the source-tree walk", () => {
     `source-tree-${process.pid}-${randomUUID()}`,
   );
   const REAL = "src/lib/real.ts";
-  const DOT_HIDDEN = "src/.probes/__credential_guard_probe__.ts";
+  /** The one path `db/layering.test.ts` plants under the REAL `src/`. */
+  const LAYERING_PROBE = "src/.probes/__credential_guard_probe__.ts";
+  const DOT_HIDDEN = LAYERING_PROBE;
   const UNDERSCORED = "src/__loose_probe__.ts";
   const DANGLING = "src/dangling.ts";
 
@@ -369,12 +374,47 @@ describe("the source-tree walk", () => {
     }
   });
 
+  it("agrees with the unfiltered walk on a tree that hides nothing", () => {
+    // The filter is a no-op over names no compiler skips — asserted here as a
+    // deep equality, against a TEMP base like every other case in this
+    // describe. It is NOT asserted over the real `src/`: `db/layering.test.ts`
+    // plants `src/.probes/__credential_guard_probe__.ts` ~20 times a run in a
+    // parallel worker of this same project, and `sourceFiles()` deep-equals
+    // `allSourceFiles()` is false for exactly as long as that path is on disk,
+    // because hiding it from one walk and not the other IS the design. An
+    // equality over the shared tree is therefore decided by another worker's
+    // timing (admin-window/BUG-0033: 6 of 12 runs red under a faithful
+    // reproduction of layering's cycle) — the defect class
+    // admin-window/BUG-0032 exists to remove, not an example of it.
+    const plain = path.join(base, "plain");
+    mkdirSync(path.join(plain, "src", "lib", "db"), { recursive: true });
+    writeFileSync(path.join(plain, "src", "page.tsx"), "export const page = 1;\n");
+    writeFileSync(path.join(plain, "src", "lib", "db", "client.ts"), "export const db = 2;\n");
+    writeFileSync(path.join(plain, "src", "lib", "notes.mts"), "export const notes = 3;\n");
+
+    expect(sourceFiles(plain)).toEqual(allSourceFiles(plain));
+    expect(sourceFiles(plain)).toEqual([
+      "src/lib/db/client.ts",
+      "src/lib/notes.mts",
+      "src/page.tsx",
+    ]);
+  });
+
   it("hides nothing that exists in the real tree", () => {
     // The filter is only safe because no real path under `src/` is named that
     // way. The day one is, this reddens instead of the rule going quiet.
-    const real = sourceFiles();
-    expect(real.length).toBeGreaterThan(5);
-    expect(real).toEqual(allSourceFiles());
+    //
+    // Stated as the SET DIFFERENCE rather than an equality, so it holds
+    // whether or not layering's probe happens to be on disk right now: the
+    // only path the filter is ever allowed to swallow is that probe. A real
+    // source file named with a leading `.` segment or `__` still lands in this
+    // difference and still reddens, which is the whole value of the case.
+    const all = allSourceFiles();
+    const visible = sourceFiles();
+    expect(visible.length).toBeGreaterThan(5);
+    expect(all.filter((file) => !visible.includes(file) && file !== LAYERING_PROBE)).toEqual([]);
+    // And the other direction — the filter drops files, it never invents one.
+    expect(visible.filter((file) => !all.includes(file))).toEqual([]);
   });
 });
 
