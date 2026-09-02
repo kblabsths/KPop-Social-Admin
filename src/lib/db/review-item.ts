@@ -29,10 +29,16 @@ import type { ReviewItemRow } from "../review/shapes";
  *
  * **Three schema facts this module exists to get right** (ARCHITECTURE.md §6):
  *
- *  - trap 1 — `review_items` spells the canonical table `domain`;
- *    `field_provenance` and `observations` spell it `entity_type`. Each read
- *    below uses its own table's spelling and the fact key translates once, in
- *    `factOf`.
+ *  - trap 1 — `review_items` and `observations` spell the canonical table
+ *    `domain`; `field_provenance` spells it `entity_type`. They hold the same
+ *    value. `observations` used to carry BOTH, and this module selected the
+ *    `entity_type` it never read — scraper migration
+ *    `20260819000002_the_domain_is_the_entity_type.sql` dropped that column
+ *    ("domain becomes the first part of both identities") while keeping
+ *    `field_provenance`'s ("field_provenance IS NOT TOUCHED"), so the evidence
+ *    read failed 42703 on every chunk and every item rendered zero evidence
+ *    rows (admin-window/BUG-0024). Each read below uses its own table's
+ *    spelling and the fact key translates once, in `factOf`.
  *  - trap 5 — **a claim has no tier of its own.** An evidence row's tier is
  *    `sources.tier`, the source's CURRENT tier, which drifts; the canonical
  *    side's tier is `field_provenance.tier_at_apply`, frozen at the apply.
@@ -50,9 +56,14 @@ import type { ReviewItemRow } from "../review/shapes";
 
 /**
  * The `observations` columns this surface renders (migration
- * `20260818000000`). Explicit (§4.2): a page asking for a different set would
+ * `20260818000000`, as amended by `20260819000002`, which dropped
+ * `entity_type`). Explicit (§4.2): a page asking for a different set would
  * defeat the not-provisioned classification, which names the column the
- * database complained about.
+ * database complained about — and every name here must be a column the table
+ * really has, because an explicit select of a retired one is a 42703 that
+ * empties the whole surface, not a missing field (admin-window/BUG-0024).
+ * `tests/offline/review-item/read.test.ts` checks each name against the
+ * fixture that states the table's columns.
  *
  * `value` is jsonb — the one json column in the system (trap 8) — so it
  * arrives as `unknown` and is rendered as its JSON text, never assumed to be
@@ -60,10 +71,13 @@ import type { ReviewItemRow } from "../review/shapes";
  */
 export interface ObservationRow {
   observation_id: string;
-  /** `observations` spells the canonical table `entity_type` (trap 1). */
-  entity_type: string;
   entity_id: string | null;
   field: string;
+  /**
+   * `observations` spells the canonical table `domain` — its only spelling of
+   * it since migration `20260819000002` dropped `entity_type` from this table
+   * (trap 1). `field_provenance` keeps `entity_type` and holds the same value.
+   */
   domain: string;
   value: unknown;
   source_id: string;
@@ -108,7 +122,6 @@ export interface SourceRow {
 
 const OBSERVATION_COLUMNS = [
   "observation_id",
-  "entity_type",
   "entity_id",
   "field",
   "domain",
@@ -148,8 +161,10 @@ export function isLive(observation: ObservationRow): boolean {
 /* ── the fact a per-fact item is about ───────────────────────────────────── */
 
 /**
- * The fact identity, in the spelling `field_provenance` and `observations`
- * use. `review_items` spells the same value `domain` (trap 1).
+ * The fact identity, in the spelling `field_provenance` uses. `review_items`
+ * and `observations` spell the same value `domain` (trap 1); the only read
+ * that filters on `entity_type` is the one against `field_provenance`, whose
+ * column it still is.
  */
 export interface FactKey {
   entityType: string;

@@ -857,7 +857,6 @@ const QA_OBSERVATIONS = QA_SPECS.filter((spec) => spec.observedAt !== undefined)
   (spec) =>
     observationRow({
       observation_id: spec.id,
-      entity_type: spec.domain,
       entity_id: spec.entity,
       domain: spec.domain,
       field: spec.field,
