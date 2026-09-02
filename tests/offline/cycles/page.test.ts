@@ -513,6 +513,53 @@ describe("a database without the resolver's tables", () => {
   });
 });
 
+/* ── what the page may claim when it never read the window ───────────────── */
+
+describe("the ?cycle= link against a window the page could not read", () => {
+  /**
+   * The Dashboard links every cycle line to `/cycles?cycle=<run_id>`, and an
+   * operator follows that link EXACTLY when something is wrong. If the read of
+   * `resolution_runs` refused or the object is absent, the page holds no
+   * window at all — so "this cycle is not in the window" is a verdict it has
+   * no evidence for, and on the not-provisioned path it contradicts the card
+   * rendered immediately below it.
+   *
+   * Behaviour asserted, not copy: the page must not publish the definite
+   * NEGATIVE verdict (`data-cycle-found="false"`) off a read that returned no
+   * window. Saying nothing, or saying the window could not be read, both pass.
+   */
+  // Pinned red: admin-window/BUG-0023. `it.fails` is vitest's strict xfail —
+  // it turns RED the day the page stops publishing the verdict, which is the
+  // signal to flip these two back to `it(...)` as part of the fix.
+  it.fails("does not claim the cycle is absent when resolution_runs is not provisioned [admin-window/BUG-0023]", async () => {
+    const markup = await renderCycles(
+      healthyScript({
+        [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
+      }),
+      { cycle: SUCCEEDED.run_id },
+    );
+    // The read never happened, so the page has no window to judge against.
+    expect(notProvisioned(markup)).toContain(T.resolutionRuns);
+    expect(renderedCycles(markup)).toEqual([]);
+    expect(cheerio.load(markup)('[data-cycle-found="false"]').length).toBe(0);
+  });
+
+  it.fails("does not claim the cycle is absent when the read of resolution_runs was refused [admin-window/BUG-0023]", async () => {
+    const markup = await renderCycles(
+      healthyScript({
+        [T.resolutionRuns]: [
+          { error: permissionDenied(T.resolutionRuns) },
+          { data: [...CYCLES] },
+        ],
+      }),
+      { cycle: SUCCEEDED.run_id },
+    );
+    expect(readsFailed(markup)).toContain(T.resolutionRuns);
+    expect(renderedCycles(markup)).toEqual([]);
+    expect(cheerio.load(markup)('[data-cycle-found="false"]').length).toBe(0);
+  });
+});
+
 describe("the adapter framework's runs", () => {
   it("renders nothing at all, and names none of that table's columns", async () => {
     const markup = await renderCycles(healthyScript());
