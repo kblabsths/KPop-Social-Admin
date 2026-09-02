@@ -1,0 +1,59 @@
+# run	2026-09-02T05:00:33Z	723d75eb-9d15-4240-ab08-849bb9b31229
+2026-09-02T05:00:50Z	builder	-	spawned
+2026-09-02T05:00:52Z	builder	-	1	1	13450
+2026-09-02T05:09:36Z	visionary	-	spawned
+2026-09-02T05:09:48Z	designer	-	spawned
+2026-09-02T05:09:55Z	toolsmith	-	spawned
+# STRANDED	2026-09-02T05:10:07Z	agent	11 uncommitted in primary checkout: agenticflow/docs/vision, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep, agenticflow/visions/admin-window/tracker/digests/.gitkeep, agenticflow/visions/admin-window/tracker/evidence/.gitkeep
+2026-09-02T05:10:07Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:10:20Z	agent	11 uncommitted in primary checkout: agenticflow/docs/vision, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep, agenticflow/visions/admin-window/tracker/digests/.gitkeep, agenticflow/visions/admin-window/tracker/evidence/.gitkeep
+2026-09-02T05:10:20Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:10:26Z	agent	11 uncommitted in primary checkout: agenticflow/docs/vision, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep, agenticflow/visions/admin-window/tracker/digests/.gitkeep, agenticflow/visions/admin-window/tracker/evidence/.gitkeep
+2026-09-02T05:10:26Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:10:39Z	agent	11 uncommitted in primary checkout: agenticflow/docs/vision, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep, agenticflow/visions/admin-window/tracker/digests/.gitkeep, agenticflow/visions/admin-window/tracker/evidence/.gitkeep
+2026-09-02T05:10:39Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:10:51Z	agent	11 uncommitted in primary checkout: agenticflow/docs/vision, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep, agenticflow/visions/admin-window/tracker/digests/.gitkeep, agenticflow/visions/admin-window/tracker/evidence/.gitkeep
+2026-09-02T05:10:51Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:10:58Z	agent	11 uncommitted in primary checkout: agenticflow/docs/vision, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep, agenticflow/visions/admin-window/tracker/digests/.gitkeep, agenticflow/visions/admin-window/tracker/evidence/.gitkeep
+2026-09-02T05:10:58Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:11:23Z	agent	11 uncommitted in primary checkout: agenticflow/docs/vision, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep, agenticflow/visions/admin-window/tracker/digests/.gitkeep, agenticflow/visions/admin-window/tracker/evidence/.gitkeep
+2026-09-02T05:11:23Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:11:29Z	agent	11 uncommitted in primary checkout: agenticflow/docs/vision, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep, agenticflow/visions/admin-window/tracker/digests/.gitkeep, agenticflow/visions/admin-window/tracker/evidence/.gitkeep
+2026-09-02T05:11:29Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:11:40Z	agent	11 uncommitted in primary checkout: agenticflow/docs/vision, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep, agenticflow/visions/admin-window/tracker/digests/.gitkeep, agenticflow/visions/admin-window/tracker/evidence/.gitkeep
+2026-09-02T05:11:40Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:11:54Z	agent	12 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep, agenticflow/visions/admin-window/tracker/digests/.gitkeep
+2026-09-02T05:11:54Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:12:01Z	agent	12 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep, agenticflow/visions/admin-window/tracker/digests/.gitkeep
+2026-09-02T05:12:01Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:12:12Z	agent	12 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep, agenticflow/visions/admin-window/tracker/digests/.gitkeep
+2026-09-02T05:12:12Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:12:32Z	agent	12 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep, agenticflow/visions/admin-window/tracker/digests/.gitkeep
+2026-09-02T05:12:32Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:12:54Z	toolsmith	12 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep, agenticflow/visions/admin-window/tracker/digests/.gitkeep
+2026-09-02T05:12:54Z	toolsmith	-	787	178	39446
+# STRANDED	2026-09-02T05:13:14Z	agent	13 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep
+2026-09-02T05:13:14Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:13:26Z	agent	13 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen, agenticflow/visions/admin-window/tracker/archive/.gitkeep
+2026-09-02T05:13:26Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:13:46Z	agent	14 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen
+2026-09-02T05:13:46Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:14:48Z	agent	15 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/docs/VISION.md, agenticflow/visions/admin-window/docs/VISION.md.frozen
+2026-09-02T05:14:48Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:14:57Z	agent	16 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/LOOK_AND_FEEL.md, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/docs/VISION.md
+2026-09-02T05:14:57Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:15:28Z	agent	16 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/LOOK_AND_FEEL.md, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/docs/VISION.md
+2026-09-02T05:15:28Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:15:49Z	agent	17 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/LOOK_AND_FEEL.md, agenticflow/visions/admin-window/docs/PERSONAS.md, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md
+2026-09-02T05:15:49Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:15:54Z	designer	17 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/LOOK_AND_FEEL.md, agenticflow/visions/admin-window/docs/PERSONAS.md, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md
+2026-09-02T05:15:54Z	designer	-	4468	365	78766
+# STRANDED	2026-09-02T05:16:20Z	agent	17 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/LOOK_AND_FEEL.md, agenticflow/visions/admin-window/docs/PERSONAS.md, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md
+2026-09-02T05:16:20Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:16:52Z	agent	19 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/LOOK_AND_FEEL.md, agenticflow/visions/admin-window/docs/PERSONAS.md, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md
+2026-09-02T05:16:52Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:17:53Z	agent	25 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/LOOK_AND_FEEL.md, agenticflow/visions/admin-window/docs/PERSONAS.md, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md
+2026-09-02T05:17:53Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:18:15Z	visionary	25 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/LOOK_AND_FEEL.md, agenticflow/visions/admin-window/docs/PERSONAS.md, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md
+2026-09-02T05:18:15Z	visionary	-	8013	519	86936
+2026-09-02T05:18:47Z	architect	-	spawned
