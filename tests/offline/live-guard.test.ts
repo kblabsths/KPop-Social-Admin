@@ -1,17 +1,37 @@
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { StatCard } from "@/components/ui";
+import {
+  DataTable,
+  Empty,
+  ErrorLine,
+  Loading,
+  NotProvisioned,
+  StatCard,
+} from "@/components/ui";
 import { EM_DASH } from "@/lib/format";
-import { stubClient } from "../fixtures/stub-client";
+import {
+  statementTimeout,
+  stubClient,
+  unparseableFailure,
+} from "../fixtures/stub-client";
 import {
   MarkupReadError,
   ParityCountError,
   ParityError,
+  StateMismatchError,
   assertParity,
+  assertState,
+  countOrAbsent,
   countRows,
+  exactCount,
+  gradeSurface,
+  pageStates,
   readNumber,
+  stateOf,
 } from "../live/parity";
+import { codeLines, repoRoot } from "./source-tree";
 import {
   LiveGuardError,
   declaredStagingTarget,
@@ -567,4 +587,383 @@ describe("npm run test:live", () => {
     expect(output).not.toContain("No test files found");
     expect(output).not.toContain("decoy.invalid");
   }, 180_000);
+});
+
+/* ── the state classifier (admin-window/TASK-0032) ────────────────────────── */
+
+/** One row of the table the classifier reads as an `ok` surface. */
+type StateRow = { id: string };
+
+describe("the state classifier", () => {
+  /**
+   * The markup under test is rendered from the REAL primitives, not typed by
+   * hand: the whole point of `data-state` is that the four `ui` cards emit it,
+   * so a hand-written state attribute would prove the test, not the app.
+   */
+  const empty = () =>
+    render(h(Empty, { holds: "open decisions", filledBy: "the resolver files one" }));
+  const notProvisioned = () =>
+    render(
+      h(NotProvisioned, {
+        missing: "review_items",
+        arrivesWith: "the scraper repo's migration",
+      }),
+    );
+  const errorLine = () =>
+    render(
+      h(ErrorLine, {
+        reading: "review_items",
+        failed: "canceling statement due to statement timeout",
+        retry: "Reload to try the read again.",
+      }),
+    );
+  const rows = () =>
+    render(
+      h(DataTable<StateRow>, {
+        label: "items",
+        columns: [{ key: "id", label: "id", cell: (row: StateRow) => row.id }],
+        rows: [{ id: "one" }],
+        rowKey: (row: StateRow) => row.id,
+      }),
+    );
+
+  /** A page-shaped fragment: one named surface holding one body. */
+  const surface = (body: string, attrs = 'data-surface="q"') =>
+    `<div ${attrs}>${body}</div>`;
+  const SURFACE = "[data-surface]";
+
+  it("names each of the four cards by what it emits, not by what it says", () => {
+    expect(stateOf(surface(empty()), SURFACE)).toBe("empty");
+    expect(stateOf(surface(notProvisioned()), SURFACE)).toBe("not_provisioned");
+    expect(stateOf(surface(errorLine()), SURFACE)).toBe("error");
+    expect(stateOf(surface(rows()), SURFACE)).toBe("ok");
+  });
+
+  it("tells an empty surface from an unprovisioned one, which prose cannot", () => {
+    // The two draw the same container and differ only in their WORDS, which is
+    // why the old oracle graded an honest EMPTY page as an unprovisioned one
+    // (`/queues`, `/sources`). Structurally they are never the same thing.
+    expect(stateOf(surface(empty()), SURFACE)).not.toBe(
+      stateOf(surface(notProvisioned()), SURFACE),
+    );
+  });
+
+  // The regression this ticket exists for: 4 of 6 live cases passed against a
+  // page in its ERROR state, because the fallback branch only asked that the
+  // markup mention the object — which the red line carries exactly as well as
+  // the gray card does.
+  it("refuses to let an ERROR page satisfy a not-provisioned expectation", () => {
+    const broken = surface(errorLine());
+
+    // Prose cannot tell them apart — both name the object, verbatim:
+    expect(broken).toContain("review_items");
+    expect(surface(notProvisioned())).toContain("review_items");
+
+    // The kind can, and an error is never a not-provisioned pass.
+    expect(stateOf(broken, SURFACE)).toBe("error");
+    expect(() => assertState(broken, SURFACE, "not_provisioned")).toThrow(
+      StateMismatchError,
+    );
+    // …nor an empty one, nor an ok one.
+    expect(() => assertState(broken, SURFACE, "empty")).toThrow(StateMismatchError);
+    expect(() => assertState(broken, SURFACE, "ok")).toThrow(StateMismatchError);
+    expect(() => assertState(broken, SURFACE, "error")).not.toThrow();
+  });
+
+  it("says which kind it found, and what the page said, when it refuses", () => {
+    const failure = (() => {
+      try {
+        assertState(surface(errorLine()), SURFACE, "ok");
+        return null;
+      } catch (thrown) {
+        return thrown as StateMismatchError;
+      }
+    })();
+    expect(failure).toBeInstanceOf(StateMismatchError);
+    expect(failure?.found).toBe("error");
+    expect(failure?.expected).toBe("ok");
+    // The read and the database's own words reach the message — rule 6.
+    expect(failure?.message).toContain("review_items");
+    expect(failure?.message).toContain("statement timeout");
+  });
+
+  it("reads a wrapper's own declared kind, and refuses one that contradicts its card", () => {
+    // The idiom `[data-queue]` and the Cycles runs surface already carry.
+    expect(
+      stateOf(surface(empty(), 'data-surface="q" data-state="empty"'), SURFACE),
+    ).toBe("empty");
+    expect(stateOf(surface(rows(), 'data-surface="q" data-state="ok"'), SURFACE)).toBe(
+      "ok",
+    );
+    expect(() =>
+      stateOf(surface(errorLine(), 'data-surface="q" data-state="ok"'), SURFACE),
+    ).toThrow(MarkupReadError);
+  });
+
+  it("lists every card the page carries, in document order", () => {
+    expect(pageStates(empty() + errorLine() + notProvisioned())).toEqual([
+      "empty",
+      "error",
+      "not_provisioned",
+    ]);
+    expect(pageStates(rows())).toEqual([]);
+  });
+
+  it("refuses a page still loading rather than calling it a fifth verdict", () => {
+    const loading = render(h(Loading, { what: "review items" }));
+    expect(loading).toContain("loading");
+    expect(() => pageStates(loading)).toThrow(MarkupReadError);
+    expect(() => stateOf(surface(loading), SURFACE)).toThrow(/LOADING/i);
+  });
+
+  it("refuses a surface that is not there, and one the selector cannot single out", () => {
+    expect(() => stateOf(surface(empty()), "[data-nothing]")).toThrow(MarkupReadError);
+    expect(() => stateOf(surface(empty()) + surface(rows()), SURFACE)).toThrow(
+      MarkupReadError,
+    );
+    expect(() => stateOf(surface(empty() + errorLine()), SURFACE)).toThrow(
+      MarkupReadError,
+    );
+  });
+
+  it("leaves a sub-surface's own state to the sub-surface", () => {
+    // A dial embedded in an evidence view is its own read; its failure is not
+    // the evidence's failure (admin-window/TASK-0032, review-item's oracle).
+    const withDial = surface(rows() + `<div data-dial>${errorLine()}</div>`);
+    expect(stateOf(withDial, SURFACE)).toBe("error");
+    expect(stateOf(withDial, SURFACE, "[data-dial]")).toBe("ok");
+  });
+});
+
+describe("grading a surface against the test's own count", () => {
+  const card = (label: string, value: number) => render(h(StatCard, { label, value }));
+  const wrap = (body: string) => `<div data-surface="q">${body}</div>`;
+  const SURFACE = "[data-surface]";
+  const emptyCard = render(
+    h(Empty, { holds: "open decisions", filledBy: "the resolver files one" }),
+  );
+  const errorCard = render(
+    h(ErrorLine, { reading: "review_items", failed: "57014", retry: "Reload." }),
+  );
+  const absentCard = render(
+    h(NotProvisioned, { missing: "review_items", arrivesWith: "a migration" }),
+  );
+  const table = render(
+    h(DataTable<StateRow>, {
+      label: "items",
+      columns: [{ key: "id", label: "id", cell: (row: StateRow) => row.id }],
+      rows: [{ id: "one" }],
+      rowKey: (row: StateRow) => row.id,
+    }),
+  );
+
+  const grade = (markup: string, counted: number | "absent", figure?: string) =>
+    gradeSurface({
+      markup,
+      within: SURFACE,
+      object: "review_items",
+      counted,
+      figure,
+    });
+
+  it("passes an EMPTY surface with a counted zero, and its figure reading 0", async () => {
+    await expect(
+      grade(wrap(card("Open decisions", 0) + emptyCard), 0, "Open decisions"),
+    ).resolves.toBe("empty");
+  });
+
+  it("fails an EMPTY surface whose figure is not the zero it counted", async () => {
+    // A figure that disappears at zero, or shows something else, is the half of
+    // rule 2 that makes an emptiness a NUMBER rather than an absence.
+    await expect(
+      grade(wrap(card("Open decisions", 3) + emptyCard), 0, "Open decisions"),
+    ).rejects.toThrow(ParityError);
+    await expect(grade(wrap(emptyCard), 0, "Open decisions")).rejects.toThrow(
+      MarkupReadError,
+    );
+  });
+
+  it("fails an EMPTY surface the database says holds rows, and the reverse", async () => {
+    await expect(grade(wrap(emptyCard), 4)).rejects.toThrow(StateMismatchError);
+    await expect(grade(wrap(table), 0)).rejects.toThrow(StateMismatchError);
+  });
+
+  it("fails an ERROR surface whatever the count says", async () => {
+    for (const counted of [0, 7, "absent"] as const) {
+      await expect(grade(wrap(errorCard), counted)).rejects.toThrow(StateMismatchError);
+    }
+    // …and the refusal names the read and what the database said.
+    await expect(grade(wrap(errorCard), 0)).rejects.toThrow(/review_items/);
+  });
+
+  it("passes NOT_PROVISIONED only on the test's own absence code", async () => {
+    await expect(grade(wrap(absentCard), "absent")).resolves.toBe("not_provisioned");
+    // Counted rows against a not-provisioned card is the inference rule 5
+    // forbids — and the check would need a live client, which offline has none
+    // of, so it refuses rather than passing.
+    await expect(grade(wrap(absentCard), 0)).rejects.toThrow();
+  });
+
+  it("fails a surface that rendered anything at all when the object is absent", async () => {
+    await expect(grade(wrap(table), "absent")).rejects.toThrow(StateMismatchError);
+    await expect(grade(wrap(emptyCard), "absent")).rejects.toThrow(StateMismatchError);
+  });
+
+  it("counts a zero as OK where the surface states its figure at zero", async () => {
+    // The Dashboard's attention cards: two figures in fixed positions, whatever
+    // the morning holds (LOOK_AND_FEEL bar 1). Their zero is `ok`, not `empty`.
+    await expect(
+      gradeSurface({
+        markup: wrap(card("Open decisions", 0)),
+        within: SURFACE,
+        object: "review_items",
+        counted: 0,
+        emptyAtZero: false,
+        figure: "Open decisions",
+      }),
+    ).resolves.toBe("ok");
+  });
+});
+
+describe("parity, once the kind is named", () => {
+  const wrap = (body: string) => `<div data-surface="q">${body}</div>`;
+  const SURFACE = "[data-surface]";
+
+  it("names the state kind before it reads the number", async () => {
+    // The failure a page in its error state must produce is a STATE failure,
+    // never the MarkupReadError of a number that was never rendered — that is
+    // how a test used to discover the page was broken, and it read as a
+    // parsing problem.
+    const broken = wrap(
+      render(
+        h(ErrorLine, { reading: "review_items", failed: "57014", retry: "Reload." }),
+      ),
+    );
+    const failure = await assertParity({
+      markup: broken,
+      within: SURFACE,
+      label: "Open decisions",
+      expected: () => 3,
+    }).catch((thrown: unknown) => thrown);
+
+    expect(failure).toBeInstanceOf(StateMismatchError);
+    expect(failure).not.toBeInstanceOf(MarkupReadError);
+  });
+
+  it("refuses a page carrying an error anywhere when no surface is named", async () => {
+    const page =
+      render(h(StatCard, { label: "Open decisions", value: 3 })) +
+      render(h(ErrorLine, { reading: "runs", failed: "57014", retry: "Reload." }));
+    await expect(
+      assertParity({ markup: page, label: "Open decisions", expected: () => 3 }),
+    ).rejects.toThrow(StateMismatchError);
+  });
+
+  it("still compares the number once the kind is the expected one", async () => {
+    const page = wrap(render(h(StatCard, { label: "Open decisions", value: 3 })));
+    await expect(
+      assertParity({
+        markup: page,
+        within: SURFACE,
+        label: "Open decisions",
+        expected: () => 3,
+      }),
+    ).resolves.toBe(3);
+    await expect(
+      assertParity({
+        markup: page,
+        within: SURFACE,
+        label: "Open decisions",
+        expected: () => 4,
+      }),
+    ).rejects.toThrow(ParityError);
+  });
+});
+
+describe("the count a live test issues", () => {
+  const HEAD_SHAPED = new RegExp("head:\\s*true");
+
+  it("is GET-shaped, so a failure comes back with a body", async () => {
+    const db = stubClient({ review_items: { count: 2 } });
+    await countRows(() => exactCount("review_items", db.asSupabaseClient()));
+
+    const steps = db.calls[0].steps;
+    const select = steps.find((step) => step.method === "select");
+    expect(select?.args[1]).toEqual({ count: "exact" });
+    // `head` is what emptied the error, and it is gone from the shape.
+    expect(JSON.stringify(select?.args)).not.toContain("head");
+    // A range keeps the body to one row: enough to carry an error, not a scan.
+    expect(steps.map((step) => step.method)).toContain("range");
+  });
+
+  it("reports the database's own code for a failed count", async () => {
+    // The measured failure: `pending_claims` times out at ~8.1s on staging
+    // (57014, admin-window/TASK-0031). Through a GET-shaped count the code and
+    // the message both arrive.
+    const db = stubClient({ pending_claims: { error: statementTimeout() } });
+    const failure = await countRows(() =>
+      exactCount("pending_claims", db.asSupabaseClient()),
+    ).then(
+      (counted) => new Error(`the count resolved to ${counted}`),
+      (thrown: unknown) => thrown as Error,
+    );
+
+    expect(failure.message).toContain("57014");
+    expect(failure.message).toContain("statement timeout");
+  });
+
+  it("says it could not tell, rather than reporting a blank", async () => {
+    // The SAME failure as a head-shaped count received it: no body, so no code
+    // and an empty message. A timeout reported as "" is the defect.
+    const db = stubClient({ pending_claims: { error: unparseableFailure() } });
+    const failure = await countRows(() =>
+      exactCount("pending_claims", db.asSupabaseClient()),
+    ).then(
+      (counted) => new Error(`the count resolved to ${counted}`),
+      (thrown: unknown) => thrown as Error,
+    );
+
+    expect(failure.message).toMatch(/no parseable error/);
+    expect(failure.message.trim()).not.toMatch(/failed:$/);
+  });
+
+  it("answers 'absent' for the absence code, and rethrows anything else", async () => {
+    const absent = stubClient({
+      review_items: { error: { code: "PGRST205", message: "not in schema cache" } },
+    });
+    await expect(
+      countOrAbsent(() => exactCount("review_items", absent.asSupabaseClient())),
+    ).resolves.toBe("absent");
+
+    const timedOut = stubClient({ review_items: { error: statementTimeout() } });
+    await expect(
+      countOrAbsent(() => exactCount("review_items", timedOut.asSupabaseClient())),
+    ).rejects.toThrow(/57014/);
+  });
+
+  it("leaves no head-shaped count on any query a live TEST issues", () => {
+    // The rule, stated where it can be checked: a count the test writes —
+    // anything built from `independentClient()` — is never head-shaped, because
+    // a HEAD response carries no body and its failures arrive blank. The app's
+    // own read path is not covered: `lib/db` counts with `head: true`, and
+    // `harness.live.test.ts` exercises it deliberately, in the app's shape.
+    //
+    // Statement-level and over CODE lines only, so a comment explaining why the
+    // head-shaped count is gone does not redden it (ARCHITECTURE §10, common
+    // violation 4).
+    const dir = "tests/live";
+    const offenders = fs
+      .readdirSync(path.join(repoRoot, dir))
+      .filter((name) => name.endsWith(".ts"))
+      .filter((name) =>
+        codeLines(`${dir}/${name}`)
+          .join("\n")
+          .split(";")
+          .some(
+            (statement) =>
+              HEAD_SHAPED.test(statement) && statement.includes("independentClient("),
+          ),
+      );
+    expect(offenders).toEqual([]);
+  });
 });

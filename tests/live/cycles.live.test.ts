@@ -3,7 +3,18 @@ import { describe, expect, it } from "vitest";
 import CyclesPage from "@/app/cycles/page";
 import { CYCLE_COUNTERS, CYCLE_WINDOW } from "@/lib/db/cycles";
 import { T } from "@/lib/db/tables";
-import { countRows, independentClient, readNumber, renderPage } from "./parity";
+import {
+  countOrAbsent,
+  countRows,
+  exactCount,
+  gradeSurface,
+  independentClient,
+  objectIsAbsent,
+  readNumber,
+  renderPage,
+  stateOf,
+  whileStill,
+} from "./parity";
 
 /**
  * The Cycles & runs page against staging (campaign admin-window/TASK-0014).
@@ -31,12 +42,25 @@ import { countRows, independentClient, readNumber, renderPage } from "./parity";
  * missing name. That refusal is the correct state today and is not a failure
  * of this file.
  *
- * Where staging does not carry an object at all (ARCHITECTURE.md §12
- * `OPEN-FIXTURES`), each case asserts the honest not-provisioned rendering
- * instead, naming that object. It never skips silently.
+ * **Every case names the STATE KIND before it compares a number**
+ * (ARCHITECTURE.md §10, common violation 6; oracle rewritten by
+ * admin-window/TASK-0032). Each surface is graded against the kind THIS TEST's
+ * own count implies: `ok` compares numbers, `empty` is a pass with a stated 0,
+ * `not_provisioned` needs this test's own absence code, `error` is a FAIL
+ * naming the read and the database's code. The cards' words are never read —
+ * `Empty` and `NotProvisioned` draw the same container.
  */
 
 type Params = Record<string, string>;
+
+/**
+ * The page's four surfaces, in the order `src/app/cycles/page.tsx` renders
+ * them. Structural — no heading text is read. (The runs half is the second,
+ * and is graded by `runs.live.test.ts` through its own `data-surface` hook.)
+ */
+const CYCLES = "section:nth-of-type(1)";
+const HEALTH = "section:nth-of-type(3)";
+const LATENCY = "section:nth-of-type(4)";
 
 interface StagingCycle {
   run_id: string;
@@ -50,14 +74,6 @@ interface StagingCycle {
 /** The page as the URL renders it. Every read happens per request. */
 async function cyclesMarkup(params: Params = {}): Promise<string> {
   return renderPage(CyclesPage, { searchParams: Promise.resolve(params) });
-}
-
-/** The objects whose absence the page reported, in its own state cards. */
-function absentObjects(markup: string): string[] {
-  const $ = cheerio.load(markup);
-  return $("[data-not-provisioned]")
-    .toArray()
-    .map((element) => $(element).attr("data-not-provisioned") ?? "");
 }
 
 /** The cycle rows the page rendered, as their hooks and counter cells. */
@@ -107,24 +123,24 @@ async function stagingCycles(limit: number): Promise<StagingCycle[]> {
 
 describe("the resolver's cycles against staging", () => {
   it("renders the newest cycles, newest first, as the table holds them", async () => {
-    const markup = await cyclesMarkup();
+    // The resolver writes cycles while this runs, so the render and the query
+    // are pinned to one still moment (`whileStill`) — otherwise a row arriving
+    // between them reads as a row the page dropped.
+    const { made: markup, held } = await whileStill(
+      () => stagingCycles(CYCLE_WINDOW),
+      () => cyclesMarkup(),
+    );
+    // Absent, empty or refused: three different kinds, and this test decides
+    // which one it expects from its own count before reading the page.
+    const state = await gradeSurface({
+      markup,
+      within: CYCLES,
+      object: T.resolutionRuns,
+      counted: () => countOrAbsent(() => exactCount(T.resolutionRuns)),
+    });
+    if (state !== "ok") return;
+
     const rendered = renderedCycles(markup);
-
-    if (rendered.length === 0) {
-      // Either the table is absent, or no cycle has ever run — both honest,
-      // and neither a silent skip.
-      if (absentObjects(markup).includes(T.resolutionRuns)) return;
-      expect(
-        await countRows(() =>
-          independentClient()
-            .from(T.resolutionRuns)
-            .select("*", { head: true, count: "exact" }),
-        ),
-      ).toBe(0);
-      return;
-    }
-
-    const held = await stagingCycles(CYCLE_WINDOW);
     expect(rendered.map((row) => row.runId)).toEqual(held.map((row) => row.run_id));
 
     // The order is this test's own claim, re-derived from the instants rather
@@ -140,8 +156,8 @@ describe("the resolver's cycles against staging", () => {
 
   it("renders every count and every error line the row carries", async () => {
     const markup = await cyclesMarkup();
+    if (stateOf(markup, CYCLES) !== "ok") return;
     const rendered = renderedCycles(markup);
-    if (rendered.length === 0) return;
 
     for (const row of rendered.slice(0, 20)) {
       const { data, error } = await independentClient()
@@ -170,8 +186,8 @@ describe("the resolver's cycles against staging", () => {
 
   it("reads a running, a skipped and a dead cycle as what they are", async () => {
     const markup = await cyclesMarkup();
+    if (stateOf(markup, CYCLES) !== "ok") return;
     const rendered = renderedCycles(markup);
-    if (rendered.length === 0) return;
 
     const held = new Map(
       (await stagingCycles(CYCLE_WINDOW)).map((row) => [row.run_id, row]),
@@ -197,9 +213,9 @@ describe("the resolver's cycles against staging", () => {
   });
 
   it("marks the cycle a Dashboard link asks for", async () => {
-    const rendered = renderedCycles(await cyclesMarkup());
-    if (rendered.length === 0) return;
-    const one = rendered[0].runId;
+    const markup = await cyclesMarkup();
+    if (stateOf(markup, CYCLES) !== "ok") return;
+    const one = renderedCycles(markup)[0].runId;
     const marked = cheerio.load(await cyclesMarkup({ cycle: one }));
     expect(marked(`[data-cycle="${one}"]`).attr("aria-current")).toBe("true");
     expect(marked('[data-cycle-found="true"]').attr("data-cycle-asked")).toBe(one);
@@ -210,19 +226,28 @@ describe("the two gauges on this page against staging", () => {
   it("counts the cycles of its window as the table holds them", async () => {
     const markup = await cyclesMarkup();
     const window = windowOf(markup, "cycle_health");
-    if (!window.present) {
-      expect(absentObjects(markup)).toContain(T.resolutionRuns);
-      return;
-    }
+    const state = await gradeSurface({
+      markup,
+      within: HEALTH,
+      object: T.resolutionRuns,
+      counted: async () => {
+        if (!window.present) {
+          return (await objectIsAbsent(T.resolutionRuns)) ? "absent" : 0;
+        }
+        return countRows(() =>
+          exactCount(T.resolutionRuns).gte("started_at", window.since),
+        );
+      },
+      emptyAtZero: false,
+      figure: "Cycles in this window",
+    });
+    if (state !== "ok") return;
     // A truncated window makes every count a floor, and a floor is not a
     // parity claim — the page says so, and this test believes it.
     if (window.truncated) return;
 
     const expected = await countRows(() =>
-      independentClient()
-        .from(T.resolutionRuns)
-        .select("*", { head: true, count: "exact" })
-        .gte("started_at", window.since),
+      exactCount(T.resolutionRuns).gte("started_at", window.since),
     );
     // `readNumber` reads the figure STRUCTURALLY — the number standing beside
     // its label — so a restyle or a copy change never reddens this parity.
@@ -232,15 +257,22 @@ describe("the two gauges on this page against staging", () => {
   it("separates the applies it measured from the decisions that name no claim", async () => {
     const markup = await cyclesMarkup();
     const window = windowOf(markup, "resolution_latency");
-    if (!window.present) {
-      expect(
-        absentObjects(markup).some((object) =>
-          [T.fieldProvenance, T.observations].includes(object as never),
-        ),
-        "an absent gauge names the object it could not read",
-      ).toBe(true);
-      return;
-    }
+    const state = await gradeSurface({
+      markup,
+      within: LATENCY,
+      object: T.fieldProvenance,
+      counted: async () => {
+        if (!window.present) {
+          return (await objectIsAbsent(T.fieldProvenance)) ? "absent" : 0;
+        }
+        return countRows(() =>
+          exactCount(T.fieldProvenance).gte("applied_at", window.since),
+        );
+      },
+      emptyAtZero: false,
+      figure: "Applies in this window",
+    });
+    if (state !== "ok") return;
     if (window.truncated) return;
 
     // This test's own split of the same window: a decision that names an
@@ -248,17 +280,12 @@ describe("the two gauges on this page against staging", () => {
     // 20260901000005; admin-window/BUG-0012). The two counts must not be the
     // same number unless staging really holds no unsets.
     const applies = await countRows(() =>
-      independentClient()
-        .from(T.fieldProvenance)
-        .select("*", { head: true, count: "exact" })
+      exactCount(T.fieldProvenance)
         .gte("applied_at", window.since)
         .not("observation_id", "is", null),
     );
     const decisions = await countRows(() =>
-      independentClient()
-        .from(T.fieldProvenance)
-        .select("*", { head: true, count: "exact" })
-        .gte("applied_at", window.since),
+      exactCount(T.fieldProvenance).gte("applied_at", window.since),
     );
 
     expect(readNumber(markup, "Applies in this window")).toBe(applies);

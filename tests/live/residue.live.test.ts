@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EDITABLE_TABLES, EDIT_CONFIG, type TableEditConfig } from "@/lib/edit/config";
-import { independentClient } from "./parity";
+import { exactCount, independentClient } from "./parity";
 import { stagingHost } from "./setup";
 
 /**
@@ -95,12 +95,19 @@ async function textColumns(config: TableEditConfig): Promise<string[]> {
   return [...columns].sort();
 }
 
-/** How many rows of `table.column` carry the marker. Never a guess. */
+/**
+ * How many rows of `table.column` carry the marker. Never a guess.
+ *
+ * A GET-shaped count (`exactCount`), because a HEAD response carries no body
+ * for supabase-js to parse an error out of — so a refused scan came back as a
+ * blank rather than as a code, and a scan that cannot say why it failed is not
+ * a clean result (admin-window/TASK-0032).
+ */
 async function countMarked(table: string, column: string): Promise<number> {
-  const { count, error } = await independentClient()
-    .from(table)
-    .select("*", { head: true, count: "exact" })
-    .ilike(column, `%${CAMPAIGN_MARKER}%`);
+  const { count, error } = await exactCount(table).ilike(
+    column,
+    `%${CAMPAIGN_MARKER}%`,
+  );
   if (error) {
     throw new Error(
       `the residue sweep's count of ${table}.${column} failed: ${error.message}`,

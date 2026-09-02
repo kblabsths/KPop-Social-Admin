@@ -2,7 +2,17 @@ import * as cheerio from "cheerio";
 import { describe, expect, it } from "vitest";
 import SourcesPage from "@/app/sources/page";
 import { T } from "@/lib/db/tables";
-import { countRows, independentClient, renderPage } from "./parity";
+import {
+  type Counted,
+  countOrAbsent,
+  countRows,
+  exactCount,
+  gradeSurface,
+  independentClient,
+  objectIsAbsent,
+  renderPage,
+  stateOf,
+} from "./parity";
 
 /**
  * The Sources page against staging (campaign admin-window/TASK-0013).
@@ -23,12 +33,39 @@ import { countRows, independentClient, renderPage } from "./parity";
  * missing name. That refusal is the correct state today and is not a failure
  * of this file.
  *
- * Where staging does not carry an object at all (ARCHITECTURE.md §12
- * `OPEN-FIXTURES`), each case asserts the honest not-provisioned rendering
- * instead, naming that object. It never skips silently.
+ * **Every case names the STATE KIND before it compares anything**
+ * (ARCHITECTURE.md §10, common violation 6; oracle rewritten by
+ * admin-window/TASK-0032). Each of this page's three surfaces is graded on its
+ * own, against the kind THIS TEST's own count implies:
+ *
+ *  - `ok` compares rows and numbers.
+ *  - `empty` is a PASS WITH A NUMBER — this test counted exactly 0. Before
+ *    this rewrite an honest emptiness fell into the not-provisioned branch and
+ *    was graded a failure, because `Empty` and `NotProvisioned` draw the same
+ *    container and were told apart by their WORDS.
+ *  - `not_provisioned` is a pass only when this test's own read of the same
+ *    object gets the absence code (`PGRST205` / `42P01`).
+ *  - `error` is a FAIL naming the read and the database's own account.
+ *
+ * The surfaces are named structurally, in the order `src/app/sources/page.tsx`
+ * renders them; no heading text is read, because copy is the designer's
+ * jurisdiction.
  */
 
 type Params = Record<string, string>;
+
+/**
+ * This page's three surfaces, in the order `src/app/sources/page.tsx` renders
+ * them: the registry, the awaiting-row trend, the settled-values trend. Each
+ * is its own read, so each is its own state.
+ */
+const REGISTRY = "section:nth-of-type(1)";
+const AWAITING_TREND = "section:nth-of-type(2)";
+const REJECTIONS = "section:nth-of-type(3)";
+
+/** The `micro` labels the two trend figures stand under, as an operator reads them. */
+const AWAITING_FIGURE = "Awaiting-row claims in this window";
+const REJECTED_FIGURE = "Re-rejected claims in this window";
 
 interface StagingSource {
   source_id: string;
@@ -41,14 +78,6 @@ interface StagingSource {
 /** The page as the URL renders it. Every read happens per request. */
 async function sourcesMarkup(params: Params = {}): Promise<string> {
   return renderPage(SourcesPage, { searchParams: Promise.resolve(params) });
-}
-
-/** The objects whose absence the page reported, in its own state cards. */
-function absentObjects(markup: string): string[] {
-  const $ = cheerio.load(markup);
-  return $("[data-not-provisioned]")
-    .toArray()
-    .map((element) => $(element).attr("data-not-provisioned") ?? "");
 }
 
 /** The registry rows the page rendered, as their hooks. */
@@ -113,27 +142,24 @@ async function stagingSources(): Promise<StagingSource[]> {
 describe("the source state rows against staging", () => {
   it("renders every source the registry holds, with its state verbatim", async () => {
     const markup = await sourcesMarkup();
-    const rendered = renderedSources(markup);
-    if (rendered.length === 0) {
-      // Either the table is absent, or the registry is empty — both honest,
-      // and neither a silent skip.
-      const absent = absentObjects(markup);
-      if (absent.includes(T.sources) || absent.includes(T.runs)) return;
-      expect(await countRows(() =>
-        independentClient().from(T.sources).select("*", { head: true, count: "exact" }),
-      )).toBe(0);
-      return;
-    }
+    // The kind this test expects comes from its OWN count, and the registry
+    // surface must be in it: a registry that holds nothing renders `empty`,
+    // and that is a pass with a stated 0 — never the not-provisioned card.
+    const counted = await countOrAbsent(() => exactCount(T.sources));
+    const state = await gradeSurface({
+      markup,
+      within: REGISTRY,
+      object: T.sources,
+      counted,
+    });
+    if (state !== "ok" || counted === "absent") return;
 
+    const rendered = renderedSources(markup);
     const held = await stagingSources();
     expect(rendered.map((row) => row.sourceId)).toEqual(
       held.map((source) => source.source_id),
     );
-    expect(rendered).toHaveLength(
-      await countRows(() =>
-        independentClient().from(T.sources).select("*", { head: true, count: "exact" }),
-      ),
-    );
+    expect(rendered).toHaveLength(counted);
 
     for (const source of held) {
       const row = rendered.find((rendered) => rendered.sourceId === source.source_id);
@@ -153,8 +179,14 @@ describe("the source state rows against staging", () => {
 
   it("shows each source's last run, matched by NAME, and none where there is none", async () => {
     const markup = await sourcesMarkup();
+    const state = await gradeSurface({
+      markup,
+      within: REGISTRY,
+      object: T.sources,
+      counted: () => countOrAbsent(() => exactCount(T.sources)),
+    });
+    if (state !== "ok") return;
     const rendered = renderedSources(markup);
-    if (rendered.length === 0) return;
 
     for (const row of rendered) {
       // This test's own match: the newest run whose `source` TEXT equals this
@@ -176,33 +208,92 @@ describe("the source state rows against staging", () => {
   });
 
   it("narrows to one source, and that source alone", async () => {
-    const rendered = renderedSources(await sourcesMarkup());
-    if (rendered.length === 0) return;
-    const one = rendered[0];
-    const narrowed = renderedSources(await sourcesMarkup({ source_id: one.sourceId }));
-    expect(narrowed.map((row) => row.sourceId)).toEqual([one.sourceId]);
+    const markup = await sourcesMarkup();
+    const state = await gradeSurface({
+      markup,
+      within: REGISTRY,
+      object: T.sources,
+      counted: () => countOrAbsent(() => exactCount(T.sources)),
+    });
+    if (state !== "ok") return;
+
+    const one = renderedSources(markup)[0];
+    const narrowedMarkup = await sourcesMarkup({ source_id: one.sourceId });
+    // One source is one row, so the narrowed registry is `ok` with exactly it.
+    await gradeSurface({
+      markup: narrowedMarkup,
+      within: REGISTRY,
+      object: T.sources,
+      counted: 1,
+    });
+    expect(renderedSources(narrowedMarkup).map((row) => row.sourceId)).toEqual([
+      one.sourceId,
+    ]);
   });
 });
 
 describe("the per-source trends against staging", () => {
+  /**
+   * The awaiting-row claims of the window the page states, counted by THIS
+   * TEST: the pending observations of the window, then their `awaiting_row`
+   * claims — every id, in chunks, so the number is exact rather than a floor.
+   *
+   * With no window line the read produced no window at all, and the only kind
+   * that may then pass is `not_provisioned` — on this test's own absence code,
+   * never on "no rows rendered" (rule 5).
+   */
+  async function awaitingClaimsInWindow(
+    window: ReturnType<typeof windowOf>,
+  ): Promise<Counted> {
+    if (!window.present) {
+      return (await objectIsAbsent(T.pendingClaims)) ? "absent" : 0;
+    }
+    const { data, error } = await independentClient()
+      .from(T.observations)
+      .select("observation_id")
+      .eq("status", "pending")
+      .gte("observed_at", window.since)
+      .limit(1000);
+    if (error) throw new Error(`the observations query failed: ${JSON.stringify(error)}`);
+    const ids = ((data ?? []) as { observation_id: string }[]).map(
+      (row) => row.observation_id,
+    );
+
+    let claims = 0;
+    for (let at = 0; at < ids.length; at += 100) {
+      claims += await countRows(() =>
+        exactCount(T.pendingClaims)
+          .eq("bucket", "awaiting_row")
+          .in("observation_id", ids.slice(at, at + 100)),
+      );
+    }
+    return claims;
+  }
+
   it("counts each source's awaiting-row claims as the view holds them", async () => {
     const markup = await sourcesMarkup();
     const window = windowOf(markup, "awaiting_row");
-    if (!window.present) {
-      expect(
-        absentObjects(markup).some((object) =>
-          [T.pendingClaims, T.observations].includes(object as never),
-        ),
-        "an absent gauge names the object it could not read",
-      ).toBe(true);
-      return;
-    }
+
+    // The kind first, and this one is RED on staging today — correctly.
+    // `pending_claims` cannot be read (admin-window/TASK-0031: every shape but
+    // an unordered `limit 1` times out at ~8.1s, `57014`), so this surface is
+    // honestly in its ERROR state and rule 6 says an error is a FAILURE naming
+    // the read. It is not skipped, not weakened and not marked todo: its red is
+    // the campaign's signal that the scraper-repo handoff has not landed. It
+    // goes green by itself the day `pending_claims` answers.
+    const state = await gradeSurface({
+      markup,
+      within: AWAITING_TREND,
+      object: T.pendingClaims,
+      counted: () => awaitingClaimsInWindow(window),
+      figure: AWAITING_FIGURE,
+    });
+    if (state !== "ok") return;
+
     // A truncated window makes every count a floor, and a floor is not a
     // parity claim — the page says so, and this test believes it.
     if (window.truncated) return;
 
-    // This test's own two-step: the claims of the window, by the instants that
-    // define it, then their buckets.
     const { data: observed, error: observedError } = await independentClient()
       .from(T.observations)
       .select("observation_id")
@@ -216,53 +307,63 @@ describe("the per-source trends against staging", () => {
       (row) => row.observation_id,
     );
 
-    const rendered = trendCells(markup, "Awaiting-row claims by source");
-    if (ids.length === 0) {
-      expect(rendered.size).toBe(0);
-      return;
-    }
-
-    const { data: claims, error: claimsError } = await independentClient()
-      .from(T.pendingClaims)
-      .select("observation_id, source_id, bucket")
-      .eq("bucket", "awaiting_row")
-      .in("observation_id", ids.slice(0, 100))
-      .limit(1000);
-    if (claimsError) {
-      throw new Error(`the claims query failed: ${JSON.stringify(claimsError)}`);
-    }
-
-    // Only the first chunk of ids was asked for, so this is a subset check in
-    // the honest direction: every source the test found must be on the page,
-    // with at least what the test counted.
+    // This test's own per-source split of the same window, every id counted.
     const counted = new Map<string, number>();
-    for (const claim of (claims ?? []) as { source_id: string }[]) {
-      counted.set(claim.source_id, (counted.get(claim.source_id) ?? 0) + 1);
+    for (let at = 0; at < ids.length; at += 100) {
+      const { data, error } = await independentClient()
+        .from(T.pendingClaims)
+        .select("observation_id, source_id, bucket")
+        .eq("bucket", "awaiting_row")
+        .in("observation_id", ids.slice(at, at + 100))
+        .limit(1000);
+      if (error) throw new Error(`the claims query failed: ${JSON.stringify(error)}`);
+      for (const claim of (data ?? []) as { source_id: string }[]) {
+        counted.set(claim.source_id, (counted.get(claim.source_id) ?? 0) + 1);
+      }
     }
+
+    const rendered = trendCells(markup, "Awaiting-row claims by source");
+    expect([...rendered.keys()].sort()).toEqual([...counted.keys()].sort());
     for (const [sourceId, claimed] of counted) {
-      const cells = rendered.get(sourceId);
-      expect(cells, sourceId).toBeDefined();
-      expect(Number(cells?.[1]), sourceId).toBeGreaterThanOrEqual(claimed);
+      expect(Number(rendered.get(sourceId)?.[1]), sourceId).toBe(claimed);
     }
   });
 
   it("counts each source's re-rejects as the stamps hold them", async () => {
     const markup = await sourcesMarkup();
     const window = windowOf(markup, "rejections");
-    if (!window.present) {
-      expect(absentObjects(markup)).toContain(T.observations);
-      return;
-    }
+
+    // The gauge's own definition, re-stated here from migration
+    // `20260901000003`: a re-reject is `rejected_by = 'resolver'`. The window
+    // is the one the page states.
+    const rerejected = async (): Promise<Counted> => {
+      if (!window.present) {
+        return (await objectIsAbsent(T.observations)) ? "absent" : 0;
+      }
+      return countRows(() =>
+        exactCount(T.observations)
+          .eq("rejected_by", "resolver")
+          .gte("rejected_at", window.since),
+      );
+    };
+
+    // Staging holds no re-rejected value in this window, so this case grades an
+    // EMPTY surface today: a pass with a stated 0 on both sides, and NOT
+    // coverage of the per-source rendering, which needs a re-reject to exist.
+    const state = await gradeSurface({
+      markup,
+      within: REJECTIONS,
+      object: T.observations,
+      counted: rerejected,
+      figure: REJECTED_FIGURE,
+    });
+    if (state !== "ok") return;
     if (window.truncated) return;
 
     const rendered = trendCells(markup, "Re-rejected values by source");
     for (const [sourceId, cells] of rendered) {
-      // The gauge's own definition, re-stated here from migration
-      // `20260901000003`: a re-reject is `rejected_by = 'resolver'`.
       const expected = await countRows(() =>
-        independentClient()
-          .from(T.observations)
-          .select("*", { head: true, count: "exact" })
+        exactCount(T.observations)
           .eq("source_id", sourceId)
           .eq("rejected_by", "resolver")
           .gte("rejected_at", window.since),
@@ -273,7 +374,9 @@ describe("the per-source trends against staging", () => {
 
   it("draws no threshold line, because the dial is not readable from here", async () => {
     const markup = await sourcesMarkup();
-    if (!windowOf(markup, "awaiting_row").present) return;
+    // Only an `ok` trend has columns to count; every other kind rendered a
+    // state card instead, which this file grades in the case above.
+    if (stateOf(markup, AWAITING_TREND) !== "ok") return;
     // period + claims + days-with-a-claim. A fourth column would mean a
     // threshold arrived from somewhere, and the only somewhere is the scraper
     // registry (admin-window/TASK-0024).

@@ -77,6 +77,261 @@ export class MarkupReadError extends Error {
   }
 }
 
+/* ── the state classifier (ARCHITECTURE §10, admin-window/TASK-0032) ──────── */
+
+/**
+ * The four kinds a data surface can be in (LOOK_AND_FEEL, Emptiness).
+ *
+ * `ok` and `empty` both COUNTED — `empty` is a real zero. `not_provisioned`
+ * and `error` counted nothing at all, and they are not interchangeable: gray
+ * means unavailable, red means broken.
+ */
+export type PageStateKind = "ok" | "empty" | "not_provisioned" | "error";
+
+/**
+ * The value the `Loading` primitive emits. It is NOT a `PageStateKind`: a live
+ * test grades a finished server render, in which nothing is still loading, so
+ * a loading card in the markup is unreadable rather than a fifth verdict.
+ */
+const LOADING = "loading";
+
+/** The card kinds `data-state` may carry, `loading` included. */
+const CARD_STATES = new Set<string>(["empty", "not_provisioned", "error", LOADING]);
+
+/** The kinds a SURFACE may declare on its own wrapper (`ok` included). */
+const SURFACE_STATES = new Set<string>(["ok", "empty", "not_provisioned", "error"]);
+
+/** A surface was in a kind the test did not expect. Always a test failure. */
+export class StateMismatchError extends Error {
+  constructor(
+    message: string,
+    readonly within: string,
+    readonly found: PageStateKind,
+    readonly expected: PageStateKind,
+  ) {
+    super(message);
+    this.name = "StateMismatchError";
+  }
+}
+
+function asKind(value: string | undefined, where: string): PageStateKind {
+  if (value === LOADING) {
+    throw new MarkupReadError(
+      `${where} is still in its LOADING state. A live test grades a finished ` +
+        `server render, so there is no number here to compare and no verdict ` +
+        `to give.`,
+    );
+  }
+  if (value === undefined || !SURFACE_STATES.has(value)) {
+    throw new MarkupReadError(
+      `${where} carries data-state="${value ?? ""}", which is not one of the ` +
+        `four kinds (${[...SURFACE_STATES].join(", ")}).`,
+    );
+  }
+  return value as PageStateKind;
+}
+
+/**
+ * Every state CARD the markup carries, in document order, by `data-state`.
+ *
+ * The four `ui` state primitives each emit one; a page-level wrapper that
+ * declares its own kind (`[data-queue]`, `[data-surface="runs"]`) is a surface
+ * rather than a card and is not listed here — `stateOf` reads those.
+ *
+ * Throws rather than skipping on a value it does not know: an unknown
+ * `data-state` means the markup grew a fifth state nobody taught this oracle
+ * about, and silently ignoring it is how a broken page goes green.
+ */
+export function pageStates(markup: string): PageStateKind[] {
+  const $ = cheerio.load(markup);
+  return $("[data-state]")
+    .toArray()
+    .filter((element) => CARD_STATES.has($(element).attr("data-state") ?? ""))
+    .map((element) =>
+      asKind($(element).attr("data-state"), `a <${(element as { tagName?: string }).tagName ?? "?"}> state card`),
+    );
+}
+
+/**
+ * The kind of ONE surface: the state card inside `within` (a selector), or
+ * `ok` when that surface rendered without a state card at all.
+ *
+ * Structural, never prose. `Empty` and `NotProvisioned` draw the identical
+ * container and differ only in their words, so reading the copy graded an
+ * honest emptiness as an unprovisioned table (`/queues`, `/sources`) — and
+ * "the markup mentions `pending_claims`" was satisfied by the red error line
+ * as well as by the gray card, which is how four live assertions passed on a
+ * page in its error state (admin-window/TASK-0032; ARCHITECTURE §10).
+ *
+ * A wrapper may declare its own kind (`[data-queue]`, `[data-surface]`); when
+ * it does, that declaration is the answer AND is checked against the card
+ * inside it, so a block cannot say `ok` while rendering an error line.
+ *
+ * `excluding` names SUB-SURFACES inside `within` that make their own read and
+ * carry their own state — the dial embedded in a review item's evidence view,
+ * for one. Their cards belong to them, not to this surface: a page that renders
+ * its claims perfectly well while an embedded gauge cannot read its view is
+ * not a page whose claims are broken. A test that excludes a sub-surface says
+ * so, and grades that sub-surface on its own or leaves it to the file that
+ * owns it.
+ */
+export function stateOf(
+  markup: string,
+  within: string,
+  excluding?: string,
+): PageStateKind {
+  const $ = cheerio.load(markup);
+  const surface = $(within);
+  if (surface.length === 0) {
+    throw new MarkupReadError(
+      `the markup carries no surface matching '${within}', so there is no ` +
+        `state to read. A surface that did not render at all is not a state.`,
+    );
+  }
+  if (surface.length > 1) {
+    throw new MarkupReadError(
+      `'${within}' matches ${surface.length} surfaces in this markup; a state ` +
+        `is read of one surface, so the selector has to name one.`,
+    );
+  }
+
+  const cards = surface
+    .find("[data-state]")
+    .toArray()
+    .filter((element) => CARD_STATES.has($(element).attr("data-state") ?? ""))
+    .filter(
+      (element) => excluding === undefined || $(element).closest(excluding).length === 0,
+    )
+    .map((element) => asKind($(element).attr("data-state"), `the card inside '${within}'`));
+  const distinct = [...new Set(cards)];
+
+  const declared = surface.attr("data-state");
+  if (declared !== undefined) {
+    const kind = asKind(declared, `the surface '${within}'`);
+    if (distinct.length === 1 && distinct[0] !== kind) {
+      throw new MarkupReadError(
+        `'${within}' declares data-state="${kind}" but the state card inside ` +
+          `it says "${distinct[0]}". The block and its card disagree about ` +
+          `which state the surface is in.`,
+      );
+    }
+    return kind;
+  }
+
+  if (distinct.length === 0) return "ok";
+  if (distinct.length === 1) return distinct[0];
+  throw new MarkupReadError(
+    `'${within}' holds state cards of ${distinct.length} different kinds ` +
+      `(${distinct.join(", ")}); the selector names more than one surface.`,
+  );
+}
+
+/** The words a state card carries, for a FAILURE MESSAGE — never for a verdict. */
+function cardText(markup: string, within: string, kind: PageStateKind): string {
+  const $ = cheerio.load(markup);
+  const scope = $(within);
+  const card = scope.is(`[data-state="${kind}"]`)
+    ? scope
+    : scope.find(`[data-state="${kind}"]`).first();
+  return normalize(card.text());
+}
+
+/**
+ * Assert the kind of one surface, and say which kind was found and where when
+ * it is not the one expected.
+ *
+ * An `error` found where anything else was expected reports the line the page
+ * rendered, which carries the read's name and the database's own words
+ * (`ui/error-line.tsx`) — rule 6: an error is a failure that NAMES the read.
+ */
+export function assertState(
+  markup: string,
+  within: string,
+  expected: PageStateKind,
+): void {
+  const found = stateOf(markup, within);
+  if (found === expected) return;
+  const detail =
+    found === "error"
+      ? ` The page says: ${cardText(markup, within, "error")}`
+      : found === "not_provisioned"
+        ? ` The page says: ${cardText(markup, within, "not_provisioned")}`
+        : "";
+  throw new StateMismatchError(
+    `'${within}' is in its ${found.toUpperCase()} state; this test expected ` +
+      `${expected.toUpperCase()}.${detail}`,
+    within,
+    found,
+    expected,
+  );
+}
+
+/**
+ * Refuse a page that carries an ERROR anywhere in it.
+ *
+ * The default guard of `assertParity` when no surface is named: a number read
+ * off a page one of whose reads refused is exactly the vacuous pass this rule
+ * exists to stop (ticket title — an ERROR page may not pass).
+ */
+export function assertNoErrorState(markup: string, label: string): void {
+  const errors = cheerio.load(markup)('[data-state="error"]');
+  if (errors.length === 0) return;
+  throw new StateMismatchError(
+    `the page is in an ERROR state, so "${label}" cannot be compared: ` +
+      normalize(errors.first().text()),
+    ":root",
+    "error",
+    "ok",
+  );
+}
+
+/** PostgREST's and Postgres's own codes for "that object is not here". */
+export const ABSENCE_CODES: readonly string[] = ["PGRST205", "42P01"];
+
+/** The `code` of a PostgREST error, or `""` when it carries none. */
+export function codeOf(error: unknown): string {
+  return typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code: unknown }).code ?? "")
+    : "";
+}
+
+/**
+ * Does THIS TEST's own read of `object` get the absence code?
+ *
+ * Rule 5: `not_provisioned` is a pass only when the test's own read of that
+ * same object returns `PGRST205` / `42P01`. It is never inferred from "no rows
+ * rendered", and never from the words on the card.
+ */
+export async function objectIsAbsent(object: string): Promise<boolean> {
+  const { error } = await independentClient().from(object).select("*").limit(1);
+  return ABSENCE_CODES.includes(codeOf(error));
+}
+
+/** A test's own count, or `"absent"` when the object is not in this database. */
+export type Counted = number | "absent";
+
+/**
+ * Run the test's own count and answer `"absent"` — rather than throwing —
+ * when the database says the object is not there.
+ *
+ * The two honest outcomes of a count are "this many" and "there is no such
+ * object", and they are the two the oracle grades against: a page may render
+ * `not_provisioned` only when THIS read got the absence code (rule 5). Every
+ * other failure still throws, because a read that broke is not a read that
+ * counted nothing.
+ */
+export async function countOrAbsent(
+  run: () => PromiseLike<{ count: number | null; error: unknown }>,
+): Promise<Counted> {
+  try {
+    return await countRows(run);
+  } catch (failure) {
+    const message = failure instanceof Error ? failure.message : String(failure);
+    if (ABSENCE_CODES.some((code) => message.includes(code))) return "absent";
+    throw failure;
+  }
+}
+
 /**
  * Render a page function to static markup.
  *
@@ -186,34 +441,82 @@ export function readNumber(markup: string, label: string): number {
 }
 
 /**
+ * A GET-shaped exact count over `object`, for a test to narrow itself.
+ *
+ * `{ count: "exact" }` WITHOUT `head: true`, plus a one-row range: the count
+ * comes back in `Content-Range` either way, but a `head: true` count is a HEAD
+ * request, and a HEAD response carries **no body** — so supabase-js parses no
+ * error out of a failure and hands back `code=undefined, msg=""` (measured on
+ * a real `57014` statement timeout, admin-window/TASK-0032). A timeout
+ * reported as a blank is how a broken read looks like an empty one. The range
+ * keeps the body to a single row, so this costs one row more than a HEAD and
+ * buys the database's own error code.
+ *
+ * Every live test counts through this. `head: true` has no place in
+ * `tests/live/**` — `tests/offline/live-guard.test.ts` pins that.
+ */
+export function exactCount(object: string, db?: SupabaseClient) {
+  return (db ?? independentClient())
+    .from(object)
+    .select("*", { count: "exact" })
+    .range(0, 0);
+}
+
+/**
+ * The database's own account of a failure, as far as it can be told, with
+ * NOTHING of the payload in it.
+ *
+ * `code` and `message` only: `details` is where supabase-js puts a transport
+ * failure's cause chain, which carries the HOST — and a live suite never
+ * prints a host (parent ticket's ground rules). When neither field says
+ * anything, the keys are named and the values are not.
+ */
+function accountOf(error: unknown): string {
+  const code = codeOf(error);
+  const message =
+    typeof error === "object" && error !== null && "message" in error
+      ? String((error as { message: unknown }).message ?? "")
+      : String(error);
+  if (code !== "" && message !== "") return `${code} ${EM_DASH} ${message}`;
+  if (code !== "") return `code ${code}, with no message`;
+  if (message !== "" && message !== "[object Object]") {
+    return `${message} (the database returned no code)`;
+  }
+  const keys =
+    typeof error === "object" && error !== null ? Object.keys(error).join(", ") : typeof error;
+  return (
+    `it returned no parseable error — no code and no message. The response ` +
+    `carried these keys and no readable account: [${keys}]`
+  );
+}
+
+/**
  * Run the count query the TEST wrote and return its number.
  *
  * Two refusals, no sentinels — a parity test must never quietly compare
  * against `0` because its own query broke or never asked for a count:
  *
- *  - a query that ERRORED throws with the database's own message;
+ *  - a query that ERRORED throws, naming the database's own code and words —
+ *    or saying in as many words that it could not tell, which is the one
+ *    honest thing to say about a response that carried neither;
  *  - a query that came back WITHOUT a count throws too. PostgREST answers a
- *    `select()` written without `{ head: true, count: "exact" }` with
- *    `error: null` and `count: null`, and coercing that to `0` gave any page
- *    rendering zero a free parity pass (admin-window/BUG-0007).
+ *    `select()` written without `count: "exact"` with `error: null` and
+ *    `count: null`, and coercing that to `0` gave any page rendering zero a
+ *    free parity pass (admin-window/BUG-0007).
  */
 export async function countRows(
   run: () => PromiseLike<{ count: number | null; error: unknown }>,
 ): Promise<number> {
   const { count, error } = await run();
   if (error !== null && error !== undefined) {
-    const message =
-      typeof error === "object" && error !== null && "message" in error
-        ? String((error as { message: unknown }).message)
-        : String(error);
-    throw new Error(`the parity count query failed: ${message}`);
+    throw new Error(`the parity count query failed: ${accountOf(error)}`);
   }
   if (typeof count !== "number" || !Number.isFinite(count)) {
     throw new ParityCountError(
       `the parity count query returned no count. A count query must be ` +
-        `written with { head: true, count: "exact" }; without it PostgREST ` +
-        `answers with no error and no count, and a parity check against a ` +
-        `count nobody made proves nothing.`,
+        `written with { count: "exact" } — \`exactCount()\` builds one; ` +
+        `without it PostgREST answers with no error and no count, and a ` +
+        `parity check against a count nobody made proves nothing.`,
     );
   }
   return count;
@@ -255,16 +558,38 @@ export interface ParityInput {
    * the page used.
    */
   expected: () => number | Promise<number>;
+  /**
+   * The surface this number belongs to. Its state kind is asserted BEFORE the
+   * number is read, so a `MarkupReadError` can never again be the way a test
+   * discovers the page was in another state (ARCHITECTURE §10).
+   */
+  within?: string;
+  /**
+   * The kind that surface is expected to be in. `ok` unless the test says
+   * otherwise — `empty` is the other one that carries a number, and it is a
+   * pass with a stated 0.
+   */
+  kind?: PageStateKind;
 }
 
 /**
  * Assert that the rendered number and the independently-counted number agree,
  * and return the number.
  *
+ * The STATE KIND is named first, always: with `within`, that surface must be
+ * in the expected kind; without it, the page must carry no error card at all
+ * — because a figure read off a page whose reads refused is precisely the
+ * vacuous pass this mechanism exists to stop.
+ *
  * Throws a `ParityError` naming both sides, so a failure reads as "the page
  * says 41, the database says 42" rather than "expected true to be false".
  */
 export async function assertParity(input: ParityInput): Promise<number> {
+  if (input.within === undefined) {
+    assertNoErrorState(input.markup, input.label);
+  } else {
+    assertState(input.markup, input.within, input.kind ?? "ok");
+  }
   const rendered = readNumber(input.markup, input.label);
   const expected = await input.expected();
   if (rendered !== expected) {
@@ -277,4 +602,183 @@ export async function assertParity(input: ParityInput): Promise<number> {
     );
   }
   return rendered;
+}
+
+/* ── grading one surface against the test's own count ─────────────────────── */
+
+export interface SurfaceGrade {
+  /** The markup the page rendered. */
+  markup: string;
+  /** The selector naming the ONE surface being graded. */
+  within: string;
+  /**
+   * The object that surface reads, spelled as the query spells it (`T.*`).
+   * Used only to check a `not_provisioned` claim against the database.
+   */
+  object: string;
+  /**
+   * What THIS TEST's own count of that surface answered — a number, or
+   * `"absent"` when its own read got the absence code (see `countOrAbsent`).
+   * It is what decides the kind the test expects: `"absent"` means
+   * `not_provisioned`, 0 means `empty`, more means `ok`.
+   *
+   * A thunk is run only once the surface is known not to be in its ERROR
+   * state, because rule 6 is unconditional: an error is a failure whatever
+   * the test's own read would have said — and where the page's read timed
+   * out, the test's own read of the same object usually times out too, which
+   * would bury the page's own account of the failure under the test's.
+   */
+  counted: Counted | (() => PromiseLike<Counted>);
+  /**
+   * The label of the figure the surface shows, when it shows one. Where the
+   * count is 0 it must read exactly 0 — an emptiness is a pass WITH a number,
+   * never an absence (LOOK_AND_FEEL bar 1, admin-window/BUG-0027).
+   */
+  figure?: string;
+  /**
+   * Does a counted zero render the `Empty` card on this surface?
+   *
+   * True for a surface whose rows are the surface (a queue, a table). FALSE
+   * for one that states its figure in every counted state and never draws an
+   * empty card — the Dashboard's attention cards show `0` and stay `ok`, which
+   * is the whole of LOOK_AND_FEEL bar 1. Defaults to true.
+   */
+  emptyAtZero?: boolean;
+  /**
+   * Sub-surfaces inside `within` that make their own read and carry their own
+   * state, and so are not this surface's to answer for (see `stateOf`).
+   */
+  excluding?: string;
+}
+
+/**
+ * Name the kind a surface is in, grade it against the test's own count, and
+ * return it — the one place the four rules of ARCHITECTURE §10 are spelled.
+ *
+ *  - `error` is a FAIL, naming the surface and the page's own error line
+ *    (which carries the read and the database's words).
+ *  - `not_provisioned` passes only if this test's own read of `object` gets
+ *    the absence code. Never inferred from "no rows rendered".
+ *  - `empty` passes only with a counted 0 on both sides, and the labelled
+ *    figure reading 0 where the surface has one.
+ *  - `ok` is the only kind that goes on to compare rows, and it must not be
+ *    what the page shows when the test counted nothing.
+ *
+ * The caller compares numbers only when this returns `"ok"`.
+ */
+export async function gradeSurface(input: SurfaceGrade): Promise<PageStateKind> {
+  const kind = stateOf(input.markup, input.within, input.excluding);
+
+  if (kind === "error") {
+    throw new StateMismatchError(
+      `'${input.within}' is in its ERROR state reading '${input.object}', so ` +
+        `nothing on it may be graded green: ` +
+        cardText(input.markup, input.within, "error"),
+      input.within,
+      "error",
+      "ok",
+    );
+  }
+
+  // The kind this test EXPECTS, decided by its OWN count and not by anything
+  // the page said — the whole of rule 1.
+  const counted =
+    typeof input.counted === "function" ? await input.counted() : input.counted;
+  const expected: PageStateKind =
+    counted === "absent"
+      ? "not_provisioned"
+      : counted === 0 && (input.emptyAtZero ?? true)
+        ? "empty"
+        : "ok";
+
+  if (kind === "not_provisioned") {
+    // Rule 5: only this test's OWN read of the same object may establish an
+    // absence, never "no rows rendered" and never the words on the card.
+    if (counted !== "absent" && !(await objectIsAbsent(input.object))) {
+      throw new StateMismatchError(
+        `'${input.within}' says '${input.object}' is not provisioned, but ` +
+          `this test's own read of it did not get an absence code ` +
+          `(${ABSENCE_CODES.join(" / ")}); it counted ${counted}.`,
+        input.within,
+        "not_provisioned",
+        expected,
+      );
+    }
+    return kind;
+  }
+
+  if (counted === "absent") {
+    throw new StateMismatchError(
+      `this test's own read of '${input.object}' got the absence code, but ` +
+        `'${input.within}' rendered its ${kind.toUpperCase()} state.`,
+      input.within,
+      kind,
+      "not_provisioned",
+    );
+  }
+
+  // `empty` and `ok` are both COUNTED states, so both are graded against the
+  // number this test got, and against the figure the surface states.
+  if (kind !== expected) {
+    throw new StateMismatchError(
+      `'${input.within}' rendered its ${kind.toUpperCase()} state, but this ` +
+        `test counted ${counted} row(s) of '${input.object}', which is ` +
+        `${expected.toUpperCase()}.`,
+      input.within,
+      kind,
+      expected,
+    );
+  }
+  if (input.figure !== undefined && counted === 0) {
+    const shown = readNumber(input.markup, input.figure);
+    if (shown !== 0) {
+      throw new ParityError(
+        `'${input.within}' counted nothing, so "${input.figure}" must read 0; ` +
+          `it reads ${shown}.`,
+        input.figure,
+        shown,
+        0,
+      );
+    }
+  }
+  return kind;
+}
+
+/* ── comparing against a database that is being written to ────────────────── */
+
+/**
+ * Make something from the page and read the database around it, and only hand
+ * both back when the database did not move in between.
+ *
+ * Staging is LIVE: the resolver files a cycle every cadence and the adapters
+ * file runs, so a row can arrive between a page's render and the query a test
+ * compares it with — measured 2026-09-02, a `/cycles` comparison that rendered
+ * 38 rows against a database that by then held 39. That is not a defect in the
+ * page and it must not be reported as one.
+ *
+ * So `read` is issued BEFORE and AFTER `make`, and the pair is returned only
+ * when the two reads agree that nothing moved; otherwise the whole thing is
+ * tried again. It is not a retry-until-green: every attempt makes the SAME
+ * exact comparison, and running out of attempts throws rather than passing —
+ * a database that will not hold still is a fact the test states, not one it
+ * swallows.
+ */
+export async function whileStill<Held, Made>(
+  read: () => Promise<Held>,
+  make: () => Promise<Made>,
+  attempts = 3,
+): Promise<{ made: Made; held: Held }> {
+  let moved = "";
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const before = await read();
+    const made = await make();
+    const held = await read();
+    if (JSON.stringify(before) === JSON.stringify(held)) return { made, held };
+    moved = `${JSON.stringify(before).length} then ${JSON.stringify(held).length} bytes`;
+  }
+  throw new Error(
+    `the database changed under this comparison on all ${attempts} attempts ` +
+      `(${moved}), so the page and the query were never looking at the same ` +
+      `rows. This is a statement about staging, not a verdict on the page.`,
+  );
 }

@@ -3,6 +3,12 @@
  * it holds and the one thing that fills it — never a bare "No data"
  * (LOOK_AND_FEEL, Voice bar 4). An empty queue is good news and reads that
  * way, so this state carries no colour.
+ *
+ * Carries `data-state="empty"`. This card and `NotProvisioned` render the same
+ * container and differ only in their WORDS, so before this hook existed the
+ * only way to tell an honest emptiness from an absent table was to grep the
+ * copy — which graded an empty page as an unprovisioned one and pinned the
+ * designer's words in a test (ARCHITECTURE §10, admin-window/TASK-0032).
  */
 export function Empty({
   holds,
@@ -24,7 +30,7 @@ export function Empty({
   eyebrow?: string;
 }) {
   return (
-    <div className="border border-hairline bg-surface p-3">
+    <div data-state="empty" className="border border-hairline bg-surface p-3">
       {eyebrow === undefined ? null : (
         <p className="type-micro text-ink-secondary">{eyebrow}</p>
       )}
