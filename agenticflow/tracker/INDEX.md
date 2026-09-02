@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T09:01:20Z — do not edit)
+# Tracker index (regenerated 2026-09-02T09:04:44Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -27,6 +27,9 @@
 - TASK-0028 [P2][task][M1] tsconfig excludes agenticflow: a factory evidence file must not red tsc  (scope:tsconfig.json)
 
 ## built
+- TASK-0007 [P1][task][M1] The six gauges as server-side queries with pure TypeScript aggregation  (deps:TASK-0002 scope:src/lib/gauges,tests/offline/gauges @builder-17)
+
+## qa
 - BUG-0009 [P1][bug][M1] Five of six gauges ask for more rows than PostgREST will return, so a truncated read reports window.truncated false and its counts read as totals  (scope:src/lib/gauges,tests/offline/gauges @builder-16 from:TASK-0007)
 
 ## blocked
@@ -36,7 +39,4 @@
 - TASK-0024 [P1][task][M1] ASK BEN: where does Admin read the per-source stuck_pattern dial, which lives only in scraper YAML?  (scope:src/lib/gauges/pending-claims.ts,src/app/sources/page.tsx)
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 
-## reopened
-- TASK-0007 [P1][task][M1] The six gauges as server-side queries with pure TypeScript aggregation  (deps:TASK-0002 scope:src/lib/gauges,tests/offline/gauges)
-
-Totals — blocked:5, built:1, done:15, open:24, reopened:1. Archived: 0.
+Totals — blocked:5, built:1, done:15, open:24, qa:1. Archived: 0.
