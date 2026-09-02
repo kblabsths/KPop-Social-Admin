@@ -1,7 +1,6 @@
-# Tracker index (regenerated 2026-09-02T07:42:52Z — do not edit)
+# Tracker index (regenerated 2026-09-02T07:48:42Z — do not edit)
 
 ## open
-- BUG-0008 [P0][bug][-] CI red: 1 failing test(s)  (scope:src,supabase,public,tests,docs)
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
 - FEAT-0002 [P1][feat][M1] Staging reads, the not-provisioned state, and the live/offline test harness
 - FEAT-0003 [P1][feat][M1] Dashboard — the breakfast view  (deps:FEAT-0001,FEAT-0002(unmet:2))
@@ -29,17 +28,18 @@
 - TASK-0016 [P2][task][M1] Cycles & runs — the adapter framework's runs half  (deps:TASK-0014,TASK-0023(unmet:2) scope:src/app/cycles/page.tsx,src/lib/db/runs.ts,tests/offline/runs,tests/live/runs.live.test.ts)
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 
-## claimed
+## built
 - TASK-0003 [P1][task][M1] The live harness: staging-only credentials, the parity helper, the sweep helper  (deps:TASK-0002 scope:tests/live,tests/offline/live-guard.test.ts,agenticflow/docs/SERVICES.md @builder-10)
 
 ## qa
 - TASK-0005 [P1][task][M1] Remove every deprecated surface; stand up the shell and the six routes  (deps:TASK-0004,TASK-0002 scope:src/app,src/components,tests/http,tests/offline/shell @builder-9)
 
 ## blocked
+- BUG-0008 [P0][bug][-] CI red: 1 failing test(s)  (scope:src,supabase,public,tests,docs)
 - TASK-0021 [P0][task][M1] ASK BEN: which Supabase env names does the APP read at runtime, and what do the campaign's live tests read?  (scope:src/lib/db/client.ts,tests/live,agenticflow/docs/SERVICES.md)
 - TASK-0022 [P0][task][M1] ASK BEN: what is installed on staging, and may a live test write fixture rows into resolver-owned tables?  (scope:tests/live)
 - TASK-0023 [P1][task][M1] ASK BEN: which of the adapter runs table's 22 columns does Cycles & runs show?  (scope:src/lib/db/runs.ts,src/app/cycles/page.tsx)
 - TASK-0024 [P1][task][M1] ASK BEN: where does Admin read the per-source stuck_pattern dial, which lives only in scraper YAML?  (scope:src/lib/gauges/pending-claims.ts,src/app/sources/page.tsx)
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 
-Totals — blocked:5, claimed:1, done:8, open:27, qa:1. Archived: 0.
+Totals — blocked:6, built:1, done:8, open:26, qa:1. Archived: 0.
