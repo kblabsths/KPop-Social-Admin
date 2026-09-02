@@ -1,7 +1,24 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { readOne, type DbResponse, type DbResult } from "./result";
+import {
+  readComplete,
+  readOne,
+  type DbCountedResponse,
+  type DbResponse,
+  type DbResult,
+  type DbUnavailable,
+} from "./result";
+import { T } from "./tables";
+import { currentDecisions } from "../browse/rows";
+import {
+  fieldProvenanceOf,
+  namedSourceIds,
+  type FieldDecisionRow,
+  type FieldProvenance,
+  type SourceNameRow,
+} from "../records/provenance";
 import {
   decideEdit,
+  mappedColumns,
   type AllowedEdit,
   type TableEditConfig,
 } from "../edit/config";
@@ -12,14 +29,20 @@ import {
  * Every export returns a `DbResult` and never throws (ARCHITECTURE.md §4.1).
  * This module spells no table name of its own: the table, its primary key and
  * its editable columns all come from `src/lib/edit/config.ts`, the one
- * hand-written config (§9). It imports that leaf; the leaf imports nothing
+ * hand-written config (§9). It imports that leaf — and two more, `lib/browse/
+ * rows.ts` for the ONE latest-per-fact reduction and `lib/records/provenance.ts`
+ * for the per-field shape both this module and the surface need; every one of
+ * them imports nothing that can reach a database, and none imports back
  * (§4 rule 7).
  *
- * **Read kind (§4.3):** both queries below address exactly one row by primary
- * key and use `.maybeSingle()`, so neither is a row-set read — there is no set
- * to be silently partial, and neither `readRows` nor `readComplete` applies.
- * A missing row comes back as `ok` carrying `null`, which the caller reports
- * as "no such record" rather than as an absent table.
+ * **Read kinds (§4.3), and there are two here.** The record's own value read
+ * and the update both address exactly one row by primary key and use
+ * `.maybeSingle()`, so neither is a row-set read — there is no set to be
+ * silently partial. A missing row comes back as `ok` carrying `null`, which
+ * the caller reports as "no such record" rather than as an absent table. The
+ * per-field provenance legs at the foot of this file are COMPLETE reads:
+ * "the latest decision on this fact" is only knowable over the whole log, so a
+ * truncated one must refuse rather than name a superseded source as current.
  *
  * **There is no insert and no delete here, and there never will be**: no
  * catalog row is created or destroyed from Admin (spec §8, AGENTS.md). The one
@@ -34,12 +57,21 @@ export type EditableValue = string | number | boolean | null;
 export type CanonicalRecord = Record<string, unknown>;
 
 /**
- * The columns a record read asks for: the primary key plus exactly the
- * editable ones. Explicit (§4.2) and derived from the config alone, so the
- * surface can never read — or write — a column the map does not carry.
+ * The columns a record read asks for: exactly the ones the map declares for
+ * this table — its primary key, its editable columns, then its read-only
+ * `display` columns, de-duplicated and in that order.
+ *
+ * Explicit (§4.2) and derived from the config alone, so the surface can never
+ * read — or write — a column the map does not carry. The order and the
+ * de-duplication are `mappedColumns`' (the one map's own helper), so the read
+ * and the drawn order cannot disagree: adding a column to a record surface
+ * stays one entry in `lib/edit/config.ts` (admin-window/TASK-0029).
+ *
+ * A `display` column is read here and written NOWHERE: the update below asks
+ * `decideEdit`, which does not read `display` at all.
  */
 export function recordColumns(config: TableEditConfig): string {
-  return [config.pk, ...config.editable].join(", ");
+  return mappedColumns(config).join(", ");
 }
 
 function selectRecord(
@@ -123,4 +155,138 @@ export async function updateRecordField(
     (client) => updateField(client, decision.edit.config, id, field, value),
     db,
   );
+}
+
+/* ── per-field provenance ─────────────────────────────────────────────────── */
+
+/**
+ * What the provenance leg produced for one record.
+ *
+ * Reported SEPARATELY from the record's values, exactly as Browse reports its
+ * legs (`RecentEventsListing`): a refused or absent `field_provenance` must
+ * leave the values on screen and say for itself what happened. Two reads, two
+ * answers — folding them would trade an honest partial record for a blank one.
+ */
+export interface RecordProvenance {
+  /** The current provenance of each displayed field, keyed by column name. */
+  fields: ReadonlyMap<string, FieldProvenance>;
+  /** Why the provenance column is empty, or `null` when the read answered. */
+  note: DbUnavailable | null;
+}
+
+/** Nothing to show and nothing to report — the pre-cutover answer. */
+const NO_PROVENANCE: RecordProvenance = { fields: new Map(), note: null };
+
+/**
+ * The columns explicitly, spelled once. `admin_locked` is READ (spec §8's
+ * "admin stickiness is visible"); this app writes it nowhere, and the
+ * structural guard in `tests/offline/edit/config.test.ts` is what keeps that
+ * true (admin-window/BUG-0028 narrowed it to writes so this select is legal).
+ */
+const PROVENANCE_COLUMNS =
+  "provenance_id, entity_id, field, source_id, applied_at, admin_locked";
+const SOURCE_COLUMNS = "source_id, source";
+
+/**
+ * The decision log behind ONE record's displayed fields — every decision on
+ * them, not the current ones: the log is append-only and PostgREST has no
+ * "distinct on", so the whole log comes back and the latest-per-fact reduction
+ * happens in TypeScript (`currentDecisions`, §4.2).
+ *
+ * A COMPLETE read (§4.3) for that reason: "the latest decision" is knowable
+ * only over the complete set, so a truncated log must refuse rather than name
+ * a superseded source as current.
+ *
+ * `entity_type` on `field_provenance` is the CANONICAL TABLE the fact lives in
+ * (the column's own comment in migration `20260818000000`), so it is filtered
+ * with the table name the map carries — the same string every other query for
+ * this record uses. The order is the decision order and ends in the primary
+ * key, which is what lets `readComplete` tell a whole set from a truncated one.
+ */
+function provenanceFor(
+  db: SupabaseClient,
+  config: TableEditConfig,
+  id: string,
+  cap: number,
+): PromiseLike<DbCountedResponse<FieldDecisionRow[]>> {
+  return db
+    .from(T.fieldProvenance)
+    .select(PROVENANCE_COLUMNS, { count: "exact" })
+    .eq("entity_type", config.table)
+    .eq("entity_id", id)
+    .in("field", [...config.display])
+    .order("field", { ascending: true })
+    .order("applied_at", { ascending: true })
+    .order("provenance_id", { ascending: true })
+    .range(0, cap - 1) as unknown as PromiseLike<
+    DbCountedResponse<FieldDecisionRow[]>
+  >;
+}
+
+/** The names of the sources those decisions name. */
+function sourcesFor(
+  db: SupabaseClient,
+  ids: readonly string[],
+  cap: number,
+): PromiseLike<DbCountedResponse<SourceNameRow[]>> {
+  return db
+    .from(T.sources)
+    .select(SOURCE_COLUMNS, { count: "exact" })
+    .in("source_id", ids)
+    .order("source_id", { ascending: true })
+    .range(0, cap - 1) as unknown as PromiseLike<
+    DbCountedResponse<SourceNameRow[]>
+  >;
+}
+
+/**
+ * The current provenance of one record's displayed fields.
+ *
+ * **A table with no `display` columns issues no query at all** and answers
+ * with nothing to show and nothing to report. That is the pre-cutover case:
+ * `field_provenance` carries rows for resolver-owned entities, `groups` and
+ * `idols` are unprovenanced by construction, and their record page says so
+ * once in words rather than per field (Ben's ruling on
+ * admin-window/TASK-0025). Reading the log for them would be a round trip
+ * whose only possible answer is "no rows" — or a not-provisioned card on a
+ * page that has no provenance to miss.
+ *
+ * Two legs, one note: the source-name lookup answers the same question the
+ * log does ("who is behind this value"), so a failure of either is one note,
+ * as Browse already folds them.
+ */
+export async function readRecordProvenance(
+  config: TableEditConfig,
+  id: string,
+  db?: SupabaseClient,
+): Promise<RecordProvenance> {
+  if (config.display.length === 0) return NO_PROVENANCE;
+
+  const log = await readComplete<FieldDecisionRow>(
+    T.fieldProvenance,
+    (client, cap) => provenanceFor(client, config, id, cap),
+    db,
+  );
+  if (log.kind !== "ok") return { fields: new Map(), note: log };
+
+  // The current decision per fact, over the COMPLETE log: a superseded
+  // decision is that fact's history and is behind nothing now
+  // (contracts/data-model.md, Per-field provenance). ONE implementation of
+  // that rule exists in this repo and this is it — never a second.
+  const current = currentDecisions(log.data);
+
+  const sourceIds = namedSourceIds(current);
+  let sources: DbResult<SourceNameRow[]> = { kind: "ok", data: [] };
+  if (sourceIds.length > 0) {
+    sources = await readComplete<SourceNameRow>(
+      T.sources,
+      (client, cap) => sourcesFor(client, sourceIds, cap),
+      db,
+    );
+  }
+
+  return {
+    fields: fieldProvenanceOf(current, sources.kind === "ok" ? sources.data : []),
+    note: sources.kind === "ok" ? null : sources,
+  };
 }

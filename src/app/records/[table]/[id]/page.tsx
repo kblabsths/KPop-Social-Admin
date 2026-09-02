@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { recordFields } from "@/components/records/fields";
 import { RecordFields } from "@/components/records/record-fields";
 import { Empty, ErrorLine, NotProvisioned, Page, Section } from "@/components/ui";
-import { readRecord } from "@/lib/db/records";
+import type { DbUnavailable } from "@/lib/db/result";
+import { readRecord, readRecordProvenance } from "@/lib/db/records";
 import { editConfigFor, type TableEditConfig } from "@/lib/edit/config";
 
 /**
@@ -41,16 +42,19 @@ import { editConfigFor, type TableEditConfig } from "@/lib/edit/config";
  * components over plain props, which is what lets the offline suite render
  * this with `renderToStaticMarkup(await RecordPage(props))` and no database.
  *
- * KNOWN GAP, stated rather than guessed (admin-window/TASK-0018 handoff): the
- * read this page calls asks for the primary key plus the map's EDITABLE
- * columns (`recordColumns` in `src/lib/db/records.ts`), and a resolver-owned
- * table's editable list is empty by design — so an `events` or `venues` record
- * arrives here carrying its id and nothing else, and there are no field lines
- * for a provenance line to sit beside. Which columns such a table DISPLAYS is
- * a decision for the one map, not for this page; inventing a display list here
- * would be the second allowlist §9 forbids. The page renders whatever the read
- * returns, so the day the map carries display columns this surface shows them
- * with no change.
+ * The map now carries that display list, and this page reads what it names
+ * (Ben's ruling, 2026-09-02; admin-window/TASK-0029). A resolver-owned record
+ * shows the columns an operator came to see — read-only, with per-field
+ * provenance beside each — because `recordColumns` asks for pk + editable +
+ * `display` and the widget still follows `decideEdit`, which does not read
+ * `display` at all. The page gained no list of its own: inventing one here
+ * would be the second allowlist §9 forbids.
+ *
+ * **TWO READS, TWO ANSWERS.** The values and the provenance are separate reads
+ * and report separately, exactly as Browse does its legs: a refused or absent
+ * `field_provenance` leaves every value on screen and says for itself what
+ * happened, and a failed value read still shows the record's id. Neither ever
+ * blanks the other.
  */
 
 /** What creates the catalog objects this page reads. */
@@ -64,9 +68,10 @@ const ARRIVES_WITH = "the scraper repo's migrations";
  * The pre-cutover line states the provenance fact plainly: `field_provenance`
  * carries rows for resolver-owned entities, and a pre-cutover table has none,
  * so no source stands beside its values. That is a fact about the data, not a
- * placeholder value in the provenance slot (admin-window/TASK-0025 is the open
- * question of what should eventually stand there; nothing is invented until it
- * is answered).
+ * placeholder value in the provenance slot — and it is said ONCE per record
+ * rather than repeated on every line, which is what Ben confirmed on
+ * admin-window/TASK-0025 (2026-09-02: keep this rendering; the resolver-owned
+ * tables get real per-field provenance, admin-window/TASK-0029).
  */
 function regimeNote(config: TableEditConfig): string {
   return config.regime === "pre_cutover"
@@ -75,6 +80,30 @@ function regimeNote(config: TableEditConfig): string {
         `no source is shown beside a value.`
     : `${config.table} is resolver-owned and read-only from Admin: its values ` +
         `change through the resolution pipeline, not by a direct edit.`;
+}
+
+/**
+ * The provenance leg's own state, when it could not fill its column — the same
+ * shape and the same two cards Browse gives a leg that failed
+ * (`LegNote` in `src/app/browse/page.tsx`).
+ *
+ * It stands ABOVE the field table rather than inside a cell: `NotProvisioned`
+ * and `ErrorLine` answer for the whole read, not for one field, and a card
+ * drawn inside the table's own border would draw two borders
+ * (`DataTable`'s contract). The cells themselves stay the app's absence, so a
+ * failed leg reads as "no provenance shown, and here is why" instead of as a
+ * per-field lie.
+ */
+function ProvenanceNote({ note }: { note: DbUnavailable }) {
+  return note.kind === "not_provisioned" ? (
+    <NotProvisioned missing={note.missing} arrivesWith={ARRIVES_WITH} />
+  ) : (
+    <ErrorLine
+      reading={note.reading}
+      failed={note.message}
+      retry="Reload to try the read again."
+    />
+  );
 }
 
 export default async function RecordPage({
@@ -93,7 +122,12 @@ export default async function RecordPage({
   // path — see the header comment.
   if (config === null) notFound();
 
+  // Two reads, reported separately: the record's values, then the per-field
+  // provenance behind them. A table with no `display` columns issues no
+  // provenance query at all (`readRecordProvenance`), which is the pre-cutover
+  // case and why `groups` still makes exactly one read.
   const result = await readRecord(config, id);
+  const provenance = await readRecordProvenance(config, id);
 
   let body;
   if (result.kind === "not_provisioned") {
@@ -120,7 +154,7 @@ export default async function RecordPage({
       <RecordFields
         table={config.table}
         id={id}
-        fields={recordFields(config, result.data)}
+        fields={recordFields(config, result.data, provenance.fields)}
       />
     );
   }
@@ -133,6 +167,7 @@ export default async function RecordPage({
       <p className="type-data text-ink-secondary">{id}</p>
       <Section title="Fields">
         <p className="type-body text-ink-secondary">{regimeNote(config)}</p>
+        {provenance.note ? <ProvenanceNote note={provenance.note} /> : null}
         {body}
       </Section>
     </Page>

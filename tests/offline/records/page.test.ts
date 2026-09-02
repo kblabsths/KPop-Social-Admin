@@ -34,6 +34,12 @@ vi.mock("@/lib/db/records", async (importActual) => {
     ...actual,
     readRecord: (config: Parameters<typeof actual.readRecord>[0], id: string) =>
       actual.readRecord(config, id, readWith.client as never),
+    // The page's SECOND read (admin-window/TASK-0029). Both legs go through
+    // the same stub, so a test scripts one client and gets both answers.
+    readRecordProvenance: (
+      config: Parameters<typeof actual.readRecordProvenance>[0],
+      id: string,
+    ) => actual.readRecordProvenance(config, id, readWith.client as never),
   };
 });
 
@@ -57,12 +63,37 @@ const UNMAPPED_COLUMN = "spotify_id";
 function scriptedRecord(table: string): Record<string, unknown> {
   const config = EDIT_CONFIG[table];
   const row: Record<string, unknown> = { [config.pk]: IDS[table] };
-  for (const column of config.editable) row[column] = `stored ${column}`;
+  for (const column of [...config.editable, ...config.display]) {
+    row[column] = `stored ${column}`;
+  }
   // A number and an absence among the scalars, so both renderings are covered.
   if (config.editable.includes("member_count")) row.member_count = 4;
   if (config.editable.includes("korean_name")) row.korean_name = null;
   row[UNMAPPED_COLUMN] = "not in the map";
   return row;
+}
+
+/**
+ * A COMPLETE read's response: the rows plus the exact count they claim. The
+ * provenance leg refuses a count it did not get, so a scripted `data` alone is
+ * a refusal rather than "no rows" (`readComplete`, ARCHITECTURE §4.3).
+ */
+function complete(rows: unknown[]) {
+  return { data: rows, count: rows.length };
+}
+
+/**
+ * The default script: the record itself, plus a provenance log that answered
+ * and holds nothing. Both legs are scripted because a resolver-owned table
+ * makes two reads now (admin-window/TASK-0029) and an unscripted table is a
+ * failed read, not a quiet one.
+ */
+function defaultScript(table: string): Script {
+  return {
+    [table]: { data: scriptedRecord(table) },
+    field_provenance: complete([]),
+    sources: complete([]),
+  };
 }
 
 async function renderRecord(
@@ -71,9 +102,7 @@ async function renderRecord(
   id = IDS[table],
 ): Promise<string> {
   const { renderToStaticMarkup } = await import("react-dom/server");
-  readWith.client = stubClient(
-    script ?? { [table]: { data: scriptedRecord(table) } },
-  ).asSupabaseClient();
+  readWith.client = stubClient(script ?? defaultScript(table)).asSupabaseClient();
   return renderToStaticMarkup(
     await RecordPage({ params: Promise.resolve({ table, id }) }),
   );
@@ -89,6 +118,8 @@ interface Line {
   editable: boolean;
   value: string;
   provenance: string;
+  /** The absolute instant behind the relative age, if the line carries one. */
+  provenanceTitle: string | undefined;
   /** Does the provenance cell render the app's absence marker? */
   provenanceAbsent: boolean;
 }
@@ -107,6 +138,7 @@ function lines(markup: string): Line[] {
           value.find("button, input, textarea, select, [contenteditable]").length > 0,
         value: value.text().trim(),
         provenance: provenance.text().trim(),
+        provenanceTitle: provenance.find("[title]").first().attr("title"),
         provenanceAbsent: provenance.find('[aria-label="no value"]').length > 0,
       };
     });
@@ -333,6 +365,226 @@ describe("the states", () => {
     for (const table of EDITABLE_TABLES) {
       const markup = await renderRecord(table);
       expect([...markup.matchAll(/<h1[\s>]/g)].length, table).toBe(1);
+    }
+  });
+});
+
+/* ── the resolver-owned surface: what it displays, and its provenance ─────── */
+
+/**
+ * Campaign admin-window/TASK-0029, from Ben's ruling of 2026-09-02: a
+ * resolver-owned record page shows the columns an operator came to see,
+ * read-only, with per-field provenance beside each. Before it, `/records/
+ * events/<id>` — the link every Browse row carries — rendered `event_id` and
+ * nothing else.
+ */
+describe("a resolver-owned record", () => {
+  const TICKETMASTER = "01920000-0000-7000-8000-000000000101";
+
+  /** One decision row, with only the columns this surface reads. */
+  function decided(overrides: Record<string, unknown> = {}) {
+    return {
+      provenance_id: "01920000-0000-7000-8000-000000000401",
+      entity_id: IDS.events,
+      field: "title",
+      source_id: TICKETMASTER,
+      applied_at: "2026-08-30T04:12:00Z",
+      admin_locked: false,
+      ...overrides,
+    };
+  }
+
+  function withProvenance(rows: unknown[], sources: unknown[] = []): Script {
+    return {
+      events: { data: scriptedRecord("events") },
+      field_provenance: complete(rows),
+      sources: complete(sources),
+    };
+  }
+
+  it("draws a line per displayed column, with the value the read returned", async () => {
+    for (const table of ["events", "venues"]) {
+      const markup = await renderRecord(table);
+      const display = EDIT_CONFIG[table].display;
+      expect(display.length, table).toBeGreaterThan(0);
+      for (const column of display) {
+        expect(lineFor(markup, column).value, `${table}.${column}`).toContain(
+          `stored ${column}`,
+        );
+      }
+    }
+  });
+
+  it("stops the Browse link dead-ending: the page shows more than the id", async () => {
+    // `eventRecordHref` is the primary navigation target from the app's main
+    // list screen; a page holding only the id the operator clicked told them
+    // nothing they did not already have.
+    const drawn = lines(await renderRecord("events"));
+    expect(drawn.map((line) => line.name)).not.toEqual(["event_id"]);
+    expect(drawn.length).toBeGreaterThan(1);
+  });
+
+  it("offers no control on any of them, however the map lists them", async () => {
+    for (const table of ["events", "venues"]) {
+      const markup = await renderRecord(table);
+      // Not "no enabled control" — none at all: `display` is the read-only
+      // half of the map and cannot become writable by being listed.
+      expect(controlCount(markup), table).toBe(0);
+      for (const column of EDIT_CONFIG[table].display) {
+        expect(lineFor(markup, column).editable, `${table}.${column}`).toBe(false);
+      }
+    }
+  });
+
+  it("shows a displayed column the read returned nothing for as the absence", async () => {
+    const markup = await renderRecord("events", {
+      events: { data: { event_id: IDS.events } },
+      field_provenance: complete([]),
+      sources: complete([]),
+    });
+    for (const column of EDIT_CONFIG.events.display) {
+      expect(lineFor(markup, column).value, column).toContain(EM_DASH);
+    }
+  });
+
+  it("names the source and the age of the value beside the field", async () => {
+    const markup = await renderRecord(
+      "events",
+      withProvenance(
+        [decided()],
+        [{ source_id: TICKETMASTER, source: "ticketmaster" }],
+      ),
+    );
+    const title = lineFor(markup, "title");
+    expect(title.provenance).toContain("ticketmaster");
+    expect(title.provenance).toContain("applied");
+    // Relative on screen, absolute on hover (LOOK_AND_FEEL, Voice bar 6).
+    expect(title.provenance).toMatch(/\b(just now|\d+[mhd] ago)\b/);
+    expect(title.provenanceTitle).toContain("2026-08-30");
+  });
+
+  it("names the admin, not a source, on a fact a human pinned", async () => {
+    const markup = await renderRecord(
+      "events",
+      withProvenance(
+        [decided({ admin_locked: true })],
+        [{ source_id: TICKETMASTER, source: "ticketmaster" }],
+      ),
+    );
+    const provenance = lineFor(markup, "title").provenance;
+    expect(provenance).toContain("admin-set");
+    expect(provenance).not.toContain("ticketmaster");
+  });
+
+  it("says a fact whose current decision is a verdict unset names no source", async () => {
+    const markup = await renderRecord(
+      "events",
+      withProvenance([decided({ source_id: null })]),
+    );
+    const provenance = lineFor(markup, "title").provenance;
+    expect(provenance).not.toContain(EM_DASH);
+    expect(provenance.length).toBeGreaterThan(0);
+  });
+
+  it("reports the latest decision per fact, never a superseded source", async () => {
+    const markup = await renderRecord(
+      "events",
+      withProvenance(
+        [
+          decided({
+            provenance_id: "01920000-0000-7000-8000-0000000004a1",
+            applied_at: "2026-07-01T00:00:00Z",
+            source_id: "01920000-0000-7000-8000-000000000102",
+          }),
+          decided({
+            provenance_id: "01920000-0000-7000-8000-0000000004a2",
+            applied_at: "2026-08-30T04:12:00Z",
+          }),
+        ],
+        [
+          { source_id: TICKETMASTER, source: "ticketmaster" },
+          { source_id: "01920000-0000-7000-8000-000000000102", source: "bandsintown" },
+        ],
+      ),
+    );
+    const provenance = lineFor(markup, "title").provenance;
+    expect(provenance).toContain("ticketmaster");
+    expect(provenance).not.toContain("bandsintown");
+  });
+
+  it("leaves a field the log says nothing about as the absence", async () => {
+    const markup = await renderRecord(
+      "events",
+      withProvenance(
+        [decided()],
+        [{ source_id: TICKETMASTER, source: "ticketmaster" }],
+      ),
+    );
+    // Not a blank and not a zero — the app's one absence marker.
+    expect(lineFor(markup, "description").provenanceAbsent).toBe(true);
+    expect(lineFor(markup, "venue_id").provenanceAbsent).toBe(true);
+  });
+
+  it("keeps every value on screen when the provenance table is absent", async () => {
+    const markup = await renderRecord("events", {
+      events: { data: scriptedRecord("events") },
+      field_provenance: { error: tableNotInSchemaCache("field_provenance") },
+    });
+    // The values leg answered, so the record still renders in full...
+    for (const column of EDIT_CONFIG.events.display) {
+      expect(lineFor(markup, column).value, column).toContain(`stored ${column}`);
+      expect(lineFor(markup, column).provenanceAbsent, column).toBe(true);
+    }
+    // ...and the provenance leg says for itself what is missing, by name.
+    expect(markup).toContain("field_provenance");
+    expect(controlCount(markup)).toBe(0);
+  });
+
+  it("keeps every value on screen when the provenance read is refused", async () => {
+    const failure = permissionDenied("field_provenance");
+    const markup = await renderRecord("events", {
+      events: { data: scriptedRecord("events") },
+      field_provenance: { error: failure },
+    });
+    expect(lineFor(markup, "title").value).toContain("stored title");
+    // A failed read is reported in the database's own words, naming the read.
+    expect(markup).toContain(failure.message);
+    expect(markup).toContain("field_provenance");
+  });
+
+  it("tells an absent provenance table apart from a provenance table holding nothing", async () => {
+    const absent = await renderRecord("events", {
+      events: { data: scriptedRecord("events") },
+      field_provenance: { error: tableNotInSchemaCache("field_provenance") },
+    });
+    const empty = await renderRecord("events");
+    expect(absent).not.toBe(empty);
+    // The empty case reports nothing at all: there is no failure to report.
+    expect(empty).not.toContain("field_provenance");
+  });
+
+  it("still reports a failed VALUE read without a provenance line in its place", async () => {
+    const markup = await renderRecord("events", {
+      events: { error: permissionDenied("events") },
+      field_provenance: complete([]),
+      sources: complete([]),
+    });
+    expect(markup).toContain(IDS.events);
+    expect(lines(markup)).toEqual([]);
+  });
+
+  it("makes no provenance read for a pre-cutover table", async () => {
+    // `field_provenance` carries rows for resolver-owned entities; groups and
+    // idols are unprovenanced by construction, and the page says so once in
+    // words rather than reading a log that could only answer "no rows".
+    for (const table of ["groups", "idols"]) {
+      const db = stubClient({ [table]: { data: scriptedRecord(table) } });
+      readWith.client = db.asSupabaseClient();
+      const { renderToStaticMarkup } = await import("react-dom/server");
+      renderToStaticMarkup(
+        await RecordPage({ params: Promise.resolve({ table, id: IDS[table] }) }),
+      );
+      expect(db.tablesRead(), table).toEqual([table]);
     }
   });
 });

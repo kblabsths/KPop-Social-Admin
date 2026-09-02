@@ -8,6 +8,7 @@ import {
   decideEdit,
   editConfigFor,
   isEditable,
+  mappedColumns,
 } from "@/lib/edit/config";
 import { TABLE_NAMES } from "@/lib/db/tables";
 import { codeLines, repoRoot, sourceFiles, sourceText } from "../source-tree";
@@ -107,6 +108,101 @@ describe("the map", () => {
     expect(EDIT_CONFIG.venues.pk).toBe("venue_id");
   });
 
+  /**
+   * The canonical columns of the two resolver-owned tables, transcribed from
+   * the scraper repo's `20260825000002_canonical_event_storage_stands_up.sql`
+   * (`CREATE TABLE "public"."events"` and `"public"."venues"`) — the migration
+   * that stood the canonical storage up, and the schema truth for both. This
+   * is `tests/fixtures/rows.ts`' idiom applied to a column SET: a name in the
+   * map that is not a column of its table is a read that would come back
+   * `not_provisioned`, and it must be one red test away rather than one
+   * production page away.
+   */
+  const CANONICAL_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+    events: [
+      "event_id",
+      "title",
+      "event_type",
+      "status",
+      "starts_at",
+      "ends_at",
+      "time_precision",
+      "description",
+      "poster_url",
+      "ticket_url",
+      "venue_id",
+      "created_at",
+    ],
+    venues: [
+      "venue_id",
+      "name",
+      "aliases",
+      "address",
+      "city",
+      "country",
+      "latitude",
+      "longitude",
+      "timezone",
+      "website",
+      "image_url",
+      "created_at",
+    ],
+  };
+
+  it("gives the resolver-owned tables the display list Ben ruled in", () => {
+    // Ben's ruling, 2026-09-02: "a resolver-owned record page shows the
+    // columns an operator came to see, read-only" — events: title,
+    // description, poster, starts_at, venue; venues: name, city, country,
+    // address. Two of those five are shorthand and resolve to the column the
+    // database actually has (`poster_url`, `venue_id`); the next case is what
+    // proves every name is real.
+    expect([...EDIT_CONFIG.events.display]).toEqual([
+      "title",
+      "description",
+      "poster_url",
+      "starts_at",
+      "venue_id",
+    ]);
+    expect([...EDIT_CONFIG.venues.display]).toEqual([
+      "name",
+      "city",
+      "country",
+      "address",
+    ]);
+  });
+
+  it("names a real column of that table in every display list", () => {
+    for (const table of ["events", "venues"]) {
+      const columns = CANONICAL_COLUMNS[table];
+      expect(columns, table).toContain(EDIT_CONFIG[table].pk);
+      for (const column of EDIT_CONFIG[table].display) {
+        expect(columns, `${table}.${column}`).toContain(column);
+      }
+    }
+  });
+
+  it("leaves the pre-cutover tables no display list — they edit their columns", () => {
+    // Their columns are already on screen through `editable`; a name in both
+    // would be one line drawn once either way, and the empty list is what
+    // says "nothing extra to show" rather than "not decided yet".
+    for (const table of ["groups", "idols"]) {
+      expect([...EDIT_CONFIG[table].display], table).toEqual([]);
+      expect(EDIT_CONFIG[table].editable.length, table).toBeGreaterThan(0);
+    }
+  });
+
+  it("never lists one column as both editable and displayed", () => {
+    // The two halves of the map answer different questions and a column in
+    // both would make "is this line read-only?" depend on which list won.
+    for (const config of Object.values(EDIT_CONFIG)) {
+      for (const column of config.display) {
+        expect(config.editable, `${config.table}.${column}`).not.toContain(column);
+        expect(column, config.table).not.toBe(config.pk);
+      }
+      expect(new Set(config.display).size, config.table).toBe(config.display.length);
+    }
+  });
+
   it("lists no id, key, timestamp, link or json column as editable", () => {
     // "user-facing fields only: never ids, keys or timestamps" (spec §8). The
     // patterns are the shapes those columns take in this schema.
@@ -129,6 +225,42 @@ describe("the map", () => {
         }
         // A primary key never edits, not even its own table's.
         expect(column, config.table).not.toBe(config.pk);
+      }
+    }
+  });
+});
+
+/* ── the map's columns, in one order ──────────────────────────────────────── */
+
+describe("mappedColumns", () => {
+  it("is the primary key, then editable, then display, in declared order", () => {
+    for (const config of Object.values(EDIT_CONFIG)) {
+      expect([...mappedColumns(config)], config.table).toEqual([
+        config.pk,
+        ...config.editable,
+        ...config.display,
+      ]);
+    }
+  });
+
+  it("de-duplicates, so a column named twice is still drawn once", () => {
+    const columns = mappedColumns({
+      table: "groups",
+      pk: "id",
+      regime: "pre_cutover",
+      editable: ["name", "company"],
+      display: ["company", "id", "bio"],
+    });
+    expect([...columns]).toEqual(["id", "name", "company", "bio"]);
+  });
+
+  it("answers nothing about writing: a displayed column is still refused", () => {
+    // The point of the helper is the READ and the ORDER. `decideEdit` is the
+    // only answer to "may this be written", and it does not read `display`.
+    for (const table of ["events", "venues"]) {
+      for (const column of EDIT_CONFIG[table].display) {
+        expect(mappedColumns(EDIT_CONFIG[table]), column).toContain(column);
+        expect(isEditable(table, column), `${table}.${column}`).toBe(false);
       }
     }
   });
@@ -200,6 +332,37 @@ describe("decideEdit", () => {
       if (!decision.allowed) {
         expect(decision.refusal.kind).toBe("resolver_owned");
         expect(decision.refusal.message).toContain(table);
+      }
+    }
+  });
+
+  it("refuses every displayed column of every table, as resolver-owned", () => {
+    // Criterion: `display` is READ-ONLY and cannot become writable by being
+    // listed. The refusal is the table's regime, not a special case for the
+    // list — the same refusal `events.performers` gets.
+    for (const table of ["events", "venues"]) {
+      const display = EDIT_CONFIG[table].display;
+      expect(display.length, table).toBeGreaterThan(0);
+      for (const field of display) {
+        const decision = decideEdit(table, field);
+        expect(decision.allowed, `${table}.${field}`).toBe(false);
+        if (!decision.allowed) {
+          expect(decision.refusal.kind).toBe("resolver_owned");
+        }
+      }
+    }
+  });
+
+  it("ignores a display list entirely, however it is spelled", () => {
+    // A forged config claiming a column is displayed — or a pre-cutover table
+    // whose display list names a column its allowlist does not — changes no
+    // answer: `decideEdit` reads the MAP, and the map's answer comes from
+    // `regime` and `editable` alone.
+    expect(isEditable("groups", "spotify_id")).toBe(false);
+    expect(isEditable("events", "title")).toBe(false);
+    for (const config of Object.values(EDIT_CONFIG)) {
+      for (const column of config.display) {
+        expect(isEditable(config.table, column), column).toBe(false);
       }
     }
   });

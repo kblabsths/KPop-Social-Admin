@@ -59,6 +59,27 @@ export interface TableEditConfig {
    * (AGENTS.md). A `resolver_owned` table carries an empty list in M1.
    */
   readonly editable: readonly string[];
+  /**
+   * The columns shown READ-ONLY — the other half of the ONE map, and never a
+   * second allowlist (Ben's ruling, 2026-09-02, campaign
+   * admin-window/TASK-0029): "a resolver-owned record page shows the columns
+   * an operator came to see, read-only, with per-field provenance beside
+   * each."
+   *
+   * **Listing a column here can never make it writable.** `decideEdit` below
+   * reads `regime` and `editable` and nothing else, so a `display` column of a
+   * resolver-owned table refuses through the same one code path every other
+   * column refuses through, and the surface draws it with no control at all.
+   * That is why a LINK column may stand here (`events.venue_id`) though it may
+   * never stand in `editable`: showing which venue a resolver-owned event
+   * points at is a read, and AGENTS.md's rule bans WIDENING AN EDIT set to a
+   * link, not looking at one.
+   *
+   * A `pre_cutover` table carries an empty list: its columns are already on
+   * screen through `editable`, and a column named in both would be drawn once
+   * either way.
+   */
+  readonly display: readonly string[];
 }
 
 /**
@@ -90,6 +111,7 @@ const ENTRIES: readonly TableEditConfig[] = [
       "image_url",
       "bio",
     ],
+    display: [],
   },
   {
     table: "idols",
@@ -113,12 +135,37 @@ const ENTRIES: readonly TableEditConfig[] = [
       "agency",
       "birth_place",
     ],
+    display: [],
   },
   // Resolver-owned. Present in the map so the surface knows they exist and
   // renders them READ-ONLY — with an empty `editable` list, which is what
-  // makes every column of theirs refuse through the same one code path.
-  { table: "events", pk: "event_id", regime: "resolver_owned", editable: [] },
-  { table: "venues", pk: "venue_id", regime: "resolver_owned", editable: [] },
+  // makes every column of theirs refuse through the same one code path, and a
+  // `display` list carrying what an operator came to see.
+  //
+  // The columns are Ben's ruling of 2026-09-02 (events: title, description,
+  // poster, starts_at, venue; venues: name, city, country, address), spelled
+  // as the DATABASE spells them — the map's names are the names the query
+  // uses, and `tests/offline/edit/config.test.ts` asserts every one against
+  // the scraper's canonical-storage migration. Two of Ben's five are shorthand
+  // for the real column and are resolved the only way they can be:
+  //   poster -> poster_url  (the events column holding the poster art)
+  //   venue  -> venue_id    (the only venue-bearing column of `events`; the
+  //                          venue's own name/city/country/address are the
+  //                          `venues` record page, one click on from here)
+  {
+    table: "events",
+    pk: "event_id",
+    regime: "resolver_owned",
+    editable: [],
+    display: ["title", "description", "poster_url", "starts_at", "venue_id"],
+  },
+  {
+    table: "venues",
+    pk: "venue_id",
+    regime: "resolver_owned",
+    editable: [],
+    display: ["name", "city", "country", "address"],
+  },
 ];
 
 /** The map itself: table name -> its edit config. */
@@ -131,6 +178,27 @@ export const EDIT_CONFIG: Readonly<Record<string, TableEditConfig>> =
 export const EDITABLE_TABLES: readonly string[] = ENTRIES.map(
   (entry) => entry.table,
 );
+
+/**
+ * Every column the map declares for a table, in ONE declared order: the
+ * primary key, then `editable`, then `display`, de-duplicated.
+ *
+ * The single answer to "which columns does this table's record surface deal
+ * in", so the READ (`recordColumns` in `lib/db/records.ts`) and the ORDER the
+ * lines are drawn in (`orderedNames` in `components/records/fields.ts`) cannot
+ * disagree: a column the surface draws is a column the read asked for, by
+ * construction rather than by two lists kept in step by hand
+ * (admin-window/TASK-0029).
+ *
+ * It answers nothing about WRITING — that is `decideEdit` alone.
+ */
+export function mappedColumns(config: TableEditConfig): readonly string[] {
+  const columns: string[] = [];
+  for (const column of [config.pk, ...config.editable, ...config.display]) {
+    if (!columns.includes(column)) columns.push(column);
+  }
+  return columns;
+}
 
 /** The config for a table, or `null` when the map does not carry it. */
 export function editConfigFor(table: string): TableEditConfig | null {
@@ -171,7 +239,10 @@ export type EditDecision =
  * (or the table) — hiding a widget is not a refusal (acceptance test 7).
  *
  * An id, key or timestamp column refuses for the ordinary reason: it is not in
- * `editable`. There is no special case for it, and none is needed.
+ * `editable`. There is no special case for it, and none is needed. So does a
+ * `display` column: this function does not read `display` at all, which is
+ * what makes the read-only half of the map read-only by construction rather
+ * than by the surface remembering to hide a control (admin-window/TASK-0029).
  */
 export function decideEdit(table: string, field: string): EditDecision {
   const config = editConfigFor(table);

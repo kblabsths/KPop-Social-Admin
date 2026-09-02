@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { EDIT_CONFIG, decideEdit } from "@/lib/edit/config";
+import { EDIT_CONFIG, decideEdit, mappedColumns } from "@/lib/edit/config";
 import {
   readRecord,
+  readRecordProvenance,
   recordColumns,
   updateRecordField,
 } from "@/lib/db/records";
+import { fieldProvenanceRow } from "../../fixtures/rows";
 import {
   permissionDenied,
   stubClient,
@@ -49,6 +51,27 @@ describe("the columns a record read asks for", () => {
     // and a later widget cannot offer — a column the map does not carry.
     expect(recordColumns(EDIT_CONFIG.groups)).not.toContain("spotify_id");
     expect(recordColumns(EDIT_CONFIG.groups)).not.toContain("created_at");
+  });
+
+  it("adds the read-only display columns, so the surface has them to draw", () => {
+    // admin-window/TASK-0029: a resolver-owned table's editable list is empty
+    // by design, and its record page showed its id and nothing else because
+    // the read asked for the pk alone. It asks for the map's columns now.
+    for (const table of ["events", "venues"]) {
+      const config = EDIT_CONFIG[table];
+      expect(recordColumns(config), table).toBe(mappedColumns(config).join(", "));
+      for (const column of config.display) {
+        expect(recordColumns(config), `${table}.${column}`).toContain(column);
+      }
+    }
+  });
+
+  it("asks for nothing the map does not carry, on a resolver-owned table too", () => {
+    const columns = recordColumns(EDIT_CONFIG.events).split(", ");
+    // Real columns of `events` that the map does not name: still unread.
+    for (const column of ["ticket_url", "event_type", "created_at", "ends_at"]) {
+      expect(columns, column).not.toContain(column);
+    }
   });
 });
 
@@ -187,7 +210,10 @@ describe("updateRecordField refuses, and issues no query at all", () => {
     const db = stubClient({ groups: { data: { id: GROUP_ID } } });
     for (const table of ["event_performers", "scraped_events", "profiles"]) {
       const result = await updateRecordField(
-        { config: { table, pk: "id", regime: "pre_cutover", editable: ["name"] }, field: "name" },
+        {
+          config: { table, pk: "id", regime: "pre_cutover", editable: ["name"], display: [] },
+          field: "name",
+        },
         GROUP_ID,
         "forged",
         db.asSupabaseClient(),
@@ -208,6 +234,7 @@ describe("updateRecordField refuses, and issues no query at all", () => {
           pk: "id",
           regime: "pre_cutover",
           editable: ["spotify_id", "name"],
+          display: [],
         },
         field: "spotify_id",
       },
@@ -223,7 +250,13 @@ describe("updateRecordField refuses, and issues no query at all", () => {
     const db = stubClient({ groups: { data: { id: GROUP_ID } } });
     await updateRecordField(
       {
-        config: { table: "groups", pk: "spotify_id", regime: "pre_cutover", editable: ["name"] },
+        config: {
+          table: "groups",
+          pk: "spotify_id",
+          regime: "pre_cutover",
+          editable: ["name"],
+          display: [],
+        },
         field: "name",
       },
       GROUP_ID,
@@ -269,5 +302,212 @@ describe("updateRecordField surfaces what the database said", () => {
     } as never;
     const result = await updateRecordField(allowed("groups", "bio"), GROUP_ID, "…", exploding);
     expect(result.kind).toBe("error");
+  });
+});
+
+/* ── the per-field provenance leg ─────────────────────────────────────────── */
+
+/**
+ * `readRecordProvenance` (campaign admin-window/TASK-0029): the record's
+ * values and its provenance are two reads and two answers, so every case below
+ * asks what the leg did on its own — including the cases where it did nothing.
+ */
+describe("readRecordProvenance", () => {
+  const EVENT_ID = "01920000-0000-7000-8000-0000000000a3";
+  const TICKETMASTER = "01920000-0000-7000-8000-000000000101";
+
+  /** A complete read's response: the rows plus the exact count they claim. */
+  function complete(rows: unknown[]) {
+    return { data: rows, count: rows.length };
+  }
+
+  it("issues no query at all for a table with no display columns", async () => {
+    // The pre-cutover case. `field_provenance` carries rows for
+    // resolver-owned entities; reading it for `groups` could only ever answer
+    // "no rows" — or hand a page with no provenance to miss a
+    // not-provisioned card.
+    const db = stubClient({});
+    const result = await readRecordProvenance(
+      EDIT_CONFIG.groups,
+      GROUP_ID,
+      db.asSupabaseClient(),
+    );
+    expect(db.calls).toEqual([]);
+    expect(result.note).toBeNull();
+    expect(result.fields.size).toBe(0);
+  });
+
+  it("reads the log for this entity and this row's displayed fields", async () => {
+    const db = stubClient({
+      field_provenance: complete([
+        fieldProvenanceRow({ entity_id: EVENT_ID, field: "title" }),
+      ]),
+      sources: complete([{ source_id: TICKETMASTER, source: "ticketmaster" }]),
+    });
+    await readRecordProvenance(EDIT_CONFIG.events, EVENT_ID, db.asSupabaseClient());
+
+    const log = db.calls[0];
+    expect(log.table).toBe("field_provenance");
+    // The fact identity's three parts: the canonical table, the row, and the
+    // fields this surface actually displays.
+    expect(step(log, "eq")?.args).toEqual(["entity_type", "events"]);
+    expect(
+      log.steps.filter((s) => s.method === "eq").map((s) => s.args),
+    ).toContainEqual(["entity_id", EVENT_ID]);
+    expect(step(log, "in")?.args).toEqual(["field", [...EDIT_CONFIG.events.display]]);
+  });
+
+  it("is a complete read: exact count, total order, capped range", async () => {
+    const db = stubClient({
+      field_provenance: complete([]),
+    });
+    await readRecordProvenance(EDIT_CONFIG.events, EVENT_ID, db.asSupabaseClient());
+
+    const log = db.calls[0];
+    expect(step(log, "select")?.args[1]).toEqual({ count: "exact" });
+    // The order ends in the primary key, which is what lets a truncated set be
+    // told from a whole one reproducibly.
+    const orders = log.steps.filter((s) => s.method === "order").map((s) => s.args[0]);
+    expect(orders[orders.length - 1]).toBe("provenance_id");
+    expect(step(log, "range")).toBeDefined();
+  });
+
+  it("refuses rather than reporting a superseded source as current", async () => {
+    // The log says there are more rows than it returned — "the latest
+    // decision" is not knowable, so the leg refuses instead of answering from
+    // the rows it happens to hold.
+    const db = stubClient({
+      field_provenance: {
+        data: [fieldProvenanceRow({ entity_id: EVENT_ID })],
+        count: 4000,
+      },
+    });
+    const result = await readRecordProvenance(
+      EDIT_CONFIG.events,
+      EVENT_ID,
+      db.asSupabaseClient(),
+    );
+    expect(result.note?.kind).toBe("error");
+    expect(result.fields.size).toBe(0);
+  });
+
+  it("keeps only the latest decision per fact, and resolves its source name", async () => {
+    const db = stubClient({
+      field_provenance: complete([
+        fieldProvenanceRow({
+          provenance_id: "01920000-0000-7000-8000-000000000401",
+          entity_id: EVENT_ID,
+          field: "title",
+          applied_at: "2026-08-01T00:00:00Z",
+          source_id: "01920000-0000-7000-8000-000000000102",
+        }),
+        fieldProvenanceRow({
+          provenance_id: "01920000-0000-7000-8000-000000000402",
+          entity_id: EVENT_ID,
+          field: "title",
+          applied_at: "2026-09-01T00:00:00Z",
+          source_id: TICKETMASTER,
+        }),
+      ]),
+      sources: complete([
+        { source_id: TICKETMASTER, source: "ticketmaster" },
+        { source_id: "01920000-0000-7000-8000-000000000102", source: "bandsintown" },
+      ]),
+    });
+    const result = await readRecordProvenance(
+      EDIT_CONFIG.events,
+      EVENT_ID,
+      db.asSupabaseClient(),
+    );
+    const title = result.fields.get("title");
+    expect(title?.authority).toBe("source");
+    expect(title && "source" in title ? title.source : null).toBe("ticketmaster");
+    expect(title?.appliedAt).toBe("2026-09-01T00:00:00Z");
+  });
+
+  it("reports an absent field_provenance without touching the values", async () => {
+    const db = stubClient({
+      field_provenance: { error: tableNotInSchemaCache("field_provenance") },
+    });
+    const result = await readRecordProvenance(
+      EDIT_CONFIG.events,
+      EVENT_ID,
+      db.asSupabaseClient(),
+    );
+    expect(result.note).toEqual({
+      kind: "not_provisioned",
+      missing: "field_provenance",
+    });
+    expect(result.fields.size).toBe(0);
+  });
+
+  it("names field_provenance when the read is refused", async () => {
+    const db = stubClient({
+      field_provenance: { error: permissionDenied("field_provenance") },
+    });
+    const result = await readRecordProvenance(
+      EDIT_CONFIG.events,
+      EVENT_ID,
+      db.asSupabaseClient(),
+    );
+    expect(result.note?.kind).toBe("error");
+    if (result.note?.kind === "error") {
+      expect(result.note.reading).toBe("field_provenance");
+    }
+  });
+
+  it("skips the source lookup when no current decision names a source", async () => {
+    const db = stubClient({
+      field_provenance: complete([
+        fieldProvenanceRow({
+          entity_id: EVENT_ID,
+          field: "title",
+          source_id: null,
+          observation_id: null,
+        }),
+      ]),
+    });
+    const result = await readRecordProvenance(
+      EDIT_CONFIG.events,
+      EVENT_ID,
+      db.asSupabaseClient(),
+    );
+    expect(db.tablesRead()).toEqual(["field_provenance"]);
+    expect(result.fields.get("title")?.authority).toBe("unset");
+  });
+
+  it("keeps the facts when the source names cannot be read, and says so", async () => {
+    // The decision behind the field is real whether or not the name lookup
+    // answered: the id stands in for the name, and the leg still reports.
+    const db = stubClient({
+      field_provenance: complete([
+        fieldProvenanceRow({ entity_id: EVENT_ID, field: "title" }),
+      ]),
+      sources: { error: permissionDenied("sources") },
+    });
+    const result = await readRecordProvenance(
+      EDIT_CONFIG.events,
+      EVENT_ID,
+      db.asSupabaseClient(),
+    );
+    const title = result.fields.get("title");
+    expect(title && "source" in title ? title.source : null).toBe(TICKETMASTER);
+    expect(result.note?.kind).toBe("error");
+  });
+
+  it("writes nothing, whatever the log says", async () => {
+    const db = stubClient({
+      field_provenance: complete([
+        fieldProvenanceRow({ entity_id: EVENT_ID, admin_locked: true }),
+      ]),
+    });
+    await readRecordProvenance(EDIT_CONFIG.events, EVENT_ID, db.asSupabaseClient());
+    for (const call of db.calls) {
+      for (const s of call.steps) {
+        expect(["update", "upsert", "insert", "delete"], call.table).not.toContain(
+          s.method,
+        );
+      }
+    }
   });
 });
