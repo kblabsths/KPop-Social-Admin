@@ -9,6 +9,7 @@ import {
   isEditable,
 } from "@/lib/edit/config";
 import { TABLE_NAMES } from "@/lib/db/tables";
+import { codeLines, repoRoot, sourceFiles, sourceText } from "../source-tree";
 
 /**
  * The edit config map — campaign admin-window/TASK-0017, acceptance test 7's
@@ -22,7 +23,6 @@ import { TABLE_NAMES } from "@/lib/db/tables";
  * delete, no write path to a resolver-owned table.
  */
 
-const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 const CONFIG_MODULE = "src/lib/edit/config.ts";
 const RECORDS_MODULE = "src/lib/db/records.ts";
 const ROUTE_MODULE = "src/app/api/admin/records/[table]/[id]/route.ts";
@@ -237,49 +237,15 @@ describe("decideEdit", () => {
 
 /* ── the source tree ──────────────────────────────────────────────────────── */
 
-/** Every TypeScript source file under `src/`, as repo-relative posix paths. */
-function sourceFiles(base: string = repoRoot): string[] {
-  const found: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (/\.(ts|tsx|mts)$/.test(entry.name) && !entry.name.startsWith("__")) {
-        found.push(path.relative(base, full).split(path.sep).join("/"));
-      }
-    }
-  };
-  walk(path.join(base, "src"));
-  return found.sort();
-}
-
-/**
- * Lines that are code, not commentary — the same reading
- * `tests/offline/db/layering.test.ts` uses, so a doc comment naming a thing
- * stays documentation and only a real occurrence is a defect. A file that
- * vanishes mid-walk is skipped: the layering suite writes and deletes a probe
- * under `src/` while vitest runs these files in parallel.
+/*
+ * The walk and the two readers are `tests/offline/source-tree.ts`
+ * (admin-window/BUG-0032). They used to be a private copy here, hardened
+ * against the probe `db/layering.test.ts` writes and deletes under the source
+ * tree in a parallel worker; two sibling files carried the same copy
+ * UNhardened and reddened on it. One copy now, with the same behaviour this
+ * file already relied on: dot- and double-underscore-prefixed names skipped,
+ * a vanished path skipped, everything else read exactly as before.
  */
-function sourceText(file: string, base: string = repoRoot): string {
-  try {
-    return fs.readFileSync(path.join(base, file), "utf8");
-  } catch (thrown) {
-    if ((thrown as NodeJS.ErrnoException).code === "ENOENT") return "";
-    throw thrown;
-  }
-}
-
-function codeLines(file: string, base: string = repoRoot): string[] {
-  return sourceText(file, base).split("\n").filter((line) => {
-    const trimmed = line.trim();
-    return (
-      trimmed.length > 0 &&
-      !trimmed.startsWith("//") &&
-      !trimmed.startsWith("*") &&
-      !trimmed.startsWith("/*")
-    );
-  });
-}
 
 function filesWhereCodeMatches(pattern: RegExp, base: string = repoRoot): string[] {
   return sourceFiles(base).filter((file) =>

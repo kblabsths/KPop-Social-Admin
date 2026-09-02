@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   PENDING_CLAIM_BUCKETS,
@@ -24,6 +22,7 @@ import {
   type Script,
   type StubClient,
 } from "../../fixtures/stub-client";
+import { codeText, sourceFiles } from "../source-tree";
 
 /**
  * `src/lib/db/claims.ts` — the classification view's one reader (campaign
@@ -333,38 +332,14 @@ describe("the one predicate", () => {
  * see it coming.
  */
 describe("the view has exactly one reader", () => {
-  const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
-
-  function sourceFiles(dir: string): string[] {
-    const found: string[] = [];
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) found.push(...sourceFiles(full));
-      else if (/\.(ts|tsx)$/.test(entry.name)) found.push(full);
-    }
-    return found;
-  }
-
-  function codeText(file: string): string {
-    return fs
-      .readFileSync(file, "utf8")
-      .split("\n")
-      .filter((line) => {
-        const trimmed = line.trim();
-        return (
-          trimmed.length > 0 &&
-          !trimmed.startsWith("//") &&
-          !trimmed.startsWith("*") &&
-          !trimmed.startsWith("/*")
-        );
-      })
-      .join("\n");
-  }
-
   it("queries pending_claims from src/lib/db/claims.ts alone", () => {
-    const readers = sourceFiles(path.join(repoRoot, "src"))
-      .filter((file) => /\.from\(T\.pendingClaims\)/.test(codeText(file)))
-      .map((file) => path.relative(repoRoot, file).split(path.sep).join("/"));
+    // The walk and the comment-stripping read are `tests/offline/source-tree.ts`
+    // — one copy for every structural rule in this suite, tolerant of the
+    // probe `db/layering.test.ts` writes and deletes under the source tree in
+    // a parallel worker (admin-window/BUG-0032).
+    const readers = sourceFiles().filter((file) =>
+      /\.from\(T\.pendingClaims\)/.test(codeText(file)),
+    );
     expect(readers).toEqual(["src/lib/db/claims.ts"]);
   });
 });
