@@ -477,3 +477,41 @@ failed last night") may be computed from `rows.length`. **`runs.source` is never
 resolved to a `sources` row by key**: no FK exists, so the facet and any
 source-linked navigation match on the name string, and a name with no matching
 source row is still a run that renders.
+
+## 2026-09-02 — Structural guards over the source tree parse with `typescript`, never with a hand-rolled tokenizer
+
+The offline suites hold several rules that read `src/` as TEXT and assert
+something structural about it: the credential scanner
+(`tests/offline/db/layering.test.ts`), the M2-close guard
+(`tests/offline/review/one-place.test.ts`), and the `admin_locked` write guard
+(`tests/offline/edit/config.test.ts`). Line-wise, comment-stripped reading —
+`codeLines` / `filesWhereCodeMatches` — is fine for a rule whose question is
+"does this NAME appear on a code line". BUG-0030 established, over three QA
+bounces, that it is not fine for a rule whose question needs a BOUNDARY: "where
+does this call's argument end", "is this backtick a template or text", "is this
+`/` division or a regex". Each of the three fixes to the bespoke tokenizer
+closed one grammar fact and opened the next, and the third one — a backtick
+inside a regex literal after `=>`, read as division — silently erased a real
+forbidden write between two backticks. That failure direction is the one the
+guard exists to exclude.
+
+The ruling: **a guard that needs a syntactic boundary uses TypeScript's own
+parser** — `ts.createSourceFile` plus an AST walk — and a guard that only needs
+a name may keep the cheap line-wise read. `typescript` ^5 is already a
+devDependency here (`tsc --noEmit` is the CI check), so this adds nothing to the
+supply chain; the parser resolves from `tests/`, handles strings, comments,
+templates, interpolations and regex literals by construction, and reduces the
+guard to ~45 lines of API calls with no bespoke lexing left in it.
+
+The doors this closes. **No new hand-rolled lexer, tokenizer or
+"string-aware regex" may be written into a test guard in this repo** — a rule
+that cannot be expressed against `codeLines` is a rule that parses. **A parse
+error is a REPORT, not a skip**: a file a structural guard cannot see into is a
+file it may not stay silent about, so the guard over-reports it; the permitted
+failure direction of every such guard is over-reporting, never a miss.
+**Anything the AST walk cannot decompose falls back to the node's source text**,
+which is the same over-report direction, rather than to a cleverer heuristic.
+And **the pre-decided escape hatch is deletion, not a fourth patch**: if the
+parser route is ever found wrong in the same class, the guard is dropped down to
+its cheap line-wise pin and the gap recorded as a residual — a structural guard
+is worth at most one re-tooling.
