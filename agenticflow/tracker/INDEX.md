@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T08:36:51Z — do not edit)
+# Tracker index (regenerated 2026-09-02T08:42:42Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -19,7 +19,6 @@
 - TASK-0017 [P1][task][M1] The edit config map and the one PATCH route that obeys it  (deps:TASK-0005,TASK-0002,TASK-0026,TASK-0027(unmet:2) scope:src/lib/edit,src/app/api/admin/records/[table]/[id]/route.ts,src/lib/db/records.ts,tests/offline/edit,tests/http/edit.http.test.ts)
 - TASK-0018 [P1][task][M1] The edit surface — the record page, direct edits for groups and idols, read-only events and venues  (deps:TASK-0017,TASK-0004(unmet:1) scope:src/app/records/[table]/[id]/page.tsx,src/components/records,tests/offline/records,tests/live/edit.live.test.ts)
 - TASK-0019 [P1][task][M1] Cross-page proofs: graceful absence on all six pages, in_window nowhere, auth on every route, zero residue  (deps:TASK-0009,TASK-0010,TASK-0011,TASK-0012,TASK-0013,TASK-0014,TASK-0015,TASK-0018,TASK-0027(unmet:9) scope:tests/offline/absence,tests/http,tests/live/residue.live.test.ts)
-- TASK-0026 [P1][task][M1] Complete reads: an ok row set is the whole matching set, or the read refuses  (deps:TASK-0002,TASK-0006 scope:src/lib/db/result.ts,src/lib/db/review-items.ts,tests/offline/db,tests/offline/review)
 - TASK-0027 [P1][task][M1] The http harness must ENFORCE 'no database', not assert it: Next reloads .env over the strip  (deps:TASK-0005 scope:tests/http/server-harness.ts,tests/offline/http-harness.test.ts)
 - BUG-0005 [P2][bug][-] Credential guard still misses destructured and optional-chained env reads, so the one-reader criterion holds for some spellings only  (scope:tests/offline/db from:BUG-0003)
 - BUG-0006 [P2][bug][M1] Light palette fails bar 12: darken healthy/attention/broken/ink-secondary to the amended hexes  (scope:src/app/globals.css,tests/offline/ui from:TASK-0004)
@@ -27,6 +26,9 @@
 - TASK-0016 [P2][task][M1] Cycles & runs — the adapter framework's runs half  (deps:TASK-0014,TASK-0023(unmet:2) scope:src/app/cycles/page.tsx,src/lib/db/runs.ts,tests/offline/runs,tests/live/runs.live.test.ts)
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 - TASK-0028 [P2][task][M1] tsconfig excludes agenticflow: a factory evidence file must not red tsc  (scope:tsconfig.json)
+
+## built
+- TASK-0026 [P1][task][M1] Complete reads: an ok row set is the whole matching set, or the read refuses  (deps:TASK-0002,TASK-0006 scope:src/lib/db/result.ts,src/lib/db/review-items.ts,tests/offline/db,tests/offline/review @builder-14)
 
 ## qa
 - TASK-0007 [P1][task][M1] The six gauges as server-side queries with pure TypeScript aggregation  (deps:TASK-0002 scope:src/lib/gauges,tests/offline/gauges @builder-12)
@@ -38,4 +40,4 @@
 - TASK-0024 [P1][task][M1] ASK BEN: where does Admin read the per-source stuck_pattern dial, which lives only in scraper YAML?  (scope:src/lib/gauges/pending-claims.ts,src/app/sources/page.tsx)
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 
-Totals — blocked:5, done:13, open:26, qa:1. Archived: 0.
+Totals — blocked:5, built:1, done:13, open:25, qa:1. Archived: 0.
