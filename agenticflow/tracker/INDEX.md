@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T17:50:51Z — do not edit)
+# Tracker index (regenerated 2026-09-02T17:54:19Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -14,14 +14,10 @@
 ## claimed
 - TASK-0016 [P2][task][M1] Cycles & runs — the adapter framework's runs half  (deps:TASK-0014 scope:src/app/cycles/page.tsx,src/lib/db/runs.ts,tests/offline/runs,tests/live/runs.live.test.ts @builder-55)
 
-## qa
-- BUG-0029 [P2][bug][M1] The offline suite is flaky in a fresh worktree: its slowest test sits 6% under vitest's 5s default, so receipts go red at random  (scope:vitest.config.mts,tests/offline/claims/page.test.ts,tests/offline/toolchain.test.ts @builder-53 from:BUG-0024)
-
 ## blocked
-- BUG-0031 [P0][bug][-] CI red: 1 failing test(s)  (scope:src,supabase,public,tests,docs)
 - TASK-0031 [P1][task][M1] ASK BEN: pending_claims view times out on staging (handoff: index or view rewrite in the scraper repo)  (scope:agenticflow/docs/vision/ARCHITECTURE.md)
 
 ## reopened
 - BUG-0030 [P2][bug][-] The admin_locked write guard's balanced-argument scan is not string-aware: it reports a READ as a write, and misses a real WRITE  (scope:tests/offline/edit from:BUG-0028)
 
-Totals — blocked:2, claimed:1, done:60, open:9, qa:1, reopened:1. Archived: 0.
+Totals — blocked:1, claimed:1, done:62, open:9, reopened:1. Archived: 0.

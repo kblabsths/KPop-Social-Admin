@@ -1,21 +1,21 @@
 {
  "id": "BUG-0029",
- "created": "2026-09-02T17:46:29Z",
+ "created": "2026-09-02T17:52:05Z",
  "green": true,
- "git_head": "cd3ba7f597022f57d50530d90262608078ac545b",
+ "git_head": "2aa6c6b5f05589547b73d78de62317f8007a77eb",
  "scope": [
   "vitest.config.mts",
   "tests/offline/claims/page.test.ts",
   "tests/offline/toolchain.test.ts"
  ],
  "isolation": "worktree",
- "foreign_files": 3,
- "tree_hash": "96e3dc667c972888a12a6e77f3491b2c9ddfc867fa65100766aa6b1d59645fe8",
+ "foreign_files": 2,
+ "tree_hash": "5b3796f6cc5b84caf60cac9cf7b9f4013c25270b04cf39927a6e9d20e9365893",
  "commands": [
   {
    "cmd": "./node_modules/.bin/vitest run tests/offline/claims/page.test.ts tests/offline/toolchain.test.ts",
    "exit": 0,
-   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-82384\n\n \u2713 |offline| tests/offline/claims/page.test.ts (69 tests) 2349ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=in_window  335ms\n \u2713 |offline| tests/offline/toolchain.test.ts (8 tests) 3348ms\n   \u2713 walking src/ while the layering probe comes and goes > lets every src/-walking offline test pass over an entry it cannot read  993ms\n\n Test Files  2 passed (2)\n      Tests  77 passed (77)\n   Start at  10:46:25\n   Duration  3.84s (transform 247ms, setup 0ms, collect 616ms, tests 5.70s, environment 0ms, prepare 157ms)\n\n(node:82391) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:82444) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:82464) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-89119\n\n \u2713 |offline| tests/offline/toolchain.test.ts (7 tests) 2695ms\n \u2713 |offline| tests/offline/claims/page.test.ts (69 tests) 2782ms\n\n Test Files  2 passed (2)\n      Tests  76 passed (76)\n   Start at  10:52:01\n   Duration  3.83s (transform 318ms, setup 0ms, collect 933ms, tests 5.48s, environment 0ms, prepare 170ms)\n\n(node:89151) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:89193) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:89251) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
   }
  ]
 }
