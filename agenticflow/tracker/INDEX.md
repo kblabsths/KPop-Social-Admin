@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T10:04:01Z — do not edit)
+# Tracker index (regenerated 2026-09-02T10:04:40Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
