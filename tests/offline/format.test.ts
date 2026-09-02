@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { EM_DASH, absoluteUtc, count, nullDash, relativeAge } from "@/lib/format";
+import { EM_DASH, absoluteUtc, count, isAbsent, nullDash, orDash, relativeAge } from "@/lib/format";
 
 /**
  * The shared formatting helpers (campaign admin-window, TASK-0004).
@@ -84,5 +84,42 @@ describe("nullDash", () => {
 
   it("names itself for a screen reader rather than reading out punctuation", () => {
     expect(renderToStaticMarkup(nullDash())).toContain("aria-label");
+  });
+});
+
+/**
+ * The one definition of absence (campaign admin-window/BUG-0004). Primitives
+ * ask here rather than each writing `x === null || x === ""`, so a dash a
+ * helper produced and a dash a raw null produced render identically.
+ */
+describe("isAbsent and orDash", () => {
+  it("calls absent everything React would draw as nothing", () => {
+    for (const missing of [null, undefined, "", "   ", false, true, []]) {
+      expect(isAbsent(missing)).toBe(true);
+    }
+  });
+
+  it("calls absent a figure that is not a finite number, so no cell reads NaN", () => {
+    for (const missing of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(isAbsent(missing)).toBe(true);
+    }
+  });
+
+  it("calls absent the dash string the formatting helpers return", () => {
+    expect(isAbsent(count(null))).toBe(true);
+    expect(isAbsent(absoluteUtc(null))).toBe(true);
+    expect(isAbsent(relativeAge(null).text)).toBe(true);
+  });
+
+  it("keeps a real value present, including the zero and the empty-looking ones", () => {
+    for (const present of [0, "0", count(0), "false", "no value"]) {
+      expect(isAbsent(present)).toBe(false);
+    }
+  });
+
+  it("renders an absence as the same element nullDash produces, and passes a value through", () => {
+    expect(renderToStaticMarkup(orDash(count(null)))).toBe(renderToStaticMarkup(nullDash()));
+    expect(renderToStaticMarkup(orDash(false))).toBe(renderToStaticMarkup(nullDash()));
+    expect(renderToStaticMarkup(orDash(count(1234)))).toBe("1,234");
   });
 });

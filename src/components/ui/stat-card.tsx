@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { count, nullDash } from "@/lib/format";
+import { count, orDash } from "@/lib/format";
 import { cx } from "./cx";
 
 /**
@@ -39,11 +39,7 @@ export function StatCard({
     <>
       <span className="type-micro text-ink-secondary">{label}</span>
       <span className={cx("type-figure", TONE[tone])}>
-        {value === null
-          ? nullDash()
-          : typeof value === "number"
-            ? count(value)
-            : value}
+        {orDash(typeof value === "number" ? count(value) : value)}
       </span>
       {sub ? <span className="type-data text-ink-secondary">{sub}</span> : null}
     </>
