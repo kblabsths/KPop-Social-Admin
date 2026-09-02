@@ -253,3 +253,46 @@
 2026-09-02T06:28:54Z	agent	-	-	-	-
 # STRANDED	2026-09-02T06:29:06Z	qa-adversary	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0001.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
 2026-09-02T06:29:06Z	qa-adversary	TASK-0001	6027	202	59544
+2026-09-02T06:29:44Z	builder	TASK-0002	spawned
+# STRANDED	2026-09-02T06:30:15Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:30:15Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:30:46Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:30:46Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:31:18Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:31:18Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:32:49Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:32:49Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:33:20Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:33:20Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:34:52Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:34:52Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:35:23Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:35:23Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:35:54Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:35:54Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:36:56Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:36:56Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:37:27Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:37:27Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:37:58Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:37:58Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:38:29Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:38:29Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:39:00Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:39:00Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:39:32Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:39:32Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:40:04Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:40:04Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:40:36Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:40:36Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:41:07Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:41:07Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:41:38Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:41:38Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:41:48Z	builder	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:41:48Z	builder	TASK-0002	11449	723	115658
+2026-09-02T06:42:14Z	qa-adversary	TASK-0002	spawned
+# STRANDED	2026-09-02T06:42:45Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
+2026-09-02T06:42:45Z	agent	-	-	-	-
+2026-09-02T06:42:50Z	builder	TASK-0004	spawned
