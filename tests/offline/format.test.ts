@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -115,6 +116,20 @@ describe("isAbsent and orDash", () => {
     for (const present of [0, "0", count(0), "false", "no value"]) {
       expect(isAbsent(present)).toBe(false);
     }
+  });
+
+  it("keeps a value present when it merely contains or resembles the dash, and when it is composite", () => {
+    // The swallow-a-real-value trap: absence recognises the *bare* dash a
+    // helper returns, so a value that only contains one, or is a node rather
+    // than a scalar, must still render as itself.
+    for (const present of [`${EM_DASH}x`, `${EM_DASH} ${EM_DASH}`, "0 ", -0, ["a", "b"]]) {
+      expect(isAbsent(present)).toBe(false);
+    }
+    const element = createElement("span", { className: "real" }, "x");
+    expect(renderToStaticMarkup(orDash(element))).toBe(
+      renderToStaticMarkup(element),
+    );
+    expect(renderToStaticMarkup(orDash(["a", "b"]))).toBe("ab");
   });
 
   it("renders an absence as the same element nullDash produces, and passes a value through", () => {
