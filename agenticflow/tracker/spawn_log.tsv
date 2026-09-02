@@ -1786,3 +1786,49 @@
 2026-09-02T11:03:59Z	qa-adversary	BUG-0014	7962	629	129896
 # STRANDED	2026-09-02T11:04:02Z	builder	4 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/BUG-0014.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0014.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0017.md
 2026-09-02T11:04:02Z	builder	BUG-0015	3196	619	96758
+2026-09-02T11:04:40Z	qa-adversary	BUG-0015	spawned
+2026-09-02T11:04:53Z	builder	BUG-0016	spawned
+# STRANDED	2026-09-02T11:05:11Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:05:11Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:05:24Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:05:24Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:05:43Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:05:43Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:05:56Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:05:56Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:06:15Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:06:15Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:06:27Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:06:27Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:06:46Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:06:46Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:07:18Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:07:18Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:07:29Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:07:29Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:08:00Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:08:00Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:08:21Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:08:21Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:08:31Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:08:31Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:08:54Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:08:54Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:09:55Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md, tests/offline/shell/shell.test.ts
+2026-09-02T11:09:55Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:10:03Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md, tests/offline/shell/shell.test.ts
+2026-09-02T11:10:03Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:10:28Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:10:28Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:10:35Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/BUG-0015.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:10:35Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:10:59Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/BUG-0015.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:10:59Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:11:06Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/BUG-0015.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:11:06Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:11:31Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/BUG-0015.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:11:31Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:11:35Z	qa-adversary	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/BUG-0015.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:11:35Z	qa-adversary	BUG-0015	2995	414	85003
+# STRANDED	2026-09-02T11:11:38Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/BUG-0015.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0015.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0016.md
+2026-09-02T11:11:38Z	agent	-	-	-	-

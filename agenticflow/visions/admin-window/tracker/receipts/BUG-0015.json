@@ -1,0 +1,30 @@
+{
+ "id": "BUG-0015",
+ "created": "2026-09-02T11:10:33Z",
+ "green": true,
+ "git_head": "a2d8cec2472c35fa49744012fe1d8998adb9cb32",
+ "scope": [
+  "src/components/shell/shell.tsx",
+  "tests/offline/shell"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "d867f489a6a1780dbbb49058b64bbd5281153ec3479b63ea1f32c5d399cf9e09",
+ "commands": [
+  {
+   "cmd": "bash -c \"! grep -q 'hover:bg-chrome-inverse' src/components/shell/shell.tsx\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/shell",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-4385\n\n \u2713 |offline| tests/offline/shell/shell.test.ts (23 tests) 27ms\n\n Test Files  1 passed (1)\n      Tests  23 passed (23)\n   Start at  04:10:30\n   Duration  482ms (transform 130ms, setup 0ms, collect 235ms, tests 27ms, environment 0ms, prepare 56ms)\n\n(node:4394) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
