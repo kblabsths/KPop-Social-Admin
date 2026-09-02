@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { encode } from "next-auth/jwt";
 import { describe, expect, it } from "vitest";
+import { EDITABLE_TABLES } from "@/lib/edit/config";
 import { HTTP_TEST_PORT } from "../suite-globs";
 import {
   AUTH_SECRET,
@@ -323,29 +324,122 @@ describe("the gate over the whole window", () => {
 });
 
 /**
- * A `notFound()` thrown by a dynamic segment must reach the operator as the
- * SAME served page an unmatched URL does (campaign admin-window/BUG-0017).
+ * A record URL for a table the edit map does not carry must reach the operator
+ * as the SAME served page an unmatched URL does (campaign
+ * admin-window/BUG-0017).
  *
- * `/records/[table]/[id]` calls `notFound()` for a table the edit map does not
- * carry (`src/app/records/[table]/[id]/page.tsx:83`), which a stale bookmark
- * still reaches. On an unmatched URL the app serves the whole framed surface;
- * on this one the served document is empty and the page exists only in the
- * flight payload, so the first paint is a blank document.
- *
- * Marked `it.fails` — the pin for a known divergence. When the served document
- * carries the surface again this test XPASSes and turns red, which is the
- * signal to drop `.fails` and close BUG-0017.
+ * `/records/[table]/[id]` calls `notFound()` for such a table, and a thrown
+ * `notFound()` cannot produce a server-rendered document AND a 404 status on
+ * Next 16 — so `next.config.ts` rewrites the URL to a path no route matches
+ * and Next's routing-level 404 answers instead. Everything below asserts that
+ * arrangement from the outside: the served bytes, the status, and the two
+ * things the rewrite must not have cost — the gate, and the record surfaces
+ * the map DOES carry.
  */
-describe("a notFound() thrown inside a dynamic route", () => {
-  it.fails("serves the same not-found surface an unmatched URL serves", async () => {
+describe("a record URL for a table the edit map does not carry", () => {
+  it("answers with the app's own 404, server-rendered, without weakening the gate", async () => {
     const { child } = await startServer();
     try {
       const cookie = await signedInCookie();
-      const route = "/records/no-such-table/2f0bc11e";
-      const res = await fetch(`${base}${route}`, { headers: { cookie }, redirect: "manual" });
-      expect(res.status, route).toBe(404);
-      // The status is already right; what is missing is the document itself.
-      expectOurNotFound(route, await res.text());
+
+      // 1. Every unmapped table answers exactly as an unmatched URL does.
+      //    `notFound()` used to answer here with an empty document that only
+      //    became the 404 page after hydration; these bytes are what a
+      //    browser with JavaScript disabled is given.
+      const unmapped = [
+        "/records/no-such-table/2f0bc11e",
+        // The dropped table and the raw archive: two names an operator could
+        // plausibly still have bookmarked.
+        "/records/artists/2f0bc11e",
+        "/records/scraped_events/2f0bc11e",
+      ];
+      for (const route of unmapped) {
+        const res = await fetch(`${base}${route}`, { headers: { cookie }, redirect: "manual" });
+        expect(res.status, route).toBe(404);
+        expectOurNotFound(route, await res.text());
+      }
+
+      // 1b. A spelling Next's own matcher reads as a configured table — it is
+      //     case-insensitive where the map is exact — is not claimed by the
+      //     rewrite, so it reaches the page and is refused there. What must
+      //     hold either way, and is the reason this is asserted rather than
+      //     left to the reader: it is a 404 and it is NOT a record surface.
+      //     The document it gets is the framework's, which is the residue
+      //     admin-window/BUG-0017 could not remove; asserting the shape of
+      //     that document would pin a defect in place, so this does not.
+      const caseVariant = await fetch(`${base}/records/GROUPS/2f0bc11e`, {
+        headers: { cookie },
+        redirect: "manual",
+      });
+      expect(caseVariant.status).toBe(404);
+      expect(await caseVariant.text()).not.toContain("groups record");
+
+      // 2. The rewrite's destination must stay a path no route matches. If a
+      //    later route ever claims it, an unmapped table would silently start
+      //    rendering that page instead of the 404 — this is the tripwire.
+      const destination = await fetch(`${base}/__no-record-surface__`, {
+        headers: { cookie },
+        redirect: "manual",
+      });
+      expect(destination.status).toBe(404);
+      expectOurNotFound("/__no-record-surface__", await destination.text());
+
+      // 3. …and it cost the map nothing: every table EDIT_CONFIG carries still
+      //    has a record surface. Reads fail here (the harness points the app
+      //    at a dead port), so these render their error or empty state — the
+      //    point is that they render, framed, and are not 404.
+      for (const table of EDITABLE_TABLES) {
+        const route = `/records/${table}/2f0bc11e`;
+        const res = await fetch(`${base}${route}`, { headers: { cookie }, redirect: "manual" });
+        expect(res.status, route).toBe(200);
+        const body = await res.text();
+        expect(body, route).toMatch(/<h1[\s>]/);
+        expect(body, `${route} served the client-render error shell`).not.toContain(
+          'id="__next_error__"',
+        );
+      }
+
+      // 4. The API surface under a similar path is not swept up by the rewrite:
+      //    it still answers as a route handler, never with the HTML 404.
+      const api = await fetch(`${base}/api/admin/records/no-such-table/2f0bc11e`, {
+        headers: { cookie },
+        redirect: "manual",
+      });
+      expect(api.status).not.toBe(404);
+      expect(api.headers.get("content-type") ?? "").not.toContain("text/html");
+    } finally {
+      await stopServer(child);
+    }
+  });
+
+  /**
+   * The rewrite must not reach past the sign-in gate. A stranger asking for an
+   * unmapped record URL gets the sign-in page, exactly as they do for every
+   * other route — never a 404, which would confirm what does and does not
+   * exist behind the gate.
+   */
+  it("still sends a stranger to the sign-in page", async () => {
+    const { child } = await startServer();
+    try {
+      for (const route of ["/records/no-such-table/2f0bc11e", "/__no-record-surface__"]) {
+        const res = await fetch(`${base}${route}`, { redirect: "manual" });
+        expect(res.status, route).toBeGreaterThanOrEqual(300);
+        expect(res.status, route).toBeLessThan(400);
+        const location = res.headers.get("location");
+        expect(location, route).not.toBeNull();
+        expect(new URL(location as string, base).pathname, route).toBe("/login");
+      }
+
+      for (const [what, forged] of await forgedCookies()) {
+        const route = "/records/no-such-table/2f0bc11e";
+        const res = await fetch(`${base}${route}`, {
+          headers: { cookie: forged },
+          redirect: "manual",
+        });
+        const where = `${route} with ${what}`;
+        expect(res.status, where).toBeGreaterThanOrEqual(300);
+        expect(res.status, where).toBeLessThan(400);
+      }
     } finally {
       await stopServer(child);
     }
