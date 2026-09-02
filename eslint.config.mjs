@@ -15,6 +15,12 @@ const eslintConfig = defineConfig([
     // The factory kit ships a Python venv with bundled JS (Playwright's
     // driver); it is tooling, not product source. admin-window/TASK-0001
     "agenticflow/**",
+    // Guard fixtures: the offline suites plant mirror source trees here and
+    // remove them in a `finally`, so nothing should normally exist to lint —
+    // but a run killed mid-test leaks one, and some fixtures are deliberately
+    // unparseable (a template literal with no closer), which would fail lint
+    // for a file that is not product source. admin-window/BUG-0030
+    "tests/.probes/**",
   ]),
 ]);
 

@@ -555,10 +555,17 @@ function writeArguments(file: string, base: string = repoRoot): string[] {
   return args;
 }
 
-/** Files that pass the column to a write verb, however the payload is laid out. */
+/**
+ * Files that pass the column to a write verb, however the payload is laid out.
+ * Every source file is asked, not only those `filesWhereCodeMatches` reports:
+ * that pre-filter reads the file through `codeLines`, which drops a whole line
+ * whose trimmed form starts with `/*`, and a payload key can share its line
+ * with a leading comment (admin-window/BUG-0030, second round). A cheaper scan
+ * that cannot see part of the tree is not cheaper.
+ */
 function filesWritingColumn(column: string, base: string = repoRoot): string[] {
   const named = new RegExp(column);
-  return filesWhereCodeMatches(named, base).filter((file) =>
+  return sourceFiles(base).filter((file) =>
     writeArguments(file, base).some((argument) => named.test(argument)),
   );
 }
@@ -1003,6 +1010,29 @@ describe("the argument scan and string literals", () => {
       (base) => filesWritingColumn(ADMIN_LOCKED, base),
     );
     expect(reported).toEqual(["src/unterminated.ts"]);
+  });
+
+  it("reports a WRITE on a payload line that opens with a block comment", () => {
+    // Valid TypeScript, and the other half of the same root: `codeLines` drops
+    // a whole line whose trimmed form starts with "/*" — comment and code
+    // alike — so a payload key sharing its line with a leading comment is lost
+    // to any scan that reads the file through that filter. The wrapped payload
+    // hides it from the line pin too, so this is the fail-open direction again.
+    // Tokenizing the RAW file, and asking every file rather than only the ones
+    // the filtered scan can see the name in, is what reports it.
+    const reported = withProbes(
+      [
+        [
+          "src/commented-payload.ts",
+          "export const stamp = (db: Db, id: string) =>\n" +
+            '  db.from("field_provenance").update({\n' +
+            "    /* legacy */ admin_locked: true,\n" +
+            '  }).eq("id", id);\n',
+        ],
+      ],
+      (base) => filesWritingColumn(ADMIN_LOCKED, base),
+    );
+    expect(reported).toEqual(["src/commented-payload.ts"]);
   });
 
   it("reports a WRITE under a backtick that is only ever mentioned in a comment", () => {
