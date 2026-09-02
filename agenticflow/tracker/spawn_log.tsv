@@ -2140,3 +2140,45 @@
 2026-09-02T12:22:00Z	agent	-	-	-	-
 # STRANDED	2026-09-02T12:22:08Z	qa-adversary	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/BUG-0017.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0017.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0009.md
 2026-09-02T12:22:08Z	qa-adversary	BUG-0017	4106	490	116178
+2026-09-02T12:22:32Z	agent	-	-	-	-
+2026-09-02T12:22:59Z	architect	TASK-0009	spawned
+2026-09-02T12:23:30Z	agent	-	-	-	-
+2026-09-02T12:23:34Z	agent	-	-	-	-
+2026-09-02T12:24:02Z	agent	-	-	-	-
+2026-09-02T12:24:05Z	agent	-	-	-	-
+2026-09-02T12:24:37Z	agent	-	-	-	-
+2026-09-02T12:25:03Z	agent	-	-	-	-
+2026-09-02T12:25:35Z	agent	-	-	-	-
+2026-09-02T12:26:06Z	agent	-	-	-	-
+2026-09-02T12:26:10Z	agent	-	-	-	-
+2026-09-02T12:26:37Z	agent	-	-	-	-
+2026-09-02T12:26:41Z	agent	-	-	-	-
+2026-09-02T12:27:08Z	agent	-	-	-	-
+2026-09-02T12:27:40Z	agent	-	-	-	-
+2026-09-02T12:27:43Z	agent	-	-	-	-
+2026-09-02T12:28:11Z	agent	-	-	-	-
+2026-09-02T12:28:14Z	agent	-	-	-	-
+2026-09-02T12:28:43Z	agent	-	-	-	-
+2026-09-02T12:28:46Z	agent	-	-	-	-
+2026-09-02T12:29:14Z	agent	-	-	-	-
+2026-09-02T12:29:18Z	agent	-	-	-	-
+2026-09-02T12:29:46Z	agent	-	-	-	-
+2026-09-02T12:29:50Z	agent	-	-	-	-
+2026-09-02T12:30:18Z	agent	-	-	-	-
+2026-09-02T12:30:21Z	agent	-	-	-	-
+# STRANDED	2026-09-02T12:30:49Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/docs/ARCHITECTURE.md
+2026-09-02T12:30:49Z	agent	-	-	-	-
+# STRANDED	2026-09-02T12:30:53Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/docs/ARCHITECTURE.md
+2026-09-02T12:30:53Z	agent	-	-	-	-
+# STRANDED	2026-09-02T12:31:21Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/docs/ARCHITECTURE.md
+2026-09-02T12:31:21Z	agent	-	-	-	-
+# STRANDED	2026-09-02T12:31:25Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/docs/ARCHITECTURE.md
+2026-09-02T12:31:25Z	agent	-	-	-	-
+# STRANDED	2026-09-02T12:31:53Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/docs/ARCHITECTURE.md
+2026-09-02T12:31:53Z	agent	-	-	-	-
+# STRANDED	2026-09-02T12:31:56Z	agent	2 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/visions/admin-window/docs/ARCHITECTURE.md
+2026-09-02T12:31:56Z	agent	-	-	-	-
+# STRANDED	2026-09-02T12:32:20Z	builder	3 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0009.md
+2026-09-02T12:32:20Z	builder	TASK-0009	2825	1086	233266
+# STRANDED	2026-09-02T12:32:24Z	agent	3 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0009.md
+2026-09-02T12:32:24Z	agent	-	-	-	-
