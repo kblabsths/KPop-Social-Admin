@@ -4963,3 +4963,13 @@
 2026-09-02T21:44:23Z	agent	-	-	-	-
 # STRANDED	2026-09-02T21:44:36Z	qa-adversary	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/DEBT-0001.md
 2026-09-02T21:44:36Z	qa-adversary	BUG-0035	7304	760	105513
+2026-09-02T21:44:49Z	agent	-	-	-	-
+2026-09-02T21:45:21Z	agent	-	-	-	-
+# STRANDED	2026-09-02T21:45:52Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/DEBT-0001.md
+2026-09-02T21:45:52Z	agent	-	-	-	-
+# STRANDED	2026-09-02T21:45:53Z	builder	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/DEBT-0001.md
+2026-09-02T21:45:53Z	builder	DEBT-0001	1845	438	86775
+# STRANDED	2026-09-02T21:47:57Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/DEBT-0001.md
+2026-09-02T21:47:57Z	agent	-	-	-	-
+2026-09-02T21:48:22Z	builder	BUG-0036	spawned
+2026-09-02T21:48:29Z	qa-adversary	DEBT-0001	spawned
