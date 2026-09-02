@@ -1,0 +1,27 @@
+{
+ "id": "BUG-0024",
+ "created": "2026-09-02T16:44:13Z",
+ "green": false,
+ "git_head": "00a53c85d94573d81b3fc36fa9aeb7814f7735ea",
+ "scope": [
+  "src/lib/db/review-item.ts",
+  "tests/live/review-item.live.test.ts",
+  "tests/offline/review-item"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 17,
+ "tree_hash": "853df5905031b0ed0eeb922e4f23aa79f1166ad6c21eef172dd2d3c0d161c651",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=live tests/live/review-item.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-64567\n\n \u2713 |live| tests/live/review-item.live.test.ts (4 tests) 68160ms\n   \u2713 a real review item, rendered > resolves exactly the evidence ids the row carries, in its fold order  17316ms\n   \u2713 a real review item, rendered > renders each claim's own instant, source tier and its shape's own column  17327ms\n   \u2713 a real review item, rendered > puts the fact's current canonical value beside them, from the latest decision  16858ms\n   \u2713 a real review item, rendered > carries the header the anatomy requires, and no control at all  16657ms\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n   Start at  09:42:53\n   Duration  68.75s (transform 154ms, setup 31ms, collect 286ms, tests 68.16s, environment 0ms, prepare 71ms)\n\n(node:64575) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm test",
+   "exit": 1,
+   "output_tail": "Use `node --trace-deprecation ...` to show where the warning was created)\n(node:68321) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:68350) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n\n\u23af\u23af\u23af\u23af\u23af\u23af Failed Suites 1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |offline| tests/offline/toolchain.test.ts > type-check program\nError: Command failed: /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-64567/node_modules/.bin/tsc --noEmit --listFilesOnly --tsBuildInfoFile /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-64567/agenticflow/tracker/evidence/tsconfig-program-probe-d7503b86-e8c7-4382-ba1a-d8e21567aad8/probe.tsbuildinfo\n \u276f tests/offline/toolchain.test.ts:113:20\n    111|     // Deliberately ill-typed: if tsc compiled this, it would exit non\u2026\n    112|     writeFileSync(probeFile, \"const probe: number = true; export defau\u2026\n    113|     const stdout = execFileSync(\n       |                    ^\n    114|       tscBin,\n    115|       [\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/2]\u23af\n\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |offline| tests/offline/claims/page.test.ts > QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab\nError: Test timed out in 5000ms.\nIf this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".\n \u276f tests/offline/claims/page.test.ts:943:5\n    941| \n    942|   for (const tab of [\"buckets\", \"standing\"] as const) {\n    943|     it(`renders exactly the claims and counts the view holds, on the $\u2026\n       |     ^\n    944|       for (const bucket of BUCKET_PARAMS) {\n    945|         for (const source of SOURCE_PARAMS) {\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[2/2]\u23af\n\n"
+  }
+ ],
+ "failure_sig": "8b407af68401"
+}

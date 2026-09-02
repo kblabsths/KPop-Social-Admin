@@ -300,3 +300,144 @@ written. Cost accepted: four page tickets code against the final signatures
 (TASK-0030 lands first), and every future trend or distribution must say what
 its series holds and what fills it before it may render — which is
 LOOK_AND_FEEL Voice bar 4 restated as a type.
+
+## 2026-09-02 — the app reads `SUPABASE_*`, the live suite reads `STAGING_*`, and parity stays two PostgREST paths
+
+Ben's answer to the env ASK (admin-window/TASK-0021): `.env` now carries the
+four `STAGING_SUPABASE_*` names; the deployed Railway service keeps reading
+`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`, so `src/lib/db/client.ts` is
+unchanged and no `STAGING_` name appears under `src/`. `SERVICES.md` declares
+the staging project ref, and the live guard passes against it.
+
+The half left to the architect was `STAGING_SUPABASE_DB_URL`: it exists as a
+name, so acceptance test 2's "direct SQL on staging" is now buildable — does
+it get a pg-driver DEP? **No. Parity stays two PostgREST paths.** What §10
+requires is two *independently written* paths to one number, not two
+*transports*: `tests/live/parity.ts` already hands each test its own client
+(`independentClient()`) and refuses to let it ask `lib/db` for the expected
+value, so the page's path and the test's path share nothing but the database.
+A pg driver would buy a second credential shape in the live suite — a DSN with
+an embedded password, the exact shape `lib/db/result.ts`'s redactor had to be
+taught to scrub — plus a supply-gate DEP, a connection-pooling question, and a
+transport with different timeout and role semantics from the one the app
+actually uses. Parity proven over a transport the app never speaks proves less,
+not more. The doors this closes: **no `pg` / `postgres.js` dependency in this
+repo**, no direct-Postgres connection from product code or tests, and
+`STAGING_SUPABASE_DB_URL` stays a name nothing in `src/` or `tests/` reads.
+What direct SQL would genuinely buy — `EXPLAIN ANALYZE`, and aggregates
+PostgREST cannot express — is the scraper repo's to run: it owns the schema, it
+pushes the migrations, and it already has a SQL prompt. So the need is real and
+it lives on the far side of the handoff, which is exactly where the
+`pending_claims` diagnosis went.
+
+## 2026-09-02 — live tests may write `groups` / `idols` and nothing else; and M1's decision-queue parity is vacuous
+
+Ben's answer to the fixtures ASK (admin-window/TASK-0022), with QA's staging
+census beside it. The resolver migrations ARE applied to staging and the tables
+are populated (`observations` 2567, `field_provenance` 1705, `resolution_runs`
+28, `sources` 4, `groups` 1759, `idols` 7234), so parity is not comparing 0 to
+0 across the board. **Live tests may write and sweep `groups`/`idols`** — the
+pre-cutover tables Admin already edits directly: one field of an existing row,
+prior value restored in a `finally`, residue scanned after. **Resolver-owned
+tables are never written by an Admin test** (`events`, `venues`,
+`review_items`, `observations`, `field_provenance`); a fixture population that
+would need one is reported as a gap, never inserted. The door this closes: this
+campaign builds no fixture-seeding harness for the resolver domain, and no
+"just for the test" row ever enters the ledger Admin exists to observe.
+
+Recorded with it, because it changes what a green live run MEANS: staging holds
+exactly **one** `review_item` — an `entity_link` signal — so `data_conflict` is
+0 and **every decision-side live assertion in M1 compares 0 to 0**. That is a
+fact of the run, not a defect in Admin: a decision item appears when the
+resolver escalates a real conflict, which is the scraper campaign's work. So
+M1's live parity for decision items is **vacuous and is to be described that
+way** on FEAT-0004, TASK-0010 and TASK-0011 rather than counted as coverage;
+the decision-side behavior is proven offline, against fixtures, and stays
+proven there until staging grows a conflict. A ticket may not close a gap by
+pointing at a 0-to-0 comparison.
+
+## 2026-09-02 — a live oracle names the page's state kind before it compares a number, and `error` is always a failure
+
+The first staging parity run graded three pages wrong in two directions:
+`/queues` and `/sources` FAILED on an honest empty page (their oracles read
+"no rows rendered" as "the table is not provisioned"), and `/claims` PASSED
+four of six assertions on a page in its **error** state, because the fallback
+branch only asked that the markup contain the string `pending_claims` — which
+the red error line satisfies exactly as well as the gray not-provisioned card.
+Four of six passes were therefore vacuous while the page was broken. The rule
+is now ARCHITECTURE §10: a live test derives the kind it expects from its own
+independent count, asserts the rendered kind (`ok` / `empty` /
+`not_provisioned` / `error`) structurally, compares numbers in `ok`, treats
+`empty` as a pass **with a stated 0**, accepts `not_provisioned` only when its
+own read of that object returns the absence code, and treats `error` as a
+FAIL naming the read.
+
+The doors this closes. **No two-way live oracle** — "rows or not-provisioned"
+is banned; four kinds, four branches. **The kind is read structurally, never
+from prose**: `Empty` and `NotProvisioned` render the same container and differ
+only in their words today, so the four `ui` state primitives carry a
+`data-state` attribute and the oracle reads that — which also keeps live tests
+out of the string-pinning business the campaign forbids elsewhere. **A parity
+helper never reports a failure it could not parse**: a `head: true` count
+carries no body, so supabase-js hands back `code=undefined, msg=""` on a real
+57014 — the helper issues a GET-shaped count or says it could not tell. Cost
+accepted: three live test files and one primitive set change; in exchange a
+live suite can no longer be green while the page it grades is broken.
+
+## 2026-09-02 — a counted zero is a real figure: an empty queue keeps its open count
+
+`/queues` with an empty decision queue rendered the Empty card and **no open
+figure at all**, while the Dashboard in the same state rendered a real `0`.
+Ruling: the Dashboard is right and Queues is the defect. LOOK_AND_FEEL bar 1
+says Queues shows "the open count of each queue" above the fold, and the
+repeat-use bar says "counts sit in fixed positions" — a figure that disappears
+when it reaches zero is a figure that moves, and an operator scanning for the
+number cannot tell a quiet morning from a broken page. The Feel's emptiness
+rule is not in tension with this: "an empty bucket, a table with no rows, and
+an unprovisioned table are three different states and never share a rendering"
+is about the ROWS region, where the Empty card is exactly right and stays. So
+both render — the labelled figure reads `0`, the rows region explains what
+fills it. The door this closes: **a counted zero is data and is always shown**;
+only `not_provisioned` may render no number, because there the zero would be a
+lie about a table that is not there. Anywhere the two could be confused, the
+gray card and the absent figure are what distinguish them.
+
+## 2026-09-02 — `pending_claims` is unreadable on staging: the fix is the scraper repo's, and Admin writes no workaround
+
+Measured by the architect against staging, read-only, eight shapes (evidence
+`agenticflow/tracker/evidence/architect/claims-probe*.tsv`): every read of the
+view except an unordered, unfiltered `limit 1` hits the 8s statement timeout
+with `57014` — including `limit 2`, `limit 1` with an `order`, a narrowed
+select, an `.in("observation_id", …)` over ten known ids, a `head:true` exact
+count, and a per-bucket count. So the cost is the view's, not the read shape's,
+and **there is no honest Admin-side mitigation to build**: no narrower select,
+no per-bucket count, no id-restricted read completes. `/claims` and the Sources
+awaiting-row gauge render their error state, which is the correct rendering of
+a database that will not answer, and they stay that way until the scraper repo
+ships an index or a view rewrite (a handoff — a campaign is running there).
+
+The doors this closes. **No workaround code**, per spec §10 and the campaign's
+freeze: not a cache, not a swallowed timeout, not a surface quietly hidden
+because it is red. **Admin never re-computes the classification** from
+`observations` + `field_provenance` + `review_items`: that would put a second
+copy of the resolver's precedence rules in this repo, and the bucket of a claim
+is the ledger's answer or it is nothing. **Raising the statement timeout is not
+the fix either** — an honest read that takes 30 seconds is still a broken page,
+and the timeout is the only thing currently telling us the view is quadratic.
+
+## 2026-09-02 — three taste rulings from Ben: the M1 dial line, the pre-cutover provenance line, and the shape of the window
+
+Three small answers, recorded because each closes a door. (1) **The per-source
+stuck-pattern threshold line stays absent in M1**, with the reason stated on
+screen; the dial lives only in scraper registry YAML and hand-copying it is
+forbidden (spec §10). Ben's principle, which is an ecosystem design-queue item
+and not campaign work: a dial-able value must not live in a YAML file — dials
+belong in rows. So Admin does not read that YAML, now or later; when the dial
+becomes a row, the gauge reads the row. (2) **The provenance slot on a
+pre-cutover table reads "no provenance recorded (pre-cutover table)"** — the
+landed rendering is confirmed, not an empty slot: absence with its reason
+beats a blank. (3) **The window is desktop-only and keeps both light and dark
+modes.** No phone bar, no mobile breakpoint work, and no single-theme
+simplification — for the designer's endgame doc pass, not a ticket. The door
+this closes: no responsive/phone layout work is in scope for this campaign, and
+neither theme may be dropped to make a screen easier.

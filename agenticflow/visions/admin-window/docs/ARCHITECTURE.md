@@ -451,6 +451,26 @@ down:**
     moves with the queues", and inventing a `queue` value the database cannot
     hold in order to test a branch it cannot reach is work with no user
     behind it.
+12. **`pending_claims` cannot be read on staging today, and no Admin-side read
+    shape rescues it** (measured 2026-09-02, architect; evidence
+    `agenticflow/tracker/evidence/architect/claims-probe*.tsv`). Every shape
+    times out at the 8s statement timeout with `57014` — the page's own query,
+    a narrowed `select`, `limit 2`, `limit 1` **with an order**, an
+    `.in("observation_id", …)` over 10 known ids, a `head:true` exact count,
+    and a per-bucket `eq("bucket", …)` count, one per bucket. Exactly one shape
+    returns: an unordered, unfiltered `limit 1` (0.85–1.1s). So there is no
+    honest fast read to write, and `/claims` plus the Sources awaiting-row
+    gauge sit in their **error** state, correctly, until the view is fixed in
+    the scraper repo (ASK-ticket, §12). Two things follow and both are rules.
+    **(a) No workaround code.** Not a narrower read, not a cache, not a
+    swallowed timeout, not a "temporarily hidden" surface — spec §10, and the
+    error state is the honest rendering of a database that will not answer.
+    **(b) Admin never re-computes the classification.** Deriving buckets in
+    TypeScript from `observations` + `field_provenance` + `review_items` would
+    put a second copy of the resolver's precedence rules in this repo, which
+    the view's own migration forbids in the other direction and §8's "this
+    build adds queries and charts" forbids in ours. The bucket of a claim is
+    the ledger's answer, or it is nothing.
 
 ## 7. Design tokens
 
@@ -531,6 +551,7 @@ export interface TableEditConfig {
   readonly pk: string;             // its primary-key column (groups.id, events.event_id, ...)
   readonly regime: Regime;         // decides the WRITE PATH — never configured per column
   readonly editable: readonly string[]; // user-facing scalars only: never ids, keys, timestamps
+  readonly display: readonly string[];  // shown READ-ONLY; never a write target (Ben, 2026-09-02)
 }
 export const EDIT_CONFIG: Readonly<Record<string, TableEditConfig>>;
 ```
@@ -538,6 +559,15 @@ export const EDIT_CONFIG: Readonly<Record<string, TableEditConfig>>;
 - **M1 builds the `pre_cutover` write path only**: `groups` and `idols` edit
   **directly**, within their allowlist — legal and unprovenanced (spec §8,
   AGENTS.md data-ownership rule).
+- **`display` is the read-only half of the same one map** (Ben's ruling,
+  2026-09-02, admin-window/TASK-0029). A `resolver_owned` table has an empty
+  `editable` and a non-empty `display`, so its record page shows the columns an
+  operator came to see — with per-field provenance beside each — while every
+  column of it still refuses through the one code path. `display` is never a
+  second allowlist: it names columns to READ and to draw, `decideEdit` still
+  answers the write question, and a column in `display` is not editable by
+  being there. It is the same file, so adding a column to any surface remains
+  one edit in one place.
 - `events` and `venues` appear with `regime: "resolver_owned"` and render
   **read-only**. **No write path to them exists in M1** — no PATCH branch, no
   helper, no scaffold. Their override path is M2's, through
@@ -576,8 +606,45 @@ export const EDIT_CONFIG: Readonly<Record<string, TableEditConfig>>;
   the page and asserts its numbers against an **independently written** query
   the test issues itself — not by calling the same `lib/db` function the page
   called. Two paths to one number, or it proves nothing.
+- **A live test names the STATE KIND before it compares a number** (added
+  2026-09-02 from the first staging parity pass; common violation 6). A page
+  renders one of four kinds — `ok`, `empty`, `not_provisioned`, `error` — and
+  an oracle written as a two-way branch (`did rows render? …else assume the
+  table is absent`) grades the other two wrong: `/queues` and `/sources` failed
+  on an honest EMPTY page, and `/claims` PASSED four assertions on an ERROR
+  page, because "the markup contains `pending_claims`" is satisfied by the
+  error line as well as by the not-provisioned card. The rule, for every live
+  test in this suite:
+  1. The test decides the kind it EXPECTS from its own independent count, then
+     asserts the rendered kind equals it. The kind is read from the markup
+     structurally — `data-state` on the four `ui` state primitives — never from
+     the prose inside a card.
+  2. `ok` compares numbers. `empty` is a **pass with a number**: the
+     independent count is exactly 0 and the page's labelled figure reads 0
+     (LOOK_AND_FEEL bar 1 — a queue's open count is on screen whether or not
+     the queue has rows). Neither is an absence.
+  3. `not_provisioned` is a pass only when the test's own read of that same
+     object gets the absence code (`PGRST205`/`42P01`). It is never inferred
+     from "no rows rendered".
+  4. `error` is a **FAIL**, and the failure message names the read and the
+     database's code. A live suite that can go green while a page is broken is
+     the one thing this suite exists not to be.
+  A `head: true` count carries no body, so supabase-js parses no error out of
+  it (measured: `code=undefined, msg=""` on a 57014) — the helper that reports
+  a failed parity count issues a GET-shaped count, or says it could not tell.
 - **Every live test sweeps what it wrote** (acceptance test 13), in a `finally`,
-  restoring the prior value. M1's only writer is the edit-surface test.
+  restoring the prior value. M1's only writer is the edit-surface test, and it
+  writes **only `groups` / `idols`** — one field of an existing row, prior value
+  restored, residue scanned after (Ben's ruling, 2026-09-02). A live test never
+  writes a resolver-owned table (`events`, `venues`, `review_items`,
+  `observations`, `field_provenance`); a fixture population that would need one
+  is a gap to report, never a row to insert.
+- **What staging holds is a fact of the run, not of the code** (census
+  2026-09-02): `review_items` = 1 row (an `entity_link` signal), so
+  `data_conflict` is 0 and every DECISION-side live assertion compares 0 to 0
+  until the resolver escalates a real conflict. That is vacuous coverage, not a
+  passing bar: a decision-queue behavior proven only offline says so in its
+  ticket rather than claiming live parity.
 - **An absence assertion reads CODE LINES and pins a CALL, never a word.**
   Two rules, one reason (common violation 4). (1) Comments are documentation:
   a guard that greps the whole file reddens on a builder explaining why the
@@ -631,25 +698,29 @@ Each carries a marker. **A question is closed only when its marker leaves this
 list** — that is the structural bar its ASK ticket checks, and the architect is
 the only one who removes a marker.
 
-1. `OPEN-ENV` — **which Supabase env names the app reads at runtime vs. what
-   the campaign's live tests read**, whether live tests get anything beyond URL
-   + service key, and the missing `## supabase` declaration in `SERVICES.md`.
-   Everything about it is confined to `src/lib/db/client.ts` and
-   `tests/live/setup.ts`.
-2. `OPEN-RUNS` — **what Cycles & runs shows for adapter `runs`**. `adapters.md`
+1. `OPEN-RUNS` — **what Cycles & runs shows for adapter `runs`**. `adapters.md`
    is not a contract snapshot and the table carries 22 columns. The
    `resolution_runs` half is fully specified and is built first, alone.
-3. `OPEN-FIXTURES` — **whether a live test may write fixture rows into
-   resolver-owned tables**, and **what staging actually has installed** — the
-   resolver campaign's migrations are authored, but each one says "the staging
-   apply is separate and human-gated."
-4. `OPEN-DIAL` — **where Admin reads the per-source `resolver.stuck_pattern`
-   dial**, which lives only in scraper registry YAML. The pending-claims gauge
-   ships without its threshold line until this is answered; hand-copying the
-   value is not an answer (spec §10).
-5. `OPEN-PROVENANCE` — **provenance display on a pre-cutover table**:
-   `groups`/`idols` edits are unprovenanced by construction, so no
-   `field_provenance` row exists for them.
+   (admin-window/TASK-0023.)
+2. `OPEN-CLAIMS-COST` — **the `pending_claims` view cannot be read on staging**
+   (§6 trap 12): every shape but an unordered `limit 1` hits the 8s statement
+   timeout. The fix is a scraper-repo artifact — an index, a `not materialized`
+   hint, or a rewrite — so it is a **handoff**, not work this campaign can do.
+   `/claims` and the Sources awaiting-row gauge render their error state until
+   it lands, and no Admin-side workaround is written. (admin-window/TASK-0031,
+   which carries the eight measured shapes, the candidate SQL and the apply
+   command.)
+
+**Four questions were settled 2026-09-02** by Ben, and their markers are gone
+from this list for that reason — each ruling is a dated paragraph in
+`DECISIONS.md` with the door it closes. In one line each: the app keeps reading
+`SUPABASE_*` while the live suite reads the staging names in
+`tests/live/setup.ts` alone, and parity stays two PostgREST paths with no pg
+driver; the resolver tables are applied to staging and populated, and a live
+test may write and sweep `groups`/`idols` and nothing else; the stuck-pattern
+threshold line stays absent for M1, with dials-as-rows an ecosystem
+design-queue item; and the provenance slot on a pre-cutover table reads "no
+provenance recorded (pre-cutover table)".
 
 ## Common violations
 
@@ -666,12 +737,45 @@ decomposition brief of every ticket touching that surface.
 | 4 | **An absence pin keyed on a WORD rather than on the write it forbids — false RED on correct work** | 4 | `! grep -rq settle_review_item src` (TASK-0010) reddens on the *comment* in `src/lib/edit/config.ts:43`; `! grep -rl verdicts src \| grep -qv tables.ts` (TASK-0010) reddens on the doc comments in `queue-health.ts` and `trend-table.tsx`; `one-place.test.ts`'s declaration-name predicate forced TASK-0007 to rename `…SettledValues` exports and hit BUG-0012's `isVerdictUnset` | **Promoted to a rule 2026-09-02** — §10: an absence assertion reads code lines and pins a call, never a word; and one owner per structural guard. Both TASK-0010 checks amended (measured failing on today's tree), the test predicate narrowed by BUG-0020. |
 | 5 | **A ticket check pinning an incidental spelling instead of the landed API** | 2 | `grep -q settled-values src/app/sources/page.tsx` (TASK-0013) — the landed page-facing export is `readRejectionStampGauge`; `grep -q cycle-health …` (TASK-0014) — it is `readCycleHealth` | **Amended 2026-09-02.** Both checks now name the exported function the gauge's own docstring calls "what `/sources` calls". A check that pins a module-path spelling forbids the barrel import the app uses everywhere. |
 
+| 6 | **A live oracle whose fallback branch accepts the ERROR state, so a broken page grades as a pass (or an honest EMPTY page grades as a failure)** | 3 | `tests/live/claims.live.test.ts` — 4 of its 6 assertions passed on a page in its error state, because the not-provisioned branch only asks that the markup contain `pending_claims`; `queues.live.test.ts` and `sources.live.test.ts` — an empty queue takes the same branch and is graded not-provisioned | **Promoted to a rule 2026-09-02** — §10: a live test names the state kind (read structurally from `data-state`) before it compares a number; `empty` is a pass with a 0; `error` is always a FAIL. Filed as the test-hardening TASK of the same date; cited in the brief of every ticket owning a `tests/live/*.live.test.ts`. |
+
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
 findings on TASK-0001/0003/0006; rows 4–5 at the second pass the same day,
-from measurement of the open tickets' own checks. The milestone structure walk
-owns this table from here.)*
+from measurement of the open tickets' own checks; row 6 at the third pass, from
+the first live parity run against staging. The milestone structure walk owns
+this table from here.)*
 
 ## History
+
+- **2026-09-02, third ruling pass** — staging became reachable and the first
+  live parity run happened, so this pass is written from measurement rather
+  than from reading. Amendments:
+  **§6 trap 12 (new)** — `pending_claims` cannot be read on staging in ANY
+  shape but an unordered `limit 1`; I measured eight shapes myself (evidence
+  `agenticflow/tracker/evidence/architect/claims-probe*.tsv`) before ruling,
+  because the question the campaign actually had to answer was "is there an
+  honest fast read we can write here" and the answer is no. The trap carries
+  the two rules that follow: no workaround code, and Admin never re-computes
+  the classification the view owns.
+  **§9** — `TableEditConfig` gains `display`, the read-only half of the one
+  map (Ben's ruling on TASK-0029). It is not a second allowlist: `decideEdit`
+  still answers the write question, and a column is not editable by being
+  displayed.
+  **§10, three rules** — a live test names the STATE KIND before it compares a
+  number (`error` is a FAIL, `empty` is a pass with a 0, `not_provisioned`
+  needs the absence code from the test's own read); the live suite's write
+  permission is `groups`/`idols` only; and what staging holds — one review
+  item, zero `data_conflict` — is recorded so no one reads a 0-to-0 comparison
+  as coverage.
+  **§12** — four markers removed on Ben's rulings, one added: the
+  `pending_claims` cost is now an open question with a handoff behind it.
+  **Common violations row 6** — the live-oracle class, at 3 in one run.
+  **§6 trap 1 was corrected by BUG-0024's builder, not by me** — the
+  correction is right, is cited to the migration, and stands. Recording it
+  here so the amendment is not invisible: this file has one writer, and the
+  reason is that the human reviews it instead of reading code. A builder who
+  finds this contract wrong should say so on the ticket; if the fix is as
+  clearly right as that one was, it survives the pass.
 
 - **2026-09-02, second ruling pass** (BUG-0016/0017/0018 landed, TASK-0007/
   0008/0015/0017/0018/0026-0028 landed; campaign `admin-window`, M1 in
