@@ -597,3 +597,7 @@
 2026-09-02T07:41:46Z	builder	TASK-0005	11431	782	141794
 2026-09-02T07:42:20Z	qa-adversary	TASK-0005	spawned
 2026-09-02T07:42:35Z	builder	TASK-0003	spawned
+# STRANDED	2026-09-02T07:42:52Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0003.md
+2026-09-02T07:42:52Z	agent	-	-	-	-
+# STRANDED	2026-09-02T07:43:06Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0003.md
+2026-09-02T07:43:06Z	agent	-	-	-	-
