@@ -191,6 +191,22 @@ function textOf(markup: string): string {
   return cheerio.load(markup).root().text().replace(/\s+/g, " ").trim();
 }
 
+/**
+ * The two figures the evidence block's accounting states, as numbers:
+ * `[resolved, ids it looked at]`.
+ *
+ * The sentence's wording is the designer's and is not pinned — only that it
+ * states an accounting at all, and that its arithmetic matches what is
+ * rendered beside it (admin-window/BUG-0021). Thousands separators are the
+ * app's number formatting, not part of the figure.
+ */
+function accountingIn(markup: string): [number, number] {
+  const match = textOf(markup).match(/([\d,]+) of ([\d,]+) evidence ids resolved/);
+  expect(match, "the page accounts for the evidence ids it looked at").not.toBeNull();
+  const [, resolved, total] = match as RegExpMatchArray;
+  return [Number(resolved.replace(/,/g, "")), Number(total.replace(/,/g, ""))];
+}
+
 function attrsOf(markup: string, selector: string): string[] {
   const $ = cheerio.load(markup);
   return $(selector)
@@ -291,22 +307,20 @@ describe("every evidence id resolves to a claim", () => {
    * `contracts/resolver.md` §11 folds by APPENDING to it, so the same
    * observation id can sit in the array twice. `readItemEvidence` already
    * knows this — it calls `distinct()` before resolving — but the page's
-   * accounting sentence divides the DEDUPLICATED claim count by the RAW array
-   * length, so an item carrying [A, A, B] with every id resolving reports "2
-   * of 3 evidence ids resolved to a claim" and lists no unresolved id at all.
+   * accounting sentence divided the DEDUPLICATED claim count by the RAW array
+   * length, so an item carrying [A, A, B] with every id resolving reported "2
+   * of 3 evidence ids resolved to a claim" and listed no unresolved id at all.
    *
    * The assertion is behavioural, not a copy of the sentence: whatever words
    * the page uses, resolved + unresolved must account for every id it claims
    * to have looked at. Here nothing is unresolved, so the two numbers in that
    * accounting must agree.
    *
-   * PINNED `it.fails` (strict) for admin-window/BUG-0021: it is green only
-   * while the divergence is live, so a fix turns it RED and the fix flips it
-   * back to a plain `it()`. Watched failing as a plain `it()` against
-   * run/admin-window @ 552a243: "AssertionError: 2 of 3 reported resolved,
-   * but no id is listed as unresolved: expected 1 to be +0".
+   * Was PINNED `it.fails` (strict) for admin-window/BUG-0021 and is a plain
+   * `it()` again since the fix: both figures now come from the read's one
+   * accounting (`ItemEvidence.ids`), so they cannot diverge.
    */
-  it.fails("accounts for every evidence id when one is repeated", async () => {
+  it("accounts for every evidence id when one is repeated", async () => {
     const item = reviewItemDataConflict({
       evidence: [ID.observationA, ID.observationA, ID.observationB],
     });
@@ -329,6 +343,42 @@ describe("every evidence id resolves to a claim", () => {
       Number(total) - Number(resolved),
       `${resolved} of ${total} reported resolved, but no id is listed as unresolved`,
     ).toBe(0);
+  });
+
+  /**
+   * The mixed case behind admin-window/BUG-0021: a repeat AND an id that
+   * names no row, each appearing twice in `evidence`.
+   *
+   * Two properties, both behavioural: the unresolved list is exactly the
+   * distinct ids with no claim — once each, not once per occurrence — and the
+   * page's own accounting covers exactly the rows and ids it rendered. The
+   * words are not pinned; the two figures are read out of whatever sentence
+   * the page writes and checked against what is on screen beside it.
+   */
+  it("names each unresolved id once and counts it in the same accounting", async () => {
+    const missing = "01920000-0000-7000-8000-0000000009ff";
+    const item = reviewItemDataConflict({
+      evidence: [ID.observationA, missing, ID.observationA, missing],
+    });
+    const markup = await renderItem(
+      conflictScript({
+        [T.reviewItems]: { data: item },
+        [T.observations]: { data: [CLAIM_A] },
+      }),
+      item.review_item_id,
+    );
+
+    expect(evidenceIds(markup)).toEqual([ID.observationA]);
+    expect(attrsOf(markup, "[data-unresolved]")).toEqual([missing]);
+
+    const [resolved, total] = accountingIn(markup);
+    expect(resolved, "the rows on screen are what it calls resolved").toBe(
+      evidenceIds(markup).length,
+    );
+    expect(
+      total - resolved,
+      "every id it says is unaccounted for is named below the sentence",
+    ).toBe(attrsOf(markup, "[data-unresolved]").length);
   });
 
   /**
@@ -690,6 +740,39 @@ describe("the four data-surface states", () => {
 
     expect(evidenceIds(markup)).toEqual([ID.observationB]);
     expect(cheerio.load(markup)("[role=alert]").text()).toContain(T.pendingClaims);
+  });
+
+  /**
+   * The source registry is a LABEL leg — admin-window/BUG-0021 (QA's second
+   * finding on TASK-0011: a refusing leg used to blank the claims that did
+   * arrive).
+   *
+   * Its refusal costs the operator a name and a current tier, never a claim,
+   * so the evidence stays on screen with each claim's source id verbatim and
+   * no tier, and the refusal is reported beside it naming `sources` — the same
+   * pattern the classification leg above already uses.
+   */
+  it("keeps the evidence when only the source registry refuses", async () => {
+    const item = reviewItemDataConflict();
+    const markup = await renderItem(
+      conflictScript({ [T.sources]: { error: permissionDenied(T.sources) } }),
+      item.review_item_id,
+    );
+
+    expect(evidenceIds(markup)).toEqual([ID.observationA, ID.observationB]);
+    // No name and no tier were read, so neither is shown or invented.
+    const row = rowOf(markup, ID.observationA);
+    expect(row.text, "the source id stands in for the name").toContain(
+      CLAIM_A.source_id,
+    );
+    // (The row's payload pointer happens to carry the source's name as text,
+    // so absence of the NAME is asserted on the source cell's own link, not on
+    // the whole row.)
+    expect(row.sourceHref, "the link is still real").toContain(CLAIM_A.source_id);
+    expect(row.tier, "no tier was read, so none is shown").toBeFalsy();
+    expect(cheerio.load(markup)("[role=alert]").text()).toContain(T.sources);
+    // …and the accounting still covers every id the read looked at.
+    expect(accountingIn(markup)).toEqual([2, 2]);
   });
 
   it("keeps the folded records when only the dial's read refuses", async () => {

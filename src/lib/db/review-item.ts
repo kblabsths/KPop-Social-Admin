@@ -6,6 +6,7 @@ import {
   type DbCountedResponse,
   type DbResponse,
   type DbResult,
+  type DbUnavailable,
 } from "./result";
 import { REVIEW_ITEM_COLUMNS } from "./review-items";
 import { T } from "./tables";
@@ -325,6 +326,27 @@ export type CanonicalSide =
   | { kind: "no_decision" }
   | { kind: "decided"; decided: CanonicalDecision };
 
+/**
+ * What `review_items.evidence` carried, and what it deduplicated to.
+ *
+ * `stored` is the array's own length; `distinct` is the number of ids this
+ * read actually looked up. **`claims.length + unresolved.length === distinct`,
+ * always** — the two figures a surface divides come from this one accounting,
+ * which is what stops a deduplicated numerator being reported over a raw
+ * denominator (admin-window/BUG-0021: `[A, A, B]` with both ids resolving
+ * rendered "2 of 3 resolved" while naming no unresolved id).
+ *
+ * The two differ whenever the same id sits in `evidence` twice, which needs no
+ * malformed row: the column is `uuid[]` with no uniqueness
+ * (`20260901000002`) and `contracts/resolver.md` §11 folds by APPENDING to it.
+ * `stored` is kept rather than dropped so a surface can say so out loud
+ * instead of quietly showing a smaller number than the row holds.
+ */
+export interface EvidenceIdCount {
+  stored: number;
+  distinct: number;
+}
+
 /** The whole evidence half of the anatomy, resolved and ready to render. */
 export interface ItemEvidence {
   /** The `evidence` ids resolved to rows, in the item's stored FOLD ORDER. */
@@ -336,7 +358,27 @@ export interface ItemEvidence {
    * shorter list would read as an item with less evidence than it has.
    */
   unresolved: string[];
+  /** The ids this read looked at: how many were stored, how many distinct. */
+  ids: EvidenceIdCount;
   canonical: CanonicalSide;
+  /**
+   * The `sources` leg's refusal, when that one leg refused — `null` otherwise.
+   *
+   * It is carried BESIDE the claims rather than returned instead of them
+   * because a missing registry row costs this surface a LABEL, never a value:
+   * `source` falls back to the id verbatim and `tier` stays null, exactly as
+   * they do when the row is simply absent. The claims themselves were read,
+   * and dropping them would tell the operator the item has no evidence when it
+   * has all of it (admin-window/BUG-0021; the page already reports the
+   * `pending_claims` leg this way).
+   *
+   * The other legs are NOT treated this way and still refuse the whole read:
+   * `observations` IS the evidence, and `field_provenance` decides the
+   * canonical value — reporting either beside a rendered block would need the
+   * canonical side to carry a "the log refused" state it does not have. That
+   * is a design call, recorded as the open residual on admin-window/TASK-0011.
+   */
+  sourcesUnavailable: DbUnavailable | null;
 }
 
 /** The ids of a list, deduplicated, in first-seen order. */
@@ -348,14 +390,19 @@ function distinct(ids: readonly string[]): string[] {
  * The item's evidence and the canonical value it stands against — the whole of
  * spec §6's second anatomy point, in one result.
  *
- * Composed of up to four reads, and **every non-`ok` result is returned
+ * Composed of up to four reads, and **a non-`ok` result is passed on
  * unchanged**, so the page's error line names the object that actually refused
- * (`observations`, `sources`, `field_provenance`) rather than a wrapper of
- * ours (admin-window/BUG-0016).
+ * (`observations`, `field_provenance`) rather than a wrapper of ours
+ * (admin-window/BUG-0016). The one exception is the `sources` leg, whose
+ * refusal is carried in `sourcesUnavailable` beside the claims it only labels;
+ * see that field for why it alone degrades.
  *
  * `evidence` is `uuid[]` in fold order (trap 10) and the claims come back in
  * that order. Ids are deduplicated first: the same claim folded twice is one
- * claim, and rendering it twice would double-count the evidence.
+ * claim, and rendering it twice would double-count the evidence — and `ids`
+ * carries both counts, so a caller reports over the ids this read actually
+ * looked at instead of dividing them by the raw array's length
+ * (admin-window/BUG-0021).
  */
 export async function readItemEvidence(
   item: ReviewItemRow,
@@ -396,12 +443,15 @@ export async function readItemEvidence(
       : [decision.source_id]),
   ]).filter((id) => id.length > 0);
   const sources = await readSources(sourceIds, db);
-  if (sources.kind !== "ok") return sources;
-  const sourceById = new Map(sources.data.map((row) => [row.source_id, row]));
+  const sourceById = new Map(
+    (sources.kind === "ok" ? sources.data : []).map((row) => [row.source_id, row]),
+  );
 
   return {
     kind: "ok",
     data: {
+      ids: { stored: item.evidence.length, distinct: evidenceIds.length },
+      sourcesUnavailable: sources.kind === "ok" ? null : sources,
       claims: claims.map((id) => {
         const observation = byId.get(id) as ObservationRow;
         const source = sourceById.get(observation.source_id);
