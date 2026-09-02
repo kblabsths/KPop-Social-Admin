@@ -235,3 +235,68 @@ header and a DSN password between the colon and the `@` (the one a
 `NAME=value` rule misses). The host of an unreachable database is NOT redacted:
 it is the client's own account of what it could not reach, and it is what tells
 an operator whether to look at the network or the query.
+
+## 2026-09-02 — a 404 this app means is ROUTED, never thrown from a dynamic segment; and the auth gate is never handed a handler
+
+`/records/<unmapped-table>/<id>` answers with the app's own framed 404 through
+a `beforeFiles` rewrite in `next.config.ts` to a path no route matches, not
+through `notFound()` in the page. The measurement is in that file: on Next
+16.2.2 the 404 status and a server-rendered document are inseparable *in
+render* — `notFound()`'s status is set in the same `catch` that emits
+`<html id="__next_error__">` (`app-render.js:1894-1918`), and adding a
+`not-found.tsx` beside the page changes nothing (still the error shell, len
+8820; rendering the not-found component inline instead gives the whole framed
+document, len 10933, but status 200). A 404 the router decides is already on
+the response before rendering starts, so the not-found tree renders through
+the root layout, which is why an unmatched URL like `/analytics` has always
+looked right.
+
+The doors this closes. **The rewrite is `/records`-specific and is not
+inherited**: a new dynamic route that calls `notFound()` gets the client-only
+error shell unless it either resolves every URL its segment matches or gets
+its own rewrite — that is now §5 of ARCHITECTURE, and it is the question to
+answer *before* writing the page, not after a walk. **`next.config.ts` may
+import the pure leaf and nothing else**: it derives the table list from
+`EDITABLE_TABLES`, so adding a table to `EDIT_CONFIG` remains the only edit
+that surface needs, and in exchange `src/lib/edit/config.ts` must keep
+importing nothing at all (Next compiles the config outside the app's module
+graph, with no `@/` alias). **The rewrite claims deliberately less than the
+page refuses**: a percent-encoded segment is excluded, because Next decodes a
+dynamic segment before the page reads it and claiming `%` would 404 a URL that
+works. Never breaking a working URL outranks covering an exotic spelling of a
+broken one.
+
+And, from the same surface: the gate stays `export { auth as middleware }`.
+Passing a handler to `auth()` puts it in `handleAuth`'s
+`else if (userMiddlewareOrRoute)` branch, which precedes
+`else if (!authorized)` (`node_modules/next-auth/lib/index.js:148-156`) — so
+the sign-in redirect never runs and every route is open. Any need for logic at
+the gate is a ticket, not an inline wrapper.
+
+## 2026-09-02 — the four data-surface states are a TYPED contract: the read is named, the eyebrow survives, and a rows surface has no headers-only rendering
+
+Three rulings on `components/ui` + `components/gauges`, all in one direction:
+what the operator must be told is carried by a required prop, not by a caller
+remembering. (1) `ErrorLine`'s `reading` becomes **required**, as does
+`reading` on `GaugeState`'s error arm. `DbResult`'s error arm has carried the
+string since BUG-0016, so no caller pays anything — but an optional prop is a
+rule TypeScript cannot enforce, and BUG-0016 was found in a page that had
+already shipped the anonymous line. (2) `Empty` and `NotProvisioned` gain an
+optional `micro` eyebrow, and the three gauge components **always** pass their
+own label: those two states replace the whole card, so without it a screen of
+unprovisioned gauges names the missing tables but not the knobs they tune. It
+stays optional on the primitive because a page renders them under a `Section`
+heading that already names the surface — and there is no forgettable caller on
+the gauge path, where the label is passed from a prop the component already
+requires. (3) `TrendTable` and `Distribution` take a **required**
+`empty: { holds, filledBy }`, and render it themselves when there are no rows
+and no other state: the component owns *when*, the caller owns *the words*.
+
+The doors this close. No `ErrorLine` without a named read, anywhere, ever
+again. No gauge state card that cannot be identified. And **no headers-only,
+body-less table** — the rendering that told the operator nothing at all is
+now unreachable rather than discouraged; `rows: []` with no state cannot be
+written. Cost accepted: four page tickets code against the final signatures
+(TASK-0030 lands first), and every future trend or distribution must say what
+its series holds and what fills it before it may render — which is
+LOOK_AND_FEEL Voice bar 4 restated as a type.

@@ -127,6 +127,9 @@ M1 EC2.
 ## 3. Module map
 
 ```
+next.config.ts                  the BUILD HOST (§4 rule 8): imports
+                                EDITABLE_TABLES from lib/edit/config.ts and
+                                rewrites an unmapped /records URL (BUG-0017)
 src/
   middleware.ts                 UNCHANGED — the gate over every route
   lib/
@@ -180,6 +183,8 @@ tests/
 ## 4. Dependency direction — one way, no exceptions
 
 ```
+next.config.ts  ->  lib/edit/config.ts                   (the BUILD HOST)
+
 app/**          ->  components/**        ->  (nothing)
 app/**          ->  lib/**
 lib/gauges/**   ->  lib/db/**            ->  @supabase/supabase-js
@@ -217,6 +222,18 @@ lib/gauges/**   ->  lib/db/**            ->  @supabase/supabase-js
    `ReviewItemRow` in `lib/review/shapes.ts` already does.
    `lib/gauges/**` is not a leaf: a gauge fetches its own bounded window
    through `lib/db/**` (§8), which is the arrow as drawn.
+8. **`next.config.ts` is a build host, and it may import the leaf — only the
+   leaf.** It imports `EDITABLE_TABLES` from `lib/edit/config.ts` so the
+   rewrite that backstops an unmapped `/records/<table>/<id>` URL is derived
+   from the ONE map (BUG-0017; the config file carries the measurement).
+   Next compiles this file *outside* the app's module graph and outside the
+   `@/` alias, so the arrow only holds while the leaf stays a leaf: **no
+   import at all** in `lib/edit/config.ts`, which
+   `tests/offline/edit/config.test.ts` ("keeps config.ts a pure leaf that
+   imports nothing") pins. Nothing else in the build host may reach `src/`:
+   an import of `lib/db/**`, a component, or anything touching
+   `process.env` from here runs at build time, in plain Node, with no alias
+   and no React — and fails the build rather than a test.
 
 ### 4.1 The data-layer contract (every query returns this)
 
@@ -225,7 +242,9 @@ lib/gauges/**   ->  lib/db/**            ->  @supabase/supabase-js
 export type DbResult<T> =
   | { kind: "ok"; data: T }
   | { kind: "not_provisioned"; missing: string }  // the table/view/column name
-  | { kind: "error"; message: string };           // the database's own words
+  | { kind: "error"; reading: string; message: string };
+  //                 ^ the object read, as `tables.ts` spells it
+  //                                    ^ the database's own words
 ```
 
 - Every exported function in `lib/db/**` returns `Promise<DbResult<T>>`. It
@@ -323,6 +342,26 @@ it is a pure synchronous component that takes plain props.**
 - **State lives in the URL** (LOOK_AND_FEEL bar 11): every filter, sort, tab
   and page position is a `searchParams` value. No client-only filter state, no
   `useState` filter that a reload forgets.
+- **A dynamic route that calls `notFound()` serves the error shell, not the
+  app** (BUG-0017, measured on Next 16.2.2). On this version the 404 status
+  and a server-rendered document are inseparable *in render*: `notFound()`'s
+  status is set in the same `catch` that emits `<html id="__next_error__">`
+  (`node_modules/next/dist/esm/server/app-render/app-render.js:1894-1918`), and
+  a `not-found.tsx` beside the page changes nothing. A 404 the ROUTER decides
+  renders normally through the root layout, which is why `/analytics` already
+  serves the framed surface. So: **a new dynamic segment either resolves every
+  URL it matches, or its miss is routed** — an unmatched URL, or its own
+  `beforeFiles` rewrite to a path no route matches. The landed rewrite in
+  `next.config.ts` is `/records`-specific and covers nothing else; inheriting
+  it is not automatic, and a `notFound()` added to a new dynamic page without
+  one is the same defect again.
+- **The gate is `export { auth as middleware }` and never `auth(handler)`.**
+  next-auth's `handleAuth` runs a supplied handler in the branch *before* the
+  unauthenticated-redirect branch
+  (`node_modules/next-auth/lib/index.js:148-156`: `else if
+  (userMiddlewareOrRoute)` precedes `else if (!authorized)`), so wrapping the
+  gate to add one line of logic silently removes the sign-in redirect from
+  every route. That is a gate bypass, not a refactor.
 
 ## 6. The data model, by reference
 
@@ -416,6 +455,25 @@ in `src/components/ui/`. Tailwind 4 is CSS-first: there is no
 - The four data-surface states — Loading, Empty, NotProvisioned, Error — are
   four named primitives. Every surface that can render rows renders all four.
   A page that hand-rolls an empty state is a defect.
+- **A state names the read it is about, and the type forces it** (BUG-0016,
+  and the ruling of 2026-09-02). `ErrorLine`'s `reading` is **required**, as
+  is `reading` on the `error` arm of `GaugeState`: a page makes several reads
+  (Browse makes four) and a red line saying only "TypeError: fetch failed"
+  names none of them. `DbResult`'s error arm already carries the string, so
+  the required prop costs a caller nothing and catches the omission at
+  compile time rather than at a walk.
+- **A state card that REPLACES a labelled surface carries that surface's
+  eyebrow.** `Empty` and `NotProvisioned` take an optional `micro` eyebrow;
+  the three gauge components always pass their own label, because their state
+  card stands in for a card the operator identified by its label — otherwise
+  a screen of missing gauges says which tables are absent but not which knobs
+  they tune. On a page's own `Empty`/`NotProvisioned` the eyebrow is optional:
+  the `Section` heading above it already names the surface.
+- **A rows surface never renders headers with no body.** `TrendTable` and
+  `Distribution` take a **required** `empty: { holds, filledBy }`: the
+  component decides *when* the empty state shows (no rows and no other state),
+  the caller supplies *the words*, and a header-only table — the one rendering
+  that says nothing at all — is unreachable by construction.
 
 ## 8. The gauges
 
@@ -505,6 +563,26 @@ export const EDIT_CONFIG: Readonly<Record<string, TableEditConfig>>;
   called. Two paths to one number, or it proves nothing.
 - **Every live test sweeps what it wrote** (acceptance test 13), in a `finally`,
   restoring the prior value. M1's only writer is the edit-surface test.
+- **An absence assertion reads CODE LINES and pins a CALL, never a word.**
+  Two rules, one reason (common violation 4). (1) Comments are documentation:
+  a guard that greps the whole file reddens on a builder explaining why the
+  thing is absent — use the `codeLines` scanner in
+  `tests/offline/edit/config.test.ts` / `tests/offline/review/one-place.test.ts`,
+  or, in a ticket check, the pipeline form
+  `! grep -rn <word> <paths> | grep -qvE '^[^:]*:[0-9]+:[[:space:]]*(\*|//|/\*)'`.
+  (2) The app's vocabulary is the contract's vocabulary: `settled` is a
+  `review_items.status` value, "settled values" is a spec §5 gauge, `verdict`
+  is an `observations.rejected_by` reason, `in_window` is a real bucket. A ban
+  keyed on such a word forces correct code to be renamed; ban the **write** —
+  the RPC name, `.insert(`/`.upsert(`/`.rpc(`, `.update(` outside
+  `lib/db/records.ts`, a `"use server"` module, a route path — which is what
+  "nothing settles anything in M1" actually means.
+- **One owner per structural guard.** The write surface of the whole repo is
+  asserted in `tests/offline/edit/config.test.ts`; the M2-close pin is
+  `tests/offline/review/one-place.test.ts`; layering is
+  `tests/offline/db/layering.test.ts`. A ticket that needs one of those
+  guarantees **runs that file** as a check instead of hand-rolling a second
+  predicate that will drift from it.
 
 ## 11. Naming and conventions
 
@@ -570,12 +648,38 @@ decomposition brief of every ticket touching that surface.
 | 2 | **A read helper substituting a number the database did not give (`count ?? 0`)** | 2 | `countRows` in `tests/live/parity.ts` (BUG-0007, fixed under TASK-0003); `readCount` in `src/lib/db/result.ts` (the user-visible twin, TASK-0026) | **Promoted to a rule 2026-09-02** — §4.3, last paragraph: a null count is a refusal, never a zero. Cited in the brief of every ticket owning a `lib/db/*.ts` module. |
 | 3 | **A list read with no `.range()`, no `.limit()` and no `.order()`** | 1 | `src/lib/db/review-items.ts` (TASK-0006), whose `readReviewAttention` count and oldest age would have been wrong rather than refused | **Design-shaped, so fixed as design rather than left to accumulate**: §4.3 (new) plus TASK-0026, seeded before the eight remaining `lib/db` modules are written. Count is 1 and stays there only if the rule holds; the structure walk should re-count at M1 close. |
 
+| 4 | **An absence pin keyed on a WORD rather than on the write it forbids — false RED on correct work** | 4 | `! grep -rq settle_review_item src` (TASK-0010) reddens on the *comment* in `src/lib/edit/config.ts:43`; `! grep -rl verdicts src \| grep -qv tables.ts` (TASK-0010) reddens on the doc comments in `queue-health.ts` and `trend-table.tsx`; `one-place.test.ts`'s declaration-name predicate forced TASK-0007 to rename `…SettledValues` exports and hit BUG-0012's `isVerdictUnset` | **Promoted to a rule 2026-09-02** — §10: an absence assertion reads code lines and pins a call, never a word; and one owner per structural guard. Both TASK-0010 checks amended (measured failing on today's tree), the test predicate narrowed by BUG-0020. |
+| 5 | **A ticket check pinning an incidental spelling instead of the landed API** | 2 | `grep -q settled-values src/app/sources/page.tsx` (TASK-0013) — the landed page-facing export is `readRejectionStampGauge`; `grep -q cycle-health …` (TASK-0014) — it is `readCycleHealth` | **Amended 2026-09-02.** Both checks now name the exported function the gauge's own docstring calls "what `/sources` calls". A check that pins a module-path spelling forbids the barrel import the app uses everywhere. |
+
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
-findings on TASK-0001/0003/0006. The milestone structure walk owns this table
-from here.)*
+findings on TASK-0001/0003/0006; rows 4–5 at the second pass the same day,
+from measurement of the open tickets' own checks. The milestone structure walk
+owns this table from here.)*
 
 ## History
 
+- **2026-09-02, second ruling pass** (BUG-0016/0017/0018 landed, TASK-0007/
+  0008/0015/0017/0018/0026-0028 landed; campaign `admin-window`, M1 in
+  flight). Amendments:
+  **§3 + §4 diagram + new rule 8** — `next.config.ts` is drawn: it is a BUILD
+  HOST that imports `EDITABLE_TABLES` from the pure leaf so BUG-0017's
+  `/records` backstop rewrite is derived from the one map. The arrow holds
+  only while the leaf imports nothing, which is why that guard is named here.
+  **§4.1** — the `DbResult` error arm in the snippet now shows `reading`,
+  which the code has carried since BUG-0016; a contract that disagrees with
+  the module beside it is worse than none.
+  **§5, two rules** — a dynamic route that calls `notFound()` inherits the
+  Next 16.2.2 error shell unless its miss is ROUTED (the `/records` rewrite is
+  not inherited), and the auth gate is never given a handler (next-auth runs
+  it in the branch before the redirect).
+  **§7, three rules** — `ErrorLine.reading` required, the state card carries
+  the replaced surface's eyebrow, and a rows surface can no longer render
+  headers with no body. Filed as TASK-0030.
+  **§10, two rules** — an absence assertion reads code lines and pins a call
+  rather than a word; one owner per structural guard, and tickets run that
+  file instead of copying its predicate.
+  **Common violations 4 and 5** — both measured on the open tickets' own
+  checks, both promoted on the spot.
 - **2026-09-02, ruling pass** (QA findings on TASK-0001, TASK-0003, TASK-0006;
   campaign `admin-window`, M1 in flight). Five amendments, each because the
   contract was wrong or silent where a builder was about to guess:
