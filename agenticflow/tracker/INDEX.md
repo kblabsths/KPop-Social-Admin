@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T10:12:10Z — do not edit)
+# Tracker index (regenerated 2026-09-02T10:23:26Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -26,7 +26,7 @@
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 - TASK-0028 [P2][task][M1] tsconfig excludes agenticflow: a factory evidence file must not red tsc  (scope:tsconfig.json)
 
-## claimed
+## built
 - TASK-0018 [P1][task][M1] The edit surface — the record page, direct edits for groups and idols, read-only events and venues  (deps:TASK-0017,TASK-0004 scope:src/app/records/[table]/[id]/page.tsx,src/components/records,tests/offline/records,tests/live/edit.live.test.ts @builder-24)
 
 ## blocked
@@ -36,4 +36,4 @@
 - TASK-0024 [P1][task][M1] ASK BEN: where does Admin read the per-source stuck_pattern dial, which lives only in scraper YAML?  (scope:src/lib/gauges/pending-claims.ts,src/app/sources/page.tsx)
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 
-Totals — blocked:5, claimed:1, done:23, open:24. Archived: 0.
+Totals — blocked:5, built:1, done:23, open:24. Archived: 0.
