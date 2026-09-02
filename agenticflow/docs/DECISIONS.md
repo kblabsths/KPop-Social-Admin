@@ -441,3 +441,39 @@ modes.** No phone bar, no mobile breakpoint work, and no single-theme
 simplification — for the designer's endgame doc pass, not a ticket. The door
 this closes: no responsive/phone layout work is in scope for this campaign, and
 neither theme may be dropped to make a screen easier.
+
+## 2026-09-02 — the adapter-runs half of Cycles shows nine of the `runs` table's 22 columns, and honours `?source=`
+
+Ben's ruling on the campaign's open runs question (TASK-0023, the last contract
+silence about a table this window renders). `/cycles`' adapter-runs half shows
+exactly: `source`, `started_at`, `ended_at` (a row with none is legible as
+still running), `outcome`, the error line (`error_summary`, inline and
+verbatim), `records_parsed`, `claims_emitted`, `records_unlinked`,
+`failure_class`. Nothing else of the 22 in M1. That half also honours
+`?source=<name>` — the Sources page's seam, which the Cycles page silently
+ignored because `resolution_runs` carries no source at all; the facet narrows
+the runs half only, matched **by name**, because `runs.source` is text with no
+foreign key (deliberately — ARCHITECTURE §6 trap 6).
+
+Why this set. `source`/when/`outcome` answer "did anything happen last night";
+`failure_class` (`transient | structural | config`) is the one column that says
+whose problem a failure is; parsed-vs-emitted is the yield; `records_unlinked`
+is the number that feeds the entity-link queue this app exists to render. The
+first five are exactly the shape the Dashboard already reads and renders on `/`
+(`DashboardRunRow` in `src/lib/db/dashboard.ts`) — `/cycles` reuses that read's
+shape and adds the four counts plus `failure_class` rather than inventing a
+second row type.
+
+The doors this closes. **The other thirteen columns are out of scope for M1** —
+`checkpoint_before/after`, `payloads_fetched`, `payloads_archived`,
+`records_rejected`, `claims_dropped_empty`, `claims_collapsed`, `claims_ai`,
+`records_linked`, `records_escalated`, `batches_written`,
+`observations_returned` are adapter-internal and belong to a run-detail view
+that has no consumer; a ticket wanting one of them re-opens this decision, it
+does not just add a column. **The runs read stays a WINDOW read** (§4.3): every
+number rendered is a column of the row it sits in, never a count over the set,
+so a bounded newest-first window is honest — and no total ("how many runs
+failed last night") may be computed from `rows.length`. **`runs.source` is never
+resolved to a `sources` row by key**: no FK exists, so the facet and any
+source-linked navigation match on the name string, and a name with no matching
+source row is still a run that renders.

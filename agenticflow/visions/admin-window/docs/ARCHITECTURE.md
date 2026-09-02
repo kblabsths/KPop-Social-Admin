@@ -698,11 +698,7 @@ Each carries a marker. **A question is closed only when its marker leaves this
 list** — that is the structural bar its ASK ticket checks, and the architect is
 the only one who removes a marker.
 
-1. `OPEN-RUNS` — **what Cycles & runs shows for adapter `runs`**. `adapters.md`
-   is not a contract snapshot and the table carries 22 columns. The
-   `resolution_runs` half is fully specified and is built first, alone.
-   (admin-window/TASK-0023.)
-2. `OPEN-CLAIMS-COST` — **the `pending_claims` view cannot be read on staging**
+1. `OPEN-CLAIMS-COST` — **the `pending_claims` view cannot be read on staging**
    (§6 trap 12): every shape but an unordered `limit 1` hits the 8s statement
    timeout. The fix is a scraper-repo artifact — an index, a `not materialized`
    hint, or a rewrite — so it is a **handoff**, not work this campaign can do.
@@ -711,7 +707,7 @@ the only one who removes a marker.
    which carries the eight measured shapes, the candidate SQL and the apply
    command.)
 
-**Four questions were settled 2026-09-02** by Ben, and their markers are gone
+**Five questions were settled 2026-09-02** by Ben, and their markers are gone
 from this list for that reason — each ruling is a dated paragraph in
 `DECISIONS.md` with the door it closes. In one line each: the app keeps reading
 `SUPABASE_*` while the live suite reads the staging names in
@@ -719,8 +715,14 @@ from this list for that reason — each ruling is a dated paragraph in
 driver; the resolver tables are applied to staging and populated, and a live
 test may write and sweep `groups`/`idols` and nothing else; the stuck-pattern
 threshold line stays absent for M1, with dials-as-rows an ecosystem
-design-queue item; and the provenance slot on a pre-cutover table reads "no
-provenance recorded (pre-cutover table)".
+design-queue item; the provenance slot on a pre-cutover table reads "no
+provenance recorded (pre-cutover table)"; and **the adapter-runs half of Cycles
+& runs shows nine of the `runs` table's 22 columns** — `source`, `started_at`,
+`ended_at` (a null one renders as still running), `outcome`, `error_summary`,
+`records_parsed`, `claims_emitted`, `records_unlinked`, `failure_class` — and
+that half honours `?source=<name>`, matched by name because `runs.source` is
+text with no foreign key (§6 trap 6). Built by admin-window/TASK-0016; the
+other thirteen columns are out of scope for M1.
 
 ## Common violations
 
@@ -747,6 +749,22 @@ this table from here.)*
 
 ## History
 
+- **2026-09-02, fourth ruling pass (one item)** — Ben answered the adapter-runs
+  column question (TASK-0023), so **§12's runs marker is struck** and the
+  nine-column set plus the `?source=<name>` facet moved into the settled
+  paragraph. The marker string itself is deliberately absent from this file now:
+  TASK-0023's structural bar is that the marker leaves it. Why recorded here and
+  not only on the ticket — §12's own rule is that a question is closed when its
+  marker leaves the list, and the human reviews this file instead of the
+  tracker. No other section changed: the set is the Dashboard's four (`source`,
+  `started_at`, `ended_at`, `outcome`, `error_summary`) widened by
+  `records_parsed`, `claims_emitted`, `records_unlinked`, `failure_class`, and
+  `src/lib/db/runs.ts` stays a **window** read under §4.3 because no figure on
+  the page is computed over the rows. The door is in `DECISIONS.md`, same date.
+  Comments in `src/app/page.tsx`, `src/lib/db/dashboard.ts`,
+  `src/lib/db/sources.ts` and the Dashboard offline tests still call the runs
+  column set an open question; they are outside TASK-0016's scope and are not a
+  defect — TASK-0016 corrects the ones in the files it owns.
 - **2026-09-02, third ruling pass** — staging became reachable and the first
   live parity run happened, so this pass is written from measurement rather
   than from reading. Amendments:
