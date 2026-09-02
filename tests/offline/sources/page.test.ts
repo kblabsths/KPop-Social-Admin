@@ -571,6 +571,47 @@ describe("the awaiting-row trend", () => {
     }
   });
 
+  it("renders the absence when a fleet-shaped series holds no row for the narrowed source", async () => {
+    // The other half of finding the series BY ID (admin-window/BUG-0022): the
+    // narrowed source may not be IN the series at all. Handed a series that is
+    // entirely a stranger's, the section must render this source's absence —
+    // never the stranger's days under this source's name, and never the
+    // stranger listed on a page the URL narrowed away from it.
+    const day = daysAgo(1).slice(0, 10);
+    trendAnswer.value = {
+      kind: "ok",
+      data: {
+        window: { since: daysAgo(7), until: daysAgo(0), limit: 1000, truncated: false },
+        series: [
+          {
+            sourceId: SOURCE.ticketmaster,
+            claims: 9,
+            points: [{ day, claims: 9 }],
+            threshold: null,
+          },
+        ],
+      },
+    };
+    try {
+      const markup = await renderSources(healthyScript(), {
+        source_id: SOURCE.bandsintown,
+      });
+      // No per-day table: there are no days of this source's to plot.
+      expect(markup).not.toContain(AWAITING_BY_DAY);
+      // And no stranger's row standing in for them.
+      expect(trendSources(markup, AWAITING_BY_SOURCE)).toEqual([]);
+      // The control: the SAME prepared series, unnarrowed, does list that
+      // stranger — so the absence above is the narrowing's doing and not a
+      // selector that matches nothing.
+      const unnarrowed = await renderSources(healthyScript());
+      expect(trendSources(unnarrowed, AWAITING_BY_SOURCE)).toEqual([
+        SOURCE.ticketmaster,
+      ]);
+    } finally {
+      trendAnswer.value = undefined;
+    }
+  });
+
   it("says a narrowed source has none, rather than showing the fleet's", async () => {
     const markup = await renderSources(healthyScript(), { source_id: SOURCE.fandom });
     expect(awaitingRowClaims(SOURCE.fandom)).toBe(0);
@@ -727,6 +768,145 @@ describe("the settled-values trend", () => {
       params,
     );
     expect(settledValuesSays(withIt)).not.toBe(settledValuesSays(withoutIt));
+  });
+
+  it("reports no unattributed rejection when the narrowed source has no rejection at all", async () => {
+    // The empty scope (`scope = []`, the page's own rule at RejectionSection):
+    // fandom has nothing adjudicated in this window, so the section's figures
+    // are a real zero over its rows. Two strangers' rows are moved around it —
+    // one added, one taken away — and the words must not move at all. Compared
+    // against the render where the FLEET holds no unattributed row either: an
+    // empty scope and an empty fleet have to read the same, which is what
+    // "not the fleet's total wearing one source's name" means.
+    const params = { source_id: SOURCE.fandom };
+    expect(rerejects(SOURCE.fandom) + adjudications(SOURCE.fandom)).toBe(0);
+    const attributedOnly = REJECTIONS.filter((row) => row.rejected_by !== null);
+    const strangerNoReason = observationRow({
+      observation_id: "01920000-0000-7000-8000-00000000fb01",
+      source_id: SOURCE.ticketmaster,
+      status: "rejected",
+      rejected_at: daysAgo(3),
+      rejected_by: null,
+    });
+
+    const asFixtured = await renderSources(healthyScript(), params);
+    const withAnotherStranger = await renderSources(
+      healthyScript({
+        [T.observations]: [
+          { data: [...PENDING_OBSERVATIONS] },
+          { data: [...REJECTIONS, strangerNoReason] },
+        ],
+      }),
+      params,
+    );
+    const withNoneAnywhere = await renderSources(
+      healthyScript({
+        [T.observations]: [{ data: [...PENDING_OBSERVATIONS] }, { data: attributedOnly }],
+      }),
+      params,
+    );
+    expect(settledValuesSays(withAnotherStranger)).toBe(settledValuesSays(asFixtured));
+    expect(settledValuesSays(withNoneAnywhere)).toBe(settledValuesSays(asFixtured));
+    // The control: the same population unnarrowed says something else, so the
+    // three equalities above are not three empty strings.
+    expect(settledValuesSays(asFixtured)).not.toBe(
+      settledValuesSays(await renderSources(healthyScript())),
+    );
+  });
+
+  it("reports a narrowed source whose rejections all carry no reason as its own count", async () => {
+    // The boundary the other way: every one of this source's rejections is
+    // unattributed, so the clause is the whole story of its column — and four
+    // of a stranger's must not be added to it. Three renders, one narrowing:
+    // the fact must be invariant to the stranger's rows and must still change
+    // when the same rows carry a reason instead (dropped and reported-as-zero
+    // would otherwise read identically).
+    const params = { source_id: SOURCE.fandom };
+    const mineNoReason = [0, 1, 2].map((n) =>
+      observationRow({
+        observation_id: `01920000-0000-7000-8000-00000000fc0${n}`,
+        source_id: SOURCE.fandom,
+        status: "rejected",
+        rejected_at: daysAgo(2 + n),
+        rejected_by: null,
+      }),
+    );
+    const mineReasoned = mineNoReason.map((row) => ({ ...row, rejected_by: "resolver" }));
+    const strangersNoReason = [0, 1, 2, 3].map((n) =>
+      observationRow({
+        observation_id: `01920000-0000-7000-8000-00000000fd0${n}`,
+        source_id: SOURCE.ticketmaster,
+        status: "rejected",
+        rejected_at: daysAgo(2 + n),
+        rejected_by: null,
+      }),
+    );
+    const say = async (rows: unknown[]) =>
+      settledValuesSays(
+        await renderSources(
+          healthyScript({
+            [T.observations]: [{ data: [...PENDING_OBSERVATIONS] }, { data: rows }],
+          }),
+          params,
+        ),
+      );
+
+    const mineAlone = await say([...REJECTIONS, ...mineNoReason]);
+    const mineAndStrangers = await say([
+      ...REJECTIONS,
+      ...mineNoReason,
+      ...strangersNoReason,
+    ]);
+    const sameRowsWithReasons = await say([...REJECTIONS, ...mineReasoned]);
+
+    // Four more of ticketmaster's unattributed rows: not this page's figure.
+    expect(mineAndStrangers).toBe(mineAlone);
+    // Same three rows, same total, a reason on each: this page's figure moves.
+    expect(sameRowsWithReasons).not.toBe(mineAlone);
+  });
+
+  it("counts the narrowed source itself once when its own registry row did not come back", async () => {
+    // `unnamedSources` was the FLEET's count; scoped, it is 0 or 1 under a
+    // narrowing (admin-window/BUG-0022). Here the gauge's own `sources` lookup
+    // comes back without ticketmaster — the registry read that fed the chips
+    // still had it, which is why the narrowing was accepted — so the narrowed
+    // split is name-less and the operator is told its name is an id. Adding
+    // TWO further unregistered sources' rejections must not turn that 1 into a
+    // 3: the clause counts the scope, not the fleet.
+    const lookupWithoutTicketmaster = SOURCES.filter(
+      (source) => source.source_id !== SOURCE.ticketmaster,
+    );
+    const script = (rows: unknown[]): Script => ({
+      ...healthyScript(),
+      [T.sources]: [
+        { data: [...SOURCES], count: SOURCES.length },
+        { data: lookupWithoutTicketmaster },
+      ],
+      [T.observations]: [{ data: [...PENDING_OBSERVATIONS] }, { data: rows }],
+    });
+    const strangers = [0, 1].map((n) =>
+      observationRow({
+        observation_id: `01920000-0000-7000-8000-00000000fe0${n}`,
+        source_id: `01920000-0000-7000-8000-00000000ee0${n}`,
+        status: "rejected",
+        rejected_at: daysAgo(2 + n),
+        rejected_by: "resolver",
+      }),
+    );
+    const params = { source_id: SOURCE.ticketmaster };
+
+    const named = settledValuesSays(await renderSources(healthyScript(), params));
+    const unnamed = settledValuesSays(
+      await renderSources(script([...REJECTIONS]), params),
+    );
+    const unnamedPlusStrangers = settledValuesSays(
+      await renderSources(script([...REJECTIONS, ...strangers]), params),
+    );
+
+    // The fact is reported at all: a name-less split reads differently.
+    expect(unnamed).not.toBe(named);
+    // And it is this source's fact alone.
+    expect(unnamedPlusStrangers).toBe(unnamed);
   });
 
   it("names the observations table when the stamps cannot be read", async () => {
