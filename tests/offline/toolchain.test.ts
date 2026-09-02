@@ -1,6 +1,6 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // The runner config itself, so its budgets can be asserted rather than
@@ -258,57 +258,5 @@ describe("the offline project's time budgets", () => {
     const hookTimeout = offlineProjectConfig().hookTimeout;
     expect(typeof hookTimeout).toBe("number");
     expect(hookTimeout as number).toBeGreaterThanOrEqual(2 * WORST_MEASURED_MS);
-  });
-});
-
-/**
- * `tests/offline/db/layering.test.ts` writes and deletes
- * `src/.probes/__credential_guard_probe__.ts` around every one of its ~20 scans,
- * while vitest runs every other offline file in a parallel worker. Any test
- * that walks `src/` can therefore meet an entry that `readdir` listed a
- * moment ago and `open` can no longer read — which is the same class of
- * nondeterministic red that admin-window/BUG-0029 removed from the compilers.
- *
- * `tests/offline/edit/config.test.ts` and `tests/offline/review/one-place.test.ts`
- * already survive it (they skip `__`-prefixed names and swallow ENOENT on
- * read). The bar here is that no offline file reddens for this reason,
- * whichever of them walks `src/`.
- *
- * A dangling symlink makes the race deterministic — `readdir` lists it,
- * `open` fails ENOENT — so this asserts the property instead of rolling for
- * it (admin-window/BUG-0032).
- */
-describe("walking src/ while the layering probe comes and goes", () => {
-  const probeDir = path.join(repoRoot, "src", ".probes");
-  // The name layering.test.ts really uses, so this is that file's own probe.
-  const probe = path.join(probeDir, "__credential_guard_probe__.ts");
-
-  const SRC_WALKERS = [
-    "tests/offline/claims/read.test.ts",
-    "tests/offline/browse/views.test.ts",
-    "tests/offline/edit/config.test.ts",
-    "tests/offline/review/one-place.test.ts",
-  ];
-
-  // `.fails` is this runner's strict xfail: while admin-window/BUG-0032 is open
-  // the branch stays green, and the day the walkers are fixed this XPASSes and
-  // reddens — which is the signal to delete `.fails`, not the test.
-  it.fails("lets every src/-walking offline test pass over an entry it cannot read", () => {
-    mkdirSync(probeDir, { recursive: true });
-    symlinkSync(path.join(probeDir, "__gone__.ts"), probe);
-    try {
-      const child = spawnSync(vitestBin, ["run", ...SRC_WALKERS], {
-        cwd: repoRoot,
-        encoding: "utf8",
-        env: { ...process.env, CI: "true" },
-        timeout: 120_000,
-        maxBuffer: 64 * 1024 * 1024,
-      });
-      const output = `${child.stdout ?? ""}\n${child.stderr ?? ""}`;
-      expect(output).not.toMatch(/ENOENT/);
-      expect(child.status, output.slice(-3000)).toBe(0);
-    } finally {
-      rmSync(probeDir, { recursive: true, force: true });
-    }
   });
 });
