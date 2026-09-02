@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { T } from "@/lib/db/tables";
 import { render } from "../ui/markup";
 import { CLAIMS, ENTITY, OBSERVATIONS, OBSERVED_AT, SOURCE } from "./population";
-import type { PendingClaimRow } from "../../fixtures/rows";
+import {
+  observationRow,
+  pendingClaimRow,
+  type PendingClaimRow,
+} from "../../fixtures/rows";
 import {
   permissionDenied,
   stubClient,
@@ -758,5 +762,394 @@ describe("a hand-edited URL", () => {
       ),
     );
     expect(markup).not.toContain(PARKED);
+  });
+});
+
+/* ══ the adversary's cross-product (admin-window/TASK-0012, QA) ═══════════ */
+
+/**
+ * A SECOND population, written by QA against the same page, and read with
+ * QA's own predicate.
+ *
+ * The suite above proves each facet one at a time against a fixture where
+ * every source and every domain also carries a renderable claim. Two things
+ * that population structurally cannot see, and this one is built to:
+ *
+ *  - **a source and a domain that exist in the raw view ONLY on parked rows.**
+ *    If the parked bucket leaked anywhere into the vocabularies, it would
+ *    surface here as a filter chip nobody can use and a source id on a page
+ *    that must not know it exists — the leak `?bucket=…` cannot produce.
+ *  - **the whole tab x bucket x source x domain cross-product**, not a
+ *    diagonal of it: 300 renderings, each one checked against a tally
+ *    computed here from the rows, so "the counts equal the view's, per bucket
+ *    and per source filter" (acceptance test 3) is asserted over every
+ *    combination an operator can reach rather than over the ones the page's
+ *    author thought of.
+ *
+ * The stub hands the parked rows over on every read — the shape of a database
+ * whose server-side `neq` did nothing — so only the code-side exclusion is
+ * under test.
+ */
+
+/** Three sources that hold renderable claims, and a fourth that holds only parked ones. */
+const QA_SOURCE = {
+  a: "01920000-0000-7000-8000-00000000a001",
+  b: "01920000-0000-7000-8000-00000000a002",
+  c: "01920000-0000-7000-8000-00000000a003",
+  /** Every claim from this source is in the parked bucket. It must not exist to the UI. */
+  parkedOnly: "01920000-0000-7000-8000-00000000a004",
+} as const;
+
+/** A domain carried by parked rows alone — the domain twin of the source above. */
+const QA_PARKED_DOMAIN = "idols";
+
+interface QaSpec {
+  id: string;
+  bucket: string;
+  source: string;
+  domain: string;
+  field: string;
+  entity: string | null;
+  requirement?: string;
+  /** Absent when this claim has no observation row: unknown age, never zero. */
+  observedAt?: string;
+}
+
+const QA_SPECS: readonly QaSpec[] = [
+  // standing_disagreement x three sources, two domains
+  { id: "01920000-0000-7000-8000-00000000b001", bucket: "standing_disagreement", source: QA_SOURCE.a, domain: "events", field: "title", entity: ENTITY.event, observedAt: "2026-08-10T00:00:00Z" },
+  { id: "01920000-0000-7000-8000-00000000b002", bucket: "standing_disagreement", source: QA_SOURCE.b, domain: "groups", field: "agency", entity: ENTITY.group, observedAt: "2026-08-11T00:00:00Z" },
+  // No observation row: unknown age, and it sorts last wherever it renders.
+  { id: "01920000-0000-7000-8000-00000000b003", bucket: "standing_disagreement", source: QA_SOURCE.c, domain: "events", field: "starts_at", entity: ENTITY.event },
+  // awaiting_link
+  { id: "01920000-0000-7000-8000-00000000b004", bucket: "awaiting_link", source: QA_SOURCE.a, domain: "venues", field: "address", entity: ENTITY.venue, observedAt: "2026-08-12T00:00:00Z" },
+  { id: "01920000-0000-7000-8000-00000000b005", bucket: "awaiting_link", source: QA_SOURCE.b, domain: "events", field: "venue", entity: ENTITY.otherEvent, observedAt: "2026-08-13T00:00:00Z" },
+  // awaiting_row — each naming its own unmet requirement, and neither with a record
+  { id: "01920000-0000-7000-8000-00000000b006", bucket: "awaiting_row", source: QA_SOURCE.c, domain: "groups", field: "name", entity: null, requirement: "debut_date", observedAt: "2026-08-14T00:00:00Z" },
+  { id: "01920000-0000-7000-8000-00000000b007", bucket: "awaiting_row", source: QA_SOURCE.a, domain: "events", field: "performers", entity: null, requirement: "at least one linked performer", observedAt: "2026-08-15T00:00:00Z" },
+  // escalated — one source only, so most (source, escalated) cells are real zeros
+  { id: "01920000-0000-7000-8000-00000000b008", bucket: "escalated", source: QA_SOURCE.b, domain: "venues", field: "name", entity: ENTITY.venue, observedAt: "2026-08-16T00:00:00Z" },
+  // agreeing
+  { id: "01920000-0000-7000-8000-00000000b009", bucket: "agreeing", source: QA_SOURCE.a, domain: "groups", field: "name", entity: ENTITY.group, observedAt: "2026-08-17T00:00:00Z" },
+  { id: "01920000-0000-7000-8000-00000000b010", bucket: "agreeing", source: QA_SOURCE.b, domain: "events", field: "title", entity: ENTITY.event, observedAt: "2026-08-18T00:00:00Z" },
+  { id: "01920000-0000-7000-8000-00000000b011", bucket: "agreeing", source: QA_SOURCE.c, domain: "venues", field: "address", entity: ENTITY.venue, observedAt: "2026-08-19T00:00:00Z" },
+  { id: "01920000-0000-7000-8000-00000000b012", bucket: "agreeing", source: QA_SOURCE.c, domain: "events", field: "starts_at", entity: ENTITY.event, observedAt: "2026-08-20T00:00:00Z" },
+  // The parked bucket: on a source nothing else carries, on a domain nothing
+  // else carries, and on two ordinary source/domain pairs as well.
+  { id: "01920000-0000-7000-8000-00000000b013", bucket: PARKED, source: QA_SOURCE.parkedOnly, domain: QA_PARKED_DOMAIN, field: "birth_date", entity: ENTITY.group, observedAt: "2026-08-21T00:00:00Z" },
+  { id: "01920000-0000-7000-8000-00000000b014", bucket: PARKED, source: QA_SOURCE.parkedOnly, domain: "events", field: "title", entity: ENTITY.event, observedAt: "2026-08-22T00:00:00Z" },
+  { id: "01920000-0000-7000-8000-00000000b015", bucket: PARKED, source: QA_SOURCE.a, domain: QA_PARKED_DOMAIN, field: "real_name", entity: ENTITY.group, observedAt: "2026-08-23T00:00:00Z" },
+  { id: "01920000-0000-7000-8000-00000000b016", bucket: PARKED, source: QA_SOURCE.c, domain: "events", field: "title", entity: ENTITY.event, observedAt: "2026-08-24T00:00:00Z" },
+];
+
+const QA_CLAIMS: readonly PendingClaimRow[] = QA_SPECS.map((spec) =>
+  pendingClaimRow(spec.bucket as PendingClaimRow["bucket"], {
+    observation_id: spec.id,
+    domain: spec.domain,
+    entity_id: spec.entity,
+    field: spec.field,
+    source_id: spec.source,
+    unmet_requirement: spec.requirement ?? null,
+  }),
+);
+
+const QA_OBSERVATIONS = QA_SPECS.filter((spec) => spec.observedAt !== undefined).map(
+  (spec) =>
+    observationRow({
+      observation_id: spec.id,
+      entity_type: spec.domain,
+      entity_id: spec.entity,
+      domain: spec.domain,
+      field: spec.field,
+      source_id: spec.source,
+      observed_at: spec.observedAt as string,
+      status: "pending",
+    }),
+);
+
+/** Every claim the UI may show — QA's own reading of the rule, not the app's. */
+const QA_SHOWABLE = QA_SPECS.filter((spec) => spec.bucket !== PARKED);
+
+/** The vocabularies the page is ALLOWED to offer, derived from the showable rows alone. */
+const QA_SOURCE_VOCAB = [...new Set(QA_SHOWABLE.map((s) => s.source))].sort();
+const QA_DOMAIN_VOCAB = [...new Set(QA_SHOWABLE.map((s) => s.domain))].sort();
+
+/** The claims a narrowing keeps. QA's predicate, written from the spec, not from the app's. */
+function qaMatching(filter: {
+  bucket?: string;
+  source_id?: string;
+  domain?: string;
+}): QaSpec[] {
+  return QA_SHOWABLE.filter(
+    (spec) =>
+      (filter.bucket === undefined || spec.bucket === filter.bucket) &&
+      (filter.source_id === undefined || spec.source === filter.source_id) &&
+      (filter.domain === undefined || spec.domain === filter.domain),
+  );
+}
+
+/**
+ * The narrowing a URL value is allowed to apply: only a value the page may
+ * offer narrows anything. Anything else — the parked bucket, a case variant, a
+ * 10k string, a source that exists only on parked rows — constrains NOTHING,
+ * so a hand-typed URL lands on a real state instead of an empty page that
+ * reads as an empty database.
+ */
+function qaApplied(
+  vocabulary: readonly string[],
+  value: string | undefined,
+): string | undefined {
+  return value !== undefined && vocabulary.includes(value) ? value : undefined;
+}
+
+function qaScript(overrides: Script = {}): Script {
+  return {
+    // Every read hands the parked rows over: a server that ignored the `neq`.
+    [T.pendingClaims]: { data: [...QA_CLAIMS], count: QA_CLAIMS.length },
+    [T.observations]: { data: [...QA_OBSERVATIONS] },
+    [T.sources]: { data: [] },
+    ...overrides,
+  };
+}
+
+/** Every link on the page, so a value can be hunted in an href as well as in text. */
+function hrefsOf(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("a[href]")
+    .toArray()
+    .map((element) => $(element).attr("href") ?? "");
+}
+
+describe("QA: the whole tab x bucket x source x domain cross-product", () => {
+  /** The bucket parameters an operator can reach, valid and hostile alike. */
+  const BUCKET_PARAMS: (string | undefined)[] = [
+    undefined,
+    "standing_disagreement",
+    "awaiting_row",
+    "agreeing",
+    PARKED,
+    "ESCALATED",
+  ];
+  const SOURCE_PARAMS: (string | undefined)[] = [
+    undefined,
+    ...Object.values(QA_SOURCE),
+  ];
+  const DOMAIN_PARAMS: (string | undefined)[] = [
+    undefined,
+    ...QA_DOMAIN_VOCAB,
+    QA_PARKED_DOMAIN,
+  ];
+
+  for (const tab of ["buckets", "standing"] as const) {
+    it(`renders exactly the claims and counts the view holds, on the ${tab} tab`, async () => {
+      for (const bucket of BUCKET_PARAMS) {
+        for (const source of SOURCE_PARAMS) {
+          for (const domain of DOMAIN_PARAMS) {
+            const params: Record<string, string> = { tab };
+            if (bucket !== undefined) params.bucket = bucket;
+            if (source !== undefined) params.source_id = source;
+            if (domain !== undefined) params.domain = domain;
+            const where = new URLSearchParams(params).toString();
+            const markup = await renderClaims(qaScript(), params);
+
+            // 1. The parked bucket, in text, in an attribute, in an href, and
+            //    in the one encoding a URL can smuggle its underscore through.
+            expect(markup, where).not.toContain(PARKED);
+            expect(markup, where).not.toContain("in%5Fwindow");
+            // 2. Nor the source and the domain that exist only on parked rows.
+            expect(markup, where).not.toContain(QA_SOURCE.parkedOnly);
+
+            // 3. The claims rendered are exactly the ones QA's own predicate
+            //    keeps — the standing tab being that predicate with the bucket
+            //    the tab IS, whatever the URL asked for.
+            const applied = {
+              bucket: qaApplied(RENDERED_BUCKETS, bucket),
+              source_id: qaApplied(QA_SOURCE_VOCAB, source),
+              domain: qaApplied(QA_DOMAIN_VOCAB, domain),
+            };
+            const expected = qaMatching(
+              tab === "standing"
+                ? { ...applied, bucket: "standing_disagreement" }
+                : applied,
+            );
+            const rendered = claimIds(markup);
+            expect(new Set(rendered), where).toEqual(
+              new Set(expected.map((spec) => spec.id)),
+            );
+            expect(rendered, where).toHaveLength(expected.length);
+
+            // 4. The bucket table: every bucket a row, every count and every
+            //    source count QA's own tally, under the source/domain scope
+            //    alone — and the standing tab carries no bucket table at all.
+            const rows = bucketRows(markup);
+            if (tab === "standing") {
+              expect(rows, where).toHaveLength(0);
+            } else {
+              expect(rows.map((row) => row.bucket), where).toEqual(RENDERED_BUCKETS);
+              const scope = {
+                source_id: applied.source_id,
+                domain: applied.domain,
+              };
+              for (const row of rows) {
+                const held = qaMatching({ ...scope, bucket: row.bucket });
+                expect(row.claims, `${where} / ${row.bucket}`).toBe(held.length);
+                expect(row.sources, `${where} / ${row.bucket} sources`).toBe(
+                  new Set(held.map((spec) => spec.source)).size,
+                );
+              }
+              // The table is the WHOLE classification under this scope: its
+              // counts sum to every claim in scope, and — when no bucket
+              // narrows the list — to the list rendered beneath it.
+              const total = rows.reduce((sum, row) => sum + row.claims, 0);
+              expect(total, where).toBe(qaMatching(scope).length);
+              if (applied.bucket === undefined) {
+                expect(total, where).toBe(rendered.length);
+              }
+            }
+
+            // 5. Nothing settles anything, and no link on the page carries a
+            //    value the page does not offer — the parked bucket and the
+            //    parked-only source can therefore not travel in a URL either.
+            expect(cheerio.load(markup)("button, form, input"), where).toHaveLength(0);
+            for (const href of hrefsOf(markup)) {
+              if (!href.startsWith("/claims") && !href.startsWith("/sources")) continue;
+              const query = new URLSearchParams(
+                href.includes("?") ? href.slice(href.indexOf("?") + 1) : "",
+              );
+              for (const [key, value] of query) {
+                if (key === "bucket") {
+                  expect(RENDERED_BUCKETS, `${where} -> ${href}`).toContain(value);
+                } else if (key === "source_id") {
+                  expect(QA_SOURCE_VOCAB, `${where} -> ${href}`).toContain(value);
+                } else if (key === "domain") {
+                  expect(QA_DOMAIN_VOCAB, `${where} -> ${href}`).toContain(value);
+                } else {
+                  expect(["tab"], `${where} -> ${href}`).toContain(key);
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+});
+
+describe("QA: what the parked bucket alone carries", () => {
+  it("offers no chip for a source or a domain only parked rows have", async () => {
+    const markup = await renderClaims(qaScript());
+    expect(chipsOf(markup, "source_id").map((chip) => chip.label)).toEqual([
+      "all",
+      ...QA_SOURCE_VOCAB,
+    ]);
+    expect(chipsOf(markup, "domain").map((chip) => chip.label)).toEqual([
+      "all",
+      ...QA_DOMAIN_VOCAB,
+    ]);
+    expect(markup).not.toContain(QA_SOURCE.parkedOnly);
+    expect(markup).not.toContain(PARKED);
+  });
+
+  it("narrows nothing when the URL names one of them", async () => {
+    const hostile: Record<string, string>[] = [
+      { source_id: QA_SOURCE.parkedOnly },
+      { domain: QA_PARKED_DOMAIN },
+      { source_id: QA_SOURCE.parkedOnly, domain: QA_PARKED_DOMAIN },
+      { bucket: PARKED, source_id: QA_SOURCE.parkedOnly },
+    ];
+    for (const params of hostile) {
+      const markup = await renderClaims(qaScript(), params);
+      const where = new URLSearchParams(params).toString();
+      // Every showable claim, not an empty page that would read as an empty
+      // database — and no trace of what the URL asked for.
+      expect(claimIds(markup), where).toHaveLength(QA_SHOWABLE.length);
+      expect(markup, where).not.toContain(QA_SOURCE.parkedOnly);
+      expect(markup, where).not.toContain(PARKED);
+    }
+  });
+
+  it("takes the first value of every repeated parameter, hostile ones included", async () => {
+    const markup = await renderClaims(qaScript(), {
+      bucket: [PARKED, "escalated"],
+      source_id: [QA_SOURCE.parkedOnly, QA_SOURCE.a],
+      domain: [QA_PARKED_DOMAIN, "events"],
+      tab: ["standing", "buckets"],
+    });
+    // First values: all three unusable, so nothing narrows; the tab is standing.
+    expect(new Set(claimIds(markup))).toEqual(
+      new Set(qaMatching({ bucket: "standing_disagreement" }).map((spec) => spec.id)),
+    );
+    expect(bucketRows(markup)).toHaveLength(0);
+    expect(markup).not.toContain(PARKED);
+    expect(markup).not.toContain(QA_SOURCE.parkedOnly);
+  });
+
+  it("shows no count at all when the view outgrew the cap, only the real number", async () => {
+    const markup = await renderClaims(
+      qaScript({
+        // The database holds far more than the read could return: a complete
+        // read must refuse with that number, never render the rows it got as
+        // if they were the whole set.
+        [T.pendingClaims]: { data: [...QA_CLAIMS], count: 4096 },
+      }),
+    );
+    expect(markup).toContain("4096");
+    expect(cheerio.load(markup)("[data-bucket-claims]")).toHaveLength(0);
+    expect(claimIds(markup)).toEqual([]);
+    expect(markup).not.toContain(PARKED);
+  });
+});
+
+describe("QA: the clauses of the criterion, driven over QA's own population", () => {
+  it("names what every awaiting_row claim waits for, and nothing else does", async () => {
+    const markup = await renderClaims(qaScript());
+    for (const spec of QA_SHOWABLE) {
+      const row = claimRow(markup, spec.id);
+      expect(row.bucket, spec.id).toBe(spec.bucket);
+      // The view's own words, verbatim — a bare bucket name is the defect the
+      // column exists to prevent (migration 20260901000004).
+      expect(row.requirement, spec.id).toBe(spec.requirement);
+      if (spec.bucket === "awaiting_row") {
+        expect(row.requirement, spec.id).toBeDefined();
+      } else {
+        expect(row.requirement, spec.id).toBeUndefined();
+      }
+    }
+  });
+
+  it("leads from every claim to its source, and to its fact where there is one", async () => {
+    const markup = await renderClaims(qaScript());
+    for (const spec of QA_SHOWABLE) {
+      const row = claimRow(markup, spec.id);
+      // Its source, always — one click, a real URL naming that source.
+      expect(row.sourceId, spec.id).toBe(spec.source);
+      expect(row.sourceHref, spec.id).toContain(encodeURIComponent(spec.source));
+      if (spec.entity === null) {
+        // No canonical row yet, so no invented link to one: that absence is
+        // exactly what the `waiting for` cell on the same row explains.
+        expect(row.provenanceHref, spec.id).toBeUndefined();
+        expect(row.requirement, spec.id).toBeDefined();
+      } else {
+        expect(row.provenanceHref, spec.id).toBe(
+          `/records/${encodeURIComponent(spec.domain)}/${encodeURIComponent(spec.entity)}`,
+        );
+      }
+    }
+  });
+
+  it("puts the standing-disagreements gauge on the standing tab and nowhere else", async () => {
+    const splitsOn = async (tab: string) => {
+      const markup = await renderClaims(qaScript(), { tab });
+      const $ = cheerio.load(markup);
+      return $("[data-split-source]")
+        .toArray()
+        .map((element) => $(element).attr("data-split-source") ?? "");
+    };
+    const standing = await splitsOn("standing");
+    expect(standing.length).toBeGreaterThan(0);
+    // Every source the gauge splits by is one the page may name at all.
+    for (const source of standing) expect(QA_SOURCE_VOCAB).toContain(source);
+    // The buckets tab carries the other gauge; this one is not read there.
+    expect(await splitsOn("buckets")).toEqual([]);
   });
 });
