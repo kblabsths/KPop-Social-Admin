@@ -65,20 +65,48 @@ function errorMessage(error: unknown): string {
 }
 
 /**
- * The first quoted name in a message, unqualified.
+ * A column-absent message's UNQUOTED column reference.
  *
- * Postgres says `column "severity" does not exist`; PostgREST says
- * `Could not find the 'severity' column of 'review_items' in the schema
- * cache`. In both, the first quoted token is the column, which is how a
- * column-absent classification can name the column and not just its table.
+ * Postgres quotes an unqualified reference (`column "severity" does not
+ * exist`) but spells a QUALIFIED one bare: `column events.badcol does not
+ * exist` — the form a page selecting an explicit column list gets. The
+ * trailing `does not exist` is required so that a message carrying no column
+ * at all cannot have a word of its prose read as one.
  */
-function firstQuotedName(message: string): string | null {
-  const match = /'([^']+)'|"([^"]+)"/.exec(message);
-  const quoted = match?.[1] ?? match?.[2];
-  if (!quoted) return null;
-  const segments = quoted.split(".");
+const UNQUOTED_COLUMN_REFERENCE =
+  /\bcolumn\s+([A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*)\s+does not exist/i;
+
+/** The last dot-segment of a possibly-qualified name — the column itself. */
+function lastSegment(name: string): string | null {
+  const segments = name.split(".");
   const last = segments[segments.length - 1];
   return last.length > 0 ? last : null;
+}
+
+/**
+ * The column a column-absent message names, or `null` if it names none.
+ *
+ * Both spellings must resolve, because both reach us:
+ *  - quoted — Postgres `column "severity" does not exist` and `column
+ *    "severity" of relation "review_items" does not exist`; PostgREST
+ *    `Could not find the 'severity' column of 'review_items' in the schema
+ *    cache`. The first quoted token is the column.
+ *  - unquoted and qualified — `column events.badcol does not exist`. Read for
+ *    quotes alone this yields nothing, and the classification collapsed to the
+ *    bare table name, so a fully-provisioned table read as absent
+ *    (admin-window/TASK-0002).
+ *
+ * Either way any qualifier is dropped: the table `classify` reports is the one
+ * the query asked for, from `tables.ts` (ARCHITECTURE.md §4.1).
+ */
+function columnFromMessage(message: string): string | null {
+  const quoted = /'([^']+)'|"([^"]+)"/.exec(message);
+  const quotedName = quoted?.[1] ?? quoted?.[2];
+  if (quotedName) return lastSegment(quotedName);
+
+  const unquoted = UNQUOTED_COLUMN_REFERENCE.exec(message);
+  const unquotedName = unquoted?.[1];
+  return unquotedName ? lastSegment(unquotedName) : null;
 }
 
 /**
@@ -88,7 +116,9 @@ function firstQuotedName(message: string): string | null {
  * not-provisioned card names the same string the query did. For a
  * column-absent code the column read out of the database's own message is
  * appended (`review_items.severity`), so the card names the column while still
- * carrying the table.
+ * carrying the table — in whichever spelling the message used, quoted or bare
+ * and qualified. When the message names no column at all, the card falls back
+ * to the object the query asked for rather than guessing a column out of it.
  *
  * Everything that is not one of the four absence codes is `kind: "error"`
  * carrying the database's message verbatim.
@@ -102,7 +132,7 @@ export function classify(error: unknown, missing: string): DbResult<never> {
   }
 
   if (code !== null && COLUMN_ABSENT_CODES.has(code)) {
-    const column = firstQuotedName(message);
+    const column = columnFromMessage(message);
     if (column === null || column === missing || missing.endsWith(`.${column}`)) {
       return { kind: "not_provisioned", missing };
     }

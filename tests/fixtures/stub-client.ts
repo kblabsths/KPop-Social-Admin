@@ -150,13 +150,37 @@ export function columnNotInSchemaCache(table: string, column: string) {
   };
 }
 
-/** 42703 — Postgres's own undefined_column. */
+/** 42703 — Postgres's own undefined_column, quoted (an unqualified reference). */
 export function undefinedColumn(column: string) {
   return {
     code: "42703",
     details: null,
     hint: null,
     message: `column "${column}" does not exist`,
+  };
+}
+
+/**
+ * 42703 with the message Postgres spells for a QUALIFIED reference — bare, no
+ * quotes at all: `column events.badcol does not exist`. This is what a page
+ * selecting an explicit column list off a table gets.
+ */
+export function undefinedQualifiedColumn(table: string, column: string) {
+  return {
+    code: "42703",
+    details: null,
+    hint: null,
+    message: `column ${table}.${column} does not exist`,
+  };
+}
+
+/** 42703 as Postgres spells it for an INSERT/UPDATE target column. */
+export function undefinedColumnOfRelation(table: string, column: string) {
+  return {
+    code: "42703",
+    details: null,
+    hint: null,
+    message: `column "${column}" of relation "${table}" does not exist`,
   };
 }
 

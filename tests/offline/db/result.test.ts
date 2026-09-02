@@ -14,6 +14,8 @@ import {
   stubClient,
   tableNotInSchemaCache,
   undefinedColumn,
+  undefinedColumnOfRelation,
+  undefinedQualifiedColumn,
   undefinedTable,
 } from "../../fixtures/stub-client";
 import {
@@ -46,21 +48,50 @@ describe("classify", () => {
     }
   });
 
-  it("reads a column-absent code as not_provisioned naming the column", () => {
-    for (const error of [
-      columnNotInSchemaCache(T.reviewItems, "severity"),
-      undefinedColumn("severity"),
-    ]) {
+  /**
+   * Every spelling a column-absent message reaches us in must name the column,
+   * never collapse to the bare table — a table that is fully provisioned but
+   * missing one column would otherwise read as absent.
+   */
+  const COLUMN_ABSENT_MESSAGE_FORMS: ReadonlyArray<[string, unknown]> = [
+    ["PostgREST quoted, PGRST204", columnNotInSchemaCache(T.reviewItems, "severity")],
+    ["Postgres quoted, unqualified", undefinedColumn("severity")],
+    [
+      "Postgres quoted, of relation",
+      undefinedColumnOfRelation(T.reviewItems, "severity"),
+    ],
+    [
+      "Postgres UNQUOTED, qualified",
+      undefinedQualifiedColumn(T.reviewItems, "severity"),
+    ],
+  ];
+
+  it.each(COLUMN_ABSENT_MESSAGE_FORMS)(
+    "reads a column-absent code as not_provisioned naming the column (%s)",
+    (_form, error) => {
       const result = classify(error, T.reviewItems);
       expect(result.kind).toBe("not_provisioned");
       // The column is named, and the table it belongs to is still carried.
       expect(result).toMatchObject({ missing: `${T.reviewItems}.severity` });
+    },
+  );
+
+  it("never reports a bare table for a column-absent code that named a column", () => {
+    for (const [, error] of COLUMN_ABSENT_MESSAGE_FORMS) {
+      expect(classify(error, T.reviewItems)).not.toMatchObject({
+        missing: T.reviewItems,
+      });
     }
   });
 
   it("falls back to the queried name when a column-absent message names nothing", () => {
+    // No column in the message: report the object the query actually asked
+    // for, rather than guessing a column name out of the prose.
     expect(
       classify({ code: "PGRST204", message: "schema cache reload failed" }, T.sources),
+    ).toEqual({ kind: "not_provisioned", missing: T.sources });
+    expect(
+      classify({ code: "42703", message: "column does not exist" }, T.sources),
     ).toEqual({ kind: "not_provisioned", missing: T.sources });
   });
 
@@ -133,6 +164,23 @@ describe("reads against a scripted PostgREST response", () => {
       stub.asSupabaseClient(),
     );
     expect(result).toEqual({ kind: "not_provisioned", missing: T.verdicts });
+  });
+
+  it("returns not_provisioned naming the column when a selected column is absent", async () => {
+    // The real surface of the bare-qualified 42703: a read selecting an
+    // explicit column list off a table that exists but lacks one column.
+    const stub = stubClient({
+      [T.events]: { error: undefinedQualifiedColumn(T.events, "badcol") },
+    });
+    const result = await readRows(
+      T.events,
+      (db) => db.from(T.events).select("event_id,badcol"),
+      stub.asSupabaseClient(),
+    );
+    expect(result).toEqual({
+      kind: "not_provisioned",
+      missing: `${T.events}.badcol`,
+    });
   });
 
   it("returns the database's message when the read is refused", async () => {
