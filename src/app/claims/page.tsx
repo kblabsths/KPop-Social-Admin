@@ -30,7 +30,6 @@ import {
   filterBar,
   filterFrom,
   isNarrowed,
-  provenanceHref,
   sourceHref,
   tabFrom,
   tabLinks,
@@ -48,6 +47,7 @@ import {
   STANDING_BUCKET,
   type StandingDisagreements,
 } from "@/lib/gauges/standing-disagreements";
+import { recordHref } from "@/lib/records/routes";
 
 /**
  * Claims — **the classification view rendered**: what is stuck, and whose
@@ -232,7 +232,7 @@ function claimLines(claims: readonly ClaimRow[]): ClaimLine[] {
     observedAt: claim.observed_at,
     unmetRequirement: claim.unmet_requirement,
     sourceHref: sourceHref(claim.source_id),
-    provenanceHref: provenanceHref(claim.domain, claim.entity_id),
+    provenanceHref: recordHref(claim.domain, claim.entity_id),
   }));
 }
 

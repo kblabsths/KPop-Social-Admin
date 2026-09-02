@@ -9,7 +9,6 @@ import {
   filterBar,
   filterFrom,
   isNarrowed,
-  provenanceHref,
   sourceHref,
   tabFrom,
   tabLinks,
@@ -17,6 +16,7 @@ import {
   type ClaimsFilter,
   type FacetOptions,
 } from "@/lib/claims/filters";
+import { recordHref } from "@/lib/records/routes";
 
 /**
  * The Claims page's URL state (campaign admin-window/TASK-0012) — the pure
@@ -191,14 +191,14 @@ describe("where a claim leads", () => {
   });
 
   it("links to the record where its fact's provenance is shown", () => {
-    expect(provenanceHref("events", "e-1")).toBe("/records/events/e-1");
-    expect(provenanceHref("venues", "v/1")).toBe("/records/venues/v%2F1");
+    expect(recordHref("events", "e-1")).toBe("/records/events/e-1");
+    expect(recordHref("venues", "v/1")).toBe("/records/venues/v%2F1");
   });
 
   it("offers no provenance link for a record that does not exist yet", () => {
     // An `awaiting_row` claim's record has no canonical row — there is no fact
     // to show provenance for, and the row says what it is waiting for instead.
-    expect(provenanceHref("events", null)).toBeNull();
-    expect(provenanceHref("events", "")).toBeNull();
+    expect(recordHref("events", null)).toBeNull();
+    expect(recordHref("events", "")).toBeNull();
   });
 });

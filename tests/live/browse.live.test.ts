@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it } from "vitest";
 import BrowsePage from "@/app/browse/page";
-import { eventRecordHref } from "@/lib/browse/rows";
+import { recordHref } from "@/lib/records/routes";
 import { RECENT_EVENTS } from "@/lib/browse/views";
 import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
@@ -184,7 +184,7 @@ describe("Browse against staging", () => {
     // And the row really does link at its own record surface.
     const $ = cheerio.load(markup);
     expect(
-      $(`a[href="${eventRecordHref(newest)}"]`).length,
+      $(`a[href="${recordHref("events", newest)}"]`).length,
     ).toBeGreaterThan(0);
   });
 

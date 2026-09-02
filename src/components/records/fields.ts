@@ -1,10 +1,10 @@
-import { provenanceHref } from "@/lib/claims/filters";
 import {
   decideEdit,
   mappedColumns,
   type TableEditConfig,
 } from "@/lib/edit/config";
 import type { FieldProvenance } from "@/lib/records/provenance";
+import { recordHref } from "@/lib/records/routes";
 import { isEditableValue, scalarText } from "./values";
 
 /**
@@ -34,8 +34,9 @@ export type FieldWidget = "cell" | "read_only";
  * The map says which column links and where (`reference` in
  * `lib/edit/config.ts`); the read says what the linked row is called
  * (`readRecordReference`); this is the two put together for one line. The
- * href is the app's one record URL, built by the same helper the Queues
- * surface builds a record link with — never a third spelling of the template.
+ * href is the app's one record URL, built by the one helper every surface
+ * builds a record link with (`recordHref` in `lib/records/routes.ts`) —
+ * never a second spelling of the template.
  */
 export interface FieldReference {
   /** The record surface this line leads to: `/records/<domain>/<id>`. */
@@ -168,7 +169,7 @@ function referenceOf(
   if (reference === null || reference.field !== name) return null;
   if (value === null || value.length === 0) return null;
 
-  const href = provenanceHref(reference.domain, value);
+  const href = recordHref(reference.domain, value);
   if (href === null) return null;
   return { href, id: value, name: referenceName };
 }

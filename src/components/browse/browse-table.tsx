@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { DataTable, type Column } from "@/components/ui";
 import { absoluteUtc, relativeAge, type Timestamp } from "@/lib/format";
-import { eventRecordHref, type BrowseRow } from "@/lib/browse/rows";
+import type { BrowseRow } from "@/lib/browse/rows";
 import type { BrowseColumnKey, BrowseView } from "@/lib/browse/views";
+import { recordHref } from "@/lib/records/routes";
 
 /**
  * The recent-events table (campaign admin-window/TASK-0015).
@@ -29,15 +30,25 @@ const CELLS: Record<BrowseColumnKey, CellBody> = {
    * the record's edit surface, which is read-only for events in M1. An event
    * with no title still links — its machine id stands in, verbatim in mono —
    * because a row you cannot open is a dead end.
+   *
+   * The URL is the app's ONE record href (`lib/records/routes.ts`), which
+   * answers null when there is no canonical row to lead to. An event row
+   * always carries its `event_id`, so that branch does not arise here today —
+   * the row simply renders unlinked rather than this file re-adding an
+   * events-only, never-null variant of the same template
+   * (admin-window/DEBT-0001).
    */
-  title: (row) => (
-    <a
-      href={eventRecordHref(row.event_id)}
-      className="transition-colors hover:text-accent"
-    >
-      {row.title ?? row.event_id}
-    </a>
-  ),
+  title: (row) => {
+    const label = row.title ?? row.event_id;
+    const href = recordHref("events", row.event_id);
+    return href === null ? (
+      label
+    ) : (
+      <a href={href} className="transition-colors hover:text-accent">
+        {label}
+      </a>
+    );
+  },
 
   starts_at: (row) => absoluteUtc(row.starts_at),
 

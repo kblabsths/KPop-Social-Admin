@@ -283,30 +283,3 @@ export function tabLinks(
 export function sourceHref(sourceId: string): string {
   return `/sources?source_id=${encodeURIComponent(sourceId)}`;
 }
-
-/**
- * The record surface for the fact this claim is about — where its provenance
- * is shown, at the field (LOOK_AND_FEEL bar 5: provenance shows at the fact,
- * and there is no provenance page). It is the same URL Browse builds for an
- * event row (`eventRecordHref` in `lib/browse/rows.ts`), for every domain.
- *
- * `null` when the claim's record has no canonical row yet (`entity_id` null) —
- * which is exactly what puts a claim in `awaiting_row`. There is no fact to
- * show provenance for, so the row names what it is waiting for instead of
- * offering a link to something that does not exist.
- *
- * It does NOT ask the edit config whether the domain has a surface, though the
- * question is tempting: that map has exactly four consumers and a fifth is a
- * second allowlist growing (`tests/offline/edit/config.test.ts`). A domain
- * with no surface is answered by the route rather than by a second copy of the
- * map: `next.config.ts` rewrites such a URL to a path no route matches, so the
- * operator gets the app's framed 404 (admin-window/BUG-0017), and today every
- * domain the registry can classify a claim into is in the map.
- */
-export function provenanceHref(
-  domain: string,
-  entityId: string | null,
-): string | null {
-  if (entityId === null || entityId.length === 0) return null;
-  return `/records/${encodeURIComponent(domain)}/${encodeURIComponent(entityId)}`;
-}

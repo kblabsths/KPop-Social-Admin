@@ -13,13 +13,13 @@ import {
 } from "@/lib/browse/views";
 import {
   arrivalOrder,
-  eventRecordHref,
   currentDecisions,
   joinBrowseRows,
   sourceIdsOf,
   type EventArrivalRow,
   type EventProvenanceRow,
 } from "@/lib/browse/rows";
+import { recordHref } from "@/lib/records/routes";
 import { sourceFiles, sourceText } from "../source-tree";
 
 /**
@@ -637,11 +637,11 @@ describe("the current provenance of a fact", () => {
 
 describe("the record link", () => {
   it("points an event row at its own record surface", () => {
-    expect(eventRecordHref("2f0b-c11e")).toBe("/records/events/2f0b-c11e");
+    expect(recordHref("events", "2f0b-c11e")).toBe("/records/events/2f0b-c11e");
   });
 
   it("encodes an id that would otherwise change the path", () => {
-    expect(eventRecordHref("a/b?c")).toBe("/records/events/a%2Fb%3Fc");
+    expect(recordHref("events", "a/b?c")).toBe("/records/events/a%2Fb%3Fc");
   });
 });
 
