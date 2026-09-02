@@ -57,3 +57,68 @@
 # STRANDED	2026-09-02T05:18:15Z	visionary	25 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/docs/vision, agenticflow/visions/admin-window/docs/LOOK_AND_FEEL.md, agenticflow/visions/admin-window/docs/PERSONAS.md, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md
 2026-09-02T05:18:15Z	visionary	-	8013	519	86936
 2026-09-02T05:18:47Z	architect	-	spawned
+2026-09-02T05:19:18Z	agent	-	-	-	-
+2026-09-02T05:19:50Z	agent	-	-	-	-
+2026-09-02T05:20:21Z	agent	-	-	-	-
+2026-09-02T05:20:53Z	agent	-	-	-	-
+2026-09-02T05:21:24Z	agent	-	-	-	-
+2026-09-02T05:21:55Z	agent	-	-	-	-
+2026-09-02T05:22:27Z	agent	-	-	-	-
+2026-09-02T05:22:58Z	agent	-	-	-	-
+2026-09-02T05:23:59Z	agent	-	-	-	-
+2026-09-02T05:24:31Z	agent	-	-	-	-
+2026-09-02T05:25:02Z	agent	-	-	-	-
+2026-09-02T05:26:04Z	agent	-	-	-	-
+2026-09-02T05:26:35Z	agent	-	-	-	-
+2026-09-02T05:28:07Z	agent	-	-	-	-
+2026-09-02T05:28:38Z	agent	-	-	-	-
+2026-09-02T05:29:09Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:29:40Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/docs/STACK.md
+2026-09-02T05:29:40Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:30:42Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/docs/STACK.md
+2026-09-02T05:30:42Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:32:44Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md
+2026-09-02T05:32:44Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:33:15Z	agent	4 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md
+2026-09-02T05:33:15Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:34:16Z	agent	4 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md
+2026-09-02T05:34:16Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:34:48Z	agent	5 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md
+2026-09-02T05:34:48Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:35:49Z	agent	8 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:35:49Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:36:51Z	agent	10 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:36:51Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:37:22Z	agent	10 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:37:22Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:37:54Z	agent	11 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:37:54Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:38:25Z	agent	13 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:38:25Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:38:57Z	agent	13 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:38:57Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:39:29Z	agent	13 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:39:29Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:40:30Z	agent	16 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:40:30Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:41:31Z	agent	20 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:41:31Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:42:33Z	agent	23 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:42:33Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:43:04Z	agent	23 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:43:04Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:43:36Z	agent	25 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:43:36Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:44:07Z	agent	25 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:44:07Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:45:38Z	agent	30 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:45:38Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:46:10Z	agent	30 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:46:10Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:46:42Z	agent	30 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:46:42Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:47:13Z	agent	30 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:47:13Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:47:20Z	architect	30 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T05:47:20Z	architect	FEAT-0001	54729	1712	259753
+2026-09-02T05:47:56Z	toolsmith	DEP-0001	spawned

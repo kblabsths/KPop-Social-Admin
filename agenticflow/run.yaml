@@ -25,13 +25,13 @@ gated: true               # KEEP true for your first run on an existing project:
                           # the factory pauses for your approval at milestone boundaries
 breaker_empty_diffs: 3    # builder exits with zero file changes before the breaker trips
 breaker_same_failure: 4   # consecutive identical failure signatures before the breaker trips
-product_dir: src,supabase,public # FILL: where your product's code lives, relative to the
+product_dir: src,supabase,public,tests,docs # FILL: where your product's code lives, relative to the
                           # REPO root (not agenticflow/); comma-separate several
                           # paths, files allowed: e.g. mobile,tests,server.py
 ui_port: 8770             # PREFERRED attention-UI port — --ensure steps to the next free port if it's taken; actual URL in tracker/ui.url
-ci_command: bash -c './node_modules/.bin/tsc --noEmit' # FILL: your app's full test-suite command, run from the repo
+ci_command: bash -c 'npm run lint && ./node_modules/.bin/tsc --noEmit && npm test' # FILL: your app's full test-suite command, run from the repo
                           # root (e.g. "cd app && npm test"); empty = CI gate disabled
-ci_scope: src,supabase,package.json,tsconfig.json # paths whose change triggers a CI check (comma-separated,
+ci_scope: src,supabase,public,tests,package.json,package-lock.json,tsconfig.json,eslint.config.mjs,next.config.ts,postcss.config.mjs,vitest.config.mts # paths whose change triggers a CI check (comma-separated,
                           # repo-relative); empty = product_dir. Set when tests/data
                           # live outside product_dir — widening product_dir instead
                           # would also widen ticket scopes, stall probes, self-scan
