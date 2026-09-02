@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T15:31:47Z — do not edit)
+# Tracker index (regenerated 2026-09-02T15:35:42Z — do not edit)
 
 ## open
 - BUG-0023 [P1][bug][M1] Cycles: a ?cycle= link asserts the cycle is absent when resolution_runs was never read  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts from:TASK-0014)
@@ -13,7 +13,7 @@
 - TASK-0016 [P2][task][M1] Cycles & runs — the adapter framework's runs half  (deps:TASK-0014,TASK-0023(unmet:2) scope:src/app/cycles/page.tsx,src/lib/db/runs.ts,tests/offline/runs,tests/live/runs.live.test.ts)
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 
-## claimed
+## built
 - BUG-0021 [P2][bug][M1] Review-item detail miscounts resolved evidence when an id repeats  (scope:src/app/queues/[reviewItemId]/page.tsx,src/lib/db/review-item.ts,tests/offline/review-item @builder-45 from:TASK-0011)
 
 ## blocked
@@ -28,4 +28,4 @@
 ## reopened
 - TASK-0014 [P1][task][M1] Cycles & runs — the resolver's cycles, newest first, with their counts and errors  (deps:TASK-0005,TASK-0007,TASK-0008,TASK-0026,TASK-0030 scope:src/app/cycles/page.tsx,src/lib/db/cycles.ts,tests/offline/cycles,tests/live/cycles.live.test.ts)
 
-Totals — blocked:7, claimed:1, done:42, open:11, reopened:1. Archived: 0.
+Totals — blocked:7, built:1, done:42, open:11, reopened:1. Archived: 0.
