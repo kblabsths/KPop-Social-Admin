@@ -74,10 +74,18 @@ function codeLines(text: string): string[] {
     });
 }
 
+/**
+ * A file's code lines rejoined, newlines kept, so a pattern may span lines.
+ * Multi-line spellings are ordinary formatted code — a formatter breaks a
+ * multi-key destructure across lines — and a scanner that tested one line at a
+ * time would be blind to them (admin-window/BUG-0005).
+ */
+function codeText(text: string): string {
+  return codeLines(text).join("\n");
+}
+
 function filesWhereCodeMatches(pattern: RegExp): string[] {
-  return sourceFiles().filter((file) =>
-    codeLines(read(file)).some((line) => pattern.test(line)),
-  );
+  return sourceFiles().filter((file) => pattern.test(codeText(read(file))));
 }
 
 function withoutDeprecated(files: string[]): string[] {
@@ -85,29 +93,59 @@ function withoutDeprecated(files: string[]): string[] {
 }
 
 /**
+ * The object an env read starts from, in every spelling that reaches it:
+ * `process.env`, `process?.env`, `globalThis.process.env`,
+ * `globalThis?.process?.env` (and `global.` for the Node idiom).
+ */
+const PROCESS_ENV = String.raw`(?:(?:globalThis|global)\s*\??\.\s*)?process\s*\??\.\s*env`;
+
+/**
+ * A bracket key a text scan CAN resolve: exactly one plain quoted string that
+ * closes the bracket. A concatenation (`"SUPABASE_" + "SERVICE_ROLE_KEY"`), an
+ * interpolated template, an escape or a bare identifier is NOT resolvable.
+ */
+const RESOLVABLE_KEY = String.raw`\s*['"\x60][^'"\x60\\$]*['"\x60]\s*\]`;
+
+/**
  * A scanner for reads of an env name, in every spelling a reader can use
  * (widened by admin-window/BUG-0003, which found the dot-only pattern blind to
- * the rest):
+ * bracket access, then by admin-window/BUG-0005, which found four more):
  *
  *   - `process.env.NAME`                — direct member access;
+ *   - `process.env?.NAME`               — optional-chained member access;
  *   - `process.env["NAME"]`             — bracket access, string literal;
+ *   - `process.env?.["NAME"]`           — optional-chained bracket access;
  *   - `process.env[SOME_NAME_CONSTANT]` — bracket access through a constant,
- *     the form `client.ts` exports `DB_KEY_ENV_NAME` for.
+ *     the form `client.ts` exports `DB_KEY_ENV_NAME` for;
+ *   - `process.env["SUPABASE_" + "…"]`  — a computed bracket key;
+ *   - `const { NAME } = process.env`    — destructuring, at any position in the
+ *     pattern, renamed (`{ NAME: alias }`), defaulted, or broken over lines;
+ *   - any of the above reached through `globalThis.process` / `global.process`.
  *
- * The last form names no string a text scan can resolve, so ANY bracket read of
- * `process.env` by identifier counts as a read of the credential: a dynamic env
- * read outside the one seam is unverifiable by construction, and an
+ * A bracket key that names no string this scan can resolve counts as a read of
+ * the credential, whether it is an identifier, a concatenation or a template: a
+ * dynamic env read outside the one seam is unverifiable by construction, and an
  * unverifiable credential read is what this rule exists to forbid. A bracket
- * read of some OTHER literal name (`process.env["NODE_ENV"]`) is resolvable and
- * is not reported.
+ * read of some OTHER literal name (`process.env["NODE_ENV"]`), and a
+ * destructure that names only such keys (`const { NODE_ENV } = process.env`),
+ * are resolvable and are not reported.
  */
 function envReadOf(namePattern: string): RegExp {
+  const quotedName = String.raw`['"\x60]${namePattern}['"\x60]`;
+  const unresolvableKey = String.raw`\[(?!${RESOLVABLE_KEY})`;
   return new RegExp(
-    "process\\.env\\s*(?:" +
-      `\\.${namePattern}\\b` +
-      `|\\[\\s*["'\`]${namePattern}["'\`]\\s*\\]` +
-      "|\\[\\s*[A-Za-z_$]" +
-      ")",
+    [
+      // process.env.NAME / process.env?.NAME
+      String.raw`${PROCESS_ENV}\s*\??\.\s*${namePattern}\b`,
+      // process.env["NAME"] / process.env?.["NAME"]
+      String.raw`${PROCESS_ENV}\s*(?:\?\.)?\s*\[\s*${quotedName}\s*\]`,
+      // process.env[ anything this scan cannot resolve to a literal name ]
+      String.raw`${PROCESS_ENV}\s*(?:\?\.)?\s*${unresolvableKey}`,
+      // const { …, NAME: alias = …, … } = process.env
+      String.raw`\{[^{}]*\b${namePattern}\b[^{}]*\}\s*=\s*${PROCESS_ENV}`,
+      // const { [ unresolvable ]: alias } = process.env
+      String.raw`\{(?:[^{}]*,)?\s*${unresolvableKey}[^{}]*\}\s*=\s*${PROCESS_ENV}`,
+    ].join("|"),
   );
 }
 
@@ -254,15 +292,12 @@ describe("the credential guard itself", () => {
     expect(scanWithProbe(source, SUPABASE_CREDENTIAL_READ)).not.toContain(PROBE);
   });
 
-  // Strict xfail (admin-window/BUG-0005): the scanner requires the character
-  // after `process.env` to be `.` or `[`, so the spellings below are invisible
-  // to both real rules above. `it.fails` errors the day it starts passing —
-  // when the scanner is widened, drop the `.fails` and it asserts normally.
-  it.fails("detects a reader that destructures or optionally chains process.env", () => {
+  it("detects a reader that destructures or optionally chains process.env", () => {
     // Spellings a reader can use that name the credential just as plainly as
-    // the three above. Destructuring an env name is ordinary Node/Next code,
-    // and `process.env?.` is habitual TypeScript; a concatenated bracket key is
-    // the dynamic-read family this scanner claims to catch by construction.
+    // the three above (admin-window/BUG-0005). Destructuring an env name is
+    // ordinary Node/Next code, `process.env?.` is habitual TypeScript, and a
+    // concatenated bracket key is the dynamic-read family this scanner counts
+    // by construction.
     for (const source of [
       "const { SUPABASE_SERVICE_ROLE_KEY } = process.env;\nexport const key = SUPABASE_SERVICE_ROLE_KEY;\n",
       "export const key = process.env?.SUPABASE_SERVICE_ROLE_KEY;\n",
@@ -270,6 +305,73 @@ describe("the credential guard itself", () => {
       'export const key = process.env["SUPABASE_" + "SERVICE_ROLE_KEY"];\n',
     ]) {
       expect(scanWithProbe(source, SERVICE_ROLE_KEY_READ), source).toContain(PROBE);
+    }
+  });
+
+  it("detects the credential in every destructuring shape", () => {
+    for (const source of [
+      // second position, so the scan cannot key on "{ NAME"
+      "const { NODE_ENV, SUPABASE_SERVICE_ROLE_KEY } = process.env;\n",
+      // renamed away, so the binding never spells the credential
+      "const { SUPABASE_SERVICE_ROLE_KEY: key } = process.env;\n",
+      // renamed AND defaulted, broken over lines as a formatter would
+      'const {\n  NODE_ENV,\n  SUPABASE_SERVICE_ROLE_KEY: key = "",\n} = process.env;\n',
+      // let rather than const, reached through globalThis
+      "let { SUPABASE_SERVICE_ROLE_KEY } = globalThis.process.env;\n",
+      // a computed key this scan cannot resolve
+      'const { ["SUPABASE_" + "SERVICE_ROLE_KEY"]: key } = process.env;\n',
+    ]) {
+      expect(scanWithProbe(source, SERVICE_ROLE_KEY_READ), source).toContain(PROBE);
+    }
+  });
+
+  it("detects a credential read reached through globalThis or optional chaining", () => {
+    for (const source of [
+      "export const key = globalThis.process.env.SUPABASE_SERVICE_ROLE_KEY;\n",
+      "export const key = globalThis?.process?.env?.SUPABASE_SERVICE_ROLE_KEY;\n",
+      'export const key = globalThis.process.env["SUPABASE_SERVICE_ROLE_KEY"];\n',
+      "export const key = process?.env?.SUPABASE_SERVICE_ROLE_KEY;\n",
+      "export const key = global.process.env.SUPABASE_SERVICE_ROLE_KEY;\n",
+    ]) {
+      expect(scanWithProbe(source, SERVICE_ROLE_KEY_READ), source).toContain(PROBE);
+    }
+  });
+
+  it("detects a bracket key it cannot resolve, however that key is written", () => {
+    for (const source of [
+      'export const key = process.env["SUPABASE_" + "SERVICE_ROLE_KEY"];\n',
+      "export const key = process.env[`${prefix}SERVICE_ROLE_KEY`];\n",
+      "export const key = process.env[name];\n",
+      "export const key = process.env?.[name];\n",
+      'export const key = process.env["SUPABASE_SERVICE\\u005FROLE_KEY"];\n',
+    ]) {
+      expect(scanWithProbe(source, SERVICE_ROLE_KEY_READ), source).toContain(PROBE);
+    }
+  });
+
+  it("tells the service-role key apart from another SUPABASE_ credential", () => {
+    // Precision, not just recall: the widened shapes must still discriminate,
+    // or the first rule's `toEqual([CLIENT])` would report url readers too.
+    const source = "const { SUPABASE_URL } = process.env;\nexport const url = SUPABASE_URL;\n";
+    expect(scanWithProbe(source, SUPABASE_CREDENTIAL_READ)).toContain(PROBE);
+    expect(scanWithProbe(source, SERVICE_ROLE_KEY_READ)).not.toContain(PROBE);
+  });
+
+  it("reports nothing for those same shapes naming an unrelated env name", () => {
+    // One negative control per widened form: the scanner must stay a
+    // credential scanner, not an every-env-read scanner.
+    for (const source of [
+      "const { NODE_ENV } = process.env;\nexport const mode = NODE_ENV;\n",
+      "const { NODE_ENV, PORT: port } = process.env;\n",
+      "const {\n  NODE_ENV,\n  PORT,\n} = process.env;\n",
+      "export const mode = process.env?.NODE_ENV;\n",
+      'export const port = process.env?.["PORT"];\n',
+      "export const mode = globalThis.process.env.NODE_ENV;\n",
+      'export const mode = globalThis.process.env["NODE_ENV"];\n',
+      'const { ["NODE_ENV"]: mode } = process.env;\n',
+    ]) {
+      expect(scanWithProbe(source, SERVICE_ROLE_KEY_READ), source).not.toContain(PROBE);
+      expect(scanWithProbe(source, SUPABASE_CREDENTIAL_READ), source).not.toContain(PROBE);
     }
   });
 
