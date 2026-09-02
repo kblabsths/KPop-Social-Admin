@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T09:46:08Z — do not edit)
+# Tracker index (regenerated 2026-09-02T09:46:49Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -25,7 +25,7 @@
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 - TASK-0028 [P2][task][M1] tsconfig excludes agenticflow: a factory evidence file must not red tsc  (scope:tsconfig.json)
 
-## claimed
+## built
 - BUG-0010 [P1][bug][-] Browse's Sources column names superseded and sourceless provenance decisions  (scope:src/lib/db/browse.ts,src/lib/browse/rows.ts,tests/offline/browse @builder-20 from:TASK-0015)
 
 ## blocked
@@ -39,4 +39,4 @@
 - TASK-0015 [P1][task][M1] Browse — the recent-events curated view and its column selector  (deps:TASK-0005,TASK-0002,TASK-0004,TASK-0026 scope:src/app/browse/page.tsx,src/lib/browse,src/lib/db/browse.ts,src/components/browse,tests/offline/browse,tests/live/browse.live.test.ts)
 - TASK-0017 [P1][task][M1] The edit config map and the one PATCH route that obeys it  (deps:TASK-0005,TASK-0002,TASK-0026,TASK-0027 scope:src/lib/edit,src/app/api/admin/records/[table]/[id]/route.ts,src/lib/db/records.ts,tests/offline/edit,tests/http/edit.http.test.ts)
 
-Totals — blocked:5, claimed:1, done:17, open:23, reopened:2. Archived: 0.
+Totals — blocked:5, built:1, done:17, open:23, reopened:2. Archived: 0.
