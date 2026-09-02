@@ -17,20 +17,127 @@ import {
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 
+/* ── the route inventory, derived from the filesystem ─────────────────────── */
+
 /**
- * Every route the window offers, plus the two dynamic children — the whole
- * surface the sign-in gate has to cover (campaign admin-window/TASK-0005).
+ * Every route this app serves, read off `src/app/**` rather than listed
+ * (campaign admin-window/TASK-0019, acceptance test 12: "an unauthenticated
+ * request to every new page and route redirects to login").
+ *
+ * DERIVED is the whole point. A hand-kept list covers the routes someone
+ * remembered; the route that escapes the gate is by definition the one nobody
+ * remembered. Adding a `page.tsx` or a `route.ts` adds it here, and the sweep
+ * below then demands it redirect a stranger — including the API handler, whose
+ * gate is the same proxy and whose data is the same service role.
+ *
+ * The one regression this inventory exists to catch, named because nothing
+ * else in the repo would: `src/middleware.ts` is `export { auth as middleware }`
+ * and must never become `auth(handler)` — next-auth runs a supplied handler in
+ * the branch BEFORE the unauthenticated-redirect branch
+ * (`node_modules/next-auth/lib/index.js`, lines 148-156), so wrapping it
+ * silently removes the redirect from every route at once.
  */
-const GATED_ROUTES = [
-  "/",
-  "/queues",
-  "/claims",
-  "/sources",
-  "/cycles",
-  "/browse",
-  "/queues/2f0bc11e",
-  "/records/groups/2f0bc11e",
-];
+interface DerivedRoute {
+  /** The route as `src/app` spells it: `/records/[table]/[id]`. */
+  readonly pattern: string;
+  /** A URL of that shape, dynamic segments filled with sample values. */
+  readonly url: string;
+  readonly kind: "page" | "handler";
+}
+
+/** Sample values for dynamic segments, by segment name. Never real ids. */
+const SEGMENT_SAMPLE: Readonly<Record<string, string>> = {
+  // A table the edit map DOES carry, so the URL reaches the record page rather
+  // than `next.config.ts`'s unmapped-table rewrite. The unmapped spelling is
+  // asserted separately below.
+  table: "groups",
+};
+const SAMPLE_ID = "2f0bc11e";
+
+function fillSegment(segment: string): string {
+  const dynamic = /^\[(?:\.\.\.)?(\w+)\]$/.exec(segment);
+  if (dynamic === null) return segment;
+  return SEGMENT_SAMPLE[dynamic[1]] ?? SAMPLE_ID;
+}
+
+/** Every `page.tsx` and `route.ts` under `src/app`, as routes. */
+function derivedRoutes(): DerivedRoute[] {
+  const appDir = path.join(repoRoot, "src", "app");
+  const routes: DerivedRoute[] = [];
+  const walk = (current: string) => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      const kind =
+        entry.name === "page.tsx" ? "page" : entry.name === "route.ts" ? "handler" : null;
+      if (kind === null) continue;
+      const relative = path.relative(appDir, path.dirname(full));
+      const segments =
+        relative === ""
+          ? []
+          : relative
+              .split(path.sep)
+              // Route groups and private folders never appear in a URL.
+              .filter((segment) => !(segment.startsWith("(") && segment.endsWith(")")))
+              .filter((segment) => !segment.startsWith("_"));
+      routes.push({
+        pattern: segments.length === 0 ? "/" : `/${segments.join("/")}`,
+        url: segments.length === 0 ? "/" : `/${segments.map(fillSegment).join("/")}`,
+        kind,
+      });
+    }
+  };
+  walk(appDir);
+  return routes.sort((a, b) => (a.pattern < b.pattern ? -1 : 1));
+}
+
+/**
+ * The paths the app declares PUBLIC, read out of the proxy's own matcher
+ * (`src/middleware.ts`) rather than repeated here.
+ *
+ * Adding a public path is a design change (STACK §3). Reading the exceptions
+ * from the matcher means such a change reddens this file instead of quietly
+ * shrinking the sweep below it.
+ */
+function publicPathsFromMatcher(): string[] {
+  const source = fs.readFileSync(path.join(repoRoot, "src", "middleware.ts"), "utf8");
+  const matcher = /\(\?!([^)]*)\)/.exec(source);
+  if (matcher === null) {
+    throw new Error("src/middleware.ts carries no negative-lookahead matcher");
+  }
+  return matcher[1]
+    .split("|")
+    .map((alternative) => alternative.replace(/\\/g, "").trim())
+    .filter((alternative) => alternative.length > 0);
+}
+
+/** Asset paths in the matcher that are not routes of this app. */
+const NON_ROUTE_EXCEPTIONS = ["_next/static", "_next/image", "favicon.ico"];
+
+/** The route-bearing public paths: what the sweep is allowed to skip. */
+function publicRoutePrefixes(): string[] {
+  return publicPathsFromMatcher()
+    .filter((exception) => !NON_ROUTE_EXCEPTIONS.includes(exception))
+    .map((exception) => `/${exception}`);
+}
+
+function isPublic(url: string): boolean {
+  return publicRoutePrefixes().some(
+    (prefix) => url === prefix || url.startsWith(`${prefix}/`),
+  );
+}
+
+/** Every derived route the gate must cover — the sweep's subject. */
+const GATED = derivedRoutes().filter((route) => !isPublic(route.url));
+
+/**
+ * The URLs of those routes. Named as before so the forgery and gate loops read
+ * unchanged; what changed is where the list comes from.
+ */
+const GATED_ROUTES = GATED.map((route) => route.url);
 
 /** The six pages plus the edit surface: routes that must actually render. */
 const RENDERING_ROUTES = [
@@ -121,6 +228,60 @@ async function forgedCookies(): Promise<ReadonlyArray<readonly [string, string]>
     ["a tampered token", `${name}=${valid.slice(0, -3)}${valid.slice(-3) === "AAA" ? "BBB" : "AAA"}`],
   ] as const;
 }
+
+describe("the route inventory", () => {
+  /**
+   * These need no server: they are about what the sweep below is going to
+   * ask for. A derivation that quietly returned nothing would make every
+   * assertion in this file vacuous, so it is checked before it is used.
+   */
+  it("finds every page and every handler on disk", () => {
+    const routes = derivedRoutes();
+    const pages = routes.filter((route) => route.kind === "page").map((r) => r.pattern);
+    const handlers = routes
+      .filter((route) => route.kind === "handler")
+      .map((route) => route.pattern);
+
+    // The six pages of the window, the two dynamic children, and sign-in.
+    expect(pages).toEqual([
+      "/",
+      "/browse",
+      "/claims",
+      "/cycles",
+      "/login",
+      "/queues",
+      "/queues/[reviewItemId]",
+      "/records/[table]/[id]",
+      "/sources",
+    ]);
+    expect(handlers).toEqual([
+      "/api/admin/records/[table]/[id]",
+      "/api/auth/[...nextauth]",
+      "/api/health",
+    ]);
+  });
+
+  it("skips exactly the three paths the app declares public", () => {
+    expect(publicRoutePrefixes().sort()).toEqual(["/api/auth", "/api/health", "/login"]);
+    // …and the sweep therefore covers everything else, the API route included.
+    expect(GATED_ROUTES).toContain(`/api/admin/records/groups/${SAMPLE_ID}`);
+    expect(GATED_ROUTES).not.toContain("/login");
+    expect(GATED.filter((route) => route.kind === "handler").length).toBe(1);
+    expect(GATED.length).toBe(9);
+  });
+
+  it("keeps the gate as an export, never as a wrapped handler", () => {
+    /**
+     * The one line whose regression the behavioural sweep would catch but no
+     * reader would: next-auth runs a SUPPLIED handler in the branch before the
+     * unauthenticated-redirect branch, so `export default auth(handler)` turns
+     * the gate off for every route at once while still looking like auth.
+     */
+    const source = fs.readFileSync(path.join(repoRoot, "src", "middleware.ts"), "utf8");
+    expect(source).toMatch(/export\s*\{\s*auth as middleware\s*\}/);
+    expect(source, "the gate wraps a handler").not.toMatch(/\bauth\s*\(/);
+  });
+});
 
 describe("the built app over http", () => {
   it("serves health and sends an unauthenticated visitor to the login page", async () => {
@@ -244,6 +405,35 @@ describe("the gate over the whole window", () => {
         const location = res.headers.get("location");
         expect(location, route).not.toBeNull();
         expect(new URL(location as string, base).pathname, route).toBe("/login");
+      }
+
+      // 1b. A route handler is not reached by GET alone. Every method a
+      //     caller could send at it is turned away by the same proxy, before
+      //     the handler runs — which is what makes "the gate covers every
+      //     route" true of the write path as well as the read paths.
+      for (const route of GATED.filter((one) => one.kind === "handler")) {
+        for (const method of ["GET", "POST", "PATCH", "PUT", "DELETE"]) {
+          const res = await fetch(`${base}${route.url}`, {
+            method,
+            headers: { "content-type": "application/json" },
+            body: method === "GET" ? undefined : JSON.stringify({ field: "name", value: "x" }),
+            redirect: "manual",
+          });
+          const where = `${method} ${route.url}`;
+          expect(res.status, where).toBeGreaterThanOrEqual(300);
+          expect(res.status, where).toBeLessThan(400);
+          expect(
+            new URL(res.headers.get("location") as string, base).pathname,
+            where,
+          ).toBe("/login");
+        }
+      }
+
+      // 1c. The public paths are public — otherwise "everything else
+      //     redirects" would be a claim about an app nobody can sign in to.
+      for (const open of ["/login", "/api/health", "/api/auth/session"]) {
+        const res = await fetch(`${base}${open}`, { redirect: "manual" });
+        expect(res.status, open).toBeLessThan(300);
       }
 
       const cookie = await signedInCookie();
