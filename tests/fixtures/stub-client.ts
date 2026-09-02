@@ -1,0 +1,175 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+/**
+ * A stub Supabase client that returns a SCRIPTED PostgREST response
+ * (campaign admin-window). The offline suite never touches a network, so this
+ * is how every `lib/db/**` read is exercised.
+ *
+ * It records the chain each query built (`.select().eq().order()` …) so a test
+ * can assert the shape of the query as well as what it did with the answer,
+ * and it accepts any builder method: the script decides the answer, not the
+ * chain.
+ */
+
+/** What a scripted query resolves to. Any omitted field defaults to null. */
+export interface ScriptedResponse {
+  data?: unknown;
+  error?: unknown;
+  /** For `head: true, count: "exact"` reads. */
+  count?: number | null;
+}
+
+/** One step of a query chain, as it was called. */
+export interface RecordedStep {
+  method: string;
+  args: unknown[];
+}
+
+/** One query, from `.from(table)` to the await. */
+export interface RecordedCall {
+  table: string;
+  steps: RecordedStep[];
+}
+
+export interface StubClient {
+  /** Cast to the real client type, for handing to a `lib/db` read. */
+  asSupabaseClient(): SupabaseClient;
+  /** Every query built through this stub, in order. */
+  readonly calls: RecordedCall[];
+  /** The table names read, in order — the names the query actually used. */
+  tablesRead(): string[];
+}
+
+/** A script: one response per table, or a queue of responses per table. */
+export type Script = Record<string, ScriptedResponse | ScriptedResponse[]>;
+
+function settled(response: ScriptedResponse) {
+  return {
+    data: response.data ?? null,
+    error: response.error ?? null,
+    count: response.count ?? null,
+    status: response.error ? 400 : 200,
+    statusText: response.error ? "Bad Request" : "OK",
+  };
+}
+
+export function stubClient(script: Script): StubClient {
+  const calls: RecordedCall[] = [];
+  const queues: Record<string, ScriptedResponse[]> = {};
+  for (const [table, scripted] of Object.entries(script)) {
+    queues[table] = Array.isArray(scripted) ? [...scripted] : [scripted];
+  }
+
+  function nextResponse(table: string): ScriptedResponse {
+    const queue = queues[table];
+    if (queue === undefined) {
+      throw new Error(
+        `stub client: no scripted response for table '${table}'`,
+      );
+    }
+    // A single scripted response answers every read of that table; a queue is
+    // consumed one per read and its last entry answers the rest.
+    return queue.length > 1 ? (queue.shift() as ScriptedResponse) : queue[0];
+  }
+
+  function query(table: string): unknown {
+    const call: RecordedCall = { table, steps: [] };
+    calls.push(call);
+    const resolve = () => Promise.resolve(settled(nextResponse(table)));
+
+    const proxy: unknown = new Proxy(
+      {},
+      {
+        get(_target, property) {
+          if (typeof property === "symbol") return undefined;
+          if (property === "then") {
+            return (
+              onFulfilled?: (value: unknown) => unknown,
+              onRejected?: (reason: unknown) => unknown,
+            ) => resolve().then(onFulfilled, onRejected);
+          }
+          if (property === "catch") {
+            return (onRejected?: (reason: unknown) => unknown) =>
+              resolve().catch(onRejected);
+          }
+          if (property === "finally") {
+            return (onFinally?: () => void) => resolve().finally(onFinally);
+          }
+          return (...args: unknown[]) => {
+            call.steps.push({ method: property, args });
+            return proxy;
+          };
+        },
+      },
+    );
+    return proxy;
+  }
+
+  const client = {
+    from(table: string) {
+      return query(table);
+    },
+  };
+
+  return {
+    asSupabaseClient: () => client as unknown as SupabaseClient,
+    calls,
+    tablesRead: () => calls.map((call) => call.table),
+  };
+}
+
+/* ── the error shapes a real PostgREST/Postgres failure carries ───────────── */
+
+/** PGRST205 — the table or view is not in PostgREST's schema cache. */
+export function tableNotInSchemaCache(table: string) {
+  return {
+    code: "PGRST205",
+    details: null,
+    hint: null,
+    message: `Could not find the table 'public.${table}' in the schema cache`,
+  };
+}
+
+/** 42P01 — Postgres's own undefined_table. */
+export function undefinedTable(table: string) {
+  return {
+    code: "42P01",
+    details: null,
+    hint: null,
+    message: `relation "public.${table}" does not exist`,
+  };
+}
+
+/** PGRST204 — the column is not in PostgREST's schema cache. */
+export function columnNotInSchemaCache(table: string, column: string) {
+  return {
+    code: "PGRST204",
+    details: null,
+    hint: null,
+    message: `Could not find the '${column}' column of '${table}' in the schema cache`,
+  };
+}
+
+/** 42703 — Postgres's own undefined_column. */
+export function undefinedColumn(column: string) {
+  return {
+    code: "42703",
+    details: null,
+    hint: null,
+    message: `column "${column}" does not exist`,
+  };
+}
+
+/**
+ * 42501 — permission denied. An ARBITRARY failure as far as the data layer is
+ * concerned: it is not an absence, so it must surface the database's own
+ * message verbatim.
+ */
+export function permissionDenied(table: string) {
+  return {
+    code: "42501",
+    details: null,
+    hint: null,
+    message: `permission denied for table ${table}`,
+  };
+}
