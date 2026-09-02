@@ -634,3 +634,16 @@
 # STRANDED	2026-09-02T07:48:43Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0003.md
 2026-09-02T07:48:43Z	agent	-	-	-	-
 2026-09-02T07:49:04Z	qa-adversary	TASK-0003	spawned
+2026-09-02T07:49:14Z	agent	-	-	-	-
+# STRANDED	2026-09-02T07:49:36Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0003.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0005.md
+2026-09-02T07:49:36Z	agent	-	-	-	-
+2026-09-02T07:49:43Z	builder	TASK-0006	spawned
+# STRANDED	2026-09-02T07:49:46Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0003.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0005.md
+2026-09-02T07:49:46Z	agent	-	-	-	-
+2026-09-02T07:50:02Z	architect	TASK-0006	spawned
+# STRANDED	2026-09-02T07:50:05Z	qa-adversary	4 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0003.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0005.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0006.md
+2026-09-02T07:50:05Z	qa-adversary	TASK-0005	4830	464	79676
+# STRANDED	2026-09-02T07:50:08Z	agent	4 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0003.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0005.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0006.md
+2026-09-02T07:50:08Z	agent	-	-	-	-
+# STRANDED	2026-09-02T07:50:15Z	agent	4 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0003.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0005.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0006.md
+2026-09-02T07:50:15Z	agent	-	-	-	-
