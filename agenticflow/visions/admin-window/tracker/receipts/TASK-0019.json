@@ -1,0 +1,41 @@
+{
+ "id": "TASK-0019",
+ "created": "2026-09-02T16:30:21Z",
+ "green": true,
+ "git_head": "a72d03c9bdef5df2f4726be190cd9839157d7308",
+ "scope": [
+  "tests/offline/absence",
+  "tests/http",
+  "tests/live/residue.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "fa2767a59a88a7467c986a74434431c5a2f4450a723c5278fba2474aebb771a3",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/absence",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-56061\n\n \u2713 |offline| tests/offline/absence/blank-cells.test.ts (10 tests) 135ms\n \u2713 |offline| tests/offline/absence/in-window.test.ts (14 tests) 640ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (238 tests) 995ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  310ms\n\n Test Files  3 passed (3)\n      Tests  262 passed (262)\n   Start at  09:30:07\n   Duration  1.71s (transform 775ms, setup 0ms, collect 1.35s, tests 1.77s, environment 0ms, prepare 225ms)\n\n(node:56506) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:http",
+   "exit": 0,
+   "output_tail": "ed visitor to the login page  617ms\n   \u2713 the gate over the whole window > sends a stranger to /login and answers a signed-in visitor honestly  1028ms\n   \u2713 a record URL for a table the edit map does not carry > answers with the app's own 404, server-rendered, without weakening the gate  756ms\n   \u2713 a record URL for a table the edit map does not carry > still sends a stranger to the sign-in page  715ms\n \u2713 |http| tests/http/edit.http.test.ts (1 test) 756ms\n   \u2713 the record PATCH route over http > gates it, refuses every forged edit, and offers no other method  756ms\n\n Test Files  2 passed (2)\n      Tests  12 passed (12)\n   Start at  09:30:17\n   Duration  4.34s (transform 60ms, setup 0ms, collect 108ms, tests 3.95s, environment 0ms, prepare 57ms)\n\nnpm notice run kpop-social-space@0.1.0 test:http\nnpm notice run next build && vitest run --project=http\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-56061/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:56586) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:56654) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"test -f tests/live/residue.live.test.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

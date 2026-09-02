@@ -51,3 +51,5 @@
 2026-09-02T15:49:17Z	TASK-0014	qa->done	already_done	qa
 2026-09-02T16:04:04Z	BUG-0022	qa->done	fixed	qa
 2026-09-02T16:18:36Z	FEAT-0003	blocked->done	already_done	qa
+2026-09-02T16:29:09Z	BUG-0025	open->done	obsolete	qa
+2026-09-02T16:30:55Z	TASK-0019	qa->done	fixed	qa
