@@ -153,19 +153,41 @@ describe("Browse against staging", () => {
     const newest = expected[0];
 
     // The test's own two-step join, written independently of lib/db/browse.ts.
+    //
+    // `field_provenance` is an APPEND-ONLY DECISION LOG (contracts/data-model.md,
+    // Per-field provenance; admin-window/BUG-0010): the current provenance of a
+    // fact is its LATEST row, the ones before it are history, and a verdict
+    // unset carries a null `source_id`. So this reduction is part of what the
+    // test independently computes, not something it takes on the page's word.
     const provenance = await independentClient()
       .from(T.fieldProvenance)
-      .select("source_id")
+      .select("provenance_id, field, source_id, applied_at")
       .eq("entity_type", T.events)
       .eq("entity_id", newest.event_id);
     if (provenance.error) {
       throw new Error(`the provenance query failed: ${provenance.error.message}`);
     }
+    const decisions = (provenance.data ?? []) as {
+      provenance_id: string;
+      field: string;
+      source_id: string | null;
+      applied_at: string;
+    }[];
+    const current = new Map<string, (typeof decisions)[number]>();
+    for (const row of decisions) {
+      const held = current.get(row.field);
+      const later =
+        held === undefined ||
+        Date.parse(row.applied_at) > Date.parse(held.applied_at) ||
+        (Date.parse(row.applied_at) === Date.parse(held.applied_at) &&
+          row.provenance_id > held.provenance_id);
+      if (later) current.set(row.field, row);
+    }
     const sourceIds = [
       ...new Set(
-        ((provenance.data ?? []) as { source_id: string }[]).map(
-          (row) => row.source_id,
-        ),
+        [...current.values()]
+          .map((row) => row.source_id)
+          .filter((id): id is string => id !== null),
       ),
     ];
 

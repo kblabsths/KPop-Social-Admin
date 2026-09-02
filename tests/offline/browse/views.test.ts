@@ -16,9 +16,11 @@ import {
 import {
   arrivalOrder,
   eventRecordHref,
+  currentDecisions,
   joinBrowseRows,
   sourceIdsOf,
   type EventArrivalRow,
+  type EventProvenanceRow,
 } from "@/lib/browse/rows";
 
 /**
@@ -308,14 +310,34 @@ describe("the join", () => {
     created_at: "2026-09-01T00:00:00Z",
   });
 
+  /**
+   * One row of the append-only decision log. A fact identity is
+   * `(entity_id, field)`, so two decisions on the same field are the same
+   * fact decided twice — and `source_id` is null on a verdict unset.
+   */
+  const decision = (
+    entity_id: string,
+    field: string,
+    source_id: string | null,
+    applied_at = "2026-01-01T00:00:00Z",
+    provenance_id = `${entity_id}/${field}/${applied_at}/${source_id}`,
+  ): EventProvenanceRow => ({
+    provenance_id,
+    entity_id,
+    field,
+    source_id,
+    applied_at,
+  });
+
   it("names the distinct sources behind a row, alphabetically", () => {
     const rows = joinBrowseRows({
       events: [event("e1")],
       venues: [],
+      // Three facts of the same row, two of them won by the same source.
       provenance: [
-        { entity_id: "e1", source_id: "s2" },
-        { entity_id: "e1", source_id: "s1" },
-        { entity_id: "e1", source_id: "s1" },
+        decision("e1", "title", "s2"),
+        decision("e1", "starts_at", "s1"),
+        decision("e1", "description", "s1"),
       ],
       sources: [
         { source_id: "s1", source: "ticketmaster" },
@@ -329,7 +351,7 @@ describe("the join", () => {
     const rows = joinBrowseRows({
       events: [event("e1")],
       venues: [],
-      provenance: [{ entity_id: "e1", source_id: "s9" }],
+      provenance: [decision("e1", "title", "s9")],
       sources: [],
     });
     expect(rows[0].sources).toEqual(["s9"]);
@@ -339,7 +361,7 @@ describe("the join", () => {
     const rows = joinBrowseRows({
       events: [event("e1"), event("e2")],
       venues: [],
-      provenance: [{ entity_id: "e1", source_id: "s1" }],
+      provenance: [decision("e1", "title", "s1")],
       sources: [{ source_id: "s1", source: "ticketmaster" }],
     });
     const byId = new Map(rows.map((r) => [r.event_id, r]));
@@ -394,8 +416,7 @@ describe("the join", () => {
    * So the sources BEHIND a row are the sources of the latest decision per
    * fact identity — never the union of every decision ever made on it.
    */
-  // strict xfail — admin-window/BUG-0010. Flip back to `it(` with the fix.
-  it.fails("names only the source behind the current value, not a superseded one", () => {
+  it("names only the source behind the current value, not a superseded one", () => {
     const rows = joinBrowseRows({
       events: [event("e1")],
       venues: [],
@@ -403,8 +424,8 @@ describe("the join", () => {
       // won it once and `ticketmaster` won it later. Only the later row is
       // the current provenance.
       provenance: [
-        { entity_id: "e1", source_id: "s_old" },
-        { entity_id: "e1", source_id: "s_new" },
+        decision("e1", "title", "s_old", "2026-01-01T00:00:00Z"),
+        decision("e1", "title", "s_new", "2026-08-01T00:00:00Z"),
       ],
       sources: [
         { source_id: "s_old", source: "retired_feed" },
@@ -420,28 +441,171 @@ describe("the join", () => {
    * 20260901000005 §1, and `contracts/data-model.md` Per-field provenance).
    * A row with no source must contribute no source name.
    */
-  // strict xfail — admin-window/BUG-0010. Flip back to `it(` with the fix.
-  it.fails("contributes no source name for a decision that names no source", () => {
+  it("contributes no source name for a decision that names no source", () => {
     const rows = joinBrowseRows({
       events: [event("e1")],
       venues: [],
       provenance: [
-        { entity_id: "e1", source_id: null as unknown as string },
-        { entity_id: "e1", source_id: "s1" },
+        decision("e1", "poster_url", null),
+        decision("e1", "title", "s1"),
       ],
       sources: [{ source_id: "s1", source: "ticketmaster" }],
     });
     expect(rows[0].sources).toEqual(["ticketmaster"]);
   });
 
+  /**
+   * The unset is the LATEST decision on its fact, so it supersedes the sourced
+   * one it replaced: the field's value went back to null and no source is
+   * behind it any more.
+   */
+  it("drops the source a later verdict unset took the field away from", () => {
+    const rows = joinBrowseRows({
+      events: [event("e1")],
+      venues: [],
+      provenance: [
+        decision("e1", "poster_url", "s2", "2026-01-01T00:00:00Z"),
+        decision("e1", "poster_url", null, "2026-08-01T00:00:00Z"),
+        decision("e1", "title", "s1", "2026-02-01T00:00:00Z"),
+      ],
+      sources: [
+        { source_id: "s1", source: "ticketmaster" },
+        { source_id: "s2", source: "bandsintown" },
+      ],
+    });
+    expect(rows[0].sources).toEqual(["ticketmaster"]);
+  });
+
+  /** An unset superseded IN TURN by a real decision is history like any other. */
+  it("names the source of a decision that came after a verdict unset", () => {
+    const rows = joinBrowseRows({
+      events: [event("e1")],
+      venues: [],
+      provenance: [
+        decision("e1", "title", null, "2026-01-01T00:00:00Z"),
+        decision("e1", "title", "s1", "2026-08-01T00:00:00Z"),
+      ],
+      sources: [{ source_id: "s1", source: "ticketmaster" }],
+    });
+    expect(rows[0].sources).toEqual(["ticketmaster"]);
+  });
+
+  it("keeps the same fact's decisions apart per entity", () => {
+    const rows = joinBrowseRows({
+      events: [event("e1"), event("e2")],
+      venues: [],
+      // Same field, different entities: two facts, not one decided twice.
+      provenance: [
+        decision("e1", "title", "s1", "2026-01-01T00:00:00Z"),
+        decision("e2", "title", "s2", "2026-08-01T00:00:00Z"),
+      ],
+      sources: [
+        { source_id: "s1", source: "ticketmaster" },
+        { source_id: "s2", source: "bandsintown" },
+      ],
+    });
+    const byId = new Map(rows.map((r) => [r.event_id, r]));
+    expect(byId.get("e1")?.sources).toEqual(["ticketmaster"]);
+    expect(byId.get("e2")?.sources).toEqual(["bandsintown"]);
+  });
+
   it("lists each source id once, in first-seen order", () => {
     expect(
       sourceIdsOf([
-        { entity_id: "e1", source_id: "s2" },
-        { entity_id: "e2", source_id: "s1" },
-        { entity_id: "e3", source_id: "s2" },
+        { source_id: "s2" },
+        { source_id: "s1" },
+        { source_id: "s2" },
       ]),
     ).toEqual(["s2", "s1"]);
+  });
+
+  it("asks for no name for a decision that names no source", () => {
+    // `.in("source_id", [null])` is not a query anyone meant to write.
+    expect(sourceIdsOf([{ source_id: null }, { source_id: "s1" }])).toEqual([
+      "s1",
+    ]);
+  });
+});
+
+/**
+ * The latest-per-fact reduction on its own (campaign admin-window/BUG-0010).
+ *
+ * `contracts/data-model.md`, Per-field provenance: the latest row per fact
+ * identity is the current provenance, the rows before it are history, and rows
+ * are never updated or deleted — so the log grows and only this reduction
+ * keeps the Sources column from growing with it.
+ */
+describe("the current provenance of a fact", () => {
+  const log = (
+    entity_id: string,
+    field: string,
+    source_id: string | null,
+    applied_at: string,
+    provenance_id: string,
+  ): EventProvenanceRow => ({
+    provenance_id,
+    entity_id,
+    field,
+    source_id,
+    applied_at,
+  });
+
+  it("keeps one decision per fact identity, whatever the log's order", () => {
+    const rows = [
+      log("e1", "title", "s1", "2026-01-01T00:00:00Z", "p1"),
+      log("e1", "title", "s2", "2026-08-01T00:00:00Z", "p2"),
+      log("e1", "title", "s3", "2026-04-01T00:00:00Z", "p3"),
+    ];
+    for (const order of [rows, [...rows].reverse()]) {
+      const current = currentDecisions(order);
+      expect(current).toHaveLength(1);
+      expect(current[0].source_id).toBe("s2");
+    }
+  });
+
+  it("keeps every distinct fact of the same entity", () => {
+    const current = currentDecisions([
+      log("e1", "title", "s1", "2026-01-01T00:00:00Z", "p1"),
+      log("e1", "starts_at", "s2", "2026-01-01T00:00:00Z", "p2"),
+    ]);
+    expect(current.map((row) => row.field).sort()).toEqual([
+      "starts_at",
+      "title",
+    ]);
+  });
+
+  it("breaks a tied timestamp on the time-ordered primary key", () => {
+    // `provenance_id` is uuid v7, so the key itself carries the later instant
+    // when two rows share an `applied_at`.
+    const tied = [
+      log("e1", "title", "s_first", "2026-01-01T00:00:00Z", "p1"),
+      log("e1", "title", "s_last", "2026-01-01T00:00:00Z", "p2"),
+    ];
+    for (const order of [tied, [...tied].reverse()]) {
+      expect(currentDecisions(order)[0].source_id).toBe("s_last");
+    }
+  });
+
+  it("keeps a verdict unset as the current decision it is", () => {
+    const current = currentDecisions([
+      log("e1", "poster_url", "s1", "2026-01-01T00:00:00Z", "p1"),
+      log("e1", "poster_url", null, "2026-08-01T00:00:00Z", "p2"),
+    ]);
+    expect(current).toHaveLength(1);
+    expect(current[0].source_id).toBeNull();
+  });
+
+  it("changes nothing when applied to its own result", () => {
+    const once = currentDecisions([
+      log("e1", "title", "s1", "2026-01-01T00:00:00Z", "p1"),
+      log("e1", "title", "s2", "2026-08-01T00:00:00Z", "p2"),
+      log("e2", "title", "s1", "2026-03-01T00:00:00Z", "p3"),
+    ]);
+    expect(currentDecisions(once)).toEqual(once);
+  });
+
+  it("is empty for an empty log", () => {
+    expect(currentDecisions([])).toEqual([]);
   });
 });
 
