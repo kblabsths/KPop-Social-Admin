@@ -1,0 +1,72 @@
+{
+ "id": "TASK-0026",
+ "created": "2026-09-02T08:47:58Z",
+ "green": true,
+ "git_head": "3545c126f3c8813e44f18945935583c970e0b8c0",
+ "scope": [
+  "src/lib/db/result.ts",
+  "src/lib/db/review-items.ts",
+  "tests/offline/db",
+  "tests/offline/review"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "42154100510ea31af5e1374d307156648d1b53cbfceff3e392042991d441868b",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/db tests/offline/review",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-92785\n\n \u2713 |offline| tests/offline/db/layering.test.ts (14 tests) 68ms\n \u2713 |offline| tests/offline/review/shapes.test.ts (38 tests) 15ms\n \u2713 |offline| tests/offline/db/client.test.ts (5 tests) 78ms\n \u2713 |offline| tests/offline/review/one-place.test.ts (8 tests) 39ms\n \u2713 |offline| tests/offline/review/review-items.test.ts (28 tests) 12ms\n \u2713 |offline| tests/offline/db/result.test.ts (41 tests) 15ms\n\n Test Files  6 passed (6)\n      Tests  134 passed (134)\n   Start at  01:47:57\n   Duration  467ms (transform 200ms, setup 0ms, collect 452ms, tests 227ms, environment 1ms, prepare 528ms)\n\n(node:92850) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -q 'export const ROW_CAP' src/lib/db/result.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q 'export async function readComplete' src/lib/db/result.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q readComplete src/lib/db/review-items.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF 'count: \"exact\"' src/lib/db/review-items.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF '.range(' src/lib/db/review-items.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF '.order(' src/lib/db/review-items.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"! grep -qF 'count ?? 0' src/lib/db/result.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q 'export async function readRows' src/lib/db/result.ts",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
