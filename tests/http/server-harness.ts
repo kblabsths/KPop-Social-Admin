@@ -36,18 +36,55 @@ export const base = `http://${host}:${HTTP_TEST_PORT}`;
 export const AUTH_SECRET = "http-suite-placeholder-not-a-credential";
 
 /**
- * Environment for the app under test.
+ * The database URL the app under test is given: a loopback address on TCP
+ * port 1.
  *
- * Every Supabase name is stripped: these routes must answer without a
- * database, and dropping the names is what proves it rather than asserts it.
- * AUTH_SECRET is the throwaway literal above; no real credential is ever read
- * here, and the suite never signs in through Google.
+ * Port 1 is reserved (tcpmux) and nothing serves it, so every connect is
+ * refused immediately — the URL is syntactically a Supabase endpoint and
+ * reaches no database, on this machine or any other.
+ */
+export const DB_URL_SENTINEL = "http://127.0.0.1:1/http-suite-no-database";
+
+/**
+ * The service-role key the app under test is given: a self-describing literal
+ * in the same spirit as AUTH_SECRET above.
+ *
+ * It is not a credential and cannot be read as one — no JWT envelope, no
+ * `sb_secret_` / `sbp_` prefix, and it says so in words.
+ */
+export const DB_KEY_SENTINEL = "http-suite-not-a-credential";
+
+/**
+ * Environment for the app under test: these routes must answer WITHOUT a
+ * database, and this function ENFORCES that rather than asserting it.
+ *
+ * Two passes, and the second is not redundant with the first — do not "clean
+ * up" the delete-then-set. Deleting every `*SUPABASE*` name is necessary (it
+ * clears staging names and anything else this machine happens to carry) but
+ * on its own it is exactly what invites the refill: `next start` calls
+ * `@next/env`'s `loadEnvConfig` on the repo root, which reads `.env` and puts
+ * the deleted names straight back (measured 2026-09-02 on Next 16.2.2,
+ * campaign admin-window/TASK-0027). What `@next/env` does NOT do is override a
+ * name that is already present — it fills absent ones only — so the two names
+ * `src/lib/db/client.ts` reads are left PRESENT, holding sentinels the reload
+ * cannot displace.
+ *
+ * `tests/offline/http-harness.test.ts` proves that end to end in a child
+ * process and fails the day this reverts to a bare delete.
+ *
+ * Consequence, wanted: a route that reaches `lib/db` now gets a refused
+ * connection and renders its error state, so the suite proves the app survives
+ * without a database instead of assuming it never asked for one. AUTH_SECRET
+ * is the throwaway literal above; no real credential is ever read here, and
+ * the suite never signs in through Google.
  */
 export function serverEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
     if (key.includes("SUPABASE")) delete env[key];
   }
+  env.SUPABASE_URL = DB_URL_SENTINEL;
+  env.SUPABASE_SERVICE_ROLE_KEY = DB_KEY_SENTINEL;
   env.AUTH_SECRET = AUTH_SECRET;
   env.AUTH_URL = base;
   env.AUTH_TRUST_HOST = "true";
