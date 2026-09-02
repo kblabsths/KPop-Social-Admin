@@ -1,10 +1,12 @@
 {
- "tree_hash": "f90d411937e7256538b1c0299b08bc82cdb9e9279b8b2296c742fc8ca2195612",
- "last_green_commit": "9d0ea5083e4108f46f0d98718d35768b6b1cff52",
- "status": "green",
- "open_bug": null,
- "last_sig": null,
- "seen_sigs": [],
+ "tree_hash": "13cdb657c9979f41a1d85f007aedabffba435e9009ebd7c96e0be47ca9df03d8",
+ "last_green_commit": "a5e4adb76e7e3afce3863883c3d561f3cba9ee8c",
+ "status": "red",
+ "open_bug": "BUG-0008",
+ "last_sig": "b638c93cffb1",
+ "seen_sigs": [
+  "b638c93cffb1"
+ ],
  "strikes": 0,
- "attempts": 0
+ "attempts": 1
 }
