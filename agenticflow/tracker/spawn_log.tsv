@@ -3699,3 +3699,5 @@
 2026-09-02T17:30:05Z	agent	-	-	-	-
 # STRANDED	2026-09-02T17:30:05Z	builder	3 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0029.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0031.md
 2026-09-02T17:30:05Z	builder	BUG-0029	11057	1247	112184
+2026-09-02T17:31:20Z	qa-adversary	BUG-0029	spawned
+2026-09-02T17:31:43Z	builder	BUG-0030	spawned
