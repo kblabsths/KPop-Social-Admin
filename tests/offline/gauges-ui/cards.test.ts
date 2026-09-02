@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   Distribution,
+  type DistributionRow,
   GaugeCard,
+  type EmptyWords,
   TrendTable,
   spreadRows,
   type GaugeState,
@@ -121,31 +123,51 @@ function card(props: Parameters<typeof GaugeCard>[0]): string {
   return render(h(GaugeCard, props));
 }
 
-function weekTable(state?: GaugeState): string {
+/**
+ * The words each rows surface must now carry for the case it holds nothing.
+ * They are the CALLER's — the component cannot invent them (ARCHITECTURE §7,
+ * admin-window/TASK-0030) — so the tests below assert they arrive verbatim.
+ */
+const WEEKS_EMPTY: EmptyWords = {
+  holds: "weeks in this window",
+  filledBy: "an item opens in this queue",
+};
+
+const SPREAD_EMPTY: EmptyWords = {
+  holds: "measured cycles",
+  filledBy: "a cycle finishes and the resolver records its duration",
+};
+
+function weekTable(state?: GaugeState, rows: QueueWeek[] = CONFLICTS.weeks): string {
   return render(
     h(TrendTable<QueueWeek>, {
       label: "opens and settles per week",
       period: "week",
-      rows: CONFLICTS.weeks,
+      rows,
       rowKey: (week: QueueWeek) => week.weekStart,
       rowLabel: (week: QueueWeek) => week.weekStart,
       measures: [
         { key: "opened", label: "opened", value: (week: QueueWeek) => week.opened },
         { key: "settled", label: "settled", value: (week: QueueWeek) => week.settled },
       ],
+      empty: WEEKS_EMPTY,
       state,
     }),
   );
 }
 
-function ageDistribution(state?: GaugeState): string {
+function ageDistribution(
+  state?: GaugeState,
+  rows: DistributionRow[] = spreadRows(CYCLES.duration),
+): string {
   return render(
     h(Distribution, {
       label: "cycle duration",
       dimension: "percentile",
       measure: "duration",
-      rows: spreadRows(CYCLES.duration),
+      rows,
       format: duration,
+      empty: SPREAD_EMPTY,
       state,
     }),
   );
@@ -440,6 +462,7 @@ describe("TrendTable", () => {
             format: duration,
           },
         ],
+        empty: { holds: "queues", filledBy: "the resolver opens a review item" },
       }),
     );
     expect(textOf(html)).toContain(duration(CONFLICTS.openAge.p50));
@@ -501,6 +524,7 @@ describe("Distribution", () => {
         measure: "duration",
         rows: spreadRows(UNMEASURED.duration),
         format: duration,
+        empty: SPREAD_EMPTY,
       }),
     );
     expect(html).not.toMatch(/width:/);
@@ -519,6 +543,7 @@ describe("Distribution", () => {
         rows,
         format: duration,
         detailLabel: "cycles",
+        empty: SPREAD_EMPTY,
       }),
     );
     const without = render(
@@ -528,6 +553,7 @@ describe("Distribution", () => {
         measure: "duration",
         rows,
         format: duration,
+        empty: SPREAD_EMPTY,
       }),
     );
     expect(textOf(withDetail)).toContain("2 cycles");
@@ -543,6 +569,7 @@ describe("Distribution", () => {
         rows: spreadRows(CYCLES.duration),
         format: duration,
         max: CYCLES.duration.max === null ? undefined : CYCLES.duration.max * 2,
+        empty: SPREAD_EMPTY,
       }),
     );
     const widths = [...html.matchAll(/width:\s*([0-9.]+)%/g)].map((match) => match[1]);
@@ -570,6 +597,145 @@ describe("Distribution", () => {
   });
 });
 
+/**
+ * The typed state contract of admin-window/TASK-0030, asserted where only a
+ * rendering can prove it: the eyebrow survives onto the card that replaces a
+ * gauge, and a rows surface has no headers-only rendering left to reach.
+ */
+describe("the state contract these three components share", () => {
+  const SURFACE_STATES = STATES.filter(
+    (state) => state.kind === "empty" || state.kind === "not_provisioned",
+  );
+
+  it("keeps the gauge's own label on the card that replaces it, in all three components", () => {
+    // The two surface states replace the WHOLE gauge, so the label is the only
+    // thing left saying which knob is missing. A screen of these without it
+    // names the absent tables and no gauges.
+    const byComponent: [string, (state: GaugeState) => string][] = [
+      ["GaugeCard", (state) => card({ label: "cycle health", state })],
+      [
+        "TrendTable",
+        (state) =>
+          render(
+            h(TrendTable<QueueWeek>, {
+              label: "cycle health",
+              period: "week",
+              rows: CONFLICTS.weeks,
+              rowKey: (week: QueueWeek) => week.weekStart,
+              rowLabel: (week: QueueWeek) => week.weekStart,
+              measures: [{ key: "opened", label: "opened", value: (week: QueueWeek) => week.opened }],
+              empty: WEEKS_EMPTY,
+              state,
+            }),
+          ),
+      ],
+      [
+        "Distribution",
+        (state) =>
+          render(
+            h(Distribution, {
+              label: "cycle health",
+              dimension: "percentile",
+              measure: "duration",
+              rows: spreadRows(CYCLES.duration),
+              format: duration,
+              empty: SPREAD_EMPTY,
+              state,
+            }),
+          ),
+      ],
+    ];
+
+    for (const [component, renderState] of byComponent) {
+      for (const state of SURFACE_STATES) {
+        const html = renderState(state);
+        const where = `${component}/${state.kind}`;
+        expect(textOf(html), where).toContain("cycle health");
+        // as the eyebrow: a `micro` label, the position StatCard gives it
+        expect(classesOf(html), where).toContain("type-micro");
+        expect(textOf(html).indexOf("cycle health"), where).toBe(0);
+      }
+    }
+  });
+
+  it("renders the caller's own empty words instead of a headers-only table", () => {
+    for (const [component, html, words] of [
+      ["TrendTable", weekTable(undefined, []), WEEKS_EMPTY],
+      ["Distribution", ageDistribution(undefined, []), SPREAD_EMPTY],
+    ] as const) {
+      // the rendering that says nothing at all is gone: no table, no header row
+      expect(html, component).not.toContain("<table");
+      expect(html, component).not.toContain("<thead");
+      // and what stands there instead carries the caller's words and the
+      // gauge's own eyebrow
+      expect(textOf(html), component).toContain(words.holds);
+      expect(textOf(html), component).toContain(words.filledBy);
+      expect(classesOf(html), component).toContain("border-hairline");
+      expect(classesOf(html), component).toContain("type-micro");
+    }
+    expect(textOf(weekTable(undefined, []))).toContain("opens and settles per week");
+    expect(textOf(ageDistribution(undefined, []))).toContain("cycle duration");
+  });
+
+  it("lets an explicit state win over the empty case it would have rendered", () => {
+    // A page that knows WHY the surface is empty — a filter that matched
+    // nothing — says so in its own words, and a read still in flight or
+    // refused is not an empty series at all.
+    const stated: GaugeState = {
+      kind: "empty",
+      holds: "cycles matching this filter",
+      filledBy: "widen the window",
+    };
+    for (const [component, html] of [
+      ["TrendTable", weekTable(stated, [])],
+      ["Distribution", ageDistribution(stated, [])],
+    ] as const) {
+      expect(textOf(html), component).toContain("cycles matching this filter");
+      expect(textOf(html), component).not.toContain(WEEKS_EMPTY.filledBy);
+      expect(textOf(html), component).not.toContain(SPREAD_EMPTY.filledBy);
+    }
+
+    for (const [component, html] of [
+      ["TrendTable", weekTable(STATES[0], [])],
+      ["Distribution", ageDistribution(STATES[0], [])],
+    ] as const) {
+      // loading: the header stays put, and no empty card claims the series is
+      // empty when nobody has read it yet
+      expect(html, component).toContain("<thead");
+      expect(html, component).toMatch(/role="status"/);
+      expect(textOf(html), component).not.toContain(WEEKS_EMPTY.filledBy);
+    }
+  });
+
+  it("cannot be handed rows with no words for the case they are absent", () => {
+    // The compile-time half: `tsc --noEmit` covers `tests/**`, so if `empty`
+    // ever goes optional again these directives become unused-directive errors
+    // and the build reddens. Never rendered — not compiling is the assertion.
+    const headersOnlyTrend = () =>
+      // @ts-expect-error `empty` is required: a headers-only table is unwritable
+      h(TrendTable<QueueWeek>, {
+        label: "opens per week",
+        period: "week",
+        rows: [],
+        rowKey: (week: QueueWeek) => week.weekStart,
+        rowLabel: (week: QueueWeek) => week.weekStart,
+        measures: [],
+      });
+    const headersOnlySpread = () =>
+      // @ts-expect-error `empty` is required: a headers-only table is unwritable
+      h(Distribution, {
+        label: "cycle duration",
+        dimension: "percentile",
+        measure: "duration",
+        rows: [],
+      });
+    expect([typeof headersOnlyTrend, typeof headersOnlySpread]).toEqual([
+      "function",
+      "function",
+    ]);
+  });
+});
+
 describe("token discipline across the three gauge components", () => {
   const SAMPLES: { name: string; html: string }[] = [
     { name: "GaugeCard", html: card({ label: "facts examined", value: CYCLES.factsExamined }) },
@@ -586,8 +752,10 @@ describe("token discipline across the three gauge components", () => {
       html: card({ label: "cycles", state }),
     })),
     { name: "TrendTable", html: weekTable() },
+    { name: "TrendTable/no-rows", html: weekTable(undefined, []) },
     ...STATES.map((state) => ({ name: `TrendTable/${state.kind}`, html: weekTable(state) })),
     { name: "Distribution", html: ageDistribution() },
+    { name: "Distribution/no-rows", html: ageDistribution(undefined, []) },
     ...STATES.map((state) => ({
       name: `Distribution/${state.kind}`,
       html: ageDistribution(state),

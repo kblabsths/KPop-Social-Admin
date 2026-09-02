@@ -116,7 +116,11 @@ export function GaugeCard(props: GaugeCardProps) {
 
   if (props.state !== undefined) {
     const state = props.state;
-    if (stateReplacesSurface(state)) return <GaugeStateCard state={state} />;
+    // The card that replaces this one keeps this one's eyebrow: the label is
+    // the only thing saying WHICH gauge is empty or unprovisioned
+    // (admin-window/TASK-0030).
+    if (stateReplacesSurface(state))
+      return <GaugeStateCard state={state} label={label} />;
     // A line state keeps the card in its grid: the dash says there is no
     // figure yet, the sub-line says why. Never a zero standing in for a
     // number nobody has read.
