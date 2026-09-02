@@ -11,3 +11,4 @@
 2026-09-02T09:25:27Z	artifact_gate	blocked write outside repo: /tmp/npmci.log
 2026-09-02T09:33:50Z	evidence_budget	qa_evidence_overbudget: TASK-0015 4214/4000 chars
 2026-09-02T09:38:03Z	artifact_gate	blocked write outside repo: /tmp/npmci.log
+2026-09-02T09:45:32Z	evidence_budget	qa_evidence_overbudget: TASK-0017 5118/4000 chars
