@@ -236,6 +236,54 @@ describe("the handler refuses a forged edit and attempts no write", () => {
     }
   });
 
+  /**
+   * The finiteness guard's EDGES — campaign admin-window/BUG-0013, QA attack.
+   *
+   * A guard written against the literal `1e999` rather than against the parsed
+   * VALUE passes the tests above and still leaks, and a guard written too wide
+   * refuses legitimate edits. Three edges pin it to the value itself:
+   *
+   *  - key ORDER: JSON's last duplicate key wins, so `{"value":"safe",
+   *    "value":1e999}` is a request to store Infinity and `{"value":1e999,
+   *    "value":"safe"}` is a request to store the string. The guard must read
+   *    the value `JSON.parse` produced, not any earlier one.
+   *  - the BOUNDARY: `Number.MAX_VALUE` is finite and must still be written;
+   *    the next literal up parses to Infinity and must be refused. Over-refusal
+   *    of large finite numbers is a regression too.
+   *  - a numeric-looking STRING is text, not a number: `"1e999"` must reach the
+   *    writer as the six characters it is.
+   */
+  it("guards the parsed value, not the literal: key order, MAX_VALUE, text", async () => {
+    // Last duplicate key wins — Infinity arrives last and is refused.
+    await refused("groups", '{"field":"bio","value":"safe","value":1e999}', "dup key, Infinity last");
+    updateRecordField.mockReset();
+    updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+
+    // Last duplicate key wins the other way — the string arrives last and writes.
+    let res = await patch("groups", '{"field":"bio","value":1e999,"value":"safe"}');
+    expect(res.status, "dup key, string last").toBe(200);
+    expect(updateRecordField.mock.calls[0][2], "dup key, string last").toBe("safe");
+    updateRecordField.mockReset();
+    updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+
+    // The largest finite double still edits — the guard refuses non-finite, not big.
+    res = await patch("groups", '{"field":"member_count","value":1.7976931348623157e308}');
+    expect(res.status, "MAX_VALUE").toBe(200);
+    expect(updateRecordField.mock.calls[0][2], "MAX_VALUE").toBe(Number.MAX_VALUE);
+    updateRecordField.mockReset();
+    updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+
+    // One step past it parses to Infinity, which JSON.stringify would null.
+    await refused("groups", '{"field":"member_count","value":1.8e308}', "just past MAX_VALUE");
+    updateRecordField.mockReset();
+    updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+
+    // A numeric-looking STRING is text and survives the round trip unchanged.
+    res = await patch("groups", '{"field":"bio","value":"1e999"}');
+    expect(res.status, "string 1e999").toBe(200);
+    expect(updateRecordField.mock.calls[0][2], "string 1e999").toBe("1e999");
+  });
+
   it("names the unstorable number in the refusal, as a client error", async () => {
     // As with an omitted `value` (admin-window/BUG-0011), a non-2xx is not
     // enough: the caller must be able to tell WHAT the request asked for that
