@@ -28,8 +28,14 @@ import {
  * The columns, explicit (§4.2 "Reads are explicit"). Spelled once: a page
  * asking for a different set would defeat the not-provisioned classification,
  * which names the column the database complained about.
+ *
+ * Exported because the item DETAIL reads one row of the same table
+ * (`src/lib/db/review-item.ts`, campaign admin-window/TASK-0011) and two
+ * hand-kept copies of a select list drift: the day a column is added here the
+ * detail must ask for it too, or the same row arrives with a different shape
+ * on two surfaces.
  */
-const COLUMNS = [
+export const REVIEW_ITEM_COLUMNS = [
   "review_item_id",
   "queue",
   "source_id",
@@ -73,7 +79,7 @@ const COLUMNS = [
 function query(db: SupabaseClient, filter: ReviewItemFilter, cap: number) {
   let builder = db
     .from(T.reviewItems)
-    .select(COLUMNS, { count: "exact" });
+    .select(REVIEW_ITEM_COLUMNS, { count: "exact" });
   if (filter.queue !== undefined) builder = builder.eq("queue", filter.queue);
   if (filter.status !== undefined) builder = builder.eq("status", filter.status);
   return builder
