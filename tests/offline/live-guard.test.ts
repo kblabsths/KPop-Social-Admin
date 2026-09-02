@@ -696,9 +696,61 @@ describe("the state classifier", () => {
     expect(stateOf(surface(rows(), 'data-surface="q" data-state="ok"'), SURFACE)).toBe(
       "ok",
     );
+    // A declaration that contradicts the card inside it is unreadable markup.
     expect(() =>
-      stateOf(surface(errorLine(), 'data-surface="q" data-state="ok"'), SURFACE),
+      stateOf(surface(empty(), 'data-surface="q" data-state="ok"'), SURFACE),
     ).toThrow(MarkupReadError);
+  });
+
+  it("lets an ERROR card outrank the wrapper's declaration rather than refusing", () => {
+    // admin-window/BUG-0035: a block that rendered an error line IS in its
+    // error state whatever it declares — and saying so lets the failure carry
+    // the read and the database's own words (rule 6), which a refusal about
+    // contradictory markup buried.
+    const declared = surface(errorLine(), 'data-surface="q" data-state="ok"');
+    expect(stateOf(declared, SURFACE)).toBe("error");
+    expect(() => assertState(declared, SURFACE, "ok")).toThrow(StateMismatchError);
+    expect(() => assertState(declared, SURFACE, "ok")).toThrow(/review_items/);
+    expect(() => assertState(declared, SURFACE, "error")).not.toThrow();
+  });
+
+  it("names the kind that dominates a surface holding several cards", () => {
+    // An error is never outvoted by a sibling read that answered; an object
+    // that could not be read outranks an emptiness; `ok` is only the answer
+    // where the surface carries no card at all (admin-window/BUG-0035).
+    expect(stateOf(surface(empty() + errorLine()), SURFACE)).toBe("error");
+    expect(stateOf(surface(notProvisioned() + errorLine()), SURFACE)).toBe("error");
+    expect(stateOf(surface(rows() + empty() + errorLine()), SURFACE)).toBe("error");
+    expect(stateOf(surface(empty() + notProvisioned()), SURFACE)).toBe(
+      "not_provisioned",
+    );
+    expect(stateOf(surface(rows() + empty()), SURFACE)).toBe("empty");
+    expect(stateOf(surface(rows()), SURFACE)).toBe("ok");
+    // And the same surface satisfies no expectation but the one it is in.
+    for (const expected of ["ok", "empty", "not_provisioned"] as const) {
+      expect(() => assertState(surface(empty() + errorLine()), SURFACE, expected)).toThrow(
+        StateMismatchError,
+      );
+    }
+  });
+
+  it("refuses a data-state value outside the four kinds, naming the value", () => {
+    // The hyphen misspelling this codebase's attribute idiom invites
+    // (`data-bucket-claims`, `data-window-limit`): skipping it graded an
+    // unprovisioned surface green (admin-window/BUG-0035).
+    const typo = surface('<div data-state="not-provisioned">review_items</div>');
+    expect(() => stateOf(typo, SURFACE)).toThrow(MarkupReadError);
+    expect(() => stateOf(typo, SURFACE)).toThrow(/not-provisioned/);
+    // A fifth state nobody taught the oracle about, wherever it sits.
+    expect(() => stateOf(surface('<p data-state="degraded">slow</p>'), SURFACE)).toThrow(
+      /degraded/,
+    );
+    expect(() =>
+      stateOf(surface(rows(), 'data-surface="q" data-state="degraded"'), SURFACE),
+    ).toThrow(/degraded/);
+    expect(() => pageStates('<p data-state="degraded">slow</p>')).toThrow(
+      MarkupReadError,
+    );
   });
 
   it("lists every card the page carries, in document order", () => {
@@ -722,9 +774,22 @@ describe("the state classifier", () => {
     expect(() => stateOf(surface(empty()) + surface(rows()), SURFACE)).toThrow(
       MarkupReadError,
     );
-    expect(() => stateOf(surface(empty() + errorLine()), SURFACE)).toThrow(
-      MarkupReadError,
+    // …and it says so only when the selector really did match more than one:
+    // a single surface holding two cards is a state, not a selector fault
+    // (admin-window/BUG-0035).
+    expect(() => stateOf(surface(empty()) + surface(rows()), SURFACE)).toThrow(
+      /more than one|2 surfaces/,
     );
+    const contradiction = (() => {
+      try {
+        stateOf(surface(empty(), 'data-surface="q" data-state="ok"'), SURFACE);
+        return "";
+      } catch (thrown) {
+        return (thrown as Error).message;
+      }
+    })();
+    expect(contradiction).toContain("disagree");
+    expect(contradiction).not.toContain("more than one surface");
   });
 
   it("leaves a sub-surface's own state to the sub-surface", () => {
@@ -1000,6 +1065,10 @@ describe("QA: the classifier, attacked", () => {
    * today (`stateOf` refuses to name a mixed surface at all), and it must
    * still hold when admin-window/BUG-0035 is fixed and `error` wins outright —
    * so it is written against the verdict, not against which refusal arrives.
+   *
+   * BUG-0035 is now fixed and `error` does win outright: the verdict this test
+   * guards is unchanged (never a passing kind), and the last line names the one
+   * kind it may be instead of only demanding that something was thrown.
    */
   it("never grades a surface as OK or EMPTY while it carries an error card", () => {
     const both = `<div data-surface="q">${empty()}${errorLine()}</div>`;
@@ -1007,42 +1076,43 @@ describe("QA: the classifier, attacked", () => {
     expect(() => assertState(both, "[data-surface]", "empty")).toThrow();
     expect(() => assertState(both, "[data-surface]", "not_provisioned")).toThrow();
     // And a grade of the same surface never returns a passing kind either.
-    expect(() => stateOf(both, "[data-surface]")).toThrow();
+    expect(stateOf(both, "[data-surface]")).toBe("error");
   });
 
-  // ── admin-window/BUG-0035: three strict expected-fail pins. Each one is a
-  // divergence measured on this tree; the day the classifier is fixed these
-  // turn RED as unexpected passes and send the reader to the ticket. The fix
-  // converts them to plain `it`.
+  // ── admin-window/BUG-0035: QA's three pins, written as strict expected
+  // failures against the broken classifier and converted to plain `it` by the
+  // fix. Each still attacks exactly what it attacked; only the third's
+  // assertion moved, because the fixed classifier REFUSES an unknown value
+  // rather than returning a kind, so a probe that grades its return value can
+  // no longer reach one.
 
-  it.fails(
-    "admin-window/BUG-0035: a wrapper's declared kind outranks an ERROR card inside it",
-    () => {
-      // The declaration is cross-checked against the card only when there is
-      // exactly ONE distinct kind inside (parity.ts:211), so a surface with two
-      // reads takes the wrapper's word — and passes on a page in its error state.
-      const declared = `<div data-surface="q" data-state="ok">${empty()}${errorLine()}</div>`;
-      expect(() => assertState(declared, "[data-surface]", "ok")).toThrow();
-    },
-  );
+  it("admin-window/BUG-0035: a wrapper's declared kind never outranks an ERROR card inside it", () => {
+    // The declaration used to be cross-checked against the card only when
+    // there was exactly ONE distinct kind inside, so a surface with two reads
+    // took the wrapper's word — and passed on a page in its error state.
+    const declared = `<div data-surface="q" data-state="ok">${empty()}${errorLine()}</div>`;
+    expect(() => assertState(declared, "[data-surface]", "ok")).toThrow();
+    expect(stateOf(declared, "[data-surface]")).toBe("error");
+  });
 
-  it.fails("admin-window/BUG-0035: an unknown data-state is skipped, not refused", () => {
-    // `pageStates` promises the opposite in its own docstring: "silently
-    // ignoring it is how a broken page goes green."
+  it("admin-window/BUG-0035: an unknown data-state is refused, not skipped", () => {
+    // `pageStates` promised this in its own docstring while doing the
+    // opposite: "silently ignoring it is how a broken page goes green."
     const fifth = `<div data-surface="q"><p data-state="degraded">slow</p>${rows()}</div>`;
     expect(() => pageStates(fifth)).toThrow(MarkupReadError);
+    expect(() => stateOf(fifth, "[data-surface]")).toThrow(/degraded/);
   });
 
-  it.fails(
-    "admin-window/BUG-0035: a hyphen-misspelled not_provisioned card reads as OK",
-    () => {
-      // The typo this codebase's attribute idiom invites (`data-bucket-claims`,
-      // `data-window-limit`): one character, and an unprovisioned surface grades
-      // green.
-      const typo = `<div data-surface="q"><div data-state="not-provisioned">review_items</div></div>`;
-      expect(stateOf(typo, "[data-surface]")).not.toBe("ok");
-    },
-  );
+  it("admin-window/BUG-0035: a hyphen-misspelled not_provisioned card never reads as OK", () => {
+    // The typo this codebase's attribute idiom invites (`data-bucket-claims`,
+    // `data-window-limit`): one character, and an unprovisioned surface graded
+    // green. It now refuses naming the value — so the probe asserts the
+    // refusal, which is the strict form of "not ok": there is no verdict at
+    // all to be green.
+    const typo = `<div data-surface="q"><div data-state="not-provisioned">review_items</div></div>`;
+    expect(() => stateOf(typo, "[data-surface]")).toThrow(MarkupReadError);
+    expect(() => stateOf(typo, "[data-surface]")).toThrow(/not-provisioned/);
+  });
 });
 
 /**
