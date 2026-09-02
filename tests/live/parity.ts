@@ -95,11 +95,29 @@ export type PageStateKind = "ok" | "empty" | "not_provisioned" | "error";
  */
 const LOADING = "loading";
 
-/** The card kinds `data-state` may carry, `loading` included. */
-const CARD_STATES = new Set<string>(["empty", "not_provisioned", "error", LOADING]);
+/**
+ * The one value only a SURFACE wrapper declares. None of the four `ui` state
+ * primitives emits it, so a `data-state="ok"` element inside a surface is a
+ * nested surface saying it read fine — never a card of the surface around it.
+ */
+const DECLARED_OK = "ok";
 
 /** The kinds a SURFACE may declare on its own wrapper (`ok` included). */
 const SURFACE_STATES = new Set<string>(["ok", "empty", "not_provisioned", "error"]);
+
+/**
+ * Which kind a surface is in when it carries several: an `error` is never
+ * outvoted by a sibling card or by a wrapper's declaration (ARCHITECTURE §10
+ * rule 6 — an error is a FAIL), an unreadable object outranks an emptiness,
+ * and `ok` is only the answer when the surface carries no card at all
+ * (admin-window/BUG-0035).
+ */
+const DOMINANCE: readonly PageStateKind[] = ["error", "not_provisioned", "empty"];
+
+/** The kind that wins over the cards a surface holds; `ok` when it holds none. */
+function dominantKind(kinds: readonly PageStateKind[]): PageStateKind {
+  return DOMINANCE.find((kind) => kinds.includes(kind)) ?? "ok";
+}
 
 /** A surface was in a kind the test did not expect. Always a test failure. */
 export class StateMismatchError extends Error {
@@ -146,7 +164,7 @@ export function pageStates(markup: string): PageStateKind[] {
   const $ = cheerio.load(markup);
   return $("[data-state]")
     .toArray()
-    .filter((element) => CARD_STATES.has($(element).attr("data-state") ?? ""))
+    .filter((element) => $(element).attr("data-state") !== DECLARED_OK)
     .map((element) =>
       asKind($(element).attr("data-state"), `a <${(element as { tagName?: string }).tagName ?? "?"}> state card`),
     );
@@ -163,9 +181,20 @@ export function pageStates(markup: string): PageStateKind[] {
  * as well as by the gray card, which is how four live assertions passed on a
  * page in its error state (admin-window/TASK-0032; ARCHITECTURE §10).
  *
+ * A surface holding several cards is in the kind that DOMINATES them: `error`
+ * first, then `not_provisioned`, then `empty`; `ok` only where it carries no
+ * card at all. A second read that came back empty does not outvote a read that
+ * refused (admin-window/BUG-0035).
+ *
  * A wrapper may declare its own kind (`[data-queue]`, `[data-surface]`); when
- * it does, that declaration is the answer AND is checked against the card
- * inside it, so a block cannot say `ok` while rendering an error line.
+ * it does, that declaration is the answer only where the cards inside it agree
+ * — an `error` among them outranks it outright, and any other disagreement is
+ * a refusal. A block can never say `ok` while rendering an error line.
+ *
+ * A `data-state` value outside the four kinds is a REFUSAL naming the value,
+ * never a skip: the misspelling `not-provisioned` is one character away from
+ * this codebase's own hyphenated idiom, and skipping it graded an unprovisioned
+ * surface green.
  *
  * `excluding` names SUB-SURFACES inside `within` that make their own read and
  * carry their own state — the dial embedded in a review item's evidence view,
@@ -198,32 +227,34 @@ export function stateOf(
   const cards = surface
     .find("[data-state]")
     .toArray()
-    .filter((element) => CARD_STATES.has($(element).attr("data-state") ?? ""))
+    .filter((element) => $(element).attr("data-state") !== DECLARED_OK)
     .filter(
       (element) => excluding === undefined || $(element).closest(excluding).length === 0,
     )
     .map((element) => asKind($(element).attr("data-state"), `the card inside '${within}'`));
   const distinct = [...new Set(cards)];
+  const held = dominantKind(distinct);
 
   const declared = surface.attr("data-state");
-  if (declared !== undefined) {
-    const kind = asKind(declared, `the surface '${within}'`);
-    if (distinct.length === 1 && distinct[0] !== kind) {
-      throw new MarkupReadError(
-        `'${within}' declares data-state="${kind}" but the state card inside ` +
-          `it says "${distinct[0]}". The block and its card disagree about ` +
-          `which state the surface is in.`,
-      );
-    }
-    return kind;
-  }
+  if (declared === undefined) return held;
 
-  if (distinct.length === 0) return "ok";
-  if (distinct.length === 1) return distinct[0];
-  throw new MarkupReadError(
-    `'${within}' holds state cards of ${distinct.length} different kinds ` +
-      `(${distinct.join(", ")}); the selector names more than one surface.`,
-  );
+  const kind = asKind(declared, `the surface '${within}'`);
+  // Rule 6 is unconditional: a surface that rendered an error line IS in its
+  // error state, whatever its wrapper declares and whatever else it holds. The
+  // failure that follows names the read and the database's own words, which a
+  // refusal about contradictory markup would have buried
+  // (admin-window/BUG-0035).
+  if (held === "error") return "error";
+  if (distinct.length > 0 && held !== kind) {
+    throw new MarkupReadError(
+      `'${within}' declares data-state="${kind}" but the state ` +
+        `${distinct.length === 1 ? "card" : "cards"} inside it ` +
+        `${distinct.length === 1 ? "says" : "say"} "${distinct.join(", ")}". ` +
+        `The block and its ${distinct.length === 1 ? "card" : "cards"} ` +
+        `disagree about which state the surface is in.`,
+    );
+  }
+  return kind;
 }
 
 /** The words a state card carries, for a FAILURE MESSAGE — never for a verdict. */
