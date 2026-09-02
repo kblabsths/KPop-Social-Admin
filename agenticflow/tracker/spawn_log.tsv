@@ -2344,3 +2344,9 @@
 2026-09-02T12:48:57Z	agent	-	-	-	-
 2026-09-02T12:49:17Z	qa-adversary	BUG-0019	7740	411	96298
 2026-09-02T12:49:29Z	agent	-	-	-	-
+2026-09-02T12:50:30Z	agent	-	-	-	-
+2026-09-02T12:51:02Z	agent	-	-	-	-
+# STRANDED	2026-09-02T12:51:33Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0020.md
+2026-09-02T12:51:33Z	agent	-	-	-	-
+# STRANDED	2026-09-02T12:51:52Z	builder	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0020.md
+2026-09-02T12:51:52Z	builder	BUG-0020	3342	552	84133
