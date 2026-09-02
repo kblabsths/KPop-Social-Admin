@@ -1963,3 +1963,5 @@
 2026-09-02T11:40:37Z	agent	-	-	-	-
 # STRANDED	2026-09-02T11:40:40Z	qa-adversary	4 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0018.md, agenticflow/visions/admin-window/tracker/tickets/FEAT-0006.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
 2026-09-02T11:40:40Z	qa-adversary	TASK-0008	3459	381	101999
+2026-09-02T11:41:01Z	qa-adversary	TASK-0028	spawned
+2026-09-02T11:41:15Z	builder	BUG-0018	spawned
