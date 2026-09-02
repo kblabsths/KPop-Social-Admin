@@ -374,3 +374,124 @@ describe("a verdict unset in the apply window", () => {
     expect(result.kind === "ok" && result.data.applies).toBe(0);
   });
 });
+
+/**
+ * QA attack on the seam BUG-0012's fix created (admin-window, QA of BUG-0012).
+ *
+ * The fix split one row set into two populations, so the questions it opened
+ * are: which column decides the split, do the two populations still add up to
+ * what was read, and does the split move a boundary the reader depends on
+ * (`window.truncated`, which BUG-0009 already had to repair).
+ */
+describe("the apply/unset split", () => {
+  function row(overrides: Partial<ProvenanceApplyRow>): ProvenanceApplyRow {
+    return fieldProvenanceRow({
+      entity_type: "events",
+      applied_at: "2026-09-01T04:10:00Z",
+      ...overrides,
+    });
+  }
+
+  /**
+   * `20260901000005` drops NOT NULL on BOTH columns in one statement and only
+   * `apply_resolution`'s unset branch writes them (both null, line 490); no
+   * constraint ties the pair, so a half-null row is reachable in the schema.
+   * The reader contract names one of the two as the discriminator:
+   * `observation_id` — "a reader takes a null here as 'no applied
+   * observation'". These pin that reading, not the other one.
+   */
+  it("reads a null observation_id as the unset, whatever source_id holds", () => {
+    const halfNull = aggregateResolutionLatency({
+      applies: [row({ source_id: ID.sourceTicketmaster, observation_id: null })],
+      observations: [],
+      window: WINDOW,
+    });
+
+    expect(halfNull.verdictUnsets).toBe(1);
+    expect(halfNull.applies).toBe(0);
+    expect(halfNull.unmatchedApplies).toBe(0);
+    expect(halfNull.overall.unmeasurable).toBe(0);
+  });
+
+  it("reads a row naming an observation as an apply, whatever source_id holds", () => {
+    const halfNull = aggregateResolutionLatency({
+      applies: [row({ source_id: null, observation_id: OBS.fast })],
+      observations: [
+        observationRow({ observation_id: OBS.fast, observed_at: "2026-09-01T04:00:00Z" }),
+      ],
+      window: WINDOW,
+    });
+
+    expect(halfNull.applies).toBe(1);
+    expect(halfNull.verdictUnsets).toBe(0);
+    expect(halfNull.overall.count).toBe(1);
+    expect(halfNull.overall.p50).toBe(600);
+  });
+
+  /**
+   * Every row read is in exactly one population, and the per-domain breakdown
+   * a page renders adds back up to the totals beside it. A reader who
+   * differences `applies` against a cycle's write counts is doing exactly this
+   * arithmetic.
+   */
+  it("splits every row read into exactly one population, per domain and overall", () => {
+    const spread = aggregateResolutionLatency({
+      applies: [
+        row({ provenance_id: ID.provenance, observation_id: OBS.fast }),
+        row({ observation_id: OBS.slow, applied_at: "2026-09-01T05:00:00Z" }),
+        row({ observation_id: OBS.missing }),
+        row({ source_id: null, observation_id: null }),
+        row({ entity_type: "groups", observation_id: OBS.other, applied_at: "2026-09-01T06:00:00Z" }),
+        row({ entity_type: "groups", source_id: null, observation_id: null }),
+      ],
+      observations: observations(),
+      window: WINDOW,
+    });
+
+    const totalRead = 6;
+    expect(spread.applies + spread.verdictUnsets).toBe(totalRead);
+    expect(spread.byDomain.reduce((sum, d) => sum + d.applies, 0)).toBe(spread.applies);
+    expect(spread.byDomain.reduce((sum, d) => sum + d.verdictUnsets, 0)).toBe(
+      spread.verdictUnsets,
+    );
+    // The unmatched apply is unmeasurable; neither unset is.
+    expect(spread.unmatchedApplies).toBe(1);
+    expect(spread.overall.count + spread.overall.unmeasurable).toBe(spread.applies);
+    expect(
+      spread.byDomain.reduce((sum, d) => sum + d.latency.count + d.latency.unmeasurable, 0),
+    ).toBe(spread.applies);
+  });
+
+  it("runs no second query when the window held nothing but unsets", async () => {
+    const stub = withRows([fieldProvenanceRow({ source_id: null, observation_id: null })], []);
+    const result = await readResolutionLatency({ now: NOW }, stub.asSupabaseClient());
+
+    expect(stub.tablesRead()).toEqual([T.fieldProvenance]);
+    expect(result.kind === "ok" && result.data.verdictUnsets).toBe(1);
+  });
+
+  /**
+   * Truncation is decided on the rows the SERVER returned, not on the applies
+   * among them (admin-window/BUG-0009). A window filled to the cap by unsets
+   * is still a floor, and a reader told `applies: 0, truncated: false` would
+   * read "the resolver applied nothing this week" off a page it never saw.
+   */
+  it("still decides truncation on every row returned when they are all unsets", async () => {
+    const unsets = Array.from({ length: 3 }, (_, index) =>
+      fieldProvenanceRow({
+        provenance_id: `01920000-0000-7000-8000-00000000042${index}`,
+        source_id: null,
+        observation_id: null,
+      }),
+    );
+    const stub = withRows(unsets, []);
+    const result = await readResolutionLatency(
+      { now: NOW, limit: 3 },
+      stub.asSupabaseClient(),
+    );
+
+    expect(result.kind === "ok" && result.data.window.truncated).toBe(true);
+    expect(result.kind === "ok" && result.data.applies).toBe(0);
+    expect(result.kind === "ok" && result.data.verdictUnsets).toBe(3);
+  });
+});
