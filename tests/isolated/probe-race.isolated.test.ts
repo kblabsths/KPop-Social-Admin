@@ -50,6 +50,12 @@ const PROBE = "src/.probes/__credential_guard_probe__.ts";
 const probePath = path.join(repoRoot, PROBE);
 const probeDir = path.dirname(probePath);
 
+/**
+ * The offline file that OWNS the probe path: the only writer of it, and the
+ * only file whose scanner is meant to see it.
+ */
+const LAYERING_SUITE = "tests/offline/db/layering.test.ts";
+
 /** The four offline files that walk the source tree. */
 const WALKERS = [
   "tests/offline/claims/read.test.ts",
@@ -158,29 +164,36 @@ describe("walking src/ while the layering probe comes and goes", () => {
     }
   });
 
-  it.fails("reddens no OTHER offline file that walks the tree either", () => {
-    // The four walkers above are not the only offline files that walk `src/`.
-    // `tests/offline/toolchain.test.ts` > "the source-tree walk" > "hides
-    // nothing that exists in the real tree" asserts
-    // `sourceFiles()` deep-equals `allSourceFiles()` over the REAL tree — and
-    // that equality is FALSE for exactly as long as the probe is on disk,
-    // because hiding it from the filtered walk is the fix's whole design.
-    // toolchain runs in a parallel worker of the same offline project as
-    // `db/layering.test.ts`, which holds that probe on disk ~343ms per run
-    // (measured: 338071 of 11806630 existence samples over a 12s window
-    // containing one 826ms layering run — ~69% of its 499ms test phase). So
-    // this is the same hazard, the same probe path, one file over.
-    // Pinned expected-fail for admin-window/BUG-0033; when the assertion stops
-    // depending on another worker's timing this XPASSes and reddens.
+  it("reddens no OTHER offline file that walks the tree either", () => {
+    // Naming four walkers was not enough. `tests/offline/toolchain.test.ts` >
+    // "the source-tree walk" also asserted `sourceFiles()` deep-equals
+    // `allSourceFiles()` over the REAL tree, and that equality is FALSE for
+    // exactly as long as the probe is on disk, because hiding it from the
+    // filtered walk is the fix's whole design. toolchain runs in a parallel
+    // worker of the same offline project as the layering suite, which holds
+    // the probe on disk ~343ms per run (measured: 338071 of 11806630 existence
+    // samples over a 12s window containing one 826ms layering run — ~69% of
+    // its 499ms test phase): the same hazard, the same probe path, one file
+    // over, 6 of 12 runs red under a faithful reproduction of that cycle
+    // (admin-window/BUG-0033).
+    //
+    // So this runs the WHOLE offline project rather than a named list. The
+    // sweep for "some other file also asserts over the real tree" is worth
+    // nothing done once by hand: the next file added to the suite has to be
+    // covered too. The layering suite is the one exclusion, and it has to be —
+    // it OWNS this probe path, deletes it in its own `finally`, and its
+    // scanner is supposed to report a probe it planted itself. Every other
+    // offline file must be blind to it.
     fs.mkdirSync(probeDir, { recursive: true });
     fs.writeFileSync(probePath, LOUD_PROBE, "utf8");
 
     const { status, output } = runWalkers(
-      ["tests/offline/toolchain.test.ts"],
+      [],
       // Pinned to the offline project: a bare `vitest run` now collects all
       // four projects, and this file must never re-enter itself.
-      ["--project=offline"],
+      ["--project=offline", "--exclude", LAYERING_SUITE],
     );
+    expect(tail(output)).not.toMatch(/ENOENT/);
     expect(status, tail(output)).toBe(0);
   });
 
@@ -194,7 +207,7 @@ describe("walking src/ while the layering probe comes and goes", () => {
     // Non-vacuous in the other direction: this pin is worthless if it names
     // files that no longer exist or no longer take the shared walk. A fifth
     // hand-rolled copy of the walk would leave this list stale and silent.
-    for (const file of [...WALKERS, "tests/offline/db/layering.test.ts"]) {
+    for (const file of [...WALKERS, LAYERING_SUITE]) {
       expect(fs.existsSync(path.join(repoRoot, file)), file).toBe(true);
       expect(sourceText(file), file).toContain("../source-tree");
     }
