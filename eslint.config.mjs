@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The factory kit ships a Python venv with bundled JS (Playwright's
+    // driver); it is tooling, not product source. admin-window/TASK-0001
+    "agenticflow/**",
   ]),
 ]);
 
