@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T16:44:18Z — do not edit)
+# Tracker index (regenerated 2026-09-02T16:44:53Z — do not edit)
 
 ## open
 - TASK-0021 [P0][task][M1] ASK BEN: which Supabase env names does the APP read at runtime, and what do the campaign's live tests read?  (scope:src/lib/db/client.ts,tests/live,agenticflow/docs/SERVICES.md)
