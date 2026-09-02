@@ -490,6 +490,34 @@ describe("the join", () => {
     expect(rows[0].sources).toEqual(["ticketmaster"]);
   });
 
+  /**
+   * The row-wide seam: several facts of ONE event, each with its own decision
+   * history. Every fact contributes the source behind its CURRENT value and
+   * nothing from its history — so a source both facts have since lost cannot
+   * ride into the cell on either of them.
+   */
+  it("names the current source of every fact on a row, and none of the superseded ones", () => {
+    const rows = joinBrowseRows({
+      events: [event("e1")],
+      venues: [],
+      provenance: [
+        decision("e1", "title", "s_old", "2026-01-01T00:00:00Z"),
+        decision("e1", "title", "s_tm", "2026-08-01T00:00:00Z"),
+        decision("e1", "starts_at", "s_old", "2026-02-01T00:00:00Z"),
+        decision("e1", "starts_at", "s_bi", "2026-07-01T00:00:00Z"),
+        // A third fact whose current decision is the same source as title's:
+        // one name, not two.
+        decision("e1", "description", "s_tm", "2026-06-01T00:00:00Z"),
+      ],
+      sources: [
+        { source_id: "s_old", source: "retired_feed" },
+        { source_id: "s_tm", source: "ticketmaster" },
+        { source_id: "s_bi", source: "bandsintown" },
+      ],
+    });
+    expect(rows[0].sources).toEqual(["bandsintown", "ticketmaster"]);
+  });
+
   it("keeps the same fact's decisions apart per entity", () => {
     const rows = joinBrowseRows({
       events: [event("e1"), event("e2")],

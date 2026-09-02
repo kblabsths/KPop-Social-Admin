@@ -227,3 +227,68 @@ describe("readResolutionLatency", () => {
     expect(result.kind === "ok" && result.data.overall.count).toBe(3);
   });
 });
+
+/**
+ * A VERDICT UNSET is not an apply with a broken join (campaign
+ * admin-window, QA of BUG-0010).
+ *
+ * `field_provenance.source_id` and `.observation_id` dropped NOT NULL in
+ * scraper migration `20260901000005`, whose own column comment is the
+ * contract: "null on a verdict unset ... A reader takes a null here as 'no
+ * applied observation'" (and `contracts/data-model.md`, Per-field provenance).
+ * `readProvenanceApplies` filters on `applied_at` alone, so those rows are in
+ * the window's row set like any other.
+ *
+ * `unmatchedApplies` is documented in `src/lib/gauges/resolution-latency.ts`
+ * as "applies whose observation was not in the second fetch ... a large value
+ * means the join, not the resolver, is what the reader is looking at". An
+ * unset never named an observation to fetch, so counting it there reports a
+ * join defect that does not exist.
+ */
+describe("a verdict unset in the apply window", () => {
+  /** The row shape the database returns for an unset — both keys null. */
+  function unsetRow(): ProvenanceApplyRow {
+    return {
+      ...fieldProvenanceRow({
+        provenance_id: "01920000-0000-7000-8000-000000000415",
+        entity_type: "events",
+        field: "poster_url",
+        applied_at: "2026-09-01T08:00:00Z",
+      }),
+      // The cast is the finding, not a convenience: `ProvenanceApplyRow`
+      // types both columns non-null against columns that admit null.
+      source_id: null,
+      observation_id: null,
+    } as unknown as ProvenanceApplyRow;
+  }
+
+  /**
+   * STRICT PIN — campaign admin-window/BUG-0012. `it.fails` passes only while
+   * the body below still fails; the day the gauge stops calling an unset a
+   * lost join, this turns red and sends the reader to that ticket, where it
+   * flips back to a plain `it(`.
+   */
+  it.fails("is not counted as an apply whose observation the join lost", () => {
+    const measured = aggregateResolutionLatency({
+      applies: [
+        fieldProvenanceRow({
+          observation_id: OBS.fast,
+          entity_type: "events",
+          applied_at: "2026-09-01T04:10:00Z",
+        }),
+        unsetRow(),
+      ],
+      observations: [
+        observationRow({
+          observation_id: OBS.fast,
+          observed_at: "2026-09-01T04:00:00Z",
+          domain: "events",
+        }),
+      ],
+      window: WINDOW,
+    });
+
+    expect(measured.overall.count).toBe(1);
+    expect(measured.unmatchedApplies).toBe(0);
+  });
+});
