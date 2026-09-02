@@ -1,6 +1,12 @@
+import * as cheerio from "cheerio";
 import { describe, expect, it } from "vitest";
+import { BrowseTable } from "@/components/browse/browse-table";
+import { recordFields } from "@/components/records/fields";
+import { RECENT_EVENTS, type BrowseColumnKey } from "@/lib/browse/views";
+import { editConfigFor } from "@/lib/edit/config";
 import { recordHref } from "@/lib/records/routes";
 import { codeLines, codeText, sourceFiles } from "../source-tree";
+import { h, render } from "../ui/markup";
 
 /**
  * The app's ONE record URL (campaign admin-window/DEBT-0001).
@@ -83,5 +89,53 @@ describe("one spelling of the record URL", () => {
       codeLines(file).some((line) => called.test(line)),
     );
     expect(offenders).toEqual([]);
+  });
+});
+
+/* ── QA (admin-window/DEBT-0001): the fold held at the rendered surfaces ──── */
+
+describe("the same URL arrives at every surface that draws one", () => {
+  // The fold's whole claim is that two surfaces that used to spell the route
+  // themselves now render exactly what the one helper returns. Asserted on the
+  // MARKUP and on the field the edit surface hands its link component, for an
+  // id that actually needs encoding — the case where two spellings would drift
+  // first, and the one neither surface's own suite drives.
+  const NEEDS_ENCODING = "a/b?c d#e";
+
+  it("browse draws the helper's href verbatim in the row's anchor", () => {
+    const markup = render(
+      h(BrowseTable, {
+        view: RECENT_EVENTS,
+        shown: ["title"] as BrowseColumnKey[],
+        rows: [
+          {
+            event_id: NEEDS_ENCODING,
+            title: "a row that links",
+            description: null,
+            poster_url: null,
+            starts_at: null,
+            created_at: null,
+            venue_name: null,
+            sources: [],
+          },
+        ],
+      }),
+    );
+    expect(cheerio.load(markup)("a").attr("href")).toBe(
+      recordHref("events", NEEDS_ENCODING),
+    );
+  });
+
+  it("the edit surface's reference field carries the helper's href verbatim", () => {
+    // `events.venue_id` is the one reference column in the map today.
+    const config = editConfigFor("events");
+    expect(config).not.toBeNull();
+    const venue = recordFields(
+      config!,
+      { venue_id: NEEDS_ENCODING },
+      new Map(),
+      "a venue",
+    ).find((field) => field.name === "venue_id");
+    expect(venue?.reference?.href).toBe(recordHref("venues", NEEDS_ENCODING));
   });
 });
