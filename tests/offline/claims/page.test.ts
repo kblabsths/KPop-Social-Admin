@@ -939,9 +939,12 @@ describe("QA: the whole tab x bucket x source x domain cross-product", () => {
     QA_PARKED_DOMAIN,
   ];
 
+  // One case per (tab, bucket) rather than one per tab: the same cross-product,
+  // the same assertions, sliced so no single it() carries the whole
+  // bucket x source x domain grid of renders (admin-window/BUG-0029).
   for (const tab of ["buckets", "standing"] as const) {
-    it(`renders exactly the claims and counts the view holds, on the ${tab} tab`, async () => {
-      for (const bucket of BUCKET_PARAMS) {
+    for (const bucket of BUCKET_PARAMS) {
+      it(`renders exactly the claims and counts the view holds, on the ${tab} tab, under bucket=${bucket ?? "(absent)"}`, async () => {
         for (const source of SOURCE_PARAMS) {
           for (const domain of DOMAIN_PARAMS) {
             const params: Record<string, string> = { tab };
@@ -1029,8 +1032,8 @@ describe("QA: the whole tab x bucket x source x domain cross-product", () => {
             }
           }
         }
-      }
-    });
+      });
+    }
   }
 });
 
