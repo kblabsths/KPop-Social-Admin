@@ -11,7 +11,7 @@ import { NotProvisioned } from "@/components/ui/not-provisioned";
 import { Page } from "@/components/ui/page";
 import { Section } from "@/components/ui/section";
 import { StatCard } from "@/components/ui/stat-card";
-import { EM_DASH } from "@/lib/format";
+import { EM_DASH, absoluteUtc, count, relativeAge } from "@/lib/format";
 
 import { classesOf, h, render, tagsOf, textOf } from "./markup";
 
@@ -272,5 +272,74 @@ describe("the four data-surface states", () => {
     expect(html).toContain("does not exist");
     expect(html).toContain("reload the page");
     expect(tagsOf(html)[0]).toBe("p");
+  });
+});
+
+/**
+ * Absence renders identically everywhere, or it does not render at all.
+ *
+ * LOOK_AND_FEEL, Data table: "A null renders as `—` in disabled-gray — never
+ * blank, never `null`, `N/A` or `none`." TASK-0004 seeds `nullDash()` so that
+ * "absence looks identical everywhere" (`src/lib/format.ts`, its own words).
+
+ * PINNED admin-window/BUG-0004: all three are `it.fails`, which is strict —
+ * the day absence renders uniformly they turn red and send the reader here.
+ *
+ * These drive the two ways a page reaches a cell without going through a raw
+ * `null`, which are the two ways the app currently disagrees with itself.
+ */
+describe("absence, across the format helpers and the primitives", () => {
+  type Missing = { id: string; n: number | null; at: string | null; flagged: boolean };
+  const missing: Missing[] = [{ id: "only", n: null, at: null, flagged: false }];
+  const dashCell = (html: string) =>
+    [...html.matchAll(/<td[^>]*class="([^"]*)"[^>]*>(.*?)<\/td>/g)].map((m) => ({
+      classes: m[1],
+      body: m[2],
+    }));
+
+  // PIN admin-window/BUG-0004 — strict: when this passes, it.fails goes red.
+  it.fails("shows a helper-produced dash in disabled-gray, like every other dash in the row", () => {
+    const html = render(
+      h(DataTable<Missing>, {
+        columns: [
+          { key: "raw", label: "raw", cell: (row: Missing) => row.n },
+          { key: "count", label: "count", cell: (row: Missing) => count(row.n) },
+          { key: "age", label: "age", cell: (row: Missing) => relativeAge(row.at).text },
+          { key: "when", label: "when", cell: (row: Missing) => absoluteUtc(row.at) },
+        ] as Column<Missing>[],
+        rows: missing,
+        rowKey: (row: Missing) => row.id,
+      }),
+    );
+    const cells = dashCell(html);
+    expect(cells).toHaveLength(4);
+    // every one of the four is the same absence; every one must read the same
+    for (const cell of cells) {
+      expect(cell.body).toContain(EM_DASH);
+      expect(`${cell.classes} ${cell.body}`).toContain("text-ink-disabled");
+    }
+  });
+
+  // PIN admin-window/BUG-0004 — strict: when this passes, it.fails goes red.
+  it.fails("never leaves a cell blank when its body is a falsy React node", () => {
+    const html = render(
+      h(DataTable<Missing>, {
+        // `row.flagged && <something>` is the idiom every page will reach for;
+        // it yields `false`, which React renders as nothing.
+        columns: [{ key: "f", label: "flagged", cell: (row: Missing) => row.flagged && "yes" }] as Column<Missing>[],
+        rows: missing,
+        rowKey: (row: Missing) => row.id,
+      }),
+    );
+    const [cell] = dashCell(html);
+    expect(cell.body).not.toBe("");
+    expect(cell.body).toContain(EM_DASH);
+  });
+
+  // PIN admin-window/BUG-0004 — strict: when this passes, it.fails goes red.
+  it.fails("shows a figure that is not a number as the same dash a null figure gets", () => {
+    const nan = render(h(StatCard, { label: "runs", value: Number.NaN }));
+    expect(nan).toContain(EM_DASH);
+    expect(nan).toContain("text-ink-disabled");
   });
 });
