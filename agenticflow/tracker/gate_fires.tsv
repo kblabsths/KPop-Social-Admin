@@ -51,3 +51,4 @@
 2026-09-02T19:46:54Z	artifact_gate	blocked write outside repo: /tmp/x
 2026-09-02T20:00:37Z	artifact_gate	blocked write outside repo: /
 2026-09-02T20:15:21Z	supply_gate	blocked npx of prettier
+2026-09-02T20:44:32Z	artifact_gate	blocked write outside repo: /head:s*true/.test
