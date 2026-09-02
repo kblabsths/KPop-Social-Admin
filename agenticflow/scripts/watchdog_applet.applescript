@@ -1,0 +1,16 @@
+-- AgenticFlow watchdog applet — exists solely to carry a scoped macOS TCC
+-- grant (Files & Folders -> Desktop Folder). launchd runs this app instead
+-- of zsh directly, because plain launchd scripts can never prompt for or
+-- hold folder permissions. The head-read logs tcc-ok so grant health is
+-- visible in tracker/watchdog.log on every firing.
+--
+-- Rebuild recipe (all three steps required; TCC re-grant needed after):
+--   osacompile -o ~/Applications/AgenticFlowWatchdog.app agenticflow/scripts/watchdog_applet.applescript
+--   /usr/libexec/PlistBuddy \
+--     -c "Add :CFBundleIdentifier string com.agenticflow.watchdog-app" \
+--     -c "Add :LSUIElement bool true" \
+--     ~/Applications/AgenticFlowWatchdog.app/Contents/Info.plist
+--   codesign -f -s - ~/Applications/AgenticFlowWatchdog.app
+-- LSUIElement keeps the applet out of the Dock — without it, every 15-min
+-- firing flashes an icon in the Dock/app switcher.
+do shell script "if head -1 /Users/ben-m4/Desktop/Coding/AgenticFlow/agenticflow/run.yaml >/dev/null 2>&1; then echo \"$(date '+%F %T') tcc-ok\" >> /Users/ben-m4/Desktop/Coding/AgenticFlow/agenticflow/tracker/watchdog.log; else echo \"$(date '+%F %T') tcc-DENIED — re-grant Desktop access to AgenticFlowWatchdog.app\" >> /private/tmp/agenticflow-watchdog-tcc.log; fi; exec /bin/zsh /Users/ben-m4/Desktop/Coding/AgenticFlow/agenticflow/scripts/factory_watchdog.sh"

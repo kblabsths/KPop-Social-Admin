@@ -47,3 +47,25 @@ next-env.d.ts
 # supabase cli cache
 supabase/.temp/
 
+agenticflow/tracker/RUNNING
+agenticflow/tracker/PARKED
+agenticflow/tracker/.relaunch_attempts
+agenticflow/tracker/SESSION_LOCK
+agenticflow/tracker/HEARTBEAT
+agenticflow/tracker/CLOSING
+__pycache__/
+.venv-tools/
+agenticflow/tracker/ORCHESTRATOR_SESSION
+agenticflow/tracker/ui_filings/
+agenticflow/tracker/ship_invocations.tsv
+agenticflow/.worktrees/
+agenticflow/tracker/ci_check.lock
+agenticflow/tracker/ui.url
+agenticflow/visions/*/tracker/evidence/*
+!agenticflow/visions/*/tracker/evidence/.gitkeep
+agenticflow/tracker/evidence/*
+!agenticflow/tracker/evidence/.gitkeep
+*.db
+*.log
+*.jsonl
+app/.venv/

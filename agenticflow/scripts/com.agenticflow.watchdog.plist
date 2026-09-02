@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.agenticflow.watchdog</string>
+    <!-- Runs the applet, not zsh: the applet holds the scoped TCC grant
+         (Files & Folders -> Desktop Folder). See scripts/watchdog_applet.applescript -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ben-m4/Applications/AgenticFlowWatchdog.app/Contents/MacOS/applet</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>900</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/dev/null</string>
+    <key>StandardErrorPath</key>
+    <string>/dev/null</string>
+</dict>
+</plist>

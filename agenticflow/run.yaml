@@ -1,0 +1,68 @@
+# Factory run configuration — flat key: value only (parsed by
+# agenticflow/scripts/lib_ticket.py). install.sh copies this to
+# agenticflow/run.yaml; fill every FILL line before the first /ship.
+
+builders: 1               # concurrent builder agents
+qa_probes: 1              # concurrent QA attack agents in /ship release sweeps
+max_milestones: 6         # runaway guard, not a target
+qa_dry_rounds: 2          # consecutive clean sweeps ending a /ship release pass (dev milestones run walks, no sweeps)
+stale_claim_minutes: 90   # watchdog releases claims idle longer than this
+stall_no_delta_minutes: 30 # claim with zero file changes under scope this long → stalled flag
+qa_relaunch_minutes: 75   # a QA lane younger than this suppresses re-offer of its
+                          # ticket; older, the offer stands with a costed
+                          # qa_overrun flag (device-walk QA runs 28-45 min routinely)
+qa_batch_patience: 0      # dispatch ticks a lone built P2/P3 ticket waits for
+                          # batch-mates before QA spawns (0 = immediately; try 2 on
+                          # bigger projects — QA measured ~45% of role-hours in
+                          # batches of one). P0/P1 never wait.
+blocked_recheck_hours: 12 # blocked tickets older than this get re-checked loudly
+compact_threshold_bytes: 8000  # History bytes that trigger a compaction flag (History is
+                          # the only section the compactor may rewrite; an immutable
+                          # body over this bar flags oversized_body informationally,
+                          # once per ticket — raise this bar on campaigns whose house
+                          # style is dense evidence-log Histories)
+gated: true               # KEEP true for your first run on an existing project:
+                          # the factory pauses for your approval at milestone boundaries
+breaker_empty_diffs: 3    # builder exits with zero file changes before the breaker trips
+breaker_same_failure: 4   # consecutive identical failure signatures before the breaker trips
+product_dir: src,supabase,public # FILL: where your product's code lives, relative to the
+                          # REPO root (not agenticflow/); comma-separate several
+                          # paths, files allowed: e.g. mobile,tests,server.py
+ui_port: 8770             # PREFERRED attention-UI port — --ensure steps to the next free port if it's taken; actual URL in tracker/ui.url
+ci_command: bash -c './node_modules/.bin/tsc --noEmit' # FILL: your app's full test-suite command, run from the repo
+                          # root (e.g. "cd app && npm test"); empty = CI gate disabled
+ci_scope: src,supabase,package.json,tsconfig.json # paths whose change triggers a CI check (comma-separated,
+                          # repo-relative); empty = product_dir. Set when tests/data
+                          # live outside product_dir — widening product_dir instead
+                          # would also widen ticket scopes, stall probes, self-scan
+notify_command:           # optional: gets each notify.py event as JSON on stdin (phone push, ntfy, ...); empty = events.jsonl only
+ci_no_progress_strikes: 3 # repair attempts with an unmoved failure signature → BUG blocked
+ci_max_attempts: 12       # runaway guard on total CI repair attempts
+qa_depth: lean            # lean | full. lean: a QA lane verifies the criteria,
+                          # runs the stored checks verbatim, makes ONE bounded
+                          # attack on the batch's own surface, and files at most
+                          # one new BUG per batch; a divergence no criterion or
+                          # receipt path reaches is a one-line residual, not a
+                          # ticket. full: the unbounded attack — set it for a
+                          # first-of-its-kind surface or a release sweep
+qa_evidence_max_chars: 4000  # QA evidence-note budget; overruns are counted in
+                          # gate_fires.tsv, never refused (0 = don't count)
+receipt_link_paths: .venv,node_modules,*/.venv,*/node_modules,.env  # gitignored paths (globs)
+                          # symlinked into the receipt's private worktree so
+                          # verbatim checks (.venv/bin/ruff) resolve there
+usage_ceiling_5h: 80      # dispatch offers no new lanes while the account's
+                          # 5-hour usage window is at/above this percent
+                          # (0 = never read usage)
+push_cadence_max_ahead: 15  # dispatch backs up the ACTIVE run branch to origin
+                          # (refs-only, non-fatal) at every landing/close and idle
+                          # tick, and whenever the branch is this many commits
+                          # ahead of upstream. RUN BRANCH ONLY — never main,
+                          # never ticket branches
+sibling_dirs: /Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper=write_by_size # related directories agents may need, ABSOLUTE paths,
+                          # comma-separated `path=policy`. read_only: reference
+                          # only, changes are HANDOFF blocked tickets.
+                          # write_by_size: minor+necessary+reversible edits land
+                          # autonomously as their own commit there (stamped
+                          # <campaign>/<ID>); major is a handoff. Everything is
+                          # major while the sibling runs its own campaign.
+                          # Empty = every outside-repo write blocked (default).
