@@ -2570,3 +2570,5 @@
 2026-09-02T13:59:06Z	agent	-	-	-	-
 # STRANDED	2026-09-02T13:59:14Z	builder	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0012.md
 2026-09-02T13:59:14Z	builder	TASK-0012	15045	1861	303160
+2026-09-02T14:11:19Z	qa-adversary	TASK-0012	spawned
+2026-09-02T14:11:36Z	builder	TASK-0011	spawned
