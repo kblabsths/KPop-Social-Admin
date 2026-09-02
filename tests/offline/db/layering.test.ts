@@ -152,3 +152,34 @@ describe("table names and the client library", () => {
     }
   });
 });
+
+/**
+ * PIN — admin-window/BUG-0003. The credential rule above is enforced by a
+ * pattern that only matches DOT access (`process.env.SUPABASE_SERVICE_ROLE_KEY`).
+ * A second reader written with BRACKET access — the very form `client.ts`'s own
+ * comment names as the alternative — is invisible to it, so the criterion's
+ * proof ("client.ts is the only file under src/ reading
+ * SUPABASE_SERVICE_ROLE_KEY") does not hold against a file written that way.
+ *
+ * `it.fails` is the strict-xfail: it passes only while the divergence is real.
+ * When the guard is widened this test XPASSes and turns RED — at which point
+ * drop the `.fails` and keep the assertion.
+ */
+describe("the credential guard itself", () => {
+  const PROBE = "src/__credential_guard_probe__.ts";
+
+  it.fails("detects a reader that uses bracket access, not just dot access", () => {
+    const probePath = path.join(repoRoot, PROBE);
+    fs.writeFileSync(
+      probePath,
+      'export const key = process.env["SUPABASE_SERVICE_ROLE_KEY"];\n',
+      "utf8",
+    );
+    try {
+      const readers = filesWhereCodeMatches(/process\.env\.SUPABASE_SERVICE_ROLE_KEY/);
+      expect(withoutDeprecated(readers)).toContain(PROBE);
+    } finally {
+      fs.rmSync(probePath, { force: true });
+    }
+  });
+});
