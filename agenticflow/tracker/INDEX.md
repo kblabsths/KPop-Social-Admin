@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T10:11:07Z — do not edit)
+# Tracker index (regenerated 2026-09-02T10:12:10Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -29,9 +29,6 @@
 ## claimed
 - TASK-0018 [P1][task][M1] The edit surface — the record page, direct edits for groups and idols, read-only events and venues  (deps:TASK-0017,TASK-0004 scope:src/app/records/[table]/[id]/page.tsx,src/components/records,tests/offline/records,tests/live/edit.live.test.ts @builder-24)
 
-## qa
-- BUG-0005 [P2][bug][-] Credential guard still misses destructured and optional-chained env reads, so the one-reader criterion holds for some spellings only  (scope:tests/offline/db @builder-23 from:BUG-0003)
-
 ## blocked
 - TASK-0021 [P0][task][M1] ASK BEN: which Supabase env names does the APP read at runtime, and what do the campaign's live tests read?  (scope:src/lib/db/client.ts,tests/live,agenticflow/docs/SERVICES.md)
 - TASK-0022 [P0][task][M1] ASK BEN: what is installed on staging, and may a live test write fixture rows into resolver-owned tables?  (scope:tests/live)
@@ -39,4 +36,4 @@
 - TASK-0024 [P1][task][M1] ASK BEN: where does Admin read the per-source stuck_pattern dial, which lives only in scraper YAML?  (scope:src/lib/gauges/pending-claims.ts,src/app/sources/page.tsx)
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 
-Totals — blocked:5, claimed:1, done:22, open:24, qa:1. Archived: 0.
+Totals — blocked:5, claimed:1, done:23, open:24. Archived: 0.
