@@ -19,6 +19,7 @@ import {
   tableNotInSchemaCache,
   type Script,
 } from "../../fixtures/stub-client";
+import { stateOf } from "../../live/parity";
 
 /**
  * The review-item detail page, rendered (campaign admin-window/TASK-0011).
@@ -908,6 +909,19 @@ describe("the four data-surface states", () => {
 
     expect(evidenceIds(markup)).toEqual([ID.observationB]);
     expect(cheerio.load(markup)("[data-dial]").text()).toContain(T.observations);
+
+    // The live oracle's ONE `excluding` caller, graded against the markup this
+    // page really renders (review-item.live.test.ts's `gradeEvidence`:
+    // within `[data-evidence-view]`, excluding `[data-dial]`). The dial is a
+    // PROPER DESCENDANT of the view, which is what makes the exclusion legal
+    // at all under admin-window/BUG-0036 — assert that from the DOM rather
+    // than from the JSX, so a refactor that lifts the dial out of the view (or
+    // wraps the view in it) reddens here instead of silently un-excluding.
+    const $ = cheerio.load(markup);
+    expect($("[data-evidence-view]")).toHaveLength(1);
+    expect($("[data-evidence-view]").find("[data-dial]")).toHaveLength(1);
+    expect(stateOf(markup, "[data-evidence-view]")).not.toBe("ok");
+    expect(stateOf(markup, "[data-evidence-view]", "[data-dial]")).toBe("ok");
   });
 });
 

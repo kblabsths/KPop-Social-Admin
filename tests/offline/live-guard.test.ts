@@ -802,6 +802,16 @@ describe("the state classifier", () => {
     // excluded element carries the state itself or wraps the card that does.
     const nested = surface(rows() + `<section><div data-dial>${errorLine()}</div></section>`);
     expect(stateOf(nested, SURFACE, "[data-dial]")).toBe("ok");
+    // …and a sub-surface inside a sub-surface is still the inner one's read.
+    const twice = surface(
+      rows() + `<div data-dial><div data-dial>${errorLine()}</div></div>`,
+    );
+    expect(stateOf(twice, SURFACE, "[data-dial]")).toBe("ok");
+    // What the exclusion may never reach is a card the SURFACE holds itself:
+    // silencing the dial's refusal does not silence the surface's own beside
+    // it (admin-window/BUG-0036).
+    const both = surface(errorLine() + `<div data-dial>${errorLine()}</div>`);
+    expect(stateOf(both, SURFACE, "[data-dial]")).toBe("error");
   });
 
   it("excludes only PROPER DESCENDANTS, never the surface or a wrapper of it", () => {
@@ -821,6 +831,21 @@ describe("the state classifier", () => {
     expect(stateOf(surface(notProvisioned()), SURFACE, "[data-surface]")).toBe(
       "not_provisioned",
     );
+    // The case the two above cannot reach: a selector that matches the surface
+    // AND a genuine sub-surface inside it, so the exclusion really has work to
+    // do. Each half of the bound holds at once — the surface's own error line
+    // survives, and the sub-surface's read is still the sub-surface's.
+    const claims = (body: string) => `<div data-surface="claims">${body}</div>`;
+    const CLAIMS = '[data-surface="claims"]';
+    const sub = `<div data-surface="dial">${notProvisioned()}</div>`;
+    expect(stateOf(claims(errorLine() + sub), CLAIMS, SURFACE)).toBe("error");
+    expect(
+      stateOf(claims(rows() + `<div data-surface="dial">${errorLine()}</div>`), CLAIMS, SURFACE),
+    ).toBe("ok");
+    // Same for a wrapper selector that matches an ancestor of the surface and
+    // a descendant of it in one read: the ancestor match silences nothing.
+    const wrapped = `<main data-page>${surface(errorLine() + `<div data-page>${empty()}</div>`)}</main>`;
+    expect(stateOf(wrapped, SURFACE, "[data-page]")).toBe("error");
   });
 });
 
