@@ -94,15 +94,28 @@ export const dynamic = "force-dynamic";
  * `/cycles?cycle=<run_id>` (`lineHref` in `src/app/page.tsx`), so the URL
  * names the row the operator came to read and this page marks it.
  *
- * Two more parameters reach this route today and are deliberately NOT consumed
- * here, because both narrow the adapter half: `run=<run_id>` (the Dashboard's
- * run lines) and `source=<name>` (the Sources page's "runs" link, matched by
- * name because `runs.source` has no foreign key). Neither is guessed at — an
- * unrecognised parameter narrows nothing rather than erroring, so both links
- * land on this page rather than dead-ending, and the ticket that answers
- * `OPEN-RUNS` is what makes them do anything.
+ * Two more parameters reach this route today and narrow NOTHING here, because
+ * both belong to the adapter half: `run=<run_id>` (the Dashboard's run lines)
+ * and `source=<name>` (the Sources page's "runs" link). Neither is guessed at
+ * — an unrecognised parameter narrows nothing rather than erroring, so both
+ * links land on this page rather than dead-ending.
  */
 const CYCLE_FACET = "cycle";
+
+/**
+ * The Sources page links each source to `/cycles?source=<name>` (`runs.source`
+ * is text with no foreign key), and that facet narrows the ADAPTER half —
+ * which this page does not render yet. `resolution_runs` has no source column,
+ * so there is no honest narrowing of the cycles below to do here: the page
+ * says which half the facet belongs to, in one sentence, rather than either
+ * ignoring the parameter silently or inventing a filter over the resolver's
+ * cycles (relayed on admin-window/TASK-0016).
+ *
+ * `run=<run_id>` (the Dashboard's run lines) reaches this route too and stays
+ * unconsumed and unremarked: it names a row in a table this page never reads,
+ * and the ticket that answers `OPEN-RUNS` is what makes it do anything.
+ */
+const SOURCE_FACET = "source";
 
 /** What creates the ecosystem objects this page reads. */
 const ARRIVES_WITH = "the scraper repo's migrations";
@@ -346,15 +359,60 @@ function cycleColumns(
 }
 
 /**
+ * What this page actually knows about the cycle a `?cycle=<run_id>` link asked
+ * for. Three states, because the page has three to be honest about — and the
+ * third is not a shade of "absent" (admin-window/BUG-0023).
+ */
+type AskedCycleState =
+  | { kind: "found" }
+  | { kind: "absent" }
+  /** No window was read at all; `reading` is the object whose read said so. */
+  | { kind: "unchecked"; reading: string };
+
+/** Which object a failed read names, in the spelling its own query used. */
+function readingOf(result: DbUnavailable): string {
+  return result.kind === "not_provisioned" ? result.missing : result.reading;
+}
+
+/**
  * The line a visitor who arrived from a `?cycle=<run_id>` link reads.
  *
- * Two answers, both honest: the row is in this window and is marked, or it is
- * not in this window at all — which is a real possibility, because the table
- * is the newest cycles and the linked one may be older. Saying nothing would
- * leave the link looking broken.
+ * Three answers, one per state: the row is in this window and is marked; it is
+ * not in this window — a real possibility, because the table holds the newest
+ * cycles and the linked one may be older; or the window was never read, in
+ * which case the line says only that, and names the read that returned none.
+ *
+ * The third answer is the whole of admin-window/BUG-0023. A refused or absent
+ * read hands the page NO window, so "this cycle is not in the window" is a
+ * verdict it has no evidence for — and on the not-provisioned path it sat
+ * directly above the card naming `resolution_runs` as missing, contradicting
+ * itself on one screen. The Dashboard's `lineHref` sends an operator here
+ * exactly during an outage, so that sentence sent them after a phantom data
+ * problem instead of the table the same screen already named. Saying nothing
+ * would leave the link looking broken; saying which read failed does not.
  */
-function AskedCycle({ askedFor, found }: { askedFor: string; found: boolean }) {
-  return found ? (
+function AskedCycle({
+  askedFor,
+  state,
+}: {
+  askedFor: string;
+  state: AskedCycleState;
+}) {
+  if (state.kind === "unchecked") {
+    return (
+      <p
+        data-cycle-asked={askedFor}
+        data-cycle-unchecked={state.reading}
+        className="type-body text-ink-secondary"
+      >
+        Whether cycle <span className="type-data text-ink">{askedFor}</span> is
+        in this window is not something this page can say: the read of{" "}
+        <span className="type-data text-ink">{state.reading}</span> returned no
+        window to look in. What is below says why.
+      </p>
+    );
+  }
+  return state.kind === "found" ? (
     <p data-cycle-asked={askedFor} data-cycle-found="true" className="type-body text-ink-secondary">
       Cycle{" "}
       <a href={`#${anchorFor(askedFor)}`} className="type-data text-ink hover:text-accent">
@@ -367,6 +425,26 @@ function AskedCycle({ askedFor, found }: { askedFor: string; found: boolean }) {
       Cycle <span className="type-data text-ink">{askedFor}</span> is not among the{" "}
       {count(CYCLE_WINDOW)} newest cycles, so it is not in this window — it ran
       earlier, or no cycle carries that id.
+    </p>
+  );
+}
+
+/**
+ * The one sentence `?source=<name>` earns on this page today.
+ *
+ * The Sources page links here by source name, and the facet narrows the
+ * adapter framework's runs — the half this page does not render yet
+ * (`OPEN-RUNS`). `resolution_runs` carries no source at all, so filtering the
+ * cycles by it would be an invention. The arriving link is told which half it
+ * addresses rather than being ignored byte-for-byte.
+ */
+function AskedSource({ source }: { source: string }) {
+  return (
+    <p data-source-facet={source} className="type-body text-ink-secondary">
+      The source facet <span className="type-data text-ink">{source}</span>{" "}
+      narrows the adapter framework&rsquo;s runs, which this page does not
+      render yet. The resolver&rsquo;s cycles below carry no source, so they are
+      the same cycles with or without it.
     </p>
   );
 }
@@ -651,6 +729,7 @@ export default async function CyclesPage({
 } = {}) {
   const params = (await searchParams) ?? {};
   const askedFor = firstValue(params[CYCLE_FACET]);
+  const askedSource = firstValue(params[SOURCE_FACET]);
 
   // One clock for the whole render: every age on the page, and the
   // running-or-died reading of every row, is measured against the same
@@ -667,7 +746,16 @@ export default async function CyclesPage({
   ]);
 
   const rows = cycles.kind === "ok" ? cycles.data.rows : [];
-  const found = rows.some((row) => row.run_id === askedFor);
+  // A verdict about the asked-for cycle comes off an `ok` read and nothing
+  // else: a refused or absent read leaves the page with no window to have
+  // looked in, which is a third state and not a negative one
+  // (admin-window/BUG-0023).
+  const asked: AskedCycleState =
+    cycles.kind !== "ok"
+      ? { kind: "unchecked", reading: readingOf(cycles) }
+      : rows.some((row) => row.run_id === askedFor)
+        ? { kind: "found" }
+        : { kind: "absent" };
 
   return (
     <Page title="Cycles & runs">
@@ -687,8 +775,9 @@ export default async function CyclesPage({
             : ""}
         </p>
         {askedFor === undefined ? null : (
-          <AskedCycle askedFor={askedFor} found={found} />
+          <AskedCycle askedFor={askedFor} state={asked} />
         )}
+        {askedSource === undefined ? null : <AskedSource source={askedSource} />}
         {cycles.kind === "not_provisioned" ? (
           // A card replaces the surface; nothing above it describes a table
           // that is not there (LOOK_AND_FEEL state 3).
