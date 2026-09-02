@@ -348,14 +348,174 @@ function filesWithWriteLineNaming(column: string, base: string = repoRoot): stri
 }
 
 /**
+ * The same text with the CONTENT of every string literal, template literal,
+ * comment and regex literal blanked to spaces — delimiters kept, length kept,
+ * so an index into the result is an index into the source. A small tokenizer
+ * rather than a regex, because what it has to get right is nesting: `${…}`
+ * inside a template is code again, and `\"` does not end its string.
+ *
+ * Why the scan needs it (admin-window/BUG-0030): `writeArguments` balances
+ * parentheses, and a parenthesis inside a payload STRING moved the argument
+ * boundary in both directions — `.update({ note: "opens ( here" })` ran past
+ * the real `)` and swallowed a later READ of the column, and
+ * `.update({ note: "set by admin :)", admin_locked: true })` ended early and
+ * hid a real WRITE.
+ *
+ * Where a literal cannot be closed with certainty — a quote or a `/` with no
+ * partner on its line, a `/*` whose `*` + `/` the comment filter above already
+ * removed — nothing is blanked and the character is read as ordinary code.
+ * That direction over-reports (a red the reader can see) instead of blinding
+ * the scan (a silent fail-open), which is the failure this ticket exists for.
+ */
+function codeOnly(text: string): string {
+  const out = text.split("");
+  const blank = (from: number, to: number) => {
+    for (let at = from; at < to; at += 1) if (out[at] !== "\n") out[at] = " ";
+  };
+
+  /** The last character that is code, so `/` can be told from `/…/`. */
+  function previousSignificant(before: number): string {
+    for (let at = before - 1; at >= 0; at -= 1) {
+      if (!/\s/.test(out[at])) return out[at];
+    }
+    return "";
+  }
+  /** Positions a regex literal may legally begin at — never after a value. */
+  const REGEX_MAY_FOLLOW = /[(,=:[!&|?+\-*%^~;{]/;
+
+  /** `'…'` or `"…"`: ends at its own unescaped quote; `\` + newline continues it. */
+  function quoted(open: number): number | null {
+    const quote = text[open];
+    let at = open + 1;
+    while (at < text.length && text[at] !== "\n") {
+      if (text[at] === "\\") {
+        at += 2;
+        continue;
+      }
+      if (text[at] === quote) {
+        blank(open + 1, at);
+        return at + 1;
+      }
+      at += 1;
+    }
+    return null;
+  }
+
+  /** `` `…` ``: literal chunks are blanked, every `${…}` is scanned as code. */
+  function template(open: number): number {
+    let at = open + 1;
+    let chunk = at;
+    while (at < text.length) {
+      if (text[at] === "\\") {
+        at += 2;
+        continue;
+      }
+      if (text[at] === "`") {
+        blank(chunk, at);
+        return at + 1;
+      }
+      if (text[at] === "$" && text[at + 1] === "{") {
+        blank(chunk, at);
+        const close = scan(at + 2, true);
+        at = close < text.length ? close + 1 : text.length;
+        chunk = at;
+        continue;
+      }
+      at += 1;
+    }
+    blank(chunk, at);
+    return at;
+  }
+
+  /** `/…/flags` on one line, `[…]` classes and `\/` escapes respected. */
+  function regexLiteral(open: number): number | null {
+    let at = open + 1;
+    let inClass = false;
+    while (at < text.length && text[at] !== "\n") {
+      const ch = text[at];
+      if (ch === "\\") {
+        at += 2;
+        continue;
+      }
+      if (inClass) {
+        if (ch === "]") inClass = false;
+      } else if (ch === "[") {
+        inClass = true;
+      } else if (ch === "/") {
+        blank(open + 1, at);
+        return at + 1;
+      }
+      at += 1;
+    }
+    return null;
+  }
+
+  /**
+   * Code from `from`; with `untilBrace`, stops at the `}` that closes an
+   * interpolation (its own `{…}` pairs counted so an object literal inside
+   * `${…}` does not end it early).
+   */
+  function scan(from: number, untilBrace: boolean): number {
+    let at = from;
+    let braces = 0;
+    while (at < text.length) {
+      const ch = text[at];
+      const next = text[at + 1] ?? "";
+      if (untilBrace && ch === "}" && braces === 0) return at;
+      if (ch === "{") braces += 1;
+      else if (ch === "}") braces -= 1;
+      else if (ch === "/" && next === "/") {
+        let end = at;
+        while (end < text.length && text[end] !== "\n") end += 1;
+        blank(at, end);
+        at = end;
+        continue;
+      } else if (ch === "/" && next === "*") {
+        const close = text.indexOf("*/", at + 2);
+        if (close !== -1) {
+          blank(at, close + 2);
+          at = close + 2;
+          continue;
+        }
+      } else if (ch === '"' || ch === "'") {
+        const after = quoted(at);
+        if (after !== null) {
+          at = after;
+          continue;
+        }
+      } else if (ch === "`") {
+        at = template(at);
+        continue;
+      } else if (ch === "/" && REGEX_MAY_FOLLOW.test(previousSignificant(at))) {
+        const after = regexLiteral(at);
+        if (after !== null) {
+          at = after;
+          continue;
+        }
+      }
+      at += 1;
+    }
+    return at;
+  }
+
+  scan(0, false);
+  return out.join("");
+}
+
+/**
  * The argument text of every write-verb call in a file, balanced across
  * parentheses and newlines so a payload Prettier split over several lines
  * reads as one string. Only what is passed TO the verb is returned, so
  * `.update(values).select("… admin_locked …")` yields `values` — a read
  * chained onto a write is not a write of that column.
+ *
+ * The text is read through `codeOnly`, so every parenthesis that moves the
+ * boundary is a real one, and the argument that comes back carries only the
+ * payload's CODE: a column named inside a payload string is not a write of it
+ * any more than a parenthesis there is a bracket.
  */
 function writeArguments(file: string, base: string = repoRoot): string[] {
-  const code = codeLines(file, base).join("\n");
+  const code = codeOnly(codeLines(file, base).join("\n"));
   const verb = new RegExp(WRITE_VERB.source, "g");
   const args: string[] = [];
   for (let hit = verb.exec(code); hit !== null; hit = verb.exec(code)) {
@@ -584,55 +744,176 @@ describe("the admin_locked write guard itself", () => {
 });
 
 /**
- * The balanced-argument scan is not string-aware (admin-window/BUG-0028 QA).
- * `writeArguments` counts parentheses in the raw code text, so a parenthesis
- * inside a STRING LITERAL in a write payload moves the argument boundary. Both
- * directions are wrong, and both are pinned here as expected failures until
- * admin-window/BUG-0030 makes the scan skip string literals. When it does,
- * these two turn red as XPASS and send the reader to that ticket.
+ * The argument scan and STRING LITERALS (admin-window/BUG-0030, found by
+ * admin-window/BUG-0028's QA). `writeArguments` balances parentheses to find
+ * where a payload ends, and it used to count them in the raw text: a
+ * parenthesis inside a payload string moved that boundary, and the rule broke
+ * in BOTH directions — an unclosed `(` ran the argument past the real `)` and
+ * swallowed a later pure READ, and a `)` truncated a real WRITE out of sight.
+ * Every case below drives the same `filesWritingColumn` the rule above calls,
+ * against a mirror tree of its own that is planted and removed here — never a
+ * file written into the real `src/` (three offline suites walk that tree in
+ * parallel; admin-window/BUG-0020).
  */
 describe("the argument scan and string literals", () => {
-  const stringBase = path.join(repoRoot, "tests", ".probes", `qa-strings-${process.pid}`);
-  const plant = (file: string, source: string) => {
-    const full = path.join(stringBase, file);
-    fs.mkdirSync(path.dirname(full), { recursive: true });
-    fs.writeFileSync(full, source, "utf8");
-  };
+  let planted = 0;
 
-  it.fails("BUG-0030: does not report a pure READ as a write (open paren in a payload string)", () => {
+  /** Plants a mirror tree, reads it through the real pins, removes it. */
+  function withProbes<T>(
+    sources: ReadonlyArray<readonly [string, string]>,
+    read: (base: string) => T,
+  ): T {
+    planted += 1;
+    const base = path.join(repoRoot, "tests", ".probes", `strings-${process.pid}-${planted}`);
     try {
-      plant(
-        "src/read-after-write.ts",
-        "export const a = (db: Db) =>\n" +
-          '  db.from("groups").update({ note: "opens ( here" }).eq("id", 1);\n' +
-          "export const b = (db: Db) =>\n" +
-          '  db.from("field_provenance").select("field, admin_locked");\n',
-      );
-      // The unclosed "(" inside the string runs the scan past the real ")", so
-      // the argument swallows the later READ of the column — the exact defect
-      // class admin-window/BUG-0028 exists to remove.
-      expect(filesWritingColumn(ADMIN_LOCKED, stringBase)).toEqual([]);
+      for (const [file, source] of sources) {
+        const full = path.join(base, file);
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, source, "utf8");
+      }
+      return read(base);
     } finally {
-      fs.rmSync(stringBase, { force: true, recursive: true });
+      fs.rmSync(base, { force: true, recursive: true });
     }
+  }
+
+  it("does not report a READ that follows a payload string opening a paren", () => {
+    const reported = withProbes(
+      [
+        [
+          "src/read-after-write.ts",
+          "export const a = (db: Db) =>\n" +
+            '  db.from("groups").update({ note: "opens ( here" }).eq("id", 1);\n' +
+            "export const b = (db: Db) =>\n" +
+            '  db.from("field_provenance").select("field, admin_locked");\n',
+        ],
+      ],
+      (base) => filesWritingColumn(ADMIN_LOCKED, base),
+    );
+    // The "(" is inside a string, so the payload ends at its own ")" and the
+    // READ underneath it is nobody's argument. Reporting it would be
+    // admin-window/BUG-0028's defect again, narrowed to files that also write.
+    expect(reported).toEqual([]);
   });
 
-  it.fails("BUG-0030: still reports a real WRITE (close paren in a payload string)", () => {
-    try {
-      plant(
-        "src/stamp.ts",
-        "export const stamp = (db: Db, id: string) =>\n" +
-          '  db.from("field_provenance").update({\n' +
-          '    note: "set by admin :)",\n' +
-          "    admin_locked: true,\n" +
-          '  }).eq("id", id);\n',
-      );
-      // The ")" inside the string ends the argument early, so the payload's own
-      // `admin_locked` is never seen; the line pin misses it too because the
-      // payload is wrapped. A forbidden write slips BOTH pins.
-      expect(filesWritingColumn(ADMIN_LOCKED, stringBase)).toEqual(["src/stamp.ts"]);
-    } finally {
-      fs.rmSync(stringBase, { force: true, recursive: true });
-    }
+  it("reports a WRITE whose payload string closes a paren", () => {
+    const reported = withProbes(
+      [
+        [
+          "src/stamp.ts",
+          "export const stamp = (db: Db, id: string) =>\n" +
+            '  db.from("field_provenance").update({\n' +
+            '    note: "set by admin :)",\n' +
+            "    admin_locked: true,\n" +
+            '  }).eq("id", id);\n',
+        ],
+      ],
+      (base) => filesWritingColumn(ADMIN_LOCKED, base),
+    );
+    // The ")" is inside a string, so the payload runs on to its own
+    // `admin_locked` — a forbidden write of a resolver-owned column, and the
+    // payload is wrapped, so this pin is the only one that can see it.
+    expect(reported).toEqual(["src/stamp.ts"]);
+  });
+
+  it("reports a WRITE whose payload string escapes its own quote", () => {
+    const reported = withProbes(
+      [
+        [
+          "src/stamp-escaped.ts",
+          "export const stamp = (db: Db, id: string) =>\n" +
+            '  db.from("field_provenance").update({\n' +
+            '    note: "he said \\"stop )\\" (twice",\n' +
+            "    admin_locked: true,\n" +
+            '  }).eq("id", id);\n',
+        ],
+      ],
+      (base) => filesWritingColumn(ADMIN_LOCKED, base),
+    );
+    // The escaped quotes do not end the string, so neither parenthesis inside
+    // it is counted and the payload still reaches the column.
+    expect(reported).toEqual(["src/stamp-escaped.ts"]);
+  });
+
+  it("reads a template literal as a literal, its ${} interpolations as code", () => {
+    const reported = withProbes(
+      [
+        [
+          "src/stamp-template.ts",
+          "export const stamp = (db: Db, id: string, who: string) =>\n" +
+            '  db.from("field_provenance").update({\n' +
+            "    note: `set by ${who.replace(\"(\", \")\")} — ${`nested ) ${who}`} :)`,\n" +
+            "    admin_locked: true,\n" +
+            '  }).eq("id", id);\n',
+        ],
+        [
+          "src/read-after-template.ts",
+          "export const a = (db: Db, who: string) =>\n" +
+            '  db.from("groups").update({ note: `opens ( for ${who}` }).eq("id", 1);\n' +
+            "export const b = (db: Db) =>\n" +
+            '  db.from("field_provenance").select("field, admin_locked");\n',
+        ],
+      ],
+      (base) => filesWritingColumn(ADMIN_LOCKED, base),
+    );
+    // Both halves of the nesting matter: the literal chunks (`:)`, `nested )`,
+    // `opens (`) are text and move nothing, while the interpolation is code
+    // again, so `.replace("(", ")")`'s own parentheses balance as they should.
+    expect(reported).toEqual(["src/stamp-template.ts"]);
+  });
+
+  it("reads a regex literal in a payload as a literal", () => {
+    const reported = withProbes(
+      [
+        [
+          "src/stamp-regex.ts",
+          "export const stamp = (db: Db, id: string, raw: string) =>\n" +
+            '  db.from("field_provenance").update({\n' +
+            '    note: raw.replace(/\\)/g, ""),\n' +
+            "    admin_locked: true,\n" +
+            '  }).eq("id", id);\n',
+        ],
+      ],
+      (base) => filesWritingColumn(ADMIN_LOCKED, base),
+    );
+    // The ")" in `/\)/` is a pattern, not a bracket; counted, it would end the
+    // argument at the `.replace(` call and hide the column two lines below.
+    expect(reported).toEqual(["src/stamp-regex.ts"]);
+  });
+
+  it("does not report the column when only a payload string names it", () => {
+    const [reported, argument] = withProbes(
+      [
+        [
+          "src/note-about-locking.ts",
+          "export const note = (db: Db, id: string) =>\n" +
+            '  db.from("groups").update({\n' +
+            '    note: "admin_locked is set by the resolver, never here",\n' +
+            '  }).eq("id", id);\n',
+        ],
+      ],
+      (base) =>
+        [
+          filesWritingColumn(ADMIN_LOCKED, base),
+          writeArguments("src/note-about-locking.ts", base).join(""),
+        ] as const,
+    );
+    // A column NAMED in prose inside a payload is not a write of it, for the
+    // same reason a parenthesis there is not a bracket: the argument the pin
+    // matches against carries the payload's code and none of its text.
+    expect(reported).toEqual([]);
+    expect(argument).toContain("note:");
+    expect(argument).not.toContain(ADMIN_LOCKED);
+  });
+
+  it("leaves no probe behind for another suite to walk into", () => {
+    // Every case above plants under `tests/.probes/` and removes it in a
+    // `finally`, so a failing assertion cannot leave a tree for a parallel
+    // suite's walker to trip over.
+    const probes = path.join(repoRoot, "tests", ".probes");
+    const mine = fs.existsSync(probes)
+      ? fs.readdirSync(probes).filter((name) => name.startsWith(`strings-${process.pid}-`))
+      : [];
+    expect(mine).toEqual([]);
   });
 });
