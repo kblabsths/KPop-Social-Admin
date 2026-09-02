@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { nullDash } from "@/lib/format";
+import { orDash } from "@/lib/format";
 import { cx } from "@/components/ui/cx";
 
 /**
@@ -153,7 +153,7 @@ export function EditableCell({
             status.kind === "saving" && "cursor-not-allowed opacity-50",
           )}
         >
-          {shown === null || shown === "" ? nullDash() : shown}
+          {orDash(shown)}
         </button>
       )}
       {status.kind === "saved" ? (

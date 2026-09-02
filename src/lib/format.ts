@@ -10,7 +10,7 @@
  * in the column header, counts carry their noun. A null is an em dash in
  * disabled-gray — never blank, never `null`, `N/A` or `none`.
  */
-import { createElement, type ReactElement } from "react";
+import { createElement, type ReactElement, type ReactNode } from "react";
 
 /** The one character that stands for "no value", everywhere in the app. */
 export const EM_DASH = "—";
@@ -91,4 +91,39 @@ export function nullDash(): ReactElement {
     { className: "text-ink-disabled", "aria-label": "no value" },
     EM_DASH,
   );
+}
+
+/**
+ * Is this renderable body an absence? The single definition, campaign
+ * admin-window/BUG-0004 — a primitive asks here instead of writing its own
+ * `x === null || x === ""` guard, because three hand-written guards disagreed.
+ *
+ * Absent is anything React would draw as nothing (`null`, `undefined`, either
+ * boolean — the `flag && "yes"` idiom yields `false` — an empty or
+ * whitespace-only string, an empty array), anything that would draw as
+ * nonsense (a non-finite number renders the literal `NaN`), and the bare em
+ * dash a formatting helper returns: `count(null)`, `absoluteUtc(null)` and
+ * `relativeAge(null).text` are strings, so they must be recognised here to be
+ * coloured like a raw null.
+ */
+export function isAbsent(value: ReactNode): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === "boolean") return true;
+  if (typeof value === "number") return !Number.isFinite(value);
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed === "" || trimmed === EM_DASH;
+  }
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+/**
+ * The body to render: itself, or `nullDash()` when it is an absence. Every
+ * primitive that renders a caller-supplied value passes it through here, so a
+ * page written against `count(row.n)` needs no absence handling of its own and
+ * every dash in a row reads the same.
+ */
+export function orDash(value: ReactNode): ReactNode {
+  return isAbsent(value) ? nullDash() : value;
 }

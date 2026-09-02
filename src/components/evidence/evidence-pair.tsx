@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { nullDash, relativeAge, type Timestamp } from "@/lib/format";
+import { orDash, relativeAge, type Timestamp } from "@/lib/format";
 import { cx } from "@/components/ui/cx";
 
 /**
@@ -39,7 +39,7 @@ export type EvidenceCanonical = {
 
 function CardValue({ value }: { value: string | null }) {
   return (
-    <span className="type-data text-ink">{value === null || value === "" ? nullDash() : value}</span>
+    <span className="type-data text-ink">{orDash(value)}</span>
   );
 }
 
@@ -66,7 +66,7 @@ export function EvidencePair({
             <CardValue value={claim.value} />
             <span className="type-data text-ink-secondary">
               {claim.source} · {claim.tier} ·{" "}
-              <span title={age.title || undefined}>{age.text}</span>
+              <span title={age.title || undefined}>{orDash(age.text)}</span>
             </span>
             {claim.action ? <div className="flex gap-2 pt-1">{claim.action}</div> : null}
           </div>

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { nullDash } from "@/lib/format";
+import { orDash } from "@/lib/format";
 import { cx } from "./cx";
 
 /**
@@ -28,7 +28,12 @@ export type Column<T> = {
    * it is currently sorted in, if it is the active sort.
    */
   sort?: { href: string; active?: SortDirection };
-  /** The cell body. Return null for a missing value — it renders as the dash. */
+  /**
+   * The cell body. Anything absent — `null`, a falsy `flag && ...` body, an
+   * empty string, or the em dash a formatting helper returns — renders as the
+   * dash in disabled-gray; the cell never decides that itself
+   * (`isAbsent` in `src/lib/format.ts`, campaign admin-window/BUG-0004).
+   */
   cell: (row: T) => ReactNode;
 };
 
@@ -127,7 +132,7 @@ export function DataTable<T>({
                           column.align === "right" && "text-right",
                         )}
                       >
-                        {body === null || body === undefined || body === "" ? nullDash() : body}
+                        {orDash(body)}
                       </td>
                     );
                   })}

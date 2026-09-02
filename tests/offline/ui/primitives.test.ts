@@ -282,11 +282,13 @@ describe("the four data-surface states", () => {
  * blank, never `null`, `N/A` or `none`." TASK-0004 seeds `nullDash()` so that
  * "absence looks identical everywhere" (`src/lib/format.ts`, its own words).
 
- * PINNED admin-window/BUG-0004: all three are `it.fails`, which is strict —
- * the day absence renders uniformly they turn red and send the reader here.
+ * admin-window/BUG-0004 fixed the three ways this disagreed with itself: the
+ * primitives no longer carry their own guards, they ask `isAbsent()` in
+ * `src/lib/format.ts`, so a helper-produced dash, a falsy cell body and a
+ * non-finite figure all render the one `nullDash()`.
  *
  * These drive the two ways a page reaches a cell without going through a raw
- * `null`, which are the two ways the app currently disagrees with itself.
+ * `null` — a formatting helper's string, and a falsy React body.
  */
 describe("absence, across the format helpers and the primitives", () => {
   type Missing = { id: string; n: number | null; at: string | null; flagged: boolean };
@@ -297,8 +299,7 @@ describe("absence, across the format helpers and the primitives", () => {
       body: m[2],
     }));
 
-  // PIN admin-window/BUG-0004 — strict: when this passes, it.fails goes red.
-  it.fails("shows a helper-produced dash in disabled-gray, like every other dash in the row", () => {
+  it("shows a helper-produced dash in disabled-gray, like every other dash in the row", () => {
     const html = render(
       h(DataTable<Missing>, {
         columns: [
@@ -320,8 +321,7 @@ describe("absence, across the format helpers and the primitives", () => {
     }
   });
 
-  // PIN admin-window/BUG-0004 — strict: when this passes, it.fails goes red.
-  it.fails("never leaves a cell blank when its body is a falsy React node", () => {
+  it("never leaves a cell blank when its body is a falsy React node", () => {
     const html = render(
       h(DataTable<Missing>, {
         // `row.flagged && <something>` is the idiom every page will reach for;
@@ -336,10 +336,35 @@ describe("absence, across the format helpers and the primitives", () => {
     expect(cell.body).toContain(EM_DASH);
   });
 
-  // PIN admin-window/BUG-0004 — strict: when this passes, it.fails goes red.
-  it.fails("shows a figure that is not a number as the same dash a null figure gets", () => {
+  it("shows a figure that is not a number as the same dash a null figure gets", () => {
     const nan = render(h(StatCard, { label: "runs", value: Number.NaN }));
     expect(nan).toContain(EM_DASH);
     expect(nan).toContain("text-ink-disabled");
+  });
+
+  it("dashes a truthy boolean cell body too, since React draws it as nothing either", () => {
+    const html = render(
+      h(DataTable<Missing>, {
+        columns: [{ key: "f", label: "flagged", cell: () => true }] as Column<Missing>[],
+        rows: missing,
+        rowKey: (row: Missing) => row.id,
+      }),
+    );
+    const [cell] = dashCell(html);
+    expect(cell.body).toContain(EM_DASH);
+    expect(cell.body).toContain("text-ink-disabled");
+  });
+
+  it("never mistakes a real zero for an absence, in a cell or in a figure", () => {
+    const html = render(
+      h(DataTable<Missing>, {
+        columns: [{ key: "z", label: "zero", cell: () => count(0) }] as Column<Missing>[],
+        rows: missing,
+        rowKey: (row: Missing) => row.id,
+      }),
+    );
+    const [cell] = dashCell(html);
+    expect(cell.body).toBe("0");
+    expect(render(h(StatCard, { label: "runs", value: 0 }))).not.toContain(EM_DASH);
   });
 });
