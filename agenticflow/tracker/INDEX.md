@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T11:48:21Z — do not edit)
+# Tracker index (regenerated 2026-09-02T11:52:15Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -20,6 +20,9 @@
 - BUG-0017 [P3][bug][M1] A notFound() from a dynamic route serves an empty document: the 404 page only appears after hydration  (scope:src/app/records/[table]/[id],src/app,tests/http from:BUG-0014)
 
 ## built
+- TASK-0008 [P2][task][M1] Gauge cards: the figure card, the trend table and the distribution view  (deps:TASK-0004,TASK-0007 scope:src/components/gauges,tests/offline/gauges-ui @builder-34)
+
+## qa
 - BUG-0018 [P2][bug][-] GaugeCard puts a floor qualifier and a palette colour on an em dash it never measured  (scope:src/components/gauges,tests/offline/gauges-ui @builder-33 from:TASK-0008)
 
 ## blocked
@@ -30,7 +33,4 @@
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 - TASK-0029 [P2][task][M1] ASK: what does a resolver-owned record page DISPLAY in M1? events/venues currently render their id and nothing else  (scope:src/lib/edit/config.ts,src/lib/db/records.ts from:TASK-0018)
 
-## reopened
-- TASK-0008 [P2][task][M1] Gauge cards: the figure card, the trend table and the distribution view  (deps:TASK-0004,TASK-0007 scope:src/components/gauges,tests/offline/gauges-ui)
-
-Totals — blocked:6, built:1, done:31, open:17, reopened:1. Archived: 0.
+Totals — blocked:6, built:1, done:31, open:17, qa:1. Archived: 0.
