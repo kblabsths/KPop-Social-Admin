@@ -17,6 +17,30 @@ export type DbResult<T> =
 export type DbResponse<T> = { data: T | null; error: unknown };
 
 /**
+ * The response shape a COMPLETE read needs: the rows AND the exact count.
+ *
+ * `count` is what `{ count: "exact" }` puts on the response. It is `null` when
+ * the query did not ask for it — which a complete read treats as a refusal
+ * rather than as information (ARCHITECTURE.md §4.3).
+ */
+export type DbCountedResponse<T> = {
+  data: T | null;
+  error: unknown;
+  count: number | null;
+};
+
+/**
+ * The most rows one complete read may return.
+ *
+ * 1000 matches PostgREST's own default `db-max-rows`, so the app never
+ * silently fights the platform cap: whichever of the two truncates first, the
+ * exact count still exceeds the rows returned and the read refuses. One named
+ * constant, handed to the query builder, so no module spells the number
+ * (ARCHITECTURE.md §4.3; DECISIONS 2026-09-02).
+ */
+export const ROW_CAP = 1000;
+
+/**
  * The object is absent: PostgREST cannot find the table/view in its schema
  * cache (`PGRST205`), or Postgres itself says undefined_table (`42P01`).
  */
@@ -176,6 +200,66 @@ export async function readRows<Row>(
   return { kind: "ok", data: result.data ?? [] };
 }
 
+/**
+ * A COMPLETE row-set read: the `ok` array is the WHOLE matching set, or the
+ * read refuses (ARCHITECTURE.md §4.3, campaign admin-window/TASK-0026).
+ *
+ * The `run` callback MUST build its query with `{ count: "exact" }`, a total
+ * `.order()` ending in the primary key, and `.range(0, cap - 1)` — `cap` is
+ * handed in so the caller never spells the number itself. The server order
+ * makes the row set (and therefore any refusal) deterministic; it is not the
+ * display order, which stays with the domain module.
+ *
+ * In order:
+ *  - a database error classifies exactly as `readRows` does, so an absent
+ *    table still reads as `not_provisioned`;
+ *  - `count === null` with no error is a refusal, never a number of our own:
+ *    the query was written without `{ count: "exact" }` and we cannot know how
+ *    many rows matched (BUG-0007's rule on the user-visible path);
+ *  - `count > rows.length` means SOMETHING truncated the set — our cap, or the
+ *    server's `db-max-rows`, which our cap alone cannot detect — so the read
+ *    refuses with the real number rather than returning a partial array;
+ *  - otherwise `ok` with every row.
+ *
+ * **Every figure, count, oldest-age and exactness claim in this app rests on
+ * that property**, which is why no caller carries a "was that all of it?"
+ * flag: a partial answer never becomes an `ok`.
+ */
+export async function readComplete<Row>(
+  missing: string,
+  run: (db: SupabaseClient, cap: number) => PromiseLike<DbCountedResponse<Row[]>>,
+  db?: SupabaseClient,
+): Promise<DbResult<Row[]>> {
+  try {
+    const client = db ?? getDbClient();
+    const { data, error, count } = await run(client, ROW_CAP);
+    if (error !== null && error !== undefined) return classify(error, missing);
+
+    const rows = data ?? [];
+    if (count === null || count === undefined) {
+      return {
+        kind: "error",
+        message:
+          `${missing}: the read returned no count, so whether these ` +
+          `${rows.length} rows are all of them is unknown; a complete read ` +
+          `requires { count: "exact" }.`,
+      };
+    }
+    if (count > rows.length) {
+      return {
+        kind: "error",
+        message:
+          `${missing}: the database holds ${count} rows matching this read ` +
+          `and it is capped at ${ROW_CAP} (${rows.length} returned); narrow ` +
+          `the filter or raise ROW_CAP.`,
+      };
+    }
+    return { kind: "ok", data: rows };
+  } catch (thrown) {
+    return classify(thrown, missing);
+  }
+}
+
 /** A single-row read (`.maybeSingle()`). `ok` carries `null` when there is no row. */
 export async function readOne<Row>(
   missing: string,
@@ -186,8 +270,15 @@ export async function readOne<Row>(
 }
 
 /**
- * A `head: true, count: "exact"` read. `ok` carries the count, `0` when
- * PostgREST returns none — a count query's payload is the count, not the data.
+ * A `head: true, count: "exact"` read. `ok` carries the count the database
+ * gave — and a database that gave none is a refusal, never a zero.
+ *
+ * This used to substitute a zero for an absent count (BUG-0007's user-visible
+ * twin), so a response with `error: null` and `count: null` — exactly what a
+ * select written WITHOUT `{ head: true, count: "exact" }` returns — rendered a
+ * confident `0` for a table holding 47 rows. A real zero still comes back as `ok` 0; only the
+ * absent count refuses (ARCHITECTURE.md §4.3, campaign
+ * admin-window/TASK-0026). It still never throws (§4.1).
  */
 export async function readCount(
   missing: string,
@@ -198,7 +289,15 @@ export async function readCount(
     const client = db ?? getDbClient();
     const { count, error } = await run(client);
     if (error !== null && error !== undefined) return classify(error, missing);
-    return { kind: "ok", data: count ?? 0 };
+    if (count === null || count === undefined) {
+      return {
+        kind: "error",
+        message:
+          `${missing}: the query returned no count, so the number of rows is ` +
+          `unknown; a count read requires { head: true, count: "exact" }.`,
+      };
+    }
+    return { kind: "ok", data: count };
   } catch (thrown) {
     return classify(thrown, missing);
   }

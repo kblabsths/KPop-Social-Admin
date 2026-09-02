@@ -1,7 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 import {
+  ROW_CAP,
   classify,
+  readComplete,
   readCount,
   readOne,
   readRows,
@@ -209,9 +211,13 @@ describe("reads against a scripted PostgREST response", () => {
     ).resolves.toEqual({ kind: "ok", data: null });
   });
 
-  it("reads a count, defaulting a null count to zero", async () => {
+  it("reads a count, and refuses a null count instead of reporting zero", async () => {
+    // BUG-0007's user-visible twin (fixed by admin-window/TASK-0026): a
+    // response with `error: null` and `count: null` — what a select written
+    // WITHOUT `{ head: true, count: "exact" }` returns — used to render a
+    // confident 0 for a table holding rows. A counted 0 is still an ok 0.
     const stub = stubClient({
-      [T.reviewItems]: [{ count: 7 }, { count: null }],
+      [T.reviewItems]: [{ count: 7 }, { count: 0 }, { count: null }],
     });
     const client = stub.asSupabaseClient();
 
@@ -229,6 +235,19 @@ describe("reads against a scripted PostgREST response", () => {
         client,
       ),
     ).resolves.toEqual({ kind: "ok", data: 0 });
+
+    const refused = await readCount(
+      T.reviewItems,
+      // The defective spelling: no count asked for, so none comes back.
+      (db) => db.from(T.reviewItems).select("*"),
+      client,
+    );
+    expect(refused.kind).toBe("error");
+    if (refused.kind !== "error") return;
+    expect(refused.message).toContain(T.reviewItems);
+    expect(refused.message).toContain('count: "exact"');
+    // Never a number the database did not give.
+    expect(refused).not.toHaveProperty("data");
   });
 
   it("classifies an absent table on a count read too", async () => {
@@ -242,6 +261,141 @@ describe("reads against a scripted PostgREST response", () => {
         stub.asSupabaseClient(),
       ),
     ).resolves.toEqual({ kind: "not_provisioned", missing: T.resolutionRuns });
+  });
+});
+
+/**
+ * The complete read (ARCHITECTURE.md §4.3, campaign admin-window/TASK-0026).
+ *
+ * The property under test in every case below is one sentence: **an `ok` array
+ * is the whole matching set.** So each branch is checked twice — that the
+ * refusal happens, and that no array escapes with it.
+ */
+describe("readComplete", () => {
+  /** The query a complete read is contractually required to build. */
+  const completeQuery =
+    (table: string) =>
+    (db: SupabaseClient, cap: number) =>
+      db
+        .from(table)
+        .select("*", { count: "exact" })
+        .order("review_item_id", { ascending: true })
+        .range(0, cap - 1);
+
+  it("returns ok with every row when the exact count matches what came back", async () => {
+    const items = reviewItemShapes();
+    const stub = stubClient({
+      [T.reviewItems]: { data: items, count: items.length },
+    });
+    const result = await readComplete(
+      T.reviewItems,
+      completeQuery(T.reviewItems),
+      stub.asSupabaseClient(),
+    );
+    expect(result).toEqual({ kind: "ok", data: items });
+  });
+
+  it("returns an empty ok when the database counted nothing", async () => {
+    // A counted zero is information; only an ABSENT count is a refusal.
+    const stub = stubClient({ [T.pendingClaims]: { data: null, count: 0 } });
+    const result = await readComplete(
+      T.pendingClaims,
+      completeQuery(T.pendingClaims),
+      stub.asSupabaseClient(),
+    );
+    expect(result).toEqual({ kind: "ok", data: [] });
+  });
+
+  it("hands the cap to the query rather than letting the caller spell it", async () => {
+    const stub = stubClient({ [T.reviewItems]: { data: [], count: 0 } });
+    await readComplete(
+      T.reviewItems,
+      completeQuery(T.reviewItems),
+      stub.asSupabaseClient(),
+    );
+    const range = stub.calls[0].steps.find((step) => step.method === "range");
+    expect(range?.args).toEqual([0, ROW_CAP - 1]);
+  });
+
+  it("classifies a database error exactly as a window read does", async () => {
+    const absent = stubClient({
+      [T.verdicts]: { error: tableNotInSchemaCache(T.verdicts) },
+    });
+    expect(
+      await readComplete(T.verdicts, completeQuery(T.verdicts), absent.asSupabaseClient()),
+    ).toEqual({ kind: "not_provisioned", missing: T.verdicts });
+
+    const refused = stubClient({
+      [T.observations]: { error: permissionDenied(T.observations) },
+    });
+    expect(
+      await readComplete(
+        T.observations,
+        completeQuery(T.observations),
+        refused.asSupabaseClient(),
+      ),
+    ).toEqual({
+      kind: "error",
+      message: permissionDenied(T.observations).message,
+    });
+  });
+
+  it("refuses a null count instead of fabricating completeness, and returns no array", async () => {
+    // The defective spelling: a select without `{ count: "exact" }` answers
+    // `error: null, count: null`. Whether those rows are all of them is
+    // unknowable, so they must not surface as an ok set.
+    const items = reviewItemShapes();
+    const stub = stubClient({ [T.reviewItems]: { data: items, count: null } });
+    const result = await readComplete(
+      T.reviewItems,
+      (db) => db.from(T.reviewItems).select("*"),
+      stub.asSupabaseClient(),
+    );
+
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.message).toContain(T.reviewItems);
+    expect(result.message).toContain('count: "exact"');
+    expect(result).not.toHaveProperty("data");
+  });
+
+  it("refuses a truncated set, naming the object, the count and the cap", async () => {
+    // What the server's own db-max-rows does to a big table: ROW_CAP rows
+    // back, and a count that says there are far more.
+    const rows = Array.from({ length: ROW_CAP }, (_, index) => ({
+      review_item_id: `row-${index}`,
+    }));
+    const held = 1732;
+    const stub = stubClient({ [T.reviewItems]: { data: rows, count: held } });
+
+    const result = await readComplete(
+      T.reviewItems,
+      completeQuery(T.reviewItems),
+      stub.asSupabaseClient(),
+    );
+
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.message).toContain(T.reviewItems);
+    expect(result.message).toContain(String(held));
+    expect(result.message).toContain(String(ROW_CAP));
+    // Never a partial array: the whole point of the branch.
+    expect(result).not.toHaveProperty("data");
+  });
+
+  it("refuses truncation regardless of where the cap bit, cap or server", async () => {
+    // One row short of the count is still a truncated set. Nothing here
+    // assumes ROW_CAP was the thing that cut it.
+    const items = reviewItemShapes();
+    const stub = stubClient({
+      [T.reviewItems]: { data: items, count: items.length + 1 },
+    });
+    const result = await readComplete(
+      T.reviewItems,
+      completeQuery(T.reviewItems),
+      stub.asSupabaseClient(),
+    );
+    expect(result.kind).toBe("error");
   });
 });
 
@@ -268,6 +422,16 @@ describe("no exported read throws", () => {
         (db) => db.from(T.reviewItems).select("*", { count: "exact", head: true }),
         client,
       ),
+      await readComplete(
+        T.reviewItems,
+        (db, cap) =>
+          db
+            .from(T.reviewItems)
+            .select("*", { count: "exact" })
+            .order("review_item_id")
+            .range(0, cap - 1),
+        client,
+      ),
     ];
 
     for (const result of results) {
@@ -291,6 +455,10 @@ describe("no exported read throws", () => {
       message: boom.message,
     });
     await expect(readCount(T.sources, thrower, client)).resolves.toEqual({
+      kind: "error",
+      message: boom.message,
+    });
+    await expect(readComplete(T.sources, thrower, client)).resolves.toEqual({
       kind: "error",
       message: boom.message,
     });

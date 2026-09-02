@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { readRows, type DbResponse, type DbResult } from "./result";
+import { readComplete, type DbCountedResponse, type DbResult } from "./result";
 import { T } from "./tables";
 import {
   queueOrder,
@@ -54,12 +54,36 @@ const COLUMNS = [
  * The predicate re-applies `queue`/`status` too: the narrowing is an
  * optimisation, and the returned set is decided by exactly one function
  * whether the server narrowed or not.
+ *
+ * It is a COMPLETE read (ARCHITECTURE.md §4.3): `{ count: "exact" }`, a total
+ * server-side order ending in the primary key, and `.range(0, cap - 1)`. That
+ * is what lets `readComplete` tell a whole matching set from a truncated one —
+ * without the count there is no way to know, and without the order the subset
+ * a cap returns is arbitrary and a refusal is not reproducible.
+ *
+ * **Ascending on all four is measured, not assumed:** `open` < `settled` and
+ * `high` < `low` lexicographically, so ascending text order already puts open
+ * before settled and high before low, and the server order happens to agree
+ * with `queueOrder`. **That agreement is a convenience, not the contract** —
+ * `queueOrder` in `src/lib/review/shapes.ts` is the only authority on display
+ * order and is applied after the read. Should a third status or severity value
+ * ever land, this order is merely arbitrary-but-stable and `queueOrder` is
+ * still right.
  */
-function query(db: SupabaseClient, filter: ReviewItemFilter) {
-  let builder = db.from(T.reviewItems).select(COLUMNS);
+function query(db: SupabaseClient, filter: ReviewItemFilter, cap: number) {
+  let builder = db
+    .from(T.reviewItems)
+    .select(COLUMNS, { count: "exact" });
   if (filter.queue !== undefined) builder = builder.eq("queue", filter.queue);
   if (filter.status !== undefined) builder = builder.eq("status", filter.status);
-  return builder as unknown as PromiseLike<DbResponse<ReviewItemRow[]>>;
+  return builder
+    .order("status", { ascending: true })
+    .order("severity", { ascending: true })
+    .order("opened_at", { ascending: true })
+    .order("review_item_id", { ascending: true })
+    .range(0, cap - 1) as unknown as PromiseLike<
+    DbCountedResponse<ReviewItemRow[]>
+  >;
 }
 
 /**
@@ -68,14 +92,19 @@ function query(db: SupabaseClient, filter: ReviewItemFilter) {
  *
  * An empty filter is the whole table, settled items included; §4 keeps them
  * browsable, and `queueOrder` puts them below the open ones.
+ *
+ * A COMPLETE read: an `ok` array is every matching row, or the read refuses
+ * with the real count (ARCHITECTURE.md §4.3). "A filter returns exactly the
+ * matching items" (acceptance test 4) is only true because of that — a
+ * silently truncated row set would make it false with nothing to show for it.
  */
 export async function listReviewItems(
   filter: ReviewItemFilter = {},
   db?: SupabaseClient,
 ): Promise<DbResult<ReviewItemRow[]>> {
-  const result = await readRows<ReviewItemRow>(
+  const result = await readComplete<ReviewItemRow>(
     T.reviewItems,
-    (client) => query(client, filter),
+    (client, cap) => query(client, filter, cap),
     db,
   );
   if (result.kind !== "ok") return result;
@@ -90,6 +119,10 @@ export async function listReviewItems(
  * `count(*) group by kind` is expressible against a column that does not
  * exist. Both kinds always come back, so an empty queue renders a zero rather
  * than a gap.
+ *
+ * Correct by construction: its input is `listReviewItems`, a complete read, so
+ * every count and oldest age here is over the whole open set or the read
+ * refused and no number is rendered at all.
  */
 export async function readReviewAttention(
   db?: SupabaseClient,
