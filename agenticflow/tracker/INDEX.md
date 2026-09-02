@@ -1,6 +1,7 @@
-# Tracker index (regenerated 2026-09-02T06:41:55Z — do not edit)
+# Tracker index (regenerated 2026-09-02T06:51:44Z — do not edit)
 
 ## open
+- BUG-0003 [P1][bug][-] The credential-layering guard misses bracket-form env reads, so the one-reader criterion is unproven  (scope:tests/offline/db from:TASK-0002)
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
 - FEAT-0002 [P1][feat][M1] Staging reads, the not-provisioned state, and the live/offline test harness
 - FEAT-0003 [P1][feat][M1] Dashboard — the breakfast view  (deps:FEAT-0001,FEAT-0002(unmet:2))
@@ -10,7 +11,6 @@
 - FEAT-0007 [P1][feat][M1] Browse — the recent-events curated view  (deps:FEAT-0001,FEAT-0002(unmet:2))
 - FEAT-0008 [P1][feat][M1] The edit surface — the config map and pre-cutover direct edits  (deps:FEAT-0001,FEAT-0002(unmet:2))
 - TASK-0003 [P1][task][M1] The live harness: staging-only credentials, the parity helper, the sweep helper  (deps:TASK-0002(unmet:1) scope:tests/live,tests/offline/live-guard.test.ts,agenticflow/docs/SERVICES.md)
-- TASK-0004 [P1][task][M1] Design tokens and the UI primitives every surface is built from  (deps:TASK-0001 scope:src/app/globals.css,src/components/ui,src/components/evidence,src/lib/format.ts,tests/offline/ui,tests/offline/format.test.ts)
 - TASK-0005 [P1][task][M1] Remove every deprecated surface; stand up the shell and the six routes  (deps:TASK-0004,TASK-0002(unmet:2) scope:src/app,src/components,tests/http,tests/offline/shell)
 - TASK-0006 [P1][task][M1] Review-item domain module: kind derived from shape, the ordering, the filters  (deps:TASK-0002(unmet:1) scope:src/lib/review,src/lib/db/review-items.ts,tests/offline/review)
 - TASK-0007 [P1][task][M1] The six gauges as server-side queries with pure TypeScript aggregation  (deps:TASK-0002(unmet:1) scope:src/lib/gauges,tests/offline/gauges)
@@ -28,8 +28,8 @@
 - TASK-0016 [P2][task][M1] Cycles & runs — the adapter framework's runs half  (deps:TASK-0014,TASK-0023(unmet:2) scope:src/app/cycles/page.tsx,src/lib/db/runs.ts,tests/offline/runs,tests/live/runs.live.test.ts)
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 
-## built
-- TASK-0002 [P1][task][M1] The staging data layer: the client seam, DbResult, and the table-name constants  (deps:TASK-0001 scope:src/lib/db,tests/offline/db,tests/fixtures @builder-3)
+## claimed
+- TASK-0004 [P1][task][M1] Design tokens and the UI primitives every surface is built from  (deps:TASK-0001 scope:src/app/globals.css,src/components/ui,src/components/evidence,src/lib/format.ts,tests/offline/ui,tests/offline/format.test.ts @builder-4)
 
 ## blocked
 - TASK-0021 [P0][task][M1] ASK BEN: which Supabase env names does the APP read at runtime, and what do the campaign's live tests read?  (scope:src/lib/db/client.ts,tests/live,agenticflow/docs/SERVICES.md)
@@ -38,4 +38,7 @@
 - TASK-0024 [P1][task][M1] ASK BEN: where does Admin read the per-source stuck_pattern dial, which lives only in scraper YAML?  (scope:src/lib/gauges/pending-claims.ts,src/app/sources/page.tsx)
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 
-Totals — blocked:5, built:1, done:4, open:26. Archived: 0.
+## reopened
+- TASK-0002 [P1][task][M1] The staging data layer: the client seam, DbResult, and the table-name constants  (deps:TASK-0001 scope:src/lib/db,tests/offline/db,tests/fixtures)
+
+Totals — blocked:5, claimed:1, done:4, open:26, reopened:1. Archived: 0.
