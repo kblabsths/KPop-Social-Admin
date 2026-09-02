@@ -8,6 +8,7 @@ import {
 } from "./result";
 import { T } from "./tables";
 import {
+  currentDecisions,
   eventIdsOf,
   joinBrowseRows,
   sourceIdsOf,
@@ -80,7 +81,8 @@ export interface RecentEventsListing {
 const EVENT_COLUMNS =
   "event_id, title, description, poster_url, starts_at, created_at";
 const LISTING_COLUMNS = "event_id, venue_name";
-const PROVENANCE_COLUMNS = "entity_id, source_id";
+const PROVENANCE_COLUMNS =
+  "provenance_id, entity_id, field, source_id, applied_at";
 const SOURCE_COLUMNS = "source_id, source";
 
 /**
@@ -127,14 +129,24 @@ function venuesFor(
 }
 
 /**
- * The applied-field decisions behind a window's events.
+ * The decision log behind a window's events — every decision, not the current
+ * ones: `field_provenance` is append-only and PostgREST has no "distinct on",
+ * so the whole log for these ids comes back and the latest-per-fact reduction
+ * happens in TypeScript (`currentDecisions`, §4.2 "join in TypeScript").
+ *
+ * That is exactly why this leg is a COMPLETE read (§4.3): "the latest decision"
+ * is only knowable over the complete set, so a truncated log must refuse rather
+ * than name a superseded source as current.
  *
  * `entity_type` on `field_provenance` is the CANONICAL TABLE the fact lives in
  * (the column's own comment in migration `20260818000000`), so it is filtered
  * with the same name `tables.ts` gives that table — one spelling, one place.
+ * It also pins the entity-type third of the fact identity, leaving
+ * `(entity_id, field)` to identify a fact within this result.
  *
- * The total order ends in `provenance_id`, the primary key, which is what lets
- * `readComplete` tell a whole set from a truncated one reproducibly.
+ * The order is the decision order — `applied_at`, then `provenance_id` — and
+ * it ends in the primary key, which is what lets `readComplete` tell a whole
+ * set from a truncated one reproducibly.
  */
 function provenanceFor(
   db: SupabaseClient,
@@ -147,6 +159,7 @@ function provenanceFor(
     .eq("entity_type", T.events)
     .in("entity_id", ids)
     .order("entity_id", { ascending: true })
+    .order("applied_at", { ascending: true })
     .order("provenance_id", { ascending: true })
     .range(0, cap - 1) as unknown as PromiseLike<
     DbCountedResponse<EventProvenanceRow[]>
@@ -181,9 +194,10 @@ function unavailable(result: DbResult<unknown>): DbUnavailable | null {
  *
  * A leg is skipped entirely when the window is empty — an `.in()` over no ids
  * is a pointless round trip, and no rows is the honest answer. The sources leg
- * is skipped when provenance named no source, and a provenance leg that failed
- * takes the sources leg's place in the report: the two together answer one
- * question ("which sources are behind this row"), so one failure is one note.
+ * is skipped when the CURRENT decisions name no source, and a provenance leg
+ * that failed takes the sources leg's place in the report: the two together
+ * answer one question ("which sources are behind this row"), so one failure is
+ * one note.
  */
 export async function readRecentEvents(
   view: BrowseView,
@@ -215,22 +229,28 @@ export async function readRecentEvents(
     db,
   );
 
+  // The current provenance of each fact, over the COMPLETE log: superseded
+  // decisions are that fact's history and name nothing that is behind the row
+  // now (contracts/data-model.md, Per-field provenance). The reduction happens
+  // before the sources leg so that only sources still behind a value are
+  // looked up at all.
+  const decisions =
+    provenance.kind === "ok" ? currentDecisions(provenance.data) : [];
+
   let sources: DbResult<SourceNameRow[]> = { kind: "ok", data: [] };
-  if (provenance.kind === "ok") {
-    const sourceIds = sourceIdsOf(provenance.data);
-    if (sourceIds.length > 0) {
-      sources = await readComplete<SourceNameRow>(
-        T.sources,
-        (client, cap) => sourcesFor(client, sourceIds, cap),
-        db,
-      );
-    }
+  const sourceIds = sourceIdsOf(decisions);
+  if (sourceIds.length > 0) {
+    sources = await readComplete<SourceNameRow>(
+      T.sources,
+      (client, cap) => sourcesFor(client, sourceIds, cap),
+      db,
+    );
   }
 
   const rows = joinBrowseRows({
     events: window.data,
     venues: venues.kind === "ok" ? venues.data : [],
-    provenance: provenance.kind === "ok" ? provenance.data : [],
+    provenance: decisions,
     sources: sources.kind === "ok" ? sources.data : [],
   });
 

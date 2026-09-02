@@ -198,8 +198,7 @@ describe("the page's rows", () => {
    * decision's source is history and an unset decision names no source at
    * all. Neither may reach the Sources cell.
    */
-  // strict xfail — admin-window/BUG-0010. Flip back to `it(` with the fix.
-  it.fails("does not name a superseded source, or a decision with no source", async () => {
+  it("does not name a superseded source, or a decision with no source", async () => {
     const markup = await renderBrowse(
       healthyScript({
         [T.fieldProvenance]: {

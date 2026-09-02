@@ -273,6 +273,135 @@ describe("the join legs", () => {
   });
 });
 
+/**
+ * `field_provenance` is an append-only decision log (campaign
+ * admin-window/BUG-0010): the read has to fetch enough to tell a current
+ * decision from a superseded one, and only the current ones may reach the
+ * column.
+ */
+describe("the provenance leg, read as a decision log", () => {
+  const OLD_STAMP = "2026-01-01T00:00:00Z";
+  const NEW_STAMP = "2026-08-01T00:00:00Z";
+
+  /** (EVENT_C, title) decided twice, plus a verdict unset on another field. */
+  function log() {
+    return [
+      fieldProvenanceRow({
+        provenance_id: "01920000-0000-7000-8000-0000000000f1",
+        entity_id: EVENT_C,
+        field: "title",
+        source_id: ID.sourceBandsintown,
+        applied_at: OLD_STAMP,
+      }),
+      fieldProvenanceRow({
+        provenance_id: "01920000-0000-7000-8000-0000000000f2",
+        entity_id: EVENT_C,
+        field: "title",
+        source_id: ID.sourceTicketmaster,
+        applied_at: NEW_STAMP,
+      }),
+      {
+        ...fieldProvenanceRow({
+          provenance_id: "01920000-0000-7000-8000-0000000000f3",
+          entity_id: EVENT_C,
+          field: "poster_url",
+          applied_at: NEW_STAMP,
+        }),
+        source_id: null,
+        observation_id: null,
+      },
+    ];
+  }
+
+  function loggedScript() {
+    return fullScript({
+      [T.fieldProvenance]: { data: log(), count: log().length },
+    });
+  }
+
+  it("selects the fact identity and the ordering key, not just the source", async () => {
+    // Without `field` and a decision order the read cannot tell a current
+    // decision from a superseded one at all.
+    const stub = stubClient(fullScript());
+    await readRecentEvents(view, stub.asSupabaseClient());
+    const select = String(argsOf(callTo(stub, T.fieldProvenance), "select")[0][0]);
+    for (const column of ["field", "applied_at", "provenance_id", "source_id"]) {
+      expect(select, column).toContain(column);
+    }
+  });
+
+  it("orders the log by the decision stamp, then by its key", async () => {
+    const stub = stubClient(fullScript());
+    await readRecentEvents(view, stub.asSupabaseClient());
+    const columns = argsOf(callTo(stub, T.fieldProvenance), "order").map(
+      (args) => args[0],
+    );
+    expect(columns.indexOf("applied_at")).toBeGreaterThan(-1);
+    expect(columns.indexOf("provenance_id")).toBeGreaterThan(
+      columns.indexOf("applied_at"),
+    );
+  });
+
+  it("names the source of the latest decision, never the superseded one", async () => {
+    const stub = stubClient(loggedScript());
+    const listing = await readRecentEvents(view, stub.asSupabaseClient());
+    if (listing.events.kind !== "ok") throw new Error("expected ok");
+    const byId = new Map(listing.events.data.map((row) => [row.event_id, row]));
+    expect(byId.get(EVENT_C)?.sources).toEqual(["ticketmaster"]);
+  });
+
+  it("looks up names only for the sources still behind a value", async () => {
+    // The superseded source and the unset's absent one are not asked about:
+    // `.in("source_id", [null])` is not a query, and a retired feed's name is
+    // not needed to render a value it no longer backs.
+    const stub = stubClient(loggedScript());
+    await readRecentEvents(view, stub.asSupabaseClient());
+    expect(argsOf(callTo(stub, T.sources), "in")[0]).toEqual([
+      "source_id",
+      [ID.sourceTicketmaster],
+    ]);
+  });
+
+  it("skips the sources leg when every current decision is a verdict unset", async () => {
+    const unsetOnly = [
+      {
+        ...fieldProvenanceRow({ entity_id: EVENT_C, field: "poster_url" }),
+        source_id: null,
+        observation_id: null,
+      },
+    ];
+    const stub = stubClient(
+      fullScript({
+        [T.fieldProvenance]: { data: unsetOnly, count: unsetOnly.length },
+      }),
+    );
+    const listing = await readRecentEvents(view, stub.asSupabaseClient());
+    expect(stub.tablesRead()).not.toContain(T.sources);
+    if (listing.events.kind !== "ok") throw new Error("expected ok");
+    expect(listing.events.data.every((row) => row.sources.length === 0)).toBe(
+      true,
+    );
+    expect(listing.provenance).toBeNull();
+  });
+
+  it("refuses a truncated log rather than calling a superseded source current", async () => {
+    // "The latest decision" is only knowable over the COMPLETE set, so the
+    // complete read refuses instead of reducing a partial log.
+    const stub = stubClient(
+      fullScript({
+        [T.fieldProvenance]: { data: log(), count: ROW_CAP + 1 },
+      }),
+    );
+    const listing = await readRecentEvents(view, stub.asSupabaseClient());
+    expect(listing.provenance?.kind).toBe("error");
+    expect(stub.tablesRead()).not.toContain(T.sources);
+    if (listing.events.kind !== "ok") throw new Error("expected ok");
+    expect(listing.events.data.every((row) => row.sources.length === 0)).toBe(
+      true,
+    );
+  });
+});
+
 describe("when an object is missing", () => {
   it("names events itself and renders no rows", async () => {
     const stub = stubClient({
