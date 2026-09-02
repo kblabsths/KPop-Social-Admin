@@ -512,6 +512,62 @@ describe("a resolver-owned record", () => {
     expect(provenance).not.toContain("bandsintown");
   });
 
+  it("does not call a fact admin-set on a lock the log has already superseded", async () => {
+    // `admin_locked` is read off the CURRENT decision, and the reduction runs
+    // first. A fact a human pinned once and the resolver has since re-decided
+    // answers to the source that holds it now — reading the lock off any row
+    // of the history would pin it forever.
+    const markup = await renderRecord(
+      "events",
+      withProvenance(
+        [
+          decided({
+            provenance_id: "01920000-0000-7000-8000-0000000004b1",
+            applied_at: "2026-07-01T00:00:00Z",
+            admin_locked: true,
+          }),
+          decided({
+            provenance_id: "01920000-0000-7000-8000-0000000004b2",
+            applied_at: "2026-08-30T04:12:00Z",
+            source_id: "01920000-0000-7000-8000-000000000102",
+          }),
+        ],
+        [
+          { source_id: TICKETMASTER, source: "ticketmaster" },
+          { source_id: "01920000-0000-7000-8000-000000000102", source: "bandsintown" },
+        ],
+      ),
+    );
+    const provenance = lineFor(markup, "title").provenance;
+    expect(provenance).toContain("bandsintown");
+    expect(provenance).not.toContain("admin-set");
+  });
+
+  /**
+   * **BUG-0034 (admin-window), pinned.** Ben's ruling names `venue` among the
+   * columns "an operator came to see"; the map resolves it to `events.venue_id`
+   * because that is the only venue-bearing column of the table, and the page
+   * then draws a bare uuid the operator can neither read nor follow — strictly
+   * LESS than the `venue_name` the Browse row they clicked already showed
+   * them. `it.fails` is this runner's strict xfail: the day the link lands,
+   * this turns red and sends the reader to the ticket.
+   */
+  it.fails("reaches the venue record page from an event's venue line", async () => {
+    const venueId = IDS.venues;
+    const markup = await renderRecord("events", {
+      events: { data: { ...scriptedRecord("events"), venue_id: venueId } },
+      field_provenance: complete([]),
+      sources: complete([]),
+    });
+    const hrefs = cheerio
+      .load(markup)("a")
+      .toArray()
+      .map((anchor) => cheerio.load(markup)(anchor).attr("href"));
+    expect(hrefs, `hrefs seen: ${JSON.stringify(hrefs)}`).toContain(
+      `/records/venues/${venueId}`,
+    );
+  });
+
   it("leaves a field the log says nothing about as the absence", async () => {
     const markup = await renderRecord(
       "events",
