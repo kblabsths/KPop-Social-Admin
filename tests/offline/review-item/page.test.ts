@@ -465,6 +465,125 @@ describe("every evidence id resolves to a claim", () => {
     }
     expect(cheerio.load(markup)("table tbody tr")).toHaveLength(0);
   });
+
+  /**
+   * The pure-repeat case: an id that folded in three times and nothing else
+   * (admin-window/BUG-0021, QA re-attack). The read deduplicates before it
+   * resolves, so one claim renders — and the accounting must be stated over
+   * the ids the read looked at, not over the array's length. Behavioural:
+   * whatever words the page uses, the numerator is the rows on screen and the
+   * denominator is those rows plus the ids named unresolved.
+   */
+  it("counts a claim once however many times it folded in", async () => {
+    const item = reviewItemDataConflict({
+      evidence: [ID.observationA, ID.observationA, ID.observationA],
+    });
+    const markup = await renderItem(
+      conflictScript({
+        [T.reviewItems]: { data: item },
+        [T.observations]: { data: [CLAIM_A] },
+      }),
+      item.review_item_id,
+    );
+
+    expect(evidenceIds(markup)).toEqual([ID.observationA]);
+    expect(attrsOf(markup, "[data-unresolved]")).toEqual([]);
+    expect(accountingIn(markup)).toEqual([1, 1]);
+  });
+
+  /**
+   * An item carrying an EMPTY `evidence` array — the column's own default
+   * (`evidence uuid[] default '{}' not null`, migration 20260901000002), so
+   * every item is this before its first fold. The block must render its empty
+   * state and the accounting must still be arithmetically true rather than
+   * absent or invented.
+   */
+  it("accounts for an item that carries no evidence id at all", async () => {
+    const item = reviewItemDataConflict({ evidence: [] });
+    const markup = await renderItem(
+      conflictScript({
+        [T.reviewItems]: { data: item },
+        // The evidence read asks for nothing; the winner is still resolved.
+        [T.observations]: [{ data: [] }, { data: [CLAIM_A] }],
+      }),
+      item.review_item_id,
+    );
+
+    expect(evidenceIds(markup)).toEqual([]);
+    expect(attrsOf(markup, "[data-unresolved]")).toEqual([]);
+    expect(accountingIn(markup)).toEqual([0, 0]);
+  });
+
+  /**
+   * Deduplication happens BEFORE the id list is chunked — the seam between
+   * admin-window/BUG-0021's accounting and `readRowsByIds`' `ID_CHUNK` = 100
+   * (`src/lib/db/result.ts`). 250 stored ids deduplicating to 150 is two
+   * chunks of the distinct list, not three of the raw one: an implementation
+   * that chunked first would send a third request and lose rows to it, and
+   * the accounting would stop matching what is on screen.
+   */
+  it("keeps the accounting whole when the distinct ids cross a chunk boundary", async () => {
+    const distinctIds = Array.from(
+      { length: 150 },
+      (_, index) =>
+        `01920000-0000-7000-8000-${(910000 + index).toString().padStart(12, "0")}`,
+    );
+    // Every id once, then the first hundred of them folded in a second time.
+    const stored = [...distinctIds, ...distinctIds.slice(0, 100)];
+    const rows = distinctIds.map((observation_id, index) =>
+      observationRow({
+        observation_id,
+        source_id: ID.sourceBandsintown,
+        entity_id: null,
+        value: `record ${index}`,
+      }),
+    );
+    const item = reviewItemSourcePattern({ evidence: stored });
+    const markup = await renderItem(
+      patternScript({
+        [T.reviewItems]: { data: item },
+        [T.observations]: [
+          { data: rows.slice(0, 100) },
+          { data: rows.slice(100) },
+          { data: [] },
+        ],
+      }),
+      item.review_item_id,
+    );
+
+    expect(evidenceIds(markup)).toEqual(distinctIds);
+    expect(attrsOf(markup, "[data-unresolved]")).toEqual([]);
+    expect(accountingIn(markup)).toEqual([150, 150]);
+  });
+
+  /**
+   * A source registry that ANSWERED but holds no row for one of the claims'
+   * sources — the ordinary case the degrading `sources` leg falls back to
+   * (admin-window/BUG-0021). A subset is not a refusal: the labelled claim
+   * keeps its tier, the unlabelled one shows its source id and no tier, and
+   * nothing is reported as unavailable.
+   */
+  it("labels only the claims the registry answered for, and calls that no refusal", async () => {
+    const item = reviewItemDataConflict();
+    const markup = await renderItem(
+      conflictScript({ [T.sources]: { data: [TICKETMASTER] } }),
+      item.review_item_id,
+    );
+
+    expect(evidenceIds(markup)).toEqual([ID.observationA, ID.observationB]);
+    expect(rowOf(markup, ID.observationA).tier).toBe(TICKETMASTER.tier);
+
+    const unlabelled = rowOf(markup, ID.observationB);
+    expect(unlabelled.tier, "no registry row, so no tier is invented").toBeFalsy();
+    expect(unlabelled.sourceHref, "the link is still real").toContain(
+      ID.sourceBandsintown,
+    );
+    expect(
+      cheerio.load(markup)("[role=alert]"),
+      "a registry with fewer rows than asked for is not a refusal",
+    ).toHaveLength(0);
+    expect(accountingIn(markup)).toEqual([2, 2]);
+  });
 });
 
 /* ── the canonical side ──────────────────────────────────────────────────── */
