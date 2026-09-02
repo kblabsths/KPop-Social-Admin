@@ -69,3 +69,6 @@ agenticflow/tracker/evidence/*
 *.log
 *.jsonl
 app/.venv/
+
+# scanner-probe mirror trees written and removed by offline tests
+tests/.probes/
