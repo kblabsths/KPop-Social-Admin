@@ -225,7 +225,7 @@ describe("the handler refuses a forged edit and attempts no write", () => {
    * "AssertionError: {\"field\":\"bio\",\"value\":1e999}: expected 200 to be
    * greater than or equal to 400".
    */
-  it.fails("refuses a non-finite number instead of nulling the column", async () => {
+  it("refuses a non-finite number instead of nulling the column", async () => {
     for (const body of [
       '{"field":"bio","value":1e999}',
       '{"field":"bio","value":-1e999}',
@@ -234,6 +234,17 @@ describe("the handler refuses a forged edit and attempts no write", () => {
       await refused("groups", body, body);
       updateRecordField.mockReset();
     }
+  });
+
+  it("names the unstorable number in the refusal, as a client error", async () => {
+    // As with an omitted `value` (admin-window/BUG-0011), a non-2xx is not
+    // enough: the caller must be able to tell WHAT the request asked for that
+    // could not be stored, and an unstorable number is the client's fault
+    // (400), not the database's (5xx). Raw string body — see above.
+    const { status, text } = await patch("groups", '{"field":"bio","value":1e999}');
+    expect(status).toBe(400);
+    expect(JSON.parse(text).error).toMatch(/Infinity/);
+    expect(updateRecordField).not.toHaveBeenCalled();
   });
 
   /**

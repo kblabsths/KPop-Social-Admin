@@ -25,10 +25,12 @@ import { updateRecordField, type EditableValue } from "@/lib/db/records";
  *    not a build-time database read.
  *
  * The request body carries a SCALAR value or null, and the `value` key must be
- * PRESENT: an object or an array is refused, and so is a body that omits
- * `value` entirely. The catalog's editable columns are typed scalars, no json
- * column is written from here (root CLAUDE.md, AGENTS.md), and only an
- * explicit `null` or `""` clears a column.
+ * PRESENT: an object or an array is refused, so is a body that omits `value`
+ * entirely, and so is a number that is not finite (it cannot survive the
+ * JSON round trip to PostgREST — campaign admin-window/BUG-0013). The
+ * catalog's editable columns are typed scalars, no json column is written from
+ * here (root CLAUDE.md, AGENTS.md), and only an explicit `null` or `""` clears
+ * a column.
  */
 
 /** The HTTP status each refusal deserves. */
@@ -103,6 +105,25 @@ async function parseBody(request: Request): Promise<ParsedBody> {
     return {
       ok: false,
       message: "value must be a string, a number, a boolean or null",
+    };
+  }
+  // A NON-FINITE number is malformed too, and for the same reason an absent
+  // key is — campaign admin-window/BUG-0013. `1e999` is valid JSON and parses
+  // to `Infinity`, whose `typeof` is `"number"`, so the scalar gate above
+  // admits it; supabase-js then serialises the update body with
+  // `JSON.stringify`, and `JSON.stringify(Infinity)` is `"null"` (ECMA-262).
+  // PostgREST would receive `{"<column>":null}` — byte-identical to an
+  // explicit clear — so a request that asked to SET a value would silently
+  // NULL a vetted catalog column with the service-role key and be answered
+  // 200 `{"ok":true}`. Only an explicit `null` or `""` clears (see above), so
+  // this is refused here, before `decideEdit` and before any update query
+  // exists. `NaN` and `-Infinity` cannot arrive through `JSON.parse` at all;
+  // the guard is on the VALUE, not on the literal that produced it, so they
+  // are covered whatever hands this body over.
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    return {
+      ok: false,
+      message: `value must be a finite number; ${String(value)} cannot be stored`,
     };
   }
   return { ok: true, field, value };
