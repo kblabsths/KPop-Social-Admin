@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T06:51:44Z — do not edit)
+# Tracker index (regenerated 2026-09-02T06:58:00Z — do not edit)
 
 ## open
 - BUG-0003 [P1][bug][-] The credential-layering guard misses bracket-form env reads, so the one-reader criterion is unproven  (scope:tests/offline/db from:TASK-0002)
@@ -28,7 +28,7 @@
 - TASK-0016 [P2][task][M1] Cycles & runs — the adapter framework's runs half  (deps:TASK-0014,TASK-0023(unmet:2) scope:src/app/cycles/page.tsx,src/lib/db/runs.ts,tests/offline/runs,tests/live/runs.live.test.ts)
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 
-## claimed
+## built
 - TASK-0004 [P1][task][M1] Design tokens and the UI primitives every surface is built from  (deps:TASK-0001 scope:src/app/globals.css,src/components/ui,src/components/evidence,src/lib/format.ts,tests/offline/ui,tests/offline/format.test.ts @builder-4)
 
 ## blocked
@@ -41,4 +41,4 @@
 ## reopened
 - TASK-0002 [P1][task][M1] The staging data layer: the client seam, DbResult, and the table-name constants  (deps:TASK-0001 scope:src/lib/db,tests/offline/db,tests/fixtures)
 
-Totals — blocked:5, claimed:1, done:4, open:26, reopened:1. Archived: 0.
+Totals — blocked:5, built:1, done:4, open:26, reopened:1. Archived: 0.
