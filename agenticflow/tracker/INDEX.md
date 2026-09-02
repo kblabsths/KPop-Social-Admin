@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T10:34:49Z — do not edit)
+# Tracker index (regenerated 2026-09-02T10:38:45Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -24,7 +24,7 @@
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 - TASK-0028 [P2][task][M1] tsconfig excludes agenticflow: a factory evidence file must not red tsc  (scope:tsconfig.json)
 
-## claimed
+## built
 - BUG-0012 [P2][bug][-] Resolution latency counts a verdict unset as an apply the join lost  (scope:src/lib/db/gauges.ts,src/lib/gauges/resolution-latency.ts,tests/offline/gauges @builder-26 from:BUG-0010)
 
 ## blocked
@@ -35,4 +35,4 @@
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 - TASK-0029 [P2][task][M1] ASK: what does a resolver-owned record page DISPLAY in M1? events/venues currently render their id and nothing else  (scope:src/lib/edit/config.ts,src/lib/db/records.ts from:TASK-0018)
 
-Totals — blocked:6, claimed:1, done:25, open:22. Archived: 0.
+Totals — blocked:6, built:1, done:25, open:22. Archived: 0.

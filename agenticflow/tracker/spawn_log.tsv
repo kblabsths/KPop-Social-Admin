@@ -1622,3 +1622,12 @@
 2026-09-02T10:34:36Z	agent	-	-	-	-
 # STRANDED	2026-09-02T10:34:42Z	qa-adversary	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/BUG-0006.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0006.md
 2026-09-02T10:34:42Z	qa-adversary	BUG-0006	2419	336	74650
+2026-09-02T10:35:07Z	agent	-	-	-	-
+2026-09-02T10:35:38Z	agent	-	-	-	-
+2026-09-02T10:36:10Z	agent	-	-	-	-
+2026-09-02T10:36:41Z	agent	-	-	-	-
+2026-09-02T10:37:13Z	agent	-	-	-	-
+2026-09-02T10:37:44Z	agent	-	-	-	-
+2026-09-02T10:38:16Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:38:37Z	builder	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md
+2026-09-02T10:38:37Z	builder	BUG-0012	5228	556	114646
