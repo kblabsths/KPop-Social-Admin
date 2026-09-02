@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T11:45:44Z — do not edit)
+# Tracker index (regenerated 2026-09-02T11:48:21Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -19,7 +19,7 @@
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 - BUG-0017 [P3][bug][M1] A notFound() from a dynamic route serves an empty document: the 404 page only appears after hydration  (scope:src/app/records/[table]/[id],src/app,tests/http from:BUG-0014)
 
-## claimed
+## built
 - BUG-0018 [P2][bug][-] GaugeCard puts a floor qualifier and a palette colour on an em dash it never measured  (scope:src/components/gauges,tests/offline/gauges-ui @builder-33 from:TASK-0008)
 
 ## blocked
@@ -33,4 +33,4 @@
 ## reopened
 - TASK-0008 [P2][task][M1] Gauge cards: the figure card, the trend table and the distribution view  (deps:TASK-0004,TASK-0007 scope:src/components/gauges,tests/offline/gauges-ui)
 
-Totals — blocked:6, claimed:1, done:31, open:17, reopened:1. Archived: 0.
+Totals — blocked:6, built:1, done:31, open:17, reopened:1. Archived: 0.
