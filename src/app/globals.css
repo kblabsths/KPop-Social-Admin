@@ -23,12 +23,25 @@
   --color-chrome-inverse: #e5e7eb; /* active nav item            gray-200 */
   --color-hairline: #d1d5dc; /* every border and divider   gray-300 */
   --color-ink: #1e2939; /* primary text               gray-800 */
-  --color-ink-secondary: #6a7282; /* labels, sub-detail         gray-500 */
+  --color-ink-secondary: #4a5565; /* labels, sub-detail         gray-600 */
   --color-ink-disabled: #99a1af; /* disabled/placeholder/null  gray-400 */
   --color-accent: #9810fa; /* selection, active, focus   purple-600 */
-  --color-healthy: #00a63e; /* succeeded, settled         green-600 */
-  --color-attention: #e17100; /* open items, high severity  amber-600 */
-  --color-broken: #e7000b; /* failed run, error line     red-600 */
+  --color-healthy: #016630; /* succeeded, settled         green-800 */
+  --color-attention: #bb4d00; /* open items, high severity  amber-700 */
+  --color-broken: #c10007; /* failed run, error line     red-700 */
+
+  /*
+   * In light theme a state colour is the ramp's DARK step, never its mid step
+   * (LOOK_AND_FEEL palette, amended 2026-09-02; admin-window/BUG-0006). Ratios
+   * against `page` #f3f4f6, the darkest of the three fills text sits on and so
+   * the one that decides: ink-secondary 6.87:1, healthy 6.48:1, broken 5.83:1,
+   * attention 4.57:1. Amber holds at the 700 step because 800 stops reading as
+   * amber, which makes 4.57:1 the palette's floor. The mid steps these replace
+   * all failed quality bar 12 on page — gray-500 4.39:1, green-600 2.92:1,
+   * amber-600 2.91:1, red-600 4.33:1. Do not restore them:
+   * tests/offline/ui/contrast.test.ts measures every pair and reddens if you
+   * do. Dark theme is unchanged and passes throughout (floor 5.25:1).
+   */
 
   /*
    * Text on an accent fill. White on purple-600 is LOOK_AND_FEEL's rule; in
