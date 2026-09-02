@@ -199,6 +199,44 @@ describe("the handler refuses a forged edit and attempts no write", () => {
   });
 
   /**
+   * A number JSON can PARSE but cannot CARRY BACK.
+   *
+   * `1e999` is valid JSON and parses to `Infinity`; `typeof Infinity` is
+   * `"number"`, so the scalar gate accepts it. It then reaches
+   * `updateRecordField`, and supabase-js serialises the update payload with
+   * `JSON.stringify` — which renders a non-finite number as `null`. The bytes
+   * PostgREST receives are `{"bio":null}`, byte-identical to an explicit
+   * clear, and the route answers 200 `{"ok":true}`.
+   *
+   * That contradicts the route's own contract (route.ts: "only an explicit
+   * `null` or `\"\"` clears a column") and is BUG-0011's harm through a
+   * different door: a request that asked to SET a value silently NULLs a
+   * vetted catalog column with the service-role key and is told it succeeded.
+   *
+   * The bodies are raw strings on purpose: `JSON.stringify({value: Infinity})`
+   * is `{"value":null}`, so an object body cannot express this request — a
+   * test that builds its body as an object exercises the explicit-clear path
+   * instead and passes for the wrong reason.
+   *
+   * PINNED `it.fails` (strict) for admin-window/BUG-0013: it is green only
+   * while the divergence is live, so fixing the route turns it RED and the fix
+   * flips it back to a plain `it()`. Watched failing as a plain `it()` against
+   * run/admin-window @ 8ff70f7 before BUG-0013 was filed:
+   * "AssertionError: {\"field\":\"bio\",\"value\":1e999}: expected 200 to be
+   * greater than or equal to 400".
+   */
+  it.fails("refuses a non-finite number instead of nulling the column", async () => {
+    for (const body of [
+      '{"field":"bio","value":1e999}',
+      '{"field":"bio","value":-1e999}',
+      '{"field":"member_count","value":1e999}',
+    ]) {
+      await refused("groups", body, body);
+      updateRecordField.mockReset();
+    }
+  });
+
+  /**
    * REGRESSION — admin-window/BUG-0011 (fixed in admin-window/TASK-0017).
    *
    * The route's documented body is `{ field, value }`. A body carrying no
