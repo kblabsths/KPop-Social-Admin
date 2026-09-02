@@ -81,11 +81,6 @@ export interface BrowseRow {
   sources: readonly string[];
 }
 
-/** The route an event row links to — read-only for events in M1. */
-export function eventRecordHref(eventId: string): string {
-  return `/records/events/${encodeURIComponent(eventId)}`;
-}
-
 /** Locale-independent string order, so a row set sorts the same everywhere. */
 function compare(a: string, b: string): number {
   if (a === b) return 0;

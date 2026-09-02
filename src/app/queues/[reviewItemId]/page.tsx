@@ -11,7 +11,7 @@ import {
   type ItemLink,
 } from "@/components/review";
 import { Empty, ErrorLine, NotProvisioned, Page, Section } from "@/components/ui";
-import { claimsHref, provenanceHref, sourceHref } from "@/lib/claims/filters";
+import { claimsHref, sourceHref } from "@/lib/claims/filters";
 import { readPendingClaims, type PendingClaimRow } from "@/lib/db/claims";
 import type { DbResult, DbUnavailable } from "@/lib/db/result";
 import {
@@ -28,6 +28,7 @@ import {
   stuckPatternThreshold,
   type AwaitingRowTrend,
 } from "@/lib/gauges/pending-claims";
+import { recordHref } from "@/lib/records/routes";
 import { kindOfItem, shapeOf, type ReviewItemRow } from "@/lib/review/shapes";
 
 /**
@@ -165,7 +166,7 @@ function evidenceRow(
     status: observation.status,
     payloadRef: observation.payload_ref,
     fact: `${observation.domain}.${observation.field}`,
-    recordHref: provenanceHref(observation.domain, observation.entity_id),
+    recordHref: recordHref(observation.domain, observation.entity_id),
     held:
       bucket === undefined
         ? null
@@ -256,7 +257,7 @@ function linksOf(item: ReviewItemRow): ItemLink[] {
   }
 
   const record =
-    item.domain === null ? null : provenanceHref(item.domain, item.entity_id);
+    item.domain === null ? null : recordHref(item.domain, item.entity_id);
   if (record !== null && item.entity_id !== null) {
     links.push({
       label: "Its record",

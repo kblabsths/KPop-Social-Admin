@@ -10,8 +10,9 @@ import {
   shownColumns,
   type BrowseColumnKey,
 } from "@/lib/browse/views";
-import { eventRecordHref } from "@/lib/browse/rows";
-import { render } from "../ui/markup";
+import { recordHref } from "@/lib/records/routes";
+import { BrowseTable } from "@/components/browse/browse-table";
+import { h, render, textOf } from "../ui/markup";
 import { ID, eventListingRow, eventRow, fieldProvenanceRow, sourceRow } from "../../fixtures/rows";
 import {
   permissionDenied,
@@ -255,8 +256,39 @@ describe("the page's rows", () => {
   it("links every row to its own record surface", async () => {
     const markup = await renderBrowse(healthyScript());
     const links = hrefs(markup);
-    expect(links).toContain(eventRecordHref(EVENT_NEW));
-    expect(links).toContain(eventRecordHref(EVENT_OLD));
+    expect(links).toContain(recordHref("events", EVENT_NEW));
+    expect(links).toContain(recordHref("events", EVENT_OLD));
+  });
+
+  it("draws a row with no record to lead to unlinked, not dead", () => {
+    // The record href is the app's one helper and answers null when there is
+    // no canonical row (admin-window/DEBT-0001). An event row always carries
+    // its id, so this is the branch the table keeps rather than re-adding an
+    // events-only variant of the URL: the row still renders, without a link.
+    const row = (event_id: string, title: string) => ({
+      event_id,
+      title,
+      description: null,
+      poster_url: null,
+      starts_at: null,
+      created_at: null,
+      venue_name: null,
+      sources: [],
+    });
+    const markup = render(
+      h(BrowseTable, {
+        view,
+        shown: ["title"] as BrowseColumnKey[],
+        rows: [row(EVENT_NEW, "has a record"), row("", "has none")],
+      }),
+    );
+    const $ = cheerio.load(markup);
+    const linked = $("a")
+      .toArray()
+      .map((anchor) => $(anchor).text());
+    expect(linked).toEqual(["has a record"]);
+    // Unlinked is not undrawn: the row is still on screen.
+    expect(textOf(markup)).toContain("has none");
   });
 
   it("states the scheduled time in UTC, with the zone in the header", async () => {

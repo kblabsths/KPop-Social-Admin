@@ -438,7 +438,7 @@ describe("a resolver-owned record", () => {
   });
 
   it("stops the Browse link dead-ending: the page shows more than the id", async () => {
-    // `eventRecordHref` is the primary navigation target from the app's main
+    // The record href is the primary navigation target from the app's main
     // list screen; a page holding only the id the operator clicked told them
     // nothing they did not already have.
     const drawn = lines(await renderRecord("events"));
