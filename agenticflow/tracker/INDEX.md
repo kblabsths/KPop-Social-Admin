@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T08:49:19Z — do not edit)
+# Tracker index (regenerated 2026-09-02T08:51:51Z — do not edit)
 
 ## open
 - BUG-0009 [P1][bug][M1] Five of six gauges ask for more rows than PostgREST will return, so a truncated read reports window.truncated false and its counts read as totals  (scope:src/lib/gauges,tests/offline/gauges from:TASK-0007)
@@ -27,7 +27,7 @@
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 - TASK-0028 [P2][task][M1] tsconfig excludes agenticflow: a factory evidence file must not red tsc  (scope:tsconfig.json)
 
-## claimed
+## built
 - TASK-0027 [P1][task][M1] The http harness must ENFORCE 'no database', not assert it: Next reloads .env over the strip  (deps:TASK-0005 scope:tests/http/server-harness.ts,tests/offline/http-harness.test.ts @builder-15)
 
 ## blocked
@@ -40,4 +40,4 @@
 ## reopened
 - TASK-0007 [P1][task][M1] The six gauges as server-side queries with pure TypeScript aggregation  (deps:TASK-0002 scope:src/lib/gauges,tests/offline/gauges)
 
-Totals — blocked:5, claimed:1, done:14, open:25, reopened:1. Archived: 0.
+Totals — blocked:5, built:1, done:14, open:25, reopened:1. Archived: 0.
