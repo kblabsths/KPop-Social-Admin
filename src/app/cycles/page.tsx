@@ -14,6 +14,7 @@ import {
   NotProvisioned,
   Page,
   Section,
+  StatCard,
   type Column,
 } from "@/components/ui";
 import {
@@ -24,8 +25,18 @@ import {
   type CycleState,
   type ResolutionRunRow,
 } from "@/lib/db/cycles";
-import type { DbUnavailable } from "@/lib/db/result";
-import { absoluteUtc, count, duration, relativeAge } from "@/lib/format";
+import type { DbResult, DbUnavailable } from "@/lib/db/result";
+import {
+  RUN_COLUMNS,
+  RUN_COUNTS,
+  RUN_WINDOW,
+  narrowedTo,
+  readRuns,
+  type RunColumn,
+  type RunRow,
+  type RunWindow,
+} from "@/lib/db/runs";
+import { absoluteUtc, count, duration, isAbsent, relativeAge } from "@/lib/format";
 import { readCycleHealth, type CycleHealth } from "@/lib/gauges/cycle-health";
 import {
   RESOLVER_CADENCE_SECONDS,
@@ -63,10 +74,15 @@ import {
  *    figure re-derived from a row array over-counts by exactly the unsets
  *    (admin-window/BUG-0012), which is why the page never takes the rows at
  *    all — `readResolutionLatency` hands it no rows to take.
- *  - **The adapter framework's `runs` are not rendered here.** Which of that
- *    table's columns this page shows is the blocked `OPEN-RUNS` question
- *    (ARCHITECTURE.md §12) and belongs to its own ticket: the seam below
- *    renders nothing and names no column of it, rather than guessing one.
+ *  - **The adapter framework's `runs` are the page's other half, and they show
+ *    exactly nine of that table's 22 columns** — Ben's ruling of 2026-09-02,
+ *    a dated paragraph in `agenticflow/docs/DECISIONS.md`
+ *    (admin-window/TASK-0016). The set is `RUN_COLUMNS` in
+ *    `src/lib/db/runs.ts` and the table is generated from it, so a tenth
+ *    column cannot arrive here without re-opening that decision. The two
+ *    halves read two tables and fail independently: with `runs` absent the
+ *    runs section renders its not-provisioned state and the cycles above it
+ *    are untouched.
  *
  * This page function is the ONLY async component on the route
  * (ARCHITECTURE.md §5): it reads, it shapes, and every child is a pure sync
@@ -79,7 +95,7 @@ import {
  */
 
 /**
- * Three reads happen per request against the live database, so the route
+ * Four reads happen per request against the live database, so the route
  * renders per request rather than being prerendered at build time
  * (`node_modules/next/dist/docs/01-app/02-guides/caching-without-cache-components.md`,
  * "Route segment config"). Reading `searchParams` already opts this page in,
@@ -94,26 +110,24 @@ export const dynamic = "force-dynamic";
  * `/cycles?cycle=<run_id>` (`lineHref` in `src/app/page.tsx`), so the URL
  * names the row the operator came to read and this page marks it.
  *
- * Two more parameters reach this route today and narrow NOTHING here, because
- * both belong to the adapter half: `run=<run_id>` (the Dashboard's run lines)
- * and `source=<name>` (the Sources page's "runs" link). Neither is guessed at
- * — an unrecognised parameter narrows nothing rather than erroring, so both
- * links land on this page rather than dead-ending.
+ * One more parameter reaches this route today and narrows NOTHING here:
+ * `run=<run_id>` (the Dashboard's run lines). It is not guessed at — an
+ * unrecognised parameter narrows nothing rather than erroring, so the link
+ * lands on this page rather than dead-ending.
  */
 const CYCLE_FACET = "cycle";
 
 /**
- * The Sources page links each source to `/cycles?source=<name>` (`runs.source`
- * is text with no foreign key), and that facet narrows the ADAPTER half —
- * which this page does not render yet. `resolution_runs` has no source column,
- * so there is no honest narrowing of the cycles below to do here: the page
- * says which half the facet belongs to, in one sentence, rather than either
- * ignoring the parameter silently or inventing a filter over the resolver's
- * cycles (relayed on admin-window/TASK-0016).
+ * The Sources page links each source to `/cycles?source=<name>`, and that
+ * facet narrows the ADAPTER half — matched by NAME, because `runs.source` is
+ * text with no foreign key (ARCHITECTURE.md §6 trap 6, Ben's ruling
+ * 2026-09-02).
  *
- * `run=<run_id>` (the Dashboard's run lines) reaches this route too and stays
- * unconsumed and unremarked: it names a row in a table this page never reads,
- * and the ticket that answers `OPEN-RUNS` is what makes it do anything.
+ * It narrows THAT HALF ONLY: `resolution_runs` carries no source column at
+ * all, so filtering the cycles by it would be an invention. The page says so
+ * in one sentence beside the runs table rather than either ignoring the
+ * parameter silently — which is what it did until admin-window/TASK-0016 —
+ * or pretending the cycles above were narrowed too.
  */
 const SOURCE_FACET = "source";
 
@@ -430,21 +444,29 @@ function AskedCycle({
 }
 
 /**
- * The one sentence `?source=<name>` earns on this page today.
+ * The one sentence `?source=<name>` earns, beside the half it narrows.
  *
- * The Sources page links here by source name, and the facet narrows the
- * adapter framework's runs — the half this page does not render yet
- * (`OPEN-RUNS`). `resolution_runs` carries no source at all, so filtering the
- * cycles by it would be an invention. The arriving link is told which half it
- * addresses rather than being ignored byte-for-byte.
+ * The Sources page links here by source name and the facet is REAL now: the
+ * runs read below carries it, matched by name (admin-window/TASK-0016). The
+ * sentence exists because the narrowing is half a page wide — the resolver's
+ * cycles above carry no source column at all, so they are the same cycles with
+ * the facet or without it, and an operator who cannot see why must not be left
+ * to guess that the page ignored their URL.
+ *
+ * The name is rendered VERBATIM, as text: what was asked for is what is shown,
+ * and nothing the URL carries reaches the document as markup.
  */
 function AskedSource({ source }: { source: string }) {
   return (
-    <p data-source-facet={source} className="type-body text-ink-secondary">
-      The source facet <span className="type-data text-ink">{source}</span>{" "}
-      narrows the adapter framework&rsquo;s runs, which this page does not
-      render yet. The resolver&rsquo;s cycles below carry no source, so they are
-      the same cycles with or without it.
+    <p
+      data-source-facet={source}
+      data-source-facet-half="runs"
+      className="type-body text-ink-secondary"
+    >
+      Narrowed to the runs whose source is{" "}
+      <span className="type-data text-ink">{source}</span>, matched by name.
+      This facet narrows the runs below and nothing else: the resolver&rsquo;s
+      cycles carry no source, so they are the same cycles with it or without it.
     </p>
   );
 }
@@ -697,21 +719,262 @@ function LatencySection({ latency }: { latency: ResolutionLatency }) {
   );
 }
 
-/* ── the seam the adapter framework's runs will fill ─────────────────────── */
+/* ── the adapter framework's runs (spec §4, Ben's ruling 2026-09-02) ─────── */
+
+/** The heading of the page's other half, and the eyebrow its state cards carry. */
+const RUNS_LABEL = "Adapter runs";
+
+/** The figure the empty state puts on screen, and the label a parity test reads it under. */
+const RUNS_IN_WINDOW = "Runs in this window";
 
 /**
- * The adapter framework's `runs` — **deliberately unrendered here**.
+ * The zero an empty window renders, as a LITERAL.
  *
- * `adapters.md` is not a contract snapshot and the table carries 22 columns,
- * so which of them this page shows is an open question (ARCHITECTURE.md §12,
- * `OPEN-RUNS`) held by its own ticket. Guessing a column set is the one thing
- * this seam exists to prevent, and a heading over an empty surface would be a
- * guess about the shape of the answer too — so this renders nothing at all
- * until that question is answered. The Dashboard already shows the newest runs
- * (source, when, outcome, error line), which is the only settled part.
+ * A window read returns at most its cap, so a window that came back with no
+ * rows had no matching rows at all — the zero is exact, and it is the one
+ * number this half may state (DECISIONS 2026-09-02, "a counted zero is a real
+ * figure"; LOOK_AND_FEEL bar 1, the count is on screen whether or not the
+ * table has rows). It is written here rather than taken from `rows.length`
+ * because a window's length is not a total and no figure on this page is
+ * allowed to come from one (ARCHITECTURE.md §4.3).
  */
-function AdapterRuns(): ReactNode {
-  return null;
+const NO_RUNS = 0;
+
+/** What an empty runs table holds, and the one thing that fills it. */
+const NO_RUNS_RECORDED: EmptyWords = {
+  holds: "runs recorded",
+  filledBy:
+    "An adapter files a row the moment it wakes, before it has fetched anything.",
+};
+
+/** The same, for a window narrowed to a source name that matched nothing. */
+function noRunsFrom(source: string): EmptyWords {
+  return {
+    holds: `runs from ${source}`,
+    filledBy:
+      "The name is matched against the run's own source text, which is not a registered source's key — a source that has never run has no run here, and a name nothing was ever filed under matches nothing.",
+  };
+}
+
+/**
+ * One run row's nine cells, keyed by column.
+ *
+ * A `Record` over `RunColumn` rather than an array of columns: the compiler
+ * requires a body for every one of the ruled nine and refuses a tenth, and the
+ * ORDER comes from `RUN_COLUMNS` alone (below), so the rendered table cannot
+ * drift from the read's select list or from the ruling.
+ *
+ * Every cell that can be absent returns the `null` ITSELF rather than a
+ * component that renders null — `DataTable` passes each body through `orDash`,
+ * and a React element is never absent to it, so a `<Cell />` would leave the
+ * cell BLANK instead of drawing the shared em dash (admin-window/TASK-0019).
+ */
+function runCells(now: string): Record<RunColumn, (row: RunRow) => ReactNode> {
+  return {
+    source: (row) => (
+      // The run's own source TEXT, verbatim: there is no foreign key here and
+      // no `sources` row is resolved to (§6 trap 6). A run against a source the
+      // registry has never heard of still renders, under the name it filed.
+      // `data-run` is the row's identity for a test to read it back by; the
+      // primary key is not a rendered column (Ben's ruling: nine, and this is
+      // not one of them).
+      <span
+        data-run={row.run_id}
+        data-run-source={row.source}
+        className="type-data text-ink"
+      >
+        {row.source}
+      </span>
+    ),
+    started_at: (row) => {
+      const age = relativeAge(row.started_at, now);
+      return (
+        <span data-run-started={row.started_at} title={age.title}>
+          {age.text}
+        </span>
+      );
+    },
+    ended_at: (row) => {
+      // A row with no end is a run still going, and says so — the dash would
+      // read as a missing value rather than as the state the null IS
+      // (Ben's ruling: "a row with none is still running and reads as such").
+      if (row.ended_at === null) {
+        return (
+          <span data-run-inflight="true" className="type-body text-ink-secondary">
+            still running
+          </span>
+        );
+      }
+      const age = relativeAge(row.ended_at, now);
+      return (
+        <span data-run-ended={row.ended_at} title={age.title}>
+          {age.text}
+        </span>
+      );
+    },
+    outcome: (row) =>
+      // The producer's own word, verbatim and never narrowed to the check
+      // constraint's spellings — `skipped` included, which is a healthy
+      // outcome and carries no colour, not a failure.
+      isAbsent(row.outcome) ? null : (
+        <span data-run-outcome={row.outcome ?? undefined}>
+          <Badge tone={OUTCOME_TONE[row.outcome ?? ""] ?? "neutral"}>{row.outcome}</Badge>
+        </span>
+      ),
+    error_summary: (row) =>
+      // Inline and VERBATIM — not trimmed, not summarised, not replaced with a
+      // friendlier sentence. Red, because a run that reported one is broken.
+      isAbsent(row.error_summary) ? null : (
+        <span data-run-error="" className="type-data text-broken">
+          {row.error_summary}
+        </span>
+      ),
+    // The three counts of the ruling, thousand-separated. A zero is a real
+    // count and renders as one, never as the absence dash: the number is the
+    // database's, and nothing on this path substitutes one it did not give
+    // (ARCHITECTURE.md §4.3).
+    //
+    // Written out rather than spread from `RUN_COUNTS`, so the
+    // `Record<RunColumn, …>` above is CHECKED: a column the ruling names and
+    // this map forgets is a compile error, which a spread of computed keys
+    // would hide.
+    records_parsed: (row) => (
+      <span data-run-count="records_parsed">{count(row.records_parsed)}</span>
+    ),
+    claims_emitted: (row) => (
+      <span data-run-count="claims_emitted">{count(row.claims_emitted)}</span>
+    ),
+    records_unlinked: (row) => (
+      <span data-run-count="records_unlinked">{count(row.records_unlinked)}</span>
+    ),
+    failure_class: (row) =>
+      // A machine identifier, rendered verbatim in mono and never prettified
+      // (ARCHITECTURE.md §11). It is the column that says whose problem a
+      // failure is, so a run that named none shows the dash and not a word of
+      // ours.
+      isAbsent(row.failure_class) ? null : (
+        <span data-run-failure-class={row.failure_class ?? undefined} className="type-data text-ink">
+          {row.failure_class}
+        </span>
+      ),
+  };
+}
+
+/** Which of the nine are figures, and so right-aligned. */
+const RIGHT_ALIGNED: ReadonlySet<string> = new Set(RUN_COUNTS);
+
+/**
+ * The nine columns, in the order the ruling names them.
+ *
+ * The header carries each column's own name, verbatim — the machine
+ * identifier the migration and the ruling both spell, never a prettified one:
+ * an operator reading this table is reading the `runs` row.
+ */
+function runColumns(now: string): Column<RunRow>[] {
+  const cells = runCells(now);
+  return RUN_COLUMNS.map((column) => ({
+    key: column,
+    label: column,
+    align: RIGHT_ALIGNED.has(column) ? ("right" as const) : undefined,
+    cell: cells[column],
+  }));
+}
+
+/**
+ * The adapter framework's runs — the page's other half.
+ *
+ * Four states, none of which shares a rendering with another (LOOK_AND_FEEL,
+ * Emptiness), and the kind is on the wrapper as `data-state` so a live test
+ * reads WHICH state the page is in before it compares a number: an `error` is
+ * always a failure, an `empty` is a pass with a real zero, and neither is
+ * inferred from "no rows rendered" (ARCHITECTURE.md §10, common violation 6).
+ */
+function AdapterRuns({
+  runs,
+  now,
+  source,
+}: {
+  runs: DbResult<RunWindow>;
+  now: string;
+  /** The `?source=` facet as the URL carried it, or undefined for no facet. */
+  source: string | undefined;
+}): ReactNode {
+  const rows = runs.kind === "ok" ? runs.data.rows : [];
+  const kind = runs.kind === "ok" && rows.length === 0 ? "empty" : runs.kind;
+  const truncated = runs.kind === "ok" && runs.data.truncated;
+  const words = source === undefined ? NO_RUNS_RECORDED : noRunsFrom(source);
+
+  return (
+    <Section title={RUNS_LABEL}>
+      {/* The window line describes a window this page actually read. A refused
+          or absent read returned none, so it would be describing a table that
+          is not there (LOOK_AND_FEEL states 3 and 4); an EMPTY window is still
+          a window — the page looked, and nothing was there. */}
+      {runs.kind === "ok" ? (
+        <p
+          data-window="runs"
+          data-window-limit={String(RUN_WINDOW)}
+          data-window-truncated={truncated ? "true" : "false"}
+          className="type-body text-ink-secondary"
+        >
+          The adapters&rsquo; newest runs, newest first — a window of at most{" "}
+          {count(RUN_WINDOW)}, not a count of the runs that exist.
+          {truncated
+            ? " The window filled its cap, so older runs ran than the ones below."
+            : ""}
+        </p>
+      ) : null}
+      {/* The facet sentence answers the URL, so it renders whatever the read
+          did: an operator who followed a link deserves to know which half it
+          addressed even when that half could not be read. */}
+      {source === undefined ? null : <AskedSource source={source} />}
+      <div data-surface="runs" data-state={kind} className="flex flex-col gap-2">
+        {runs.kind === "not_provisioned" ? (
+          // A card replaces the surface; nothing above it describes a table
+          // that is not there (LOOK_AND_FEEL state 3).
+          <StateOf result={runs} />
+        ) : kind === "empty" ? (
+          <>
+            <StatCard
+              label={RUNS_IN_WINDOW}
+              value={NO_RUNS}
+              sub={
+                source === undefined
+                  ? "nothing has run yet"
+                  : "no run in this window carries that source name"
+              }
+            />
+            <div data-empty="runs">
+              <Empty holds={words.holds} filledBy={words.filledBy} />
+            </div>
+          </>
+        ) : (
+          <DataTable<RunRow>
+            label={RUNS_LABEL}
+            columns={runColumns(now)}
+            rows={rows}
+            // The primary key is the row key and the order's tiebreak. It is
+            // not a tenth column and is never rendered as one.
+            rowKey={(row) => row.run_id}
+            placeholder={runs.kind === "error" ? <StateOf result={runs} /> : undefined}
+          />
+        )}
+      </div>
+      {/* What the columns mean — for a table that is on screen. With no window
+          read there is nothing for it to explain. */}
+      {runs.kind === "ok" ? (
+        <p className="type-body text-ink-secondary">
+          A run with no end is still going: the row is written when the adapter
+          wakes and nothing rewrites it, so no completion is guessed.{" "}
+          <span className="type-data text-ink">failure_class</span> says whose
+          problem a failure is, and{" "}
+          <span className="type-data text-ink">source</span> is the run&rsquo;s
+          own text — a run filed under a name the registry does not carry still
+          appears here.
+        </p>
+      ) : null}
+    </Section>
+  );
 }
 
 /* ── the page ────────────────────────────────────────────────────────────── */
@@ -729,18 +992,22 @@ export default async function CyclesPage({
 } = {}) {
   const params = (await searchParams) ?? {};
   const askedFor = firstValue(params[CYCLE_FACET]);
-  const askedSource = firstValue(params[SOURCE_FACET]);
+  // A `?source=` carrying nothing narrows nothing and earns no sentence: it is
+  // half a typed URL, not a request for the runs of the empty name.
+  const askedSource = narrowedTo(firstValue(params[SOURCE_FACET])) ?? undefined;
 
   // One clock for the whole render: every age on the page, and the
   // running-or-died reading of every row, is measured against the same
   // instant. Reading the clock per row would let two rows disagree.
   const now = new Date().toISOString();
 
-  // Three reads, concurrent and reported separately: the table and each gauge
-  // fail on their own, so an absent `field_provenance` never takes the cycle
-  // table down with it (ARCHITECTURE.md §4.1).
-  const [cycles, health, latency] = await Promise.all([
+  // Four reads, concurrent and reported separately: each table and each gauge
+  // fails on its own, so an absent `field_provenance` never takes the cycle
+  // table down with it and an absent `runs` never takes the cycles half down
+  // with it (ARCHITECTURE.md §4.1).
+  const [cycles, runs, health, latency] = await Promise.all([
     readCycles(),
+    readRuns({ source: askedSource }),
     readCycleHealth(),
     readResolutionLatency(),
   ]);
@@ -777,7 +1044,6 @@ export default async function CyclesPage({
         {askedFor === undefined ? null : (
           <AskedCycle askedFor={askedFor} state={asked} />
         )}
-        {askedSource === undefined ? null : <AskedSource source={askedSource} />}
         {cycles.kind === "not_provisioned" ? (
           // A card replaces the surface; nothing above it describes a table
           // that is not there (LOOK_AND_FEEL state 3).
@@ -808,6 +1074,10 @@ export default async function CyclesPage({
         </p>
       </Section>
 
+      {/* The page's two halves, adjacent — spec §4 names them in one breath,
+          and §5's two gauges follow both tables. */}
+      <AdapterRuns runs={runs} now={now} source={askedSource} />
+
       <Section title={HEALTH_LABEL}>
         {health.kind === "ok" ? (
           <CycleHealthSection health={health.data} />
@@ -823,8 +1093,6 @@ export default async function CyclesPage({
           <StateOf result={latency} eyebrow={LATENCY_LABEL} />
         )}
       </Section>
-
-      <AdapterRuns />
     </Page>
   );
 }
