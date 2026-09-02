@@ -16,3 +16,4 @@
 2026-09-02T10:32:45Z	evidence_budget	qa_evidence_overbudget: TASK-0018 4599/4000 chars
 2026-09-02T10:44:23Z	evidence_budget	qa_evidence_overbudget: BUG-0012 4202/4000 chars
 2026-09-02T10:47:39Z	artifact_gate	blocked write outside repo: /g,
+2026-09-02T10:55:03Z	artifact_gate	blocked write outside repo: /_next/static/[^"]*\.css
