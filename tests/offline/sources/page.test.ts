@@ -18,6 +18,7 @@ import {
   rerejects,
   runsResponseFor,
 } from "./population";
+import { observationRow } from "../../fixtures/rows";
 import {
   permissionDenied,
   stubClient,
@@ -223,6 +224,21 @@ function chips(markup: string) {
       href: $(element).attr("href") ?? "",
       active: $(element).attr("aria-current") === "true",
     }));
+}
+
+/**
+ * Everything the settled-values section SAYS, minus its window line.
+ *
+ * The window line carries `until` — the instant of the render — so it differs
+ * between two renders by construction; every other word in the section is a
+ * function of the rows alone. Selected by the gauge's own `data-window` hook
+ * rather than by a heading, so no copy is pinned.
+ */
+function settledValuesSays(markup: string): string {
+  const $ = cheerio.load(markup);
+  const section = $('[data-window="rejections"]').closest("section");
+  section.find("[data-window]").remove();
+  return section.text().replace(/\s+/g, " ").trim();
 }
 
 const AWAITING_BY_SOURCE = "Awaiting-row claims by source";
@@ -579,6 +595,44 @@ describe("the settled-values trend", () => {
     expect(Number(cells[3])).toBe(
       rerejects(SOURCE.bandsintown) + adjudications(SOURCE.bandsintown) + 1,
     );
+  });
+
+  // PINNED for admin-window/BUG-0022 — `it.fails` is strict: it is GREEN only
+  // while the defect is live, and turns RED the day the fix lands, sending the
+  // reader to the ticket. Flip it back to a plain `it()` with the fix.
+  it.fails("keeps a stranger's rejection out of a narrowed source's figures", async () => {
+    // Narrowed to ticketmaster, ONLY ticketmaster's rows may move any figure
+    // this section reports — the page's own rule (`RejectionSection`: "the
+    // figures answer the question the URL asked … not the fleet's total
+    // wearing one source's name"). So adding a rejection that belongs to
+    // bandsintown must leave the narrowed rendering unchanged.
+    const mine = REJECTIONS.filter((row) => row.source_id === SOURCE.ticketmaster);
+    const stranger = observationRow({
+      observation_id: "01920000-0000-7000-8000-00000000ff01",
+      source_id: SOURCE.bandsintown,
+      status: "rejected",
+      rejected_at: daysAgo(3),
+      // The column is nullable and written by convention (migration
+      // 20260901000003), so a stamp with no reason at all is a real row.
+      rejected_by: null,
+    });
+    const params = { source_id: SOURCE.ticketmaster };
+    const withoutStranger = await renderSources(
+      healthyScript({
+        [T.observations]: [{ data: [...PENDING_OBSERVATIONS] }, { data: mine }],
+      }),
+      params,
+    );
+    const withStranger = await renderSources(
+      healthyScript({
+        [T.observations]: [
+          { data: [...PENDING_OBSERVATIONS] },
+          { data: [...mine, stranger] },
+        ],
+      }),
+      params,
+    );
+    expect(settledValuesSays(withStranger)).toBe(settledValuesSays(withoutStranger));
   });
 
   it("names the observations table when the stamps cannot be read", async () => {
