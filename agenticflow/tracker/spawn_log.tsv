@@ -709,3 +709,50 @@
 2026-09-02T08:00:31Z	builder	TASK-0006	4113	647	106751
 2026-09-02T08:01:01Z	qa-adversary	TASK-0006	spawned
 2026-09-02T08:01:16Z	builder	TASK-0007	spawned
+2026-09-02T08:01:32Z	agent	-	-	-	-
+2026-09-02T08:01:48Z	agent	-	-	-	-
+2026-09-02T08:02:12Z	agent	-	-	-	-
+2026-09-02T08:02:19Z	agent	-	-	-	-
+2026-09-02T08:02:43Z	agent	-	-	-	-
+2026-09-02T08:02:50Z	agent	-	-	-	-
+2026-09-02T08:03:15Z	agent	-	-	-	-
+2026-09-02T08:03:47Z	agent	-	-	-	-
+2026-09-02T08:04:49Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:05:21Z	agent	1 uncommitted in primary checkout: tests/offline/review/qa-probe.test.ts
+2026-09-02T08:05:21Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:05:23Z	agent	1 uncommitted in primary checkout: tests/offline/review/qa-probe.test.ts
+2026-09-02T08:05:23Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:05:52Z	agent	1 uncommitted in primary checkout: tests/offline/review/qa-probe.test.ts
+2026-09-02T08:05:52Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:06:24Z	agent	1 uncommitted in primary checkout: tests/offline/review/qa-probe.test.ts
+2026-09-02T08:06:24Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:06:25Z	agent	1 uncommitted in primary checkout: tests/offline/review/qa-probe.test.ts
+2026-09-02T08:06:25Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:06:56Z	agent	2 uncommitted in primary checkout: tests/fixtures/rows.ts, tests/offline/review/qa-probe.test.ts
+2026-09-02T08:06:56Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:07:56Z	agent	3 uncommitted in primary checkout: tests/fixtures/rows.ts, tests/offline/review/qa-probe.test.ts, tests/offline/review/shapes.test.ts
+2026-09-02T08:07:56Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:07:58Z	agent	3 uncommitted in primary checkout: tests/fixtures/rows.ts, tests/offline/review/qa-probe.test.ts, tests/offline/review/shapes.test.ts
+2026-09-02T08:07:58Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:08:28Z	agent	3 uncommitted in primary checkout: tests/fixtures/rows.ts, tests/offline/review/review-items.test.ts, tests/offline/review/shapes.test.ts
+2026-09-02T08:08:28Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:08:30Z	agent	3 uncommitted in primary checkout: tests/fixtures/rows.ts, tests/offline/review/review-items.test.ts, tests/offline/review/shapes.test.ts
+2026-09-02T08:08:30Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:09:00Z	agent	3 uncommitted in primary checkout: tests/fixtures/rows.ts, tests/offline/review/review-items.test.ts, tests/offline/review/shapes.test.ts
+2026-09-02T08:09:00Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:09:32Z	agent	3 uncommitted in primary checkout: tests/fixtures/rows.ts, tests/offline/review/review-items.test.ts, tests/offline/review/shapes.test.ts
+2026-09-02T08:09:32Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:09:32Z	agent	3 uncommitted in primary checkout: tests/fixtures/rows.ts, tests/offline/review/review-items.test.ts, tests/offline/review/shapes.test.ts
+2026-09-02T08:09:32Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:10:03Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0006.json
+2026-09-02T08:10:03Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:10:05Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0006.json
+2026-09-02T08:10:05Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:10:35Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0006.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0006.md
+2026-09-02T08:10:35Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:10:37Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0006.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0006.md
+2026-09-02T08:10:37Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:10:55Z	qa-adversary	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0006.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0006.md
+2026-09-02T08:10:55Z	qa-adversary	TASK-0006	3672	594	124884
+# STRANDED	2026-09-02T08:11:06Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0006.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0006.md
+2026-09-02T08:11:06Z	agent	-	-	-	-

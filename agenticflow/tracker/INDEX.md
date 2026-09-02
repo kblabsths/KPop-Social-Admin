@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T08:00:38Z — do not edit)
+# Tracker index (regenerated 2026-09-02T08:11:08Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -9,9 +9,8 @@
 - FEAT-0006 [P1][feat][M1] The six threshold gauges  (deps:FEAT-0001,FEAT-0002(unmet:2))
 - FEAT-0007 [P1][feat][M1] Browse — the recent-events curated view  (deps:FEAT-0001,FEAT-0002(unmet:2))
 - FEAT-0008 [P1][feat][M1] The edit surface — the config map and pre-cutover direct edits  (deps:FEAT-0001,FEAT-0002(unmet:2))
-- TASK-0007 [P1][task][M1] The six gauges as server-side queries with pure TypeScript aggregation  (deps:TASK-0002 scope:src/lib/gauges,tests/offline/gauges)
-- TASK-0009 [P1][task][M1] Dashboard — the breakfast view  (deps:TASK-0005,TASK-0006,TASK-0007,TASK-0008(unmet:3) scope:src/app/page.tsx,src/lib/db/dashboard.ts,tests/offline/dashboard,tests/live/dashboard.live.test.ts)
-- TASK-0010 [P1][task][M1] Queues — two queues of equal standing, with exact filters  (deps:TASK-0005,TASK-0006,TASK-0007,TASK-0008(unmet:3) scope:src/app/queues/page.tsx,src/components/queues,tests/offline/queues,tests/live/queues.live.test.ts)
+- TASK-0009 [P1][task][M1] Dashboard — the breakfast view  (deps:TASK-0005,TASK-0006,TASK-0007,TASK-0008(unmet:2) scope:src/app/page.tsx,src/lib/db/dashboard.ts,tests/offline/dashboard,tests/live/dashboard.live.test.ts)
+- TASK-0010 [P1][task][M1] Queues — two queues of equal standing, with exact filters  (deps:TASK-0005,TASK-0006,TASK-0007,TASK-0008(unmet:2) scope:src/app/queues/page.tsx,src/components/queues,tests/offline/queues,tests/live/queues.live.test.ts)
 - TASK-0011 [P1][task][M1] Review-item detail — three typed views over one anatomy, evidence resolved  (deps:TASK-0010(unmet:1) scope:src/app/queues/[reviewItemId]/page.tsx,src/lib/db/review-item.ts,src/components/review,tests/offline/review-item,tests/live/review-item.live.test.ts)
 - TASK-0012 [P1][task][M1] Claims — the classification buckets, the standing-disagreements tab, and no in_window  (deps:TASK-0005,TASK-0007,TASK-0008(unmet:2) scope:src/app/claims/page.tsx,src/lib/db/claims.ts,src/components/claims,tests/offline/claims,tests/live/claims.live.test.ts)
 - TASK-0013 [P1][task][M1] Sources — lifecycle, tier, checkpoint, last run, and the per-source trends  (deps:TASK-0005,TASK-0007,TASK-0008(unmet:2) scope:src/app/sources/page.tsx,src/lib/db/sources.ts,tests/offline/sources,tests/live/sources.live.test.ts)
@@ -26,8 +25,8 @@
 - TASK-0016 [P2][task][M1] Cycles & runs — the adapter framework's runs half  (deps:TASK-0014,TASK-0023(unmet:2) scope:src/app/cycles/page.tsx,src/lib/db/runs.ts,tests/offline/runs,tests/live/runs.live.test.ts)
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 
-## built
-- TASK-0006 [P1][task][M1] Review-item domain module: kind derived from shape, the ordering, the filters  (deps:TASK-0002 scope:src/lib/review,src/lib/db/review-items.ts,tests/offline/review @builder-11)
+## claimed
+- TASK-0007 [P1][task][M1] The six gauges as server-side queries with pure TypeScript aggregation  (deps:TASK-0002 scope:src/lib/gauges,tests/offline/gauges @builder-12)
 
 ## blocked
 - TASK-0021 [P0][task][M1] ASK BEN: which Supabase env names does the APP read at runtime, and what do the campaign's live tests read?  (scope:src/lib/db/client.ts,tests/live,agenticflow/docs/SERVICES.md)
@@ -36,4 +35,4 @@
 - TASK-0024 [P1][task][M1] ASK BEN: where does Admin read the per-source stuck_pattern dial, which lives only in scraper YAML?  (scope:src/lib/gauges/pending-claims.ts,src/app/sources/page.tsx)
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 
-Totals — blocked:5, built:1, done:12, open:24. Archived: 0.
+Totals — blocked:5, claimed:1, done:13, open:23. Archived: 0.
