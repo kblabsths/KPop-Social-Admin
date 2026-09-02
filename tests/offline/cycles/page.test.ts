@@ -528,10 +528,10 @@ describe("the ?cycle= link against a window the page could not read", () => {
    * NEGATIVE verdict (`data-cycle-found="false"`) off a read that returned no
    * window. Saying nothing, or saying the window could not be read, both pass.
    */
-  // Pinned red: admin-window/BUG-0023. `it.fails` is vitest's strict xfail —
-  // it turns RED the day the page stops publishing the verdict, which is the
-  // signal to flip these two back to `it(...)` as part of the fix.
-  it.fails("does not claim the cycle is absent when resolution_runs is not provisioned [admin-window/BUG-0023]", async () => {
+  // Filed as two `it.fails` pins by QA and flipped back to plain `it(...)` when
+  // admin-window/BUG-0023 was fixed: the assertions below are unchanged, and
+  // they now hold because the verdict renders only off an `ok` read.
+  it("does not claim the cycle is absent when resolution_runs is not provisioned [admin-window/BUG-0023]", async () => {
     const markup = await renderCycles(
       healthyScript({
         [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
@@ -544,7 +544,7 @@ describe("the ?cycle= link against a window the page could not read", () => {
     expect(cheerio.load(markup)('[data-cycle-found="false"]').length).toBe(0);
   });
 
-  it.fails("does not claim the cycle is absent when the read of resolution_runs was refused [admin-window/BUG-0023]", async () => {
+  it("does not claim the cycle is absent when the read of resolution_runs was refused [admin-window/BUG-0023]", async () => {
     const markup = await renderCycles(
       healthyScript({
         [T.resolutionRuns]: [
@@ -557,6 +557,70 @@ describe("the ?cycle= link against a window the page could not read", () => {
     expect(readsFailed(markup)).toContain(T.resolutionRuns);
     expect(renderedCycles(markup)).toEqual([]);
     expect(cheerio.load(markup)('[data-cycle-found="false"]').length).toBe(0);
+  });
+
+  it("says instead that the window it would have looked in was never read", async () => {
+    // Not merely the absence of the negative verdict: the operator who
+    // followed the Dashboard's link is told which read came back with no
+    // window, in the object's own spelling, and no row anywhere is marked as
+    // the asked-for cycle.
+    for (const script of [
+      { [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) } },
+      {
+        [T.resolutionRuns]: [
+          { error: permissionDenied(T.resolutionRuns) },
+          { data: [...CYCLES] },
+        ],
+      },
+    ] satisfies Script[]) {
+      const markup = await renderCycles(healthyScript(script), {
+        cycle: SUCCEEDED.run_id,
+      });
+      const $ = cheerio.load(markup);
+      const line = $(`[data-cycle-asked="${SUCCEEDED.run_id}"]`);
+      expect(line.attr("data-cycle-unchecked")).toBe(T.resolutionRuns);
+      expect(line.attr("data-cycle-found")).toBeUndefined();
+      // The asked-for id is still named, so the link does not read as broken.
+      expect(line.text()).toContain(SUCCEEDED.run_id);
+      expect($("[data-cycle][aria-current]").length).toBe(0);
+    }
+  });
+
+  it("still answers the ?cycle= link when the read did return a window", async () => {
+    // The fix removes a verdict from two states and from no others: an `ok`
+    // read that does not hold the cycle still says so.
+    const markup = await renderCycles(healthyScript(), { cycle: "0192ffff-dead" });
+    const $ = cheerio.load(markup);
+    expect($('[data-cycle-found="false"]').attr("data-cycle-asked")).toBe("0192ffff-dead");
+    expect($("[data-cycle-unchecked]").length).toBe(0);
+  });
+});
+
+/* ── the facet that belongs to the half this page does not render ────────── */
+
+describe("a ?source= link arriving from the Sources page", () => {
+  it("says which half the facet narrows, and narrows none of the cycles itself", async () => {
+    // `resolution_runs` carries no source, so the cycles are the same cycles
+    // with the facet as without it — but the arriving link is answered rather
+    // than ignored byte-for-byte (relayed on admin-window/TASK-0016).
+    const plain = await renderCycles(healthyScript());
+    const faceted = await renderCycles(healthyScript(), { source: "ticketmaster" });
+    expect(renderedCycles(faceted)).toEqual(renderedCycles(plain));
+    const line = cheerio.load(faceted)("[data-source-facet]");
+    expect(line.attr("data-source-facet")).toBe("ticketmaster");
+    // The source is named verbatim, so the operator sees which one was meant.
+    expect(line.text()).toContain("ticketmaster");
+    // No facet, no sentence.
+    expect(cheerio.load(plain)("[data-source-facet]").length).toBe(0);
+  });
+
+  it("takes the first value when the URL names the source twice", async () => {
+    const markup = await renderCycles(healthyScript(), {
+      source: ["bandsintown", "eventbrite"],
+    });
+    expect(cheerio.load(markup)("[data-source-facet]").attr("data-source-facet")).toBe(
+      "bandsintown",
+    );
   });
 });
 
