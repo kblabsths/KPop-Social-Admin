@@ -2537,3 +2537,36 @@
 2026-09-02T13:38:37Z	agent	-	-	-	-
 # STRANDED	2026-09-02T13:38:43Z	qa-adversary	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0010.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0010.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0012.md
 2026-09-02T13:38:43Z	qa-adversary	TASK-0010	7220	645	135809
+2026-09-02T13:40:09Z	agent	-	-	-	-
+2026-09-02T13:40:40Z	agent	-	-	-	-
+2026-09-02T13:41:12Z	agent	-	-	-	-
+2026-09-02T13:41:45Z	agent	-	-	-	-
+2026-09-02T13:42:46Z	agent	-	-	-	-
+2026-09-02T13:43:18Z	agent	-	-	-	-
+2026-09-02T13:44:23Z	agent	-	-	-	-
+2026-09-02T13:44:55Z	agent	-	-	-	-
+2026-09-02T13:45:28Z	agent	-	-	-	-
+2026-09-02T13:46:30Z	agent	-	-	-	-
+2026-09-02T13:47:02Z	agent	-	-	-	-
+2026-09-02T13:47:34Z	agent	-	-	-	-
+2026-09-02T13:48:06Z	agent	-	-	-	-
+2026-09-02T13:48:37Z	agent	-	-	-	-
+2026-09-02T13:49:09Z	agent	-	-	-	-
+2026-09-02T13:50:10Z	agent	-	-	-	-
+2026-09-02T13:50:42Z	agent	-	-	-	-
+2026-09-02T13:52:45Z	agent	-	-	-	-
+2026-09-02T13:53:16Z	agent	-	-	-	-
+2026-09-02T13:53:47Z	agent	-	-	-	-
+2026-09-02T13:54:19Z	agent	-	-	-	-
+2026-09-02T13:54:51Z	agent	-	-	-	-
+2026-09-02T13:55:24Z	agent	-	-	-	-
+2026-09-02T13:55:55Z	agent	-	-	-	-
+2026-09-02T13:56:28Z	agent	-	-	-	-
+2026-09-02T13:56:59Z	agent	-	-	-	-
+2026-09-02T13:57:31Z	agent	-	-	-	-
+2026-09-02T13:58:03Z	agent	-	-	-	-
+2026-09-02T13:58:34Z	agent	-	-	-	-
+# STRANDED	2026-09-02T13:59:06Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0012.md
+2026-09-02T13:59:06Z	agent	-	-	-	-
+# STRANDED	2026-09-02T13:59:14Z	builder	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0012.md
+2026-09-02T13:59:14Z	builder	TASK-0012	15045	1861	303160
