@@ -1204,3 +1204,15 @@
 2026-09-02T09:34:02Z	agent	-	-	-	-
 # STRANDED	2026-09-02T09:34:10Z	qa-adversary	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0010.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0015.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0017.md
 2026-09-02T09:34:10Z	qa-adversary	TASK-0015	7342	552	134743
+2026-09-02T09:34:31Z	compactor	TASK-0015	spawned
+2026-09-02T09:34:33Z	agent	-	-	-	-
+2026-09-02T09:35:02Z	agent	-	-	-	-
+2026-09-02T09:35:05Z	agent	-	-	-	-
+2026-09-02T09:35:36Z	agent	-	-	-	-
+2026-09-02T09:36:04Z	agent	-	-	-	-
+2026-09-02T09:36:07Z	agent	-	-	-	-
+2026-09-02T09:36:39Z	agent	-	-	-	-
+# STRANDED	2026-09-02T09:36:59Z	builder	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0017.md
+2026-09-02T09:36:59Z	builder	TASK-0017	8302	705	139573
+# STRANDED	2026-09-02T09:37:05Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0017.md
+2026-09-02T09:37:05Z	agent	-	-	-	-
