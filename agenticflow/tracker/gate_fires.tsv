@@ -46,3 +46,4 @@
 2026-09-02T18:25:09Z	evidence_budget	qa_evidence_overbudget: BUG-0030 4395/4000 chars
 2026-09-02T18:47:55Z	evidence_budget	qa_evidence_overbudget: BUG-0032 4628/4000 chars
 2026-09-02T18:58:39Z	evidence_budget	qa_evidence_overbudget: BUG-0030 4476/4000 chars
+2026-09-02T18:59:43Z	artifact_gate	blocked write outside repo: //
