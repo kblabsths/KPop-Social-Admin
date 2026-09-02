@@ -86,9 +86,17 @@ export type ObservationStatus =
   | "rejected"
   | "quarantined";
 
+/**
+ * The columns `observations` actually has. It carries NO `entity_type`: the
+ * schema owner dropped that column in scraper migration
+ * `20260819000002_the_domain_is_the_entity_type.sql` ("observations.entity_type
+ * (the column) is dropped. domain becomes the first part of both identities"),
+ * while keeping `field_provenance`'s. A fixture that carries a column the table
+ * does not have is how a select naming it passed the offline suite and then
+ * failed 42703 against staging (admin-window/BUG-0024).
+ */
 export interface ObservationRow {
   observation_id: string;
-  entity_type: string;
   entity_id: string | null;
   field: string;
   domain: string;
@@ -110,7 +118,6 @@ export function observationRow(
 ): ObservationRow {
   return {
     observation_id: ID.observationA,
-    entity_type: "events",
     entity_id: ID.eventEntity,
     field: "title",
     domain: "events",
@@ -137,7 +144,11 @@ export function referenceValue(ref: string): { ref: string } {
 
 export interface FieldProvenanceRow {
   provenance_id: string;
-  /** `field_provenance` spells the canonical table `entity_type`, not `domain`. */
+  /**
+   * `field_provenance` spells the canonical table `entity_type`, and KEEPS it
+   * (the same migration that dropped `observations.entity_type` says
+   * "field_provenance IS NOT TOUCHED"). Its value is the domain.
+   */
   entity_type: string;
   entity_id: string;
   field: string;

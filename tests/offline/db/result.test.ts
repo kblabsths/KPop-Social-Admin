@@ -883,9 +883,11 @@ describe("the fixture builders the suite reads through", () => {
     // runs.source is text with no foreign key: it matches sources.source by name.
     expect(runRow().source).toBe(sourceRow().source);
     expect(observationRow().source_id).toBe(sourceRow().source_id);
-    // The evidence side spells the canonical table entity_type; review_items
-    // spells the same thing domain.
-    expect(fieldProvenanceRow().entity_type).toBe(observationRow().entity_type);
+    // `field_provenance` spells the canonical table entity_type; `observations`
+    // and `review_items` spell the same thing domain, and the values agree —
+    // `observations.entity_type` was dropped by scraper migration
+    // `20260819000002` (admin-window/BUG-0024).
+    expect(fieldProvenanceRow().entity_type).toBe(observationRow().domain);
     expect(reviewItemShapes()[0].domain).toBe(observationRow().domain);
   });
 });

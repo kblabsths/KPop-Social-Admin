@@ -373,7 +373,7 @@ of what to read and the traps in it. Columns verified against migrations
 | surface reads | object | key columns |
 | --- | --- | --- |
 | Dashboard, Queues, item detail | `review_items` | `review_item_id, queue, source_id, domain, entity_id, field, severity(low\|high), status(open\|settled), summary, evidence uuid[], folded_count, opened_at, last_evidence_at` |
-| item detail evidence | `observations` | `observation_id, entity_type, entity_id, field, domain, value jsonb, source_id, external_ref, payload_ref, observed_at, last_confirmed_at, status, rejected_at, rejected_by` |
+| item detail evidence | `observations` | `observation_id, entity_id, field, domain, value jsonb, schema_version, source_id, external_ref, payload_ref, observed_at, last_confirmed_at, status, rejected_at, rejected_by` — **no `entity_type`** (see trap 1) |
 | item detail canonical side, Browse | `field_provenance` | `provenance_id, entity_type, entity_id, field, source_id, observation_id, tier_at_apply, applied_at, admin_locked` |
 | Claims | **view** `pending_claims` | `observation_id, domain, entity_id, field, source_id, bucket, unmet_requirement` |
 | Sources | `sources` | `source_id, source, kind, lifecycle, tier, checkpoint, note, created_at, updated_at` |
@@ -384,12 +384,27 @@ of what to read and the traps in it. Columns verified against migrations
 **Traps, each of which will bite exactly one builder if it is not written
 down:**
 
-1. **`domain` vs `entity_type`.** `observations` carries **both**;
-   `field_provenance` and `observations` use **`entity_type`** for the
-   canonical table, while `review_items` and `pending_claims` use
-   **`domain`**. They hold the same value (`pending_claims` joins provenance
-   on `entity_type = claim.domain`). Read each table's own spelling; never
-   assume one.
+1. **`domain` vs `entity_type`.** **`field_provenance` alone** uses
+   **`entity_type`** for the canonical table; `observations`, `review_items`
+   and `pending_claims` use **`domain`**. They hold the same value
+   (`pending_claims` joins provenance on `entity_type = claim.domain`). Read
+   each table's own spelling; never assume one.
+
+   Corrected 2026-09-02 (admin-window/BUG-0024). This trap previously said
+   `observations` carries **both** — true of the migrations read on 2026-09-01,
+   which stopped at `20260901000004` and missed
+   `20260819000002_the_domain_is_the_entity_type.sql`: it **drops
+   `observations.entity_type`** ("domain becomes the first part of both
+   identities"; the three identity indexes are rebuilt on `domain`) and keeps
+   `field_provenance`'s ("field_provenance IS NOT TOUCHED. Its entity_type
+   column stays … apply_and_record now writes the domain into it"). Selecting
+   the dropped column is not a missing field — PostgREST answers 42703 and the
+   whole read fails, which is how the review-item detail rendered zero evidence
+   rows for every item on staging. The offline suite cannot see this: the stub
+   client scripts the answer, not the schema, so each `lib/db` read's column
+   list is checked against the fixture that states the table's real columns
+   (`tests/offline/review-item/read.test.ts`, "the columns the evidence reads
+   name").
 2. **There is no separate standing-disagreements view.** It is
    `pending_claims` filtered to `bucket = 'standing_disagreement'`
    (resolver §7: "the standing-disagreements view is this view filtered to

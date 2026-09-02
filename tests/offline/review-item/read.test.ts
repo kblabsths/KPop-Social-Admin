@@ -335,3 +335,72 @@ describe("the canonical side", () => {
     expect(result.data.claims).toHaveLength(1);
   });
 });
+
+/**
+ * The offline suite scripts the ANSWER, not the schema: the stub client hands
+ * back whatever a test wrote regardless of the columns the query asked for, so
+ * a select naming a column the table does not have is green here and 42703 on
+ * staging — which is exactly what shipped (admin-window/BUG-0024:
+ * `observations.entity_type`, dropped by scraper migration `20260819000002`,
+ * left every review item rendering zero evidence rows).
+ *
+ * The fixtures in `tests/fixtures/rows.ts` state each table's real columns, so
+ * they can stand in for the schema here: every column these reads name must be
+ * one the fixture row carries. A select may ask for FEWER columns than the
+ * table has — `field_provenance.admin_locked` is deliberately not read — so
+ * this is a subset check, and it fails only on a column that does not exist.
+ */
+describe("the columns the evidence reads name", () => {
+  /** The column list each recorded query on `table` asked its `select` for. */
+  function columnsSelectedOn(
+    client: ReturnType<typeof stubClient>,
+    table: string,
+  ): string[][] {
+    return client.calls
+      .filter((call) => call.table === table)
+      .map((call) => call.steps.find((step) => step.method === "select"))
+      .filter((step): step is NonNullable<typeof step> => step !== undefined)
+      .map((step) =>
+        String(step.args[0])
+          .split(",")
+          .map((column) => column.trim())
+          .filter((column) => column !== ""),
+      );
+  }
+
+  it("names only columns those tables actually have", async () => {
+    const client = stubClient(healthy());
+    const result = await readItemEvidence(
+      reviewItemDataConflict(),
+      client.asSupabaseClient(),
+    );
+    expect(result.kind).toBe("ok");
+
+    const columnsOf: Record<string, string[]> = {
+      [T.observations]: Object.keys(observationRow()),
+      [T.fieldProvenance]: Object.keys(fieldProvenanceRow()),
+      [T.sources]: Object.keys(sourceRow()),
+    };
+
+    for (const [table, actual] of Object.entries(columnsOf)) {
+      const selects = columnsSelectedOn(client, table);
+      // Every one of the three legs ran, or the check proves nothing.
+      expect(selects.length, `no read of ${table} was recorded`).toBeGreaterThan(0);
+      for (const selected of selects) {
+        expect(selected.length, `${table}: an empty select`).toBeGreaterThan(0);
+        expect(
+          selected.filter((column) => !actual.includes(column)),
+          `${table}: selected a column the table does not have`,
+        ).toEqual([]);
+      }
+    }
+  });
+
+  it("still names the column that carries the canonical table on each side", () => {
+    // The two spellings, after the drop: the evidence side has only `domain`,
+    // the decision log keeps `entity_type`, and they hold the same value.
+    expect(Object.keys(observationRow())).toContain("domain");
+    expect(Object.keys(observationRow())).not.toContain("entity_type");
+    expect(Object.keys(fieldProvenanceRow())).toContain("entity_type");
+  });
+});
