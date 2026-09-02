@@ -58,10 +58,17 @@ function scriptDatabase(script: Script) {
  * fixed it by returning the null itself from the column (a plain function, not
  * a component). Found by campaign admin-window/TASK-0019, whose ticket adds no
  * product code; the fix belongs to the Dashboard's own ticket
- * (admin-window/TASK-0009).
+ * (admin-window/TASK-0009), and is tracked there as admin-window/BUG-0026.
+ *
+ * QA measured it on run/admin-window at 14a3e71, 2026-09-02: with this entry
+ * removed the assertion reads `expected 10 to be +0` on `/` and passes on all
+ * seven other surfaces. The fix is done when this map is EMPTY — that literal
+ * (`= {};`) is what admin-window/BUG-0026's checks grade, so a pin removed
+ * without a fix reddens the assertion below and a fix without the pin removed
+ * reddens it as an unexpected pass.
  */
 const KNOWN_BLANK: Readonly<Record<string, string>> = {
-  "/": "the two error_summary columns render a component that returns null",
+  "/": "admin-window/BUG-0026 — the two error_summary columns render a component that returns null",
 };
 
 describe("a page whose rows carry nothing but nulls", () => {
