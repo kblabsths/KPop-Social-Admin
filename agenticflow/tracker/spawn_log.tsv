@@ -1997,3 +1997,4 @@
 2026-09-02T11:45:37Z	qa-adversary	TASK-0028	2826	275	65277
 # STRANDED	2026-09-02T11:45:43Z	agent	4 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/notes/TASK-0008.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0028.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
 2026-09-02T11:45:43Z	agent	-	-	-	-
+2026-09-02T11:45:44Z	compactor	TASK-0008	4775	250	43398
