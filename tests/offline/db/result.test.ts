@@ -239,11 +239,26 @@ describe("the database client's own account", () => {
  */
 describe("the account never carries a credential", () => {
   const HOST = "abcdefghijklmnopqrst.supabase.co";
+
+  /**
+   * A JWT-SHAPED string, assembled at runtime.
+   *
+   * It has to have the real three-segment shape or it does not exercise the
+   * rule, and a literal of that shape in a source file is what a secret
+   * scanner is for — so the segments are encoded here instead of pasted.
+   * Nothing in it is or ever was a credential.
+   */
+  const jwtShaped = [
+    Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url"),
+    Buffer.from(JSON.stringify({ role: "not-a-real-role" })).toString("base64url"),
+    "n0tar3alsignaturevalue",
+  ].join(".");
+
   const cases: ReadonlyArray<[string, string, string]> = [
     [
       "a JWT",
-      `GET https://${HOST}/rest/v1/events failed with apikey eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZSJ9.NOTAREALSIGNATUREVALUE`,
-      "eyJhbGciOiJIUzI1NiJ9",
+      `GET https://${HOST}/rest/v1/events failed with apikey ${jwtShaped}`,
+      jwtShaped,
     ],
     [
       "a named key in a query string",
