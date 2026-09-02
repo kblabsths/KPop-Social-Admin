@@ -197,3 +197,25 @@ export function permissionDenied(table: string) {
     message: `permission denied for table ${table}`,
   };
 }
+
+/**
+ * What supabase-js hands back when the TRANSPORT fails — probed against the
+ * http harness's sentinel URL (admin-window/BUG-0016).
+ *
+ * The shape is the point: `message` is a bare wrapper that names nothing,
+ * the real cause lives in `details`, and `hint`/`code` come back EMPTY —
+ * an empty code must not be read as an absence code. The cause string differs
+ * per environment ("bad port" here); the shape does not.
+ */
+export function transportFailure(cause = "bad port") {
+  return {
+    code: "",
+    details:
+      "TypeError: fetch failed\n" +
+      `    Caused by: Error: ${cause}\n` +
+      `        Error: ${cause}\n` +
+      "            at makeNetworkError (node:internal/deps/undici/undici:6027:35)",
+    hint: "",
+    message: "TypeError: fetch failed",
+  };
+}

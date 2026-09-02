@@ -5,6 +5,7 @@ import {
   type DbCountedResponse,
   type DbResponse,
   type DbResult,
+  type DbUnavailable,
 } from "./result";
 import { T } from "./tables";
 import {
@@ -49,10 +50,12 @@ import type { BrowseView } from "../browse/views";
  *    extraordinary row count, and then the read says so with the real number.
  */
 
-/** A read that did not produce rows — the two non-`ok` arms of `DbResult`. */
-export type DbUnavailable =
-  | { kind: "not_provisioned"; missing: string }
-  | { kind: "error"; message: string };
+/**
+ * A read that did not produce rows — the two non-`ok` arms of `DbResult`.
+ * Re-exported rather than re-spelled: a hand-copied union drifts from the one
+ * `result.ts` actually returns (admin-window/BUG-0016).
+ */
+export type { DbUnavailable } from "./result";
 
 /**
  * What Browse's page renders.

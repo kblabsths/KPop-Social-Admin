@@ -15,6 +15,7 @@ import {
   permissionDenied,
   stubClient,
   tableNotInSchemaCache,
+  transportFailure,
   undefinedColumn,
   undefinedColumnOfRelation,
   undefinedQualifiedColumn,
@@ -101,17 +102,22 @@ describe("classify", () => {
     const error = permissionDenied(T.verdicts);
     expect(classify(error, T.verdicts)).toEqual({
       kind: "error",
-      message: error.message,
+      // The object the query asked for, so a page composing several reads can
+      // say WHICH one refused (admin-window/BUG-0016).
+      reading: T.verdicts,
+      message: expect.stringContaining(error.message),
     });
   });
 
   it("carries the message of a thrown Error, a thrown string, and a bare object", () => {
     expect(classify(new Error("fetch failed"), T.runs)).toEqual({
       kind: "error",
+      reading: T.runs,
       message: "fetch failed",
     });
     expect(classify("socket hang up", T.runs)).toEqual({
       kind: "error",
+      reading: T.runs,
       message: "socket hang up",
     });
     // No message anywhere: still an error, still never an invented sentence.
@@ -122,6 +128,204 @@ describe("classify", () => {
     expect(classify({ code: "PGRST116", message: "no rows" }, T.events).kind).toBe(
       "error",
     );
+  });
+});
+
+/**
+ * The client's own account of a failure (admin-window/BUG-0016).
+ *
+ * `message` alone is not the account. supabase-js wraps a transport failure as
+ * `message: "TypeError: fetch failed"` and puts the REAL cause in `details`,
+ * so a reader of `message` alone ships exactly the generic wrapper the Feel
+ * forbids ("errors are never swallowed and never replaced with a generic
+ * message"). Everything below is about what survives into the `DbResult`.
+ */
+describe("the database client's own account", () => {
+  it("carries the cause out of details when the message is only a wrapper", () => {
+    const result = classify(transportFailure(), T.events);
+
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    // The cause, verbatim — this is the whole bug: it used to be dropped.
+    expect(result.message).toContain("bad port");
+    expect(result.message).toContain("Caused by");
+    // And never the wrapper standing alone.
+    expect(result.message).not.toBe(transportFailure().message);
+  });
+
+  it("says the wrapper once, not twice, when details repeats it", () => {
+    // supabase-js's `details` opens with a copy of `message`. Printing both
+    // tells an operator nothing and pushes the cause off the line.
+    const result = classify(transportFailure(), T.events);
+    if (result.kind !== "error") throw new Error("expected an error");
+    const wrapper = transportFailure().message;
+    expect(result.message.split(wrapper)).toHaveLength(2);
+  });
+
+  it("does not read an EMPTY code as a code, or print one", () => {
+    // The transport failure comes back with code "" and hint "". Neither is
+    // information, and "" is not an absence code.
+    const result = classify(transportFailure(), T.events);
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.message).not.toContain("()");
+    expect(result.message.trim()).toBe(result.message);
+  });
+
+  it("carries message, details, hint and code, in that order", () => {
+    const error = {
+      code: "42883",
+      message: "function public.settle(uuid) does not exist",
+      details: "the resolver called it with two arguments",
+      hint: "No function matches the given name and argument types.",
+    };
+    const result = classify(error, T.events);
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+
+    const at = (part: string) => result.message.indexOf(part);
+    expect(at(error.message)).toBeGreaterThanOrEqual(0);
+    expect(at(error.details)).toBeGreaterThan(at(error.message));
+    expect(at(error.hint)).toBeGreaterThan(at(error.details));
+    expect(at(error.code)).toBeGreaterThan(at(error.hint));
+  });
+
+  it("follows a thrown Error's cause chain", () => {
+    // The other shape of the same failure: a fetch that throws straight
+    // through arrives as an Error whose `cause` is the real one.
+    const thrown = new Error("TypeError: fetch failed", {
+      cause: new Error("bad port"),
+    });
+    const result = classify(thrown, T.events);
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.message).toContain("bad port");
+  });
+
+  it("survives a cause that points back at itself", () => {
+    const looping: { message: string; cause?: unknown } = { message: "outer" };
+    looping.cause = looping;
+    const result = classify(looping, T.sources);
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.message).toContain("outer");
+  });
+
+  it("names the read that failed, in the spelling the query used", () => {
+    for (const table of [T.events, T.fieldProvenance, T.sources]) {
+      expect(classify(transportFailure(), table)).toMatchObject({
+        kind: "error",
+        reading: table,
+      });
+    }
+  });
+
+  it("invents nothing when the client said nothing at all", () => {
+    // No message, no details: still an error, still never a sentence of ours.
+    const result = classify({}, T.runs);
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.message.toLowerCase()).not.toContain("something went wrong");
+    expect(result.message.toLowerCase()).not.toContain("sorry");
+  });
+});
+
+/**
+ * The account reaches a screen, so it must not carry a credential.
+ *
+ * The host of an unreachable database IS the client's own account of what it
+ * could not reach and stays. A key never may — including the one place a
+ * `NAME=value` rule misses it, a DSN's password between the colon and the `@`.
+ */
+describe("the account never carries a credential", () => {
+  const HOST = "abcdefghijklmnopqrst.supabase.co";
+
+  /**
+   * A JWT-SHAPED string, assembled at runtime.
+   *
+   * It has to have the real three-segment shape or it does not exercise the
+   * rule, and a literal of that shape in a source file is what a secret
+   * scanner is for — so the segments are encoded here instead of pasted.
+   * Nothing in it is or ever was a credential.
+   */
+  const jwtShaped = [
+    Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url"),
+    Buffer.from(JSON.stringify({ role: "not-a-real-role" })).toString("base64url"),
+    "n0tar3alsignaturevalue",
+  ].join(".");
+
+  const cases: ReadonlyArray<[string, string, string]> = [
+    [
+      "a JWT",
+      `GET https://${HOST}/rest/v1/events failed with apikey ${jwtShaped}`,
+      jwtShaped,
+    ],
+    [
+      "a named key in a query string",
+      `connect ECONNREFUSED https://${HOST}/rest/v1/events?apikey=sbp_0000notarealkey0000`,
+      "sbp_0000notarealkey0000",
+    ],
+    [
+      "a DSN password, mid-line between the colon and the @",
+      `could not connect to postgresql://postgres:n0tar3alpassw0rd@${HOST}:5432/postgres`,
+      "n0tar3alpassw0rd",
+    ],
+    [
+      "an Authorization header dump",
+      `401 from https://${HOST}/rest/v1/events; Authorization: Bearer sb_secret_000notarealsecret000`,
+      "sb_secret_000notarealsecret000",
+    ],
+  ];
+
+  it.each(cases)("redacts %s while keeping the host", (_label, detail, secret) => {
+    const result = classify(
+      { code: "", hint: "", message: "TypeError: fetch failed", details: detail },
+      T.events,
+    );
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.message).not.toContain(secret);
+    // The host is what an operator needs in order to know where to look.
+    expect(result.message).toContain(HOST);
+  });
+});
+
+/**
+ * Criterion 4: the classification is UNCHANGED. `details` is now read for the
+ * account, and it must not be read for the classification — an absent object
+ * still renders gray and names itself, and only genuine failures render red.
+ */
+describe("the account does not disturb the classification", () => {
+  it("still reads an absent table as not_provisioned when details names something else", () => {
+    expect(
+      classify(
+        {
+          ...tableNotInSchemaCache(T.verdicts),
+          details: `Perhaps you meant the table 'public.${T.reviewItems}'`,
+        },
+        T.verdicts,
+      ),
+    ).toEqual({ kind: "not_provisioned", missing: T.verdicts });
+  });
+
+  it("still names the column from the MESSAGE when details quotes another name", () => {
+    // The mined column must come from `message`; a quoted identifier in
+    // `details` must not be able to take its place.
+    expect(
+      classify(
+        {
+          ...undefinedQualifiedColumn(T.events, "badcol"),
+          details: "column 'starts_at' is the closest match",
+        },
+        T.events,
+      ),
+    ).toEqual({ kind: "not_provisioned", missing: `${T.events}.badcol` });
+  });
+
+  it("keeps a transport failure red rather than reading it as an absence", () => {
+    // "Red means broken, never unavailable": a database that refuses to answer
+    // is broken, whatever its empty code might tempt a reader into.
+    expect(classify(transportFailure(), T.events).kind).toBe("error");
   });
 });
 
@@ -193,7 +397,11 @@ describe("reads against a scripted PostgREST response", () => {
       (db) => db.from(T.observations).select("*"),
       stub.asSupabaseClient(),
     );
-    expect(result).toEqual({ kind: "error", message: error.message });
+    expect(result).toEqual({
+      kind: "error",
+      reading: T.observations,
+      message: expect.stringContaining(error.message),
+    });
   });
 
   it("reads one row, and null when there is none", async () => {
@@ -244,7 +452,9 @@ describe("reads against a scripted PostgREST response", () => {
     );
     expect(refused.kind).toBe("error");
     if (refused.kind !== "error") return;
-    expect(refused.message).toContain(T.reviewItems);
+    // The object is carried by the result rather than spelled into the prose:
+    // every error arm names its read (admin-window/BUG-0016).
+    expect(refused.reading).toBe(T.reviewItems);
     expect(refused.message).toContain('count: "exact"');
     // Never a number the database did not give.
     expect(refused).not.toHaveProperty("data");
@@ -336,7 +546,8 @@ describe("readComplete", () => {
       ),
     ).toEqual({
       kind: "error",
-      message: permissionDenied(T.observations).message,
+      reading: T.observations,
+      message: expect.stringContaining(permissionDenied(T.observations).message),
     });
   });
 
@@ -354,7 +565,7 @@ describe("readComplete", () => {
 
     expect(result.kind).toBe("error");
     if (result.kind !== "error") return;
-    expect(result.message).toContain(T.reviewItems);
+    expect(result.reading).toBe(T.reviewItems);
     expect(result.message).toContain('count: "exact"');
     expect(result).not.toHaveProperty("data");
   });
@@ -376,7 +587,7 @@ describe("readComplete", () => {
 
     expect(result.kind).toBe("error");
     if (result.kind !== "error") return;
-    expect(result.message).toContain(T.reviewItems);
+    expect(result.reading).toBe(T.reviewItems);
     expect(result.message).toContain(String(held));
     expect(result.message).toContain(String(ROW_CAP));
     // Never a partial array: the whole point of the branch.
@@ -530,22 +741,11 @@ describe("no exported read throws", () => {
     };
     const client = stubClient({}).asSupabaseClient();
 
-    await expect(readRows(T.sources, thrower, client)).resolves.toEqual({
-      kind: "error",
-      message: boom.message,
-    });
-    await expect(readOne(T.sources, thrower, client)).resolves.toEqual({
-      kind: "error",
-      message: boom.message,
-    });
-    await expect(readCount(T.sources, thrower, client)).resolves.toEqual({
-      kind: "error",
-      message: boom.message,
-    });
-    await expect(readComplete(T.sources, thrower, client)).resolves.toEqual({
-      kind: "error",
-      message: boom.message,
-    });
+    const thrown = { kind: "error", reading: T.sources, message: boom.message };
+    await expect(readRows(T.sources, thrower, client)).resolves.toEqual(thrown);
+    await expect(readOne(T.sources, thrower, client)).resolves.toEqual(thrown);
+    await expect(readCount(T.sources, thrower, client)).resolves.toEqual(thrown);
+    await expect(readComplete(T.sources, thrower, client)).resolves.toEqual(thrown);
   });
 
   it("turns an unset credential name into an error result, not a crash", async () => {

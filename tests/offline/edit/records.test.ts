@@ -254,7 +254,11 @@ describe("updateRecordField surfaces what the database said", () => {
     const db = stubClient({ groups: { error: denied } });
     expect(
       await updateRecordField(allowed("groups", "bio"), GROUP_ID, "…", db.asSupabaseClient()),
-    ).toEqual({ kind: "error", message: denied.message });
+    ).toEqual({
+      kind: "error",
+      reading: "groups",
+      message: expect.stringContaining(denied.message),
+    });
   });
 
   it("never throws, even when the client itself fails", async () => {

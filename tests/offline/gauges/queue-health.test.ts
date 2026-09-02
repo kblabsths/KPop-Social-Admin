@@ -111,7 +111,10 @@ describe("fetchQueueHealth", () => {
     const stub = stubClient({ [T.reviewItems]: { error: permissionDenied(T.reviewItems) } });
     await expect(fetchQueueHealth({}, stub.asSupabaseClient())).resolves.toEqual({
       kind: "error",
-      message: `permission denied for table ${T.reviewItems}`,
+      // The read that refused is named as well as the refusal, and the
+      // client's own account reaches the caller intact (BUG-0016).
+      reading: T.reviewItems,
+      message: expect.stringContaining(`permission denied for table ${T.reviewItems}`),
     });
   });
 });

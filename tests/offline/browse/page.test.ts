@@ -17,6 +17,7 @@ import {
   permissionDenied,
   stubClient,
   tableNotInSchemaCache,
+  transportFailure,
   type Script,
 } from "../../fixtures/stub-client";
 
@@ -147,6 +148,14 @@ function hrefs(markup: string): string[] {
   return $("[href]")
     .toArray()
     .map((el) => $(el).attr("href") ?? "");
+}
+
+/** The text of each red state line, in document order. */
+function alerts(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $('[role="alert"]')
+    .toArray()
+    .map((el) => $(el).text().replace(/\s+/g, " ").trim());
 }
 
 /** The label a configured column renders under. */
@@ -420,6 +429,50 @@ describe("every state renders without throwing", () => {
     } finally {
       process.env = restore;
     }
+  });
+
+  /**
+   * admin-window/BUG-0016: the whole error state used to be "TypeError: fetch
+   * failed", which names none of Browse's four reads and drops the cause the
+   * client put in `details`. Both halves are asserted here at the surface.
+   */
+  it("names which read failed, so the legs are told apart on screen", async () => {
+    const markup = await renderBrowse(
+      healthyScript({
+        [T.eventListings]: { error: transportFailure() },
+        [T.fieldProvenance]: { error: transportFailure() },
+      }),
+    );
+
+    const lines = alerts(markup);
+    expect(lines).toHaveLength(2);
+    // Two legs refused with the SAME client message; only the read they name
+    // tells them apart, which is the operator's whole question.
+    expect(lines.some((line) => line.includes(T.eventListings))).toBe(true);
+    expect(lines.some((line) => line.includes(T.fieldProvenance))).toBe(true);
+    // The rows still render: a failed leg is its own state, not the page's.
+    expect(bodyRows(markup)).toHaveLength(2);
+  });
+
+  it("shows the cause the client put in details, not the wrapper alone", async () => {
+    const markup = await renderBrowse({ [T.events]: { error: transportFailure() } });
+
+    const lines = alerts(markup);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("bad port");
+    expect(lines[0]).toContain(T.events);
+    // Still the state LINE inside the table, and still nothing thrown.
+    expect(cheerio.load(markup)("thead th").length).toBeGreaterThan(0);
+  });
+
+  it("keeps an absent object gray and unnamed by the red line", async () => {
+    // Red means broken, never unavailable: a table-absent code is still the
+    // not-provisioned card, not an error line (BUG-0016 criterion 4).
+    const markup = await renderBrowse({
+      [T.events]: { error: tableNotInSchemaCache(T.events) },
+    });
+    expect(alerts(markup)).toEqual([]);
+    expect(markup).toContain(T.events);
   });
 
   it("gives the page exactly one h1 in every state", async () => {

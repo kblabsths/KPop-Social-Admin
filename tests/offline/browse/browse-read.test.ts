@@ -506,7 +506,10 @@ describe("when a read fails or refuses", () => {
 
     expect(listing.events.kind).toBe("error");
     if (listing.events.kind !== "error") return;
-    expect(listing.events.message).toBe(permissionDenied(T.events).message);
+    // The database's own words survive, and the leg that refused is named —
+    // Browse makes four reads, so "which one" is half the answer (BUG-0016).
+    expect(listing.events.message).toContain(permissionDenied(T.events).message);
+    expect(listing.events.reading).toBe(T.events);
   });
 
   it("refuses a truncated provenance set instead of understating the sources", async () => {

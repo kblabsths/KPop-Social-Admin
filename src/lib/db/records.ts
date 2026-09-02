@@ -111,7 +111,11 @@ export async function updateRecordField(
   const { config, field } = edit;
   const decision = decideEdit(config.table, field);
   if (!decision.allowed) {
-    return { kind: "error", message: decision.refusal.message };
+    return {
+      kind: "error",
+      reading: config.table,
+      message: decision.refusal.message,
+    };
   }
 
   return readOne<CanonicalRecord>(

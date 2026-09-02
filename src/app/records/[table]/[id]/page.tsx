@@ -89,7 +89,11 @@ export default async function RecordPage({
     body = <NotProvisioned missing={result.missing} arrivesWith={ARRIVES_WITH} />;
   } else if (result.kind === "error") {
     body = (
-      <ErrorLine failed={result.message} retry="Reload to try the read again." />
+      <ErrorLine
+        reading={result.reading}
+        failed={result.message}
+        retry="Reload to try the read again."
+      />
     );
   } else if (result.data === null) {
     // The table answered and holds no such row — a different state from the

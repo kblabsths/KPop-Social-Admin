@@ -204,7 +204,8 @@ describe("listReviewItems", () => {
     const result = await listReviewItems({}, stub.asSupabaseClient());
     expect(result.kind).toBe("error");
     if (result.kind !== "error") return;
-    expect(result.message).toBe(permissionDenied(T.reviewItems).message);
+    expect(result.message).toContain(permissionDenied(T.reviewItems).message);
+    expect(result.reading).toBe(T.reviewItems);
   });
 });
 
@@ -252,7 +253,9 @@ describe("listReviewItems is a complete read", () => {
 
     expect(result.kind).toBe("error");
     if (result.kind !== "error") return;
-    expect(result.message).toContain(T.reviewItems);
+    // The object the read asked for is carried by the result, not spelled
+    // into the prose (BUG-0016: every error arm names its read).
+    expect(result.reading).toBe(T.reviewItems);
     expect(result.message).toContain(String(rows.length + 732));
     expect(result.message).toContain(String(ROW_CAP));
     // A partial queue list would look exactly like a short queue.
@@ -477,7 +480,7 @@ describe("truncation beats every filter (QA attack)", () => {
     const result = await readReviewAttention(stub.asSupabaseClient());
     expect(result.kind).toBe("error");
     if (result.kind !== "error") return;
-    expect(result.message).toContain(T.reviewItems);
+    expect(result.reading).toBe(T.reviewItems);
     expect(result).not.toHaveProperty("data");
   });
 });

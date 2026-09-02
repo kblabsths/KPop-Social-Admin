@@ -36,6 +36,11 @@ import {
  * All four data-surface states render from the `ui` primitives, and the three
  * reads are reported separately: with `field_provenance` absent the event rows
  * still render and the page says which table is missing. Nothing throws.
+ *
+ * A FAILED read names its object the same way an absent one does — the
+ * `DbResult` error arm carries `reading` — so the four legs are distinguishable
+ * on screen instead of collapsing into one anonymous red line
+ * (admin-window/BUG-0016).
  */
 
 /** This route's own path — the base every selector link is built on. */
@@ -49,7 +54,11 @@ function LegNote({ note }: { note: DbUnavailable }) {
   return note.kind === "not_provisioned" ? (
     <NotProvisioned missing={note.missing} arrivesWith={ARRIVES_WITH} />
   ) : (
-    <ErrorLine failed={note.message} retry="Reload to try the read again." />
+    <ErrorLine
+      reading={note.reading}
+      failed={note.message}
+      retry="Reload to try the read again."
+    />
   );
 }
 
@@ -88,6 +97,7 @@ export default async function BrowsePage({
         rows={[]}
         placeholder={
           <ErrorLine
+            reading={events.reading}
             failed={events.message}
             retry="Reload to try the read again."
           />

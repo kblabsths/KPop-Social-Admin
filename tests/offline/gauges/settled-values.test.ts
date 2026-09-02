@@ -155,7 +155,10 @@ describe("fetchRejectionStamps", () => {
     const stub = stubClient({ [T.observations]: { error: permissionDenied(T.observations) } });
     await expect(fetchRejectionStamps({}, stub.asSupabaseClient())).resolves.toEqual({
       kind: "error",
-      message: `permission denied for table ${T.observations}`,
+      // The read that refused is named as well as the refusal, and the
+      // client's own account reaches the caller intact (BUG-0016).
+      reading: T.observations,
+      message: expect.stringContaining(`permission denied for table ${T.observations}`),
     });
   });
 });

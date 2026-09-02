@@ -130,7 +130,10 @@ describe("fetchCycleHealth", () => {
     });
     await expect(fetchCycleHealth({}, stub.asSupabaseClient())).resolves.toEqual({
       kind: "error",
-      message: `permission denied for table ${T.resolutionRuns}`,
+      // The read that refused is named as well as the refusal, and the
+      // client's own account reaches the caller intact (BUG-0016).
+      reading: T.resolutionRuns,
+      message: expect.stringContaining(`permission denied for table ${T.resolutionRuns}`),
     });
   });
 });
