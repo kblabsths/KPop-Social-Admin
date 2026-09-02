@@ -6,6 +6,7 @@ import {
   GaugeStateCard,
   GaugeStateLine,
   stateReplacesSurface,
+  type EmptyWords,
   type GaugeState,
 } from "./state";
 
@@ -93,6 +94,7 @@ export function Distribution({
   format = count,
   max,
   detailLabel,
+  empty,
   state,
 }: {
   /** Accessible name for the table — what is distributed. */
@@ -115,11 +117,36 @@ export function Distribution({
   max?: number;
   /** Header for the optional detail column. The column exists only with it. */
   detailLabel?: string;
+  /**
+   * The words for the empty series: what this distribution would hold, and the one
+   * thing that fills it. **Required** — the component owns WHEN the empty
+   * state shows (no rows, no other state), the caller owns THE WORDS. Neither
+   * half can be moved: the component cannot invent "no cycles have run in this
+   * window", and a caller whose fixtures always have rows will not remember a
+   * case it never sees. So `rows: []` with no state is unwritable, and the one
+   * rendering that says nothing at all — a header row over an empty body —
+   * cannot be reached (ARCHITECTURE §7, admin-window/TASK-0030).
+   */
+  empty: EmptyWords;
   /** Set while the surface is loading, empty, unprovisioned or broken. */
   state?: GaugeState;
 }) {
-  if (state !== undefined && stateReplacesSurface(state)) {
-    return <GaugeStateCard state={state} />;
+  if (state !== undefined) {
+    if (stateReplacesSurface(state)) {
+      return <GaugeStateCard state={state} label={label} />;
+    }
+  } else if (rows.length === 0) {
+    // No rows and no stated reason: the surface card replaces the table by the
+    // same `stateReplacesSurface` rule an explicit empty state obeys, rendered
+    // through the same component so the two are one rendering. An explicit
+    // `state` wins — a page that knows WHY it is empty (a filter matched
+    // nothing) says so in its own words.
+    return (
+      <GaugeStateCard
+        state={{ kind: "empty", holds: empty.holds, filledBy: empty.filledBy }}
+        label={label}
+      />
+    );
   }
 
   const scale = max !== undefined && max > 0 ? max : scaleOf(rows);

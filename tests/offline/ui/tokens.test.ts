@@ -70,8 +70,18 @@ const SAMPLES: Sample[] = [
   ),
   { name: "Loading", html: render(h(Loading, { what: "cycles" })) },
   { name: "Empty", html: render(h(Empty, { holds: "open decisions", filledBy: "the resolver files one here" })) },
+  {
+    name: "Empty/eyebrow",
+    html: render(
+      h(Empty, { holds: "open decisions", filledBy: "the resolver files one here", eyebrow: "cycle health" }),
+    ),
+  },
   { name: "NotProvisioned", html: render(h(NotProvisioned, { missing: "verdicts", arrivesWith: "a migration" })) },
-  { name: "ErrorLine", html: render(h(ErrorLine, { failed: "no relation", retry: "reload" })) },
+  {
+    name: "NotProvisioned/eyebrow",
+    html: render(h(NotProvisioned, { missing: "verdicts", arrivesWith: "a migration", eyebrow: "cycle health" })),
+  },
+  { name: "ErrorLine", html: render(h(ErrorLine, { reading: "verdicts", failed: "no relation", retry: "reload" })) },
   {
     name: "EvidencePair",
     html: render(

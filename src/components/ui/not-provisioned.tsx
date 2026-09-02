@@ -7,14 +7,24 @@
 export function NotProvisioned({
   missing,
   arrivesWith,
+  eyebrow,
 }: {
   /** The table/view name the query used, spelled exactly as the query spelled it. */
   missing: string;
   /** What creates it: "the scraper repo's migration". */
   arrivesWith: string;
+  /**
+   * The `micro` label of the surface this card stands in for. Optional here
+   * and always passed by the gauge components — see `Empty` for the ruling
+   * (ARCHITECTURE §7, admin-window/TASK-0030).
+   */
+  eyebrow?: string;
 }) {
   return (
     <div className="border border-hairline bg-surface p-3">
+      {eyebrow === undefined ? null : (
+        <p className="type-micro text-ink-secondary">{eyebrow}</p>
+      )}
       <p className="type-body text-ink-secondary">
         <span className="type-data text-ink">{missing}</span> isn&rsquo;t in this
         database yet — it arrives with {arrivesWith}.

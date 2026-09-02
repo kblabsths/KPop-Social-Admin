@@ -251,7 +251,9 @@ describe("the four data-surface states", () => {
     const loading = render(h(Loading, { what: "cycles" }));
     const empty = render(h(Empty, { holds: "open decisions", filledBy: "the resolver files one here" }));
     const missing = render(h(NotProvisioned, { missing: "verdicts", arrivesWith: "the scraper repo's migration" }));
-    const failed = render(h(ErrorLine, { failed: "relation does not exist", retry: "reload the page" }));
+    const failed = render(
+      h(ErrorLine, { reading: "verdicts", failed: "relation does not exist", retry: "reload the page" }),
+    );
     expect(new Set([loading, empty, missing, failed]).size).toBe(4);
   });
 
@@ -278,8 +280,74 @@ describe("the four data-surface states", () => {
     expect(html).not.toContain(">0<");
   });
 
+  it("carries an optional eyebrow above the message, and emits none without one", () => {
+    // The eyebrow is the `micro` label of the surface the card stands in for
+    // (LOOK_AND_FEEL: `micro` is "the eyebrow label above a value"), so it must
+    // read before the message, not after it (admin-window/TASK-0030).
+    for (const [bare, labelled] of [
+      [
+        render(h(Empty, { holds: "open decisions", filledBy: "the resolver files one here" })),
+        render(
+          h(Empty, {
+            holds: "open decisions",
+            filledBy: "the resolver files one here",
+            eyebrow: "cycle health",
+          }),
+        ),
+      ],
+      [
+        render(h(NotProvisioned, { missing: "verdicts", arrivesWith: "a migration" })),
+        render(h(NotProvisioned, { missing: "verdicts", arrivesWith: "a migration", eyebrow: "cycle health" })),
+      ],
+    ]) {
+      expect(classesOf(labelled)).toContain("type-micro");
+      const text = textOf(labelled);
+      // first thing the card reads out: the label sits ABOVE the message
+      expect(text.indexOf("cycle health")).toBe(0);
+
+      // a card given no eyebrow is exactly the card that shipped before it
+      // existed: no stray label, no empty element holding its place
+      expect(classesOf(bare)).not.toContain("type-micro");
+      expect(textOf(bare)).not.toContain("cycle health");
+    }
+  });
+
+  it("takes the read a failed query was making as a REQUIRED prop", () => {
+    // Compile-time half of the assertion: `tsc --noEmit` covers `tests/**`
+    // (tsconfig `include`), so if `reading` ever goes optional again this
+    // directive becomes an unused-directive error and the build reddens.
+    // BUG-0016 shipped precisely because only a reviewer could catch it
+    // (ARCHITECTURE §7, admin-window/TASK-0030).
+    const anonymous = () =>
+      // @ts-expect-error a red line that names no read is unwritable
+      h(ErrorLine, { failed: "relation does not exist", retry: "reload the page" });
+    expect(typeof anonymous).toBe("function");
+
+    const named = render(
+      h(ErrorLine, { reading: "verdicts", failed: "no such relation", retry: "reload the page" }),
+    );
+    expect(textOf(named)).toContain("verdicts");
+  });
+
+  it("falls back to the failure alone when the read it was given names nothing", () => {
+    // The type forces the prop; it cannot force the string to say something,
+    // since `""` is a `string`. A blank read gets the app's one definition of
+    // absence rather than a dangling em dash (`isAbsent` — BUG-0004/BUG-0019).
+    for (const reading of ["", "   "]) {
+      const html = render(h(ErrorLine, { reading, failed: "no such relation", retry: "reload" }));
+      expect(textOf(html), JSON.stringify(reading)).not.toContain(EM_DASH);
+      expect(textOf(html), JSON.stringify(reading)).toContain("no such relation");
+    }
+  });
+
   it("renders an error as one red line carrying the failure verbatim and the retry", () => {
-    const html = render(h(ErrorLine, { failed: 'relation "verdicts" does not exist', retry: "reload the page" }));
+    const html = render(
+      h(ErrorLine, {
+        reading: "verdicts",
+        failed: 'relation "verdicts" does not exist',
+        retry: "reload the page",
+      }),
+    );
     expect(classesOf(html)).toContain("text-broken");
     expect(html).toContain("does not exist");
     expect(html).toContain("reload the page");

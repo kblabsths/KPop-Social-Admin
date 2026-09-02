@@ -18,11 +18,21 @@ import { Empty, ErrorLine, Loading, NotProvisioned } from "@/components/ui";
  * page does the reading, narrows the result, and hands a plain object down
  * (ARCHITECTURE §5 — the page function is the only async component).
  */
+/**
+ * The words an empty surface is named with: what it would hold, and the one
+ * thing that fills it (LOOK_AND_FEEL, Voice bar 4 — never a bare "No data").
+ *
+ * Defined once and shared by the `empty` state and by the REQUIRED `empty`
+ * prop of `TrendTable`/`Distribution`, so the two spellings of the same
+ * sentence cannot drift apart (admin-window/TASK-0030).
+ */
+export type EmptyWords = { holds: string; filledBy: string };
+
 export type GaugeState =
   | { kind: "loading"; what: string }
-  | { kind: "empty"; holds: string; filledBy: string }
+  | ({ kind: "empty" } & EmptyWords)
   | { kind: "not_provisioned"; missing: string; arrivesWith: string }
-  | { kind: "error"; reading?: string; failed: string; retry: string };
+  | { kind: "error"; reading: string; failed: string; retry: string };
 
 /** The two states that are CARDS, and so replace the surface. */
 export type GaugeSurfaceState = Extract<
@@ -52,11 +62,29 @@ export function stateReplacesSurface(state: GaugeState): state is GaugeSurfaceSt
  * never red and never a zero that reads like data: a missing table is
  * unavailable, not broken.
  */
-export function GaugeStateCard({ state }: { state: GaugeSurfaceState }) {
+export function GaugeStateCard({
+  state,
+  label,
+}: {
+  state: GaugeSurfaceState;
+  /**
+   * The gauge's own `micro` label, carried onto the card as its eyebrow.
+   * Required, and never optional: this card stands in for the WHOLE gauge, so
+   * without it a screen of empty or unprovisioned gauges tells the operator
+   * which tables are missing but not which knob each one tunes. Every gauge
+   * component already requires a `label`, so no caller is asked for a new word
+   * (ARCHITECTURE §7, admin-window/TASK-0030).
+   */
+  label: string;
+}) {
   return state.kind === "empty" ? (
-    <Empty holds={state.holds} filledBy={state.filledBy} />
+    <Empty holds={state.holds} filledBy={state.filledBy} eyebrow={label} />
   ) : (
-    <NotProvisioned missing={state.missing} arrivesWith={state.arrivesWith} />
+    <NotProvisioned
+      missing={state.missing}
+      arrivesWith={state.arrivesWith}
+      eyebrow={label}
+    />
   );
 }
 

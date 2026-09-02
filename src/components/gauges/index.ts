@@ -18,6 +18,7 @@ export {
   GaugeStateCard,
   GaugeStateLine,
   stateReplacesSurface,
+  type EmptyWords,
   type GaugeLineState,
   type GaugeState,
   type GaugeSurfaceState,
