@@ -236,18 +236,53 @@ describe("table names and the client library", () => {
  * under `src/` and asserts what the same scanner the rules use reports about it.
  */
 describe("the credential guard itself", () => {
-  const PROBE = "src/__credential_guard_probe__.ts";
+  /**
+   * Under `src/`, so the scanner walks it — and inside a dot-directory, so no
+   * compiler does (admin-window/BUG-0029).
+   *
+   * This probe used to be written straight to `src/__credential_guard_probe__.ts`,
+   * which the tsconfig `include` glob (`**\/*.ts`) covers. `tests/offline/toolchain.test.ts`
+   * runs a real `tsc --listFilesOnly` over that same program in a parallel
+   * worker; when it enumerated the probe and the `finally` below deleted it a
+   * moment later, tsc died with `TS6053: File ... not found` and the offline
+   * suite reddened for reasons no assertion cared about. TypeScript's include
+   * globbing skips directories whose name starts with `.`, while the walker in
+   * `sourceFiles()` above skips nothing — so a dot-hidden probe is asserted on
+   * exactly as before and is invisible to any concurrent compile.
+   */
+  const PROBE = "src/.probes/__credential_guard_probe__.ts";
   const probePath = path.join(repoRoot, PROBE);
+  const probeDir = path.dirname(probePath);
 
   /** Files the scanner reports while `source` sits under `src/` as PROBE. */
   function scanWithProbe(source: string, pattern: RegExp): string[] {
+    fs.mkdirSync(probeDir, { recursive: true });
     fs.writeFileSync(probePath, source, "utf8");
     try {
       return withoutDeprecated(filesWhereCodeMatches(pattern));
     } finally {
-      fs.rmSync(probePath, { force: true });
+      fs.rmSync(probeDir, { force: true, recursive: true });
     }
   }
+
+  it("hides its probe from every compiler that reads this tree", () => {
+    // The invariant the comment above depends on: a path segment starting with
+    // `.` is what keeps this file out of the tsconfig program, and out of any
+    // `tsc`/`next build` running beside this suite.
+    expect(PROBE.startsWith("src/")).toBe(true);
+    expect(PROBE.split("/").some((segment) => segment.startsWith("."))).toBe(true);
+  });
+
+  it("still reaches the scanner from there, and leaves nothing behind", () => {
+    // Non-vacuous both ways: dot-hidden did not mean invisible to the walker,
+    // and the probe directory does not survive the scan.
+    const readers = scanWithProbe(
+      "export const key = process.env.SUPABASE_SERVICE_ROLE_KEY;\n",
+      SERVICE_ROLE_KEY_READ,
+    );
+    expect(readers).toContain(PROBE);
+    expect(fs.existsSync(probeDir)).toBe(false);
+  });
 
   it("detects a reader that uses dot access", () => {
     const readers = scanWithProbe(

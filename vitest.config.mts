@@ -25,6 +25,24 @@ export default defineConfig({
           name: "offline",
           include: OFFLINE_INCLUDE,
           environment: "node",
+          // Budgets, not speed limits (admin-window/BUG-0029). Vitest's 5000ms
+          // default was the whole defect: the slowest offline test measured
+          // 3391ms cold-idle here and 4712ms warm on the box that filed the
+          // bug — a margin small enough that a receipt worktree, which always
+          // runs colder and under whatever else the machine is doing, flipped
+          // the same tree between RED and GREEN. Under 2x CPU
+          // oversubscription that same test measured 7647ms and failed.
+          // With that test split per bucket, the slowest offline test measured
+          // cold here is 2261ms (live-guard.test.ts, which spawns a child
+          // vitest) and the heaviest cross-product slice is 1249ms, so 20s is
+          // ~9x the worst cold measurement — and still >2x the 7647ms that a
+          // 2x-oversubscribed machine produced before the split. It bounds a
+          // hang; it does not police speed.
+          testTimeout: 20_000,
+          // Hooks here shell out to real compilers — `tsc --listFilesOnly`
+          // (~1.2s idle) and two `vitest list` startups — which the 10s
+          // default does not comfortably cover on a loaded machine.
+          hookTimeout: 60_000,
         },
       },
       {
