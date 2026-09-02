@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import {
   EDITABLE_TABLES,
@@ -316,224 +317,177 @@ function filesWithWriteLineNaming(column: string, base: string = repoRoot): stri
 }
 
 /**
- * The same text with the CONTENT of every string literal, template literal,
- * comment and regex literal blanked to spaces — delimiters kept, length kept,
- * so an index into the result is an index into the source. A small tokenizer
- * rather than a regex, because what it has to get right is nesting: `${…}`
- * inside a template is code again, and `\"` does not end its string.
- *
- * Why the scan needs it (admin-window/BUG-0030): `writeArguments` balances
- * parentheses, and a parenthesis inside a payload STRING moved the argument
- * boundary in both directions — `.update({ note: "opens ( here" })` ran past
- * the real `)` and swallowed a later READ of the column, and
- * `.update({ note: "set by admin :)", admin_locked: true })` ended early and
- * hid a real WRITE.
- *
- * Where a literal cannot be closed — a quote or a `/` with no partner on its
- * line, a backtick or an interpolation with no partner at all, a `/*` with no
- * closer — NOTHING is blanked and the character is read as ordinary code.
- * That direction over-reports (a red the reader can see) instead of blinding
- * the scan (a silent fail-open), which is the failure this ticket exists for,
- * and it holds for every literal kind alike: the asymmetry where `quoted` gave
- * up and `template` blanked to end of file was this ticket's second round.
+ * The write verbs as the PARSER sees them: a call whose callee is a property
+ * access spelling one of these names. `WRITE_VERB` above asks the same
+ * question of one code LINE, which is all the ruled line pin needs.
  */
-function codeOnly(text: string): string {
-  const out = text.split("");
-  const blank = (from: number, to: number) => {
-    for (let at = from; at < to; at += 1) if (out[at] !== "\n") out[at] = " ";
-  };
+const WRITE_VERBS = new Set(["update", "upsert", "insert"]);
 
-  /** The last character that is code, so `/` can be told from `/…/`. */
-  function previousSignificant(before: number): string {
-    for (let at = before - 1; at >= 0; at -= 1) {
-      if (!/\s/.test(out[at])) return out[at];
-    }
-    return "";
-  }
-  /** Positions a regex literal may legally begin at — never after a value. */
-  const REGEX_MAY_FOLLOW = /[(,=:[!&|?+\-*%^~;{]/;
-
-  /** `'…'` or `"…"`: ends at its own unescaped quote; `\` + newline continues it. */
-  function quoted(open: number): number | null {
-    const quote = text[open];
-    let at = open + 1;
-    while (at < text.length && text[at] !== "\n") {
-      if (text[at] === "\\") {
-        at += 2;
-        continue;
-      }
-      if (text[at] === quote) {
-        blank(open + 1, at);
-        return at + 1;
-      }
-      at += 1;
-    }
-    return null;
-  }
-
-  /**
-   * `` `…` ``: literal chunks are blanked, every `${…}` is scanned as code —
-   * and, like `quoted`, it gives up rather than guess. A backtick that never
-   * meets its partner (or an interpolation that never closes) returns null,
-   * the caller undoes every blank this made, and the backtick is read as
-   * ordinary code. Blanking to end of file instead would hide every write
-   * below it (admin-window/BUG-0030, second round).
-   */
-  function template(open: number): number | null {
-    let at = open + 1;
-    let chunk = at;
-    while (at < text.length) {
-      if (text[at] === "\\") {
-        at += 2;
-        continue;
-      }
-      if (text[at] === "`") {
-        blank(chunk, at);
-        return at + 1;
-      }
-      if (text[at] === "$" && text[at + 1] === "{") {
-        blank(chunk, at);
-        const close = scan(at + 2, true);
-        if (close >= text.length) return null;
-        at = close + 1;
-        chunk = at;
-        continue;
-      }
-      at += 1;
-    }
-    return null;
-  }
-
-  /** `/…/flags` on one line, `[…]` classes and `\/` escapes respected. */
-  function regexLiteral(open: number): number | null {
-    let at = open + 1;
-    let inClass = false;
-    while (at < text.length && text[at] !== "\n") {
-      const ch = text[at];
-      if (ch === "\\") {
-        at += 2;
-        continue;
-      }
-      if (inClass) {
-        if (ch === "]") inClass = false;
-      } else if (ch === "[") {
-        inClass = true;
-      } else if (ch === "/") {
-        blank(open + 1, at);
-        return at + 1;
-      }
-      at += 1;
-    }
-    return null;
-  }
-
-  /**
-   * Code from `from`; with `untilBrace`, stops at the `}` that closes an
-   * interpolation (its own `{…}` pairs counted so an object literal inside
-   * `${…}` does not end it early).
-   */
-  function scan(from: number, untilBrace: boolean): number {
-    let at = from;
-    let braces = 0;
-    while (at < text.length) {
-      const ch = text[at];
-      const next = text[at + 1] ?? "";
-      if (untilBrace && ch === "}" && braces === 0) return at;
-      if (ch === "{") braces += 1;
-      else if (ch === "}") braces -= 1;
-      else if (ch === "/" && next === "/") {
-        let end = at;
-        while (end < text.length && text[end] !== "\n") end += 1;
-        blank(at, end);
-        at = end;
-        continue;
-      } else if (ch === "/" && next === "*") {
-        const close = text.indexOf("*/", at + 2);
-        if (close !== -1) {
-          blank(at, close + 2);
-          at = close + 2;
-          continue;
-        }
-      } else if (ch === '"' || ch === "'") {
-        const after = quoted(at);
-        if (after !== null) {
-          at = after;
-          continue;
-        }
-      } else if (ch === "`") {
-        const undo = out.slice();
-        const after = template(at);
-        if (after !== null) {
-          at = after;
-          continue;
-        }
-        for (let index = 0; index < out.length; index += 1) out[index] = undo[index];
-      } else if (ch === "/" && REGEX_MAY_FOLLOW.test(previousSignificant(at))) {
-        const after = regexLiteral(at);
-        if (after !== null) {
-          at = after;
-          continue;
-        }
-      }
-      at += 1;
-    }
-    return at;
-  }
-
-  scan(0, false);
-  return out.join("");
+/**
+ * The file, parsed by TypeScript's own parser (admin-window/BUG-0030, third
+ * round, on the architect's ruling of 2026-09-02).
+ *
+ * The three rounds before this one hand-rolled a lexer here, and each fix
+ * closed the case in front of it and opened the next: "is this `/` a division
+ * or a pattern, is this backtick a template or text" is not a corner of the
+ * grammar, it is the grammar. `typescript` is already a devDependency of this
+ * repo, so strings, comments, template literals, interpolations and patterns
+ * are now decided by construction instead of by heuristic, and the question
+ * the scan actually asks — does a write verb RECEIVE this column — is asked of
+ * the syntax tree rather than of text.
+ *
+ * `setParentNodes` is on because `node.getText(source)` needs it. A `.tsx`
+ * file is parsed as TSX: `sourceFiles()` walks `.tsx`, and one parsed as TS
+ * reports parse errors that rule below would turn into a report of the whole
+ * file.
+ */
+function parse(file: string, base: string): ts.SourceFile {
+  return ts.createSourceFile(
+    file,
+    sourceText(file, base),
+    ts.ScriptTarget.Latest,
+    /* setParentNodes */ true,
+    file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
 }
 
 /**
- * The argument text of every write-verb call in a file, balanced across
- * parentheses and newlines so a payload Prettier split over several lines
- * reads as one string. Only what is passed TO the verb is returned, so
- * `.update(values).select("… admin_locked …")` yields `values` — a read
- * chained onto a write is not a write of that column.
+ * What the parser could not read. `parseDiagnostics` exists at runtime and is
+ * `@internal` in typescript's own `.d.ts`, so it is reached through a cast —
+ * `unknown`-based, never `any`.
+ */
+function parseErrors(source: ts.SourceFile): readonly ts.Diagnostic[] {
+  return (source as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] })
+    .parseDiagnostics ?? [];
+}
+
+/**
+ * Parsed, and read a SECOND time if the first read did not parse.
  *
- * The text is read through `codeOnly`, so every parenthesis that moves the
- * boundary is a real one, and the argument that comes back carries only the
- * payload's CODE: a column named inside a payload string is not a write of it
- * any more than a parenthesis there is a bracket.
+ * A file the parser cannot see into is REPORTED rather than skipped (below),
+ * and a half-written file would therefore be a red that has nothing to do with
+ * the rule: another suite plants and removes a probe under `src/` while this
+ * one runs in a parallel worker (admin-window/BUG-0020, BUG-0029). So a parse
+ * error is re-read once and the second result is used. Neither read fails
+ * open: a genuinely unparseable file fails both, while a torn one either comes
+ * back whole (correct silence) or torn again (correct over-report).
+ */
+function parsed(file: string, base: string): ts.SourceFile {
+  const first = parse(file, base);
+  return parseErrors(first).length === 0 ? first : parse(file, base);
+}
+
+/**
+ * Every write CALL in the file: a `CallExpression` whose callee is a property
+ * access named by `WRITE_VERBS`. This is what makes
+ * `.update(values).select("… admin_locked …")` safe by construction — the
+ * `.select(` is a different call, not an argument of the write, so a READ can
+ * no longer be reported by accident (admin-window/BUG-0028).
+ */
+function forEachWriteCall(source: ts.SourceFile, see: (call: ts.CallExpression) => void): void {
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      WRITE_VERBS.has(node.expression.name.text)
+    ) {
+      see(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+}
+
+/**
+ * Does this ARGUMENT of a write call name the column?
  *
- * It reads the RAW file, not `codeLines` (admin-window/BUG-0030, second
- * round): that filter drops any line whose trimmed form starts with `*`, and
- * such a line can carry a template literal's closing backtick — hiding the
- * closer from a scanner whose whole job is finding closers. Commentary is
- * excluded by the tokenizer instead, which is where it belongs, and every
- * comment is excluded whole rather than line by line.
+ * A payload object is read by its property NAMES and recursed into, so a
+ * nested payload and a computed key spelling the column are both seen. A
+ * string or template literal is deliberately NOT matched: a column named in
+ * prose inside a payload is not a write of it, which is what the case "does
+ * not report the column when only a payload string names it" pins.
+ *
+ * Everything else — an identifier, a call, a conditional, an `as` — falls back
+ * to its source text, which is the over-report direction on purpose:
+ * `update(buildPayload({ admin_locked: true }))` is reported, while
+ * `update(values)` is not, because nothing there spells the column.
+ */
+function namesColumn(node: ts.Node, column: string, source: ts.SourceFile): boolean {
+  if (ts.isObjectLiteralExpression(node)) {
+    return node.properties.some((property) => {
+      const name = property.name;
+      if (name !== undefined) {
+        const spelled = ts.isComputedPropertyName(name)
+          ? name.expression.getText(source)
+          : ts.isIdentifier(name) || ts.isPrivateIdentifier(name)
+            ? name.text
+            : name.getText(source);
+        if (spelled.includes(column)) return true;
+      }
+      if (ts.isPropertyAssignment(property)) {
+        return namesColumn(property.initializer, column, source);
+      }
+      if (ts.isSpreadAssignment(property)) {
+        return namesColumn(property.expression, column, source);
+      }
+      return false;
+    });
+  }
+  if (ts.isArrayLiteralExpression(node)) {
+    return node.elements.some((element) => namesColumn(element, column, source));
+  }
+  if (ts.isParenthesizedExpression(node)) {
+    return namesColumn(node.expression, column, source);
+  }
+  if (ts.isStringLiteralLike(node) || ts.isTemplateExpression(node)) return false;
+  return node.getText(source).includes(column);
+}
+
+/**
+ * The source text of every argument of every write call in a file. Only what
+ * is passed TO the verb is returned, so `.update(values).select("… admin_locked
+ * …")` yields `values` — a read chained onto a write is not a write of that
+ * column.
+ *
+ * It keeps its name and its shape because "extracts the argument of the one
+ * real write in this repo" asserts on it: an empty result there would mean the
+ * ARGUMENT pin was vacuously green everywhere. The pin itself no longer
+ * decides from this text — it decides from `namesColumn` over the argument
+ * NODES.
  */
 function writeArguments(file: string, base: string = repoRoot): string[] {
-  const code = codeOnly(sourceText(file, base));
-  const verb = new RegExp(WRITE_VERB.source, "g");
+  const source = parsed(file, base);
   const args: string[] = [];
-  for (let hit = verb.exec(code); hit !== null; hit = verb.exec(code)) {
-    const start = hit.index + hit[0].length;
-    let depth = 1;
-    let index = start;
-    while (index < code.length && depth > 0) {
-      if (code[index] === "(") depth += 1;
-      else if (code[index] === ")") depth -= 1;
-      index += 1;
-    }
-    args.push(code.slice(start, depth === 0 ? index - 1 : code.length));
-  }
+  forEachWriteCall(source, (call) => {
+    for (const argument of call.arguments) args.push(argument.getText(source));
+  });
   return args;
 }
 
 /**
  * Files that pass the column to a write verb, however the payload is laid out.
+ *
  * Every source file is asked, not only those `filesWhereCodeMatches` reports:
- * that pre-filter reads the file through `codeLines`, which drops a whole line
- * whose trimmed form starts with `/*`, and a payload key can share its line
- * with a leading comment (admin-window/BUG-0030, second round). A cheaper scan
- * that cannot see part of the tree is not cheaper.
+ * that pre-filter reads the file line by line and drops a whole line whose
+ * trimmed form starts with `/*`, and a payload key can share its line with a
+ * leading comment (admin-window/BUG-0030, second round). A cheaper scan that
+ * cannot see part of the tree is not cheaper.
+ *
+ * A file with ANY parse diagnostic is reported without further inspection: a
+ * file the scan cannot see into is a file it may not stay silent about. Over-
+ * reporting is a red a reader can see; a miss is the fail-open this ticket
+ * exists to forbid.
  */
 function filesWritingColumn(column: string, base: string = repoRoot): string[] {
-  const named = new RegExp(column);
-  return sourceFiles(base).filter((file) =>
-    writeArguments(file, base).some((argument) => named.test(argument)),
-  );
+  return sourceFiles(base).filter((file) => {
+    const source = parsed(file, base);
+    if (parseErrors(source).length > 0) return true;
+    let writes = false;
+    forEachWriteCall(source, (call) => {
+      if (call.arguments.some((argument) => namesColumn(argument, column, source))) writes = true;
+    });
+    return writes;
+  });
 }
 
 describe("the write surface of the whole repo", () => {
@@ -741,12 +695,14 @@ describe("the admin_locked write guard itself", () => {
 
 /**
  * The argument scan and STRING LITERALS (admin-window/BUG-0030, found by
- * admin-window/BUG-0028's QA). `writeArguments` balances parentheses to find
- * where a payload ends, and it used to count them in the raw text: a
- * parenthesis inside a payload string moved that boundary, and the rule broke
- * in BOTH directions — an unclosed `(` ran the argument past the real `)` and
- * swallowed a later pure READ, and a `)` truncated a real WRITE out of sight.
- * Every case below drives the same `filesWritingColumn` the rule above calls,
+ * admin-window/BUG-0028's QA). The scan used to find where a payload ends by
+ * counting parentheses in the raw text: a parenthesis inside a payload string
+ * moved that boundary, and the rule broke in BOTH directions — an unclosed `(`
+ * ran the argument past the real `)` and swallowed a later pure READ, and a
+ * `)` truncated a real WRITE out of sight. Three rounds of hand-written lexing
+ * later, an argument now ends where the PARSER says it ends, and every case
+ * below is a shape that a text scan got wrong and a syntax tree cannot.
+ * Every case drives the same `filesWritingColumn` the rule above calls,
  * against a mirror tree of its own that is planted and removed here — never a
  * file written into the real `src/` (three offline suites walk that tree in
  * parallel; admin-window/BUG-0020).
@@ -878,7 +834,7 @@ describe("the argument scan and string literals", () => {
   });
 
   it("does not report the column when only a payload string names it", () => {
-    const [reported, argument] = withProbes(
+    const [reported, args] = withProbes(
       [
         [
           "src/note-about-locking.ts",
@@ -891,15 +847,21 @@ describe("the argument scan and string literals", () => {
       (base) =>
         [
           filesWritingColumn(ADMIN_LOCKED, base),
-          writeArguments("src/note-about-locking.ts", base).join(""),
+          writeArguments("src/note-about-locking.ts", base),
         ] as const,
     );
-    // A column NAMED in prose inside a payload is not a write of it, for the
-    // same reason a parenthesis there is not a bracket: the argument the pin
-    // matches against carries the payload's code and none of its text.
+    // A column NAMED in prose inside a payload is not a write of it: a string
+    // literal is the one argument shape `namesColumn` deliberately does not
+    // match, for the same reason a parenthesis inside one is not a bracket.
+    // The write call itself IS found, which is what keeps this case a decision
+    // about the payload rather than blindness to the whole call
+    // (admin-window/BUG-0030, third round: the old
+    // `expect(argument).not.toContain(ADMIN_LOCKED)` asserted that the string's
+    // text had been blanked out of the extracted argument, and nothing is
+    // blanked any more — the argument is now the source text of the node).
     expect(reported).toEqual([]);
-    expect(argument).toContain("note:");
-    expect(argument).not.toContain(ADMIN_LOCKED);
+    expect(args).toHaveLength(1);
+    expect(args[0]).toContain("note:");
   });
 
   it(
@@ -907,12 +869,12 @@ describe("the argument scan and string literals", () => {
     () => {
       // Valid, compiling TypeScript. `codeLines` drops any line whose trimmed
       // form starts with "*" as commentary, and here that line carries the
-      // template's CLOSING backtick — so reading the file through that filter
-      // hid the closer from the one scanner whose job is finding closers, and
-      // the write three lines below vanished (admin-window/BUG-0030, second
-      // round: the silent fail-open direction the contract excludes). Two
-      // things now stop it: `writeArguments` tokenizes the RAW file, and
-      // `template` gives up rather than blank to end of file.
+      // template's CLOSING backtick — so a scan that read the file through
+      // that filter lost the closer and the write three lines below vanished
+      // with it (admin-window/BUG-0030, second round: the silent fail-open
+      // direction the contract excludes). The parser reads the whole file and
+      // no line filter stands between it and this template, which spans two
+      // lines like any other multi-line literal.
       const reported = withProbes(
         [
           [
@@ -934,10 +896,12 @@ describe("the argument scan and string literals", () => {
 
   it("over-reports rather than blinding itself when a QUOTED string cannot be closed", () => {
     // The same predicament for a double-quoted literal: a line-continued string
-    // whose closing quote sits on a line `codeLines` strips. `quoted` gives up
-    // and blanks nothing, so the write below stays visible. This is the
-    // direction the tokenizer is supposed to fail in, and it is what makes the
-    // case above a defect rather than a limit.
+    // whose closing quote sits on a line `codeLines` strips. The title is kept
+    // from the rounds when a lexer had to choose whether to blind itself here;
+    // there is nothing to over-report any more, because this parses cleanly —
+    // `\` before a newline continues a string — so the write below it is
+    // found structurally and reporting the file is simply TRUE
+    // (admin-window/BUG-0030, third round).
     const reported = withProbes(
       [
         [
@@ -957,10 +921,11 @@ describe("the argument scan and string literals", () => {
   });
 
   it("over-reports rather than blinding itself when a TEMPLATE cannot be closed", () => {
-    // The give-up path on its own, with no help from reading the raw file: a
-    // backtick with no partner anywhere. `template` blanks nothing and the
-    // backtick is read as ordinary code, so the write below it stays visible.
-    // Blanking to end of file here is what made the case above fail open.
+    // A backtick with no partner anywhere: this file does not parse. It is
+    // reported for exactly that reason — a file the scan cannot see into is a
+    // file it may not stay silent about — rather than through a lexer's
+    // give-up path (admin-window/BUG-0030, third round). The bar the title
+    // names is unchanged and is the point: over-report, never a silent miss.
     const reported = withProbes(
       [
         [
@@ -984,8 +949,8 @@ describe("the argument scan and string literals", () => {
     // alike — so a payload key sharing its line with a leading comment is lost
     // to any scan that reads the file through that filter. The wrapped payload
     // hides it from the line pin too, so this is the fail-open direction again.
-    // Tokenizing the RAW file, and asking every file rather than only the ones
-    // the filtered scan can see the name in, is what reports it.
+    // Parsing the RAW file, and asking every file rather than only the ones a
+    // filtered scan can see the name in, is what reports it.
     const reported = withProbes(
       [
         [
@@ -1002,10 +967,10 @@ describe("the argument scan and string literals", () => {
   });
 
   it("reports a WRITE under a backtick that is only ever mentioned in a comment", () => {
-    // A backtick inside commentary opens nothing: comments are excluded by the
-    // tokenizer, whole, before any literal is read. Both shapes the line filter
-    // used to handle for it are here — a trailing "//" and a block comment
-    // opened mid-line — and neither may swallow the write beneath.
+    // A backtick inside commentary opens nothing: the parser knows a comment
+    // from a literal, whole, wherever the comment starts. Both shapes the line
+    // filter used to handle for it are here — a trailing "//" and a block
+    // comment opened mid-line — and neither may swallow the write beneath.
     const reported = withProbes(
       [
         [
@@ -1024,17 +989,17 @@ describe("the argument scan and string literals", () => {
     expect(reported).toEqual(["src/commented-backtick.ts"]);
   });
 
-  it.fails("reports a WRITE between a regex literal holding a backtick and a later template", () => {
+  it("reports a WRITE between a regex literal holding a backtick and a later template", () => {
     // Valid, strict-compiling TypeScript: `tsc --noEmit --strict` exits 0 on
-    // this exact source. `REGEX_MAY_FOLLOW` decides a `/` from ONE previous
-    // character, and neither `=>` nor `return` ends in one of them, so a regex
-    // in the commonest predicate shape is read as division — and the backtick
-    // inside it is then read as opening a template. That template DOES find a
-    // partner (the next ordinary template literal in the file), so the give-up
-    // contract never fires: everything between them is blanked, the write in
-    // between with it. The payload is wrapped, so the line pin misses it too.
-    // Fail-open — the direction this describe exists to forbid
-    // (admin-window/BUG-0030).
+    // this exact source. Deciding a `/` from the ONE character before it — the
+    // third round's bounce — read this regex as a division, because neither
+    // `=>` nor `return` ends in a character a pattern may follow; the backtick
+    // inside it then opened a "template" that found a partner in the ordinary
+    // template literal at the foot of the file, and the wrapped write between
+    // them was erased. Silent, and the line pin misses a wrapped payload too:
+    // the fail-open direction this describe exists to forbid
+    // (admin-window/BUG-0030). Where a pattern may legally start is a fact
+    // about the grammar, and the parser holds all of it.
     const reported = withProbes(
       [
         [
@@ -1052,6 +1017,34 @@ describe("the argument scan and string literals", () => {
       (base) => filesWritingColumn(ADMIN_LOCKED, base),
     );
     expect(reported).toEqual(["src/tick-regex.ts"]);
+  });
+
+  it("reports a WRITE between a regex literal in RETURN position and a later template", () => {
+    // The same shape in the other position a predicate is written in: a
+    // `return` of a regex from a function body rather than an arrow's
+    // expression body (admin-window/BUG-0030, acceptance criterion 3). A regex
+    // is a regex wherever one may legally stand, so the backtick inside it
+    // opens nothing, and the wrapped write between it and the ordinary
+    // template literal below is reported.
+    const reported = withProbes(
+      [
+        [
+          "src/tick-return.ts",
+          "export function hasTick(s: string) {\n" +
+            "  return /`/.test(s);\n" +
+            "}\n" +
+            "\n" +
+            "export const stamp = (db: Db, id: string) =>\n" +
+            '  db.from("field_provenance").update({\n' +
+            "    admin_locked: true,\n" +
+            '  }).eq("id", id);\n' +
+            "\n" +
+            "export const label = (n: number) => `${n} rows`;\n",
+        ],
+      ],
+      (base) => filesWritingColumn(ADMIN_LOCKED, base),
+    );
+    expect(reported).toEqual(["src/tick-return.ts"]);
   });
 
   it("leaves no probe behind for another suite to walk into", () => {
