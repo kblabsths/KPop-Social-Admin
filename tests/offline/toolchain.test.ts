@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   HTTP_INCLUDE,
   HTTP_ROOT,
@@ -81,6 +83,68 @@ describe("test project layout", () => {
     for (const file of http) {
       expect(file.startsWith(`${HTTP_ROOT}${path.sep}`)).toBe(true);
       expect(offline).not.toContain(file);
+    }
+  });
+});
+
+/**
+ * The repo's type gate must red on product code and on nothing else.
+ *
+ * Agents are told to put artefacts under `agenticflow/tracker/evidence/`, so a
+ * stray `.ts` there used to be compiled as if it were product source and
+ * reddened someone else's receipt (admin-window/TASK-0028).
+ */
+describe("type-check program", () => {
+  const tscBin = path.join(repoRoot, "node_modules", ".bin", "tsc");
+  const probeDir = path.join(
+    repoRoot,
+    "agenticflow",
+    "tracker",
+    "evidence",
+    `tsconfig-program-probe-${randomUUID()}`,
+  );
+  const probeFile = path.join(probeDir, "probe.ts");
+  let program: string[] = [];
+
+  beforeAll(() => {
+    mkdirSync(probeDir, { recursive: true });
+    // Deliberately ill-typed: if tsc compiled this, it would exit non-zero.
+    writeFileSync(probeFile, "const probe: number = true; export default probe;\n");
+    const stdout = execFileSync(
+      tscBin,
+      [
+        "--noEmit",
+        "--listFilesOnly",
+        // Keep the shared incremental cache out of this.
+        "--tsBuildInfoFile",
+        path.join(probeDir, "probe.tsbuildinfo"),
+      ],
+      { cwd: repoRoot, encoding: "utf8" },
+    );
+    program = stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => path.relative(repoRoot, path.resolve(repoRoot, line)));
+  });
+
+  afterAll(() => {
+    rmSync(probeDir, { recursive: true, force: true });
+  });
+
+  it("compiles the product and the tests", () => {
+    // Non-vacuous: the program is real, and reaches both trees.
+    expect(program).toContain(path.join("src", "lib", "db", "result.ts"));
+    expect(program).toContain(path.join(OFFLINE_ROOT, "toolchain.test.ts"));
+    expect(
+      program.some((file) => file.startsWith(`src${path.sep}app${path.sep}`)),
+    ).toBe(true);
+  });
+
+  it("compiles nothing a factory agent wrote under agenticflow/", () => {
+    expect(program).not.toContain(path.relative(repoRoot, probeFile));
+    for (const file of program) {
+      expect(file.startsWith(`agenticflow${path.sep}`)).toBe(false);
     }
   });
 });
