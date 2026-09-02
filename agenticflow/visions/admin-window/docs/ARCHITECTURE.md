@@ -68,8 +68,21 @@ not beside it — silently, with no error, reading the wrong thing or nothing.
 - If a fact lives only in scraper YAML and not in a row, that is **a flagged
   gap and a blocked ticket, not a silent copy** (spec §10). The per-source
   `resolver.stuck_pattern` dial is exactly this case — see ASK-ticket §12.4.
-- In-repo imports use the `@/*` alias (`tsconfig.json` `paths`), never
-  `../../lib/...`. Within-directory `./x` is fine.
+- **What the ban is actually about: leaving your own product tree.** No
+  relative path — in an import, a config value, a fixture path or a test
+  helper — may resolve outside `src/` (product code) or outside `tests/`
+  (tests). That is the failure this rule exists for and it is absolute.
+  Relative imports that stay *inside* the tree are fine and are what landed:
+  `src/lib/db/review-items.ts` imports `../review/shapes`, and
+  `src/lib/gauges/*.ts` import `../db/result`. Neither is a defect and neither
+  is to be churned. The `@/*` alias (`tsconfig.json` `paths`) is available and
+  is the spelling to use from `src/app/**` and `src/components/**`, which are
+  deep enough that counting `../` is where mistakes live. Within-directory
+  `./x` is always fine.
+  *(Amended 2026-09-02: as first written this bullet banned `../` in every
+  import, which two landed modules and six in-flight ones already contradicted
+  — see the Common violations ledger. A rule the code disproves gets a builder
+  to refactor working code for nothing.)*
 - The `contracts/` directory is **in this repo and tracked in git**, so it is
   present in every worktree: cite it as `contracts/<file>.md`.
 
@@ -167,9 +180,15 @@ tests/
 ## 4. Dependency direction — one way, no exceptions
 
 ```
-app/**  ->  components/**  ->  (nothing)
-app/**  ->  lib/**         ->  lib/db/**  ->  @supabase/supabase-js
-lib/gauges/**, lib/review/**, lib/edit/**  ->  lib/db/**
+app/**          ->  components/**        ->  (nothing)
+app/**          ->  lib/**
+lib/gauges/**   ->  lib/db/**            ->  @supabase/supabase-js
+
+                    everything above     ->  lib/<leaf>/**  ->  (nothing)
+
+<leaf> = the PURE DOMAIN LEAVES, the bottom of the app:
+         lib/review/**, lib/format.ts, lib/edit/config.ts
+         (and lib/browse/** when TASK-0015 lands)
 ```
 
 1. **`components/**` never imports from `lib/db/**` and never fetches.** A
@@ -186,6 +205,18 @@ lib/gauges/**, lib/review/**, lib/edit/**  ->  lib/db/**
    used.
 5. `lib/**` never imports from `app/**` or `components/**`.
 6. **No `src/app/components/`.** Components live at `src/components/`.
+7. **Pure domain leaves sit below `lib/db/**`, not above it.** A leaf holds
+   the vocabulary, the row interfaces it reasons about, and pure functions
+   over rows. It imports **nothing that can reach a database** — not
+   `lib/db/**`, not `@supabase/supabase-js`, not `process.env`. `lib/db/**`
+   imports the leaf; **the leaf never imports `lib/db/**` back, not a value
+   and not a type.** A type-only import erases at runtime, but it still writes
+   a directory-level cycle into this contract, and the day someone widens it
+   to a value import the cycle is real with nothing to catch it. A row type
+   both sides need is **declared in the leaf** — which is what
+   `ReviewItemRow` in `lib/review/shapes.ts` already does.
+   `lib/gauges/**` is not a leaf: a gauge fetches its own bounded window
+   through `lib/db/**` (§8), which is the arrow as drawn.
 
 ### 4.1 The data-layer contract (every query returns this)
 
@@ -225,6 +256,52 @@ its ids, query B with `.in("id", ids)`, join in code. It is predictable, it
 unit-tests offline against captured fixtures, and it does not break when a
 view's inferred relationships change. Do not build a query helper that
 "figures out" embeds.
+
+### 4.3 Two kinds of read, and neither may be silently partial
+
+*(Added 2026-09-02, from QA's finding on TASK-0006. Fixed by TASK-0026; every
+ticket owning a `lib/db/*.ts` module carries this in its brief.)*
+
+PostgREST caps a response at its `db-max-rows` (Supabase's default is 1000)
+and says nothing about it. A `select` with no `.range()`, no `.limit()` and no
+`.order()` therefore returns **an arbitrary subset in unspecified order**, and
+a count or an "exactly the matching items" claim built on it is *wrong* rather
+than *refused* — the one failure mode this data layer exists to make
+impossible. Pick a read kind deliberately.
+
+**1. Complete read — `readComplete` in `lib/db/result.ts`.** Use it whenever
+the surface presents the result as the whole set: a list rendered in full, a
+count, an oldest age, a filter that claims exactness. The query passes
+`{ count: "exact" }`, a **total** `.order()` ending in the primary key, and
+`.range(0, cap - 1)` with `ROW_CAP` handed in (1000, matching PostgREST's own
+default so the app never silently fights the platform cap). When the exact
+count exceeds the rows returned — whatever truncated it, our cap or the
+server's — the result is `kind: "error"` naming the object, the count and the
+cap.
+
+> **An `ok` array from a complete read is the whole matching set.** Every
+> figure, count, oldest-age and exactness claim in this app rests on that one
+> property, and it is why no caller carries a "was that all of it?" flag: a
+> partial answer never becomes an `ok`.
+
+**2. Window read — `readRows`, unchanged.** The caller's own `.order()` +
+`.limit()` define a **named** window and the surface says which window it is
+showing. This is §8's gauge contract and the landed gauges use it correctly.
+A window read's rows must never become a figure presented as a total.
+
+**And no read helper substitutes a number the database did not give.**
+`readCount` returned `count ?? 0`, so a query written without
+`{ head: true, count: "exact" }` — `error: null`, `count: null` — rendered a
+confident `0` for a table holding 47 rows. That is BUG-0007's defect on the
+user-visible path; a null count is a refusal, never a zero. The same rule is
+why the complete read refuses a null count instead of returning the rows it
+happens to hold.
+
+Paging is not the answer to a cap and none is built: nothing in the spec asks
+for it, and complete-or-refuse means there is never a partial page to
+continue. When a table genuinely outgrows `ROW_CAP` the app says so with the
+real number, and raising the cap or narrowing the filter is then a deliberate
+decision with evidence behind it.
 
 ## 5. Rendering: one async boundary per route
 
@@ -304,6 +381,22 @@ down:**
    explicitly for this reason.
 10. **`review_items.evidence` is `uuid[]`** — order is the fold order; render
     it in that order.
+11. **`shapeOf` defaults to `data_conflict_fact`, and the trigger to revisit
+    it is a migration.** `lib/review/shapes.ts` branches on `queue ===
+    "entity_link"` and falls through to `data_conflict_fact` for everything
+    else — total by construction, so no caller has an exception path, which is
+    right (§11: the kind is derived, never stored). Today it is also
+    unreachable-by-anything-else: migration `20260901000002` constrains
+    `review_items.queue` to exactly `data_conflict` and `entity_link`. But a
+    third queue — a `freshness` queue, say — would arrive through that default
+    and render as a **decision**, silently and plausibly. **The migration that
+    widens that CHECK constraint is the trigger**: when it lands, `Shape`,
+    `SHAPES`, `KIND_BY_SHAPE` and `shapeOf` are extended together (the
+    compiler requires the first three; only `shapeOf` can go quietly wrong).
+    Recorded, not ticketed — spec §6 calls the shape set "an open set that
+    moves with the queues", and inventing a `queue` value the database cannot
+    hold in order to test a branch it cannot reach is work with no user
+    behind it.
 
 ## 7. Design tokens
 
@@ -471,10 +564,41 @@ The milestone structure walk maintains this ledger: violation class, count, one
 example. A class that reaches 2 becomes a rule above and is cited in the
 decomposition brief of every ticket touching that surface.
 
-*(empty at intake — 2026-09-01)*
+| # | class | count | one example | status |
+| --- | --- | --- | --- | --- |
+| 1 | **A `../` import inside `src/`, which §1.2 as written banned outright** | 8 | `src/lib/db/review-items.ts` imports `../review/shapes` (landed, TASK-0006); the six `src/lib/gauges/*.ts` import `../db/result` (in flight, TASK-0007) | **Rule narrowed 2026-09-02, no code churn.** The contract was over-broad, not the code: §1.2 exists to stop a path *leaving the product tree* (worktrees make `../` resolve inside this repo), and an import that stays inside `src/` cannot do that. §1.2 now says so. Logged here because a class that hits 8 in one milestone is a rule that needed rewriting, and because the next reader must not "fix" the code to match the old wording. |
+| 2 | **A read helper substituting a number the database did not give (`count ?? 0`)** | 2 | `countRows` in `tests/live/parity.ts` (BUG-0007, fixed under TASK-0003); `readCount` in `src/lib/db/result.ts` (the user-visible twin, TASK-0026) | **Promoted to a rule 2026-09-02** — §4.3, last paragraph: a null count is a refusal, never a zero. Cited in the brief of every ticket owning a `lib/db/*.ts` module. |
+| 3 | **A list read with no `.range()`, no `.limit()` and no `.order()`** | 1 | `src/lib/db/review-items.ts` (TASK-0006), whose `readReviewAttention` count and oldest age would have been wrong rather than refused | **Design-shaped, so fixed as design rather than left to accumulate**: §4.3 (new) plus TASK-0026, seeded before the eight remaining `lib/db` modules are written. Count is 1 and stays there only if the rule holds; the structure walk should re-count at M1 close. |
+
+*(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
+findings on TASK-0001/0003/0006. The milestone structure walk owns this table
+from here.)*
 
 ## History
 
+- **2026-09-02, ruling pass** (QA findings on TASK-0001, TASK-0003, TASK-0006;
+  campaign `admin-window`, M1 in flight). Five amendments, each because the
+  contract was wrong or silent where a builder was about to guess:
+  **§1.2 narrowed** — the `../` ban is about leaving `src/`/`tests/`, not about
+  relative imports as such; as written it contradicted two landed modules and
+  six in-flight ones, and would have bought a pointless refactor.
+  **§4 diagram + new rule 7** — pure domain leaves (`lib/review/**`,
+  `lib/format.ts`, `lib/edit/config.ts`) sit *below* `lib/db/**`, which is
+  what TASK-0006 landed and what its two-module contract required; the old
+  arrow pointed the wrong way. The leaf may never import `lib/db/**` back,
+  not even a type: a type-only edge erases at runtime but still writes a
+  directory-level cycle into this file. `lib/gauges/**` is unaffected — it
+  fetches, so it sits above `lib/db/**` as drawn.
+  **New §4.3** — the read-kind split. An unbounded PostgREST select returns an
+  arbitrary subset in unspecified order, so a complete read now refuses rather
+  than truncates and an `ok` array is the whole matching set. This is the
+  amendment with the widest blast radius: eight unwritten `lib/db` modules
+  would otherwise each have invented a bound.
+  **§6 trap 11** — `shapeOf`'s fall-through default, and the migration that
+  makes it reachable, recorded rather than ticketed.
+  **Common violations** — seeded with three classes; two were promoted to
+  rules on the spot (classes 1 and 2 are at 2+).
+  Doors closed by these are in `agenticflow/docs/DECISIONS.md`, same date.
 - **2026-09-01, intake.** Written from the `contracts/` snapshots read that
   day, the scraper repo's migrations, and a code walk of `src/`. Decisions that
   close a door are recorded separately in `agenticflow/docs/DECISIONS.md`:

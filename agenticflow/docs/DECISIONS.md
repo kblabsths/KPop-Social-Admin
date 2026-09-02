@@ -104,3 +104,104 @@ and `npm run test:http` regenerate on demand. The door this closes: CI never
 again reds on stale generated route types, and no one "fixes" it by dropping
 `.next/types` from `tsconfig.json`, which is what gives pages their typed
 route params.
+
+## 2026-09-02 — Pure domain leaves sit below `lib/db`, and never import it back
+
+QA found on TASK-0006 that `src/lib/db/review-items.ts` imports
+`src/lib/review/shapes.ts` — the reverse of ARCHITECTURE §4's arrow. The code
+was right and the diagram was wrong: `shapes.ts` has zero imports, no cycle is
+constructible, and TASK-0006's own two-module contract (a pure domain module
+plus its reads) required exactly that split. §4 now seats the pure domain
+leaves — `lib/review/**`, `lib/format.ts`, `lib/edit/config.ts`, and
+`lib/browse/**` when it lands — at the bottom of the app, below `lib/db/**`. A
+leaf imports nothing that can reach a database. The door this closes: a leaf
+may never import `lib/db/**` *back*, **not even with `import type`**. A
+type-only edge erases at runtime, so it cannot deadlock anything today — but it
+writes a directory-level cycle into the contract the human reviews instead of
+reading code, and the day someone widens it to a value import there is nothing
+to catch it. A row type both sides need is declared in the leaf, which is what
+`ReviewItemRow` already does. Cost accepted: `lib/db` cannot hand a domain
+module one of its own internal types; if it wants to, the type was domain
+vocabulary all along and belongs in the leaf. `lib/gauges/**` is deliberately
+NOT a leaf — a gauge fetches its own bounded window through `lib/db/**`, which
+is the arrow as drawn and what TASK-0007 landed.
+
+## 2026-09-02 — A complete read returns the whole matching set or refuses; it never truncates
+
+PostgREST caps responses at `db-max-rows` (Supabase default 1000) and says
+nothing about it, so a select with no `.range()`, `.limit()` or `.order()`
+returns an arbitrary subset in unspecified order. QA found exactly that in
+`src/lib/db/review-items.ts`: `readReviewAttention`'s open count and oldest age
+would have been *wrong* rather than *refused*. ARCHITECTURE §4.3 now splits
+reads in two. A **complete read** (`readComplete`) asks for `{ count: "exact" }`
+with a total order and an explicit range, and returns `kind: "error"` — naming
+the object, the exact count and the cap — whenever the count exceeds the rows
+returned; so an `ok` array is the whole matching set, always. A **window read**
+(`readRows`, unchanged) is §8's gauge contract: a named, bounded, ordered
+window whose card says which window it shows. Same rule, one level down: a
+helper never substitutes a number the database did not give — `readCount`'s
+`count ?? 0` is BUG-0007 on the user-visible path and becomes a refusal. The
+doors this closes: **no paging or infinite scroll is built in this app** (there
+is never a partial page to continue, and nothing in the spec asks), no surface
+carries a "was that all of it?" flag, no figure is ever derived from a possibly
+truncated set, and the cap is a single named constant rather than a number
+sprinkled through eight modules. Cost accepted: a table that outgrows
+`ROW_CAP` takes its page to an error state instead of showing "the first
+1000" — which is the point; raising the cap is then a decision with the real
+count in front of it.
+
+## 2026-09-02 — The http suite ENFORCES "no database" with sentinel credentials, because deleting names does not work
+
+`tests/http/server-harness.ts` deleted every `*SUPABASE*` name from the child
+env and claimed that "dropping the names is what proves it rather than asserts
+it". Measured on this tree: `next start` then calls `@next/env`'s
+`loadEnvConfig` on the repo root and restores `SUPABASE_URL` and
+`SUPABASE_ANON_KEY` straight out of `.env`. It has been harmless only because
+one developer's untracked `.env` happens to carry no service-role key — and
+TASK-0017 is about to add an http test that PATCHes a write route, which on a
+machine with that key would exercise production with RLS bypassed. Also
+measured: `@next/env` fills absent names but does not override present ones.
+So the harness sets **sentinels** — a URL on a closed local port and a
+self-describing non-credential literal — for the two names `lib/db/client.ts`
+reads, and an offline test proves they survive the reload in a child process.
+The door this closes: the http suite may never acquire a database, not by
+configuration and not by accident, and "no database" stops being a claim in a
+docstring. Consequence accepted and wanted: a DB-reading route under the http
+suite now renders its **error** state (the connection is refused) rather than
+never being asked — the suite proves the app survives without a database
+instead of assuming it never looked.
+
+## 2026-09-02 — `tsconfig.json` excludes `agenticflow/`: factory artefacts are not product source
+
+`include` is `**/*.ts` / `**/*.tsx` and `exclude` was only
+`node_modules`/`scripts`. TypeScript's wildcards skip dot-directories, so
+`agenticflow/.worktrees/**` and `agenticflow/.venv-tools/**` were already out —
+but `agenticflow/tracker/evidence/**` was not, and that is precisely where the
+kit tells every role to write anything a ticket or receipt cites. Measured: one
+ill-typed `.ts` file there takes `tsc --noEmit` to exit 2, in somebody else's
+receipt, on a file their ticket does not name. Adding `"agenticflow"` to
+`exclude` fixes it with no loss — `tsc --listFilesOnly` compiles the identical
+65 files under `src/` and `tests/` either way. The door this closes: the
+alternative fixes are refused. `include` keeps `**/*.ts`, and nobody narrows it
+to `src`/`tests`, because it also carries `.next/types/**/*.ts` and
+`.next/dev/types/**/*.ts` (typed route params — DECISIONS 2026-09-02 above),
+`next-env.d.ts`, `**/*.mts` and the root config files; and no agent-hygiene
+rule is written telling roles not to put TypeScript in their evidence
+directory, because the repo's type gate reacting to the factory's own
+scratch space is the defect, not the scratch space.
+
+## 2026-09-02 — `shapeOf` stays total, defaulting to `data_conflict_fact`; the trigger to revisit is a migration
+
+`lib/review/shapes.ts` branches on `queue === "entity_link"` and falls through
+to `data_conflict_fact`, so an unrecognised queue value would render as a
+decision. Today the branch is unreachable: migration `20260901000002`
+constrains `review_items.queue` to exactly those two values. The decision is to
+leave it total and record the trigger (ARCHITECTURE §6 trap 11) rather than
+ticket it. The doors this closes: `shapeOf` does not grow a throw, does not
+return `null`, and does not acquire an `unknown` shape — every one of those
+would put an exception path into every caller for a case the database cannot
+produce, and spec §6 explicitly calls the shape set "an open set that moves
+with the queues". The obligation this creates instead: the migration that
+widens that CHECK constraint extends `Shape`, `SHAPES`, `KIND_BY_SHAPE` and
+`shapeOf` together — the compiler forces the first three, and `shapeOf` is the
+only one that can go quietly wrong.
