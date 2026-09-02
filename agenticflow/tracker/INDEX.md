@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T18:12:20Z — do not edit)
+# Tracker index (regenerated 2026-09-02T18:17:55Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -11,10 +11,10 @@
 - TASK-0029 [P2][task][M1] ASK: what does a resolver-owned record page DISPLAY in M1? events/venues currently render their id and nothing else  (deps:BUG-0028 scope:src/lib/edit/config.ts,src/lib/db/records.ts,src/app/records,src/components/records,tests/offline/records,tests/offline/edit from:TASK-0018)
 - BUG-0027 [P3][bug][M1] An empty queue renders no open count: /queues drops the figure the Dashboard renders as a real 0  (scope:src/app/queues/page.tsx,src/components/queues,tests/offline/queues from:TASK-0010)
 
-## claimed
+## built
 - BUG-0030 [P2][bug][-] The admin_locked write guard's balanced-argument scan is not string-aware: it reports a READ as a write, and misses a real WRITE  (scope:tests/offline/edit @builder-54 from:BUG-0028)
 
 ## blocked
 - TASK-0031 [P1][task][M1] ASK BEN: pending_claims view times out on staging (handoff: index or view rewrite in the scraper repo)  (scope:agenticflow/docs/vision/ARCHITECTURE.md)
 
-Totals — blocked:1, claimed:1, done:63, open:9. Archived: 0.
+Totals — blocked:1, built:1, done:63, open:9. Archived: 0.
