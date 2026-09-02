@@ -434,3 +434,55 @@ export async function readCount(
     return classify(thrown, missing);
   }
 }
+
+/* ── the second leg of a two-step join (ARCHITECTURE.md §4.2) ─────────────── */
+
+/**
+ * How many ids go into one `.in(...)`. PostgREST puts the list in the URL, so
+ * an unchunked `.in()` over a 1,000-row id set builds a request long enough to
+ * be refused by a proxy. Chunking keeps every request bounded.
+ */
+export const ID_CHUNK = 100;
+
+/** Split a list into chunks of at most `size`. */
+export function chunk<T2>(items: readonly T2[], size = ID_CHUNK): T2[][] {
+  if (size <= 0) return [[...items]];
+  const chunks: T2[][] = [];
+  for (let start = 0; start < items.length; start += size) {
+    chunks.push(items.slice(start, start + size));
+  }
+  return chunks;
+}
+
+/**
+ * The second leg of a two-step join (ARCHITECTURE.md §4.2): query A returned
+ * rows, `ids` are its keys, and this runs query B `.in(...)` over them in
+ * bounded chunks and concatenates the results.
+ *
+ * No ids means no query at all — an empty `.in()` is a pointless round trip,
+ * and `ok: []` is the honest answer. The chunks are sequential, so a chunk
+ * that errors stops the read instead of half-filling it, and the first non-`ok`
+ * result comes back unchanged so a missing table still reaches the page as
+ * `not_provisioned` naming that table.
+ *
+ * It lives here, beside the read kinds, rather than in `lib/db/gauges.ts`
+ * where campaign admin-window/TASK-0007 first needed it: §4.2's two-step is
+ * every reader's rule, and `lib/db/claims.ts` is the second module to join on
+ * an id set (admin-window/TASK-0012). `gauges.ts` re-exports both names, so
+ * every existing caller and test still imports them from where they were.
+ */
+export async function readRowsByIds<Row>(
+  missing: string,
+  ids: readonly string[],
+  run: (db: SupabaseClient, chunkIds: string[]) => PromiseLike<DbResponse<Row[]>>,
+  db?: SupabaseClient,
+): Promise<DbResult<Row[]>> {
+  if (ids.length === 0) return { kind: "ok", data: [] };
+  const collected: Row[] = [];
+  for (const chunkIds of chunk(ids)) {
+    const result = await readRows<Row>(missing, (client) => run(client, chunkIds), db);
+    if (result.kind !== "ok") return result;
+    collected.push(...result.data);
+  }
+  return { kind: "ok", data: collected };
+}

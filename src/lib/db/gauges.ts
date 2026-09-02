@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { readRows, type DbResponse, type DbResult } from "./result";
+import { readRows, readRowsByIds, type DbResponse, type DbResult } from "./result";
 import { T } from "./tables";
+import type { PendingClaimsFilter } from "./claims";
 import type { ReviewItemRow } from "../review/shapes";
 
 /**
@@ -24,6 +25,22 @@ import type { ReviewItemRow } from "../review/shapes";
  * Every export returns a `DbResult` and never throws (§4.1), and the table is
  * named through `T` alone (§4 rule 4), so a database lacking the resolver
  * tables renders a not-provisioned card naming the missing object.
+ *
+ * **What used to live here and now lives elsewhere** (campaign
+ * admin-window/TASK-0012), re-exported below so every caller and test keeps
+ * its import path:
+ *
+ *  - `ID_CHUNK`, `chunk` and `readRowsByIds` moved to `./result.ts`. The
+ *    two-step join is ARCHITECTURE.md §4.2's rule for every reader, not a
+ *    gauge trick; `lib/db/claims.ts` is the second module to need it, and a
+ *    helper it imported from here would have made this module and that one a
+ *    cycle.
+ *  - the `pending_claims` VOCABULARY (`PENDING_CLAIM_BUCKETS`,
+ *    `RENDERABLE_BUCKETS`, `isRenderableBucket`), its row and filter types,
+ *    and the view's own read moved to `./claims.ts` — the seam this file
+ *    named when it declared them, so the `in_window` exclusion is written
+ *    once, in the module ARCHITECTURE.md §6 trap 4 names, and no query of
+ *    that view exists outside it.
  */
 
 /**
@@ -37,6 +54,17 @@ import type { ReviewItemRow } from "../review/shapes";
  */
 export type DbClient = SupabaseClient;
 
+/* ── moved, and re-exported from where they went ─────────────────────────── */
+
+export { ID_CHUNK, chunk, readRowsByIds } from "./result";
+export {
+  PENDING_CLAIM_BUCKETS,
+  RENDERABLE_BUCKETS,
+  isRenderableBucket,
+  readPendingClaims,
+} from "./claims";
+export type { PendingClaimBucket, PendingClaimRow, PendingClaimsFilter } from "./claims";
+
 /* ── bounds ──────────────────────────────────────────────────────────────── */
 
 /** The window and cap a scan runs under. Resolved by `lib/gauges/gauge.ts`. */
@@ -45,94 +73,6 @@ export interface ReadBounds {
   since: string;
   /** Hard row cap. */
   limit: number;
-}
-
-/**
- * How many ids go into one `.in(...)`. PostgREST puts the list in the URL, so
- * an unchunked `.in()` over a 1,000-row id set builds a request long enough to
- * be refused by a proxy. Chunking keeps every request bounded.
- */
-export const ID_CHUNK = 100;
-
-/** Split a list into chunks of at most `size`. */
-export function chunk<T2>(items: readonly T2[], size = ID_CHUNK): T2[][] {
-  if (size <= 0) return [[...items]];
-  const chunks: T2[][] = [];
-  for (let start = 0; start < items.length; start += size) {
-    chunks.push(items.slice(start, start + size));
-  }
-  return chunks;
-}
-
-/**
- * The second leg of a two-step join (ARCHITECTURE.md §4.2): query A returned
- * rows, `ids` are its keys, and this runs query B `.in(...)` over them in
- * bounded chunks and concatenates the results.
- *
- * No ids means no query at all — an empty `.in()` is a pointless round trip,
- * and `ok: []` is the honest answer. The chunks are sequential, so a chunk
- * that errors stops the read instead of half-filling it, and the first non-`ok`
- * result comes back unchanged so a missing table still reaches the page as
- * `not_provisioned` naming that table.
- */
-export async function readRowsByIds<Row>(
-  missing: string,
-  ids: readonly string[],
-  run: (db: SupabaseClient, chunkIds: string[]) => PromiseLike<DbResponse<Row[]>>,
-  db?: SupabaseClient,
-): Promise<DbResult<Row[]>> {
-  if (ids.length === 0) return { kind: "ok", data: [] };
-  const collected: Row[] = [];
-  for (const chunkIds of chunk(ids)) {
-    const result = await readRows<Row>(missing, (client) => run(client, chunkIds), db);
-    if (result.kind !== "ok") return result;
-    collected.push(...result.data);
-  }
-  return { kind: "ok", data: collected };
-}
-
-/* ── the pending-claim bucket vocabulary ─────────────────────────────────── */
-
-/**
- * The six buckets, spelled as the view spells them (migration
- * `20260901000004`, `pending_claims.bucket`).
- *
- * It lives in the data layer because ARCHITECTURE.md §6 trap 4 puts the
- * `in_window` exclusion here — "filter it out at the data layer … once".
- *
- * SEAM: when `src/lib/db/claims.ts` lands (§6 trap 4 names that file), this
- * vocabulary and `isRenderableBucket` move there and this module imports them,
- * rather than the data layer carrying two copies that can drift.
- */
-export const PENDING_CLAIM_BUCKETS = [
-  "in_window",
-  "standing_disagreement",
-  "awaiting_link",
-  "awaiting_row",
-  "escalated",
-  "agreeing",
-] as const;
-
-export type PendingClaimBucket = (typeof PENDING_CLAIM_BUCKETS)[number];
-
-/**
- * The bucket that is empty by rule and is not rendered until it can hold a row
- * (spec §4, M1 EC5): every corroboration window is zero-length, so the view's
- * condition for it is false for every claim. Nothing downstream ever sees it —
- * not as a row, not as a filter option, not as a zero.
- */
-const UNRENDERABLE_BUCKET: PendingClaimBucket = "in_window";
-
-/** The buckets a gauge may report — every one except the unrenderable one. */
-export const RENDERABLE_BUCKETS: readonly PendingClaimBucket[] =
-  PENDING_CLAIM_BUCKETS.filter((bucket) => bucket !== UNRENDERABLE_BUCKET);
-
-/** Is this a bucket the UI may show? The single test, used everywhere. */
-export function isRenderableBucket(bucket: string): bucket is PendingClaimBucket {
-  return (
-    bucket !== UNRENDERABLE_BUCKET &&
-    (PENDING_CLAIM_BUCKETS as readonly string[]).includes(bucket)
-  );
 }
 
 /* ── row types, exactly as the scraper repo's migrations declare them ────── */
@@ -224,19 +164,6 @@ export interface PendingObservationRow {
   observed_at: string;
 }
 
-/** The `pending_claims` view's whole select list — migration `20260901000004`. */
-export interface PendingClaimRow {
-  observation_id: string;
-  /** The view spells the canonical table `domain` (§6 trap 1). */
-  domain: string;
-  entity_id: string | null;
-  field: string;
-  source_id: string;
-  bucket: PendingClaimBucket;
-  /** Named only on `awaiting_row`; null in every other bucket. */
-  unmet_requirement: string | null;
-}
-
 /**
  * `observations`, narrowed to the adjudication stamp — migration
  * `20260901000003`. `rejected_at` is nullable on the table but never null in
@@ -260,12 +187,6 @@ export interface SourceStateRow {
   lifecycle: string;
   /** The source's CURRENT tier, which drifts — not `tier_at_apply` (§6 trap 5). */
   tier: string;
-}
-
-/** What a claims read may be narrowed by (spec §5: "by source and domain"). */
-export interface PendingClaimsFilter {
-  source_id?: string;
-  domain?: string;
 }
 
 /* ── the reads ───────────────────────────────────────────────────────────── */
@@ -303,16 +224,6 @@ const PENDING_OBSERVATION_COLUMNS = [
   "domain",
   "field",
   "observed_at",
-].join(", ");
-
-const PENDING_CLAIM_COLUMNS = [
-  "observation_id",
-  "domain",
-  "entity_id",
-  "field",
-  "source_id",
-  "bucket",
-  "unmet_requirement",
 ].join(", ");
 
 const REVIEW_ITEM_COLUMNS = [
@@ -440,30 +351,6 @@ export function readPendingObservations(
         .order("observed_at", { ascending: true })
         .limit(bounds.limit) as unknown as PromiseLike<DbResponse<PendingObservationRow[]>>;
     },
-    db,
-  );
-}
-
-/**
- * The buckets of those claims. **`in_window` is excluded here** — the data
- * layer, once (ARCHITECTURE.md §6 trap 4). The gauges exclude it again in
- * code, so the returned set is decided by one rule whether or not the server
- * narrowed.
- */
-export function readPendingClaims(
-  ids: readonly string[],
-  db?: SupabaseClient,
-): Promise<DbResult<PendingClaimRow[]>> {
-  return readRowsByIds<PendingClaimRow>(
-    T.pendingClaims,
-    ids,
-    (client, chunkIds) =>
-      client
-        .from(T.pendingClaims)
-        .select(PENDING_CLAIM_COLUMNS)
-        .in("observation_id", chunkIds)
-        .neq("bucket", UNRENDERABLE_BUCKET)
-        .limit(chunkIds.length) as unknown as PromiseLike<DbResponse<PendingClaimRow[]>>,
     db,
   );
 }
