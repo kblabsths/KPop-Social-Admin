@@ -35,10 +35,10 @@ import {
  * them imports nothing that can reach a database, and none imports back
  * (§4 rule 7).
  *
- * **Read kinds (§4.3), and there are two here.** The record's own value read
- * and the update both address exactly one row by primary key and use
- * `.maybeSingle()`, so neither is a row-set read — there is no set to be
- * silently partial. A missing row comes back as `ok` carrying `null`, which
+ * **Read kinds (§4.3), and there are two here.** The record's own value read,
+ * the update and the reference-name read all address exactly one row by
+ * primary key and use `.maybeSingle()`, so none is a row-set read — there is
+ * no set to be silently partial. A missing row comes back as `ok` carrying `null`, which
  * the caller reports as "no such record" rather than as an absent table. The
  * per-field provenance legs at the foot of this file are COMPLETE reads:
  * "the latest decision on this fact" is only knowable over the whole log, so a
@@ -155,6 +155,109 @@ export async function updateRecordField(
     (client) => updateField(client, decision.edit.config, id, field, value),
     db,
   );
+}
+
+/* ── the linked entity behind a reference column ──────────────────────────── */
+
+/**
+ * What the reference leg produced: the linked row's readable NAME, and its own
+ * account of why it has none.
+ *
+ * A third read, reported separately for the same reason the provenance leg is
+ * (`RecordProvenance` below): a refused or absent name relation must leave
+ * every value on screen, and the reference cell still links its id. The name
+ * is a nicety; the ROUTE OUT is the fix (admin-window/BUG-0034).
+ */
+export interface RecordReference {
+  /** The linked row's name, or `null` when the read named none. */
+  name: string | null;
+  /** Why there is no name, or `null` when the read answered. */
+  note: DbUnavailable | null;
+}
+
+/** No reference on this record, and nothing to report for one. */
+const NO_REFERENCE: RecordReference = { name: null, note: null };
+
+/**
+ * How the linked row's readable name is read, per REFERENCING table.
+ *
+ * It lives here rather than in the map because it is a relation name, and
+ * ARCHITECTURE.md §4 rule 4 (pinned by `tests/offline/db/layering.test.ts`)
+ * leaves `lib/db/tables.ts` the only file in `src/` that spells one — so this
+ * spells none of its own either, and every string below comes from `T`.
+ *
+ * `events` reads its venue's name through the **`event_listings` view**, which
+ * is the one place the events × venues join is already spelled and the same
+ * leg Browse reads (`venuesFor` in `lib/db/browse.ts`, `LISTING_COLUMNS`).
+ * That matters beyond convenience: the record page an operator clicks INTO
+ * from a Browse row must not name the venue differently from the row they
+ * clicked. The view is one row per event, keyed by the event's own primary
+ * key, which is why the read below filters on `config.pk`.
+ */
+const NAME_RELATIONS: Readonly<
+  Record<string, { readonly relation: string; readonly column: string }>
+> = {
+  [T.events]: { relation: T.eventListings, column: "venue_name" },
+};
+
+/** One row of a name relation: the record's key, and the linked row's name. */
+type ReferenceNameRow = Record<string, unknown>;
+
+function referenceNameFor(
+  db: SupabaseClient,
+  relation: string,
+  key: string,
+  column: string,
+  id: string,
+): PromiseLike<DbResponse<ReferenceNameRow>> {
+  return db
+    .from(relation)
+    .select(`${key}, ${column}`)
+    .eq(key, id)
+    .maybeSingle() as unknown as PromiseLike<DbResponse<ReferenceNameRow>>;
+}
+
+/**
+ * The linked entity behind this record's reference column — the venue an event
+ * points at (admin-window/BUG-0034).
+ *
+ * **It issues no query at all** unless there is something to name: a table
+ * whose map entry carries no `reference`, a record that was not read, a
+ * reference column holding no id (an event with no venue), or a reference the
+ * data layer has no name relation for. A read whose only possible answer is
+ * "nothing" is a round trip and a not-provisioned card the page has no
+ * business showing.
+ *
+ * Addressed by primary key with `.maybeSingle()`, so it is not a row-set read
+ * and has no completeness question: `ok` carrying no row means the relation
+ * answered and knows nothing about this record, which reads as no name — never
+ * as an absent relation.
+ */
+export async function readRecordReference(
+  config: TableEditConfig,
+  id: string,
+  record: CanonicalRecord | null,
+  db?: SupabaseClient,
+): Promise<RecordReference> {
+  const reference = config.reference;
+  if (reference === null || record === null) return NO_REFERENCE;
+
+  const linkedId = record[reference.field];
+  if (typeof linkedId !== "string" || linkedId.length === 0) return NO_REFERENCE;
+
+  const source = NAME_RELATIONS[config.table];
+  if (source === undefined) return NO_REFERENCE;
+
+  const row = await readOne<ReferenceNameRow>(
+    source.relation,
+    (client) =>
+      referenceNameFor(client, source.relation, config.pk, source.column, id),
+    db,
+  );
+  if (row.kind !== "ok") return { name: null, note: row };
+
+  const name = row.data?.[source.column];
+  return { name: typeof name === "string" && name.length > 0 ? name : null, note: null };
 }
 
 /* ── per-field provenance ─────────────────────────────────────────────────── */

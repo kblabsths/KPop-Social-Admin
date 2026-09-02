@@ -40,6 +40,15 @@ vi.mock("@/lib/db/records", async (importActual) => {
       config: Parameters<typeof actual.readRecordProvenance>[0],
       id: string,
     ) => actual.readRecordProvenance(config, id, readWith.client as never),
+    // The page's THIRD read (admin-window/BUG-0034): the name of the record a
+    // reference column points at. Through the same stub, so a leg left out of
+    // a script is a failed read rather than a real one.
+    readRecordReference: (
+      config: Parameters<typeof actual.readRecordReference>[0],
+      id: string,
+      record: Parameters<typeof actual.readRecordReference>[2],
+    ) =>
+      actual.readRecordReference(config, id, record, readWith.client as never),
   };
 });
 
@@ -82,17 +91,24 @@ function complete(rows: unknown[]) {
   return { data: rows, count: rows.length };
 }
 
+/** The venue name the listings view answers with, for the events record. */
+const VENUE_NAME = "Olympic Hall";
+
 /**
- * The default script: the record itself, plus a provenance log that answered
- * and holds nothing. Both legs are scripted because a resolver-owned table
- * makes two reads now (admin-window/TASK-0029) and an unscripted table is a
- * failed read, not a quiet one.
+ * The default script: the record itself, a provenance log that answered and
+ * holds nothing, and the listings view naming this event's venue. Every leg is
+ * scripted because a resolver-owned table makes THREE reads now
+ * (admin-window/TASK-0029, BUG-0034) and an unscripted table is a failed read,
+ * not a quiet one.
  */
 function defaultScript(table: string): Script {
   return {
     [table]: { data: scriptedRecord(table) },
     field_provenance: complete([]),
     sources: complete([]),
+    event_listings: {
+      data: { event_id: IDS.events, venue_name: VENUE_NAME },
+    },
   };
 }
 
@@ -117,6 +133,8 @@ interface Line {
   /** Does the value cell offer an interactive control at all? */
   editable: boolean;
   value: string;
+  /** Every route out of the value cell, in document order. */
+  valueHrefs: (string | undefined)[];
   provenance: string;
   /** The absolute instant behind the relative age, if the line carries one. */
   provenanceTitle: string | undefined;
@@ -137,6 +155,10 @@ function lines(markup: string): Line[] {
         editable:
           value.find("button, input, textarea, select, [contenteditable]").length > 0,
         value: value.text().trim(),
+        valueHrefs: value
+          .find("a")
+          .toArray()
+          .map((anchor) => $(anchor).attr("href")),
         provenance: provenance.text().trim(),
         provenanceTitle: provenance.find("[title]").first().attr("title"),
         provenanceAbsent: provenance.find('[aria-label="no value"]').length > 0,
@@ -544,20 +566,21 @@ describe("a resolver-owned record", () => {
   });
 
   /**
-   * **BUG-0034 (admin-window), pinned.** Ben's ruling names `venue` among the
+   * **BUG-0034 (admin-window), fixed.** Ben's ruling names `venue` among the
    * columns "an operator came to see"; the map resolves it to `events.venue_id`
    * because that is the only venue-bearing column of the table, and the page
-   * then draws a bare uuid the operator can neither read nor follow — strictly
+   * drew a bare uuid the operator could neither read nor follow — strictly
    * LESS than the `venue_name` the Browse row they clicked already showed
-   * them. `it.fails` is this runner's strict xfail: the day the link lands,
-   * this turns red and sends the reader to the ticket.
+   * them. QA pinned this as a strict `it.fails` xfail; the link landed, so it
+   * is an ordinary assertion now, and its shape is deliberately unchanged.
    */
-  it.fails("reaches the venue record page from an event's venue line", async () => {
+  it("reaches the venue record page from an event's venue line", async () => {
     const venueId = IDS.venues;
     const markup = await renderRecord("events", {
       events: { data: { ...scriptedRecord("events"), venue_id: venueId } },
       field_provenance: complete([]),
       sources: complete([]),
+      event_listings: { data: { event_id: IDS.events, venue_name: VENUE_NAME } },
     });
     const hrefs = cheerio
       .load(markup)("a")
@@ -566,6 +589,167 @@ describe("a resolver-owned record", () => {
     expect(hrefs, `hrefs seen: ${JSON.stringify(hrefs)}`).toContain(
       `/records/venues/${venueId}`,
     );
+  });
+
+  /** An events record whose venue line carries `venueId`. */
+  function eventWithVenue(venueId: string | null, script: Script = {}): Script {
+    return {
+      events: { data: { ...scriptedRecord("events"), venue_id: venueId } },
+      field_provenance: complete([]),
+      sources: complete([]),
+      ...script,
+    };
+  }
+
+  it("shows the venue's name, and its id, on the line that links to it", async () => {
+    const venueId = IDS.venues;
+    const markup = await renderRecord(
+      "events",
+      eventWithVenue(venueId, {
+        event_listings: { data: { event_id: IDS.events, venue_name: VENUE_NAME } },
+      }),
+    );
+    const line = lineFor(markup, "venue_id");
+    // The name Browse showed on the row the operator clicked — the record page
+    // must not be less informative than the row that linked to it...
+    expect(line.value).toContain(VENUE_NAME);
+    // ...and the id stays on screen: it is the machine's word for the row.
+    expect(line.value).toContain(venueId);
+    expect(line.valueHrefs).toEqual([`/records/venues/${venueId}`]);
+    // A route out is not a write path: the line still offers no control.
+    expect(line.editable).toBe(false);
+  });
+
+  it("resolves that name from the same view Browse reads, keyed by the event", async () => {
+    const db = stubClient(
+      eventWithVenue(IDS.venues, {
+        event_listings: { data: { event_id: IDS.events, venue_name: VENUE_NAME } },
+      }),
+    );
+    readWith.client = db.asSupabaseClient();
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    renderToStaticMarkup(
+      await RecordPage({
+        params: Promise.resolve({ table: "events", id: IDS.events }),
+      }),
+    );
+    // Two names shown differently for the same venue is the bug this ticket is
+    // about, so the leg is the listings view, addressed by the event's own key.
+    const listings = db.calls.find((call) => call.table === "event_listings");
+    expect(listings, `tables read: ${db.tablesRead().join(", ")}`).toBeDefined();
+    expect(listings?.steps.find((step) => step.method === "eq")?.args).toEqual([
+      "event_id",
+      IDS.events,
+    ]);
+  });
+
+  it("still links the venue when the listings view is absent, and says so", async () => {
+    const venueId = IDS.venues;
+    const markup = await renderRecord(
+      "events",
+      eventWithVenue(venueId, {
+        event_listings: { error: tableNotInSchemaCache("event_listings") },
+      }),
+    );
+    const line = lineFor(markup, "venue_id");
+    // The name is what the failed leg cost; the way through is not.
+    expect(line.valueHrefs).toEqual([`/records/venues/${venueId}`]);
+    expect(line.value).toContain(venueId);
+    expect(line.value).not.toContain(VENUE_NAME);
+    // The leg answers for itself, naming the view, and every other value stays.
+    expect(markup).toContain("event_listings");
+    expect(lineFor(markup, "title").value).toContain("stored title");
+    expect(controlCount(markup)).toBe(0);
+  });
+
+  it("still links the venue when the name read is refused", async () => {
+    const failure = permissionDenied("event_listings");
+    const markup = await renderRecord(
+      "events",
+      eventWithVenue(IDS.venues, { event_listings: { error: failure } }),
+    );
+    expect(lineFor(markup, "venue_id").valueHrefs).toEqual([
+      `/records/venues/${IDS.venues}`,
+    ]);
+    expect(markup).toContain(failure.message);
+  });
+
+  it("links the id itself when the view answered and named no venue", async () => {
+    // A row the view knows nothing about, and a null name: both are "no name",
+    // and neither is a reason to strand the operator on a uuid.
+    for (const scripted of [
+      { data: null },
+      { data: { event_id: IDS.events, venue_name: null } },
+    ]) {
+      const markup = await renderRecord(
+        "events",
+        eventWithVenue(IDS.venues, { event_listings: scripted }),
+      );
+      const line = lineFor(markup, "venue_id");
+      expect(line.valueHrefs).toEqual([`/records/venues/${IDS.venues}`]);
+      expect(line.value).toContain(IDS.venues);
+      // Nothing failed, so nothing is reported.
+      expect(markup).not.toContain("event_listings");
+    }
+  });
+
+  it("draws an event with no venue as the absence, and reads no view for it", async () => {
+    const db = stubClient(eventWithVenue(null));
+    readWith.client = db.asSupabaseClient();
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const markup = renderToStaticMarkup(
+      await RecordPage({
+        params: Promise.resolve({ table: "events", id: IDS.events }),
+      }),
+    );
+    const line = lineFor(markup, "venue_id");
+    expect(line.value).toContain(EM_DASH);
+    expect(line.valueHrefs).toEqual([]);
+    // There is no linked row to name, so there is no round trip and no card.
+    expect(db.tablesRead()).not.toContain("event_listings");
+    expect(markup).not.toContain("event_listings");
+  });
+
+  it("makes no name read for a table the map gives no reference", async () => {
+    for (const table of ["venues", "groups", "idols"]) {
+      expect(EDIT_CONFIG[table].reference, table).toBeNull();
+      const db = stubClient({
+        [table]: { data: scriptedRecord(table) },
+        field_provenance: complete([]),
+        sources: complete([]),
+      });
+      readWith.client = db.asSupabaseClient();
+      const { renderToStaticMarkup } = await import("react-dom/server");
+      const markup = renderToStaticMarkup(
+        await RecordPage({ params: Promise.resolve({ table, id: IDS[table] }) }),
+      );
+      expect(db.tablesRead(), table).not.toContain("event_listings");
+      // ...and no line of theirs pretends to lead anywhere.
+      for (const line of lines(markup)) {
+        expect(line.valueHrefs, `${table}.${line.name}`).toEqual([]);
+      }
+    }
+  });
+
+  it("keeps the venue line's provenance coming from field_provenance", async () => {
+    // A reference field is still a field: the link says where the value POINTS,
+    // and `field_provenance` on `venue_id` still says who decided it.
+    const markup = await renderRecord("events", {
+      ...eventWithVenue(IDS.venues, {
+        event_listings: { data: { event_id: IDS.events, venue_name: VENUE_NAME } },
+      }),
+      field_provenance: complete([
+        decided({
+          provenance_id: "01920000-0000-7000-8000-0000000004c1",
+          field: "venue_id",
+        }),
+      ]),
+      sources: complete([{ source_id: TICKETMASTER, source: "ticketmaster" }]),
+    });
+    const line = lineFor(markup, "venue_id");
+    expect(line.provenance).toContain("ticketmaster");
+    expect(line.provenanceAbsent).toBe(false);
+    expect(line.valueHrefs).toEqual([`/records/venues/${IDS.venues}`]);
   });
 
   it("leaves a field the log says nothing about as the absence", async () => {

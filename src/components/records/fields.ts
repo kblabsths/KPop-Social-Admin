@@ -1,3 +1,4 @@
+import { provenanceHref } from "@/lib/claims/filters";
 import {
   decideEdit,
   mappedColumns,
@@ -26,6 +27,29 @@ import { isEditableValue, scalarText } from "./values";
 /** What a line offers: the click-to-edit cell, or nothing but its value. */
 export type FieldWidget = "cell" | "read_only";
 
+/**
+ * The linked entity behind a reference column — what the line shows INSTEAD of
+ * the raw id (campaign admin-window/BUG-0034).
+ *
+ * The map says which column links and where (`reference` in
+ * `lib/edit/config.ts`); the read says what the linked row is called
+ * (`readRecordReference`); this is the two put together for one line. The
+ * href is the app's one record URL, built by the same helper the Queues
+ * surface builds a record link with — never a third spelling of the template.
+ */
+export interface FieldReference {
+  /** The record surface this line leads to: `/records/<domain>/<id>`. */
+  readonly href: string;
+  /** The stored id, verbatim — the machine's word, kept on screen. */
+  readonly id: string;
+  /**
+   * The linked row's readable name, or `null` when the name read produced
+   * none. A line with no name still LINKS, with the id as its own label: the
+   * route out is what the operator came for.
+   */
+  readonly name: string | null;
+}
+
 /** One line of the edit surface: the field, its value, and its widget. */
 export interface RecordField {
   /** The column, spelled as the database spells it. */
@@ -49,6 +73,12 @@ export interface RecordField {
    * and never as an invented source (admin-window/TASK-0029).
    */
   readonly provenance: FieldProvenance | null;
+  /**
+   * The record this line points at, when the map calls the column a reference
+   * and the row carries an id for it; `null` on every other line
+   * (admin-window/BUG-0034).
+   */
+  readonly reference: FieldReference | null;
 }
 
 /**
@@ -96,6 +126,7 @@ export function recordFields(
   config: TableEditConfig,
   record: Record<string, unknown>,
   provenance: ReadonlyMap<string, FieldProvenance> = new Map(),
+  referenceName: string | null = null,
 ): RecordField[] {
   return orderedNames(config, record).map((name) => {
     const raw = record[name];
@@ -111,6 +142,33 @@ export function recordFields(
       multiline: editable && value !== null && value.includes("\n"),
       isKey: name === config.pk,
       provenance: provenance.get(name) ?? null,
+      reference: referenceOf(config, name, value, referenceName),
     };
   });
+}
+
+/**
+ * The link on a reference line, or `null` when this line is not one.
+ *
+ * Three things must hold, and each `null` is a different fact: the MAP calls
+ * this column a reference, the row carries an id for it (an event with no
+ * venue links nowhere and renders as the absence), and the id survives the
+ * app's own href helper. The linked NAME is not one of them — a reference
+ * whose name could not be read still links, labelled with its id, because the
+ * uuid was never the complaint: having no way through was
+ * (admin-window/BUG-0034).
+ */
+function referenceOf(
+  config: TableEditConfig,
+  name: string,
+  value: string | null,
+  referenceName: string | null,
+): FieldReference | null {
+  const reference = config.reference;
+  if (reference === null || reference.field !== name) return null;
+  if (value === null || value.length === 0) return null;
+
+  const href = provenanceHref(reference.domain, value);
+  if (href === null) return null;
+  return { href, id: value, name: referenceName };
 }

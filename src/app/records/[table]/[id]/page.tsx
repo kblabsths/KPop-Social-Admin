@@ -3,7 +3,11 @@ import { recordFields } from "@/components/records/fields";
 import { RecordFields } from "@/components/records/record-fields";
 import { Empty, ErrorLine, NotProvisioned, Page, Section } from "@/components/ui";
 import type { DbUnavailable } from "@/lib/db/result";
-import { readRecord, readRecordProvenance } from "@/lib/db/records";
+import {
+  readRecord,
+  readRecordProvenance,
+  readRecordReference,
+} from "@/lib/db/records";
 import { editConfigFor, type TableEditConfig } from "@/lib/edit/config";
 
 /**
@@ -50,11 +54,13 @@ import { editConfigFor, type TableEditConfig } from "@/lib/edit/config";
  * `display` at all. The page gained no list of its own: inventing one here
  * would be the second allowlist §9 forbids.
  *
- * **TWO READS, TWO ANSWERS.** The values and the provenance are separate reads
- * and report separately, exactly as Browse does its legs: a refused or absent
+ * **EVERY LEG ANSWERS FOR ITSELF.** The values, the per-field provenance and
+ * the name of the record a reference column points at are separate reads that
+ * report separately, exactly as Browse does its legs: a refused or absent
  * `field_provenance` leaves every value on screen and says for itself what
- * happened, and a failed value read still shows the record's id. Neither ever
- * blanks the other.
+ * happened, a name relation that refuses costs the venue's NAME and not the
+ * link to it, and a failed value read still shows the record's id. None ever
+ * blanks another (admin-window/TASK-0029, BUG-0034).
  */
 
 /** What creates the catalog objects this page reads. */
@@ -83,9 +89,11 @@ function regimeNote(config: TableEditConfig): string {
 }
 
 /**
- * The provenance leg's own state, when it could not fill its column — the same
- * shape and the same two cards Browse gives a leg that failed
- * (`LegNote` in `src/app/browse/page.tsx`).
+ * A leg's own state, when it could not fill what it was for — the same shape
+ * and the same two cards Browse gives a leg that failed (`LegNote` in
+ * `src/app/browse/page.tsx`). Two legs report through it: the per-field
+ * provenance, and the name of the record a reference column points at
+ * (admin-window/BUG-0034).
  *
  * It stands ABOVE the field table rather than inside a cell: `NotProvisioned`
  * and `ErrorLine` answer for the whole read, not for one field, and a card
@@ -94,7 +102,7 @@ function regimeNote(config: TableEditConfig): string {
  * failed leg reads as "no provenance shown, and here is why" instead of as a
  * per-field lie.
  */
-function ProvenanceNote({ note }: { note: DbUnavailable }) {
+function LegNote({ note }: { note: DbUnavailable }) {
   return note.kind === "not_provisioned" ? (
     <NotProvisioned missing={note.missing} arrivesWith={ARRIVES_WITH} />
   ) : (
@@ -128,6 +136,13 @@ export default async function RecordPage({
   // case and why `groups` still makes exactly one read.
   const result = await readRecord(config, id);
   const provenance = await readRecordProvenance(config, id);
+  // The third leg, and the narrowest: the NAME of the record this one's
+  // reference column points at (admin-window/BUG-0034). It reads nothing at
+  // all unless the map calls a column a reference and the row carries an id
+  // for it, and a failure of it costs the name, never the link and never a
+  // value.
+  const record = result.kind === "ok" ? result.data : null;
+  const reference = await readRecordReference(config, id, record);
 
   let body;
   if (result.kind === "not_provisioned") {
@@ -154,7 +169,12 @@ export default async function RecordPage({
       <RecordFields
         table={config.table}
         id={id}
-        fields={recordFields(config, result.data, provenance.fields)}
+        fields={recordFields(
+          config,
+          result.data,
+          provenance.fields,
+          reference.name,
+        )}
       />
     );
   }
@@ -167,7 +187,8 @@ export default async function RecordPage({
       <p className="type-data text-ink-secondary">{id}</p>
       <Section title="Fields">
         <p className="type-body text-ink-secondary">{regimeNote(config)}</p>
-        {provenance.note ? <ProvenanceNote note={provenance.note} /> : null}
+        {provenance.note ? <LegNote note={provenance.note} /> : null}
+        {reference.note ? <LegNote note={reference.note} /> : null}
         {body}
       </Section>
     </Page>
