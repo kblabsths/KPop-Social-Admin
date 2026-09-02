@@ -82,10 +82,13 @@ function removeProbe(): void {
 afterEach(removeProbe);
 
 /** Run the walker files as a child vitest and hand back status and output. */
-function runWalkers(files: string[]): { status: number | null; output: string } {
+function runWalkers(
+  files: string[],
+  extraArgs: string[] = [],
+): { status: number | null; output: string } {
   const result = spawnSync(
     path.join(repoRoot, "node_modules", ".bin", "vitest"),
-    ["run", "--reporter=dot", ...files],
+    ["run", "--reporter=dot", ...extraArgs, ...files],
     {
       cwd: repoRoot,
       encoding: "utf8",
@@ -153,6 +156,32 @@ describe("walking src/ while the layering probe comes and goes", () => {
     } finally {
       churn.stop();
     }
+  });
+
+  it.fails("reddens no OTHER offline file that walks the tree either", () => {
+    // The four walkers above are not the only offline files that walk `src/`.
+    // `tests/offline/toolchain.test.ts` > "the source-tree walk" > "hides
+    // nothing that exists in the real tree" asserts
+    // `sourceFiles()` deep-equals `allSourceFiles()` over the REAL tree — and
+    // that equality is FALSE for exactly as long as the probe is on disk,
+    // because hiding it from the filtered walk is the fix's whole design.
+    // toolchain runs in a parallel worker of the same offline project as
+    // `db/layering.test.ts`, which holds that probe on disk ~343ms per run
+    // (measured: 338071 of 11806630 existence samples over a 12s window
+    // containing one 826ms layering run — ~69% of its 499ms test phase). So
+    // this is the same hazard, the same probe path, one file over.
+    // Pinned expected-fail for admin-window/BUG-0033; when the assertion stops
+    // depending on another worker's timing this XPASSes and reddens.
+    fs.mkdirSync(probeDir, { recursive: true });
+    fs.writeFileSync(probePath, LOUD_PROBE, "utf8");
+
+    const { status, output } = runWalkers(
+      ["tests/offline/toolchain.test.ts"],
+      // Pinned to the offline project: a bare `vitest run` now collects all
+      // four projects, and this file must never re-enter itself.
+      ["--project=offline"],
+    );
+    expect(status, tail(output)).toBe(0);
   });
 
   it("leaves no probe behind for the offline suite to walk into", () => {
