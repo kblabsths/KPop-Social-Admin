@@ -469,7 +469,16 @@ function AwaitingRowTrendSection({
   // Narrowed to one source, the trend is that source's DAYS — the shape the
   // word "trend" actually means. Unnarrowed it is one row per source, busiest
   // first, which is the comparison an operator makes across the fleet.
-  const narrowed = filter.source_id === undefined ? null : (series[0] ?? null);
+  //
+  // Found BY ID, the way `RejectionSection` below does it. The read narrows at
+  // the query, so today `series` holds that one source — but taking `series[0]`
+  // would make this rendering depend on a narrowing applied twice upstream, and
+  // the day a series arrives unfiltered it would silently label a stranger's
+  // days as this source's (admin-window/BUG-0022).
+  const narrowed =
+    filter.source_id === undefined
+      ? null
+      : (series.find((one) => one.sourceId === filter.source_id) ?? null);
 
   const perSource: TrendMeasure<AwaitingRowSeries>[] = [
     { key: "claims", label: "claims", value: (one) => one.claims },
@@ -594,6 +603,15 @@ function RejectionSection({
   const scope =
     filter.source_id === undefined ? bySource : narrowed === null ? [] : [narrowed];
   const rerejected = scope.reduce((total, split) => total + split.rerejected, 0);
+  // The closing sentence obeys the same rule as the cards. Both facts it
+  // reports are per-source facts: an unattributed rejection is missing its
+  // REASON, not its source, and an unnamed source is one row of `scope` whose
+  // registry lookup came back empty. Read off the whole gauge they were the
+  // FLEET's, so a bandsintown row moved a page narrowed to ticketmaster
+  // (admin-window/BUG-0022) — and deleting the sentence would have lost two
+  // facts the operator needs, so they are scoped rather than dropped.
+  const unattributed = scope.reduce((total, split) => total + split.unattributed, 0);
+  const unnamed = scope.filter((split) => split.source === null).length;
 
   return (
     <>
@@ -659,16 +677,18 @@ function RejectionSection({
       <p className="type-body text-ink-secondary">
         A re-reject is the resolver throwing out a value a human already
         adjudicated out — source health, and the evidence behind a tier move.
-        {gauge.unattributed > 0
-          ? ` ${count(gauge.unattributed)} ${
-              gauge.unattributed === 1 ? "rejection carries" : "rejections carry"
+        {unattributed > 0
+          ? ` ${count(unattributed)} ${
+              unattributed === 1 ? "rejection carries" : "rejections carry"
             } no reason at all, so ${
-              gauge.unattributed === 1 ? "it is" : "they are"
+              unattributed === 1 ? "it is" : "they are"
             } counted in neither column.`
           : ""}
-        {gauge.unnamedSources > 0
-          ? ` ${count(gauge.unnamedSources)} of these sources had no registry row in this read, so they are named by id.`
-          : ""}
+        {unnamed === 0
+          ? ""
+          : unnamed === 1 && narrowed !== null
+            ? " This source had no registry row in this read, so it is named by id."
+            : ` ${count(unnamed)} of these sources had no registry row in this read, so they are named by id.`}
       </p>
     </>
   );

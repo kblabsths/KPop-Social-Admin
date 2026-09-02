@@ -100,6 +100,14 @@ export interface SourceRejections {
   adjudicated: number;
   /** Every reason seen, by its own name — including one this app does not know. */
   byReason: Record<string, number>;
+  /**
+   * This source's rejections carrying no `rejected_by` at all — the per-source
+   * half of `SettledValues.unattributed`. The row still names its source
+   * (`observations.source_id` is not nullable); it is the REASON that is
+   * missing, so the fact belongs to exactly one source and a page narrowed to
+   * a source may report it (admin-window/BUG-0022).
+   */
+  unattributed: number;
   /** All rejections of this source's claims in the window. */
   total: number;
   /** One entry per week of the window, ascending, zeros included. */
@@ -123,6 +131,10 @@ export interface SettledValues {
    * written by convention rather than by a trigger (migration
    * `20260901000003`), so a stamp without a reason is possible and is reported
    * rather than being counted as a re-reject.
+   *
+   * Fleet-wide, and equal to the sum of `bySource[].unattributed` — a reader
+   * narrowed to one source wants that per-source figure, not this one
+   * (admin-window/BUG-0022).
    */
   unattributed: number;
 }
@@ -182,12 +194,15 @@ export function aggregateRejectionStamps(input: SettledValuesRows): SettledValue
       if (source === undefined) unnamedSources += 1;
 
       const reasons = emptyReasons();
+      let unattributedHere = 0;
       const weekly = new Map<string, RejectionWeek>(
         weeks.map((weekStart) => [weekStart, { weekStart, rerejected: 0, adjudicated: 0 }]),
       );
       for (const row of group) {
         if (row.rejected_by !== null && row.rejected_by !== undefined) {
           reasons[row.rejected_by] = (reasons[row.rejected_by] ?? 0) + 1;
+        } else {
+          unattributedHere += 1;
         }
         const weekStart = utcWeekStart(row.rejected_at);
         const week = weekStart === null ? undefined : weekly.get(weekStart);
@@ -206,6 +221,7 @@ export function aggregateRejectionStamps(input: SettledValuesRows): SettledValue
         rerejected: reasons[RE_REJECT_REASON] ?? 0,
         adjudicated: reasons[ADJUDICATION_REASON] ?? 0,
         byReason: reasons,
+        unattributed: unattributedHere,
         total: group.length,
         weeks: weeks.map((weekStart) => weekly.get(weekStart) as RejectionWeek),
       };
