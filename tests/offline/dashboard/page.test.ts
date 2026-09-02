@@ -4,6 +4,7 @@ import { DASHBOARD_WINDOW } from "@/lib/db/dashboard";
 import { T } from "@/lib/db/tables";
 import { absoluteUtc } from "@/lib/format";
 import { render } from "../ui/markup";
+import { blankCells } from "../absence/surfaces";
 import { readNumber } from "../../live/parity";
 import {
   resolutionRunRow,
@@ -234,6 +235,29 @@ function errorLinesOf(markup: string, table: string): { text: string; href: stri
       text: $(element).text().replace(/\s+/g, " ").trim(),
       href: $(element).attr("href") ?? "",
     }));
+}
+
+/**
+ * Does each row of the named table render the app's ABSENCE in that column?
+ *
+ * `[aria-label="no value"]` is the one absence rendering (`nullDash`,
+ * `lib/format.ts`), so this reads what an operator is shown — a cell that is
+ * empty, or one carrying anything else, answers false — without pinning the
+ * dash character or a class name.
+ */
+function absencesOf(markup: string, table: string, column: string): boolean[] {
+  const $ = cheerio.load(markup);
+  const scope = $(`table[aria-label="${table}"]`);
+  const at = scope
+    .find("thead th")
+    .toArray()
+    .map((th) => $(th).text().trim())
+    .indexOf(column);
+  if (at < 0) throw new Error(`table ${table} has no ${column} column`);
+  return scope
+    .find("tbody tr")
+    .toArray()
+    .map((tr) => $(tr).find("td").eq(at).find('[aria-label="no value"]').length > 0);
 }
 
 /** The whole rendered text, tags stripped. */
@@ -789,5 +813,99 @@ describe("one absent table beside a present one", () => {
     expect(card.text()).not.toMatch(/\d/);
     // ...and it is not the red state: an absence is not a breakage.
     expect(card.closest('[role="alert"]')).toHaveLength(0);
+  });
+});
+
+
+describe("a cycle or run that reported nothing", () => {
+  // campaign admin-window/BUG-0026: the two `error` columns and the two
+  // `outcome` columns yield the ABSENCE ITSELF to the table. A column that
+  // hands `DataTable` a component element instead hides the null from `orDash`
+  // and leaves the cell empty, which is what an operator sees as a table with
+  // holes in it.
+
+  it("renders the shared absence, not an empty cell, where there is no error", async () => {
+    const markup = await renderDashboard(healthyScript());
+
+    // Two of the three cycles and one of the two runs reported no error.
+    expect(absencesOf(markup, "cycles", "error")).toEqual([true, true, false]);
+    expect(absencesOf(markup, "runs", "error")).toEqual([true, false]);
+    // Nothing on the page renders a cell with nothing in it.
+    expect(blankCells(markup)).toBe(0);
+    // ...and the rows that DID report one are untouched: verbatim and linked.
+    expect(errorLinesOf(markup, "cycles")).toEqual([
+      { text: CYCLE_ERROR, href: `/cycles?cycle=${CYCLE_OLDEST}` },
+    ]);
+    expect(errorLinesOf(markup, "runs")).toEqual([
+      { text: RUN_ERROR, href: `/cycles?run=${RUN_OLDEST}` },
+    ]);
+  });
+
+  it("reads a row that ENDED with no outcome recorded as an absence, not as running", async () => {
+    // `resolution_runs.outcome` and `runs.outcome` are null until completion,
+    // so a row that ended without one is a real state and not a fixture
+    // curiosity. The page invents no word for it — the table's own dash says
+    // the producer recorded none — and it must not read as "still running",
+    // which is the OTHER null-outcome state.
+    const markup = await renderDashboard(
+      healthyScript({
+        [T.resolutionRuns]: {
+          data: [
+            resolutionRunRow({
+              run_id: CYCLE_OLDEST,
+              started_at: "2026-09-01T04:30:00Z",
+              ended_at: "2026-09-01T04:33:20Z",
+              outcome: null,
+              error_summary: null,
+            }),
+          ],
+        },
+        [T.runs]: {
+          data: [
+            runRow({
+              run_id: RUN_OLDEST,
+              started_at: "2026-09-01T03:00:00Z",
+              ended_at: "2026-09-01T03:02:11Z",
+              outcome: null,
+              error_summary: null,
+            }),
+          ],
+        },
+      }),
+    );
+
+    for (const table of ["cycles", "runs"]) {
+      expect(absencesOf(markup, table, "outcome"), table).toEqual([true]);
+      // No state word was borrowed: neither an outcome nor "running".
+      expect(outcomesOf(markup, table), table).toEqual([undefined]);
+    }
+    expect(blankCells(markup)).toBe(0);
+    // The still-running rendering is still reachable — this is the other state.
+    const running = await renderDashboard(healthyScript());
+    expect(outcomesOf(running, "runs")).toEqual(["running", "failed"]);
+  });
+
+  it("treats an error_summary of whitespace as no error at all", async () => {
+    // A producer that wrote a blank string reported nothing, and the row reads
+    // the same as one that wrote null — absence is `isAbsent`, defined once
+    // (admin-window/BUG-0004).
+    const markup = await renderDashboard(
+      healthyScript({
+        [T.runs]: {
+          data: [
+            runRow({
+              run_id: RUN_OLDEST,
+              ended_at: "2026-09-01T03:02:11Z",
+              outcome: "failed",
+              error_summary: "   ",
+            }),
+          ],
+        },
+      }),
+    );
+
+    expect(errorLinesOf(markup, "runs")).toEqual([]);
+    expect(absencesOf(markup, "runs", "error")).toEqual([true]);
+    expect(blankCells(markup)).toBe(0);
   });
 });

@@ -50,26 +50,18 @@ function scriptDatabase(script: Script) {
  * `it.fails` rather than excluded, so the day one is fixed this file reddens
  * and the pin comes off. Each entry names what renders blank and who owns it.
  *
- * `/` — the Dashboard's two `error` columns (cycles and runs) render their
- * body through the `ErrorSummary` COMPONENT, which returns null when
- * `error_summary` is null (`src/app/page.tsx`). `orDash` sees a React element,
- * never an absence, so 10 of the 10 rows in the fixture population leave an
- * empty cell — measured 2026-09-02 by this file. Cycles hit the same thing and
- * fixed it by returning the null itself from the column (a plain function, not
- * a component). Found by campaign admin-window/TASK-0019, whose ticket adds no
- * product code; the fix belongs to the Dashboard's own ticket
- * (admin-window/TASK-0009), and is tracked there as admin-window/BUG-0026.
+ * **Empty today, and that is the passing state**: every surface renders the em
+ * dash for every absence. The map stays as the seam, because the defect is a
+ * shape rather than a page — a column whose body is a child COMPONENT element
+ * hides the absence from `orDash` and leaves the cell empty. The fix is always
+ * the same: the column returns the `null` ITSELF (a plain function, never a
+ * `<Component />`), which is how `/cycles`, `/sources`, `/claims`, `/browse`
+ * and `/` all render theirs.
  *
- * QA measured it on run/admin-window at 14a3e71, 2026-09-02: with this entry
- * removed the assertion reads `expected 10 to be +0` on `/` and passes on all
- * seven other surfaces. The fix is done when this map is EMPTY — that literal
- * (`= {};`) is what admin-window/BUG-0026's checks grade, so a pin removed
- * without a fix reddens the assertion below and a fix without the pin removed
- * reddens it as an unexpected pass.
+ * A page pinned here is a page an operator is being shown nothing on, so an
+ * entry is a debt with an owner and a ticket id, never a permanent exemption.
  */
-const KNOWN_BLANK: Readonly<Record<string, string>> = {
-  "/": "admin-window/BUG-0026 — the two error_summary columns render a component that returns null",
-};
+const KNOWN_BLANK: Readonly<Record<string, string>> = {};
 
 describe("a page whose rows carry nothing but nulls", () => {
   for (const surface of SURFACES) {

@@ -17,7 +17,7 @@ import {
   type DashboardRunRow,
 } from "@/lib/db/dashboard";
 import type { DbResult } from "@/lib/db/result";
-import { count, relativeAge } from "@/lib/format";
+import { count, isAbsent, relativeAge } from "@/lib/format";
 import { KINDS, type Kind, type KindSummary } from "@/lib/review/shapes";
 
 /**
@@ -150,20 +150,21 @@ function AttentionDetail({ summary }: { summary: KindSummary }) {
  * ended is left to the table's own dash: the producer recorded no outcome and
  * this page will not invent one. `data-outcome` is the state a test reads, so
  * the words stay the designer's to change.
+ *
+ * A plain function and not a component, deliberately (campaign
+ * admin-window/BUG-0026): a component ELEMENT is never absent to `DataTable`'s
+ * `orDash`, whatever it renders, so a component that returns null leaves the
+ * cell BLANK — the one rendering LOOK_AND_FEEL forbids. Returning the `null`
+ * ITSELF is what puts the shared em dash in the cell. Absence is `isAbsent`,
+ * the app's single definition (admin-window/BUG-0004).
  */
 const OUTCOME_TONE: Record<string, "healthy" | "broken" | "neutral"> = {
   succeeded: "healthy",
   failed: "broken",
 };
 
-function Outcome({
-  outcome,
-  endedAt,
-}: {
-  outcome: string | null;
-  endedAt: string | null;
-}) {
-  if (outcome !== null && outcome !== "") {
+function outcomeCell(outcome: string | null, endedAt: string | null): ReactNode {
+  if (outcome !== null && !isAbsent(outcome)) {
     return (
       <span data-outcome={outcome}>
         <Badge tone={OUTCOME_TONE[outcome] ?? "neutral"}>{outcome}</Badge>
@@ -177,11 +178,20 @@ function Outcome({
       </span>
     );
   }
+  // It ended and recorded no outcome: the table's own dash stands for the
+  // value the producer never wrote.
   return null;
 }
 
-/** When a line happened: relative, with the absolute in the title, linked. */
-function Started({ at, href }: { at: string; href: string }) {
+/**
+ * When a line happened: relative, with the absolute in the title, linked.
+ *
+ * A plain function, like the two cells below it, so that NO column on this page
+ * hands `DataTable` a component element — the shape that defeats `orDash`
+ * (admin-window/BUG-0026). This one always renders, but the rule is the rule:
+ * the next early return added here would be invisible again.
+ */
+function startedCell(at: string, href: string): ReactNode {
   const age = relativeAge(at);
   return (
     <a href={href} title={age.title} className="transition-colors hover:text-accent">
@@ -195,9 +205,14 @@ function Started({ at, href }: { at: string; href: string }) {
  * summarised, not replaced with a friendlier sentence (LOOK_AND_FEEL: the app
  * shows what the database said). Red because a failed run is broken; linked,
  * so the error line reaches the row that produced it (spec §4).
+ *
+ * A plain function and not a component, for the same reason `outcomeCell` is
+ * (campaign admin-window/BUG-0026): a run that reported no error yields the
+ * `null` itself, so `DataTable` draws the shared em dash instead of emitting
+ * an empty cell.
  */
-function ErrorSummary({ summary, href }: { summary: string | null; href: string }) {
-  if (summary === null || summary.trim() === "") return null;
+function errorCell(summary: string | null, href: string): ReactNode {
+  if (isAbsent(summary)) return null;
   return (
     <a
       href={href}
@@ -213,14 +228,12 @@ const CYCLE_COLUMNS: Column<DashboardCycleRow>[] = [
   {
     key: "started",
     label: "started",
-    cell: (row) => (
-      <Started at={row.started_at} href={lineHref(CYCLE_PARAM, row.run_id)} />
-    ),
+    cell: (row) => startedCell(row.started_at, lineHref(CYCLE_PARAM, row.run_id)),
   },
   {
     key: "outcome",
     label: "outcome",
-    cell: (row) => <Outcome outcome={row.outcome} endedAt={row.ended_at} />,
+    cell: (row) => outcomeCell(row.outcome, row.ended_at),
   },
   { key: "applied", label: "applied", align: "right", cell: (row) => count(row.applied) },
   {
@@ -233,12 +246,7 @@ const CYCLE_COLUMNS: Column<DashboardCycleRow>[] = [
   {
     key: "error_summary",
     label: "error",
-    cell: (row) => (
-      <ErrorSummary
-        summary={row.error_summary}
-        href={lineHref(CYCLE_PARAM, row.run_id)}
-      />
-    ),
+    cell: (row) => errorCell(row.error_summary, lineHref(CYCLE_PARAM, row.run_id)),
   },
 ];
 
@@ -253,21 +261,17 @@ const RUN_COLUMNS: Column<DashboardRunRow>[] = [
   {
     key: "started",
     label: "started",
-    cell: (row) => (
-      <Started at={row.started_at} href={lineHref(RUN_PARAM, row.run_id)} />
-    ),
+    cell: (row) => startedCell(row.started_at, lineHref(RUN_PARAM, row.run_id)),
   },
   {
     key: "outcome",
     label: "outcome",
-    cell: (row) => <Outcome outcome={row.outcome} endedAt={row.ended_at} />,
+    cell: (row) => outcomeCell(row.outcome, row.ended_at),
   },
   {
     key: "error_summary",
     label: "error",
-    cell: (row) => (
-      <ErrorSummary summary={row.error_summary} href={lineHref(RUN_PARAM, row.run_id)} />
-    ),
+    cell: (row) => errorCell(row.error_summary, lineHref(RUN_PARAM, row.run_id)),
   },
 ];
 
