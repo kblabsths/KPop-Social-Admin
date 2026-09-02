@@ -199,21 +199,32 @@ describe("the handler refuses a forged edit and attempts no write", () => {
   });
 
   /**
-   * PINNED DIVERGENCE — admin-window/BUG-0011.
-   *
-   * `it.fails` is the strict pin: it passes only while the body below still
-   * throws. The day the route refuses an omitted `value`, this turns RED and
-   * sends the reader here — at which point the marker becomes a plain `it`.
+   * REGRESSION — admin-window/BUG-0011 (fixed in admin-window/TASK-0017).
    *
    * The route's documented body is `{ field, value }`. A body carrying no
    * `value` at all states no intent: it is malformed, not an instruction to
    * null a vetted catalog column. The retired route this one carries over from
-   * never nulled on an omitted key — it nulled on `""` alone.
+   * never nulled on an omitted key — it nulled on `""` alone. This test was
+   * pinned `it.fails` while the divergence was live; it is a plain `it` again.
+   *
+   * Note the second body: `JSON.stringify` DROPS a key whose value is
+   * `undefined`, so `{ field: "name", value: undefined }` reaches the handler
+   * as `{"field":"name"}` — the exact request a widget bug produces.
    */
-  it.fails("refuses a body that omits `value` instead of clearing the column", async () => {
+  it("refuses a body that omits `value` instead of clearing the column", async () => {
     await refused("groups", { field: "bio" }, "value omitted");
     updateRecordField.mockReset();
     await refused("groups", { field: "name", value: undefined }, "value undefined");
+  });
+
+  it("names the missing `value` in the refusal, as a client error", async () => {
+    // BUG-0011 asks for more than a non-2xx: the caller must be able to tell
+    // WHAT was wrong with the request, and a malformed body is the client's
+    // fault (400), not the database's (5xx).
+    const { status, text } = await patch("groups", { field: "bio" });
+    expect(status).toBe(400);
+    expect(JSON.parse(text).error).toMatch(/value/i);
+    expect(updateRecordField).not.toHaveBeenCalled();
   });
 
   it("still clears a column on an explicit null or an emptied input", async () => {
