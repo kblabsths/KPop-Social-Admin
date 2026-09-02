@@ -1,0 +1,45 @@
+{
+ "id": "BUG-0006",
+ "created": "2026-09-02T10:33:41Z",
+ "green": true,
+ "git_head": "8662661762063937f666981fb89e5b758b11dc12",
+ "scope": [
+  "src/app/globals.css",
+  "tests/offline/ui"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 0,
+ "tree_hash": "1e004e5cac886ba459dedda45843cef1f2bd5d0ec8bd519b1798b69c66da6a87",
+ "commands": [
+  {
+   "cmd": "bash -c \"grep -q -- '--color-ink-secondary: #4a5565' src/app/globals.css && grep -q -- '--color-healthy: #016630' src/app/globals.css && grep -q -- '--color-attention: #bb4d00' src/app/globals.css && grep -q -- '--color-broken: #c10007' src/app/globals.css\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"! grep -qE '#00a63e|#e17100|#e7000b|#6a7282' src/app/globals.css\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"grep -q -- '--color-chrome-inverse: #364153' src/app/globals.css && grep -q -- '--color-on-accent: #030712' src/app/globals.css\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/ui/contrast.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-60090\n\n \u2713 |offline| tests/offline/ui/contrast.test.ts (51 tests) 7ms\n\n Test Files  1 passed (1)\n      Tests  51 passed (51)\n   Start at  03:33:37\n   Duration  318ms (transform 30ms, setup 0ms, collect 27ms, tests 7ms, environment 0ms, prepare 66ms)\n\n(node:60107) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/ui",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-60090\n\n \u2713 |offline| tests/offline/ui/contrast.test.ts (51 tests) 9ms\n \u2713 |offline| tests/offline/ui/editable-cell.test.ts (5 tests) 15ms\n \u2713 |offline| tests/offline/ui/evidence-pair.test.ts (10 tests) 16ms\n \u2713 |offline| tests/offline/ui/tokens.test.ts (9 tests) 11ms\n \u2713 |offline| tests/offline/ui/primitives.test.ts (35 tests) 48ms\n\n Test Files  5 passed (5)\n      Tests  110 passed (110)\n   Start at  03:33:37\n   Duration  538ms (transform 228ms, setup 0ms, collect 770ms, tests 100ms, environment 1ms, prepare 311ms)\n\n(node:60132) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

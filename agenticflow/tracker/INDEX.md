@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T10:33:31Z — do not edit)
+# Tracker index (regenerated 2026-09-02T10:34:49Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -27,9 +27,6 @@
 ## claimed
 - BUG-0012 [P2][bug][-] Resolution latency counts a verdict unset as an apply the join lost  (scope:src/lib/db/gauges.ts,src/lib/gauges/resolution-latency.ts,tests/offline/gauges @builder-26 from:BUG-0010)
 
-## qa
-- BUG-0006 [P2][bug][M1] Light palette fails bar 12: darken healthy/attention/broken/ink-secondary to the amended hexes  (scope:src/app/globals.css,tests/offline/ui @builder-25 from:TASK-0004)
-
 ## blocked
 - TASK-0021 [P0][task][M1] ASK BEN: which Supabase env names does the APP read at runtime, and what do the campaign's live tests read?  (scope:src/lib/db/client.ts,tests/live,agenticflow/docs/SERVICES.md)
 - TASK-0022 [P0][task][M1] ASK BEN: what is installed on staging, and may a live test write fixture rows into resolver-owned tables?  (scope:tests/live)
@@ -38,4 +35,4 @@
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 - TASK-0029 [P2][task][M1] ASK: what does a resolver-owned record page DISPLAY in M1? events/venues currently render their id and nothing else  (scope:src/lib/edit/config.ts,src/lib/db/records.ts from:TASK-0018)
 
-Totals — blocked:6, claimed:1, done:24, open:22, qa:1. Archived: 0.
+Totals — blocked:6, claimed:1, done:25, open:22. Archived: 0.
