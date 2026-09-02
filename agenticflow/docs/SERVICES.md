@@ -51,3 +51,22 @@ the gate sees, e.g. `## railway`, `## supabase`):
   agenticflow/tracker/milestones/M2.md). That sanction ends when M2 closes.
 - provisioned by: Ben, pre-factory (live project); Ben, 2026-08-17
   (kspace-staging declared via dispatcher, staging.env filled by Ben)
+
+### railway (recorded, deliberately NOT declared - the CLI stays refused)
+- what it is for: the deploy target of this app. Railway builds from `railway.toml`
+  (nixpacks; build `npm run build`; start `npm run start`; healthcheck `/api/health`)
+  and deploys from `main` through the GitHub integration. Pushing to `main` IS the
+  deploy; no CLI is involved.
+- console: https://railway.com/dashboard  <-- Ben: replace with the project URL
+- tier / cost ceiling: <Ben: plan and $/mo>. Ceiling for DEP purposes: the existing
+  plan, $0 incremental. Anything that adds a billable Railway resource (new service,
+  Postgres/Redis plugin, extra environment) is a new DEP and is refused by default.
+- staging target agents may touch: NONE. There is no Railway staging environment.
+  The deployed service is a PRODUCTION surface: it reads SUPABASE_URL /
+  SUPABASE_SERVICE_ROLE_KEY (service-side names, never the STAGING_* ones) and
+  therefore holds a service-role key on the live catalog. Campaign work targets
+  kspace-staging only.
+- CLI status: NOT declared, on purpose (DEP-0002, 2026-09-02). `railway` is on this
+  machine via Homebrew (5.9.1), so the remote gate's refusal is the only control.
+  Agents run no railway command; deploys happen by `git push` to `main`.
+- provisioned by: Ben, pre-factory

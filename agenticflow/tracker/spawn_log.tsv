@@ -3364,3 +3364,5 @@
 2026-09-02T16:32:47Z	builder	BUG-0024	9424	761	118535
 # STRANDED	2026-09-02T16:32:49Z	compactor	4 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/docs/SERVICES.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0024.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0002.md
 2026-09-02T16:32:49Z	compactor	DEP-0002	13322	754	54528
+# STRANDED	2026-09-02T16:33:08Z	agent	2 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/docs/SERVICES.md
+2026-09-02T16:33:08Z	agent	-	-	-	-
