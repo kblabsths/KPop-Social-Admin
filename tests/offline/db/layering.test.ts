@@ -81,6 +81,39 @@ function withoutDeprecated(files: string[]): string[] {
   return files.filter((file) => !DEPRECATED_UNTIL_TASK_0005.includes(file));
 }
 
+/**
+ * A scanner for reads of an env name, in every spelling a reader can use
+ * (widened by admin-window/BUG-0003, which found the dot-only pattern blind to
+ * the rest):
+ *
+ *   - `process.env.NAME`                — direct member access;
+ *   - `process.env["NAME"]`             — bracket access, string literal;
+ *   - `process.env[SOME_NAME_CONSTANT]` — bracket access through a constant,
+ *     the form `client.ts` exports `DB_KEY_ENV_NAME` for.
+ *
+ * The last form names no string a text scan can resolve, so ANY bracket read of
+ * `process.env` by identifier counts as a read of the credential: a dynamic env
+ * read outside the one seam is unverifiable by construction, and an
+ * unverifiable credential read is what this rule exists to forbid. A bracket
+ * read of some OTHER literal name (`process.env["NODE_ENV"]`) is resolvable and
+ * is not reported.
+ */
+function envReadOf(namePattern: string): RegExp {
+  return new RegExp(
+    "process\\.env\\s*(?:" +
+      `\\.${namePattern}\\b` +
+      `|\\[\\s*["'\`]${namePattern}["'\`]\\s*\\]` +
+      "|\\[\\s*[A-Za-z_$]" +
+      ")",
+  );
+}
+
+/** Reads of the service-role key itself. */
+const SERVICE_ROLE_KEY_READ = envReadOf("SUPABASE_SERVICE_ROLE_KEY");
+
+/** Reads of any `SUPABASE_`-prefixed credential name. */
+const SUPABASE_CREDENTIAL_READ = envReadOf("SUPABASE_[A-Z0-9_]+");
+
 describe("the source tree", () => {
   it("is non-empty and contains the seam files these rules are about", () => {
     const files = sourceFiles();
@@ -107,13 +140,13 @@ describe("credentials", () => {
   });
 
   it("reads the service-role key in the db client alone", () => {
-    const readers = filesWhereCodeMatches(/process\.env\.SUPABASE_SERVICE_ROLE_KEY/);
+    const readers = filesWhereCodeMatches(SERVICE_ROLE_KEY_READ);
     expect(readers).toContain(CLIENT);
     expect(withoutDeprecated(readers)).toEqual([CLIENT]);
   });
 
   it("reads no other SUPABASE_ credential outside the db client", () => {
-    const readers = filesWhereCodeMatches(/process\.env\.SUPABASE_[A-Z0-9_]+/);
+    const readers = filesWhereCodeMatches(SUPABASE_CREDENTIAL_READ);
     expect(withoutDeprecated(readers)).toEqual([CLIENT]);
   });
 });
@@ -154,32 +187,74 @@ describe("table names and the client library", () => {
 });
 
 /**
- * PIN — admin-window/BUG-0003. The credential rule above is enforced by a
- * pattern that only matches DOT access (`process.env.SUPABASE_SERVICE_ROLE_KEY`).
- * A second reader written with BRACKET access — the very form `client.ts`'s own
- * comment names as the alternative — is invisible to it, so the criterion's
- * proof ("client.ts is the only file under src/ reading
- * SUPABASE_SERVICE_ROLE_KEY") does not hold against a file written that way.
- *
- * `it.fails` is the strict-xfail: it passes only while the divergence is real.
- * When the guard is widened this test XPASSes and turns RED — at which point
- * drop the `.fails` and keep the assertion.
+ * The guard guarding itself (admin-window/BUG-0003). The credential rules above
+ * are only as good as the spelling they recognise: a dot-only pattern reported
+ * nothing for a second reader written `process.env["SUPABASE_SERVICE_ROLE_KEY"]`,
+ * so the criterion "client.ts is the only file under src/ reading the key" held
+ * for one spelling and not for the others. Each case below writes a probe file
+ * under `src/` and asserts what the same scanner the rules use reports about it.
  */
 describe("the credential guard itself", () => {
   const PROBE = "src/__credential_guard_probe__.ts";
+  const probePath = path.join(repoRoot, PROBE);
 
-  it.fails("detects a reader that uses bracket access, not just dot access", () => {
-    const probePath = path.join(repoRoot, PROBE);
-    fs.writeFileSync(
-      probePath,
-      'export const key = process.env["SUPABASE_SERVICE_ROLE_KEY"];\n',
-      "utf8",
-    );
+  /** Files the scanner reports while `source` sits under `src/` as PROBE. */
+  function scanWithProbe(source: string, pattern: RegExp): string[] {
+    fs.writeFileSync(probePath, source, "utf8");
     try {
-      const readers = filesWhereCodeMatches(/process\.env\.SUPABASE_SERVICE_ROLE_KEY/);
-      expect(withoutDeprecated(readers)).toContain(PROBE);
+      return withoutDeprecated(filesWhereCodeMatches(pattern));
     } finally {
       fs.rmSync(probePath, { force: true });
     }
+  }
+
+  it("detects a reader that uses dot access", () => {
+    const readers = scanWithProbe(
+      "export const key = process.env.SUPABASE_SERVICE_ROLE_KEY;\n",
+      SERVICE_ROLE_KEY_READ,
+    );
+    expect(readers).toContain(PROBE);
+  });
+
+  it("detects a reader that uses bracket access with a string literal", () => {
+    const readers = scanWithProbe(
+      'export const key = process.env["SUPABASE_SERVICE_ROLE_KEY"];\n',
+      SERVICE_ROLE_KEY_READ,
+    );
+    expect(readers).toContain(PROBE);
+  });
+
+  it("detects a reader that brackets the exported name constant", () => {
+    const readers = scanWithProbe(
+      'import { DB_KEY_ENV_NAME } from "@/lib/db/client";\n' +
+        "export const key = process.env[DB_KEY_ENV_NAME];\n",
+      SERVICE_ROLE_KEY_READ,
+    );
+    expect(readers).toContain(PROBE);
+  });
+
+  it("detects a bracketed read of any other SUPABASE_ credential", () => {
+    const readers = scanWithProbe(
+      'export const url = process.env["SUPABASE_URL"];\n',
+      SUPABASE_CREDENTIAL_READ,
+    );
+    expect(readers).toContain(PROBE);
+  });
+
+  it("reports nothing for a file that reads an unrelated env name", () => {
+    // The scanner must stay a credential scanner: a resolvable non-credential
+    // name, in either spelling, is not a violation of this rule.
+    const source =
+      "export const mode = process.env.NODE_ENV;\n" +
+      'export const port = process.env["PORT"];\n';
+    expect(scanWithProbe(source, SERVICE_ROLE_KEY_READ)).not.toContain(PROBE);
+    expect(scanWithProbe(source, SUPABASE_CREDENTIAL_READ)).not.toContain(PROBE);
+  });
+
+  it("leaves the seam file itself reported by both scanners", () => {
+    // The rules assert `toEqual([CLIENT])`; that is only meaningful while the
+    // scanners still see the real reader.
+    expect(filesWhereCodeMatches(SERVICE_ROLE_KEY_READ)).toContain(CLIENT);
+    expect(filesWhereCodeMatches(SUPABASE_CREDENTIAL_READ)).toContain(CLIENT);
   });
 });
