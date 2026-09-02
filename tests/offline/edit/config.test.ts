@@ -906,6 +906,61 @@ describe("the argument scan and string literals", () => {
     expect(argument).not.toContain(ADMIN_LOCKED);
   });
 
+  it.fails(
+    "admin-window/BUG-0030: reports a WRITE below a template literal whose closing backtick lands on a stripped line",
+    () => {
+      // Valid, compiling TypeScript (tsc --noEmit --strict on this exact source
+      // exits 0). `codeLines` drops any line whose trimmed form starts with "*"
+      // as commentary, and here that line carries the template's CLOSING
+      // backtick. `codeOnly` then meets an opening backtick with no partner and
+      // blanks everything to end of file, so the real write three lines below is
+      // never seen — the SILENT FAIL-OPEN direction the scan's own contract
+      // excludes: "where a literal cannot be closed with certainty ... nothing is
+      // blanked ... never a silent fail-open". `quoted` honours that contract
+      // (the case below); `template` has no give-up path.
+      const reported = withProbes(
+        [
+          [
+            "src/bullets.ts",
+            "export const BULLETS = `first line\n" +
+              "  *`;\n" +
+              "\n" +
+              "export const stamp = (db: Db, id: string) =>\n" +
+              '  db.from("field_provenance").update({\n' +
+              "    admin_locked: true,\n" +
+              '  }).eq("id", id);\n',
+          ],
+        ],
+        (base) => filesWritingColumn(ADMIN_LOCKED, base),
+      );
+      expect(reported).toEqual(["src/bullets.ts"]);
+    },
+  );
+
+  it("over-reports rather than blinding itself when a QUOTED string cannot be closed", () => {
+    // The same predicament for a double-quoted literal: a line-continued string
+    // whose closing quote sits on a line `codeLines` strips. `quoted` gives up
+    // and blanks nothing, so the write below stays visible. This is the
+    // direction the tokenizer is supposed to fail in, and it is what makes the
+    // case above a defect rather than a limit.
+    const reported = withProbes(
+      [
+        [
+          "src/bullets-quoted.ts",
+          'export const BULLETS = "first line \\\n' +
+            '  *";\n' +
+            "\n" +
+            "export const stamp = (db: Db, id: string) =>\n" +
+            '  db.from("field_provenance").update({\n' +
+            "    admin_locked: true,\n" +
+            '  }).eq("id", id);\n',
+        ],
+      ],
+      (base) => filesWritingColumn(ADMIN_LOCKED, base),
+    );
+    expect(reported).toEqual(["src/bullets-quoted.ts"]);
+  });
+
   it("leaves no probe behind for another suite to walk into", () => {
     // Every case above plants under `tests/.probes/` and removes it in a
     // `finally`, so a failing assertion cannot leave a tree for a parallel
