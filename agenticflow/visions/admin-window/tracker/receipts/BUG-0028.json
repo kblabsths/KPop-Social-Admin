@@ -1,0 +1,29 @@
+{
+ "id": "BUG-0028",
+ "created": "2026-09-02T17:14:42Z",
+ "green": true,
+ "git_head": "6fcf2995bb5c2d1bda96f600d1c81cd9d36d093e",
+ "scope": [
+  "tests/offline/edit"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "3c51c18ba7989bf03abe1dca7c18096d7bee0282cd7509ec36dc6c4edea121a1",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/edit",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-26814\n\n \u2713 |offline| tests/offline/edit/route.test.ts (19 tests) 21ms\n \u2713 |offline| tests/offline/edit/records.test.ts (17 tests) 7ms\n \u2713 |offline| tests/offline/edit/config.test.ts (25 tests) 103ms\n\n Test Files  3 passed (3)\n      Tests  61 passed (61)\n   Start at  10:14:41\n   Duration  645ms (transform 229ms, setup 0ms, collect 330ms, tests 131ms, environment 1ms, prepare 325ms)\n\n(node:26821) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -qE 'admin_locked[^\\n]*(update|upsert|insert)|(update|upsert|insert)[^\\n]*admin_locked' tests/offline/edit/config.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"! grep -rn settle_review_item src | grep -qvE \\\"^[^:]*:[0-9]+:[[:space:]]*(\\*|//|/\\*)\\\"\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
