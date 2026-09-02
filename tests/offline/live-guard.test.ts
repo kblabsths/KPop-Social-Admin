@@ -798,6 +798,29 @@ describe("the state classifier", () => {
     const withDial = surface(rows() + `<div data-dial>${errorLine()}</div>`);
     expect(stateOf(withDial, SURFACE)).toBe("error");
     expect(stateOf(withDial, SURFACE, "[data-dial]")).toBe("ok");
+    // …however deep inside the surface the sub-surface sits, and whether the
+    // excluded element carries the state itself or wraps the card that does.
+    const nested = surface(rows() + `<section><div data-dial>${errorLine()}</div></section>`);
+    expect(stateOf(nested, SURFACE, "[data-dial]")).toBe("ok");
+  });
+
+  it("excludes only PROPER DESCENDANTS, never the surface or a wrapper of it", () => {
+    // admin-window/BUG-0036: the card scan walks every ancestor of a card, so
+    // an exclusion selector matching the surface itself — or the page around
+    // it — used to drop every card the surface held and grade an error line
+    // `ok`. An exclusion may silence a sub-surface's read, never the surface's
+    // own.
+    const held = surface(errorLine());
+    expect(stateOf(held, SURFACE, SURFACE)).toBe("error");
+    expect(stateOf(`<main data-page>${held}</main>`, SURFACE, "[data-page]")).toBe(
+      "error",
+    );
+    // The same bound holds for the kinds that are not failures: an exclusion
+    // that names no sub-surface changes no verdict at all.
+    expect(stateOf(surface(empty()), SURFACE, SURFACE)).toBe("empty");
+    expect(stateOf(surface(notProvisioned()), SURFACE, "[data-surface]")).toBe(
+      "not_provisioned",
+    );
   });
 });
 
@@ -1114,12 +1137,12 @@ describe("QA: the classifier, attacked", () => {
     expect(() => stateOf(typo, "[data-surface]")).toThrow(/not-provisioned/);
   });
 
-  // admin-window/BUG-0036, written as a strict expected failure: while the
-  // defect stands this pin is green because its body throws, and the day the
-  // exclusion is confined to proper sub-surfaces it XPASSes (vitest reports
-  // "Expect test to fail") and sends the reader to the ticket. The fix turns
-  // it back into a plain `it`.
-  it.fails("admin-window/BUG-0036: an `excluding` selector that also matches the surface hides its ERROR card", () => {
+  // admin-window/BUG-0036: QA's pin, written as a strict expected failure
+  // against the broken classifier and converted to a plain `it` by the fix.
+  // It attacks exactly what it attacked; the exclusion is now confined to
+  // proper sub-surfaces of the graded surface, so the surface's own error
+  // line can no longer be silenced by a selector.
+  it("admin-window/BUG-0036: an `excluding` selector that also matches the surface hides its ERROR card", () => {
     // `excluding` names SUB-SURFACES inside the graded surface, and the card
     // scan drops a card whose `closest(excluding)` matches — but `closest`
     // starts at the card and walks EVERY ancestor, the surface itself and the

@@ -203,6 +203,12 @@ export function pageStates(markup: string): PageStateKind[] {
  * not a page whose claims are broken. A test that excludes a sub-surface says
  * so, and grades that sub-surface on its own or leaves it to the file that
  * owns it.
+ *
+ * INSIDE is literal: only a PROPER DESCENDANT of `within` can be excluded. An
+ * `excluding` that also matches the surface itself, or any wrapper around it,
+ * silences nothing — it can never empty the surface of its own cards, because
+ * a surface holding an error line says `error` whatever a selector asks
+ * (admin-window/BUG-0036).
  */
 export function stateOf(
   markup: string,
@@ -224,13 +230,29 @@ export function stateOf(
     );
   }
 
+  // The sub-surfaces `excluding` actually names HERE: the ones a `find` from
+  // the graded surface reaches, which is every proper descendant of it and
+  // nothing else. The surface itself and every wrapper around it are outside
+  // this set by construction (admin-window/BUG-0036).
+  const subSurfaces = new Set<unknown>(
+    excluding === undefined ? [] : surface.find(excluding).toArray(),
+  );
+
   const cards = surface
     .find("[data-state]")
     .toArray()
     .filter((element) => $(element).attr("data-state") !== DECLARED_OK)
-    .filter(
-      (element) => excluding === undefined || $(element).closest(excluding).length === 0,
-    )
+    .filter((element) => {
+      if (excluding === undefined || subSurfaces.size === 0) return true;
+      // `closest()` starts at the card and walks EVERY ancestor — the surface
+      // and the page around it included — so the match it returns silences
+      // this card only where it is a PROPER DESCENDANT sub-surface. Without
+      // that bound, an exclusion selector matching the surface itself dropped
+      // every card the surface held, its ERROR line among them, and graded a
+      // page in its error state `ok` (admin-window/BUG-0036).
+      const owner = $(element).closest(excluding).toArray()[0];
+      return owner === undefined || !subSurfaces.has(owner);
+    })
     .map((element) => asKind($(element).attr("data-state"), `the card inside '${within}'`));
   const distinct = [...new Set(cards)];
   const held = dominantKind(distinct);
