@@ -965,3 +965,13 @@
 2026-09-02T08:48:58Z	agent	-	-	-	-
 # STRANDED	2026-09-02T08:49:13Z	qa-adversary	3 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0026.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0026.md
 2026-09-02T08:49:13Z	qa-adversary	TASK-0026	5007	369	93121
+# STRANDED	2026-09-02T08:49:30Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T08:49:30Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:49:41Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T08:49:41Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:50:01Z	agent	3 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/notes/TASK-0007.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0007.md
+2026-09-02T08:50:01Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:50:12Z	agent	3 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/notes/TASK-0007.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0007.md
+2026-09-02T08:50:12Z	agent	-	-	-	-
+# STRANDED	2026-09-02T08:50:23Z	compactor	3 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/notes/TASK-0007.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0007.md
+2026-09-02T08:50:23Z	compactor	TASK-0007	581	166	39239
