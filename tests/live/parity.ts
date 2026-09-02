@@ -54,6 +54,21 @@ export class ParityError extends Error {
   }
 }
 
+/**
+ * The test's own count query came back without a count.
+ *
+ * Distinct from a query that errored: PostgREST answers a plain `select()`
+ * with `error: null` and `count: null`, and treating that as `0` is what
+ * admin-window/BUG-0007 was — a parity pass against a number the database
+ * never returned.
+ */
+export class ParityCountError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ParityCountError";
+  }
+}
+
 /** The markup did not carry the number the test asked for. */
 export class MarkupReadError extends Error {
   constructor(message: string) {
@@ -173,8 +188,14 @@ export function readNumber(markup: string, label: string): number {
 /**
  * Run the count query the TEST wrote and return its number.
  *
- * A failed query throws with the database's own message — a parity test must
- * never quietly compare against `0` because its own query broke.
+ * Two refusals, no sentinels — a parity test must never quietly compare
+ * against `0` because its own query broke or never asked for a count:
+ *
+ *  - a query that ERRORED throws with the database's own message;
+ *  - a query that came back WITHOUT a count throws too. PostgREST answers a
+ *    `select()` written without `{ head: true, count: "exact" }` with
+ *    `error: null` and `count: null`, and coercing that to `0` gave any page
+ *    rendering zero a free parity pass (admin-window/BUG-0007).
  */
 export async function countRows(
   run: () => PromiseLike<{ count: number | null; error: unknown }>,
@@ -187,7 +208,15 @@ export async function countRows(
         : String(error);
     throw new Error(`the parity count query failed: ${message}`);
   }
-  return count ?? 0;
+  if (typeof count !== "number" || !Number.isFinite(count)) {
+    throw new ParityCountError(
+      `the parity count query returned no count. A count query must be ` +
+        `written with { head: true, count: "exact" }; without it PostgREST ` +
+        `answers with no error and no count, and a parity check against a ` +
+        `count nobody made proves nothing.`,
+    );
+  }
+  return count;
 }
 
 let independent: SupabaseClient | null = null;

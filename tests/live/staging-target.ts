@@ -32,6 +32,16 @@ export const SERVICES_SECTION = "supabase";
 /** The bullet inside that section that carries the target. */
 export const TARGET_FIELD = "staging target agents may touch";
 
+/**
+ * The two forms a declaration may take, spelled into every refusal.
+ *
+ * `SERVICES.md`'s generic entry template invites a "project/env name or id",
+ * which for other CLIs is right; for a Supabase project only a ref or a host
+ * can be checked against a URL, so the refusals say so rather than leaving a
+ * human to guess why their friendly name was rejected.
+ */
+const DECLARATION_FORMS = "project ref or the full host";
+
 /** Every refusal this module raises. Loud, and never a fallback. */
 export class LiveGuardError extends Error {
   constructor(message: string) {
@@ -96,10 +106,16 @@ function normalizeDeclared(value: string): string {
  * The staging target declared in `SERVICES.md`, or `null` when the doc
  * declares none.
  *
- * Only a real top-level `## supabase` heading counts. The doc's own entry
- * template is indented inside a code block, so it is not a heading and cannot
- * be mistaken for a declaration — which is the whole reason this is parsed
- * rather than grepped.
+ * Only a real top-level `## supabase` heading counts, and only CODE-FREE
+ * lines are read at all. The doc's own entry template is example text, not a
+ * declaration, and this parser has to be able to say so structurally rather
+ * than by luck: both ways Markdown marks a line as code are skipped —
+ *
+ *  - a fenced block (``` or ~~~), whose contents are ignored wholesale;
+ *  - indentation of four or more columns, which is an indented code block.
+ *
+ * That is the whole reason this is parsed rather than grepped: a filled-in
+ * EXAMPLE in the doc must never be readable as a human's declaration.
  */
 export function declaredStagingTarget(
   servicesMarkdown: string | null,
@@ -107,9 +123,25 @@ export function declaredStagingTarget(
   if (servicesMarkdown === null) return null;
 
   const lines = servicesMarkdown.split(/\r?\n/);
+  // A field line is a real list item: up to three leading spaces. Four or
+  // more makes it an indented code block, i.e. example text.
+  const fieldPattern = new RegExp(
+    `^ {0,3}-\\s*${TARGET_FIELD}\\s*:\\s*(.+?)\\s*$`,
+    "i",
+  );
   let inSection = false;
+  let fence: string | null = null;
 
   for (const line of lines) {
+    const fenceMark = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (fenceMark) {
+      const mark = fenceMark[1][0];
+      if (fence === null) fence = mark;
+      else if (fence === mark) fence = null;
+      continue;
+    }
+    if (fence !== null) continue;
+
     const heading = /^##\s+(.+?)\s*$/.exec(line);
     if (heading) {
       inSection = heading[1].trim().toLowerCase() === SERVICES_SECTION;
@@ -117,8 +149,7 @@ export function declaredStagingTarget(
     }
     if (!inSection) continue;
 
-    const field = new RegExp(`^\\s*-\\s*${TARGET_FIELD}\\s*:\\s*(.+?)\\s*$`, "i")
-      .exec(line);
+    const field = fieldPattern.exec(line);
     if (!field) continue;
 
     const value = field[1].trim();
@@ -129,6 +160,16 @@ export function declaredStagingTarget(
   return null;
 }
 
+/**
+ * The domain a bare project ref is resolved against.
+ *
+ * `SERVICES.md`'s `## supabase` section declares a Supabase project, whose
+ * URL is `https://<ref>.supabase.co`. Anything else — a self-hosted instance,
+ * a custom domain — has to be declared as a FULL host, which still matches by
+ * equality below.
+ */
+const SUPABASE_HOST_SUFFIX = "supabase.co";
+
 /** Does the URL's host name the same project the human declared? */
 export function hostMatchesDeclaration(
   host: string,
@@ -137,11 +178,15 @@ export function hostMatchesDeclaration(
   const wanted = normalizeDeclared(declared);
   if (wanted.length === 0) return false;
   const actualHost = host.trim().toLowerCase();
-  const actualRef = actualHost.split(".")[0];
   // The declaration may be the full host (`abc.supabase.co`) or the project
   // ref alone (`abc`). Equality either way — never a substring test, which
   // would let `abc` match `abc-production`.
-  return wanted === actualHost || wanted === actualRef;
+  if (wanted === actualHost) return true;
+  // A bare ref is only a ref of the Supabase domain. Matching it against the
+  // host's first label alone would have accepted `abc.somewhere-else.tld` on
+  // a declaration of `abc` — a different project entirely, sharing a label.
+  if (wanted.includes(".")) return false;
+  return actualHost === `${wanted}.${SUPABASE_HOST_SUFFIX}`;
 }
 
 /**
@@ -190,8 +235,9 @@ export function resolveStagingTarget(input: {
   if (declared === null) {
     throw new LiveGuardError(
       `the live suite refuses: no staging target is declared in ` +
-        `${SERVICES_DOC_PATH} (a top-level "## ${SERVICES_SECTION}" section ` +
-        `with "- ${TARGET_FIELD}: <ref>"). Until a human declares one, ` +
+        `${SERVICES_DOC_PATH} (a top-level "## ${SERVICES_SECTION}" section, ` +
+        `outside any code block, with "- ${TARGET_FIELD}: <ref>" — the ` +
+        `${DECLARATION_FORMS}). Until a human declares one, ` +
         `${names.url} is unverifiable and this suite will not run — that is ` +
         `how "production is never a target" stays structural.`,
     );
@@ -201,7 +247,8 @@ export function resolveStagingTarget(input: {
     throw new LiveGuardError(
       `the live suite refuses: ${names.url} points at host "${host}", which ` +
         `is not the staging target declared in ${SERVICES_DOC_PATH} ` +
-        `("${declared}").`,
+        `("${declared}"). A declaration is the ${DECLARATION_FORMS} — a ` +
+        `human-readable project name is not something this guard can check.`,
     );
   }
 
