@@ -18,3 +18,4 @@
 2026-09-02T10:47:39Z	artifact_gate	blocked write outside repo: /g,
 2026-09-02T10:55:03Z	artifact_gate	blocked write outside repo: /_next/static/[^"]*\.css
 2026-09-02T11:15:30Z	artifact_gate	blocked write outside repo: /.exec
+2026-09-02T11:43:10Z	artifact_gate	blocked machinery write: agenticflow/scripts/qa_probe_task0028.ts
