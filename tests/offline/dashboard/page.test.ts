@@ -568,3 +568,226 @@ describe("the cycles and runs window", () => {
     expect(sources).toEqual(runs().map((row) => row.source));
   });
 });
+
+/* ── the adversarial pass (QA, campaign admin-window/TASK-0009) ──────────── */
+
+/**
+ * The states the builder's own cases do not reach: producer text that is
+ * hostile or enormous, an attention read that came back TRUNCATED rather than
+ * uncounted, a population whose only high-severity item is settled, an open
+ * set that ties on the instant, an adapter outcome the check constraint allows
+ * but this page has no tone for, and an absent table beside a present one.
+ *
+ * Behaviour only — which figure stands under which label, which state a
+ * surface falls into, what round-trips verbatim. No copy and no class is
+ * pinned here either.
+ */
+
+/** The smallest element whose text carries `needle` — the card that names it. */
+function cardNaming(markup: string, needle: string) {
+  const $ = cheerio.load(markup);
+  const nodes = $("*")
+    .toArray()
+    .filter((element) => $(element).text().includes(needle))
+    .sort((a, b) => $(a).text().length - $(b).text().length);
+  return $(nodes[0]);
+}
+
+describe("hostile and boundary producer text", () => {
+  it("renders an error_summary carrying markup as text, spawning no element", async () => {
+    // `error_summary` is the producer's own string and is rendered verbatim.
+    // Verbatim must not mean *interpreted*: a summary quoting a payload it
+    // failed to parse can carry anything at all.
+    const payload =
+      '<script>alert("cycle")</script><img src=x onerror=alert(1)> & <b>b</b>';
+    const markup = await renderDashboard(
+      healthyScript({
+        [T.resolutionRuns]: {
+          data: [
+            resolutionRunRow({
+              run_id: CYCLE_OLDEST,
+              outcome: "failed",
+              error_summary: payload,
+            }),
+          ],
+        },
+        [T.runs]: {
+          data: [runRow({ run_id: RUN_OLDEST, outcome: "failed", error_summary: payload })],
+        },
+      }),
+    );
+    const $ = cheerio.load(markup);
+
+    // Nothing in the payload became part of the document.
+    expect($("script")).toHaveLength(0);
+    expect($("img")).toHaveLength(0);
+    expect($("b")).toHaveLength(0);
+    // And the operator still reads exactly what the database holds.
+    expect(errorLinesOf(markup, "cycles")).toEqual([
+      { text: payload, href: `/cycles?cycle=${CYCLE_OLDEST}` },
+    ]);
+    expect(errorLinesOf(markup, "runs")).toEqual([
+      { text: payload, href: `/cycles?run=${RUN_OLDEST}` },
+    ]);
+  });
+
+  it("renders a very long error_summary in full — untrimmed, still linked", async () => {
+    // "Never trimmed, never summarised" is the contract; a truncated error
+    // line is a wrong error line, and the trim would be silent.
+    const enormous = "E".repeat(5000);
+    const markup = await renderDashboard(
+      healthyScript({
+        [T.runs]: {
+          data: [runRow({ run_id: RUN_OLDEST, outcome: "failed", error_summary: enormous })],
+        },
+      }),
+    );
+    const lines = errorLinesOf(markup, "runs");
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].text).toHaveLength(5000);
+    expect(lines[0].text).toBe(enormous);
+    expect(lines[0].href).toBe(`/cycles?run=${RUN_OLDEST}`);
+  });
+
+  it("renders an adapter outcome it has no tone for, verbatim", async () => {
+    // `runs.outcome` admits four values (migration 20260829000001); this page
+    // colours two of them. The other two must still read as themselves rather
+    // than be dropped or coerced into one it knows.
+    const markup = await renderDashboard(
+      healthyScript({
+        [T.runs]: {
+          data: [runRow({ run_id: RUN_OLDEST, ended_at: "2026-09-01T03:02:11Z", outcome: "partial" })],
+        },
+      }),
+    );
+
+    expect(outcomesOf(markup, "runs")).toEqual(["partial"]);
+    expect(rowsOf(markup, "runs")[0].outcome).toBe("partial");
+  });
+
+  it("reads an adapter run still in flight as running, not as a blank", async () => {
+    // The cycles half is asserted above; the runs half shares the rendering
+    // and nothing pinned it. A run row is inserted at start, so a null
+    // `ended_at` with a null `outcome` is the commonest live row there is.
+    const markup = await renderDashboard(healthyScript());
+
+    expect(outcomesOf(markup, "runs")).toEqual(["running", "failed"]);
+  });
+});
+
+describe("the attention summary under refusal and ties", () => {
+  it("renders no figure when the attention read was truncated, and says how many", async () => {
+    // Distinct from the uncounted case above: here the count came back and is
+    // LARGER than the rows. A number derived from that set would be wrong on
+    // the one screen whose job is 'what needs me' — so no number renders and
+    // the refusal carries the real count.
+    const items = reviewItems();
+    const markup = await renderDashboard(
+      healthyScript({ [T.reviewItems]: { data: items, count: 4210 } }),
+    );
+    const $ = cheerio.load(markup);
+    const alert = $('[role="alert"]').text();
+
+    expect(() => readNumber(markup, "Open decisions")).toThrow();
+    expect(() => readNumber(markup, "Open signals")).toThrow();
+    expect($('a[href^="/queues?"]')).toHaveLength(0);
+    expect(alert).toContain("4210");
+    expect(alert).toContain(T.reviewItems);
+  });
+
+  it("fabricates no severity or age from settled items when nothing is open", async () => {
+    // Every item settled, every one of them `high`. The open count is a real
+    // zero, and neither the severity nor the oldest age may be borrowed from
+    // a row that is not attention.
+    const settled: ReviewItemRow[] = [
+      reviewItemDataConflict({
+        review_item_id: "01920000-0000-7000-8000-000000000901",
+        status: "settled",
+        severity: "high",
+        opened_at: "2026-07-01T06:00:00Z",
+      }),
+      reviewItemSourcePattern({
+        review_item_id: "01920000-0000-7000-8000-000000000902",
+        status: "settled",
+        severity: "high",
+        opened_at: "2026-07-02T06:00:00Z",
+      }),
+    ];
+    const markup = await renderDashboard(
+      healthyScript({ [T.reviewItems]: { data: settled, count: settled.length } }),
+    );
+    const $ = cheerio.load(markup);
+
+    expect(readNumber(markup, "Open decisions")).toBe(0);
+    expect(readNumber(markup, "Open signals")).toBe(0);
+    for (const kind of ["decision", "signal"]) {
+      const card = $(`a[href*="kind=${kind}"]`);
+      expect(card, kind).toHaveLength(1);
+      // No severity word borrowed from the settled rows...
+      expect(card.text(), kind).not.toMatch(/\bhigh\b|\blow\b/);
+      // ...and no age either: an age element is a titled span.
+      expect(card.find("[title]"), kind).toHaveLength(0);
+      // The settled rows' instants reach nothing on this page.
+      expect(card.text(), kind).not.toContain("2026-07");
+    }
+  });
+
+  it("shows one oldest age per kind when every open item shares an instant", async () => {
+    const instant = "2026-08-30T06:00:00Z";
+    const tied: ReviewItemRow[] = [
+      reviewItemDataConflict({
+        review_item_id: "01920000-0000-7000-8000-000000000911",
+        opened_at: instant,
+      }),
+      reviewItemEntityLink({
+        review_item_id: "01920000-0000-7000-8000-000000000912",
+        opened_at: instant,
+      }),
+      reviewItemSourcePattern({
+        review_item_id: "01920000-0000-7000-8000-000000000913",
+        opened_at: instant,
+      }),
+    ];
+    const markup = await renderDashboard(
+      healthyScript({ [T.reviewItems]: { data: tied, count: tied.length } }),
+    );
+    const $ = cheerio.load(markup);
+
+    expect(readNumber(markup, "Open decisions")).toBe(2);
+    expect(readNumber(markup, "Open signals")).toBe(1);
+    for (const kind of ["decision", "signal"]) {
+      const titles = $(`a[href*="kind=${kind}"] [title]`)
+        .toArray()
+        .map((element) => $(element).attr("title"));
+      // Exactly one age, and it is the instant they all share.
+      expect(titles, kind).toEqual([absoluteUtc(instant)]);
+    }
+  });
+});
+
+describe("one absent table beside a present one", () => {
+  it("names the absent object without a zero anywhere in the card that names it", async () => {
+    // LOOK_AND_FEEL bar 4: not-provisioned is never a zero. The counts of the
+    // reads that DID succeed still render, so the absence must be legible as
+    // absence rather than as 'nothing happened last night'.
+    const markup = await renderDashboard(
+      healthyScript({
+        [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
+      }),
+    );
+    const $ = cheerio.load(markup);
+
+    expect($('table[aria-label="cycles"]')).toHaveLength(0);
+    expect($('table[aria-label="runs"]')).toHaveLength(1);
+    expect(readNumber(markup, "Open decisions")).toBe(
+      openDecisions(reviewItems()).length,
+    );
+    // The card that names the missing object states no quantity at all.
+    const card = cardNaming(markup, T.resolutionRuns);
+    expect(card.text()).toContain(T.resolutionRuns);
+    expect(card.text()).not.toMatch(/\d/);
+    // ...and it is not the red state: an absence is not a breakage.
+    expect(card.closest('[role="alert"]')).toHaveLength(0);
+  });
+});
