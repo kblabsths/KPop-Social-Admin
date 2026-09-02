@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T08:31:09Z — do not edit)
+# Tracker index (regenerated 2026-09-02T08:36:51Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -28,7 +28,7 @@
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 - TASK-0028 [P2][task][M1] tsconfig excludes agenticflow: a factory evidence file must not red tsc  (scope:tsconfig.json)
 
-## built
+## qa
 - TASK-0007 [P1][task][M1] The six gauges as server-side queries with pure TypeScript aggregation  (deps:TASK-0002 scope:src/lib/gauges,tests/offline/gauges @builder-12)
 
 ## blocked
@@ -38,4 +38,4 @@
 - TASK-0024 [P1][task][M1] ASK BEN: where does Admin read the per-source stuck_pattern dial, which lives only in scraper YAML?  (scope:src/lib/gauges/pending-claims.ts,src/app/sources/page.tsx)
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 
-Totals — blocked:5, built:1, done:13, open:26. Archived: 0.
+Totals — blocked:5, done:13, open:26, qa:1. Archived: 0.
