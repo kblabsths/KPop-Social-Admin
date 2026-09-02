@@ -283,6 +283,123 @@ describe("every evidence id resolves to a claim", () => {
     ).toBe(missing);
   });
 
+  /**
+   * A REPEATED evidence id — campaign admin-window, QA attack on TASK-0011.
+   *
+   * `review_items.evidence` is a plain `uuid[]` with no uniqueness
+   * (`20260901000002`: `evidence uuid[] default '{}' not null`) and
+   * `contracts/resolver.md` §11 folds by APPENDING to it, so the same
+   * observation id can sit in the array twice. `readItemEvidence` already
+   * knows this — it calls `distinct()` before resolving — but the page's
+   * accounting sentence divides the DEDUPLICATED claim count by the RAW array
+   * length, so an item carrying [A, A, B] with every id resolving reports "2
+   * of 3 evidence ids resolved to a claim" and lists no unresolved id at all.
+   *
+   * The assertion is behavioural, not a copy of the sentence: whatever words
+   * the page uses, resolved + unresolved must account for every id it claims
+   * to have looked at. Here nothing is unresolved, so the two numbers in that
+   * accounting must agree.
+   *
+   * PINNED `it.fails` (strict) for admin-window/BUG-0021: it is green only
+   * while the divergence is live, so a fix turns it RED and the fix flips it
+   * back to a plain `it()`. Watched failing as a plain `it()` against
+   * run/admin-window @ 552a243: "AssertionError: 2 of 3 reported resolved,
+   * but no id is listed as unresolved: expected 1 to be +0".
+   */
+  it.fails("accounts for every evidence id when one is repeated", async () => {
+    const item = reviewItemDataConflict({
+      evidence: [ID.observationA, ID.observationA, ID.observationB],
+    });
+    const markup = await renderItem(
+      conflictScript({ [T.reviewItems]: { data: item } }),
+      item.review_item_id,
+    );
+
+    // Nothing failed to resolve: both distinct ids came back.
+    expect(cheerio.load(markup)("[data-unresolved]")).toHaveLength(0);
+
+    // …so the page must not tell the operator that an id went unaccounted
+    // for. Read the two figures out of its own accounting sentence.
+    const accounting = textOf(markup).match(
+      /(\d+) of (\d+) evidence ids resolved/,
+    );
+    expect(accounting, "the page states how many evidence ids resolved").not.toBeNull();
+    const [, resolved, total] = accounting as RegExpMatchArray;
+    expect(
+      Number(total) - Number(resolved),
+      `${resolved} of ${total} reported resolved, but no id is listed as unresolved`,
+    ).toBe(0);
+  });
+
+  /**
+   * A hostile `payload_ref` — campaign admin-window, QA attack on TASK-0011.
+   *
+   * `observations.payload_ref` is scraper-written text: it is FOREIGN data on
+   * a surface behind the service role (STACK.md's trust boundary), so a value
+   * shaped like a `javascript:` URL must reach the operator as text and never
+   * as something clickable. The pointer is rendered verbatim by design (no
+   * object-storage base URL exists as a name in this app), and this pins that
+   * "verbatim" never quietly becomes "linked" the day a base URL arrives.
+   */
+  it("renders a hostile payload pointer as text, never as a link", async () => {
+    const hostile = "javascript:alert(document.domain)";
+    const item = reviewItemDataConflict();
+    const markup = await renderItem(
+      conflictScript({
+        [T.observations]: {
+          data: [observationRow({ payload_ref: hostile }), CLAIM_B],
+        },
+      }),
+      item.review_item_id,
+    );
+    const $ = cheerio.load(markup);
+
+    expect($(`[data-payload="${hostile}"]`)).toHaveLength(1);
+    expect($(`[data-payload="${hostile}"]`).is("a")).toBe(false);
+    for (const link of $("a[href]").toArray()) {
+      expect($(link).attr("href")?.startsWith("javascript:"), "href").toBe(false);
+    }
+  });
+
+  /**
+   * A source-pattern item that folded FAR more records than one chunk — the
+   * boundary `readRowsByIds` chunks at (`ID_CHUNK` = 100,
+   * `src/lib/db/result.ts`). 200 ids is two chunks plus a remainder-free edge,
+   * and every one of them must reach the folded-record list: a pattern signal
+   * that showed only its first hundred records would understate the very
+   * thing it exists to report.
+   */
+  it("renders every folded record of a large source-pattern item", async () => {
+    const ids = Array.from(
+      { length: 200 },
+      (_, index) =>
+        `01920000-0000-7000-8000-${(900000 + index).toString().padStart(12, "0")}`,
+    );
+    const rows = ids.map((observation_id, index) =>
+      observationRow({
+        observation_id,
+        source_id: ID.sourceBandsintown,
+        entity_id: null,
+        value: `record ${index}`,
+      }),
+    );
+    const item = reviewItemSourcePattern({ evidence: ids });
+    const markup = await renderItem(
+      patternScript({
+        [T.reviewItems]: { data: item },
+        [T.observations]: [
+          { data: rows.slice(0, 100) },
+          { data: rows.slice(100) },
+          { data: [] },
+        ],
+      }),
+      item.review_item_id,
+    );
+
+    expect(evidenceIds(markup)).toEqual(ids);
+    expect(cheerio.load(markup)("[data-unresolved]")).toHaveLength(0);
+  });
+
   it("renders an honest empty block when NO id resolves", async () => {
     const item = reviewItemDataConflict();
     const markup = await renderItem(
