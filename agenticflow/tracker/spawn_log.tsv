@@ -3366,3 +3366,33 @@
 2026-09-02T16:32:49Z	compactor	DEP-0002	13322	754	54528
 # STRANDED	2026-09-02T16:33:08Z	agent	2 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/docs/SERVICES.md
 2026-09-02T16:33:08Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:33:40Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T16:33:40Z	agent	-	-	-	-
+2026-09-02T16:33:47Z	toolsmith	DEP-0002	spawned
+2026-09-02T16:34:05Z	qa-adversary	BUG-0024	spawned
+# STRANDED	2026-09-02T16:34:11Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T16:34:11Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:34:15Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T16:34:15Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:34:19Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T16:34:19Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:34:37Z	agent	2 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0024.md
+2026-09-02T16:34:37Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:34:44Z	agent	2 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0024.md
+2026-09-02T16:34:44Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:34:51Z	agent	2 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0024.md
+2026-09-02T16:34:51Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:35:10Z	agent	3 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0024.md
+2026-09-02T16:35:10Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:35:15Z	agent	3 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0024.md
+2026-09-02T16:35:15Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:35:22Z	agent	3 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0024.md
+2026-09-02T16:35:22Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:35:47Z	agent	3 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0024.md
+2026-09-02T16:35:47Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:35:53Z	agent	3 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0024.md
+2026-09-02T16:35:53Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:36:12Z	agent	4 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0024.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0002.md
+2026-09-02T16:36:12Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:36:21Z	toolsmith	4 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0024.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0002.md
+2026-09-02T16:36:21Z	toolsmith	DEP-0002	6933	153	44279
