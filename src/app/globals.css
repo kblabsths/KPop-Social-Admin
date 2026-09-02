@@ -1,26 +1,166 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+ * Design tokens — campaign admin-window, TASK-0004.
+ *
+ * Authority: agenticflow/docs/vision/LOOK_AND_FEEL.md ("The Look") and
+ * ARCHITECTURE.md §7. Tailwind 4 is CSS-first: this file is the whole token
+ * layer, there is no tailwind.config.js and none is added.
+ *
+ * Builders consume tokens and primitives, never raw values: a hex code, an
+ * arbitrary `text-[13px]` or a `rounded-lg` in a page file is a defect.
+ *
+ * Theming: every palette job is ONE token whose value flips in the
+ * prefers-color-scheme media query below. So a primitive writes `bg-surface`,
+ * never `bg-surface dark:bg-surface-dark` — there is no way to ship a class
+ * that is right in one theme and wrong in the other.
+ */
+@theme {
+  /* ---- Palette: eleven jobs, light values (dark below) ---------------- */
+  --color-page: #f3f4f6; /* page background            gray-100 */
+  --color-surface: #ffffff; /* cards, tables, panels      white    */
+  --color-chrome: #f9fafb; /* sidebar, header row, chips gray-50  */
+  --color-chrome-inverse: #e5e7eb; /* active nav item            gray-200 */
+  --color-hairline: #d1d5dc; /* every border and divider   gray-300 */
+  --color-ink: #1e2939; /* primary text               gray-800 */
+  --color-ink-secondary: #6a7282; /* labels, sub-detail         gray-500 */
+  --color-ink-disabled: #99a1af; /* disabled/placeholder/null  gray-400 */
+  --color-accent: #9810fa; /* selection, active, focus   purple-600 */
+  --color-healthy: #00a63e; /* succeeded, settled         green-600 */
+  --color-attention: #e17100; /* open items, high severity  amber-600 */
+  --color-broken: #e7000b; /* failed run, error line     red-600 */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  /*
+   * Text on an accent fill. White on purple-600 is LOOK_AND_FEEL's rule; in
+   * dark theme the accent is purple-400, where white measures ~2.4:1, so the
+   * dark value flips to the page ink instead (quality bar 12: nothing below
+   * 4.5:1 on text).
+   */
+  --color-on-accent: #ffffff;
+
+  /* ---- Typography: one family pair, five steps ------------------------ */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* the one number on a stat or gauge card */
+  --text-figure: 20px;
+  --text-figure--line-height: 24px;
+  --text-figure--font-weight: 600;
+  /* page h1 and section h2, nothing else */
+  --text-title: 14px;
+  --text-title--line-height: 20px;
+  --text-title--font-weight: 600;
+  --text-title--letter-spacing: 0.05em;
+  /* buttons, nav, prose, form labels */
+  --text-body: 12px;
+  --text-body--line-height: 18px;
+  /* table cells, values, chips, badges, inline detail */
+  --text-data: 11px;
+  --text-data--line-height: 16px;
+  /* the eyebrow label above a value */
+  --text-micro: 10px;
+  --text-micro--line-height: 14px;
+  --text-micro--letter-spacing: 0.05em;
+
+  /*
+   * ---- Spacing scale: 2, 4, 6, 8, 12, 16, 24 px, and nothing else -----
+   * The multiplier is stated in px because the spec is: 0.5=2 1=4 1.5=6 2=8
+   * 3=12 4=16 6=24. `p-5` (20px) is off-scale and a defect even though
+   * Tailwind will generate it; tests/offline/ui asserts the primitives emit
+   * only in-scale steps.
+   */
+  --spacing: 4px;
+
+  /* ---- Radius: 0 for containers, 4px for interactive controls -------- */
+  --radius-control: 4px;
+
+  /*
+   * ---- Motion budget: 120ms colour transitions, and the 1.5s save
+   * confirmation owned by EditableCell. Nothing else moves — no shimmer,
+   * no pulse, no animated counters.
+   */
+  --default-transition-duration: 120ms;
 }
 
+/*
+ * Dark theme. Same eleven jobs, dark values; utilities resolve through the
+ * variable, so no component carries a `dark:` class for a palette job.
+ */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --color-page: #030712; /* gray-950 */
+    --color-surface: #101828; /* gray-900 */
+    --color-chrome: #1e2939; /* gray-800 */
+    --color-chrome-inverse: #364153; /* gray-700 */
+    --color-hairline: #364153; /* gray-700 */
+    --color-ink: #e5e7eb; /* gray-200 */
+    --color-ink-secondary: #99a1af; /* gray-400 */
+    --color-ink-disabled: #4a5565; /* gray-600 */
+    --color-accent: #c27aff; /* purple-400 */
+    --color-healthy: #05df72; /* green-400 */
+    --color-attention: #ffb900; /* amber-400 */
+    --color-broken: #ff6467; /* red-400 */
+    --color-on-accent: #030712;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/*
+ * The five type steps as single utilities. Each one carries its face, so the
+ * mono/sans split — "mono carries every value the database produced, sans
+ * carries every word the app wrote" — is enforced by which utility you use
+ * rather than by remembering (ARCHITECTURE §7).
+ */
+@utility type-figure {
+  font-family: var(--font-mono);
+  font-size: var(--text-figure);
+  line-height: var(--text-figure--line-height);
+  font-weight: 600;
+}
+
+@utility type-title {
+  font-family: var(--font-sans);
+  font-size: var(--text-title);
+  line-height: var(--text-title--line-height);
+  font-weight: 600;
+  letter-spacing: var(--text-title--letter-spacing);
+  text-transform: uppercase;
+}
+
+@utility type-body {
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  font-weight: 400;
+}
+
+@utility type-data {
+  font-family: var(--font-mono);
+  font-size: var(--text-data);
+  line-height: var(--text-data--line-height);
+  font-weight: 400;
+}
+
+@utility type-micro {
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  line-height: var(--text-micro--line-height);
+  font-weight: 400;
+  letter-spacing: var(--text-micro--letter-spacing);
+  text-transform: uppercase;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-page);
+    color: var(--color-ink);
+  }
+
+  /*
+   * Keyboard focus, once, for everything: a 2px accent outline at 1px offset.
+   * No component sets `outline: none` — quality bar 9.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
 }
