@@ -1,0 +1,399 @@
+import { describe, expect, it, vi } from "vitest";
+import * as cheerio from "cheerio";
+import { EM_DASH } from "@/lib/format";
+import { T } from "@/lib/db/tables";
+import {
+  COLUMNS_PARAM,
+  RECENT_EVENTS,
+  columnsParamValue,
+  configuredKeys,
+  shownColumns,
+  type BrowseColumnKey,
+} from "@/lib/browse/views";
+import { eventRecordHref } from "@/lib/browse/rows";
+import { render } from "../ui/markup";
+import { ID, eventListingRow, eventRow, fieldProvenanceRow, sourceRow } from "../../fixtures/rows";
+import {
+  permissionDenied,
+  stubClient,
+  tableNotInSchemaCache,
+  type Script,
+} from "../../fixtures/stub-client";
+
+/**
+ * The Browse page, rendered (campaign admin-window/TASK-0015).
+ *
+ * The page function is the only async component on the route
+ * (ARCHITECTURE.md §5), so the whole test is
+ * `renderToStaticMarkup(await BrowsePage(props))` — no jsdom, no Testing
+ * Library, no database. `readRecentEvents` is stubbed at the module boundary
+ * so the page's four states are all reachable offline; what it reads through
+ * is exercised for real in `browse-read.test.ts`.
+ *
+ * These assert STRUCTURE and BEHAVIOUR — which columns are drawn, in what row
+ * order, which links the selector offers, which state renders — never a
+ * rendered word or a class name. Copy and styling belong to the walk.
+ */
+
+const view = RECENT_EVENTS;
+
+/**
+ * The page reads through `lib/db/browse`, which reads through the real
+ * `result.ts` helpers; handing it a stub client is the honest seam, so the
+ * mock below only swaps in the client the reads use.
+ */
+const readWith = vi.hoisted(() => ({ client: undefined as unknown }));
+
+vi.mock("@/lib/db/browse", async (importActual) => {
+  const actual =
+    await importActual<typeof import("@/lib/db/browse")>();
+  return {
+    ...actual,
+    readRecentEvents: (v: Parameters<typeof actual.readRecentEvents>[0]) =>
+      actual.readRecentEvents(v, readWith.client as never),
+  };
+});
+
+const { default: BrowsePage } = await import("@/app/browse/page");
+
+const EVENT_NEW = "01920000-0000-7000-8000-000000000b02";
+const EVENT_OLD = "01920000-0000-7000-8000-000000000b01";
+
+function population() {
+  return [
+    eventRow({
+      event_id: EVENT_OLD,
+      title: "older arrival",
+      created_at: "2026-07-01T00:00:00Z",
+      // starts LAST though it arrived FIRST: the calendar order is the
+      // reverse of the arrival order, so a sort on starts_at cannot pass.
+      starts_at: "2027-06-01T18:30:00Z",
+      description: "An older blurb.",
+      poster_url: "https://example.invalid/posters/old.jpg",
+    }),
+    eventRow({
+      event_id: EVENT_NEW,
+      title: "newest arrival",
+      created_at: "2026-09-01T00:00:00Z",
+      starts_at: "2026-10-01T02:00:00Z",
+      description: "A newer blurb.",
+      poster_url: "https://example.invalid/posters/new.jpg",
+    }),
+  ];
+}
+
+function healthyScript(overrides: Script = {}): Script {
+  const provenance = [
+    fieldProvenanceRow({
+      entity_id: EVENT_NEW,
+      source_id: ID.sourceTicketmaster,
+    }),
+    fieldProvenanceRow({
+      entity_id: EVENT_NEW,
+      field: "starts_at",
+      source_id: ID.sourceBandsintown,
+    }),
+  ];
+  const sources = [
+    sourceRow({ source_id: ID.sourceTicketmaster, source: "ticketmaster" }),
+    sourceRow({ source_id: ID.sourceBandsintown, source: "bandsintown" }),
+  ];
+  const listings = [
+    eventListingRow({ event_id: EVENT_NEW, venue_name: "Crypto.com Arena" }),
+    eventListingRow({ event_id: EVENT_OLD, venue_name: "The Forum" }),
+  ];
+  return {
+    [T.events]: { data: population() },
+    [T.eventListings]: { data: listings, count: listings.length },
+    [T.fieldProvenance]: { data: provenance, count: provenance.length },
+    [T.sources]: { data: sources, count: sources.length },
+    ...overrides,
+  };
+}
+
+/** Render the page against a scripted database and the given URL state. */
+async function renderBrowse(
+  script: Script,
+  params: Record<string, string | string[] | undefined> = {},
+): Promise<string> {
+  readWith.client = stubClient(script).asSupabaseClient();
+  return render(await BrowsePage({ searchParams: Promise.resolve(params) }));
+}
+
+/** The table's header labels, in document order. */
+function headers(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("thead th")
+    .toArray()
+    .map((th) => $(th).text().trim());
+}
+
+/** Each body row's cells, as trimmed text. */
+function bodyRows(markup: string): string[][] {
+  const $ = cheerio.load(markup);
+  return $("tbody tr")
+    .toArray()
+    .map((tr) =>
+      $(tr)
+        .find("td")
+        .toArray()
+        .map((td) => $(td).text().replace(/\s+/g, " ").trim()),
+    );
+}
+
+/** Every href in the markup. */
+function hrefs(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("[href]")
+    .toArray()
+    .map((el) => $(el).attr("href") ?? "");
+}
+
+/** The label a configured column renders under. */
+function labelOf(key: BrowseColumnKey): string {
+  const column = view.columns.find((each) => each.key === key);
+  if (!column) throw new Error(`${key} is not configured`);
+  return column.label;
+}
+
+describe("the page's rows", () => {
+  it("renders the newest arrival first", async () => {
+    const markup = await renderBrowse(healthyScript());
+    const titleColumn = headers(markup).indexOf(labelOf("title"));
+    const rows = bodyRows(markup);
+    expect(rows).toHaveLength(2);
+    expect(rows[0][titleColumn]).toBe("newest arrival");
+    expect(rows[1][titleColumn]).toBe("older arrival");
+  });
+
+  it("renders every spot-verification column, sources included", async () => {
+    const markup = await renderBrowse(healthyScript());
+    const labels = headers(markup);
+    for (const key of [
+      "title",
+      "starts_at",
+      "venue",
+      "description",
+      "poster",
+      "sources",
+    ] as BrowseColumnKey[]) {
+      expect(labels, key).toContain(labelOf(key));
+    }
+  });
+
+  it("shows the source names the provenance join resolved", async () => {
+    const markup = await renderBrowse(healthyScript());
+    const column = headers(markup).indexOf(labelOf("sources"));
+    const rows = bodyRows(markup);
+    expect(rows[0][column]).toContain("ticketmaster");
+    expect(rows[0][column]).toContain("bandsintown");
+    // The older event has no provenance at all: an absence, not an empty cell.
+    expect(rows[1][column]).toBe(EM_DASH);
+  });
+
+  it("shows the venue name from the listings view", async () => {
+    const markup = await renderBrowse(healthyScript());
+    const column = headers(markup).indexOf(labelOf("venue"));
+    expect(bodyRows(markup)[0][column]).toBe("Crypto.com Arena");
+  });
+
+  it("renders the poster as an image the operator can actually look at", async () => {
+    const markup = await renderBrowse(healthyScript());
+    const $ = cheerio.load(markup);
+    const sources = $("img")
+      .toArray()
+      .map((img) => $(img).attr("src"));
+    expect(sources).toContain("https://example.invalid/posters/new.jpg");
+  });
+
+  it("links every row to its own record surface", async () => {
+    const markup = await renderBrowse(healthyScript());
+    const links = hrefs(markup);
+    expect(links).toContain(eventRecordHref(EVENT_NEW));
+    expect(links).toContain(eventRecordHref(EVENT_OLD));
+  });
+
+  it("states the scheduled time in UTC, with the zone in the header", async () => {
+    const markup = await renderBrowse(healthyScript());
+    const label = labelOf("starts_at");
+    expect(label).toContain("UTC");
+    const column = headers(markup).indexOf(label);
+    // The value is the absolute instant, never a raw ISO string.
+    expect(bodyRows(markup)[0][column]).toMatch(
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/,
+    );
+  });
+
+  it("carries the absolute instant behind every relative age", async () => {
+    const markup = await renderBrowse(healthyScript());
+    const $ = cheerio.load(markup);
+    const titled = $("tbody [title]")
+      .toArray()
+      .map((el) => $(el).attr("title") ?? "");
+    expect(titled.some((t) => t.endsWith("UTC"))).toBe(true);
+  });
+});
+
+describe("the column selector on the page", () => {
+  /** The selector's chips: their label and the href each one points at. */
+  function options(markup: string): { label: string; href: string; active: boolean }[] {
+    const $ = cheerio.load(markup);
+    return $('[role="group"] a')
+      .toArray()
+      .map((a) => ({
+        label: $(a).text().trim(),
+        href: $(a).attr("href") ?? "",
+        active: $(a).attr("aria-current") === "true",
+      }));
+  }
+
+  it("offers exactly the configured column set — every one, nothing else", async () => {
+    const markup = await renderBrowse(healthyScript());
+    expect(options(markup).map((o) => o.label)).toEqual(
+      view.columns.map((c) => c.label),
+    );
+  });
+
+  it("offers the same set when the URL shows only one column", async () => {
+    const markup = await renderBrowse(healthyScript(), {
+      [COLUMNS_PARAM]: "title",
+    });
+    expect(options(markup).map((o) => o.label)).toEqual(
+      view.columns.map((c) => c.label),
+    );
+    expect(headers(markup)).toEqual([labelOf("title")]);
+  });
+
+  it("marks the shown columns active and the hidden ones not", async () => {
+    const markup = await renderBrowse(healthyScript(), {
+      [COLUMNS_PARAM]: columnsParamValue(["title", "sources"]),
+    });
+    const active = options(markup)
+      .filter((o) => o.active)
+      .map((o) => o.label);
+    expect(active).toEqual([labelOf("title"), labelOf("sources")]);
+  });
+
+  it("hides exactly the column a chip's link takes away", async () => {
+    const before = await renderBrowse(healthyScript());
+    const venueChip = options(before).find((o) => o.label === labelOf("venue"));
+    expect(venueChip).toBeDefined();
+
+    const url = new URL(venueChip?.href ?? "", "https://admin.invalid");
+    const after = await renderBrowse(healthyScript(), {
+      [COLUMNS_PARAM]: url.searchParams.get(COLUMNS_PARAM) ?? undefined,
+    });
+
+    const gone = headers(before).filter((h) => !headers(after).includes(h));
+    expect(gone).toEqual([labelOf("venue")]);
+  });
+
+  it("round-trips its state through the URL for every configured column", async () => {
+    for (const key of configuredKeys(view)) {
+      const markup = await renderBrowse(healthyScript(), {
+        [COLUMNS_PARAM]: columnsParamValue([key]),
+      });
+      expect(headers(markup), key).toEqual([labelOf(key)]);
+    }
+  });
+
+  it("ignores a column the view does not configure", async () => {
+    const markup = await renderBrowse(healthyScript(), {
+      [COLUMNS_PARAM]: "title,ticket_url",
+    });
+    expect(headers(markup)).toEqual([labelOf("title")]);
+  });
+
+  it("shows the default set when the URL says nothing about columns", async () => {
+    const markup = await renderBrowse(healthyScript());
+    expect(headers(markup)).toEqual(
+      shownColumns(view, undefined).map((key) => labelOf(key)),
+    );
+  });
+});
+
+describe("every state renders without throwing", () => {
+  it("renders the rows when the database is whole", async () => {
+    const markup = await renderBrowse(healthyScript());
+    expect(bodyRows(markup)).toHaveLength(2);
+  });
+
+  it("renders an empty state, not a table of nothing, when there are no events", async () => {
+    const markup = await renderBrowse({ [T.events]: { data: [] } });
+    expect(markup).toContain("<h1");
+    expect(bodyRows(markup)).toEqual([]);
+    expect(cheerio.load(markup)("table").length).toBe(0);
+  });
+
+  it("names the missing table when events itself is absent", async () => {
+    const markup = await renderBrowse({
+      [T.events]: { error: tableNotInSchemaCache(T.events) },
+    });
+    expect(markup).toContain(T.events);
+    expect(markup).not.toContain("0 events");
+    expect(cheerio.load(markup)("table").length).toBe(0);
+  });
+
+  it("shows the database's own words when a read fails", async () => {
+    const markup = await renderBrowse({
+      [T.events]: { error: permissionDenied(T.events) },
+    });
+    expect(markup).toContain(permissionDenied(T.events).message);
+    expect(cheerio.load(markup)('[role="alert"]').length).toBeGreaterThan(0);
+  });
+
+  it("still renders the event rows with field_provenance absent, and says so", async () => {
+    // The acceptance criterion, at the surface: rows render AND the page names
+    // the missing table. Either way nothing throws.
+    const markup = await renderBrowse(
+      healthyScript({
+        [T.fieldProvenance]: { error: tableNotInSchemaCache(T.fieldProvenance) },
+      }),
+    );
+    expect(bodyRows(markup)).toHaveLength(2);
+    expect(markup).toContain(T.fieldProvenance);
+
+    const column = headers(markup).indexOf(labelOf("sources"));
+    for (const row of bodyRows(markup)) expect(row[column]).toBe(EM_DASH);
+  });
+
+  it("still renders the event rows with the listings view absent, and says so", async () => {
+    const markup = await renderBrowse(
+      healthyScript({
+        [T.eventListings]: { error: tableNotInSchemaCache(T.eventListings) },
+      }),
+    );
+    expect(bodyRows(markup)).toHaveLength(2);
+    expect(markup).toContain(T.eventListings);
+
+    const column = headers(markup).indexOf(labelOf("venue"));
+    for (const row of bodyRows(markup)) expect(row[column]).toBe(EM_DASH);
+  });
+
+  it("renders with no database credential in the environment", async () => {
+    const restore = { ...process.env };
+    for (const key of Object.keys(process.env)) {
+      if (key.includes("SUPABASE")) delete process.env[key];
+    }
+    try {
+      readWith.client = undefined;
+      const markup = render(await BrowsePage());
+      expect(markup).toContain("<h1");
+      expect(cheerio.load(markup)('[role="alert"]').length).toBeGreaterThan(0);
+    } finally {
+      process.env = restore;
+    }
+  });
+
+  it("gives the page exactly one h1 in every state", async () => {
+    for (const script of [
+      healthyScript(),
+      { [T.events]: { data: [] } },
+      { [T.events]: { error: tableNotInSchemaCache(T.events) } },
+      { [T.events]: { error: permissionDenied(T.events) } },
+    ] as Script[]) {
+      const markup = await renderBrowse(script);
+      expect([...markup.matchAll(/<h1[\s>]/g)]).toHaveLength(1);
+    }
+  });
+});
