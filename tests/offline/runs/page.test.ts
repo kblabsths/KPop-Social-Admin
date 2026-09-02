@@ -6,6 +6,7 @@ import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
 import { readNumber } from "../../live/parity";
 import { APPLIES, CYCLES, OBSERVED } from "../cycles/population";
+import { runRow, type RunRow as RunFixture } from "../../fixtures/rows";
 import { render } from "../ui/markup";
 import {
   FAILED,
@@ -496,5 +497,88 @@ describe("a database without the adapter framework's runs", () => {
     expect(notProvisioned(markup)).toContain(T.resolutionRuns);
     expect(runsState(markup)).toBe("ok");
     expect(renderedRuns(markup)).toEqual(NEWEST_FIRST.map((row) => row.run_id));
+  });
+});
+
+/* ── the values an ADAPTER wrote, not the values our fixtures like ───────── */
+
+/**
+ * `runs.source`, `outcome`, `failure_class` and `error_summary` are foreign
+ * text: an adapter writes them, this app never validates them, and the
+ * ecosystem's whole point is that a fact renders as the producer filed it. The
+ * facet's URL-controlled string is already pinned above; these are the ROW's,
+ * which arrive by a different path (a scraper insert) and are the path the
+ * trust boundary names.
+ */
+describe("a run carrying values this app has never heard of", () => {
+  /**
+   * A population of one row, so the assertions are about that row alone.
+   *
+   * The overrides are cast because the shared fixture narrows `outcome` and
+   * `failure_class` to the words the migration's check constraints allow
+   * today, while the COLUMNS are plain text and `RunRow` in `src/lib/db/runs.ts`
+   * types them `string | null` on purpose. A word this app has never heard of
+   * is exactly what these tests are about, so it is written here rather than
+   * by widening the fixture's union for every other test.
+   */
+  async function renderOne(overrides: Record<string, unknown>): Promise<string> {
+    const only = {
+      ...runRow({ run_id: "0192f0c2-0000-7000-8000-0000000000aa" }),
+      ...overrides,
+    } as unknown as RunFixture;
+    return renderCycles(healthyScript({ [T.runs]: { data: [only] } }));
+  }
+
+  const ONLY = "0192f0c2-0000-7000-8000-0000000000aa";
+
+  it("renders an outcome and a failure_class outside the constraint's words verbatim", async () => {
+    // Neither word is in `runs_outcome_check` / `runs_failure_class_check`
+    // (migration 20260829000001). A value the database holds and this app has
+    // never heard of must reach the operator as it was filed — never narrowed
+    // away, never replaced with a word of ours, and never turned into the
+    // absence dash.
+    const markup = await renderOne({
+      outcome: "abandoned",
+      failure_class: "quota",
+      error_summary: "upstream said no",
+      records_parsed: 7,
+      claims_emitted: 0,
+      records_unlinked: 3,
+    });
+    expect(runsState(markup)).toBe("ok");
+    const row = runRowOf(markup, ONLY);
+    expect(row.outcome).toBe("abandoned");
+    expect(row.failureClass).toBe("quota");
+    expect(row.cells[RUN_COLUMNS.indexOf("outcome")]).toBe("abandoned");
+    expect(row.cells[RUN_COLUMNS.indexOf("failure_class")]).toBe("quota");
+    expect(row.cells[RUN_COLUMNS.indexOf("failure_class")]).not.toBe(EM_DASH);
+    // The rest of the row is unaffected by the word it does not know.
+    expect(row.counts.records_parsed).toBe("7");
+    expect(row.counts.records_unlinked).toBe("3");
+  });
+
+  it("renders adapter-written text as text, never as markup", async () => {
+    // An `error_summary` is whatever the adapter's exception said, and a
+    // `source` is whatever it filed under. Neither may reach the document as
+    // an element.
+    const error = '</td><script>alert(1)</script>';
+    const source = '"><img src=x onerror=alert(1)>';
+    const markup = await renderOne({
+      source,
+      outcome: "failed",
+      failure_class: "<b>structural</b>",
+      error_summary: error,
+    });
+    expect(markup).not.toContain("<script>");
+    expect(markup).not.toContain("<img");
+    const $ = cheerio.load(markup);
+    expect($("script").length).toBe(0);
+    expect($("img").length).toBe(0);
+    // Still legible, and still the producer's own text.
+    const row = runRowOf(markup, ONLY);
+    expect(row.error).toBe(error);
+    expect(row.source).toBe(source);
+    expect(row.failureClass).toBe("<b>structural</b>");
+    expect(runsState(markup)).toBe("ok");
   });
 });
