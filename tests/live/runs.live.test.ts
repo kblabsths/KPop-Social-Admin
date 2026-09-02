@@ -3,7 +3,15 @@ import { describe, expect, it } from "vitest";
 import CyclesPage from "@/app/cycles/page";
 import { RUN_COLUMNS, RUN_COUNTS, RUN_WINDOW } from "@/lib/db/runs";
 import { T } from "@/lib/db/tables";
-import { independentClient, readNumber, renderPage } from "./parity";
+import {
+  assertState,
+  gradeSurface,
+  independentClient,
+  objectIsAbsent,
+  readNumber,
+  renderPage,
+  whileStill,
+} from "./parity";
 
 /**
  * The adapter-runs half of `/cycles` against staging (campaign
@@ -50,8 +58,8 @@ type Params = Record<string, string>;
 /** The label the empty state's figure stands under, as an operator reads it. */
 const RUNS_FIGURE = "Runs in this window";
 
-/** The four kinds a data surface can be in (LOOK_AND_FEEL; §10's rule). */
-type StateKind = "ok" | "empty" | "not_provisioned" | "error";
+/** The runs half's own hook — the surface every case below grades. */
+const RUNS = '[data-surface="runs"]';
 
 interface StagingRun {
   run_id: string;
@@ -69,35 +77,6 @@ interface StagingRun {
 /** The page as the URL renders it. Every read happens per request. */
 async function cyclesMarkup(params: Params = {}): Promise<string> {
   return renderPage(CyclesPage, { searchParams: Promise.resolve(params) });
-}
-
-/**
- * The kind the runs section is in, read STRUCTURALLY — never from the prose
- * inside a card, which the not-provisioned card and the error line can both
- * satisfy.
- */
-function runsState(markup: string): StateKind {
-  const kind = cheerio.load(markup)('[data-surface="runs"]').attr("data-state");
-  if (kind === undefined) {
-    throw new Error(
-      "the page rendered no adapter-runs surface at all: there is no " +
-        "[data-surface=runs] element to read a state kind from.",
-    );
-  }
-  return kind as StateKind;
-}
-
-/** The failure the page reported for a named read, verbatim. */
-function failureOf(markup: string, reading: string): string {
-  return cheerio.load(markup)(`[data-read-failed="${reading}"]`).text().trim();
-}
-
-/** The objects whose absence the page reported, in its own state cards. */
-function absentObjects(markup: string): string[] {
-  const $ = cheerio.load(markup);
-  return $("[data-not-provisioned]")
-    .toArray()
-    .map((element) => $(element).attr("data-not-provisioned") ?? "");
 }
 
 /** The run rows the page rendered, as their hooks and count cells. */
@@ -155,68 +134,45 @@ async function stagingRuns(limit: number, source?: string): Promise<StagingRun[]
   return (data ?? []) as unknown as StagingRun[];
 }
 
-/** PostgREST's and Postgres's own codes for "that object is not here". */
-const ABSENCE_CODES = new Set(["PGRST205", "42P01"]);
-
-/** Does THIS TEST's own read of `runs` get the absence code? */
-async function runsAreAbsent(): Promise<boolean> {
-  const { error } = await independentClient().from(T.runs).select("run_id").limit(1);
-  const code =
-    typeof error === "object" && error !== null && "code" in error
-      ? String((error as { code: unknown }).code)
-      : "";
-  return ABSENCE_CODES.has(code);
-}
-
 /**
- * Grade the state kind the page is in, and say whether the caller may go on to
- * compare rows.
+ * Grade the state kind the runs half is in, and say whether the caller may go
+ * on to compare rows.
  *
- * Everything except `ok` ends the test here, and each ending is earned: an
- * `error` fails naming the read and what the database said; a
- * `not_provisioned` is checked against this test's own absence code; an
- * `empty` is a pass carrying the number 0 on screen and 0 in the database.
+ * The four rules live in `gradeSurface` (`tests/live/parity.ts`), which every
+ * live oracle in this suite now shares — an `error` fails naming the read and
+ * what the database said, a `not_provisioned` is checked against this test's
+ * own absence code, an `empty` is a pass carrying 0 on screen and 0 in the
+ * database. What is local here is the COUNT: this test's own read of the runs
+ * the window would hold.
  */
 async function gradeState(markup: string, source?: string): Promise<boolean> {
-  const kind = runsState(markup);
-
-  if (kind === "error") {
-    throw new Error(
-      `the adapter-runs half of /cycles is in its ERROR state reading ` +
-        `'${T.runs}': ${failureOf(markup, T.runs)}`,
-    );
-  }
-
-  if (kind === "not_provisioned") {
-    expect(absentObjects(markup)).toContain(T.runs);
-    expect(
-      await runsAreAbsent(),
-      `the page says '${T.runs}' is not provisioned, but this test's own read ` +
-        `of it did not get an absence code`,
-    ).toBe(true);
-    return false;
-  }
-
-  if (kind === "empty") {
-    // A pass with a number, not an absence: the independent count is exactly
-    // 0 and the page's labelled figure reads 0.
-    expect(await stagingRuns(1, source)).toHaveLength(0);
-    expect(readNumber(markup, RUNS_FIGURE)).toBe(0);
-    expect(renderedRuns(markup)).toHaveLength(0);
-    return false;
-  }
-
-  expect(kind).toBe("ok");
-  return true;
+  const kind = await gradeSurface({
+    markup,
+    within: RUNS,
+    object: T.runs,
+    figure: RUNS_FIGURE,
+    counted: async () =>
+      (await objectIsAbsent(T.runs))
+        ? "absent"
+        : (await stagingRuns(RUN_WINDOW, source)).length,
+  });
+  if (kind === "ok") return true;
+  if (kind === "empty") expect(renderedRuns(markup)).toHaveLength(0);
+  return false;
 }
 
 describe("the adapter framework's runs against staging", () => {
   it("renders the newest runs, newest first, as the table holds them", async () => {
-    const markup = await cyclesMarkup();
+    // The adapters file runs while this test runs, so the render and the query
+    // are pinned to one still moment: a run arriving between them would read
+    // as a run the page dropped (`whileStill`, tests/live/parity.ts).
+    const { made: markup, held } = await whileStill(
+      () => stagingRuns(RUN_WINDOW),
+      () => cyclesMarkup(),
+    );
     if (!(await gradeState(markup))) return;
 
     const rendered = renderedRuns(markup);
-    const held = await stagingRuns(RUN_WINDOW);
     expect(rendered.map((row) => row.runId)).toEqual(held.map((row) => row.run_id));
 
     // The order is this test's own claim, re-derived from the instants rather
@@ -334,33 +290,39 @@ describe("the ?source= facet against staging", () => {
     // counted zero — never the error state (DECISIONS 2026-09-02).
     const name = `no-such-source-${Date.now()}`;
     const markup = await cyclesMarkup({ source: name });
-    const kind = runsState(markup);
 
-    if (kind === "not_provisioned") {
-      expect(await runsAreAbsent()).toBe(true);
+    if (await objectIsAbsent(T.runs)) {
+      assertState(markup, RUNS, "not_provisioned");
       return;
     }
-    expect(
-      kind,
-      `a facet matching nothing must render 'empty', not '${kind}'` +
-        (kind === "error" ? `: ${failureOf(markup, T.runs)}` : ""),
-    ).toBe("empty");
+    // Nothing can carry this name, so this test counted 0 and the page must
+    // say EMPTY with a 0 on it — never the error state (DECISIONS 2026-09-02).
     expect(await stagingRuns(1, name)).toHaveLength(0);
+    assertState(markup, RUNS, "empty");
     expect(readNumber(markup, RUNS_FIGURE)).toBe(0);
     expect(markup).toContain(name);
   });
 
   it("leaves the resolver's cycles unnarrowed, because they carry no source", async () => {
-    const plain = await cyclesMarkup();
-    if (!(await gradeState(plain))) return;
-    const name = renderedRuns(plain)[0].source;
-
-    const faceted = await cyclesMarkup({ source: name });
     const cyclesOf = (markup: string) =>
       cheerio
         .load(markup)("[data-cycle]")
         .toArray()
         .map((element) => cheerio.load(markup)(element).attr("data-cycle") ?? "");
-    expect(cyclesOf(faceted)).toEqual(cyclesOf(plain));
+
+    // Two renders, compared with each other, so they must see the same
+    // database: the resolver files a cycle every cadence, and one arriving
+    // between the two renders is not the facet narrowing anything.
+    const { made } = await whileStill(
+      async () => cyclesOf(await cyclesMarkup()),
+      async () => {
+        const plain = await cyclesMarkup();
+        if (!(await gradeState(plain))) return null;
+        const name = renderedRuns(plain)[0].source;
+        return { plain, faceted: await cyclesMarkup({ source: name }) };
+      },
+    );
+    if (made === null) return;
+    expect(cyclesOf(made.faceted)).toEqual(cyclesOf(made.plain));
   });
 });

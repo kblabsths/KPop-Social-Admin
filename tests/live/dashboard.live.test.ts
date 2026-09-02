@@ -3,7 +3,16 @@ import { describe, expect, it } from "vitest";
 import DashboardPage from "@/app/page";
 import { DASHBOARD_WINDOW } from "@/lib/db/dashboard";
 import { T } from "@/lib/db/tables";
-import { assertParity, countRows, independentClient, renderPage } from "./parity";
+import {
+  assertParity,
+  countOrAbsent,
+  countRows,
+  exactCount,
+  gradeSurface,
+  independentClient,
+  renderPage,
+  whileStill,
+} from "./parity";
 
 /**
  * The Dashboard against staging (campaign admin-window/TASK-0009).
@@ -25,10 +34,14 @@ import { assertParity, countRows, independentClient, renderPage } from "./parity
  * missing name. That refusal is the correct state today and is not a failure
  * of this file.
  *
- * Where staging does not carry a table at all (ARCHITECTURE.md §12
- * `OPEN-FIXTURES` — what staging has installed is itself an open question),
- * each case asserts the honest not-provisioned rendering instead, naming the
- * table. It never skips silently.
+ * **Every case names the STATE KIND before it compares a number**
+ * (ARCHITECTURE.md §10, common violation 6; oracle rewritten by
+ * admin-window/TASK-0032). The page's three surfaces are graded on their own,
+ * each against the kind THIS TEST's own count implies: `ok` compares numbers,
+ * `empty` is a pass with a stated 0, `not_provisioned` needs this test's own
+ * absence code (`PGRST205` / `42P01`), and `error` is a FAIL naming the read.
+ * Nothing is inferred from "no rows rendered", and no card's WORDS are read —
+ * `Empty` and `NotProvisioned` draw the same container.
  */
 
 /** Load the page once per assertion; every read happens per request. */
@@ -36,9 +49,32 @@ async function dashboardMarkup(): Promise<string> {
   return renderPage(DashboardPage, undefined);
 }
 
-/** Did the attention summary render its counts at all? */
-function countsRendered(markup: string): boolean {
-  return cheerio.load(markup)('a[href^="/queues?"]').length > 0;
+/**
+ * The page's three surfaces, in the order `src/app/page.tsx` renders them.
+ * Structural — no heading text is read, because copy is the designer's.
+ */
+const ATTENTION = "section:nth-of-type(1)";
+const CYCLES = "section:nth-of-type(2)";
+const RUNS = "section:nth-of-type(3)";
+
+/**
+ * Grade the attention summary against this test's own count of the table
+ * behind it.
+ *
+ * `emptyAtZero: false` states a property of THIS surface: its two figures
+ * stand in the same place whether or not anything is open, so a quiet morning
+ * is `ok` showing 0 and never the empty card (LOOK_AND_FEEL bar 1). The
+ * counted zero still has to be on screen — the parity assertion that follows
+ * reads it.
+ */
+async function gradeAttention(markup: string) {
+  return gradeSurface({
+    markup,
+    within: ATTENTION,
+    object: T.reviewItems,
+    counted: () => countOrAbsent(() => exactCount(T.reviewItems)),
+    emptyAtZero: false,
+  });
 }
 
 /** The rows of the named table, header-keyed, in rendered order. */
@@ -74,19 +110,15 @@ function lineIds(markup: string, parameter: string): string[] {
 describe("the attention summary against staging", () => {
   it("renders the open decision count the database holds", async () => {
     const markup = await dashboardMarkup();
-    if (!countsRendered(markup)) {
-      expect(markup).toContain(T.reviewItems);
-      return;
-    }
+    if ((await gradeAttention(markup)) !== "ok") return;
 
     await assertParity({
       markup,
+      within: ATTENTION,
       label: "Open decisions",
       expected: () =>
         countRows(() =>
-          independentClient()
-            .from(T.reviewItems)
-            .select("*", { head: true, count: "exact" })
+          exactCount(T.reviewItems)
             .eq("status", "open")
             // A decision is everything that is not the per-source signal:
             // a `data_conflict` item, or an `entity_link` item about a fact.
@@ -99,19 +131,15 @@ describe("the attention summary against staging", () => {
 
   it("renders the open signal count the database holds", async () => {
     const markup = await dashboardMarkup();
-    if (!countsRendered(markup)) {
-      expect(markup).toContain(T.reviewItems);
-      return;
-    }
+    if ((await gradeAttention(markup)) !== "ok") return;
 
     await assertParity({
       markup,
+      within: ATTENTION,
       label: "Open signals",
       expected: () =>
         countRows(() =>
-          independentClient()
-            .from(T.reviewItems)
-            .select("*", { head: true, count: "exact" })
+          exactCount(T.reviewItems)
             .eq("status", "open")
             .eq("queue", "entity_link")
             .not("source_id", "is", null),
@@ -121,21 +149,11 @@ describe("the attention summary against staging", () => {
 
   it("counts open items alone — the two figures plus the settled ones are the table", async () => {
     const markup = await dashboardMarkup();
-    if (!countsRendered(markup)) {
-      expect(markup).toContain(T.reviewItems);
-      return;
-    }
+    if ((await gradeAttention(markup)) !== "ok") return;
 
-    const whole = await countRows(() =>
-      independentClient()
-        .from(T.reviewItems)
-        .select("*", { head: true, count: "exact" }),
-    );
+    const whole = await countRows(() => exactCount(T.reviewItems));
     const settled = await countRows(() =>
-      independentClient()
-        .from(T.reviewItems)
-        .select("*", { head: true, count: "exact" })
-        .neq("status", "open"),
+      exactCount(T.reviewItems).neq("status", "open"),
     );
     const $ = cheerio.load(markup);
     const rendered = $('a[href^="/queues?"]')
@@ -148,10 +166,7 @@ describe("the attention summary against staging", () => {
 
   it("shows the oldest open item of each kind, as the database orders them", async () => {
     const markup = await dashboardMarkup();
-    if (!countsRendered(markup)) {
-      expect(markup).toContain(T.reviewItems);
-      return;
-    }
+    if ((await gradeAttention(markup)) !== "ok") return;
 
     for (const [kind, narrow] of [
       [
@@ -191,6 +206,42 @@ describe("the attention summary against staging", () => {
   });
 });
 
+/** This test's own read of the cycles window the Dashboard renders. */
+async function newestCycles() {
+  const { data, error } = await independentClient()
+    .from(T.resolutionRuns)
+    .select("run_id, started_at, applied, escalated, errors, outcome")
+    .order("started_at", { ascending: false })
+    .order("run_id", { ascending: false })
+    .limit(DASHBOARD_WINDOW);
+  if (error) throw new Error(`the cycles query failed: ${JSON.stringify(error)}`);
+  return (data ?? []) as {
+    run_id: string;
+    started_at: string;
+    applied: number;
+    escalated: number;
+    errors: number;
+    outcome: string | null;
+  }[];
+}
+
+/** This test's own read of the runs window the Dashboard renders. */
+async function newestRuns() {
+  const { data, error } = await independentClient()
+    .from(T.runs)
+    .select("run_id, source, started_at, outcome, error_summary")
+    .order("started_at", { ascending: false })
+    .order("run_id", { ascending: false })
+    .limit(DASHBOARD_WINDOW);
+  if (error) throw new Error(`the runs query failed: ${JSON.stringify(error)}`);
+  return (data ?? []) as {
+    run_id: string;
+    source: string;
+    outcome: string | null;
+    error_summary: string | null;
+  }[];
+}
+
 /** The test's own open-items query, before either kind narrows it. */
 function openItems() {
   return independentClient()
@@ -201,29 +252,22 @@ function openItems() {
 
 describe("last night's cycles against staging", () => {
   it("renders the newest cycles, newest first, exactly as the database orders them", async () => {
-    const markup = await dashboardMarkup();
-    if (cheerio.load(markup)('table[aria-label="cycles"]').length === 0) {
-      // Not provisioned, or genuinely empty: both are legitimate and both must
-      // say which table they are about.
-      expect(markup).toContain(T.resolutionRuns);
-      return;
-    }
-
-    const { data, error } = await independentClient()
-      .from(T.resolutionRuns)
-      .select("run_id, started_at, applied, escalated, errors, outcome")
-      .order("started_at", { ascending: false })
-      .order("run_id", { ascending: false })
-      .limit(DASHBOARD_WINDOW);
-    if (error) throw new Error(`the cycles query failed: ${error.message}`);
-    const expected = (data ?? []) as {
-      run_id: string;
-      started_at: string;
-      applied: number;
-      escalated: number;
-      errors: number;
-      outcome: string | null;
-    }[];
+    // The resolver writes cycles while this runs, so the render and the query
+    // are pinned to one still moment (`whileStill`, tests/live/parity.ts): a
+    // cycle arriving between them reads as a row the page dropped.
+    const { made: markup, held: expected } = await whileStill(
+      newestCycles,
+      dashboardMarkup,
+    );
+    // Not provisioned, genuinely empty, or refused: three different kinds, and
+    // the surface says which one it is in. Only `ok` has rows to compare.
+    const state = await gradeSurface({
+      markup,
+      within: CYCLES,
+      object: T.resolutionRuns,
+      counted: () => countOrAbsent(() => exactCount(T.resolutionRuns)),
+    });
+    if (state !== "ok") return;
 
     expect(lineIds(markup, "cycle")).toEqual(expected.map((row) => row.run_id));
 
@@ -243,42 +287,35 @@ describe("last night's cycles against staging", () => {
   });
 
   it("shows no more cycles than its window", async () => {
-    const markup = await dashboardMarkup();
-    if (cheerio.load(markup)('table[aria-label="cycles"]').length === 0) {
-      expect(markup).toContain(T.resolutionRuns);
-      return;
-    }
-
-    const whole = await countRows(() =>
-      independentClient()
-        .from(T.resolutionRuns)
-        .select("*", { head: true, count: "exact" }),
+    const { made: markup, held: whole } = await whileStill(
+      () => countOrAbsent(() => exactCount(T.resolutionRuns)),
+      dashboardMarkup,
     );
+    const state = await gradeSurface({
+      markup,
+      within: CYCLES,
+      object: T.resolutionRuns,
+      counted: whole,
+    });
+    if (state !== "ok" || whole === "absent") return;
     expect(rowsOf(markup, "cycles")).toHaveLength(Math.min(whole, DASHBOARD_WINDOW));
   });
 });
 
 describe("last night's adapter runs against staging", () => {
   it("renders the newest runs, newest first, with the source the database holds", async () => {
-    const markup = await dashboardMarkup();
-    if (cheerio.load(markup)('table[aria-label="runs"]').length === 0) {
-      expect(markup).toContain(T.runs);
-      return;
-    }
-
-    const { data, error } = await independentClient()
-      .from(T.runs)
-      .select("run_id, source, started_at, outcome, error_summary")
-      .order("started_at", { ascending: false })
-      .order("run_id", { ascending: false })
-      .limit(DASHBOARD_WINDOW);
-    if (error) throw new Error(`the runs query failed: ${error.message}`);
-    const expected = (data ?? []) as {
-      run_id: string;
-      source: string;
-      outcome: string | null;
-      error_summary: string | null;
-    }[];
+    // Pinned to one still moment, for the reason the cycles case gives.
+    const { made: markup, held: expected } = await whileStill(
+      newestRuns,
+      dashboardMarkup,
+    );
+    const state = await gradeSurface({
+      markup,
+      within: RUNS,
+      object: T.runs,
+      counted: () => countOrAbsent(() => exactCount(T.runs)),
+    });
+    if (state !== "ok") return;
 
     expect(lineIds(markup, "run")).toEqual(expected.map((row) => row.run_id));
 

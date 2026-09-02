@@ -2,7 +2,13 @@ import * as cheerio from "cheerio";
 import { describe, expect, it } from "vitest";
 import ReviewItemPage from "@/app/queues/[reviewItemId]/page";
 import { T } from "@/lib/db/tables";
-import { independentClient, renderPage } from "./parity";
+import {
+  assertState,
+  gradeSurface,
+  independentClient,
+  pageStates,
+  renderPage,
+} from "./parity";
 
 /**
  * The review-item detail against staging (campaign admin-window/TASK-0011).
@@ -27,10 +33,13 @@ import { independentClient, renderPage } from "./parity";
  * missing name. That refusal is the correct state today and is not a failure
  * of this file.
  *
- * Where staging carries no `review_items` at all, or holds no item yet
- * (ARCHITECTURE.md §12 `OPEN-FIXTURES`), each case asserts the honest state
- * instead — the table named, or the page's own no-such-row surface. It never
- * skips silently.
+ * **The STATE KIND is named structurally, never from prose** (ARCHITECTURE.md
+ * §10, common violation 6; oracle rewritten by admin-window/TASK-0032). Where
+ * staging carries no `review_items` at all, this test's own read gets the
+ * absence code and the page must render `not_provisioned`; where the table
+ * answers and holds no such row, the page must render `empty` — the two draw
+ * the same container and differ only in their words, so `data-state` is what
+ * separates them. An `error` fails.
  */
 
 type Item = {
@@ -46,9 +55,52 @@ type Item = {
   evidence: string[];
 };
 
+/** An id no row can carry — for the two states that are about a missing row. */
+const NO_SUCH_ID = "00000000-0000-7000-8000-000000000000";
+
+/**
+ * The evidence surface: the body of the second section, which is the
+ * `Section`'s first child after its heading — the shape's evidence view, or
+ * the state card that replaced it
+ * (`src/app/queues/[reviewItemId]/page.tsx`). Structural; no heading text is
+ * read.
+ *
+ * Deliberately NOT the whole section: the section also carries the separate
+ * legs this page reports beside the evidence — the bucket read and the source
+ * registry — each of which has its own state and its own object. Grading them
+ * as one surface makes an unreadable bucket look like unreadable evidence, and
+ * on staging today it does exactly that (`pending_claims` times out —
+ * admin-window/TASK-0031 — while the claims themselves render fine).
+ */
+const EVIDENCE = "section:nth-of-type(2) > :nth-child(2)";
+
+/**
+ * The dial embedded in a source-pattern evidence view is its OWN read of
+ * `pending_claims`, with its own state — and on staging today it is in its
+ * error state, because that view times out (admin-window/TASK-0031). Its
+ * failure is not the evidence's failure: the claims below it render fine, and
+ * this file compares claims. Excluded by name rather than silently.
+ */
+const DIAL = "[data-dial]";
+
 /** The page as the URL renders it. Every read happens per request. */
 function itemMarkup(id: string): Promise<string> {
   return renderPage(ReviewItemPage, { params: Promise.resolve({ reviewItemId: id }) });
+}
+
+/**
+ * Grade the evidence surface against the ids the ITEM carries: an item with no
+ * evidence renders the empty state, one with evidence renders rows, and a
+ * refused read fails naming what it was reading.
+ */
+async function gradeEvidence(markup: string, item: Item) {
+  return gradeSurface({
+    markup,
+    within: EVIDENCE,
+    object: T.observations,
+    counted: (await observationsOf(item.evidence)).length,
+    excluding: DIAL,
+  });
 }
 
 /** The test's own select over the review table. */
@@ -144,22 +196,28 @@ describe("a real review item, rendered", () => {
   it("resolves exactly the evidence ids the row carries, in its fold order", async () => {
     const item = await anyItem();
     if (item === "absent") {
-      expect(textOf(await itemMarkup("00000000-0000-7000-8000-000000000000"))).toContain(
-        T.reviewItems,
-      );
+      // This test's own read got the absence code, so the page must say the
+      // table is not provisioned — the gray card, not the red line and not the
+      // empty one (rule 5).
+      const markup = await itemMarkup(NO_SUCH_ID);
+      expect(pageStates(markup)).toEqual(["not_provisioned"]);
+      expect(textOf(markup)).toContain(T.reviewItems);
       return;
     }
     if (item === null) {
       // The table exists and holds nothing: the page's no-such-row surface is
-      // the honest answer, and it names the id and the table.
-      const id = "00000000-0000-7000-8000-000000000000";
-      const markup = await itemMarkup(id);
-      expect(cheerio.load(markup)(`[data-review-item="${id}"]`).text()).toBe(id);
-      expect(textOf(markup)).toContain(T.reviewItems);
+      // an EMPTY state — a read that answered — and it names the id.
+      const markup = await itemMarkup(NO_SUCH_ID);
+      expect(pageStates(markup)).toEqual(["empty"]);
+      expect(cheerio.load(markup)(`[data-review-item="${NO_SUCH_ID}"]`).text()).toBe(
+        NO_SUCH_ID,
+      );
       return;
     }
 
     const markup = await itemMarkup(item.review_item_id);
+    // The evidence surface answered, or nothing below it means anything.
+    await gradeEvidence(markup, item);
     const resolvable = await observationsOf(item.evidence);
     const known = new Set(resolvable.map((row) => row.observation_id));
 
@@ -181,7 +239,9 @@ describe("a real review item, rendered", () => {
     const markup = await itemMarkup(item.review_item_id);
     const $ = cheerio.load(markup);
     const claims = await observationsOf(item.evidence);
-    if (claims.length === 0) {
+    if ((await gradeEvidence(markup, item)) !== "ok") {
+      // An item whose evidence resolves to nothing renders the empty state,
+      // asserted above; there is no claim row to compare.
       expect(renderedIds(markup)).toEqual([]);
       return;
     }
@@ -250,6 +310,7 @@ describe("a real review item, rendered", () => {
       // A per-source item has no fact, so there is no canonical card to compare
       // — and the page must not invent one.
       const markup = await itemMarkup(item.review_item_id);
+      await gradeEvidence(markup, item);
       expect(cheerio.load(markup)("[data-pair]")).toHaveLength(0);
       return;
     }
@@ -296,6 +357,9 @@ describe("a real review item, rendered", () => {
     if (item === "absent" || item === null) return;
 
     const markup = await itemMarkup(item.review_item_id);
+    // "What happened" is its own read of the same row: it renders the header
+    // or it renders a state card, and this case is about the header.
+    assertState(markup, "section:nth-of-type(1)", "ok");
     const $ = cheerio.load(markup);
 
     expect(textOf(markup)).toContain(item.summary);

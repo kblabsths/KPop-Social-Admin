@@ -13,6 +13,12 @@ import { EM_DASH, isAbsent } from "@/lib/format";
  * is how BUG-0016 shipped: a rule review has to catch is a rule the compiler
  * should be catching. `DbResult`'s error arm carries the string, so every
  * caller already holds it (`lib/db/result.ts`).
+ *
+ * Carries `data-state="error"`. A live oracle grades an error as a FAILURE and
+ * must not be able to mistake it for the gray not-provisioned card: both name
+ * the object the query used, so "the markup contains `pending_claims`" was
+ * satisfied by either one and four live assertions passed on a broken page
+ * (ARCHITECTURE §10, admin-window/TASK-0032).
  */
 export function ErrorLine({
   reading,
@@ -33,7 +39,11 @@ export function ErrorLine({
   // admin-window/BUG-0004 and BUG-0019).
   const named = !isAbsent(reading);
   return (
-    <p className="flex flex-wrap items-baseline gap-2 text-broken" role="alert">
+    <p
+      data-state="error"
+      className="flex flex-wrap items-baseline gap-2 text-broken"
+      role="alert"
+    >
       <span className="type-data">
         {named ? `${reading} ${EM_DASH} ${failed}` : failed}
       </span>

@@ -199,6 +199,38 @@ export function permissionDenied(table: string) {
 }
 
 /**
+ * 57014 — Postgres's own `query_canceled`: the statement ran past the
+ * database's `statement_timeout` and was killed.
+ *
+ * Measured against staging 2026-09-02 (admin-window/TASK-0031: `pending_claims`
+ * cannot be read). The shape matters twice over: it is a real, populated
+ * PostgREST error body — and a `head: true` count never receives it, because a
+ * HEAD response has no body for supabase-js to parse, so the same failure
+ * arrives as `code=undefined, msg=""` (admin-window/TASK-0032).
+ */
+export function statementTimeout() {
+  return {
+    code: "57014",
+    details: null,
+    hint: null,
+    message: "canceling statement due to statement timeout",
+  };
+}
+
+/**
+ * The SAME failure as a `head: true` count receives it: nothing at all.
+ *
+ * supabase-js parses the error out of the response BODY, and a HEAD response
+ * carries none — so a real 57014 arrived as an error object with no code and
+ * an empty message, and a timeout was reported as a blank. This is the shape
+ * `countRows` must refuse to describe as anything but "no parseable error"
+ * (admin-window/TASK-0032).
+ */
+export function unparseableFailure() {
+  return { code: undefined, details: undefined, hint: undefined, message: "" };
+}
+
+/**
  * What supabase-js hands back when the TRANSPORT fails — probed against the
  * http harness's sentinel URL (admin-window/BUG-0016).
  *

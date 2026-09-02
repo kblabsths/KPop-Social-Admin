@@ -3,6 +3,10 @@
  * Gray, never red — red means broken, never unavailable — and never a zero
  * that reads like data. Names the missing table verbatim in mono and what
  * creates it (LOOK_AND_FEEL, state 3 and Voice bar 4).
+ *
+ * Carries `data-state="not_provisioned"` — the hook that separates it from
+ * `Empty`, which draws the identical container (ARCHITECTURE §10,
+ * admin-window/TASK-0032).
  */
 export function NotProvisioned({
   missing,
@@ -21,7 +25,10 @@ export function NotProvisioned({
   eyebrow?: string;
 }) {
   return (
-    <div className="border border-hairline bg-surface p-3">
+    <div
+      data-state="not_provisioned"
+      className="border border-hairline bg-surface p-3"
+    >
       {eyebrow === undefined ? null : (
         <p className="type-micro text-ink-secondary">{eyebrow}</p>
       )}

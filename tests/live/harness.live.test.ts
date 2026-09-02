@@ -17,7 +17,7 @@
 import { describe, expect, it } from "vitest";
 import { readCount } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
-import { countRows, independentClient } from "./parity";
+import { countRows, exactCount } from "./parity";
 import { APP_URL_ENV_NAME, declaredTarget, stagingHost } from "./setup";
 
 describe("the live harness", () => {
@@ -32,20 +32,16 @@ describe("the live harness", () => {
     // A count of a canonical catalog table: it round-trips PostgREST with the
     // service role, so a bad key or a wrong host fails here and not inside
     // some page's parity test.
-    const rows = await countRows(() =>
-      independentClient()
-        .from(T.events)
-        .select("*", { head: true, count: "exact" }),
-    );
+    const rows = await countRows(() => exactCount(T.events));
     expect(rows).toBeGreaterThanOrEqual(0);
   });
 
   it("agrees with the app's own read path on that number", async () => {
-    const mine = await countRows(() =>
-      independentClient()
-        .from(T.events)
-        .select("*", { head: true, count: "exact" }),
-    );
+    const mine = await countRows(() => exactCount(T.events));
+    // The APP's own read path, in the app's own shape — `lib/db` counts with
+    // `head: true` and this case exists to exercise what the pages do, not to
+    // re-issue the test's query. The test's side above is GET-shaped, which is
+    // this suite's rule for the counts IT writes (admin-window/TASK-0032).
     const theirs = await readCount(T.events, (db) =>
       db.from(T.events).select("*", { head: true, count: "exact" }),
     );

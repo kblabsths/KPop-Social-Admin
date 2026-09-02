@@ -5,7 +5,13 @@ import { eventRecordHref } from "@/lib/browse/rows";
 import { RECENT_EVENTS } from "@/lib/browse/views";
 import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
-import { independentClient, renderPage } from "./parity";
+import {
+  countOrAbsent,
+  exactCount,
+  gradeSurface,
+  independentClient,
+  renderPage,
+} from "./parity";
 
 /**
  * Browse against staging (campaign admin-window/TASK-0015).
@@ -23,9 +29,39 @@ import { independentClient, renderPage } from "./parity";
  * declares the target — `tests/live/setup.ts` throws first, non-zero, with the
  * missing name. That refusal is the correct state today and is not a failure
  * of this file.
+ *
+ * **The STATE KIND of the events surface is named before any row is compared**
+ * (ARCHITECTURE.md §10, common violation 6; oracle rewritten by
+ * admin-window/TASK-0032): `ok` compares rows, `empty` is a pass with the
+ * window counted at 0, `not_provisioned` needs this test's own absence code,
+ * and `error` is a FAIL. The surface is the LAST child of the page's one
+ * section — the events body, in whichever of its four states it rendered. The
+ * two leg notes above it (venues, provenance) are separate reads with separate
+ * states, which is why the section as a whole is not the surface.
  */
 
 const view = RECENT_EVENTS;
+
+/**
+ * The events surface: the last child of the page's one section, which is the
+ * body in each of its four states — the table, the `Empty` card, the
+ * `NotProvisioned` card, or the table carrying the error line
+ * (`src/app/browse/page.tsx`). Structural; no heading or copy is read.
+ */
+const EVENTS = "section:nth-of-type(1) > :last-child";
+
+/** Grade the events surface against this test's own count of the window. */
+async function gradeEvents(markup: string) {
+  return gradeSurface({
+    markup,
+    within: EVENTS,
+    object: T.events,
+    counted: async () => {
+      const whole = await countOrAbsent(() => exactCount(T.events));
+      return whole === "absent" ? "absent" : Math.min(whole, view.window);
+    },
+  });
+}
 
 /** Load the page once; every assertion below reads this one render. */
 async function browseMarkup(): Promise<string> {
@@ -79,6 +115,7 @@ async function windowFromDatabase(): Promise<
 describe("Browse against staging", () => {
   it("renders the window newest-first by arrival, exactly as the database orders it", async () => {
     const markup = await browseMarkup();
+    if ((await gradeEvents(markup)) !== "ok") return;
     const expected = await windowFromDatabase();
 
     const rendered = renderedEventIds(markup);
@@ -93,12 +130,11 @@ describe("Browse against staging", () => {
 
   it("shows no more than the window, and every row the database has when there are fewer", async () => {
     const markup = await browseMarkup();
+    if ((await gradeEvents(markup)) !== "ok") return;
     const expected = await windowFromDatabase();
 
-    const { count, error } = await independentClient()
-      .from(T.events)
-      .select("*", { head: true, count: "exact" });
-    if (error) throw new Error(`the count query failed: ${error.message}`);
+    const { count, error } = await exactCount(T.events);
+    if (error) throw new Error(`the count query failed: ${JSON.stringify(error)}`);
     if (typeof count !== "number") {
       throw new Error("the count query returned no count");
     }
@@ -109,14 +145,20 @@ describe("Browse against staging", () => {
 
   it("renders the first page of rows with the values the database holds", async () => {
     const markup = await browseMarkup();
-    const expected = await windowFromDatabase();
-    if (expected.length === 0) return; // an empty catalog is a legitimate state
+    if ((await gradeEvents(markup)) !== "ok") return;
 
-    const newest = expected[0];
+    // The row the PAGE put first, asked of the database by its own id. Reading
+    // the id off the render rather than re-deriving "the newest" keeps this a
+    // comparison of VALUES — which is what this case is about — and takes the
+    // ordering claim, which is the case above's, out of it. It also cannot
+    // race a row arriving between the render and the query: measured
+    // 2026-09-02, an event inserted mid-test made the two "newest" rows
+    // different rows and reddened a correct page.
+    const newest = renderedEventIds(markup)[0];
     const { data, error } = await independentClient()
       .from(T.eventListings)
       .select("event_id, title, starts_at, venue_name")
-      .eq("event_id", newest.event_id)
+      .eq("event_id", newest)
       .maybeSingle();
     if (error) throw new Error(`the listing query failed: ${error.message}`);
     expect(data, "the listings view has no row for the newest event").toBeTruthy();
@@ -130,7 +172,7 @@ describe("Browse against staging", () => {
     const label = (key: string) =>
       view.columns.find((column) => column.key === key)?.label ?? key;
 
-    expect(row[label("title")]).toBe(listing.title ?? newest.event_id);
+    expect(row[label("title")]).toBe(listing.title ?? newest);
     expect(row[label("venue")]).toBe(listing.venue_name ?? EM_DASH);
 
     // The scheduled time renders absolute UTC, to the minute.
@@ -142,15 +184,15 @@ describe("Browse against staging", () => {
     // And the row really does link at its own record surface.
     const $ = cheerio.load(markup);
     expect(
-      $(`a[href="${eventRecordHref(newest.event_id)}"]`).length,
+      $(`a[href="${eventRecordHref(newest)}"]`).length,
     ).toBeGreaterThan(0);
   });
 
   it("names the same sources behind the newest row as the provenance join does", async () => {
     const markup = await browseMarkup();
-    const expected = await windowFromDatabase();
-    if (expected.length === 0) return;
-    const newest = expected[0];
+    if ((await gradeEvents(markup)) !== "ok") return;
+    // Again the row the page put first, by its own id — see the case above.
+    const newest = renderedEventIds(markup)[0];
 
     // The test's own two-step join, written independently of lib/db/browse.ts.
     //
@@ -163,7 +205,7 @@ describe("Browse against staging", () => {
       .from(T.fieldProvenance)
       .select("provenance_id, field, source_id, applied_at")
       .eq("entity_type", T.events)
-      .eq("entity_id", newest.event_id);
+      .eq("entity_id", newest);
     if (provenance.error) {
       throw new Error(`the provenance query failed: ${provenance.error.message}`);
     }
