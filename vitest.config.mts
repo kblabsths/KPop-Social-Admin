@@ -33,6 +33,10 @@ export default defineConfig({
           name: "live",
           include: LIVE_INCLUDE,
           environment: "node",
+          // The staging guard (admin-window/TASK-0003). Registering it here is
+          // what makes it unskippable: every live test file runs it first, and
+          // a missing STAGING_ name fails the run before a test body executes.
+          setupFiles: ["./tests/live/setup.ts"],
           testTimeout: 60_000,
         },
       },
