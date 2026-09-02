@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { StatCard, type StatTone } from "@/components/ui";
+import { isAbsent } from "@/lib/format";
 import {
   GaugeStateCard,
   GaugeStateLine,
@@ -18,11 +19,14 @@ import {
  * card). What this component adds is the three things a GAUGE figure must
  * carry that a plain stat does not:
  *
- * 1. **An unmeasurable figure is the em dash with its REASON**, never a zero.
- *    The type makes it structural: a `value` that can be `null` cannot be
- *    passed without `absent`, because "no cycle has finished yet" and "zero
- *    cycles" tune a knob in opposite directions (spec §5; every `lib/gauges`
- *    aggregate returns `null` rather than `0` for exactly this reason).
+ * 1. **An unmeasurable figure is the em dash with its REASON**, never a zero,
+ *    never a qualifier and never a palette colour — "no cycle has finished
+ *    yet" and "zero cycles" tune a knob in opposite directions (spec §5;
+ *    every `lib/gauges` aggregate returns `null` rather than `0` for exactly
+ *    this reason). What counts as unmeasurable is decided by `isAbsent` in
+ *    `lib/format`, the app's ONE definition of absence
+ *    (admin-window/BUG-0004), so this card, `StatCard` and `DataTable` cannot
+ *    disagree about whether there is a figure.
  * 2. **A count from a truncated window is a floor**, and says so — `floor`
  *    is `window.truncated` from the aggregate's `WindowInfo`.
  * 3. **The four states**, through the `ui` primitives.
@@ -30,6 +34,18 @@ import {
  * Pure and synchronous, plain props, no data access — a page reads and hands
  * the aggregate's fields down (ARCHITECTURE §5).
  */
+
+/**
+ * The sub-line an absence falls back on when the caller passed no `absent`.
+ *
+ * Only reachable where the props union cannot demand a reason (see
+ * `GaugeCardProps`): a `string` value the formatters produced, or a `number`
+ * that turned out non-finite. Saying "not measured" is thin, but a bare dash
+ * with no words at all is the reading LOOK_AND_FEEL forbids — a card that
+ * cannot measure says so (admin-window/BUG-0018).
+ */
+const UNSTATED_REASON = "not measured";
+
 type GaugeCardBase = {
   /** The `micro` eyebrow: what the figure counts. */
   label: string;
@@ -46,6 +62,23 @@ type GaugeCardBase = {
   floor?: boolean;
 };
 
+/**
+ * Three arms: a state, a figure, or a figure that may not exist.
+ *
+ * **What the type can force, it forces; the rest is forced at render.** A
+ * `value` whose TYPE admits `null` cannot be passed without `absent`, so the
+ * common case — an aggregate percentile handed straight down — is structural.
+ * TypeScript cannot go further: `duration(null)` and `count(null)` are typed
+ * `string` while returning the em dash, and `NaN` is typed `number`, so no
+ * arm of this union can tell a formatted absence from a formatted figure
+ * (admin-window/BUG-0018 was exactly that gap, and
+ * `tests/offline/gauges-ui/cards.test.ts` pins both shapes as callable).
+ * Those two paths are caught at render instead: `isAbsent` decides, the floor
+ * and the tone are dropped, and `UNSTATED_REASON` stands in for the reason
+ * the caller did not give. Passing `absent` alongside a formatted value is
+ * always better than relying on that fallback, which is why every arm takes
+ * it.
+ */
 export type GaugeCardProps = GaugeCardBase &
   (
     | {
@@ -58,6 +91,11 @@ export type GaugeCardProps = GaugeCardBase &
         state?: undefined;
         /** A number is thousand-separated; a string is shown verbatim. */
         value: number | string;
+        /**
+         * Why the figure could not be measured. Optional only because the
+         * type cannot see an absence inside a `string` or a non-finite
+         * `number` — supply it whenever the value came from a formatter.
+         */
         absent?: string;
       }
     | {
@@ -91,18 +129,24 @@ export function GaugeCard(props: GaugeCardProps) {
   }
 
   const value = props.value ?? null;
-  const unmeasured = value === null;
+  // The app's single definition of absence, not a fourth hand-written guard:
+  // `null`, `undefined`, a non-finite number, and the em-dash STRING every
+  // formatter returns for a null all mean "nothing was measured here"
+  // (`isAbsent`, lib/format.ts — admin-window/BUG-0004 and BUG-0018).
+  const unmeasured = isAbsent(value);
 
   return (
     <StatCard
       label={label}
-      value={value}
+      // Normalised to the one null the card renders one way: whatever spelling
+      // the absence arrived in, the dash is `orDash`'s dash.
+      value={unmeasured ? null : value}
       // No colour on an absent figure: the dash carries the disabled gray, and
       // a state colour on a card with no value states a health it never read.
       tone={unmeasured ? "default" : tone}
       // A floor qualifies a figure; there is nothing to qualify about a dash.
       floor={floor && !unmeasured}
-      sub={unmeasured ? props.absent : sub}
+      sub={unmeasured ? (props.absent ?? UNSTATED_REASON) : sub}
       href={href}
     />
   );

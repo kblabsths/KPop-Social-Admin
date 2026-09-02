@@ -231,10 +231,9 @@ describe("GaugeCard", () => {
   // `relativeAge(null).text`), and an arithmetic figure can arrive non-finite.
   // Both render as the dash, so neither may carry a floor qualifier or a
   // palette colour — a health tone on a figure nobody measured is the reading
-  // this gauge exists to prevent (spec §5).
-  // it.fails = strict xfail: this passes only while the divergence is live, and
-  // turns RED the moment BUG-0018 is fixed, sending the reader to the ticket.
-  it.fails("never qualifies or colours an absence that arrived as a formatted string", () => {
+  // this gauge exists to prevent (spec §5). The card asks `isAbsent` instead of
+  // `value === null`, which is why these two now hold.
+  it("never qualifies or colours an absence that arrived as a formatted string", () => {
     const html = card({
       label: "median duration",
       // exactly what a page renders a seconds figure with: the helper this
@@ -248,14 +247,64 @@ describe("GaugeCard", () => {
     expect(classesOf(html)).not.toContain("text-broken");
   });
 
-  // it.fails = strict xfail, admin-window/BUG-0018 (see above).
-  it.fails("never qualifies or colours a non-finite figure", () => {
+  // admin-window/BUG-0018 (see above).
+  it("never qualifies or colours a non-finite figure", () => {
     for (const value of [Number.NaN, Number.POSITIVE_INFINITY]) {
       const html = card({ label: "writes per fact", value, floor: true, tone: "broken" });
       expect(textOf(html), String(value)).toContain(EM_DASH);
       expect(classesOf(html), String(value)).not.toContain("type-body");
       expect(classesOf(html), String(value)).not.toContain("text-broken");
     }
+  });
+
+  it("says why it cannot measure, whether or not the caller gave a reason", () => {
+    // the reason reaches the dash even though the value is a non-null string,
+    // which is the arm admin-window/BUG-0018 could not reach at all
+    const stated = card({
+      label: "median duration",
+      value: duration(UNMEASURED.duration.p50),
+      absent: "no cycle in this window has finished",
+    });
+    expect(textOf(stated)).toContain(EM_DASH);
+    expect(textOf(stated)).toContain("no cycle in this window has finished");
+
+    // and a formatted absence the caller did not annotate still carries a
+    // sub-line: a dash with no words at all says nothing an operator can act on
+    const unstated = card({ label: "writes per fact", value: Number.NaN });
+    expect(textOf(unstated)).toContain(EM_DASH);
+    expect(classesOf(unstated)).toContain("type-data");
+    // a measured figure with no sub-detail carries no sub-line, so the line
+    // above is the absence speaking and not the card's default anatomy
+    expect(classesOf(card({ label: "facts examined", value: 12 }))).not.toContain("type-data");
+  });
+
+  it("takes its absence from the app's one definition, not a guard of its own", () => {
+    // the spellings the two tests above do not cover: `isAbsent` treats a blank
+    // string and a bare em dash as absences, so the card must too — one guard,
+    // one meaning, in GaugeCard, StatCard and DataTable alike (BUG-0004)
+    for (const value of ["", "   ", EM_DASH]) {
+      const html = card({ label: "median duration", value, floor: true, tone: "broken" });
+      expect(textOf(html), JSON.stringify(value)).toContain(EM_DASH);
+      expect(classesOf(html), JSON.stringify(value)).toContain("text-ink-disabled");
+      expect(classesOf(html), JSON.stringify(value)).not.toContain("type-body");
+      expect(classesOf(html), JSON.stringify(value)).not.toContain("text-broken");
+    }
+  });
+
+  it("never mistakes a measured zero for an absence, in either spelling", () => {
+    // a real zero keeps its qualifier and its colour: "zero cycles failed" is a
+    // reading, and suppressing it would be the mirror image of BUG-0018
+    const zero = card({ label: "failed cycles", value: 0, floor: true, tone: "broken" });
+    expect(textOf(zero)).toContain("0");
+    expect(textOf(zero)).not.toContain(EM_DASH);
+    expect(classesOf(zero)).toContain("type-body");
+    expect(classesOf(zero)).toContain("text-broken");
+
+    // and the same zero after a formatter has been over it
+    const formatted = card({ label: "median duration", value: duration(0), tone: "healthy" });
+    expect(textOf(formatted)).toContain(duration(0));
+    expect(textOf(formatted)).not.toContain(EM_DASH);
+    expect(classesOf(formatted)).toContain("text-healthy");
   });
 
   it("colours the figure only when it carries a palette state", () => {
