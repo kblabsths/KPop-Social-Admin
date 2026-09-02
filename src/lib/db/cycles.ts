@@ -15,10 +15,10 @@ import { T } from "./tables";
  * ARCHITECTURE.md §4.1 (every export returns a `DbResult` and never throws),
  * §4 rule 4 (only `tables.ts` spells a table name) and §4.3 (read kinds).
  *
- * **The adapter framework's `runs` are NOT read here.** Which of that table's
- * columns this page shows is the blocked `OPEN-RUNS` question
- * (ARCHITECTURE.md §12) and belongs to its own ticket and its own module; a
- * read of `runs` added here would answer it by the back door.
+ * **The adapter framework's `runs` are NOT read here.** They are the page's
+ * other half and they have their own module, `src/lib/db/runs.ts`
+ * (admin-window/TASK-0016, on Ben's ruling of 2026-09-02): one module per
+ * table, so an absent `runs` never takes the cycles half down with it.
  *
  * **Which read kind, and why** (ARCHITECTURE.md §4.3). This is a **window**
  * read, kind 2: the resolver files a row every fifteen minutes forever, so
@@ -136,8 +136,17 @@ function instantOf(ts: string | null): number | null {
  * `started_at` is visible instead of silently reordering the cycles above it.
  *
  * The input is not mutated.
+ *
+ * Generic over the row because BOTH halves of the Cycles & runs page order
+ * their table this way, off the same two columns: `resolution_runs` here and
+ * the adapter framework's `runs` in `src/lib/db/runs.ts`
+ * (admin-window/TASK-0016). One comparator, so the two tables cannot come to
+ * disagree about what "newest first" means; the constraint is the two columns
+ * it reads, not which table they came from.
  */
-export function newestFirst(rows: readonly ResolutionRunRow[]): ResolutionRunRow[] {
+export function newestFirst<Row extends Pick<ResolutionRunRow, "run_id" | "started_at">>(
+  rows: readonly Row[],
+): Row[] {
   return [...rows].sort((a, b) => {
     const left = instantOf(a.started_at);
     const right = instantOf(b.started_at);

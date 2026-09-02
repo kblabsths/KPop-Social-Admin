@@ -62,6 +62,21 @@ vi.mock("@/lib/db/cycles", async (importActual) => {
   };
 });
 
+/**
+ * The page's other half reads its own table through its own module
+ * (`src/lib/db/runs.ts`, admin-window/TASK-0016). It is routed through the
+ * same stub so this file stays offline-pure; what that half RENDERS is
+ * asserted in `tests/offline/runs/`, not here.
+ */
+vi.mock("@/lib/db/runs", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/db/runs")>();
+  return {
+    ...actual,
+    readRuns: (filter?: unknown) =>
+      actual.readRuns((filter ?? {}) as never, readWith.client as never),
+  };
+});
+
 vi.mock("@/lib/gauges/cycle-health", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/gauges/cycle-health")>();
   return {
@@ -96,6 +111,9 @@ function healthyScript(overrides: Script = {}): Script {
     [T.resolutionRuns]: [{ data: [...CYCLES] }, { data: [...CYCLES] }],
     [T.fieldProvenance]: { data: [...APPLIES] },
     [T.observations]: { data: [...OBSERVED] },
+    // The other half's table. This file asserts only that it is read and that
+    // it does not disturb the cycles; `tests/offline/runs/` renders its rows.
+    [T.runs]: { data: [] },
     ...overrides,
   };
 }
@@ -709,29 +727,51 @@ describe("a ?source= link arriving from the Sources page", () => {
   });
 });
 
-describe("the adapter framework's runs", () => {
-  it("renders nothing at all, and names none of that table's columns", async () => {
+/**
+ * The adapter framework's `runs` are the page's OTHER half and landed with
+ * admin-window/TASK-0016 (Ben's ruling of 2026-09-02). Everything about that
+ * half — its nine columns, its order, its four states and the `?source=`
+ * facet — is asserted in `tests/offline/runs/`, which owns it and renders the
+ * whole page against a `runs` population.
+ *
+ * What stays HERE is the boundary this file's own subject cares about: the
+ * cycles half is the cycles half, and the second table on the page does not
+ * bleed into it. The reads this file scripts do not include `runs`, so the
+ * runs section renders its own error state and the cycles below are
+ * unaffected — which is the assertion.
+ */
+describe("the adapter framework's runs, beside the cycles", () => {
+  it("is a second section, and the cycles half is unchanged by it", async () => {
     const markup = await renderCycles(healthyScript());
-    // Three sections: the cycles, and the two gauges spec §5 puts on this page.
-    expect(sections(markup)).toEqual(["Cycles", "Cycle health", "Resolution latency"]);
-    // One table of cycles, two distributions and one trend — no fifth surface
-    // waiting to be filled with guessed columns.
+    // Four sections: the two halves spec §4 names, then the two gauges §5 puts
+    // on this page.
+    expect(sections(markup)).toEqual([
+      "Cycles",
+      "Adapter runs",
+      "Cycle health",
+      "Resolution latency",
+    ]);
+    // This file's script holds no `runs` rows, so that half renders its empty
+    // state — a card, not a table — and the surfaces below are the cycles
+    // table plus the two gauges' distributions and trend, unchanged.
     const $ = cheerio.load(markup);
+    expect($('[data-surface="runs"]').attr("data-state")).toBe("empty");
     expect(
       $("table")
         .toArray()
         .map((element) => $(element).attr("aria-label")),
     ).toEqual([CYCLES_TABLE, OUTCOMES, DURATIONS, WAITS, BY_DOMAIN]);
-    // Nothing on the page is hooked to an adapter run, so no column of that
-    // table has been guessed at — the `OPEN-RUNS` question is still open and
-    // this page answers none of it.
-    expect(cheerio.load(markup)("[data-run]").length).toBe(0);
+    // Every cycle still renders beside it.
+    expect(renderedCycles(markup)).toEqual(NEWEST_FIRST.map((row) => row.run_id));
   });
 
-  it("does not read the runs table", async () => {
+  it("reads the runs table separately from the cycles table", async () => {
     const stub = stubClient(healthyScript());
     readWith.client = stub.asSupabaseClient();
     await CyclesPage({ searchParams: Promise.resolve({}) });
-    expect(stub.tablesRead()).not.toContain(T.runs);
+    // Two tables, two reads: one refusing never takes the other down
+    // (ARCHITECTURE.md §4.1).
+    expect(stub.tablesRead()).toContain(T.resolutionRuns);
+    expect(stub.tablesRead()).toContain(T.runs);
   });
 });
