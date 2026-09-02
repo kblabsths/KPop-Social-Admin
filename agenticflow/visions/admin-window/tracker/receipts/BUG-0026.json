@@ -1,0 +1,36 @@
+{
+ "id": "BUG-0026",
+ "created": "2026-09-02T17:07:57Z",
+ "green": true,
+ "git_head": "178b2248f0f68597abcb710e55045b250f6618ed",
+ "scope": [
+  "src/app/page.tsx",
+  "tests/offline/dashboard",
+  "tests/offline/absence"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "c1ed2a2a160da095bebcfcc5ef9cf9ef866bc0923672d8b21c3d2bce629c7cab",
+ "commands": [
+  {
+   "cmd": "bash -c \"grep -q 'KNOWN_BLANK: Readonly<Record<string, string>> = {};' tests/offline/absence/blank-cells.test.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/absence tests/offline/dashboard",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-17974\n\n \u2713 |offline| tests/offline/dashboard/read.test.ts (14 tests) 9ms\n \u2713 |offline| tests/offline/dashboard/page.test.ts (35 tests) 175ms\n \u2713 |offline| tests/offline/absence/blank-cells.test.ts (10 tests) 125ms\n \u2713 |offline| tests/offline/absence/in-window.test.ts (14 tests) 633ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (238 tests) 988ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  396ms\n\n Test Files  5 passed (5)\n      Tests  311 passed (311)\n   Start at  10:07:46\n   Duration  1.82s (transform 1.03s, setup 0ms, collect 1.98s, tests 1.93s, environment 1ms, prepare 477ms)\n\n(node:18006) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
