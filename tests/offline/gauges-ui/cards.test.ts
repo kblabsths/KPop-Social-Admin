@@ -278,6 +278,24 @@ describe("GaugeCard", () => {
     expect(classesOf(card({ label: "facts examined", value: 12 }))).not.toContain("type-data");
   });
 
+  // admin-window/BUG-0019 — strict pin: `it.fails` reddens the day this passes,
+  // which is the day the reason path asks the same definition the value path
+  // does. Watched RED as a plain `it` first ('"": expected 0 to be greater
+  // than 0'); the fix flips it back to `it`.
+  it.fails("says why it cannot measure even when the caller's reason is itself blank", () => {
+    // The card asks `isAbsent` about the VALUE but not about the REASON, so a
+    // blank reason — which the union's third arm accepts, since it demands
+    // `absent: string` and "" is a string — renders the dash with no words at
+    // all beside it. Same reading LOOK_AND_FEEL forbids and the same reason the
+    // UNSTATED_REASON fallback exists for; `??` only catches null/undefined.
+    for (const absent of ["", "   "]) {
+      const html = card({ label: "median duration", value: null, absent });
+      const beside = textOf(html).replace(EM_DASH, "").replace("median duration", "").trim();
+      expect(textOf(html), JSON.stringify(absent)).toContain(EM_DASH);
+      expect(beside.length, JSON.stringify(absent)).toBeGreaterThan(0);
+    }
+  });
+
   it("takes its absence from the app's one definition, not a guard of its own", () => {
     // the spellings the two tests above do not cover: `isAbsent` treats a blank
     // string and a bare em dash as absences, so the card must too — one guard,
