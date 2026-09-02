@@ -141,10 +141,7 @@ function instantOf(appliedAt: string): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function laterDecision(
-  a: EventProvenanceRow,
-  b: EventProvenanceRow,
-): EventProvenanceRow {
+function laterDecision<Row extends EventProvenanceRow>(a: Row, b: Row): Row {
   const left = instantOf(a.applied_at);
   const right = instantOf(b.applied_at);
   if (left !== right) return left > right ? a : b;
@@ -170,11 +167,19 @@ function laterDecision(
  * in question (`readComplete`, ARCHITECTURE.md §4.3) — a truncated log would
  * make "the latest" a lie, which is why the read refuses rather than truncates.
  * Idempotent: reducing an already-reduced set returns it unchanged.
+ *
+ * GENERIC IN THE ROW, and domain-agnostic despite the row type's name
+ * (admin-window/TASK-0011): the reduction reads only `entity_id`, `field`,
+ * `applied_at` and `provenance_id`, and the canonical table is fixed by the
+ * caller's own `.eq("entity_type", ...)`, so a review item's fact reduces by
+ * the same rule an event's does — and a caller that also needs
+ * `tier_at_apply` keeps it, instead of a second copy of "which decision is
+ * later" being written next to a wider row type.
  */
-export function currentDecisions(
-  provenance: readonly EventProvenanceRow[],
-): EventProvenanceRow[] {
-  const latest = new Map<string, EventProvenanceRow>();
+export function currentDecisions<Row extends EventProvenanceRow>(
+  provenance: readonly Row[],
+): Row[] {
+  const latest = new Map<string, Row>();
   for (const row of provenance) {
     const identity = `${row.entity_id}\u0000${row.field}`;
     const incumbent = latest.get(identity);
