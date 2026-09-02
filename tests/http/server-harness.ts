@@ -25,19 +25,30 @@ export const host = "127.0.0.1";
 export const base = `http://${host}:${HTTP_TEST_PORT}`;
 
 /**
+ * The secret the app under test signs sessions with.
+ *
+ * A throwaway literal, not a credential, and it never leaves the test process.
+ * It is exported so a test can mint a session token the running app accepts —
+ * the only way to ask "what does this app do for someone who IS signed in",
+ * which is where a retired route's 404 lives: the proxy sends everyone else to
+ * /login before a route is ever matched.
+ */
+export const AUTH_SECRET = "http-suite-placeholder-not-a-credential";
+
+/**
  * Environment for the app under test.
  *
  * Every Supabase name is stripped: these routes must answer without a
  * database, and dropping the names is what proves it rather than asserts it.
- * AUTH_SECRET is a throwaway literal for signing nothing — the suite never
- * signs in, and no real credential is ever read here.
+ * AUTH_SECRET is the throwaway literal above; no real credential is ever read
+ * here, and the suite never signs in through Google.
  */
 export function serverEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
     if (key.includes("SUPABASE")) delete env[key];
   }
-  env.AUTH_SECRET = "http-suite-placeholder-not-a-credential";
+  env.AUTH_SECRET = AUTH_SECRET;
   env.AUTH_URL = base;
   env.AUTH_TRUST_HOST = "true";
   env.PORT = String(HTTP_TEST_PORT);
