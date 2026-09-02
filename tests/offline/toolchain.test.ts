@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // The runner config itself, so its budgets can be asserted rather than
@@ -11,13 +11,15 @@ import config from "../../vitest.config.mjs";
 import {
   HTTP_INCLUDE,
   HTTP_ROOT,
+  ISOLATED_INCLUDE,
+  ISOLATED_ROOT,
   LIVE_INCLUDE,
   LIVE_ROOT,
   OFFLINE_INCLUDE,
   OFFLINE_ROOT,
 } from "../suite-globs";
+import { allSourceFiles, repoRoot, sourceFiles, sourceText } from "./source-tree";
 
-const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 const vitestBin = path.join(repoRoot, "node_modules", ".bin", "vitest");
 
 /**
@@ -95,10 +97,12 @@ describe("test project layout", () => {
   // child three times inside test bodies (admin-window/BUG-0029).
   let offlineFiles: string[] = [];
   let httpFiles: string[] = [];
+  let isolatedFiles: string[] = [];
 
   beforeAll(() => {
     offlineFiles = collectedFiles("offline");
     httpFiles = collectedFiles("http");
+    isolatedFiles = collectedFiles("isolated");
   });
 
   it("roots every project's include glob at its own directory", () => {
@@ -111,8 +115,11 @@ describe("test project layout", () => {
     for (const glob of HTTP_INCLUDE) {
       expect(glob.startsWith(`${HTTP_ROOT}/`)).toBe(true);
     }
+    for (const glob of ISOLATED_INCLUDE) {
+      expect(glob.startsWith(`${ISOLATED_ROOT}/`)).toBe(true);
+    }
     // Sibling roots: no root is a prefix of another, so the globs partition.
-    const roots = [OFFLINE_ROOT, LIVE_ROOT, HTTP_ROOT];
+    const roots = [OFFLINE_ROOT, LIVE_ROOT, HTTP_ROOT, ISOLATED_ROOT];
     for (const a of roots) {
       for (const b of roots) {
         if (a === b) continue;
@@ -134,6 +141,18 @@ describe("test project layout", () => {
       expect(file.startsWith(`${OFFLINE_ROOT}${path.sep}`)).toBe(true);
       expect(file.startsWith(`${LIVE_ROOT}${path.sep}`)).toBe(false);
       expect(file.startsWith(`${HTTP_ROOT}${path.sep}`)).toBe(false);
+      expect(file.startsWith(`${ISOLATED_ROOT}${path.sep}`)).toBe(false);
+    }
+  });
+
+  it("collects the isolated suite into the isolated project only", () => {
+    // Without this, a typo in the include glob would mean the probe-race pin
+    // is collected by NO project and silently never runs
+    // (admin-window/BUG-0032).
+    expect(isolatedFiles.length).toBeGreaterThan(0);
+    for (const file of isolatedFiles) {
+      expect(file.startsWith(`${ISOLATED_ROOT}${path.sep}`)).toBe(true);
+      expect(offlineFiles).not.toContain(file);
     }
   });
 
@@ -258,5 +277,150 @@ describe("the offline project's time budgets", () => {
     const hookTimeout = offlineProjectConfig().hookTimeout;
     expect(typeof hookTimeout).toBe("number");
     expect(hookTimeout as number).toBeGreaterThanOrEqual(2 * WORST_MEASURED_MS);
+  });
+});
+
+/**
+ * The ONE walk over the source tree (`tests/offline/source-tree.ts`), pinned
+ * here because it is toolchain, not product: every structural rule in this
+ * suite is asserted through it, and `tests/offline/db/layering.test.ts` writes
+ * and deletes a probe under that same tree ~20 times a run while other files
+ * walk it in parallel workers (admin-window/BUG-0032).
+ *
+ * These cases plant into a TEMP base, never the shared tree, so this file can
+ * keep running in parallel with everything else. The end-to-end half — the
+ * real probe path, a child vitest, and a real churn loop — is
+ * `tests/isolated/probe-race.isolated.test.ts`, which cannot.
+ */
+describe("the source-tree walk", () => {
+  const base = path.join(
+    repoRoot,
+    "tests",
+    ".probes",
+    `source-tree-${process.pid}-${randomUUID()}`,
+  );
+  const REAL = "src/lib/real.ts";
+  const DOT_HIDDEN = "src/.probes/__credential_guard_probe__.ts";
+  const UNDERSCORED = "src/__loose_probe__.ts";
+  const DANGLING = "src/dangling.ts";
+
+  beforeAll(() => {
+    mkdirSync(path.join(base, "src", "lib"), { recursive: true });
+    mkdirSync(path.join(base, "src", ".probes"), { recursive: true });
+    writeFileSync(path.join(base, REAL), "export const real = 1;\n");
+    writeFileSync(path.join(base, DOT_HIDDEN), "export const probe = 2;\n");
+    writeFileSync(path.join(base, UNDERSCORED), "export const loose = 3;\n");
+    // Listed by readdir, ENOENT on open: the race with the timing removed.
+    symlinkSync(path.join(base, "src", "__no_such_target__.ts"), path.join(base, DANGLING));
+  });
+
+  afterAll(() => {
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  it("reports only what a compiler compiles", () => {
+    // Dot-directories and `__` names are exactly what tsc's include globbing
+    // and the probe convention put out of the program, so a structural rule
+    // asserted over this list reads the same tree the compilers read.
+    expect(sourceFiles(base)).toEqual([REAL, DANGLING].sort());
+  });
+
+  it("reaches the probe through the unfiltered walk", () => {
+    // Non-vacuous the other way: `layering.test.ts` proves its own scanner by
+    // planting that probe, so hiding it from EVERY walk would gut that suite.
+    const all = allSourceFiles(base);
+    expect(all).toContain(DOT_HIDDEN);
+    expect(all).toContain(UNDERSCORED);
+    expect(all).toContain(REAL);
+    expect(sourceText(DOT_HIDDEN, base)).toContain("export const probe");
+  });
+
+  it("reads a listed path that cannot be opened as empty", () => {
+    expect(sourceText(DANGLING, base)).toBe("");
+    expect(allSourceFiles(base)).toContain(DANGLING);
+  });
+
+  it("reports nothing for a directory that is not there", () => {
+    // The second crash site: since the probe became a whole DIRECTORY, a walk
+    // can die listing a directory that vanished after its parent was listed.
+    expect(sourceFiles(path.join(base, "gone"))).toEqual([]);
+    expect(allSourceFiles(path.join(base, "gone"))).toEqual([]);
+  });
+
+  it("still throws for a failure that is not a vanished path", () => {
+    // The guard is narrow on purpose: swallowing every error would turn a
+    // broken checkout into a silently green suite.
+    const locked = path.join(base, "src", "locked");
+    mkdirSync(locked, { recursive: true });
+    chmodSync(locked, 0o000);
+    let unreadable = false;
+    try {
+      readdirSync(locked);
+    } catch {
+      unreadable = true;
+    }
+    try {
+      // Skipped rather than faked where the OS lets this user read it anyway
+      // (running as root).
+      if (unreadable) expect(() => allSourceFiles(base)).toThrow();
+    } finally {
+      chmodSync(locked, 0o755);
+      rmSync(locked, { recursive: true, force: true });
+    }
+  });
+
+  it("hides nothing that exists in the real tree", () => {
+    // The filter is only safe because no real path under `src/` is named that
+    // way. The day one is, this reddens instead of the rule going quiet.
+    const real = sourceFiles();
+    expect(real.length).toBeGreaterThan(5);
+    expect(real).toEqual(allSourceFiles());
+  });
+});
+
+/**
+ * The isolation the probe-race pin depends on (admin-window/BUG-0032).
+ *
+ * `tests/isolated/**` mutates the shared source tree on purpose. If it ever
+ * ran beside the offline project — whose files walk that tree in parallel
+ * workers — it would FIRE the race it pins; measured at the time, an in-tree
+ * version took a sub-1-in-37 flake to 1 in 5. Two structural guarantees keep
+ * that from happening, and both are asserted here rather than trusted.
+ */
+describe("the isolated project's isolation", () => {
+  function projectConfig(name: string): Record<string, unknown> {
+    const projects = (
+      config as { test?: { projects?: { test?: { name?: string } }[] } }
+    ).test?.projects;
+    const found = (projects ?? []).find((project) => project?.test?.name === name);
+    expect(found, `vitest.config.mts declares no project named ${name}`).toBeDefined();
+    return (found as { test: Record<string, unknown> }).test;
+  }
+
+  it("runs one file at a time", () => {
+    // Two of its files would race each other over the same probe path.
+    const isolated = projectConfig("isolated");
+    expect(isolated.pool).toBe("forks");
+    expect(isolated.poolOptions).toEqual({ forks: { singleFork: true } });
+  });
+
+  it("never shares a vitest invocation with the offline project", () => {
+    const manifest = JSON.parse(sourceText("package.json")) as {
+      scripts: Record<string, string>;
+    };
+    const commands: string[] = manifest.scripts.test
+      .split("&&")
+      .map((part: string) => part.trim());
+
+    // Both run under `npm test` — the pin is worthless if nothing runs it...
+    expect(commands.some((command) => command.includes("--project=offline"))).toBe(true);
+    expect(commands.some((command) => command.includes("--project=isolated"))).toBe(true);
+    // ...and never in the same process, which is what makes them sequential.
+    for (const command of commands) {
+      expect(
+        command.includes("--project=offline") && command.includes("--project=isolated"),
+        command,
+      ).toBe(false);
+    }
   });
 });

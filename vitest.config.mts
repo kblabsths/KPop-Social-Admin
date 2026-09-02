@@ -2,12 +2,14 @@ import { defineConfig } from "vitest/config";
 import tsconfigPaths from "vite-tsconfig-paths";
 import {
   HTTP_INCLUDE,
+  ISOLATED_INCLUDE,
   LIVE_INCLUDE,
   OFFLINE_INCLUDE,
 } from "./tests/suite-globs";
 
 /**
- * Three projects, one per suite (admin-window/TASK-0001).
+ * Four projects, one per suite (admin-window/TASK-0001, `isolated` added by
+ * admin-window/BUG-0032).
  *
  * Each project's include glob is rooted at its own directory, so the offline
  * project is structurally unable to collect a live or http test — see
@@ -76,6 +78,30 @@ export default defineConfig({
           // this for one project; `singleFork` can.
           pool: "forks",
           poolOptions: { forks: { singleFork: true } },
+        },
+      },
+      {
+        plugins: [tsconfigPaths()],
+        test: {
+          name: "isolated",
+          include: ISOLATED_INCLUDE,
+          environment: "node",
+          // This project MUTATES the shared source tree (it plants and removes
+          // a probe under `src/`) to pin that every walk of that tree survives
+          // it. Two constraints follow, and both are asserted in
+          // `tests/offline/toolchain.test.ts` (admin-window/BUG-0032):
+          //
+          //  - one fork, one file at a time — two of these files would race
+          //    each other over the same probe path;
+          //  - and this project NEVER shares a `vitest run` with the offline
+          //    project, whose files walk that same tree in parallel workers.
+          //    `npm test` runs the two as separate, sequential invocations.
+          pool: "forks",
+          poolOptions: { forks: { singleFork: true } },
+          // Each case spawns a child vitest over four real test files, and one
+          // drives a filesystem churn loop against them.
+          testTimeout: 180_000,
+          hookTimeout: 180_000,
         },
       },
     ],

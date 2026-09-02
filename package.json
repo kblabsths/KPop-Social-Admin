@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --project=offline",
+    "test": "vitest run --project=offline && vitest run --project=isolated",
+    "test:isolated": "vitest run --project=isolated",
     "test:live": "vitest run --project=live",
     "test:http": "next build && vitest run --project=http"
   },

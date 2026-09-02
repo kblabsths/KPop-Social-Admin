@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { SHAPES } from "@/lib/review/shapes";
 import type { ReviewItemRow } from "@/lib/review/shapes";
 import { reviewItemShapes, type ReviewItemRow as FixtureRow } from "../../fixtures/rows";
+import { codeLines, repoRoot, sourceFiles } from "../source-tree";
 
 /**
  * The structural half of admin-window/TASK-0006's acceptance criteria, asserted
@@ -30,59 +31,16 @@ import { reviewItemShapes, type ReviewItemRow as FixtureRow } from "../../fixtur
  * copy of this derivation appearing anywhere is the defect these guard.
  */
 
-const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 const SHAPES_MODULE = "src/lib/review/shapes.ts";
 
-/**
- * Every TypeScript source file under `src/`, as repo-relative posix paths.
- *
- * `__`-prefixed files are excluded and a file that vanishes mid-walk is
- * skipped, because `tests/offline/db/layering.test.ts` WRITES AND DELETES
- * `src/__credential_guard_probe__.ts` while asserting its own scanner, and
- * vitest runs test files in parallel. A tree scanner that reads whatever it
- * listed a moment ago is a flake against any suite that touches `src/`
- * (admin-window/TASK-0006 — it failed exactly once in five full-suite runs
- * before this guard). Nothing real is hidden: a skip only happens for a file
- * that no longer exists, which is by definition not part of the tree under
- * test.
+/*
+ * The walk and the comment-stripping read are `tests/offline/source-tree.ts`
+ * (admin-window/BUG-0032). They used to be a private copy here, hardened
+ * against the probe `db/layering.test.ts` writes and deletes under the source
+ * tree in a parallel worker; two sibling files carried the same copy
+ * UNhardened and reddened on it (admin-window/TASK-0006 saw it once in five
+ * full-suite runs before this file's own guard). One copy now.
  */
-function sourceFiles(base: string = repoRoot): string[] {
-  const found: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (/\.(ts|tsx|mts)$/.test(entry.name) && !entry.name.startsWith("__")) {
-        found.push(path.relative(base, full).split(path.sep).join("/"));
-      }
-    }
-  };
-  walk(path.join(base, "src"));
-  return found.sort();
-}
-
-/** Lines that are code, not commentary — a doc comment naming a thing is documentation. */
-function codeLines(file: string, base: string = repoRoot): string[] {
-  let text: string;
-  try {
-    text = fs.readFileSync(path.join(base, file), "utf8");
-  } catch (thrown) {
-    // Only the transient case above; anything else is a real failure.
-    if ((thrown as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw thrown;
-  }
-  return text
-    .split("\n")
-    .filter((line) => {
-      const trimmed = line.trim();
-      return (
-        trimmed.length > 0 &&
-        !trimmed.startsWith("//") &&
-        !trimmed.startsWith("*") &&
-        !trimmed.startsWith("/*")
-      );
-    });
-}
 
 function filesWhereCodeMatches(pattern: RegExp, base: string = repoRoot): string[] {
   return sourceFiles(base).filter((file) =>

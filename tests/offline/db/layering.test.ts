@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { allSourceFiles, codeText, repoRoot, sourceText } from "../source-tree";
 
 /**
  * The structural rules of ARCHITECTURE.md §4, asserted against the source tree
@@ -13,8 +14,6 @@ import { describe, expect, it } from "vitest";
  *      to the live-test setup, never to the app.
  */
 
-const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
-const srcRoot = path.join(repoRoot, "src");
 
 const CLIENT = "src/lib/db/client.ts";
 const TABLES = "src/lib/db/tables.ts";
@@ -36,56 +35,21 @@ const TABLES = "src/lib/db/tables.ts";
  */
 const CARRIED_OVER = ["src/lib/supabase.ts"];
 
-/** Every TypeScript source file under `src/`, as repo-relative posix paths. */
-function sourceFiles(): string[] {
-  const found: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (/\.(ts|tsx|mts)$/.test(entry.name)) {
-        found.push(path.relative(repoRoot, full).split(path.sep).join("/"));
-      }
-    }
-  };
-  walk(srcRoot);
-  return found.sort();
-}
-
-function read(file: string): string {
-  return fs.readFileSync(path.join(repoRoot, file), "utf8");
-}
-
-/**
- * Lines that are code, not commentary. A doc comment naming a table (this
- * file, `result.ts`) is documentation; only a real occurrence is a defect.
+/*
+ * The walk and the two readers are `tests/offline/source-tree.ts`
+ * (admin-window/BUG-0032) — one copy for every structural rule in this suite,
+ * instead of the five hand-copied ones that had drifted apart.
+ *
+ * This file takes `allSourceFiles`, the UNFILTERED walk: the probe below is
+ * the point of "the credential guard itself", so the scanner these rules use
+ * must reach it. Every other caller takes the filtered `sourceFiles`, which
+ * skips exactly what no compiler compiles. Both survive a path vanishing
+ * mid-walk, which is what this file's own probe does ~20 times per run while
+ * other files walk the same tree in parallel workers.
  */
-function codeLines(text: string): string[] {
-  return text
-    .split("\n")
-    .filter((line) => {
-      const trimmed = line.trim();
-      return (
-        trimmed.length > 0 &&
-        !trimmed.startsWith("//") &&
-        !trimmed.startsWith("*") &&
-        !trimmed.startsWith("/*")
-      );
-    });
-}
-
-/**
- * A file's code lines rejoined, newlines kept, so a pattern may span lines.
- * Multi-line spellings are ordinary formatted code — a formatter breaks a
- * multi-key destructure across lines — and a scanner that tested one line at a
- * time would be blind to them (admin-window/BUG-0005).
- */
-function codeText(text: string): string {
-  return codeLines(text).join("\n");
-}
 
 function filesWhereCodeMatches(pattern: RegExp): string[] {
-  return sourceFiles().filter((file) => pattern.test(codeText(read(file))));
+  return allSourceFiles().filter((file) => pattern.test(codeText(file)));
 }
 
 function withoutDeprecated(files: string[]): string[] {
@@ -157,7 +121,7 @@ const SUPABASE_CREDENTIAL_READ = envReadOf("SUPABASE_[A-Z0-9_]+");
 
 describe("the source tree", () => {
   it("is non-empty and contains the seam files these rules are about", () => {
-    const files = sourceFiles();
+    const files = allSourceFiles();
     expect(files.length).toBeGreaterThan(5);
     expect(files).toContain(CLIENT);
     expect(files).toContain(TABLES);
@@ -176,7 +140,7 @@ describe("credentials", () => {
   it("mentions no staging name anywhere under src", () => {
     // Not code-lines-only: a STAGING_ name has no business in a comment here
     // either. Staging is tests/live's, and this rule takes no exemption.
-    const offenders = sourceFiles().filter((file) => read(file).includes("STAGING_"));
+    const offenders = allSourceFiles().filter((file) => sourceText(file).includes("STAGING_"));
     expect(offenders).toEqual([]);
   });
 
@@ -247,7 +211,7 @@ describe("the credential guard itself", () => {
    * moment later, tsc died with `TS6053: File ... not found` and the offline
    * suite reddened for reasons no assertion cared about. TypeScript's include
    * globbing skips directories whose name starts with `.`, while the walker in
-   * `sourceFiles()` above skips nothing — so a dot-hidden probe is asserted on
+   * `allSourceFiles()` skips nothing — so a dot-hidden probe is asserted on
    * exactly as before and is invisible to any concurrent compile.
    */
   const PROBE = "src/.probes/__credential_guard_probe__.ts";

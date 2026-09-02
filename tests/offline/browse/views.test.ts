@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BROWSE_VIEWS,
@@ -22,6 +20,7 @@ import {
   type EventArrivalRow,
   type EventProvenanceRow,
 } from "@/lib/browse/rows";
+import { sourceFiles, sourceText } from "../source-tree";
 
 /**
  * Browse's view definition and its column-selector algebra (campaign
@@ -34,7 +33,6 @@ import {
  */
 
 const view = RECENT_EVENTS;
-const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 
 describe("the view definition", () => {
   it("ships exactly one curated view", () => {
@@ -648,19 +646,12 @@ describe("the record link", () => {
 });
 
 describe("what Browse must NOT contain", () => {
-  /** Every TypeScript source file under `src/`, as absolute paths. */
-  function sourceFiles(): string[] {
-    const found: string[] = [];
-    const walk = (dir: string) => {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) walk(full);
-        else if (/\.(ts|tsx|mts)$/.test(entry.name)) found.push(full);
-      }
-    };
-    walk(path.join(repoRoot, "src"));
-    return found;
-  }
+  // The walk and the read are `tests/offline/source-tree.ts` — one copy for
+  // every structural rule in this suite, tolerant of the probe
+  // `db/layering.test.ts` writes and deletes under the source tree in a
+  // parallel worker (admin-window/BUG-0032). `sourceText` is the RAW file:
+  // both rules below must see a forbidden call even where a comment could
+  // hide it.
 
   it("has no SQL-executing route and no whole-table browser", () => {
     // The ticket's own check, asserted here too so it survives a refactor of
@@ -669,19 +660,13 @@ describe("what Browse must NOT contain", () => {
       ["select\\s+\\*\\s+from", "\\.rpc\\(", "execute_sql"].join("|"),
       "i",
     );
-    const offenders = sourceFiles().filter((file) =>
-      forbidden.test(fs.readFileSync(file, "utf8")),
-    );
+    const offenders = sourceFiles().filter((file) => forbidden.test(sourceText(file)));
     expect(offenders).toEqual([]);
   });
 
   it("defines its views in exactly one file", () => {
     const definition = new RegExp("BROWSE_VIEWS\\s*[:=]");
-    const files = sourceFiles().filter((file) =>
-      definition.test(fs.readFileSync(file, "utf8")),
-    );
-    expect(files.map((f) => path.relative(repoRoot, f))).toEqual([
-      path.join("src", "lib", "browse", "views.ts"),
-    ]);
+    const files = sourceFiles().filter((file) => definition.test(sourceText(file)));
+    expect(files).toEqual(["src/lib/browse/views.ts"]);
   });
 });
