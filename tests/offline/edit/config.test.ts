@@ -191,6 +191,34 @@ describe("the map", () => {
     }
   });
 
+  it("gives events the one reference the surface links through, and no other table one", () => {
+    // admin-window/BUG-0034: `venue_id` is a LINK, and the map is where the
+    // surface learns that — `events` is the only table with one in M1.
+    expect(EDIT_CONFIG.events.reference).toEqual({
+      field: "venue_id",
+      domain: "venues",
+    });
+    for (const table of ["groups", "idols", "venues"]) {
+      expect(EDIT_CONFIG[table].reference, table).toBeNull();
+    }
+  });
+
+  it("keeps every reference a displayed column, never an editable one", () => {
+    // A reference is a third QUESTION about a displayed column, not a third
+    // list of columns: one that is not displayed would be drawn nowhere, and
+    // one that is editable would offer a control over a link (AGENTS.md).
+    for (const config of Object.values(EDIT_CONFIG)) {
+      const reference = config.reference;
+      if (reference === null) continue;
+      expect(config.display, config.table).toContain(reference.field);
+      expect(config.editable, config.table).not.toContain(reference.field);
+      // It points at a table this app has a record surface for, spelled as
+      // the map keys it — the link is `/records/<domain>/<id>`.
+      expect(EDITABLE_TABLES, config.table).toContain(reference.domain);
+      expect(reference.domain, config.table).not.toBe(config.table);
+    }
+  });
+
   it("never lists one column as both editable and displayed", () => {
     // The two halves of the map answer different questions and a column in
     // both would make "is this line read-only?" depend on which list won.
@@ -250,6 +278,7 @@ describe("mappedColumns", () => {
       regime: "pre_cutover",
       editable: ["name", "company"],
       display: ["company", "id", "bio"],
+      reference: null,
     });
     expect([...columns]).toEqual(["id", "name", "company", "bio"]);
   });

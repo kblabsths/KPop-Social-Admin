@@ -211,7 +211,14 @@ describe("updateRecordField refuses, and issues no query at all", () => {
     for (const table of ["event_performers", "scraped_events", "profiles"]) {
       const result = await updateRecordField(
         {
-          config: { table, pk: "id", regime: "pre_cutover", editable: ["name"], display: [] },
+          config: {
+            table,
+            pk: "id",
+            regime: "pre_cutover",
+            editable: ["name"],
+            display: [],
+            reference: null,
+          },
           field: "name",
         },
         GROUP_ID,
@@ -235,6 +242,7 @@ describe("updateRecordField refuses, and issues no query at all", () => {
           regime: "pre_cutover",
           editable: ["spotify_id", "name"],
           display: [],
+          reference: null,
         },
         field: "spotify_id",
       },
@@ -256,6 +264,7 @@ describe("updateRecordField refuses, and issues no query at all", () => {
           regime: "pre_cutover",
           editable: ["name"],
           display: [],
+          reference: null,
         },
         field: "name",
       },

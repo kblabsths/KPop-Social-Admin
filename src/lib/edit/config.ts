@@ -45,6 +45,37 @@ export type Regime =
    */
   | "resolver_owned";
 
+/**
+ * A displayed column that POINTS AT another record rather than holding a value
+ * an operator can read — `events.venue_id` is the only one in M1 (campaign
+ * admin-window/BUG-0034).
+ *
+ * It says what a `display` column IS, never that it may be written:
+ * `decideEdit` reads `regime` and `editable` and nothing else, so a reference
+ * column is drawn with no control at all, exactly like every other displayed
+ * column. What changes is the RENDERING — the linked entity's name with a
+ * route to its own record — because a bare uuid shows the operator strictly
+ * LESS than the venue name on the Browse row they clicked through to get here
+ * (spec §8: a reference field shows its linked entity).
+ *
+ * **Where that name is READ from is deliberately not here.** It is a relation
+ * name, and ARCHITECTURE.md §4 rule 4 — pinned by
+ * `tests/offline/db/layering.test.ts` — leaves `lib/db/tables.ts` the only
+ * file in `src/` that spells one. So the map says which column links and where
+ * the link goes; the data layer says how the linked row is named
+ * (`readRecordReference` in `lib/db/records.ts`).
+ */
+export interface ReferenceColumn {
+  /** The `display` column holding the linked row's id. */
+  readonly field: string;
+  /**
+   * The table whose record surface it points at, spelled as the map keys that
+   * table: the link is `/records/<domain>/<id>`, the one record URL this app
+   * has.
+   */
+  readonly domain: string;
+}
+
 export interface TableEditConfig {
   /** The canonical table, spelled as the database spells it. */
   readonly table: string;
@@ -80,6 +111,13 @@ export interface TableEditConfig {
    * either way.
    */
   readonly display: readonly string[];
+  /**
+   * The one `display` column that LINKS to another record, or `null` when the
+   * table has none (admin-window/BUG-0034). A third question about the same
+   * columns, not a third list of them: the column named here must already
+   * stand in `display`, and naming it changes only how that line is drawn.
+   */
+  readonly reference: ReferenceColumn | null;
 }
 
 /**
@@ -112,6 +150,7 @@ const ENTRIES: readonly TableEditConfig[] = [
       "bio",
     ],
     display: [],
+    reference: null,
   },
   {
     table: "idols",
@@ -136,6 +175,7 @@ const ENTRIES: readonly TableEditConfig[] = [
       "birth_place",
     ],
     display: [],
+    reference: null,
   },
   // Resolver-owned. Present in the map so the surface knows they exist and
   // renders them READ-ONLY — with an empty `editable` list, which is what
@@ -151,13 +191,21 @@ const ENTRIES: readonly TableEditConfig[] = [
   //   poster -> poster_url  (the events column holding the poster art)
   //   venue  -> venue_id    (the only venue-bearing column of `events`; the
   //                          venue's own name/city/country/address are the
-  //                          `venues` record page, one click on from here)
+  //                          `venues` record page, one click on from here —
+  //                          a claim this file made before the click existed,
+  //                          which is what `reference` below now carries
+  //                          (admin-window/BUG-0034))
   {
     table: "events",
     pk: "event_id",
     regime: "resolver_owned",
     editable: [],
     display: ["title", "description", "poster_url", "starts_at", "venue_id"],
+    // The one link on this surface: `venue_id` is drawn as the venue itself —
+    // its name, and a route to its own record — never as the bare uuid that
+    // told the operator less than the Browse row they clicked
+    // (admin-window/BUG-0034).
+    reference: { field: "venue_id", domain: "venues" },
   },
   {
     table: "venues",
@@ -165,6 +213,7 @@ const ENTRIES: readonly TableEditConfig[] = [
     regime: "resolver_owned",
     editable: [],
     display: ["name", "city", "country", "address"],
+    reference: null,
   },
 ];
 

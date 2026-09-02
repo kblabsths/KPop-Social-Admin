@@ -2,7 +2,7 @@ import { DataTable, type Column } from "@/components/ui";
 import { relativeAge } from "@/lib/format";
 import type { FieldProvenance } from "@/lib/records/provenance";
 import { FieldEditor } from "./field-editor";
-import type { RecordField } from "./fields";
+import type { FieldReference, RecordField } from "./fields";
 
 /**
  * One record, one line per field: the field, its value, its provenance
@@ -59,6 +59,39 @@ function ProvenanceLine({ fact }: { fact: FieldProvenance }) {
   );
 }
 
+/**
+ * A reference line: the linked entity, and the way through to it
+ * (campaign admin-window/BUG-0034).
+ *
+ * The name is what an operator reads and the LINK is what they came for — the
+ * events surface used to render `venue_id` as inert uuid text, which is
+ * strictly less than the venue name on the Browse row they clicked to get
+ * here. The id stays on screen beside the name, in mono, because it is the
+ * machine's word for this row and the operator copying it into a query needs
+ * it verbatim; when no name was read, the id IS the label and the line still
+ * links. Same anchor styling as the Browse row link, which is the app's one
+ * treatment for "this text goes somewhere".
+ */
+function ReferenceValue({ reference }: { reference: FieldReference }) {
+  return (
+    <span className="flex flex-wrap items-baseline gap-2">
+      <a
+        href={reference.href}
+        className={
+          reference.name === null
+            ? "type-data transition-colors hover:text-accent"
+            : "type-body transition-colors hover:text-accent"
+        }
+      >
+        {reference.name ?? reference.id}
+      </a>
+      {reference.name === null ? null : (
+        <span className="type-data text-ink-secondary">{reference.id}</span>
+      )}
+    </span>
+  );
+}
+
 export function RecordFields({
   table,
   id,
@@ -87,6 +120,10 @@ export function RecordFields({
             value={field.value}
             multiline={field.multiline}
           />
+        ) : field.reference !== null ? (
+          // A link, not a control: a reference column is read-only like every
+          // other displayed column, and a route out is not a write path.
+          <ReferenceValue reference={field.reference} />
         ) : (
           // No widget at all — not a disabled input, which could be re-enabled
           // from the console and would read as "editable, later" (spec §8).
