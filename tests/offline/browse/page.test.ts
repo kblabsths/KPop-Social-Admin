@@ -191,6 +191,44 @@ describe("the page's rows", () => {
     expect(rows[1][column]).toBe(EM_DASH);
   });
 
+  /**
+   * The rendered twin of the two `joinBrowseRows` pins in `views.test.ts`:
+   * `field_provenance` is an append-only decision log
+   * (`contracts/data-model.md`, Per-field provenance), so a superseded
+   * decision's source is history and an unset decision names no source at
+   * all. Neither may reach the Sources cell.
+   */
+  // strict xfail — admin-window/BUG-0010. Flip back to `it(` with the fix.
+  it.fails("does not name a superseded source, or a decision with no source", async () => {
+    const markup = await renderBrowse(
+      healthyScript({
+        [T.fieldProvenance]: {
+          data: [
+            // (EVENT_NEW, title) decided twice — only the later one stands.
+            fieldProvenanceRow({
+              entity_id: EVENT_NEW,
+              field: "title",
+              source_id: ID.sourceBandsintown,
+              applied_at: "2026-01-01T00:00:00Z",
+            }),
+            fieldProvenanceRow({
+              entity_id: EVENT_NEW,
+              field: "title",
+              source_id: ID.sourceTicketmaster,
+              applied_at: "2026-08-01T00:00:00Z",
+            }),
+            // A verdict unset: source_id is null (scraper migration
+            // 20260901000005 §1).
+            { ...fieldProvenanceRow({ entity_id: EVENT_NEW, field: "poster_url" }), source_id: null },
+          ],
+          count: 3,
+        },
+      }),
+    );
+    const column = headers(markup).indexOf(labelOf("sources"));
+    expect(bodyRows(markup)[0][column]).toBe("ticketmaster");
+  });
+
   it("shows the venue name from the listings view", async () => {
     const markup = await renderBrowse(healthyScript());
     const column = headers(markup).indexOf(labelOf("venue"));

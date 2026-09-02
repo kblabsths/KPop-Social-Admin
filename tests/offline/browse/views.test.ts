@@ -382,6 +382,58 @@ describe("the join", () => {
     expect(rows.map((r) => r.event_id)).toEqual(["new", "old"]);
   });
 
+  /**
+   * `field_provenance` is an APPEND-ONLY DECISION LOG, not a current-state
+   * table: `contracts/data-model.md`, Per-field provenance — "The latest row
+   * per fact identity is the current provenance; the rows before it are that
+   * fact's decision history", and the schema agrees (scraper migration
+   * 20260818000000: `COMMENT ON TABLE field_provenance IS 'The decision
+   * log ... Append-only'`; trigger `field_provenance_reject_rewrite` refuses
+   * every update and delete; the only key is `provenance_id`).
+   *
+   * So the sources BEHIND a row are the sources of the latest decision per
+   * fact identity — never the union of every decision ever made on it.
+   */
+  // strict xfail — admin-window/BUG-0010. Flip back to `it(` with the fix.
+  it.fails("names only the source behind the current value, not a superseded one", () => {
+    const rows = joinBrowseRows({
+      events: [event("e1")],
+      venues: [],
+      // The same fact identity (e1, title) decided twice: `retired_feed`
+      // won it once and `ticketmaster` won it later. Only the later row is
+      // the current provenance.
+      provenance: [
+        { entity_id: "e1", source_id: "s_old" },
+        { entity_id: "e1", source_id: "s_new" },
+      ],
+      sources: [
+        { source_id: "s_old", source: "retired_feed" },
+        { source_id: "s_new", source: "ticketmaster" },
+      ],
+    });
+    expect(rows[0].sources).toEqual(["ticketmaster"]);
+  });
+
+  /**
+   * An unset decision carries no source: `field_provenance.source_id` is
+   * nullable and "null on a verdict unset" (scraper migration
+   * 20260901000005 §1, and `contracts/data-model.md` Per-field provenance).
+   * A row with no source must contribute no source name.
+   */
+  // strict xfail — admin-window/BUG-0010. Flip back to `it(` with the fix.
+  it.fails("contributes no source name for a decision that names no source", () => {
+    const rows = joinBrowseRows({
+      events: [event("e1")],
+      venues: [],
+      provenance: [
+        { entity_id: "e1", source_id: null as unknown as string },
+        { entity_id: "e1", source_id: "s1" },
+      ],
+      sources: [{ source_id: "s1", source: "ticketmaster" }],
+    });
+    expect(rows[0].sources).toEqual(["ticketmaster"]);
+  });
+
   it("lists each source id once, in first-seen order", () => {
     expect(
       sourceIdsOf([
