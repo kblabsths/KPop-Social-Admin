@@ -20,18 +20,21 @@ const CLIENT = "src/lib/db/client.ts";
 const TABLES = "src/lib/db/tables.ts";
 
 /**
- * Surfaces the campaign deprecates, removed by admin-window/TASK-0005. They
- * predate these rules and are outside this ticket's touch scope, so each rule
- * below exempts exactly these paths and no others — a NEW violator still
- * reddens. The list is a ratchet: every entry must still exist, so when
- * TASK-0005 deletes a file this test fails until its entry is deleted too.
+ * Files exempt from the rules below, by ruling rather than by oversight — a
+ * NEW violator still reddens.
+ *
+ * The deprecated surfaces this list also carried (`src/app/page.tsx`,
+ * `src/app/analytics/page.tsx`, `src/app/data-management/events/page.tsx`)
+ * left with admin-window/TASK-0005, which deleted or rewrote them; their
+ * entries went with them.
+ *
+ * What remains is `src/lib/supabase.ts`: the pre-campaign service-role client,
+ * one of the handful of files ARCHITECTURE §2 carries over untouched, so it
+ * reads the credential and builds a client outside `lib/db/client.ts` on
+ * purpose. The list stays a ratchet — every entry must still exist, so an
+ * exemption cannot outlive the file it names.
  */
-const DEPRECATED_UNTIL_TASK_0005 = [
-  "src/lib/supabase.ts",
-  "src/app/page.tsx",
-  "src/app/analytics/page.tsx",
-  "src/app/data-management/events/page.tsx",
-];
+const CARRIED_OVER = ["src/lib/supabase.ts"];
 
 /** Every TypeScript source file under `src/`, as repo-relative posix paths. */
 function sourceFiles(): string[] {
@@ -78,7 +81,7 @@ function filesWhereCodeMatches(pattern: RegExp): string[] {
 }
 
 function withoutDeprecated(files: string[]): string[] {
-  return files.filter((file) => !DEPRECATED_UNTIL_TASK_0005.includes(file));
+  return files.filter((file) => !CARRIED_OVER.includes(file));
 }
 
 /**
@@ -122,10 +125,10 @@ describe("the source tree", () => {
     expect(files).toContain(TABLES);
   });
 
-  it("still contains every deprecated file the exemptions name", () => {
+  it("still contains every file the exemptions name", () => {
     // The ratchet: an exemption for a file that no longer exists is dead
     // weight that would silently keep a rule loose.
-    for (const file of DEPRECATED_UNTIL_TASK_0005) {
+    for (const file of CARRIED_OVER) {
       expect(fs.existsSync(path.join(repoRoot, file)), `${file} is gone — drop its exemption`).toBe(true);
     }
   });
