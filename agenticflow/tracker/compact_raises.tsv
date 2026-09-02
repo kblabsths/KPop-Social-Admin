@@ -1,1 +1,2 @@
 2026-09-02T08:52:20Z	TASK-0007	8000	12000	12480	first compaction shrank History ~5%; dense evidence log, irreducible
+2026-09-02T09:40:08Z	TASK-0015	8000	22000	14816	irreducible: remainder is the BUG-0010 reproduction measurement, three named xfail tests, the amended checks and the dead ends; the two architect rulings are already cut to ARCHITECTURE.md pointers
