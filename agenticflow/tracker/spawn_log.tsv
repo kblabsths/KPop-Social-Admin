@@ -2401,3 +2401,24 @@
 2026-09-02T13:01:12Z	agent	-	-	-	-
 # STRANDED	2026-09-02T13:01:17Z	builder	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0030.md
 2026-09-02T13:01:17Z	builder	TASK-0030	7115	512	97970
+2026-09-02T13:01:55Z	qa-adversary	TASK-0030	spawned
+# STRANDED	2026-09-02T13:02:27Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0030.md
+2026-09-02T13:02:27Z	agent	-	-	-	-
+# STRANDED	2026-09-02T13:02:59Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0030.md
+2026-09-02T13:02:59Z	agent	-	-	-	-
+# STRANDED	2026-09-02T13:03:31Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0030.md, tests/offline/__qa_typegate_probe.tsx
+2026-09-02T13:03:31Z	agent	-	-	-	-
+# STRANDED	2026-09-02T13:04:03Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0030.md, tests/offline/__qa_probe.test.ts
+2026-09-02T13:04:03Z	agent	-	-	-	-
+# STRANDED	2026-09-02T13:04:34Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0030.md
+2026-09-02T13:04:34Z	agent	-	-	-	-
+# STRANDED	2026-09-02T13:05:07Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0030.md
+2026-09-02T13:05:07Z	agent	-	-	-	-
+# STRANDED	2026-09-02T13:05:39Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0030.md
+2026-09-02T13:05:39Z	agent	-	-	-	-
+# STRANDED	2026-09-02T13:06:10Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0030.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0030.md
+2026-09-02T13:06:10Z	agent	-	-	-	-
+# STRANDED	2026-09-02T13:06:42Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0030.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0030.md
+2026-09-02T13:06:42Z	agent	-	-	-	-
+# STRANDED	2026-09-02T13:07:13Z	qa-adversary	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0030.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0030.md
+2026-09-02T13:07:13Z	qa-adversary	TASK-0030	2759	317	73425
