@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 import { describe, expect, it } from "vitest";
 import QueuesPage from "@/app/queues/page";
 import { T } from "@/lib/db/tables";
-import { assertParity, countRows, independentClient, renderPage } from "./parity";
+import { assertParity, countRows, independentClient, readNumber, renderPage } from "./parity";
 
 /**
  * The Queues page against staging (campaign admin-window/TASK-0010).
@@ -249,14 +249,14 @@ describe("the queue-health gauge against staging", () => {
     // opened inside the window it names, so the whole-table count is its
     // ceiling and never its equal by definition.
     const whole = await countRows(() => itemCount().eq("status", "open"));
-    const rendered = ["data_conflict", "entity_link"].map((queue) =>
-      Number(
-        $(`[data-gauge-queue="${queue}"]`)
-          .text()
-          .match(/(\d[\d,]*)/)?.[1]
-          ?.replace(/,/g, "") ?? "0",
-      ),
-    );
-    for (const figure of rendered) expect(figure).toBeLessThanOrEqual(whole);
+    // Read the figure by its LABEL, the way every other parity assertion in
+    // this suite does. A regex over the slice's text cannot: `.text()`
+    // concatenates the figure with the severity sub-line beside it, so an
+    // open count of 4 followed by "1 high, 3 low" reads back as 41 — measured
+    // on the offline edge population 2026-09-02 (4 -> 41, 3 -> 31), which
+    // would fail this assertion against correct code.
+    for (const queue of ["data_conflict", "entity_link"]) {
+      expect(readNumber(markup, `${queue} open`), queue).toBeLessThanOrEqual(whole);
+    }
   });
 });

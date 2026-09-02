@@ -666,3 +666,112 @@ describe("the route", () => {
     expect(new Set(idsIn(markup))).toEqual(new Set(idsOf(POPULATION)));
   });
 });
+
+/* ── the URL as an operator (or a stale bookmark) can actually spell it ───── */
+
+/**
+ * `searchParams` the way Next hands a REAL query string over: the value for a
+ * key, or an array of them when the key repeats
+ * (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/page.md`).
+ *
+ * The cases above pass parameter objects; these drive the whole URL path —
+ * percent-encoding, repeats, empty values and all — because that is what the
+ * Dashboard's link and a hand-edited address bar actually deliver.
+ */
+function paramsOf(query: string): Record<string, string | string[]> {
+  const params: Record<string, string | string[]> = {};
+  for (const key of new URLSearchParams(query).keys()) {
+    const values = new URLSearchParams(query).getAll(key);
+    params[key] = values.length === 1 ? values[0] : values;
+  }
+  return params;
+}
+
+describe("a hand-edited URL", () => {
+  /**
+   * Each case: the query string, and the narrowing it is allowed to apply.
+   * `{}` means "narrows nothing" — an unusable value shows the whole table
+   * rather than an empty page that reads as an empty database.
+   */
+  const cases: [string, Record<string, string>][] = [
+    // Contradictory but individually valid: a `data_conflict` row is a fact
+    // item by construction, so this pair matches nothing and must render
+    // EXACTLY nothing — the AND is real, not "the second one wins".
+    [
+      "shape=entity_link_fact&queue=data_conflict",
+      { shape: "entity_link_fact", queue: "data_conflict" },
+    ],
+    ["kind=decision&shape=entity_link_source_pattern", {
+      kind: "decision",
+      shape: "entity_link_source_pattern",
+    }],
+    // A repeated key is ambiguous state; the first value is the answer.
+    ["kind=decision&kind=signal", { kind: "decision" }],
+    ["status=open&status=settled", { status: "open" }],
+    // Unusable values, every way one arrives.
+    ["kind=Decision", {}],
+    ["kind=decision%20", {}],
+    ["queue=", {}],
+    ["queue=decision", {}],
+    ["shape=entity_link_fact%2Cin_window", {}],
+    [`shape=${"x".repeat(10_000)}`, {}],
+  ];
+
+  for (const [query, expected] of cases) {
+    const name = query.length > 60 ? `${query.slice(0, 40)}… (${query.length} chars)` : query;
+
+    it(`renders exactly the items ?${name} matches`, async () => {
+      const markup = await renderQueues(healthyScript(), paramsOf(query));
+      const rendered = idsIn(markup);
+
+      expect(new Set(rendered)).toEqual(new Set(idsOf(matching(expected))));
+      expect(rendered).toHaveLength(matching(expected).length);
+      // Whatever the URL said, both queues still stand and nothing writes.
+      expect(cheerio.load(markup)("[data-queue]")).toHaveLength(2);
+      for (const control of ["form", "button", "input", "select", "textarea"]) {
+        expect(cheerio.load(markup)(control), control).toHaveLength(0);
+      }
+    });
+  }
+
+  it("renders nothing at all for the two contradictory pairs", async () => {
+    // The pins above are only worth something if these pairs really are empty.
+    expect(matching({ shape: "entity_link_fact", queue: "data_conflict" })).toHaveLength(0);
+    expect(matching({ kind: "decision", shape: "entity_link_source_pattern" })).toHaveLength(0);
+
+    const markup = await renderQueues(
+      healthyScript(),
+      paramsOf("shape=entity_link_fact&queue=data_conflict"),
+    );
+    expect(idsIn(markup)).toEqual([]);
+    expect(cheerio.load(markup)("[data-queue] table")).toHaveLength(0);
+  });
+
+  it("never echoes an oversized value back into the page", async () => {
+    // A rejected value must not survive into a chip href or an attribute:
+    // the page reflects only what it understood.
+    const long = "x".repeat(10_000);
+    const markup = await renderQueues(healthyScript(), paramsOf(`shape=${long}`));
+
+    expect(markup).not.toContain("x".repeat(200));
+    for (const chip of chipsOf(markup, "shape")) {
+      expect(chip.href.length).toBeLessThan(200);
+    }
+  });
+
+  it("lands filtered on the link the Dashboard sends, with the other queue intact", async () => {
+    // SEAM (admin-window/TASK-0009 → TASK-0010): the Dashboard's attention
+    // counts link to `/queues?kind=decision|signal`. Driven here as the query
+    // string it emits, so a parameter renamed on either side of the seam
+    // shows up as items in the wrong queue rather than as a link that
+    // silently opens the unfiltered page.
+    for (const kind of KIND_NAMES) {
+      const markup = await renderQueues(healthyScript(), paramsOf(`kind=${kind}`));
+
+      expect(new Set(idsIn(markup)), kind).toEqual(new Set(idsOf(matching({ kind }))));
+      expect(idsIn(markup, kind).length, kind).toBeGreaterThan(0);
+      // Equal standing survives the arrival: the other queue is still there.
+      expect(cheerio.load(markup)("[data-queue]"), kind).toHaveLength(2);
+    }
+  });
+});
