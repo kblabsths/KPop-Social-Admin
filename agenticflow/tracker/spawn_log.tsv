@@ -1915,3 +1915,51 @@
 2026-09-02T11:33:15Z	agent	-	-	-	-
 # STRANDED	2026-09-02T11:33:42Z	builder	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md
 2026-09-02T11:33:42Z	builder	TASK-0008	10596	863	139001
+2026-09-02T11:34:19Z	qa-adversary	TASK-0008	spawned
+2026-09-02T11:34:27Z	builder	TASK-0028	spawned
+# STRANDED	2026-09-02T11:34:51Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:34:51Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:34:59Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:34:59Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:35:22Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:35:22Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:35:30Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:35:30Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:35:54Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:35:54Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:36:02Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:36:02Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:36:26Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:36:26Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:36:33Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:36:33Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:37:04Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:37:04Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:37:28Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md, tests/offline/gauges-ui/probe.test.ts
+2026-09-02T11:37:28Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:37:36Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md, tests/offline/gauges-ui/probe.test.ts
+2026-09-02T11:37:36Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:38:08Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md, tests/offline/gauges-ui/probe.test.ts
+2026-09-02T11:38:08Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:38:30Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md, tests/offline/gauges-ui/probe.test.ts
+2026-09-02T11:38:30Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:38:40Z	agent	4 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md, tests/offline/gauges-ui/cards.test.ts, tests/offline/gauges-ui/probe.test.ts
+2026-09-02T11:38:40Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:39:01Z	agent	4 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md, tests/offline/gauges-ui/cards.test.ts, tests/offline/gauges-ui/probe.test.ts
+2026-09-02T11:39:01Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:39:11Z	agent	5 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0018.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md, tests/offline/gauges-ui/cards.test.ts, tests/offline/gauges-ui/probe.test.ts
+2026-09-02T11:39:11Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:39:33Z	agent	4 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0018.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md, tests/offline/gauges-ui/cards.test.ts
+2026-09-02T11:39:33Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:39:43Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0018.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:39:43Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:40:05Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0018.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:40:05Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:40:14Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0018.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:40:14Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:40:18Z	builder	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0018.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:40:18Z	builder	TASK-0028	1830	350	57966
+# STRANDED	2026-09-02T11:40:37Z	agent	4 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0018.md, agenticflow/visions/admin-window/tracker/tickets/FEAT-0006.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:40:37Z	agent	-	-	-	-
+# STRANDED	2026-09-02T11:40:40Z	qa-adversary	4 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0018.md, agenticflow/visions/admin-window/tracker/tickets/FEAT-0006.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0008.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0028.md
+2026-09-02T11:40:40Z	qa-adversary	TASK-0008	3459	381	101999
