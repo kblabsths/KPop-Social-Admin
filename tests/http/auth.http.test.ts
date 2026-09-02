@@ -74,6 +74,53 @@ async function signedInCookie(): Promise<string> {
   return `${name}=${token}`;
 }
 
+/**
+ * Session cookies the running app must REFUSE.
+ *
+ * The whole signed-in half of this suite rests on one claim: the app accepts
+ * the minted cookie only because `next start` was given the same throwaway
+ * AUTH_SECRET in its environment. If any of these is accepted, that claim is
+ * false and the gate is not a gate — so each is asserted against every route,
+ * not just the root.
+ */
+async function forgedCookies(): Promise<ReadonlyArray<readonly [string, string]>> {
+  const name = "authjs.session-token";
+  const claims = { sub: "http-suite", email: "http-suite@example.invalid" };
+
+  const wrongSecret = await encode({
+    token: claims,
+    secret: `${AUTH_SECRET}-but-not-really`,
+    salt: name,
+    maxAge: 60 * 60,
+  });
+  // Right secret, wrong salt: Auth.js binds the cookie name into the key it
+  // derives, so a token minted for another cookie must not open this one.
+  const wrongSalt = await encode({
+    token: claims,
+    secret: AUTH_SECRET,
+    salt: "authjs.csrf-token",
+    maxAge: 60 * 60,
+  });
+  const expired = await encode({
+    token: claims,
+    secret: AUTH_SECRET,
+    salt: name,
+    maxAge: -60,
+  });
+  const valid = await encode({ token: claims, secret: AUTH_SECRET, salt: name, maxAge: 60 * 60 });
+
+  return [
+    ["a token signed with a different secret", `${name}=${wrongSecret}`],
+    ["a token bound to a different cookie name", `${name}=${wrongSalt}`],
+    ["an expired token", `${name}=${expired}`],
+    ["a structurally broken token", `${name}=not.a.real.token`],
+    ["an empty token", `${name}=`],
+    // Same bytes, one flipped in the payload: proves the signature is checked
+    // rather than the envelope merely parsed.
+    ["a tampered token", `${name}=${valid.slice(0, -3)}${valid.slice(-3) === "AAA" ? "BBB" : "AAA"}`],
+  ] as const;
+}
+
 describe("the built app over http", () => {
   it("serves health and sends an unauthenticated visitor to the login page", async () => {
     const { child } = await startServer();
@@ -236,6 +283,34 @@ describe("the gate over the whole window", () => {
       for (const route of ["/login", ...RENDERING_ROUTES]) {
         const res = await fetch(`${base}${route}`, { headers: { cookie } });
         expectNoCredentialMaterial(`response body of ${route}`, await res.text());
+      }
+
+      // 6. The minted cookie works only because this server was started with
+      //    the harness's throwaway AUTH_SECRET. Every forgery of it — wrong
+      //    secret, wrong cookie binding, expired, tampered, malformed — is
+      //    turned away on EVERY route, exactly as no cookie at all is.
+      for (const [what, forged] of await forgedCookies()) {
+        for (const route of GATED_ROUTES) {
+          const res = await fetch(`${base}${route}`, {
+            headers: { cookie: forged },
+            redirect: "manual",
+          });
+          const where = `${route} with ${what}`;
+          expect(res.status, where).toBeGreaterThanOrEqual(300);
+          expect(res.status, where).toBeLessThan(400);
+          const location = res.headers.get("location");
+          expect(location, where).not.toBeNull();
+          expect(new URL(location as string, base).pathname, where).toBe("/login");
+        }
+        // A forged session must not reach past the gate to a retired path
+        // either: it gets the sign-in page, never a 404 that would confirm
+        // what does and does not exist behind the gate.
+        const retired = await fetch(`${base}/analytics`, {
+          headers: { cookie: forged },
+          redirect: "manual",
+        });
+        expect(retired.status, `/analytics with ${what}`).toBeLessThan(400);
+        expect(retired.status, `/analytics with ${what}`).toBeGreaterThanOrEqual(300);
       }
     } finally {
       await stopServer(child);
