@@ -1,0 +1,45 @@
+{
+ "id": "TASK-0007",
+ "created": "2026-09-02T09:08:30Z",
+ "green": true,
+ "git_head": "8f82307eeabfe316c4ca920356e34522adc24cf1",
+ "scope": [
+  "src/lib/gauges",
+  "tests/offline/gauges"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "740a1b7ed88abfaddf9d4d488ab8b8c09e3c21a03dff797c027a11e66934f47b",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/gauges",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-47147\n\n \u2713 |offline| tests/offline/gauges/resolution-latency.test.ts (11 tests) 6ms\n \u2713 |offline| tests/offline/gauges/cycle-health.test.ts (17 tests) 8ms\n \u2713 |offline| tests/offline/gauges/standing-disagreements.test.ts (14 tests) 9ms\n \u2713 |offline| tests/offline/gauges/gauge.test.ts (40 tests) 10ms\n \u2713 |offline| tests/offline/gauges/queue-health.test.ts (16 tests) 7ms\n \u2713 |offline| tests/offline/gauges/pending-claims.test.ts (25 tests) 11ms\n \u2713 |offline| tests/offline/gauges/settled-values.test.ts (14 tests) 14ms\n \u2713 |offline| tests/offline/gauges/bounded.test.ts (40 tests) 34ms\n\n Test Files  8 passed (8)\n      Tests  177 passed (177)\n   Start at  02:08:29\n   Duration  560ms (transform 559ms, setup 0ms, collect 1.34s, tests 99ms, environment 1ms, prepare 719ms)\n\n(node:47200) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "test -f src/lib/gauges/cycle-health.ts && test -f src/lib/gauges/resolution-latency.ts && test -f src/lib/gauges/pending-claims.ts && test -f src/lib/gauges/queue-health.ts && test -f src/lib/gauges/standing-disagreements.ts && test -f src/lib/gauges/settled-values.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(ls supabase/migrations | wc -l)\" -eq 2",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"grep -rq limit src/lib/gauges\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

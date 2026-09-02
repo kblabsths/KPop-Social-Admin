@@ -1,0 +1,25 @@
+{
+ "id": "BUG-0009",
+ "created": "2026-09-02T09:08:21Z",
+ "green": true,
+ "git_head": "8f82307eeabfe316c4ca920356e34522adc24cf1",
+ "scope": [
+  "src/lib/gauges",
+  "tests/offline/gauges"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "740a1b7ed88abfaddf9d4d488ab8b8c09e3c21a03dff797c027a11e66934f47b",
+ "commands": [
+  {
+   "cmd": "cd '/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin' && ./node_modules/.bin/vitest run tests/offline/gauges",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\n\n \u2713 |offline| tests/offline/gauges/resolution-latency.test.ts (11 tests) 7ms\n \u2713 |offline| tests/offline/gauges/standing-disagreements.test.ts (14 tests) 11ms\n \u2713 |offline| tests/offline/gauges/gauge.test.ts (40 tests) 10ms\n \u2713 |offline| tests/offline/gauges/pending-claims.test.ts (25 tests) 11ms\n \u2713 |offline| tests/offline/gauges/queue-health.test.ts (16 tests) 6ms\n \u2713 |offline| tests/offline/gauges/cycle-health.test.ts (17 tests) 16ms\n \u2713 |offline| tests/offline/gauges/settled-values.test.ts (14 tests) 8ms\n \u2713 |offline| tests/offline/gauges/bounded.test.ts (40 tests) 88ms\n\n Test Files  8 passed (8)\n      Tests  177 passed (177)\n   Start at  02:08:19\n   Duration  662ms (transform 666ms, setup 0ms, collect 1.57s, tests 159ms, environment 1ms, prepare 815ms)\n\n(node:47064) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "cd '/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin' && ./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
