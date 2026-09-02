@@ -36,7 +36,7 @@ import {
  */
 
 const NOW = "2026-09-01T12:00:00.000Z";
-const WINDOW = { since: "2026-06-03T12:00:00.000Z", until: NOW, limit: 5000, truncated: false };
+const WINDOW = { since: "2026-06-03T12:00:00.000Z", until: NOW, limit: 900, truncated: false };
 
 const SOURCE_A = ID.sourceTicketmaster;
 const SOURCE_B = ID.sourceBandsintown;
@@ -127,7 +127,7 @@ describe("fetchPendingClaims", () => {
   it("scans observations with an explicit window and cap, then joins the view by id", async () => {
     const stub = withRows(claims(), observations());
     const result = await fetchPendingClaims(
-      { now: NOW, days: 90, limit: 5000 },
+      { now: NOW, days: 90, limit: 900 },
       stub.asSupabaseClient(),
     );
 
@@ -140,7 +140,7 @@ describe("fetchPendingClaims", () => {
       "observed_at",
       "2026-06-03T12:00:00.000Z",
     ]);
-    expect(scan.find((s) => s.method === "limit")?.args).toEqual([5000]);
+    expect(scan.find((s) => s.method === "limit")?.args).toEqual([900]);
     // Oldest first: truncation drops the newest claims and keeps the stuck ones.
     expect(scan.find((s) => s.method === "order")?.args).toEqual([
       "observed_at",
@@ -286,7 +286,7 @@ describe("aggregatePendingClaims", () => {
 describe("aggregateAwaitingRowTrend", () => {
   const trend = aggregateAwaitingRowTrend(
     rows({
-      window: { since: "2026-08-29T12:00:00.000Z", until: NOW, limit: 5000, truncated: false },
+      window: { since: "2026-08-29T12:00:00.000Z", until: NOW, limit: 900, truncated: false },
     }),
   );
 

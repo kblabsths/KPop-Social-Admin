@@ -9,6 +9,7 @@ import {
   type ReviewSeverity,
 } from "../review/shapes";
 import {
+  GAUGE_ROW_CAP,
   groupBy,
   mapOk,
   rate,
@@ -42,8 +43,15 @@ import {
  * carrying one of the two registry values.
  */
 
-/** Default window: half a year of items, capped. */
-export const QUEUE_HEALTH_DEFAULTS = { days: 180, limit: 5000 } as const;
+/**
+ * Default window: half a year of items, capped at the rows the platform will
+ * return (`GAUGE_ROW_CAP`). 180 days of `review_items` passes that cap in
+ * normal operation, which is the point: at the cap the window reports
+ * `truncated: true` and every count is read as a floor, instead of a cap of
+ * 5000 that the server silently cut to 1000 and called complete
+ * (admin-window/BUG-0009).
+ */
+export const QUEUE_HEALTH_DEFAULTS = { days: 180, limit: GAUGE_ROW_CAP } as const;
 
 /** Both queues, always reported, so an empty queue renders a zero and not a gap. */
 export const QUEUES: readonly ReviewQueue[] = ["data_conflict", "entity_link"];

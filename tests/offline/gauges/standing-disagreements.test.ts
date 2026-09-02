@@ -29,7 +29,7 @@ import {
  */
 
 const NOW = "2026-09-01T12:00:00.000Z";
-const WINDOW = { since: "2026-06-03T12:00:00.000Z", until: NOW, limit: 5000, truncated: false };
+const WINDOW = { since: "2026-06-03T12:00:00.000Z", until: NOW, limit: 900, truncated: false };
 
 const SOURCE_A = ID.sourceTicketmaster;
 const SOURCE_B = ID.sourceBandsintown;
