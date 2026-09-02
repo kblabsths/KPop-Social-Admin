@@ -1,0 +1,4 @@
+Design-queue request you asked for (2026-09-02): dial-able values must not live in YAML. Paste into ../ROADMAP.md's design queue (or ../MIGRATE_LATER.md) — agents cannot write outside this repo mid-run:
+- **Dials as rows, not registry YAML.** The per-source `resolver.stuck_pattern` threshold (and any other tunable the resolver/adapters read) lives only in scraper registry YAML today, so Admin cannot show the threshold line on the pending-claims trend and an operator cannot turn the dial without a commit. *To design:* a dials table (or columns on the sources state row) the resolver reads at cycle start and Admin renders and, in M2+, edits through a recorded pathway; the registry keeps the schema, the row keeps the value. Retires TASK-0024's "absent for M1".
+Recommend: paste as-is; it is ecosystem design, not campaign work.
+Unblocks: the threshold line on Sources/Claims in a later milestone.
