@@ -1631,3 +1631,37 @@
 2026-09-02T10:38:16Z	agent	-	-	-	-
 # STRANDED	2026-09-02T10:38:37Z	builder	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md
 2026-09-02T10:38:37Z	builder	BUG-0012	5228	556	114646
+2026-09-02T10:39:13Z	qa-adversary	BUG-0012	spawned
+2026-09-02T10:39:26Z	builder	BUG-0013	spawned
+# STRANDED	2026-09-02T10:39:45Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md
+2026-09-02T10:39:45Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:39:57Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md
+2026-09-02T10:39:57Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:40:17Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md
+2026-09-02T10:40:17Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:40:29Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md
+2026-09-02T10:40:29Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:40:49Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md
+2026-09-02T10:40:49Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:41:00Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md
+2026-09-02T10:41:00Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:41:20Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md
+2026-09-02T10:41:20Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:41:31Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md
+2026-09-02T10:41:31Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:41:53Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md
+2026-09-02T10:41:53Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:42:03Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md
+2026-09-02T10:42:03Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:42:25Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md
+2026-09-02T10:42:25Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:42:34Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md, tests/offline/gauges/resolution-latency.test.ts
+2026-09-02T10:42:34Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:42:57Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md, tests/offline/gauges/resolution-latency.test.ts
+2026-09-02T10:42:57Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:43:05Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md, tests/offline/gauges/resolution-latency.test.ts
+2026-09-02T10:43:05Z	agent	-	-	-	-
+# STRANDED	2026-09-02T10:43:14Z	builder	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md, tests/offline/gauges/resolution-latency.test.ts
+2026-09-02T10:43:14Z	builder	BUG-0013	2034	227	58127
+# STRANDED	2026-09-02T10:43:29Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0012.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0013.md, tests/offline/gauges/resolution-latency.test.ts
+2026-09-02T10:43:29Z	agent	-	-	-	-

@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T10:38:45Z — do not edit)
+# Tracker index (regenerated 2026-09-02T10:43:22Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -15,7 +15,6 @@
 - TASK-0013 [P1][task][M1] Sources — lifecycle, tier, checkpoint, last run, and the per-source trends  (deps:TASK-0005,TASK-0007,TASK-0008,TASK-0026(unmet:1) scope:src/app/sources/page.tsx,src/lib/db/sources.ts,tests/offline/sources,tests/live/sources.live.test.ts)
 - TASK-0014 [P1][task][M1] Cycles & runs — the resolver's cycles, newest first, with their counts and errors  (deps:TASK-0005,TASK-0007,TASK-0008,TASK-0026(unmet:1) scope:src/app/cycles/page.tsx,src/lib/db/cycles.ts,tests/offline/cycles,tests/live/cycles.live.test.ts)
 - TASK-0019 [P1][task][M1] Cross-page proofs: graceful absence on all six pages, in_window nowhere, auth on every route, zero residue  (deps:TASK-0009,TASK-0010,TASK-0011,TASK-0012,TASK-0013,TASK-0014,TASK-0015,TASK-0018,TASK-0027(unmet:6) scope:tests/offline/absence,tests/http,tests/live/residue.live.test.ts)
-- BUG-0013 [P2][bug][-] PATCH with a non-finite number (1e999) NULLs a catalog column and answers 200  (scope:src/app/api/admin/records/[table]/[id]/route.ts,tests/offline/edit from:TASK-0017)
 - BUG-0014 [P2][bug][M1] The 404 renders as Next's default inside the Frame: system-ui type off the scale, body fill off the palette  (scope:src/app/not-found.tsx,tests/offline/shell)
 - BUG-0015 [P2][bug][M1] Frame: a hovered nav item is pixel-identical to the active one, so two items read as current  (scope:src/components/shell/shell.tsx,tests/offline/shell from:TASK-0005)
 - BUG-0016 [P2][bug][M1] Browse's error line reads only 'TypeError: fetch failed': it names no read and drops the client's own cause  (scope:src/lib/db/result.ts,src/app/browse/page.tsx,tests/offline/db,tests/offline/browse from:TASK-0015)
@@ -25,6 +24,9 @@
 - TASK-0028 [P2][task][M1] tsconfig excludes agenticflow: a factory evidence file must not red tsc  (scope:tsconfig.json)
 
 ## built
+- BUG-0013 [P2][bug][-] PATCH with a non-finite number (1e999) NULLs a catalog column and answers 200  (scope:src/app/api/admin/records/[table]/[id]/route.ts,tests/offline/edit @builder-27 from:TASK-0017)
+
+## qa
 - BUG-0012 [P2][bug][-] Resolution latency counts a verdict unset as an apply the join lost  (scope:src/lib/db/gauges.ts,src/lib/gauges/resolution-latency.ts,tests/offline/gauges @builder-26 from:BUG-0010)
 
 ## blocked
@@ -35,4 +37,4 @@
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 - TASK-0029 [P2][task][M1] ASK: what does a resolver-owned record page DISPLAY in M1? events/venues currently render their id and nothing else  (scope:src/lib/edit/config.ts,src/lib/db/records.ts from:TASK-0018)
 
-Totals — blocked:6, built:1, done:25, open:22. Archived: 0.
+Totals — blocked:6, built:1, done:25, open:21, qa:1. Archived: 0.
