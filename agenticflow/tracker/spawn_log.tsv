@@ -3458,3 +3458,25 @@
 2026-09-02T16:44:36Z	agent	-	-	-	-
 # STRANDED	2026-09-02T16:45:08Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
 2026-09-02T16:45:08Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:45:32Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T16:45:32Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:46:10Z	agent	2 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0024.json
+2026-09-02T16:46:10Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:46:42Z	agent	3 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0024.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0024.md
+2026-09-02T16:46:42Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:47:14Z	agent	4 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0024.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0024.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0011.md
+2026-09-02T16:47:14Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:47:46Z	agent	4 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0024.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0024.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0011.md
+2026-09-02T16:47:46Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:48:18Z	agent	8 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0024.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0021.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0022.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0024.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0025.json
+2026-09-02T16:48:18Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:48:50Z	agent	10 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0024.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0021.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0022.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0024.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0025.json
+2026-09-02T16:48:50Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:49:22Z	agent	12 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0024.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0021.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0022.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0024.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0025.json
+2026-09-02T16:49:22Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:49:54Z	agent	12 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0024.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0021.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0022.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0024.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0025.json
+2026-09-02T16:49:54Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:50:26Z	agent	12 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0024.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0021.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0022.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0024.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0025.json
+2026-09-02T16:50:26Z	agent	-	-	-	-
+# STRANDED	2026-09-02T16:50:53Z	qa-adversary	13 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0024.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0021.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0022.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0024.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0025.json
+2026-09-02T16:50:53Z	qa-adversary	BUG-0024	8693	1008	156854

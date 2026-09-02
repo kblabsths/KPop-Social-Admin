@@ -1,0 +1,19 @@
+{
+ "id": "TASK-0025",
+ "created": "2026-09-02T16:48:09Z",
+ "green": true,
+ "git_head": "684cee570b2197297bef621aed889a85ff5c3b8c",
+ "scope": [
+  "src/app/records/[table]/[id]/page.tsx"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 7,
+ "tree_hash": "e28aad1f2673a597b768b2d5d3434dc1107f817aa39b118a471516bdaddc38cc",
+ "commands": [
+  {
+   "cmd": "bash -c \"! grep -q OPEN-PROVENANCE agenticflow/docs/vision/ARCHITECTURE.md\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

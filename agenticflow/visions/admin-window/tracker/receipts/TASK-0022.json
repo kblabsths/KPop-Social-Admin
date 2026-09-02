@@ -1,0 +1,19 @@
+{
+ "id": "TASK-0022",
+ "created": "2026-09-02T16:48:08Z",
+ "green": true,
+ "git_head": "684cee570b2197297bef621aed889a85ff5c3b8c",
+ "scope": [
+  "tests/live"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "f4f5c90857dd7374e71d774f05b165583881c7093c31cebb13233dbdb10f0c18",
+ "commands": [
+  {
+   "cmd": "bash -c \"! grep -q OPEN-FIXTURES agenticflow/docs/vision/ARCHITECTURE.md\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

@@ -37,3 +37,4 @@
 2026-09-02T16:13:27Z	artifact_gate	blocked write outside repo: catalog
 2026-09-02T16:35:10Z	supply_gate	blocked npx of @railway/cli
 2026-09-02T16:35:10Z	supply_gate	blocked npx of railway
+2026-09-02T16:46:41Z	evidence_budget	qa_evidence_overbudget: BUG-0024 4277/4000 chars
