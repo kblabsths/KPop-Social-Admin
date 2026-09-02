@@ -228,6 +228,41 @@ describe("the M2-close guard itself", () => {
     expect(served).not.toContain(ROUTE_PROBE);
   });
 
+  it("reports an INLINE directive inside a page, not only a file-level one", () => {
+    // admin-window/BUG-0020 QA. `"use server"` at the top of a function body is
+    // the other half of the directive's contract (Next 16 docs,
+    // 01-getting-started/07-mutating-data.md: "at the top of an asynchronous
+    // function ... or at the top of a separate file"), and it is the shape a
+    // settle control most plausibly arrives as — inline in `queues/page.tsx`,
+    // which TASK-0010 renders next. Measured caught on the real tree; pinned
+    // here so a later narrowing of USE_SERVER cannot lose it silently.
+    const inlineBase = path.join(repoRoot, "tests", ".probes", `inline-${process.pid}`);
+    const PAGE_PROBE = "src/app/queues/page.tsx";
+    let served: string[] = [];
+    let named: string[] = [];
+    try {
+      const full = path.join(inlineBase, PAGE_PROBE);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(
+        full,
+        "export default function Page() {\n" +
+          "  async function stamp() {\n" +
+          '    "use server";\n' +
+          "    return null;\n" +
+          "  }\n  return stamp;\n}\n",
+        "utf8",
+      );
+      served = filesWhereCodeMatches(USE_SERVER, inlineBase);
+      named = sourceFiles(inlineBase).filter((file) => SETTLE_PATH.test(file));
+    } finally {
+      fs.rmSync(inlineBase, { force: true, recursive: true });
+    }
+    expect(served).toEqual([PAGE_PROBE]);
+    // ...and the path rule is blind to it: the page is not named for the close.
+    expect(named).toEqual([]);
+    expect(fs.existsSync(inlineBase)).toBe(false);
+  });
+
   it("leaves no probe behind for another suite to walk into", () => {
     // The `finally` above must hold even when its assertions fail.
     expect(fs.existsSync(probeBase)).toBe(false);
