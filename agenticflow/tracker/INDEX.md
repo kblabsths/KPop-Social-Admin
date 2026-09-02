@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T07:12:04Z — do not edit)
+# Tracker index (regenerated 2026-09-02T07:12:55Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -29,7 +29,7 @@
 - TASK-0016 [P2][task][M1] Cycles & runs — the adapter framework's runs half  (deps:TASK-0014,TASK-0023(unmet:2) scope:src/app/cycles/page.tsx,src/lib/db/runs.ts,tests/offline/runs,tests/live/runs.live.test.ts)
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 
-## claimed
+## built
 - BUG-0004 [P2][bug][M1] Absence renders three different ways: a helper-produced dash is primary ink, and a falsy cell body is blank  (scope:src/lib/format.ts,src/components/ui/data-table.tsx,src/components/ui/stat-card.tsx,tests/offline/ui,tests/offline/format.test.ts @builder-7 from:TASK-0004)
 
 ## blocked
@@ -39,4 +39,4 @@
 - TASK-0024 [P1][task][M1] ASK BEN: where does Admin read the per-source stuck_pattern dial, which lives only in scraper YAML?  (scope:src/lib/gauges/pending-claims.ts,src/app/sources/page.tsx)
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 
-Totals — blocked:5, claimed:1, done:7, open:27. Archived: 0.
+Totals — blocked:5, built:1, done:7, open:27. Archived: 0.

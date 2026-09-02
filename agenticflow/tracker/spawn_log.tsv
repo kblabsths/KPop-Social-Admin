@@ -484,3 +484,7 @@
 2026-09-02T07:11:59Z	qa-adversary	TASK-0002	6080	203	63531
 # STRANDED	2026-09-02T07:12:05Z	designer	5 uncommitted in primary checkout: agenticflow/visions/admin-window/docs/LOOK_AND_FEEL.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0002.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0006.md, agenticflow/visions/admin-window/tracker/tickets/FEAT-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0002.md
 2026-09-02T07:12:05Z	designer	TASK-0004	7715	276	61749
+2026-09-02T07:12:28Z	agent	-	-	-	-
+# STRANDED	2026-09-02T07:12:47Z	builder	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0004.md
+2026-09-02T07:12:47Z	builder	BUG-0004	1587	239	50577
+2026-09-02T07:13:17Z	qa-adversary	BUG-0004	spawned
