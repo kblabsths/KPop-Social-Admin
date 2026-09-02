@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T16:31:54Z — do not edit)
+# Tracker index (regenerated 2026-09-02T16:32:56Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -12,7 +12,7 @@
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019 scope:docs/build_judgments.md)
 - TASK-0029 [P2][task][M1] ASK: what does a resolver-owned record page DISPLAY in M1? events/venues currently render their id and nothing else  (scope:src/lib/edit/config.ts,src/lib/db/records.ts from:TASK-0018)
 
-## claimed
+## built
 - BUG-0024 [P1][bug][M1] Review-item evidence is always empty on staging: the app selects observations.entity_type, a column the schema owner dropped  (scope:src/lib/db/review-item.ts,tests/live/review-item.live.test.ts,tests/offline/review-item @builder-50 from:TASK-0011)
 
 ## blocked
@@ -22,4 +22,4 @@
 - DEP-0002 [P2][dep][M1] Service: Railway (existing deploy target of this app)  (scope:agenticflow/docs/SERVICES.md)
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 
-Totals — blocked:5, claimed:1, done:50, open:10. Archived: 0.
+Totals — blocked:5, built:1, done:50, open:10. Archived: 0.
