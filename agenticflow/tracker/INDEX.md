@@ -1,7 +1,6 @@
-# Tracker index (regenerated 2026-09-02T12:41:55Z — do not edit)
+# Tracker index (regenerated 2026-09-02T12:49:27Z — do not edit)
 
 ## open
-- BUG-0020 [P1][bug][M1] one-place.test.ts bans the domain's own vocabulary: narrow the M2-close pin to the write, not the word  (scope:tests/offline/review/one-place.test.ts from:TASK-0007)
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
 - FEAT-0002 [P1][feat][M1] Staging reads, the not-provisioned state, and the live/offline test harness
 - FEAT-0003 [P1][feat][M1] Dashboard — the breakfast view  (deps:FEAT-0001,FEAT-0002(unmet:2))
@@ -15,12 +14,12 @@
 - TASK-0013 [P1][task][M1] Sources — lifecycle, tier, checkpoint, last run, and the per-source trends  (deps:TASK-0005,TASK-0007,TASK-0008,TASK-0026,TASK-0030(unmet:1) scope:src/app/sources/page.tsx,src/lib/db/sources.ts,tests/offline/sources,tests/live/sources.live.test.ts)
 - TASK-0014 [P1][task][M1] Cycles & runs — the resolver's cycles, newest first, with their counts and errors  (deps:TASK-0005,TASK-0007,TASK-0008,TASK-0026,TASK-0030(unmet:1) scope:src/app/cycles/page.tsx,src/lib/db/cycles.ts,tests/offline/cycles,tests/live/cycles.live.test.ts)
 - TASK-0019 [P1][task][M1] Cross-page proofs: graceful absence on all six pages, in_window nowhere, auth on every route, zero residue  (deps:TASK-0009,TASK-0010,TASK-0011,TASK-0012,TASK-0013,TASK-0014,TASK-0015,TASK-0018,TASK-0027(unmet:5) scope:tests/offline/absence,tests/http,tests/live/residue.live.test.ts)
-- TASK-0030 [P1][task][M1] The state contract, typed: ErrorLine names its read, a state card keeps its eyebrow, no headers-only table  (deps:BUG-0019,TASK-0009(unmet:1) scope:src/components/ui/error-line.tsx,src/components/ui/empty.tsx,src/components/ui/not-provisioned.tsx,src/components/gauges/state.tsx,src/components/gauges/gauge-card.tsx,src/components/gauges/trend-table.tsx,src/components/gauges/distribution.tsx,tests/offline/ui,tests/offline/gauges-ui)
+- TASK-0030 [P1][task][M1] The state contract, typed: ErrorLine names its read, a state card keeps its eyebrow, no headers-only table  (deps:BUG-0019,TASK-0009 scope:src/components/ui/error-line.tsx,src/components/ui/empty.tsx,src/components/ui/not-provisioned.tsx,src/components/gauges/state.tsx,src/components/gauges/gauge-card.tsx,src/components/gauges/trend-table.tsx,src/components/gauges/distribution.tsx,tests/offline/ui,tests/offline/gauges-ui)
 - TASK-0016 [P2][task][M1] Cycles & runs — the adapter framework's runs half  (deps:TASK-0014,TASK-0023(unmet:2) scope:src/app/cycles/page.tsx,src/lib/db/runs.ts,tests/offline/runs,tests/live/runs.live.test.ts)
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 
-## built
-- BUG-0019 [P1][bug][M1] GaugeCard's absence reason is not asked isAbsent, so a blank reason renders a dash with no words  (scope:src/components/gauges,tests/offline/gauges-ui @builder-37 from:BUG-0018)
+## claimed
+- BUG-0020 [P1][bug][M1] one-place.test.ts bans the domain's own vocabulary: narrow the M2-close pin to the write, not the word  (scope:tests/offline/review/one-place.test.ts @builder-38 from:TASK-0007)
 
 ## blocked
 - TASK-0021 [P0][task][M1] ASK BEN: which Supabase env names does the APP read at runtime, and what do the campaign's live tests read?  (scope:src/lib/db/client.ts,tests/live,agenticflow/docs/SERVICES.md)
@@ -30,4 +29,4 @@
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 - TASK-0029 [P2][task][M1] ASK: what does a resolver-owned record page DISPLAY in M1? events/venues currently render their id and nothing else  (scope:src/lib/edit/config.ts,src/lib/db/records.ts from:TASK-0018)
 
-Totals — blocked:6, built:1, done:35, open:17. Archived: 0.
+Totals — blocked:6, claimed:1, done:36, open:16. Archived: 0.
