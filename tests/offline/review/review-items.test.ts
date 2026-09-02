@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { listReviewItems, readReviewAttention } from "@/lib/db/review-items";
-import { SHAPES, kindOfItem, shapeOf, type ReviewItemRow } from "@/lib/review/shapes";
+import {
+  SHAPES,
+  kindOfItem,
+  queueOrder,
+  shapeOf,
+  type ReviewItemRow,
+} from "@/lib/review/shapes";
+import { ROW_CAP } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
 import {
   EDGE_ID,
@@ -52,9 +59,18 @@ function population(): ReviewItemRow[] {
 
 const ids = (items: ReviewItemRow[]) => items.map((i) => i.review_item_id);
 
-/** A stub whose `review_items` read answers with these rows. */
+/**
+ * A stub whose `review_items` read answers with these rows AND the exact count
+ * of them — the response a `{ count: "exact" }` select really returns.
+ *
+ * The count is part of the fixture since admin-window/TASK-0026 made this a
+ * COMPLETE read: without it the helper cannot tell a whole set from a
+ * truncated one, and refuses. Scripting `count: rows.length` is a database
+ * that holds exactly these rows; the truncation cases below script a larger
+ * count on purpose.
+ */
 function withRows(rows: ReviewItemRow[]) {
-  return stubClient({ [T.reviewItems]: { data: rows } });
+  return stubClient({ [T.reviewItems]: { data: rows, count: rows.length } });
 }
 
 describe("listReviewItems", () => {
@@ -152,7 +168,7 @@ describe("listReviewItems", () => {
   });
 
   it("returns an empty ok for an empty table, never a null", async () => {
-    const stub = stubClient({ [T.reviewItems]: { data: null } });
+    const stub = stubClient({ [T.reviewItems]: { data: null, count: 0 } });
     expect(await listReviewItems({}, stub.asSupabaseClient())).toEqual({
       kind: "ok",
       data: [],
@@ -192,6 +208,80 @@ describe("listReviewItems", () => {
   });
 });
 
+/**
+ * The complete-read contract (ARCHITECTURE.md §4.3, admin-window/TASK-0026).
+ *
+ * `listReviewItems` presents its result as exactly the matching items and
+ * `readReviewAttention` counts it, so a silently truncated row set would make
+ * both WRONG rather than refused. These assert the query that makes truncation
+ * detectable, and that a detected truncation never becomes an ok.
+ */
+describe("listReviewItems is a complete read", () => {
+  it("asks for the exact count", async () => {
+    const stub = withRows(population());
+    await listReviewItems({}, stub.asSupabaseClient());
+    const select = stub.calls[0].steps.find((step) => step.method === "select");
+    expect(select?.args[1]).toMatchObject({ count: "exact" });
+  });
+
+  it("bounds the read with an explicit range at the shared cap", async () => {
+    const stub = withRows(population());
+    await listReviewItems({}, stub.asSupabaseClient());
+    const range = stub.calls[0].steps.find((step) => step.method === "range");
+    expect(range?.args).toEqual([0, ROW_CAP - 1]);
+  });
+
+  it("orders server-side on a total key ending in the primary key", async () => {
+    // Without a total order the subset a cap returns is arbitrary and a
+    // refusal is not reproducible. The last key must be the primary key, or
+    // rows tied on the others can still reshuffle between reads.
+    const stub = withRows(population());
+    await listReviewItems({}, stub.asSupabaseClient());
+    const orders = stub.calls[0].steps
+      .filter((step) => step.method === "order")
+      .map((step) => step.args[0]);
+    expect(orders).toEqual(["status", "severity", "opened_at", "review_item_id"]);
+  });
+
+  it("refuses when the database holds more rows than it returned", async () => {
+    const rows = population();
+    const stub = stubClient({
+      [T.reviewItems]: { data: rows, count: rows.length + 732 },
+    });
+    const result = await listReviewItems({}, stub.asSupabaseClient());
+
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.message).toContain(T.reviewItems);
+    expect(result.message).toContain(String(rows.length + 732));
+    expect(result.message).toContain(String(ROW_CAP));
+    // A partial queue list would look exactly like a short queue.
+    expect(result).not.toHaveProperty("data");
+  });
+
+  it("refuses when the response carries no count at all", async () => {
+    const stub = stubClient({ [T.reviewItems]: { data: population() } });
+    const result = await listReviewItems({}, stub.asSupabaseClient());
+    expect(result.kind).toBe("error");
+    expect(result).not.toHaveProperty("data");
+  });
+
+  it("keeps queueOrder as the display authority, applied after the read", async () => {
+    // The stub answers whatever the script holds regardless of the `.order()`
+    // chain — so it stands in for a server order that disagrees. The rendered
+    // order comes back right anyway, which is the property: the query's order
+    // is for determinism, `queueOrder` decides what the page shows.
+    const rows = population();
+    const stub = stubClient({
+      [T.reviewItems]: { data: [...rows].reverse(), count: rows.length },
+    });
+    const result = await listReviewItems({}, stub.asSupabaseClient());
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(ids(result.data)).toEqual(ids(queueOrder(rows)));
+  });
+});
+
 describe("readReviewAttention", () => {
   it("summarises the open items per kind", async () => {
     const stub = withRows(population());
@@ -222,7 +312,7 @@ describe("readReviewAttention", () => {
   });
 
   it("reports both kinds at zero against an empty table", async () => {
-    const stub = stubClient({ [T.reviewItems]: { data: [] } });
+    const stub = stubClient({ [T.reviewItems]: { data: [], count: 0 } });
     const result = await readReviewAttention(stub.asSupabaseClient());
     expect(result).toEqual({
       kind: "ok",
@@ -231,6 +321,17 @@ describe("readReviewAttention", () => {
         signal: { kind: "signal", open: 0, maxSeverity: null, oldestOpenedAt: null },
       },
     });
+  });
+
+  it("refuses rather than reporting an open count over a truncated set", async () => {
+    // The failure this whole ticket exists for: 5 open items counted out of a
+    // table the database says holds 1732 matching rows would be a WRONG
+    // number on the Dashboard, not a refused one.
+    const rows = population();
+    const stub = stubClient({ [T.reviewItems]: { data: rows, count: 1732 } });
+    const result = await readReviewAttention(stub.asSupabaseClient());
+    expect(result.kind).toBe("error");
+    expect(result).not.toHaveProperty("data");
   });
 
   it("propagates not_provisioned rather than reporting zero attention", async () => {
