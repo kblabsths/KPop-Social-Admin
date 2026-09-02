@@ -5,10 +5,13 @@ import { describe, expect, it } from "vitest";
 
 import { NAV_ITEMS, isFramed, isNavItemActive } from "@/components/shell/nav-items";
 
+import { classesOf } from "../ui/markup";
+
 import BrowsePage from "@/app/browse/page";
 import ClaimsPage from "@/app/claims/page";
 import CyclesPage from "@/app/cycles/page";
 import DashboardPage from "@/app/page";
+import NotFound from "@/app/not-found";
 import QueuesPage from "@/app/queues/page";
 import RecordPage from "@/app/records/[table]/[id]/page";
 import SourcesPage from "@/app/sources/page";
@@ -27,6 +30,19 @@ const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 
 /** The six pages of the window, as `src/app` route paths. */
 const SIX_ROUTES = ["/", "/queues", "/claims", "/sources", "/cycles", "/browse"];
+
+/**
+ * Paths a signed-in operator can still reach for: the deprecated app's
+ * surfaces, which a stale bookmark still points at, and one that never
+ * existed. All of them land on the not-found surface.
+ */
+const RETIRED_PATHS = [
+  "/analytics",
+  "/database",
+  "/data-management",
+  "/data-management/completeness",
+  "/no-such-surface-here",
+];
 
 describe("the sidebar's routes", () => {
   it("offers exactly the six pages of the window", () => {
@@ -155,5 +171,64 @@ describe("every route's page", () => {
       expect(markup).toContain("2f0b-c11e");
       expect(markup).toContain("groups");
     });
+  });
+});
+
+/**
+ * The 404 (campaign admin-window/BUG-0014).
+ *
+ * Next serves its own `HTTPAccessErrorFallback` for unmatched URLs unless the
+ * app owns `not-found.tsx`, and that fallback draws `system-ui` type and
+ * injects a `body{color:…;background:…}` stylesheet that overrides the token
+ * layer for the whole document. These assert the surface is ours and carries
+ * no styling of its own; that the built app actually serves it — with a 404,
+ * and without the framework's stylesheet — is `tests/http/auth.http.test.ts`.
+ */
+describe("the not-found surface", () => {
+  const markup = renderToStaticMarkup(NotFound());
+
+  it("renders inside the Frame, on retired paths and on one that never existed", () => {
+    // The root not-found renders through the root layout, so what decides
+    // whether it wears the sidebar is the same predicate every page uses.
+    for (const pathname of RETIRED_PATHS) {
+      expect(isFramed(pathname), pathname).toBe(true);
+    }
+  });
+
+  it("gives the page one h1 and words under it", () => {
+    expect([...markup.matchAll(/<h1[\s>]/g)].length).toBe(1);
+    expect(markup.replace(/<[^>]*>/g, "").trim().length).toBeGreaterThan(0);
+  });
+
+  it("carries no hard-coded hex, no arbitrary value and no styling of its own", () => {
+    const classes = classesOf(markup);
+    expect(classes.length).toBeGreaterThan(0);
+    expect(classes.filter((c) => /#[0-9a-f]{3,8}/i.test(c))).toEqual([]);
+    expect(classes.filter((c) => c.includes("["))).toEqual([]);
+    // The framework fallback styles every element inline and ships a <style>
+    // element of its own; ours does neither.
+    expect(markup).not.toMatch(/style="/);
+    expect(markup).not.toMatch(/<style[\s>]/);
+  });
+
+  it("sizes text only through the five type steps", () => {
+    const classes = classesOf(markup);
+    const LEGACY = /^(text-(xs|sm|base|lg|xl|\d?xl)|text-\[)/;
+    expect(classes.filter((c) => LEGACY.test(c))).toEqual([]);
+    const steps = classes.filter((c) => c.startsWith("type-"));
+    expect(steps.length).toBeGreaterThan(0);
+    for (const step of steps) {
+      expect(["type-figure", "type-title", "type-body", "type-data", "type-micro"]).toContain(step);
+    }
+  });
+
+  it("offers a way back to a page that exists, without the back button", () => {
+    const hrefs = [...markup.matchAll(/href="([^"]*)"/g)].map((match) => match[1]);
+    expect(hrefs.length).toBeGreaterThan(0);
+    // Every link it offers is one of the window's own routes — each of which
+    // is asserted to have a page.tsx on disk above — and the Dashboard is
+    // among them.
+    for (const href of hrefs) expect(SIX_ROUTES, href).toContain(href);
+    expect(hrefs).toContain("/");
   });
 });

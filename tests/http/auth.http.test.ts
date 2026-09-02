@@ -262,13 +262,16 @@ describe("the gate over the whole window", () => {
       }
 
       // 3. The retired surfaces are gone, not redirected to something that
-      //    works: to a visitor who is past the gate they are simply 404.
+      //    works: to a visitor who is past the gate they are simply 404 —
+      //    answered by THIS app's not-found surface, not the framework's
+      //    (campaign admin-window/BUG-0014).
       for (const route of RETIRED_ROUTES) {
         const res = await fetch(`${base}${route}`, {
           headers: { cookie },
           redirect: "manual",
         });
         expect(res.status, route).toBe(404);
+        expectOurNotFound(route, await res.text());
       }
 
       // 4. …and a retired path is answered exactly as a path that never
@@ -278,6 +281,7 @@ describe("the gate over the whole window", () => {
         redirect: "manual",
       });
       expect(neverExisted.status).toBe(404);
+      expectOurNotFound("/no-such-surface-here", await neverExisted.text());
 
       // 5. Nothing the server hands a browser carries credential material.
       for (const route of ["/login", ...RENDERING_ROUTES]) {
@@ -317,6 +321,45 @@ describe("the gate over the whole window", () => {
     }
   });
 });
+
+/**
+ * The 404 the built app actually serves is OURS (campaign
+ * admin-window/BUG-0014).
+ *
+ * Without `src/app/not-found.tsx` Next answers every unmatched URL with its
+ * built-in `HTTPAccessErrorFallback`, which renders inside our Frame while
+ * belonging to another product: `system-ui` type off the scale, and — the part
+ * that reaches past itself — an injected stylesheet that paints `body` with
+ * literal hexes, overriding the token layer for the whole document.
+ *
+ * So this asserts the two things that distinguish them, on the built artifact
+ * rather than on source: none of the framework fallback's own markers are
+ * present, and the token layer is what styled the document. It deliberately
+ * pins no wording of ours — the copy is the walk's business.
+ */
+function expectOurNotFound(route: string, html: string): void {
+  // 1. Not the framework's. Its h1 class and its message are its own
+  //    literals, not ours, so naming them here churns on no copy edit of ours.
+  expect(html, `${route} carries Next's fallback h1`).not.toContain("next-error-h1");
+  expect(html, `${route} carries Next's fallback copy`).not.toContain(
+    "This page could not be found.",
+  );
+
+  // 2. Nothing in the document paints `body` with a literal colour. Our token
+  //    layer paints it through `var(--color-page)` / `var(--color-ink)`; the
+  //    fallback's injected `body{color:#000;background:#fff;margin:0}` (with a
+  //    dark arm of #fff/#000) is what this forbids, in either theme arm.
+  const bodyPaintedRaw = /body\s*\{[^}]*(?:^|[;{\s])(?:color|background(?:-color)?)\s*:\s*(?:#|rgb|hsl)/i;
+  expect(bodyPaintedRaw.test(html), `${route} ships a raw body colour rule`).toBe(false);
+
+  // 3. Ours: a page heading, styled through the app's own type scale, with a
+  //    link back to a route that exists.
+  expect(html, route).toMatch(/<h1[\s>]/);
+  expect(html, `${route} was not styled by the token layer`).toMatch(
+    /class="[^"]*\btype-(figure|title|body|data|micro)\b/,
+  );
+  expect(html, `${route} offers no way back`).toMatch(/href="\/"/);
+}
 
 /**
  * Credential shapes, asserted by NAME and by SHAPE — never by value. A test
