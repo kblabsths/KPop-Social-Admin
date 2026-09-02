@@ -522,3 +522,113 @@ export function runRow(overrides: Override<RunRow> = {}): RunRow {
     ...overrides,
   };
 }
+
+/* ── events, and the event_listings VIEW over them ───────────────────────── */
+
+/**
+ * The `events` columns, from migration `20260825000002` (the canonical event
+ * storage) — `created_at` is the arrival stamp Browse orders on, and it exists
+ * on the TABLE alone: the listings view does not carry it (migration
+ * `20260825000004`), which is why Browse reads the window from `events` and
+ * the venue name from the view.
+ */
+export interface EventRow {
+  event_id: string;
+  title: string;
+  event_type:
+    | "concert"
+    | "festival"
+    | "fansign"
+    | "fanmeet"
+    | "showcase"
+    | "online"
+    | "other";
+  status: "scheduled" | "postponed" | "cancelled";
+  starts_at: string;
+  ends_at: string | null;
+  time_precision: "datetime" | "date";
+  /** NOT NULL with a `''` default — an empty description is an absence. */
+  description: string;
+  poster_url: string | null;
+  ticket_url: string | null;
+  venue_id: string | null;
+  created_at: string;
+}
+
+export function eventRow(overrides: Override<EventRow> = {}): EventRow {
+  return {
+    event_id: ID.eventEntity,
+    title: "TWICE 5TH WORLD TOUR",
+    event_type: "concert",
+    status: "scheduled",
+    starts_at: "2026-11-14T02:00:00Z",
+    ends_at: null,
+    time_precision: "datetime",
+    description: "The fifth world tour, Los Angeles night one.",
+    poster_url: "https://example.invalid/posters/twice-5th.jpg",
+    ticket_url: "https://example.invalid/tickets/twice-5th",
+    venue_id: "01920000-0000-7000-8000-000000000901",
+    created_at: "2026-09-01T04:12:00Z",
+    ...overrides,
+  };
+}
+
+/**
+ * The `event_listings` view's row (migration `20260825000004`): events × venues
+ * × performers × stats, assembled once in the database so no consumer
+ * re-implements the join. Note the absent `created_at` — see `EventRow`.
+ */
+export interface EventListingRow {
+  event_id: string;
+  title: string;
+  event_type: EventRow["event_type"];
+  status: EventRow["status"];
+  starts_at: string;
+  ends_at: string | null;
+  time_precision: EventRow["time_precision"];
+  description: string;
+  poster_url: string | null;
+  ticket_url: string | null;
+  venue_id: string | null;
+  /** Null when the event has no linked venue — the view LEFT JOINs venues. */
+  venue_name: string | null;
+  city: string | null;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  timezone: string | null;
+  performer_names: string[];
+  performers_text: string;
+  going_count: number;
+  interested_count: number;
+}
+
+export function eventListingRow(
+  overrides: Override<EventListingRow> = {},
+): EventListingRow {
+  const event = eventRow();
+  return {
+    event_id: event.event_id,
+    title: event.title,
+    event_type: event.event_type,
+    status: event.status,
+    starts_at: event.starts_at,
+    ends_at: event.ends_at,
+    time_precision: event.time_precision,
+    description: event.description,
+    poster_url: event.poster_url,
+    ticket_url: event.ticket_url,
+    venue_id: event.venue_id,
+    venue_name: "Crypto.com Arena",
+    city: "Los Angeles",
+    country: "US",
+    latitude: 34.043,
+    longitude: -118.267,
+    timezone: "America/Los_Angeles",
+    performer_names: ["TWICE"],
+    performers_text: "TWICE",
+    going_count: 0,
+    interested_count: 0,
+    ...overrides,
+  };
+}
