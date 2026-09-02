@@ -1,4 +1,9 @@
-import { decideEdit, type TableEditConfig } from "@/lib/edit/config";
+import {
+  decideEdit,
+  mappedColumns,
+  type TableEditConfig,
+} from "@/lib/edit/config";
+import type { FieldProvenance } from "@/lib/records/provenance";
 import { isEditableValue, scalarText } from "./values";
 
 /**
@@ -38,14 +43,25 @@ export interface RecordField {
   readonly multiline: boolean;
   /** True for the primary key — the record's identity, never an edit target. */
   readonly isKey: boolean;
+  /**
+   * The current provenance of this field, or `null` when the log says nothing
+   * about it — which the surface draws as the app's absence, never as a blank
+   * and never as an invented source (admin-window/TASK-0029).
+   */
+  readonly provenance: FieldProvenance | null;
 }
 
 /**
- * The columns to draw, in a stable order: the primary key first (the record's
- * identity), then the map's editable columns in the order the map declares
- * them, then anything else the read returned.
+ * The columns to draw, in a stable order: **the map's columns first, in the
+ * one order the map declares** (`mappedColumns` — the primary key, then the
+ * editable columns, then the read-only `display` ones), then anything else the
+ * read returned.
  *
- * The third group is not dead code: it is what makes this surface render
+ * There is ONE ordering rule and this is it: the same helper the read uses to
+ * choose its columns chooses the order they are drawn in, so a `display`
+ * column needs no rule of its own (admin-window/TASK-0029).
+ *
+ * The second group is not dead code: it is what makes this surface render
  * whatever a table's read hands it, so a column arriving in the read shows up
  * here as a READ-ONLY line — never as an editable one, because the widget is
  * `decideEdit`'s answer and not "was it in the row".
@@ -54,10 +70,7 @@ function orderedNames(
   config: TableEditConfig,
   record: Record<string, unknown>,
 ): string[] {
-  const names: string[] = [config.pk];
-  for (const column of config.editable) {
-    if (!names.includes(column)) names.push(column);
-  }
+  const names: string[] = [...mappedColumns(config)];
   for (const column of Object.keys(record)) {
     if (!names.includes(column)) names.push(column);
   }
@@ -71,10 +84,18 @@ function orderedNames(
  * for it: an empty column renders as the em dash and is still editable, which
  * is how a missing value is ever filled in. Absence is a state, not a reason
  * to hide the field (LOOK_AND_FEEL, the four states).
+ *
+ * `provenance` is the current provenance per column (`readRecordProvenance` in
+ * `lib/db/records.ts`), keyed by column name and defaulting to empty — a
+ * pre-cutover table has none, and the page then says so once in words rather
+ * than per field (Ben's ruling on admin-window/TASK-0025). A field the map
+ * carries and the log says nothing about keeps its line and gets `null`, which
+ * the surface draws as the app's absence.
  */
 export function recordFields(
   config: TableEditConfig,
   record: Record<string, unknown>,
+  provenance: ReadonlyMap<string, FieldProvenance> = new Map(),
 ): RecordField[] {
   return orderedNames(config, record).map((name) => {
     const raw = record[name];
@@ -89,6 +110,7 @@ export function recordFields(
       widget: editable ? "cell" : "read_only",
       multiline: editable && value !== null && value.includes("\n"),
       isKey: name === config.pk,
+      provenance: provenance.get(name) ?? null,
     };
   });
 }

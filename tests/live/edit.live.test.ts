@@ -1,5 +1,7 @@
+import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { EDIT_CONFIG, type TableEditConfig } from "@/lib/edit/config";
+import { EM_DASH } from "@/lib/format";
 import { independentClient, renderPage } from "./parity";
 import { withSweep } from "./sweep";
 
@@ -210,6 +212,23 @@ describe("a forged edit", () => {
 
 /* ── and the read-only surface offers no way to try ───────────────────────── */
 
+/** The field names the rendered surface drew a line for. */
+function drawnFields(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("tbody tr")
+    .toArray()
+    .map((tr) => $(tr).find("td").eq(0).text().trim());
+}
+
+/** The provenance cell of one field line, as text. */
+function provenanceOf(markup: string, field: string): string | null {
+  const $ = cheerio.load(markup);
+  const row = $("tbody tr")
+    .toArray()
+    .find((tr) => $(tr).find("td").eq(0).text().trim() === field);
+  return row ? $(row).find("td").eq(2).text().trim() : null;
+}
+
 describe("a resolver-owned record page", () => {
   it("renders from staging with no editable widget on it", async () => {
     for (const table of ["events", "venues"]) {
@@ -219,6 +238,111 @@ describe("a resolver-owned record page", () => {
       });
       expect(markup, table).toContain(id);
       expect(markup, table).not.toMatch(/<(button|input|textarea|select)[\s>]/);
+    }
+  });
+
+  /**
+   * Campaign admin-window/TASK-0029. The map's `display` names are asserted
+   * against the scraper's migration offline; THIS is the assertion that they
+   * are the names STAGING actually has. A typo'd column makes PostgREST refuse
+   * the whole select (`PGRST204`), which the page classifies as
+   * not-provisioned and renders as a card with no field lines at all — so
+   * "every displayed column drew a line, carrying the row's own value" is the
+   * two-path check: the page's read against this test's independent read of
+   * the same row.
+   */
+  it("displays every column the map names, with staging's own value", async () => {
+    for (const table of ["events", "venues"]) {
+      const config = EDIT_CONFIG[table];
+      const { id, row } = await subject(config);
+      const markup = await renderPage(RecordPage, {
+        params: Promise.resolve({ table, id }),
+      });
+
+      const drawn = drawnFields(markup);
+      expect(drawn, table).toContain(config.pk);
+      for (const column of config.display) {
+        // The column exists on staging's row at all — the map and the schema
+        // have not drifted apart.
+        expect(Object.keys(row), `${table}.${column}`).toContain(column);
+        expect(drawn, `${table}.${column}`).toContain(column);
+
+        // ...and the line carries what this test's own read found there.
+        const value = row[column];
+        if (typeof value === "string" && value.trim() !== "") {
+          const $ = cheerio.load(markup);
+          const line = $("tbody tr")
+            .toArray()
+            .find((tr) => $(tr).find("td").eq(0).text().trim() === column);
+          expect($(line).find("td").eq(1).text(), `${table}.${column}`).toContain(
+            value,
+          );
+        }
+      }
+    }
+  });
+
+  /**
+   * The provenance leg, against the real log. Staging's rows may carry no
+   * decisions yet, so this asserts the two things that must hold either way:
+   * a field the log covers names its source on the line, and a field it does
+   * not covers renders the app's absence — never a blank and never a source
+   * that is not behind the value.
+   */
+  it("shows the source behind each field the decision log covers", async () => {
+    const config = EDIT_CONFIG.events;
+    const { id } = await subject(config);
+
+    // This test's own read of the log, written without `lib/db`.
+    const { data, error } = await independentClient()
+      .from("field_provenance")
+      .select("field, source_id, applied_at, admin_locked, provenance_id")
+      .eq("entity_type", config.table)
+      .eq("entity_id", id)
+      .in("field", [...config.display])
+      .order("applied_at", { ascending: true })
+      .order("provenance_id", { ascending: true });
+    if (error) throw new Error(`reading field_provenance failed: ${error.message}`);
+
+    // The latest decision per field, by this test's own reckoning — the read
+    // above is ordered ascending, so the last row wins.
+    const latest = new Map<string, Record<string, unknown>>();
+    for (const decision of (data ?? []) as Record<string, unknown>[]) {
+      latest.set(String(decision.field), decision);
+    }
+
+    const names = new Map<string, string>();
+    const sourceIds = [...latest.values()]
+      .map((decision) => decision.source_id)
+      .filter((sourceId): sourceId is string => typeof sourceId === "string");
+    if (sourceIds.length > 0) {
+      const named = await independentClient()
+        .from("sources")
+        .select("source_id, source")
+        .in("source_id", [...new Set(sourceIds)]);
+      for (const source of (named.data ?? []) as Record<string, unknown>[]) {
+        names.set(String(source.source_id), String(source.source));
+      }
+    }
+
+    const markup = await renderPage(RecordPage, {
+      params: Promise.resolve({ table: config.table, id }),
+    });
+
+    for (const column of config.display) {
+      const line = provenanceOf(markup, column);
+      expect(line, column).not.toBeNull();
+      const decision = latest.get(column);
+      if (decision === undefined) {
+        // No decision on this fact: the app's one absence marker, nothing else.
+        expect(line, column).toBe(EM_DASH);
+      } else if (decision.admin_locked === true) {
+        expect(line, column).not.toBe(EM_DASH);
+      } else if (typeof decision.source_id === "string") {
+        expect(line, column).toContain(
+          names.get(decision.source_id) ?? decision.source_id,
+        );
+      }
     }
   });
 });
