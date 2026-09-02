@@ -1,0 +1,31 @@
+{
+ "id": "BUG-0034",
+ "created": "2026-09-02T20:25:29Z",
+ "green": true,
+ "git_head": "7011da6e1826c11fa18d5a41dbf8154afbcd92b5",
+ "scope": [
+  "src/components/records",
+  "src/app/records",
+  "tests/offline/records"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 11,
+ "tree_hash": "8fd63227c965f0d6d6f6f9c3d45f4ad3fe9553686405f1b711c3e31475d5bddd",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/records tests/offline/edit tests/offline/db",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-70446\n\n \u2713 |offline| tests/offline/records/submit.test.ts (11 tests) 11ms\n \u2713 |offline| tests/offline/db/client.test.ts (5 tests) 158ms\n \u2713 |offline| tests/offline/edit/route.test.ts (19 tests) 29ms\n \u2713 |offline| tests/offline/records/provenance.test.ts (13 tests) 29ms\n \u2713 |offline| tests/offline/db/result.test.ts (62 tests) 21ms\n \u2713 |offline| tests/offline/edit/records.test.ts (29 tests) 10ms\n \u2713 |offline| tests/offline/db/layering.test.ts (21 tests) 638ms\n \u2713 |offline| tests/offline/edit/config.test.ts (48 tests) 287ms\n \u2713 |offline| tests/offline/records/page.test.ts (53 tests) 322ms\n\n Test Files  9 passed (9)\n      Tests  261 passed (261)\n   Start at  13:25:17\n   Duration  1.21s (transform 813ms, setup 0ms, collect 2.49s, tests 1.51s, environment 1ms, prepare 888ms)\n\n(node:70459) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

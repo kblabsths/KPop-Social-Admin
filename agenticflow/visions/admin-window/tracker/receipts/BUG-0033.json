@@ -1,0 +1,26 @@
+{
+ "id": "BUG-0033",
+ "created": "2026-09-02T19:20:33Z",
+ "green": true,
+ "git_head": "5b445bc2f5ab1424be8cecd92210071287533ff9",
+ "scope": [
+  "tests/offline/toolchain.test.ts",
+  "tests/offline/source-tree.ts",
+  "tests/isolated/probe-race.isolated.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 7,
+ "tree_hash": "5c8ad1cfba097720c41d52ea6d38d1817e12f42f72483ae27347b96ceb63d9a8",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=isolated",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-14568\n\n \u2713 |isolated| tests/isolated/probe-race.isolated.test.ts (6 tests) 14812ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is readable  1440ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is listed but cannot be opened  1289ms\n   \u2713 walking src/ while the layering probe comes and goes > survives the probe directory appearing and vanishing under the walk  3648ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no OTHER offline file that walks the tree either  8432ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  12:20:14\n   Duration  15.17s (transform 34ms, setup 0ms, collect 31ms, tests 14.81s, environment 0ms, prepare 84ms)\n\n(node:14575) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"mkdir -p src/.probes; touch src/.probes/__credential_guard_probe__.ts; ./node_modules/.bin/vitest run --project=offline tests/offline/toolchain.test.ts; rc=\\$?; rm -rf src/.probes; exit \\$rc\"",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-14568\n\n \u2713 |offline| tests/offline/toolchain.test.ts (17 tests) 2422ms\n\n Test Files  1 passed (1)\n      Tests  17 passed (17)\n   Start at  12:20:30\n   Duration  2.83s (transform 46ms, setup 0ms, collect 141ms, tests 2.42s, environment 0ms, prepare 75ms)\n\n(node:14875) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:14897) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:14900) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:14904) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

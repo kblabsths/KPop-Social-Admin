@@ -1,0 +1,42 @@
+{
+ "id": "TASK-0032",
+ "created": "2026-09-02T21:12:40Z",
+ "green": false,
+ "git_head": "42ab316ae6905fa4f3a774b690d23ea37a74aae0",
+ "scope": [
+  "tests/live",
+  "tests/offline/live-guard.test.ts",
+  "src/components/ui"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 14,
+ "tree_hash": "63c6d9543b8b1c3b988d42b7e95b3d9727f13063d6bfe82e2e8c93a86a08e96a",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/live-guard.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-1863\n\n \u2713 |offline| tests/offline/live-guard.test.ts (70 tests) 1066ms\n   \u2713 npm run test:live > refuses, non-zero, naming the missing name \u2014 and never falls back  996ms\n\n Test Files  1 passed (1)\n      Tests  70 passed (70)\n   Start at  14:11:08\n   Duration  1.59s (transform 101ms, setup 0ms, collect 239ms, tests 1.07s, environment 0ms, prepare 59ms)\n\n(node:1871) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm test",
+   "exit": 0,
+   "output_tail": ", collect 11.76s, tests 34.88s, environment 12ms, prepare 5.60s)\n\n\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-1863\n\n \u2713 |isolated| tests/isolated/probe-race.isolated.test.ts (6 tests) 15257ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is readable  1378ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is listed but cannot be opened  1388ms\n   \u2713 walking src/ while the layering probe comes and goes > survives the probe directory appearing and vanishing under the walk  3819ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no OTHER offline file that walks the tree either  8671ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  14:11:18\n   Duration  15.61s (transform 33ms, setup 0ms, collect 33ms, tests 15.26s, environment 0ms, prepare 65ms)\n\nnpm notice run kpop-social-space@0.1.0 test\nnpm notice run vitest run --project=offline && vitest run --project=isolated\n(node:1970) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:1991) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:1998) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:2037) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:2184) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=live tests/live/queues.live.test.ts tests/live/sources.live.test.ts",
+   "exit": 1,
+   "output_tail": " its state verbatim  9919ms\n   \u2713 the source state rows against staging > shows each source's last run, matched by NAME, and none where there is none  9263ms\n   \u2713 the source state rows against staging > narrows to one source, and that source alone  9496ms\n   \u00d7 the per-source trends against staging > counts each source's awaiting-row claims as the view holds them 8740ms\n     \u2192 'section:nth-of-type(2)' is in its ERROR state reading 'pending_claims', so nothing on it may be graded green: pending_claims \u2014 canceling statement due to statement timeout (57014)Reload to try the read again.\n   \u2713 the per-source trends against staging > counts each source's re-rejects as the stamps hold them  8859ms\n   \u2713 the per-source trends against staging > draws no threshold line, because the dial is not readable from here  9000ms\n\n Test Files  1 failed | 1 passed (2)\n      Tests  1 failed | 12 passed (13)\n   Start at  14:11:44\n   Duration  55.86s (transform 202ms, setup 60ms, collect 563ms, tests 61.22s, environment 0ms, prepare 145ms)\n\n(node:2493) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |live| tests/live/sources.live.test.ts > the per-source trends against staging > counts each source's awaiting-row claims as the view holds them\nStateMismatchError: 'section:nth-of-type(2)' is in its ERROR state reading 'pending_claims', so nothing on it may be graded green: pending_claims \u2014 canceling statement due to statement timeout (57014)Reload to try the read again.\n \u276f gradeSurface tests/live/parity.ts:673:11\n    671| \n    672|   if (kind === \"error\") {\n    673|     throw new StateMismatchError(\n       |           ^\n    674|       `'${input.within}' is in its ERROR state reading '${input.object\u2026\n    675|         `nothing on it may be graded green: ` +\n \u276f tests/live/sources.live.test.ts:284:25\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\n\n"
+  }
+ ],
+ "failure_sig": "0810ce350703"
+}
