@@ -1113,6 +1113,24 @@ describe("QA: the classifier, attacked", () => {
     expect(() => stateOf(typo, "[data-surface]")).toThrow(MarkupReadError);
     expect(() => stateOf(typo, "[data-surface]")).toThrow(/not-provisioned/);
   });
+
+  // admin-window/BUG-0036, written as a strict expected failure: while the
+  // defect stands this pin is green because its body throws, and the day the
+  // exclusion is confined to proper sub-surfaces it XPASSes (vitest reports
+  // "Expect test to fail") and sends the reader to the ticket. The fix turns
+  // it back into a plain `it`.
+  it.fails("admin-window/BUG-0036: an `excluding` selector that also matches the surface hides its ERROR card", () => {
+    // `excluding` names SUB-SURFACES inside the graded surface, and the card
+    // scan drops a card whose `closest(excluding)` matches — but `closest`
+    // starts at the card and walks EVERY ancestor, the surface itself and the
+    // page around it included. So an exclusion selector that also matches the
+    // surface (or anything wrapping it) drops every card the surface holds,
+    // and a surface rendering nothing but an error line grades OK.
+    const broken = `<div data-surface="q">${errorLine()}</div>`;
+    expect(stateOf(broken, "[data-surface]")).toBe("error");
+    expect(stateOf(broken, "[data-surface]", "[data-surface]")).toBe("error");
+    expect(() => assertState(broken, "[data-surface]", "ok")).toThrow();
+  });
 });
 
 /**
