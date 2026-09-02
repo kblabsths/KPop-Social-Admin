@@ -1,3 +1,3 @@
-Declare the staging Supabase project in agenticflow/docs/SERVICES.md as a `## supabase` section (console URL, tier, the staging project ref agents may touch, provisioned-by/date). The remote gate refuses any undeclared service CLI, so without this entry agents cannot run direct SQL on staging for the parity checks.
-Recommend: declare it now; the architect will say separately if a DB connection-string NAME is also needed for direct-SQL parity.
-Unblocks: acceptance tests 2–3 (parity against direct SQL) and 13 (live-suite residue sweep).
+Declare the staging Supabase project in agenticflow/docs/SERVICES.md as a `## supabase` section. The live-test guard (TASK-0003) matches STAGING_SUPABASE_URL's host against the "staging target agents may touch" line, and it accepts the project REF (the subdomain, e.g. abcdefghijklmnop) or the full host (abcdefghijklmnop.supabase.co) — not a free-form name. No declaration = every live test refuses.
+Recommend: put the project ref on that line; keep the tier/cost ceiling honest; no key or connection string anywhere in the file.
+Unblocks: every live staging test (acceptance tests 2–5, 9–11, 13) once the two STAGING_* names are also in .env.
