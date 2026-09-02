@@ -1,0 +1,37 @@
+{
+ "id": "BUG-0016",
+ "created": "2026-09-02T11:27:23Z",
+ "green": true,
+ "git_head": "a10c1382aab872ef7ca6c265bcb12111e81c7ce7",
+ "scope": [
+  "src/lib/db/result.ts",
+  "src/app/browse/page.tsx",
+  "tests/offline/db",
+  "tests/offline/browse"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "e24dc36373350d9425c1e1c9c958b8b641732989edb4ebae476b5bdf1af52006",
+ "commands": [
+  {
+   "cmd": "bash -c \"grep -q 'details' src/lib/db/result.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-58884\n\n \u2713 |offline| tests/offline/db/result.test.ts (62 tests) 15ms\n\n Test Files  1 passed (1)\n      Tests  62 passed (62)\n   Start at  04:27:18\n   Duration  437ms (transform 78ms, setup 0ms, collect 114ms, tests 15ms, environment 0ms, prepare 77ms)\n\n(node:58902) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/browse",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-58884\n\n \u2713 |offline| tests/offline/browse/views.test.ts (52 tests) 18ms\n \u2713 |offline| tests/offline/browse/browse-read.test.ts (27 tests) 13ms\n \u2713 |offline| tests/offline/browse/page.test.ts (29 tests) 92ms\n\n Test Files  3 passed (3)\n      Tests  108 passed (108)\n   Start at  04:27:19\n   Duration  714ms (transform 266ms, setup 0ms, collect 585ms, tests 123ms, environment 0ms, prepare 244ms)\n\n(node:58993) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
