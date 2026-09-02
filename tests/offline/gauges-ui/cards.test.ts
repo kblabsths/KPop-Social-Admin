@@ -278,22 +278,32 @@ describe("GaugeCard", () => {
     expect(classesOf(card({ label: "facts examined", value: 12 }))).not.toContain("type-data");
   });
 
-  // admin-window/BUG-0019 — strict pin: `it.fails` reddens the day this passes,
-  // which is the day the reason path asks the same definition the value path
-  // does. Watched RED as a plain `it` first ('"": expected 0 to be greater
-  // than 0'); the fix flips it back to `it`.
-  it.fails("says why it cannot measure even when the caller's reason is itself blank", () => {
-    // The card asks `isAbsent` about the VALUE but not about the REASON, so a
-    // blank reason — which the union's third arm accepts, since it demands
-    // `absent: string` and "" is a string — renders the dash with no words at
-    // all beside it. Same reading LOOK_AND_FEEL forbids and the same reason the
-    // UNSTATED_REASON fallback exists for; `??` only catches null/undefined.
-    for (const absent of ["", "   "]) {
+  // admin-window/BUG-0019 — the reason path now asks the same definition the
+  // value path does, so this is a plain `it` (it was pinned `it.fails` while
+  // the card decided the reason with `??`, which catches only null/undefined).
+  it("says why it cannot measure even when the caller's reason is itself blank", () => {
+    // A blank reason is one the union's third arm accepts, since it demands
+    // `absent: string` and "" is a string. Whatever its whitespace spelling, it
+    // states nothing, so the card must fall back to words rather than render
+    // the dash bare — the reading LOOK_AND_FEEL forbids and the very reason the
+    // UNSTATED_REASON fallback exists.
+    for (const absent of ["", "   ", "\n\t "]) {
       const html = card({ label: "median duration", value: null, absent });
       const beside = textOf(html).replace(EM_DASH, "").replace("median duration", "").trim();
       expect(textOf(html), JSON.stringify(absent)).toContain(EM_DASH);
+      expect(classesOf(html), JSON.stringify(absent)).toContain("type-data");
       expect(beside.length, JSON.stringify(absent)).toBeGreaterThan(0);
+      // and the words are the ones an unannotated absence gets: a stated-but-
+      // empty reason and no reason at all are the same absence, not two
+      // renderings (no wording is pinned — the two markups are compared)
+      expect(html, JSON.stringify(absent)).toBe(
+        card({ label: "median duration", value: Number.NaN }),
+      );
     }
+
+    // a reason that does carry words is still the caller's, untouched
+    const stated = card({ label: "median duration", value: null, absent: "  no cycle yet  " });
+    expect(textOf(stated)).toContain("no cycle yet");
   });
 
   it("takes its absence from the app's one definition, not a guard of its own", () => {
