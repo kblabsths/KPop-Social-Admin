@@ -5020,3 +5020,5 @@
 2026-09-02T21:54:18Z	agent	-	-	-	-
 # STRANDED	2026-09-02T21:54:51Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/DEBT-0001.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0036.md
 2026-09-02T21:54:51Z	agent	-	-	-	-
+2026-09-02T21:55:13Z	qa-adversary	DEBT-0001	5012	404	74907
+2026-09-02T21:55:20Z	agent	-	-	-	-
