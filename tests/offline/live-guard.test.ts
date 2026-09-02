@@ -305,6 +305,38 @@ describe("the parity mechanism", () => {
       ),
     ).resolves.toBe(0);
   });
+
+  // PIN admin-window/BUG-0007 — `it.fails` is strict: the day
+  // `countRows` starts refusing, this XPASSes and goes red, which is the
+  // signal to flip it back to a plain `it` and close the bug.
+  it.fails("refuses a count the database never returned, instead of fabricating zero", async () => {
+    // The query a page ticket writes when it forgets `count: "exact"`:
+    // PostgREST answers with no error AND no count. `countRows` promises the
+    // opposite of this ("a parity test must never quietly compare against 0
+    // because its own query broke", tests/live/parity.ts) — and the whole
+    // mechanism is worthless if the second path can be a fabricated zero.
+    const db = stubClient({ review_items: {} }).asSupabaseClient();
+
+    await expect(
+      countRows(() => db.from("review_items").select("*")),
+    ).rejects.toThrow();
+  });
+
+  // PIN admin-window/BUG-0007 (same defect, seen from the mechanism).
+  it.fails("does not pass parity by comparing a page's zero against a count it never got", async () => {
+    const db = stubClient({ review_items: {} }).asSupabaseClient();
+
+    const outcome = await assertParity({
+      markup: card("Open decisions", 0),
+      label: "Open decisions",
+      expected: () => countRows(() => db.from("review_items").select("*")),
+    }).then(
+      () => "parity passed",
+      () => "refused",
+    );
+
+    expect(outcome).toBe("refused");
+  });
 });
 
 describe("the sweep", () => {
