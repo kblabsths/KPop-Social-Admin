@@ -48,6 +48,16 @@ export default defineConfig({
           environment: "node",
           testTimeout: 180_000,
           hookTimeout: 180_000,
+          // Every http test starts the built app on the ONE fixed
+          // HTTP_TEST_PORT, so two files cannot run at once: the second
+          // would find the port held and the harness would (correctly)
+          // refuse to certify a server it did not start. One fork runs
+          // this project's files one after another, which is what makes a
+          // second http test file possible (admin-window/TASK-0017).
+          // `fileParallelism` is a root-only option, so it cannot express
+          // this for one project; `singleFork` can.
+          pool: "forks",
+          poolOptions: { forks: { singleFork: true } },
         },
       },
     ],
