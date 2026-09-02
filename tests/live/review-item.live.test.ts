@@ -103,6 +103,43 @@ function textOf(markup: string): string {
   return cheerio.load(markup).root().text().replace(/\s+/g, " ").trim();
 }
 
+/**
+ * The three shapes, derived from the item's own columns exactly as
+ * `resolver.md` §11 and migration `20260901000002` define the subject: a
+ * `data_conflict` row is always a fact item, and on `entity_link` a set
+ * `source_id` is the whole discriminator between the source-pattern signal and
+ * the stuck-fact decision. Spelled out here rather than imported, for the same
+ * reason every other expectation in this file is: the test must not ask the
+ * code under test what the answer is (ARCHITECTURE.md §10).
+ */
+type Shape = "data_conflict_fact" | "entity_link_fact" | "entity_link_source_pattern";
+
+function shapeOfItem(item: Item): Shape {
+  if (item.queue !== "entity_link") return "data_conflict_fact";
+  return item.source_id === null ? "entity_link_fact" : "entity_link_source_pattern";
+}
+
+/** The view each shape must render (spec §6: each shape is its own view). */
+const VIEW_OF_SHAPE: Record<Shape, string> = {
+  data_conflict_fact: "conflict",
+  entity_link_fact: "stuck-fact",
+  entity_link_source_pattern: "source-pattern",
+};
+
+/**
+ * The one column that is this shape's own, beside the shared four. The
+ * contenders carry their lifecycle status; a stuck claim carries what holds
+ * it (§6: "the stuck claims and the unmet requirement"); a folded record
+ * carries the record it is about (§6: "the folded records, rendered as a
+ * list"). A shape rendering another shape's column — or none — is the generic
+ * layout §6 rules out.
+ */
+const EXTRA_HOOK_OF_SHAPE: Record<Shape, string> = {
+  data_conflict_fact: "data-claim-status",
+  entity_link_fact: "data-held",
+  entity_link_source_pattern: "data-fact",
+};
+
 describe("a real review item, rendered", () => {
   it("resolves exactly the evidence ids the row carries, in its fold order", async () => {
     const item = await anyItem();
@@ -137,7 +174,7 @@ describe("a real review item, rendered", () => {
     }
   });
 
-  it("renders each claim's own instant, status and source tier", async () => {
+  it("renders each claim's own instant, source tier and its shape's own column", async () => {
     const item = await anyItem();
     if (item === "absent" || item === null) return;
 
@@ -148,6 +185,16 @@ describe("a real review item, rendered", () => {
       expect(renderedIds(markup)).toEqual([]);
       return;
     }
+
+    // The shape, derived here from the item's own columns (resolver.md §11:
+    // `queue`, and `source_id` set only on a per-source subject) rather than
+    // asked of the module under test — and the view the page must have chosen
+    // for it. §6: "Each shape is its own detail view … the evidence block
+    // renders what that shape's evidence is, not one generic layout".
+    const shape = shapeOfItem(item);
+    expect($("[data-evidence-view]").attr("data-evidence-view"), item.review_item_id).toBe(
+      VIEW_OF_SHAPE[shape],
+    );
 
     // The tiers, read by the test itself — the evidence row shows the source's
     // tier NOW (ARCHITECTURE.md §6 trap 5), not the tier frozen at any apply.
@@ -164,16 +211,34 @@ describe("a real review item, rendered", () => {
 
     for (const claim of claims) {
       const row = $(`[data-evidence="${claim.observation_id}"]`).closest("tr");
+      // The base contract, on every shape (§6 anatomy 2): the claim's own
+      // instant, its source, that source's tier NOW, and the payload pointer.
       expect(row.find("[data-observed]").attr("data-observed"), claim.observation_id).toBe(
         claim.observed_at,
       );
-      expect(row.find("[data-claim-status]").attr("data-claim-status")).toBe(
-        claim.status,
-      );
+      expect(
+        row.find("[data-payload]").attr("data-payload"),
+        `${claim.observation_id}: no payload pointer`,
+      ).toBeDefined();
       const source = tierOf.get(claim.source_id);
       if (source !== undefined) {
         expect(row.find("[data-tier-now]").attr("data-tier-now")).toBe(source.tier);
         expect(row.text()).toContain(source.source);
+      }
+      // ...and this shape's own column, which is the part §6 makes typed. The
+      // claim's lifecycle `status` is the CONFLICT view's column — the two
+      // entity_link views answer a different question in that slot (what holds
+      // the claim; which record was folded), so demanding `status` of them
+      // would be demanding the one generic layout §6 forbids.
+      const hook = EXTRA_HOOK_OF_SHAPE[shape];
+      expect(
+        row.find(`[${hook}]`).attr(hook),
+        `${claim.observation_id}: no ${hook} on the ${shape} view`,
+      ).toBeDefined();
+      if (shape === "data_conflict_fact") {
+        expect(row.find("[data-claim-status]").attr("data-claim-status")).toBe(
+          claim.status,
+        );
       }
     }
   });
