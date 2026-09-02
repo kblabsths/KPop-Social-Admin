@@ -1,0 +1,19 @@
+{
+ "id": "BUG-0002",
+ "created": "2026-09-02T06:23:34Z",
+ "green": true,
+ "git_head": "df2dbd2773b24b49cce436f47f3aef3c7f1b8e95",
+ "scope": [
+  "tests"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "122661e6320da3948849489797ac8d61c3ff74da0eed3fb2ff16007d15c9c654",
+ "commands": [
+  {
+   "cmd": "npm run test:http",
+   "exit": 0,
+   "output_tail": "roups/[id]\n\u251c \u0192 /api/admin/idols/[id]\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /data-management\n\u251c \u0192 /data-management/completeness\n\u251c \u0192 /data-management/events\n\u251c \u0192 /data-management/groups\n\u251c \u0192 /data-management/idols\n\u251c \u0192 /database\n\u2514 \u0192 /login\n\n\n\u0192 Proxy (Middleware)\n\n\u0192  (Dynamic)  server-rendered on demand\n\n\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-92966\n\n \u2713 |http| tests/http/auth.http.test.ts (3 tests) 722ms\n   \u2713 the built app over http > serves health and sends an unauthenticated visitor to the login page  649ms\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  23:23:33\n   Duration  1.04s (transform 41ms, setup 0ms, collect 41ms, tests 722ms, environment 0ms, prepare 70ms)\n\nnpm notice run kpop-social-space@0.1.0 test:http\nnpm notice run next build && vitest run --project=http\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-92966/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:93140) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:93510) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

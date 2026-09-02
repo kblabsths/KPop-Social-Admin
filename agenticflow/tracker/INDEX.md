@@ -1,7 +1,6 @@
-# Tracker index (regenerated 2026-09-02T06:10:43Z — do not edit)
+# Tracker index (regenerated 2026-09-02T06:23:06Z — do not edit)
 
 ## open
-- BUG-0002 [P1][bug][M1] http suite certifies whatever holds port 8772, not the app it started  (scope:tests from:TASK-0001)
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
 - FEAT-0002 [P1][feat][M1] Staging reads, the not-provisioned state, and the live/offline test harness
 - FEAT-0003 [P1][feat][M1] Dashboard — the breakfast view  (deps:FEAT-0001,FEAT-0002(unmet:2))
@@ -30,6 +29,12 @@
 - TASK-0016 [P2][task][M1] Cycles & runs — the adapter framework's runs half  (deps:TASK-0014,TASK-0023(unmet:2) scope:src/app/cycles/page.tsx,src/lib/db/runs.ts,tests/offline/runs,tests/live/runs.live.test.ts)
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 
+## built
+- TASK-0001 [P1][task][M1] Toolchain: Vitest, the offline/live/http suites, and a lint that exits 0  (deps:DEP-0001 scope:package.json,package-lock.json,vitest.config.mts,eslint.config.mjs,tests,.env.example @builder-2)
+
+## qa
+- BUG-0002 [P1][bug][M1] http suite certifies whatever holds port 8772, not the app it started  (scope:tests @builder-1 from:TASK-0001)
+
 ## blocked
 - BUG-0001 [P0][bug][-] CI red: 1 failing test(s)  (scope:src,supabase,public,tests,docs)
 - TASK-0021 [P0][task][M1] ASK BEN: which Supabase env names does the APP read at runtime, and what do the campaign's live tests read?  (scope:src/lib/db/client.ts,tests/live,agenticflow/docs/SERVICES.md)
@@ -38,7 +43,4 @@
 - TASK-0024 [P1][task][M1] ASK BEN: where does Admin read the per-source stuck_pattern dial, which lives only in scraper YAML?  (scope:src/lib/gauges/pending-claims.ts,src/app/sources/page.tsx)
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 
-## reopened
-- TASK-0001 [P1][task][M1] Toolchain: Vitest, the offline/live/http suites, and a lint that exits 0  (deps:DEP-0001 scope:package.json,package-lock.json,vitest.config.mts,eslint.config.mjs,tests,.env.example)
-
-Totals — blocked:6, done:1, open:28, reopened:1. Archived: 0.
+Totals — blocked:6, built:1, done:1, open:27, qa:1. Archived: 0.

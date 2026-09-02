@@ -1,0 +1,23 @@
+{
+ "id": "BUG-0001",
+ "created": "2026-09-02T06:24:35Z",
+ "green": true,
+ "git_head": "df2dbd2773b24b49cce436f47f3aef3c7f1b8e95",
+ "scope": [
+  "src",
+  "supabase",
+  "public",
+  "tests",
+  "docs"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "95e74ac12338ec2d4d016dd770be591bfadccee64422bacf4bdfb1b2a6eebad4",
+ "commands": [
+  {
+   "cmd": "bash -c 'npm run lint && ./node_modules/.bin/tsc --noEmit && npm test'",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-2296\n\n \u2713 |offline| tests/offline/toolchain.test.ts (3 tests) 1125ms\n   \u2713 test project layout > collects no live or http file into the offline project  375ms\n   \u2713 test project layout > collects the http suite into the http project only  748ms\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  23:24:34\n   Duration  1.43s (transform 30ms, setup 0ms, collect 25ms, tests 1.13s, environment 0ms, prepare 66ms)\n\nnpm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\nnpm notice run kpop-social-space@0.1.0 test\nnpm notice run vitest run --project=offline\n(node:3107) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:3220) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:3248) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:3333) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

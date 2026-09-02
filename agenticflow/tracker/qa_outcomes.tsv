@@ -1,1 +1,3 @@
 2026-09-02T06:09:03Z	TASK-0001	qa->reopened	-	qa
+2026-09-02T06:24:24Z	BUG-0002	qa->done	fixed	qa
+2026-09-02T06:24:41Z	BUG-0001	blocked->done	already_done	qa
