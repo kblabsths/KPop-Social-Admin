@@ -192,10 +192,14 @@ function Queue({
     hrefFor: itemHref,
   };
 
+  // A read that could not count passes NO figure: a zero for a table that is
+  // not there, or for a read that refused, would be a number the app never
+  // counted (LOOK_AND_FEEL state 3, quality bar 4).
   if (result.kind === "not_provisioned") {
     return (
       <QueueList
         {...shared}
+        state="not_provisioned"
         items={[]}
         card={
           <NotProvisioned missing={result.missing} arrivesWith={ARRIVES_WITH} />
@@ -207,6 +211,7 @@ function Queue({
     return (
       <QueueList
         {...shared}
+        state="error"
         items={[]}
         line={
           <ErrorLine
@@ -224,22 +229,30 @@ function Queue({
   // hand-written `filter(i => …)` here would be a second one (acceptance
   // test 4), and the order is `queueOrder`'s, untouched.
   const items = selectItems(result.data, { kind });
-  if (items.length === 0) {
-    const words = isNarrowed(filter) ? NOTHING_MATCHED : NOTHING_HERE[kind];
-    return (
-      <QueueList
-        {...shared}
-        items={[]}
-        card={<Empty holds={words.holds} filledBy={words.filledBy} />}
-      />
-    );
-  }
+  const narrowed = isNarrowed(filter);
+  // The read succeeded either way, so it produced a figure either way. An
+  // empty queue differs from a full one ONLY in the rows region, where its
+  // card says what the queue holds and what fills it: the counted zero keeps
+  // the position the count occupies when there are rows, because a figure that
+  // disappears at zero cannot be scanned in the same place every morning
+  // (admin-window/BUG-0027; LOOK_AND_FEEL bar 1 and "counts sit in fixed
+  // positions"). The `Empty` card is untouched and stays where rows go.
+  const words = narrowed ? NOTHING_MATCHED : NOTHING_HERE[kind];
   return (
     <QueueList
       {...shared}
+      state={items.length === 0 ? "empty" : "ok"}
       items={items}
       open={selectItems(items, { status: "open" }).length}
-      openDetail={<OpenDetail items={items} narrowed={isNarrowed(filter)} />}
+      // The same sub-line rule in both: with nothing open it says so, and
+      // names the filtered scope when a filter is what emptied the queue, so
+      // a scoped zero never reads as a whole-queue zero.
+      openDetail={<OpenDetail items={items} narrowed={narrowed} />}
+      card={
+        items.length === 0 ? (
+          <Empty holds={words.holds} filledBy={words.filledBy} />
+        ) : undefined
+      }
     />
   );
 }

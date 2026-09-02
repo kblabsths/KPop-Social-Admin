@@ -194,6 +194,59 @@ function textOf(markup: string): string {
   return cheerio.load(markup).root().text();
 }
 
+function squash(text: string): string {
+  return text.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The label each queue's open figure stands under — the same string the live
+ * parity test reads the number by. Spelled here, not imported: a rename on
+ * either side has to show up as a failure.
+ */
+const OPEN_LABEL: Record<string, string> = {
+  decision: "Open decisions",
+  signal: "Open signals",
+};
+
+/** Which of the four states the named queue block says it is in. */
+function stateOf(markup: string, kind: string): string | undefined {
+  return cheerio.load(markup)(`[data-queue="${kind}"]`).attr("data-state");
+}
+
+/**
+ * The block's two regions, by position: where the labelled figure sits among
+ * the section's own children, and where the rows region does. Positions, not
+ * classes — "the count sits in a fixed position" is a structural claim.
+ */
+function regionsOf(markup: string, kind: string) {
+  const $ = cheerio.load(markup);
+  const children = $(`[data-queue="${kind}"] section`).children().toArray();
+  return {
+    figure: children.findIndex((child) =>
+      squash($(child).text()).startsWith(OPEN_LABEL[kind]),
+    ),
+    rows: children.findIndex((child) => $(child).is("[data-rows]")),
+  };
+}
+
+/**
+ * The sub-line standing under a queue's open figure: everything the figure's
+ * card says apart from its label and the number itself.
+ */
+function openSub(markup: string, kind: string): string {
+  const $ = cheerio.load(markup);
+  const card = $(`[data-queue="${kind}"] section`)
+    .children()
+    .filter((_, child) => squash($(child).text()).startsWith(OPEN_LABEL[kind]))
+    .first();
+  const parts = card
+    .children()
+    .toArray()
+    .map((child) => squash($(child).text()))
+    .filter((text) => text !== OPEN_LABEL[kind] && !/^-?[\d,]+$/.test(text));
+  return parts.join(" ");
+}
+
 /* ── two queues of equal standing ────────────────────────────────────────── */
 
 describe("the two queues", () => {
@@ -635,9 +688,11 @@ describe("when a read fails", () => {
   });
 });
 
+const EMPTY_TABLE: Script = { [T.reviewItems]: { data: [], count: 0 } };
+
 describe("with the table present and empty", () => {
   it("says what each queue holds and what fills it, and shows a real zero", async () => {
-    const markup = await renderQueues({ [T.reviewItems]: { data: [], count: 0 } });
+    const markup = await renderQueues(EMPTY_TABLE);
     const $ = cheerio.load(markup);
 
     expect($("[data-queue]")).toHaveLength(2);
@@ -649,6 +704,131 @@ describe("with the table present and empty", () => {
     // The gauge read the same empty table and reports zeros it really counted.
     expect(readNumber(markup, "data_conflict open")).toBe(0);
   });
+
+  it("renders each queue's open figure as a counted zero (admin-window/BUG-0027)", async () => {
+    // A queue that holds nothing was COUNTED, so its figure is on the page and
+    // reads 0 — quality bar 1 asks the Queues page for the open count of each
+    // queue, and one of two counts vanishing at zero does not answer it.
+    const markup = await renderQueues(EMPTY_TABLE);
+
+    for (const kind of KIND_NAMES) {
+      expect(readNumber(markup, OPEN_LABEL[kind]), kind).toBe(0);
+      expect(stateOf(markup, kind), kind).toBe("empty");
+    }
+  });
+
+  it("keeps the figure where it sits when the queue has rows, and the card below it", async () => {
+    // "Counts sit in fixed positions": the same slot of the same block, so an
+    // operator scanning the same spot every morning can tell a quiet queue
+    // from a broken page.
+    const empty = regionsOf(await renderQueues(EMPTY_TABLE), "decision");
+    const populated = regionsOf(await renderQueues(healthyScript()), "decision");
+
+    expect(empty.figure).toBeGreaterThanOrEqual(0);
+    expect(empty.figure).toBe(populated.figure);
+    expect(empty.rows).toBe(populated.rows);
+    // The rows region is BELOW the figure, and it is where the card went.
+    expect(empty.rows).toBeGreaterThan(empty.figure);
+  });
+
+  it("puts the Empty card in the rows region, with no table", async () => {
+    const markup = await renderQueues(EMPTY_TABLE);
+    const $ = cheerio.load(markup);
+
+    for (const kind of KIND_NAMES) {
+      const rows = $(`[data-queue="${kind}"] [data-rows]`);
+      expect(rows, kind).toHaveLength(1);
+      expect(rows.find("table"), kind).toHaveLength(0);
+      // The card the page passes stands there rather than nothing at all.
+      expect(squash(rows.text()).length, kind).toBeGreaterThan(0);
+    }
+    // Each card speaks about ITS OWN queue: the two say different things, so
+    // neither is a shared "No data" placeholder (LOOK_AND_FEEL, Voice bar 4).
+    expect(squash($('[data-queue="decision"] [data-rows]').text())).not.toBe(
+      squash($('[data-queue="signal"] [data-rows]').text()),
+    );
+  });
+
+  it("keeps the two queues at equal standing while both are empty", async () => {
+    // TASK-0010's pins, re-run in this state: the fix must not buy the figure
+    // by making one queue a different kind of block from the other.
+    const markup = await renderQueues(EMPTY_TABLE);
+    const { $, blocks } = blocksOf(markup);
+
+    expect(blocks).toHaveLength(2);
+    expect($(blocks[0]).parent().get(0)).toBe($(blocks[1]).parent().get(0));
+    expect(blocks[0].tagName).toBe(blocks[1].tagName);
+    expect($(blocks[0]).attr("class")).toBe($(blocks[1]).attr("class"));
+    expect($(blocks[0]).find("h2")).toHaveLength(1);
+    expect($(blocks[1]).find("h2")).toHaveLength(1);
+    expect(regionsOf(markup, "decision")).toEqual(regionsOf(markup, "signal"));
+  });
+});
+
+describe("a zero that a filter produced", () => {
+  it("names its scope, so a filtered 0 never reads as a whole-queue 0", async () => {
+    // Arriving on the Dashboard's "open signals" link empties the decision
+    // queue on screen while the database holds plenty. The sub-line under that
+    // zero says more than the unfiltered zero's does — it names the scope —
+    // which is the behaviour, not the wording, and is what is pinned here.
+    const filtered = await renderQueues(healthyScript(), { kind: "signal" });
+    const whole = await renderQueues(EMPTY_TABLE);
+
+    expect(matching({ kind: "decision", status: "open" }).length).toBeGreaterThan(0);
+    expect(readNumber(filtered, OPEN_LABEL.decision)).toBe(0);
+    expect(stateOf(filtered, "decision")).toBe("empty");
+
+    const scoped = openSub(filtered, "decision");
+    const unscoped = openSub(whole, "decision");
+    expect(unscoped.length).toBeGreaterThan(0);
+    expect(scoped).toContain(unscoped);
+    expect(scoped.length).toBeGreaterThan(unscoped.length);
+  });
+
+  it("scopes the zero of a queue that has rows but nothing open, too", async () => {
+    // `?status=settled` leaves rows on screen and a real zero above them.
+    const markup = await renderQueues(healthyScript(), { status: "settled" });
+
+    expect(readNumber(markup, OPEN_LABEL.decision)).toBe(0);
+    expect(stateOf(markup, "decision")).toBe("ok");
+    expect(openSub(markup, "decision")).toContain(
+      openSub(await renderQueues(EMPTY_TABLE), "decision"),
+    );
+  });
+});
+
+describe("the four states, on the block itself", () => {
+  /** state name → the script that puts both queues in it, and whether it counted. */
+  const cases: [string, Script, boolean][] = [
+    ["ok", healthyScript(), true],
+    ["empty", EMPTY_TABLE, true],
+    ["error", { [T.reviewItems]: { error: permissionDenied(T.reviewItems) } }, false],
+    [
+      "not_provisioned",
+      { [T.reviewItems]: { error: tableNotInSchemaCache(T.reviewItems) } },
+      false,
+    ],
+  ];
+
+  for (const [state, script, counted] of cases) {
+    it(`says data-state="${state}" and ${counted ? "shows" : "shows no"} figure`, async () => {
+      // The state is readable BEFORE any number is (ARCHITECTURE.md §10): an
+      // error is always a failure, an empty is a pass with a stated 0, and
+      // neither is inferred from "no rows rendered".
+      const markup = await renderQueues(script);
+
+      for (const kind of KIND_NAMES) {
+        expect(stateOf(markup, kind), kind).toBe(state);
+        if (counted) {
+          expect(readNumber(markup, OPEN_LABEL[kind]), kind).toBeGreaterThanOrEqual(0);
+        } else {
+          // A table that is not there, or a read that refused, counted
+          // nothing — and nothing is not a zero.
+          expect(() => readNumber(markup, OPEN_LABEL[kind]), kind).toThrow();
+        }
+      }
+    });
+  }
 });
 
 /* ── the route ───────────────────────────────────────────────────────────── */

@@ -4,6 +4,14 @@ import { count, relativeAge } from "@/lib/format";
 import { shapeOf, type Kind, type ReviewItemRow } from "@/lib/review/shapes";
 
 /**
+ * The four states one queue block can be in (LOOK_AND_FEEL, Emptiness): the
+ * three `DbResult` kinds plus `empty` — a read that succeeded and counted
+ * nothing. They never share a rendering, and the block says which one it is in
+ * (`data-state`, the hook the Cycles page's runs surface already carries).
+ */
+export type QueueState = "ok" | "empty" | "error" | "not_provisioned";
+
+/**
  * One of the two queues — campaign admin-window/TASK-0010.
  *
  * The Queues page renders this component ONCE PER KIND and nothing else: the
@@ -27,9 +35,22 @@ import { shapeOf, type Kind, type ReviewItemRow } from "@/lib/review/shapes";
  *
  * A pure component: plain props, no fetching (ARCHITECTURE.md §4 rule 1).
  * Nothing here settles anything: every control in this markup is a link.
+ *
+ * The block has two regions and they answer different questions
+ * (admin-window/BUG-0027): the FIGURE region — the labelled open count, in one
+ * fixed position whatever the state — and the ROWS region below it
+ * (`data-rows`), which holds the table, the `Empty` card or the
+ * `NotProvisioned` card. A counted zero is a figure and holds its position;
+ * only a state that COUNTED NOTHING (a missing table, a refused read) leaves
+ * the figure region empty, because a zero there would be a lie about a table
+ * that is not present (LOOK_AND_FEEL state 3). Which of the four states the
+ * block is in is on the wrapper as `data-state`, so a reader — an operator or
+ * a live test — knows which state it is reading before it reads a number,
+ * rather than inferring it from "no rows rendered".
  */
 export function QueueList({
   kind,
+  state,
   title,
   openLabel,
   open,
@@ -42,6 +63,12 @@ export function QueueList({
 }: {
   /** Which queue this is. Rendered as the block's own hook, `data-queue`. */
   kind: Kind;
+  /**
+   * Which of the four states this block is in, verbatim on the wrapper as
+   * `data-state`. `ok` and `empty` are both a read that COUNTED — `empty` is
+   * a real zero — while `error` and `not_provisioned` counted nothing at all.
+   */
+  state: QueueState;
   /** The h2 above the list — the same type scale for both queues. */
   title: string;
   /** The `micro` label the open figure stands under. */
@@ -49,7 +76,9 @@ export function QueueList({
   /**
    * Open items in this queue. Omitted when no read produced a number — a
    * missing table or a failed read is never rendered as a zero
-   * (LOOK_AND_FEEL state 3).
+   * (LOOK_AND_FEEL state 3). A read that came back EMPTY did produce one, and
+   * passes `0`: the figure holds its position rather than vanishing when the
+   * queue goes quiet (admin-window/BUG-0027).
    */
   open?: number;
   /** At most one `data` line under that figure: severity split and oldest age. */
@@ -62,8 +91,9 @@ export function QueueList({
   hrefFor: (item: ReviewItemRow) => string;
   /**
    * A CARD state — the page's own `Empty` or `NotProvisioned` — rendered in
-   * place of the whole surface, because those two draw their own border and a
-   * card inside the table's border would draw two.
+   * the ROWS region in place of the table, because those two draw their own
+   * border and a card inside the table's border would draw two. It replaces
+   * the rows; the figure above them, when there is one, stays put.
    */
   card?: ReactNode;
   /**
@@ -135,28 +165,32 @@ export function QueueList({
   ];
 
   return (
-    <div data-queue={kind} className="flex w-full flex-col gap-2">
+    <div data-queue={kind} data-state={state} className="flex w-full flex-col gap-2">
       <Section title={title}>
-        {card ?? (
-          <>
-            {open === undefined ? null : (
-              <StatCard
-                label={openLabel}
-                value={open}
-                sub={openDetail}
-                tone={open > 0 ? "attention" : "default"}
-              />
-            )}
-            <p className="type-body text-ink-secondary">{sort}</p>
-            <DataTable<ReviewItemRow>
-              columns={columns}
-              rows={line === undefined ? [...items] : []}
-              rowKey={(item) => item.review_item_id}
-              label={title}
-              placeholder={line}
-            />
-          </>
+        {/* The figure, in the one position it occupies in every state that
+            counted something: above the rows region, never inside it. */}
+        {open === undefined ? null : (
+          <StatCard
+            label={openLabel}
+            value={open}
+            sub={openDetail}
+            tone={open > 0 ? "attention" : "default"}
+          />
         )}
+        <div data-rows={kind} className="flex flex-col gap-2">
+          {card ?? (
+            <>
+              <p className="type-body text-ink-secondary">{sort}</p>
+              <DataTable<ReviewItemRow>
+                columns={columns}
+                rows={line === undefined ? [...items] : []}
+                rowKey={(item) => item.review_item_id}
+                label={title}
+                placeholder={line}
+              />
+            </>
+          )}
+        </div>
       </Section>
     </div>
   );
