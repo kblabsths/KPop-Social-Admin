@@ -1,0 +1,21 @@
+{
+ "id": "TASK-0023",
+ "created": "2026-09-02T16:52:16Z",
+ "green": false,
+ "git_head": "a80fc58974d2dd90afd7d302fee526f2a8482d5a",
+ "scope": [
+  "src/lib/db/runs.ts",
+  "src/app/cycles/page.tsx"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "bcc26aee7546f1b353ecf03190aa28c48eb27a1061a2b8c0aec44e1c1039364e",
+ "commands": [
+  {
+   "cmd": "bash -c \"! grep -q OPEN-RUNS agenticflow/docs/vision/ARCHITECTURE.md\"",
+   "exit": 1,
+   "output_tail": ""
+  }
+ ],
+ "failure_sig": "fa7764405279"
+}
