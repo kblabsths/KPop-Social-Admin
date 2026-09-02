@@ -374,6 +374,24 @@ describe("a record URL for a table the edit map does not carry", () => {
       expect(caseVariant.status).toBe(404);
       expect(await caseVariant.text()).not.toContain("groups record");
 
+      // 1c. The other half of that trade, and the one with a user behind it:
+      //     the rewrite excludes percent-encoded table segments BECAUSE a
+      //     percent-encoded spelling of a configured table is the SAME URI as
+      //     the plain one (RFC 3986 §6.2.2.2) and serves a real record. Closing
+      //     the case-variant gap by claiming `%` segments would 404 a working
+      //     bookmark, so this pins the working URL rather than the gap: the
+      //     rewrite must never swallow a URI that names a table the map holds.
+      //     The read fails here (dead port), so this asserts the surface
+      //     RENDERED, framed and not-404 — the same bar as loop 3 below.
+      const encodedConfigured = await fetch(`${base}/records/gro%75ps/2f0bc11e`, {
+        headers: { cookie },
+        redirect: "manual",
+      });
+      expect(encodedConfigured.status, "/records/gro%75ps/<id> is /records/groups/<id>").toBe(200);
+      const encodedBody = await encodedConfigured.text();
+      expect(encodedBody).toMatch(/<h1[\s>]/);
+      expect(encodedBody).not.toContain('id="__next_error__"');
+
       // 2. The rewrite's destination must stay a path no route matches. If a
       //    later route ever claims it, an unmapped table would silently start
       //    rendering that page instead of the 404 — this is the tripwire.
