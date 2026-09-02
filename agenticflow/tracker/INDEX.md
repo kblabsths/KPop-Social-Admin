@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T17:54:19Z — do not edit)
+# Tracker index (regenerated 2026-09-02T18:02:39Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -11,7 +11,7 @@
 - TASK-0029 [P2][task][M1] ASK: what does a resolver-owned record page DISPLAY in M1? events/venues currently render their id and nothing else  (deps:BUG-0028 scope:src/lib/edit/config.ts,src/lib/db/records.ts,src/app/records,src/components/records,tests/offline/records,tests/offline/edit from:TASK-0018)
 - BUG-0027 [P3][bug][M1] An empty queue renders no open count: /queues drops the figure the Dashboard renders as a real 0  (scope:src/app/queues/page.tsx,src/components/queues,tests/offline/queues from:TASK-0010)
 
-## claimed
+## built
 - TASK-0016 [P2][task][M1] Cycles & runs — the adapter framework's runs half  (deps:TASK-0014 scope:src/app/cycles/page.tsx,src/lib/db/runs.ts,tests/offline/runs,tests/live/runs.live.test.ts @builder-55)
 
 ## blocked
@@ -20,4 +20,4 @@
 ## reopened
 - BUG-0030 [P2][bug][-] The admin_locked write guard's balanced-argument scan is not string-aware: it reports a READ as a write, and misses a real WRITE  (scope:tests/offline/edit from:BUG-0028)
 
-Totals — blocked:1, claimed:1, done:62, open:9, reopened:1. Archived: 0.
+Totals — blocked:1, built:1, done:62, open:9, reopened:1. Archived: 0.

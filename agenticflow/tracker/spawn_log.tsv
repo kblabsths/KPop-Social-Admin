@@ -3859,3 +3859,31 @@
 2026-09-02T17:53:45Z	qa-adversary	BUG-0029	11036	1344	121972
 # STRANDED	2026-09-02T17:54:09Z	agent	5 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0029.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0029.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0031.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0032.md
 2026-09-02T17:54:09Z	agent	-	-	-	-
+# STRANDED	2026-09-02T17:55:10Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T17:55:10Z	agent	-	-	-	-
+# STRANDED	2026-09-02T17:55:42Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T17:55:42Z	agent	-	-	-	-
+# STRANDED	2026-09-02T17:56:14Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T17:56:14Z	agent	-	-	-	-
+# STRANDED	2026-09-02T17:56:46Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T17:56:46Z	agent	-	-	-	-
+# STRANDED	2026-09-02T17:57:18Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T17:57:18Z	agent	-	-	-	-
+# STRANDED	2026-09-02T17:57:49Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T17:57:49Z	agent	-	-	-	-
+# STRANDED	2026-09-02T17:58:21Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T17:58:21Z	agent	-	-	-	-
+# STRANDED	2026-09-02T17:59:22Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T17:59:22Z	agent	-	-	-	-
+# STRANDED	2026-09-02T17:59:53Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T17:59:53Z	agent	-	-	-	-
+# STRANDED	2026-09-02T18:00:25Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T18:00:25Z	agent	-	-	-	-
+# STRANDED	2026-09-02T18:00:57Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T18:00:57Z	agent	-	-	-	-
+# STRANDED	2026-09-02T18:01:29Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T18:01:29Z	agent	-	-	-	-
+# STRANDED	2026-09-02T18:02:00Z	agent	1 uncommitted in primary checkout: agenticflow/DIGEST.md
+2026-09-02T18:02:00Z	agent	-	-	-	-
+# STRANDED	2026-09-02T18:02:29Z	builder	2 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0016.md
+2026-09-02T18:02:29Z	builder	TASK-0016	9087	1248	257925
