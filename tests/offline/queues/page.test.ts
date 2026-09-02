@@ -797,6 +797,142 @@ describe("a zero that a filter produced", () => {
   });
 });
 
+/* ── one queue quiet, the other busy ─────────────────────────────────────── */
+
+describe("one queue quiet while the other is busy", () => {
+  // The shape the defect was FOUND in (BUG-0027, live parity run against
+  // staging): the table held signal items only, so the decision queue was
+  // empty and the signal queue was not — with no filter on the page. Every
+  // other empty-state case here empties BOTH queues (an empty table) or
+  // empties one WITH a filter, and neither reaches this seam: a queue whose
+  // zero is real, unscoped, and standing beside a populated sibling.
+  const SIGNALS = matching({ kind: "signal" });
+  const SIGNALS_ONLY: Script = {
+    [T.reviewItems]: { data: SIGNALS, count: SIGNALS.length },
+  };
+
+  /** The figure the open card shows, as rendered text — a number or a dash. */
+  function openFigure(markup: string, kind: string): string {
+    const $ = cheerio.load(markup);
+    const card = $(`[data-queue="${kind}"] section`)
+      .children()
+      .filter((_, child) => squash($(child).text()).startsWith(OPEN_LABEL[kind]))
+      .first();
+    const parts = card
+      .children()
+      .toArray()
+      .map((child) => squash($(child).text()))
+      .filter((text) => text !== OPEN_LABEL[kind]);
+    return parts[0] ?? "";
+  }
+
+  it("shows BOTH figures — the quiet queue's counted zero and the busy one's count", async () => {
+    const markup = await renderQueues(SIGNALS_ONLY);
+
+    expect(SIGNALS.length).toBeGreaterThan(0);
+    expect(SIGNALS.filter((item) => item.status === "open").length).toBeGreaterThan(0);
+    expect(readNumber(markup, OPEN_LABEL.decision)).toBe(0);
+    expect(readNumber(markup, OPEN_LABEL.signal)).toBe(
+      SIGNALS.filter((item) => item.status === "open").length,
+    );
+    expect(stateOf(markup, "decision")).toBe("empty");
+    expect(stateOf(markup, "signal")).toBe("ok");
+  });
+
+  it("renders that zero as a number, never as the absence dash", async () => {
+    // `orDash` colours an absence with an em dash, and `count(0)` must not
+    // reach it: "the read counted nothing" and "the read counted zero" are
+    // different facts and the live oracle distinguishes them.
+    const markup = await renderQueues(SIGNALS_ONLY);
+
+    expect(openFigure(markup, "decision")).toBe("0");
+    expect(openFigure(markup, "decision")).not.toContain(EM_DASH);
+    expect(openFigure(markup, "signal")).not.toContain(EM_DASH);
+  });
+
+  it("leaves that zero unscoped — no filter is what emptied it", async () => {
+    // The scope suffix is a claim about the URL. A queue that is quiet on its
+    // own must not borrow it, or a whole-queue zero reads as a filtered one.
+    const quiet = await renderQueues(SIGNALS_ONLY);
+    const both = await renderQueues(EMPTY_TABLE);
+    const filtered = await renderQueues(healthyScript(), { kind: "signal" });
+
+    expect(openSub(quiet, "decision")).toBe(openSub(both, "decision"));
+    expect(openSub(filtered, "decision")).toContain(openSub(quiet, "decision"));
+    expect(openSub(filtered, "decision").length).toBeGreaterThan(
+      openSub(quiet, "decision").length,
+    );
+  });
+
+  it("keeps equal standing and both fixed positions in the mixed state", async () => {
+    // The asymmetric render is where a per-state layout would show: one block
+    // holding a card and one holding a table must still be the same block.
+    const markup = await renderQueues(SIGNALS_ONLY);
+    const { $, blocks } = blocksOf(markup);
+    const populated = await renderQueues(healthyScript());
+
+    expect(blocks).toHaveLength(2);
+    expect($(blocks[0]).parent().get(0)).toBe($(blocks[1]).parent().get(0));
+    expect(blocks[0].tagName).toBe(blocks[1].tagName);
+    expect($(blocks[0]).attr("class")).toBe($(blocks[1]).attr("class"));
+    expect(regionsOf(markup, "decision")).toEqual(regionsOf(markup, "signal"));
+    expect(regionsOf(markup, "decision")).toEqual(regionsOf(populated, "decision"));
+  });
+
+  it("gives the quiet queue the card and the busy queue the table, each in its rows region", async () => {
+    const markup = await renderQueues(SIGNALS_ONLY);
+    const $ = cheerio.load(markup);
+
+    const quiet = $('[data-queue="decision"] [data-rows]');
+    const busy = $('[data-queue="signal"] [data-rows]');
+    expect(quiet.find("table")).toHaveLength(0);
+    expect(squash(quiet.text()).length).toBeGreaterThan(0);
+    expect(busy.find("table")).toHaveLength(1);
+    expect(idsIn(markup, "decision")).toEqual([]);
+    expect(new Set(idsIn(markup, "signal"))).toEqual(new Set(idsOf(SIGNALS)));
+  });
+
+  it("states a real 0 when the Dashboard's decision link opens a quiet decision queue", async () => {
+    // SEAM: the Dashboard links its attention counts to `/queues?kind=…`, and
+    // TASK-0032's oracle rule is that an empty page is a PASS WITH A STATED 0.
+    // Driven for both ways a decision queue can be quiet on arrival.
+    for (const script of [SIGNALS_ONLY, EMPTY_TABLE]) {
+      const markup = await renderQueues(script, paramsOf("kind=decision"));
+
+      expect(cheerio.load(markup)("[data-queue]")).toHaveLength(2);
+      expect(readNumber(markup, OPEN_LABEL.decision)).toBe(0);
+      expect(readNumber(markup, OPEN_LABEL.signal)).toBe(0);
+      expect(stateOf(markup, "decision")).toBe("empty");
+    }
+  });
+
+  it("says one of exactly four states on every block of every state, always", async () => {
+    // `data-state` is a contract a live reader branches on: a fifth value, a
+    // missing attribute or a block that says nothing would silently turn a
+    // failure into a pass.
+    const scripts: Record<string, string | string[]>[] = [{}, paramsOf("kind=decision"), { status: "settled" }];
+    const states = new Set(["ok", "empty", "error", "not_provisioned"]);
+
+    for (const script of [
+      healthyScript(),
+      SIGNALS_ONLY,
+      EMPTY_TABLE,
+      { [T.reviewItems]: { error: permissionDenied(T.reviewItems) } },
+      { [T.reviewItems]: { error: tableNotInSchemaCache(T.reviewItems) } },
+      { [T.reviewItems]: { error: transportFailure() } },
+    ] as Script[]) {
+      for (const params of scripts) {
+        const { $, blocks } = blocksOf(await renderQueues(script, params));
+        expect(blocks).toHaveLength(2);
+        for (const block of blocks) {
+          const state = $(block).attr("data-state");
+          expect(states.has(state ?? ""), `${state}`).toBe(true);
+        }
+      }
+    }
+  });
+});
+
 describe("the four states, on the block itself", () => {
   /** state name → the script that puts both queues in it, and whether it counted. */
   const cases: [string, Script, boolean][] = [
