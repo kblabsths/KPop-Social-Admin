@@ -1,0 +1,40 @@
+{
+ "id": "TASK-0027",
+ "created": "2026-09-02T09:00:14Z",
+ "green": true,
+ "git_head": "5350604ff8c7828d3e06e44431311e86de071d8c",
+ "scope": [
+  "tests/http/server-harness.ts",
+  "tests/offline/http-harness.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "aba05f82208cdedccac0b64b8a89cd343215a17cb0b735dd9ad29f0bc81ab3e9",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/http-harness.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-17463\n\n \u2713 |offline| tests/offline/http-harness.test.ts (5 tests) 172ms\n\n Test Files  1 passed (1)\n      Tests  5 passed (5)\n   Start at  02:00:14\n   Duration  479ms (transform 37ms, setup 0ms, collect 40ms, tests 172ms, environment 0ms, prepare 59ms)\n\n(node:17748) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -qF 'SUPABASE_SERVICE_ROLE_KEY' tests/http/server-harness.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF 'SUPABASE_URL' tests/http/server-harness.ts",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
