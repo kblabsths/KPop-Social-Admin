@@ -25,3 +25,4 @@
 2026-09-02T12:34:14Z	artifact_gate	blocked write outside repo: /tmp/x
 2026-09-02T12:43:02Z	artifact_gate	blocked write outside repo: /tmp/x
 2026-09-02T12:53:01Z	artifact_gate	blocked write outside repo: /tmp/x.log
+2026-09-02T14:23:19Z	evidence_budget	qa_evidence_overbudget: TASK-0012 4554/4000 chars
