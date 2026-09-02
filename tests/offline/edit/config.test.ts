@@ -582,3 +582,57 @@ describe("the admin_locked write guard itself", () => {
     expect(fs.existsSync(probeBase)).toBe(false);
   });
 });
+
+/**
+ * The balanced-argument scan is not string-aware (admin-window/BUG-0028 QA).
+ * `writeArguments` counts parentheses in the raw code text, so a parenthesis
+ * inside a STRING LITERAL in a write payload moves the argument boundary. Both
+ * directions are wrong, and both are pinned here as expected failures until
+ * admin-window/BUG-0030 makes the scan skip string literals. When it does,
+ * these two turn red as XPASS and send the reader to that ticket.
+ */
+describe("the argument scan and string literals", () => {
+  const stringBase = path.join(repoRoot, "tests", ".probes", `qa-strings-${process.pid}`);
+  const plant = (file: string, source: string) => {
+    const full = path.join(stringBase, file);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, source, "utf8");
+  };
+
+  it.fails("BUG-0030: does not report a pure READ as a write (open paren in a payload string)", () => {
+    try {
+      plant(
+        "src/read-after-write.ts",
+        "export const a = (db: Db) =>\n" +
+          '  db.from("groups").update({ note: "opens ( here" }).eq("id", 1);\n' +
+          "export const b = (db: Db) =>\n" +
+          '  db.from("field_provenance").select("field, admin_locked");\n',
+      );
+      // The unclosed "(" inside the string runs the scan past the real ")", so
+      // the argument swallows the later READ of the column — the exact defect
+      // class admin-window/BUG-0028 exists to remove.
+      expect(filesWritingColumn(ADMIN_LOCKED, stringBase)).toEqual([]);
+    } finally {
+      fs.rmSync(stringBase, { force: true, recursive: true });
+    }
+  });
+
+  it.fails("BUG-0030: still reports a real WRITE (close paren in a payload string)", () => {
+    try {
+      plant(
+        "src/stamp.ts",
+        "export const stamp = (db: Db, id: string) =>\n" +
+          '  db.from("field_provenance").update({\n' +
+          '    note: "set by admin :)",\n' +
+          "    admin_locked: true,\n" +
+          '  }).eq("id", id);\n',
+      );
+      // The ")" inside the string ends the argument early, so the payload's own
+      // `admin_locked` is never seen; the line pin misses it too because the
+      // payload is wrapped. A forbidden write slips BOTH pins.
+      expect(filesWritingColumn(ADMIN_LOCKED, stringBase)).toEqual(["src/stamp.ts"]);
+    } finally {
+      fs.rmSync(stringBase, { force: true, recursive: true });
+    }
+  });
+});
