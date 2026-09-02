@@ -168,6 +168,15 @@ describe("every gauge query", () => {
         expect(Number.isFinite(cap), `${gauge} → ${call.table} limit`).toBe(true);
         expect(cap, `${gauge} → ${call.table} limit`).toBeGreaterThan(0);
 
+        // …and a cap the SERVER will honour. Above `db-max-rows` PostgREST
+        // truncates first and says nothing, so `rowCount >= limit` can never
+        // fire and the window reports a floor as a total
+        // (admin-window/BUG-0009). `PLATFORM_ROW_CAP` is declared below.
+        expect(
+          cap,
+          `${gauge} → ${call.table} asks for more rows than the server returns`,
+        ).toBeLessThanOrEqual(PLATFORM_ROW_CAP);
+
         // …and a window: a time bound on a scan, or the previous leg's id set
         // on a lookup. Neither means the query could walk the whole table.
         expect(
@@ -332,30 +341,9 @@ const SCANS: {
   },
 ];
 
-/**
- * PIN admin-window/BUG-0009 — the five gauges whose declared default limit is
- * ABOVE `PLATFORM_ROW_CAP` today. The server truncates before their own cap is
- * reached, so `rowCount >= bounds.limit` can never be true and the window
- * reports `truncated: false` over counts that are floors.
- *
- * They are listed by name rather than derived from `scan.limit`, deliberately:
- * a derived list would quietly re-classify itself when the limits are fixed
- * and this pin would never go red. Each is `it.fails`, so the branch stays
- * green while the defect lives and turns RED the day it is fixed — at which
- * point delete this list and make every case a plain `it`.
- */
-const PINNED_BUG_0009: readonly string[] = [
-  "resolution latency",
-  "pending claims",
-  "queue health",
-  "standing disagreements",
-  "settled values",
-];
-
 describe("a gauge read the server truncated at its own cap", () => {
   for (const scan of SCANS) {
-    const runner = PINNED_BUG_0009.includes(scan.gauge) ? it.fails : it;
-    runner(`says so, so its counts are read as a floor — ${scan.gauge}`, async () => {
+    it(`says so, so its counts are read as a floor — ${scan.gauge}`, async () => {
       const handedBack = rowsTheServerWillGive(scan.limit);
       const stub = stubClient(scan.fill(handedBack) as Record<string, { data: unknown }>);
       const result = await scan.run(stub.asSupabaseClient());
@@ -370,4 +358,39 @@ describe("a gauge read the server truncated at its own cap", () => {
       ).toBe(true);
     });
   }
+});
+
+describe("a gauge asked for more rows than the platform will return", () => {
+  it("is not possible: every declared default cap is at or under the cap", () => {
+    // The defect admin-window/BUG-0009 recorded, as a property: five of six
+    // gauges declared 2000 or 5000 and the sixth 800, so the five could never
+    // observe their own truncation. Read off the DEFAULTS the gauges export,
+    // so lowering the number in a test cannot make this pass.
+    for (const scan of SCANS) {
+      expect(scan.limit, `${scan.gauge} default limit`).toBeLessThanOrEqual(PLATFORM_ROW_CAP);
+    }
+    expect(CYCLE_HEALTH_DEFAULTS.limit).toBeLessThanOrEqual(PLATFORM_ROW_CAP);
+  });
+
+  it("is not possible for a caller either: an oversized limit is clamped", async () => {
+    // A page passing its own limit must not be able to reintroduce the defect.
+    const asked = PLATFORM_ROW_CAP * 50;
+    const stub = stubClient({
+      [T.reviewItems]: {
+        data: repeat(PLATFORM_ROW_CAP, (i) =>
+          reviewItemDataConflict({ review_item_id: `item-${i}` }),
+        ),
+      },
+    });
+    const result = await fetchQueueHealth({ now: NOW, limit: asked }, stub.asSupabaseClient());
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+
+    const limitStep = stub.calls[0].steps.find((step) => step.method === "limit");
+    expect(limitStep?.args).toEqual([PLATFORM_ROW_CAP]);
+
+    const { window } = result.data as { window: WindowInfo };
+    expect(window.limit).toBe(PLATFORM_ROW_CAP);
+    expect(window.truncated).toBe(true);
+  });
 });

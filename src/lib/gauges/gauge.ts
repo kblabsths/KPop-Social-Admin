@@ -1,4 +1,4 @@
-import type { DbResult } from "../db/result";
+import { ROW_CAP, type DbResult } from "../db/result";
 
 /**
  * What every gauge shares — campaign admin-window/TASK-0007.
@@ -15,14 +15,41 @@ import type { DbResult } from "../db/result";
  * a bounded window, a percentile spread, and a per-period bucketing — and
  * three hand-written percentile functions would disagree within a milestone.
  *
- * **This module is pure.** It imports one TYPE from the data layer and no
- * runtime code at all, so nothing under `lib/gauges/` can reach a database —
- * which is what makes "the aggregate is pure" a structural fact rather than a
- * promise (ARCHITECTURE.md §4 rule 2: only `lib/db/**` imports
- * `@supabase/supabase-js`; every PostgREST chain is in `lib/db/gauges.ts`).
+ * **This module is pure.** From the data layer it imports one TYPE and one
+ * NUMBER (`ROW_CAP`, the platform row cap — see `GAUGE_ROW_CAP` below); it
+ * imports no client, no query builder and no chain, so nothing under
+ * `lib/gauges/` can reach a database — which is what makes "the aggregate is
+ * pure" a structural fact rather than a promise (ARCHITECTURE.md §4 rule 2:
+ * only `lib/db/**` imports `@supabase/supabase-js`; every PostgREST chain is
+ * in `lib/db/gauges.ts`).
  */
 
 /* ── bounds: every fetch is windowed and capped ──────────────────────────── */
+
+/**
+ * The most rows any gauge scan may ask for.
+ *
+ * PostgREST refuses to return more than its `db-max-rows` (Supabase's default
+ * is 1000) **and says nothing about having done so** (ARCHITECTURE.md §4.3).
+ * A window read decides truncation by comparing the rows it got against the
+ * cap it asked for, so the moment a gauge asks for MORE than the server will
+ * give, the server truncates first, `rowCount >= limit` can never be true, and
+ * `WindowInfo.truncated` reports `false` over counts that are floors — the one
+ * failure mode this data layer exists to make impossible
+ * (admin-window/BUG-0009: five of six gauges declared 2000 or 5000).
+ *
+ * So every gauge window is clamped to this figure, and truncation stays
+ * DECIDABLE: at the cap the window says `truncated: true` — a floor, honestly
+ * labelled — rather than presenting a cut-off count as a total. A window
+ * holding exactly the cap and no more is reported as a floor too; that is the
+ * safe direction of the error, and the only one the server lets us tell apart.
+ *
+ * It is `ROW_CAP` itself and not a second literal: one number stands for
+ * PostgREST's `db-max-rows` in this app (`lib/db/result.ts`), so the two read
+ * kinds cannot drift apart. Raising it is only sound if the server's own
+ * `db-max-rows` is raised with it.
+ */
+export const GAUGE_ROW_CAP = ROW_CAP;
 
 /**
  * How a caller narrows a gauge. Every field is optional; every gauge names its
@@ -92,6 +119,12 @@ function nowOf(options: GaugeOptions): Date {
  * `limit` falls back to the default rather than becoming an unbounded query,
  * because `limit(0)` and `limit(NaN)` are exactly the defects the rule is
  * about.
+ *
+ * Whatever the caller or the gauge asked for, the resolved cap is clamped to
+ * `GAUGE_ROW_CAP`: a query asking for more rows than the server will hand back
+ * cannot tell a truncated read from a complete one (admin-window/BUG-0009), so the ceiling
+ * is enforced here, once, rather than trusted to six default objects and every
+ * future caller.
  */
 export function resolveBounds(
   options: GaugeOptions,
@@ -106,20 +139,31 @@ export function resolveBounds(
     typeof options.limit === "number" && Number.isFinite(options.limit) && options.limit > 0
       ? Math.floor(options.limit)
       : defaults.limit;
+  const cappedLimit = Math.min(limit, GAUGE_ROW_CAP);
   const since =
     options.since !== undefined && !Number.isNaN(Date.parse(options.since))
       ? new Date(Date.parse(options.since)).toISOString()
       : new Date(until.getTime() - days * MS_PER_DAY).toISOString();
-  return { since, until: until.toISOString(), limit };
+  return { since, until: until.toISOString(), limit: cappedLimit };
 }
 
-/** The window a fetch of `rows.length` rows under `bounds` actually covered. */
+/**
+ * The window a fetch of `rows.length` rows under `bounds` actually covered.
+ *
+ * Truncation is decided against the SMALLER of the cap asked for and
+ * `GAUGE_ROW_CAP`, because the server stops at its own cap whatever the query
+ * said. `resolveBounds` already clamps, so for every gauge the two are the
+ * same number; the `min` here is what keeps the answer honest for bounds built
+ * any other way, instead of leaving the guard in one place a caller can walk
+ * around (admin-window/BUG-0009).
+ */
 export function windowOf(bounds: Bounds, rowCount: number): WindowInfo {
+  const effectiveLimit = Math.min(bounds.limit, GAUGE_ROW_CAP);
   return {
     since: bounds.since,
     until: bounds.until,
-    limit: bounds.limit,
-    truncated: rowCount >= bounds.limit,
+    limit: effectiveLimit,
+    truncated: rowCount >= effectiveLimit,
   };
 }
 

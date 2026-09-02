@@ -32,7 +32,7 @@ import {
  */
 
 const NOW = "2026-09-01T12:00:00.000Z";
-const WINDOW = { since: "2026-08-25T12:00:00.000Z", until: NOW, limit: 5000, truncated: false };
+const WINDOW = { since: "2026-08-25T12:00:00.000Z", until: NOW, limit: 900, truncated: false };
 
 /**
  * Five items across both queues and both statuses. The two settled ones sit in
@@ -72,7 +72,7 @@ describe("fetchQueueHealth", () => {
   it("reads review_items with an explicit window and an explicit cap", async () => {
     const stub = withRows(population());
     const result = await fetchQueueHealth(
-      { now: NOW, days: 7, limit: 5000 },
+      { now: NOW, days: 7, limit: 900 },
       stub.asSupabaseClient(),
     );
 
@@ -83,7 +83,7 @@ describe("fetchQueueHealth", () => {
       "opened_at",
       "2026-08-25T12:00:00.000Z",
     ]);
-    expect(steps.find((s) => s.method === "limit")?.args).toEqual([5000]);
+    expect(steps.find((s) => s.method === "limit")?.args).toEqual([900]);
     // Oldest first: the backlog's age distribution is the primary figure.
     expect(steps.find((s) => s.method === "order")?.args).toEqual([
       "opened_at",

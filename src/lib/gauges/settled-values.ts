@@ -7,6 +7,7 @@ import {
   type SourceStateRow,
 } from "../db/gauges";
 import {
+  GAUGE_ROW_CAP,
   groupBy,
   idsOf,
   indexBy,
@@ -53,8 +54,12 @@ import {
 
 export type { RejectionRow };
 
-/** Default window: a quarter of rejections. */
-export const REJECTION_STAMP_DEFAULTS = { days: 90, limit: 5000 } as const;
+/**
+ * Default window: a quarter of rejections, capped at the rows the platform
+ * will return (`GAUGE_ROW_CAP`). Above that cap the server truncates first and
+ * the window cannot tell (admin-window/BUG-0009).
+ */
+export const REJECTION_STAMP_DEFAULTS = { days: 90, limit: GAUGE_ROW_CAP } as const;
 
 /** The reason a claim was adjudicated out — `observations.rejected_by`. */
 export const REJECTION_REASONS = ["verdict", "resolver", "window"] as const;

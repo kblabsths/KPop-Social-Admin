@@ -7,6 +7,7 @@ import {
   type ProvenanceApplyRow,
 } from "../db/gauges";
 import {
+  GAUGE_ROW_CAP,
   RESOLVER_CADENCE_SECONDS,
   groupBy,
   idsOf,
@@ -39,8 +40,13 @@ import {
 
 export type { ObservedAtRow, ProvenanceApplyRow };
 
-/** Default window: a week of applies. */
-export const RESOLUTION_LATENCY_DEFAULTS = { days: 7, limit: 2000 } as const;
+/**
+ * Default window: a week of applies, capped at the rows the platform will
+ * return (`GAUGE_ROW_CAP`). Asking for more than that made the scan
+ * undecidable, not bigger: PostgREST stopped at its own `db-max-rows` and the
+ * window reported `truncated: false` over a floor (admin-window/BUG-0009).
+ */
+export const RESOLUTION_LATENCY_DEFAULTS = { days: 7, limit: GAUGE_ROW_CAP } as const;
 
 export interface ResolutionLatencyRows {
   applies: ProvenanceApplyRow[];

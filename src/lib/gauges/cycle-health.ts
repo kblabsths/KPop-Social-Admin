@@ -30,7 +30,12 @@ import {
 
 export type { ResolutionRunRow };
 
-/** Default window: a week of cycles. At a 15-minute cadence that is ~672 rows. */
+/**
+ * Default window: a week of cycles. At a 15-minute cadence that is ~672 rows,
+ * so 800 sits under `GAUGE_ROW_CAP` on purpose — a full week normally fits,
+ * and a window that comes back full is genuinely saying "more cycles ran than
+ * a week's worth of room", not "the platform cut me off".
+ */
 export const CYCLE_HEALTH_DEFAULTS = { days: 7, limit: 800 } as const;
 
 /** The bounded row set the gauge aggregates, with the window it was read under. */

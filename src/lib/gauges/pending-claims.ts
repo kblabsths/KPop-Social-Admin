@@ -12,6 +12,7 @@ import {
   type PendingObservationRow,
 } from "../db/gauges";
 import {
+  GAUGE_ROW_CAP,
   groupBy,
   idsOf,
   indexBy,
@@ -100,8 +101,14 @@ export function stuckPatternThreshold(sourceId: string): StuckPatternThreshold |
 
 /* ── rows ────────────────────────────────────────────────────────────────── */
 
-/** Default window: a quarter of claims, capped. */
-export const PENDING_CLAIMS_DEFAULTS = { days: 90, limit: 5000 } as const;
+/**
+ * Default window: a quarter of claims, capped at the rows the platform will
+ * return (`GAUGE_ROW_CAP`). A larger cap does not read more rows — PostgREST
+ * stops at its own `db-max-rows` — it only stops the read from knowing it was
+ * truncated (admin-window/BUG-0009). The scan is OLDEST-first, so what a full
+ * window keeps is the longest-waiting claims, which is what this gauge judges.
+ */
+export const PENDING_CLAIMS_DEFAULTS = { days: 90, limit: GAUGE_ROW_CAP } as const;
 
 export interface PendingClaimsRows {
   claims: PendingClaimRow[];

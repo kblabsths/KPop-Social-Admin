@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  GAUGE_ROW_CAP,
   RESOLVER_CADENCE_SECONDS,
   groupBy,
   idsOf,
@@ -19,6 +20,7 @@ import {
   windowOf,
 } from "@/lib/gauges/gauge";
 import { chunk, readRowsByIds } from "@/lib/db/gauges";
+import { ROW_CAP } from "@/lib/db/result";
 import type { DbResponse } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
 import {
@@ -99,6 +101,33 @@ describe("resolveBounds", () => {
   });
 });
 
+describe("the platform row cap", () => {
+  it("is the same number the complete read uses, so the two cannot drift", () => {
+    // One figure stands for PostgREST's `db-max-rows` in this app
+    // (ARCHITECTURE.md §4.3). A second literal here would be a second truth.
+    expect(GAUGE_ROW_CAP).toBe(ROW_CAP);
+  });
+
+  it("clamps a default that asks for more rows than the server will give", () => {
+    // admin-window/BUG-0009: a gauge declaring 5000 got 1000 from the server
+    // and could never see `rowCount >= limit`, so its floors read as totals.
+    const bounds = resolveBounds({ now: NOW }, { days: 7, limit: GAUGE_ROW_CAP * 5 });
+    expect(bounds.limit).toBe(GAUGE_ROW_CAP);
+  });
+
+  it("clamps an oversized limit the caller passed", () => {
+    const bounds = resolveBounds(
+      { now: NOW, limit: GAUGE_ROW_CAP + 1 },
+      { days: 7, limit: 500 },
+    );
+    expect(bounds.limit).toBe(GAUGE_ROW_CAP);
+  });
+
+  it("leaves a cap under it alone", () => {
+    expect(resolveBounds({ now: NOW, limit: 25 }, { days: 7, limit: 500 }).limit).toBe(25);
+  });
+});
+
 describe("windowOf", () => {
   const bounds = { since: "2026-08-25T12:00:00.000Z", until: NOW, limit: 3 };
 
@@ -108,6 +137,16 @@ describe("windowOf", () => {
 
   it("is truncated at the cap, because more rows may exist unseen", () => {
     expect(windowOf(bounds, 3).truncated).toBe(true);
+  });
+
+  it("decides truncation against the platform cap when bounds ask for more", () => {
+    // Bounds built by hand rather than through `resolveBounds`: the server
+    // still stops at its own cap, so a full read is a floor and says so.
+    const oversized = { since: bounds.since, until: NOW, limit: GAUGE_ROW_CAP * 5 };
+    const window = windowOf(oversized, GAUGE_ROW_CAP);
+    expect(window.truncated).toBe(true);
+    expect(window.limit, "the window reports the cap that really applied").toBe(GAUGE_ROW_CAP);
+    expect(windowOf(oversized, GAUGE_ROW_CAP - 1).truncated).toBe(false);
   });
 });
 

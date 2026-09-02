@@ -26,7 +26,7 @@ import {
  */
 
 const NOW = "2026-09-01T12:00:00.000Z";
-const WINDOW = { since: "2026-08-17T12:00:00.000Z", until: NOW, limit: 5000, truncated: false };
+const WINDOW = { since: "2026-08-17T12:00:00.000Z", until: NOW, limit: 900, truncated: false };
 
 const SOURCE_A = ID.sourceTicketmaster;
 const SOURCE_B = ID.sourceBandsintown;
@@ -94,7 +94,7 @@ describe("fetchRejectionStamps", () => {
   it("scans observations by rejection stamp, windowed and capped, then names the sources", async () => {
     const stub = withRows(rejections(), sources());
     const result = await fetchRejectionStamps(
-      { now: NOW, days: 15, limit: 5000 },
+      { now: NOW, days: 15, limit: 900 },
       stub.asSupabaseClient(),
     );
 
@@ -108,7 +108,7 @@ describe("fetchRejectionStamps", () => {
       "rejected_at",
       "2026-08-17T12:00:00.000Z",
     ]);
-    expect(scan.find((s) => s.method === "limit")?.args).toEqual([5000]);
+    expect(scan.find((s) => s.method === "limit")?.args).toEqual([900]);
     expect(scan.find((s) => s.method === "order")?.args).toEqual([
       "rejected_at",
       { ascending: false },

@@ -26,7 +26,7 @@ import {
  */
 
 const NOW = "2026-09-01T12:00:00.000Z";
-const WINDOW = { since: "2026-08-25T12:00:00.000Z", until: NOW, limit: 2000, truncated: false };
+const WINDOW = { since: "2026-08-25T12:00:00.000Z", until: NOW, limit: 900, truncated: false };
 
 const OBS = {
   fast: "01920000-0000-7000-8000-000000000301",
@@ -96,7 +96,7 @@ describe("fetchResolutionLatency", () => {
   it("scans field_provenance with an explicit window and cap, then joins by id", async () => {
     const stub = withRows(applies(), observations());
     const result = await fetchResolutionLatency(
-      { now: NOW, days: 7, limit: 2000 },
+      { now: NOW, days: 7, limit: 900 },
       stub.asSupabaseClient(),
     );
 
@@ -108,7 +108,7 @@ describe("fetchResolutionLatency", () => {
       "applied_at",
       "2026-08-25T12:00:00.000Z",
     ]);
-    expect(scan.find((s) => s.method === "limit")?.args).toEqual([2000]);
+    expect(scan.find((s) => s.method === "limit")?.args).toEqual([900]);
 
     // The second leg is bounded by the id set the first produced — four
     // applies, four distinct observation ids.
