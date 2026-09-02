@@ -260,15 +260,17 @@ function sourceFiles(base: string = repoRoot): string[] {
  * vanishes mid-walk is skipped: the layering suite writes and deletes a probe
  * under `src/` while vitest runs these files in parallel.
  */
-function codeLines(file: string, base: string = repoRoot): string[] {
-  let text: string;
+function sourceText(file: string, base: string = repoRoot): string {
   try {
-    text = fs.readFileSync(path.join(base, file), "utf8");
+    return fs.readFileSync(path.join(base, file), "utf8");
   } catch (thrown) {
-    if ((thrown as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if ((thrown as NodeJS.ErrnoException).code === "ENOENT") return "";
     throw thrown;
   }
-  return text.split("\n").filter((line) => {
+}
+
+function codeLines(file: string, base: string = repoRoot): string[] {
+  return sourceText(file, base).split("\n").filter((line) => {
     const trimmed = line.trim();
     return (
       trimmed.length > 0 &&
@@ -361,11 +363,13 @@ function filesWithWriteLineNaming(column: string, base: string = repoRoot): stri
  * `.update({ note: "set by admin :)", admin_locked: true })` ended early and
  * hid a real WRITE.
  *
- * Where a literal cannot be closed with certainty — a quote or a `/` with no
- * partner on its line, a `/*` whose `*` + `/` the comment filter above already
- * removed — nothing is blanked and the character is read as ordinary code.
+ * Where a literal cannot be closed — a quote or a `/` with no partner on its
+ * line, a backtick or an interpolation with no partner at all, a `/*` with no
+ * closer — NOTHING is blanked and the character is read as ordinary code.
  * That direction over-reports (a red the reader can see) instead of blinding
- * the scan (a silent fail-open), which is the failure this ticket exists for.
+ * the scan (a silent fail-open), which is the failure this ticket exists for,
+ * and it holds for every literal kind alike: the asymmetry where `quoted` gave
+ * up and `template` blanked to end of file was this ticket's second round.
  */
 function codeOnly(text: string): string {
   const out = text.split("");
@@ -401,8 +405,15 @@ function codeOnly(text: string): string {
     return null;
   }
 
-  /** `` `…` ``: literal chunks are blanked, every `${…}` is scanned as code. */
-  function template(open: number): number {
+  /**
+   * `` `…` ``: literal chunks are blanked, every `${…}` is scanned as code —
+   * and, like `quoted`, it gives up rather than guess. A backtick that never
+   * meets its partner (or an interpolation that never closes) returns null,
+   * the caller undoes every blank this made, and the backtick is read as
+   * ordinary code. Blanking to end of file instead would hide every write
+   * below it (admin-window/BUG-0030, second round).
+   */
+  function template(open: number): number | null {
     let at = open + 1;
     let chunk = at;
     while (at < text.length) {
@@ -417,14 +428,14 @@ function codeOnly(text: string): string {
       if (text[at] === "$" && text[at + 1] === "{") {
         blank(chunk, at);
         const close = scan(at + 2, true);
-        at = close < text.length ? close + 1 : text.length;
+        if (close >= text.length) return null;
+        at = close + 1;
         chunk = at;
         continue;
       }
       at += 1;
     }
-    blank(chunk, at);
-    return at;
+    return null;
   }
 
   /** `/…/flags` on one line, `[…]` classes and `\/` escapes respected. */
@@ -484,8 +495,13 @@ function codeOnly(text: string): string {
           continue;
         }
       } else if (ch === "`") {
-        at = template(at);
-        continue;
+        const undo = out.slice();
+        const after = template(at);
+        if (after !== null) {
+          at = after;
+          continue;
+        }
+        for (let index = 0; index < out.length; index += 1) out[index] = undo[index];
       } else if (ch === "/" && REGEX_MAY_FOLLOW.test(previousSignificant(at))) {
         const after = regexLiteral(at);
         if (after !== null) {
@@ -513,9 +529,16 @@ function codeOnly(text: string): string {
  * boundary is a real one, and the argument that comes back carries only the
  * payload's CODE: a column named inside a payload string is not a write of it
  * any more than a parenthesis there is a bracket.
+ *
+ * It reads the RAW file, not `codeLines` (admin-window/BUG-0030, second
+ * round): that filter drops any line whose trimmed form starts with `*`, and
+ * such a line can carry a template literal's closing backtick — hiding the
+ * closer from a scanner whose whole job is finding closers. Commentary is
+ * excluded by the tokenizer instead, which is where it belongs, and every
+ * comment is excluded whole rather than line by line.
  */
 function writeArguments(file: string, base: string = repoRoot): string[] {
-  const code = codeOnly(codeLines(file, base).join("\n"));
+  const code = codeOnly(sourceText(file, base));
   const verb = new RegExp(WRITE_VERB.source, "g");
   const args: string[] = [];
   for (let hit = verb.exec(code); hit !== null; hit = verb.exec(code)) {
@@ -532,10 +555,17 @@ function writeArguments(file: string, base: string = repoRoot): string[] {
   return args;
 }
 
-/** Files that pass the column to a write verb, however the payload is laid out. */
+/**
+ * Files that pass the column to a write verb, however the payload is laid out.
+ * Every source file is asked, not only those `filesWhereCodeMatches` reports:
+ * that pre-filter reads the file through `codeLines`, which drops a whole line
+ * whose trimmed form starts with `/*`, and a payload key can share its line
+ * with a leading comment (admin-window/BUG-0030, second round). A cheaper scan
+ * that cannot see part of the tree is not cheaper.
+ */
 function filesWritingColumn(column: string, base: string = repoRoot): string[] {
   const named = new RegExp(column);
-  return filesWhereCodeMatches(named, base).filter((file) =>
+  return sourceFiles(base).filter((file) =>
     writeArguments(file, base).some((argument) => named.test(argument)),
   );
 }
@@ -906,18 +936,17 @@ describe("the argument scan and string literals", () => {
     expect(argument).not.toContain(ADMIN_LOCKED);
   });
 
-  it.fails(
-    "admin-window/BUG-0030: reports a WRITE below a template literal whose closing backtick lands on a stripped line",
+  it(
+    "reports a WRITE below a template literal whose closing backtick lands on a comment-stripped line",
     () => {
-      // Valid, compiling TypeScript (tsc --noEmit --strict on this exact source
-      // exits 0). `codeLines` drops any line whose trimmed form starts with "*"
-      // as commentary, and here that line carries the template's CLOSING
-      // backtick. `codeOnly` then meets an opening backtick with no partner and
-      // blanks everything to end of file, so the real write three lines below is
-      // never seen — the SILENT FAIL-OPEN direction the scan's own contract
-      // excludes: "where a literal cannot be closed with certainty ... nothing is
-      // blanked ... never a silent fail-open". `quoted` honours that contract
-      // (the case below); `template` has no give-up path.
+      // Valid, compiling TypeScript. `codeLines` drops any line whose trimmed
+      // form starts with "*" as commentary, and here that line carries the
+      // template's CLOSING backtick — so reading the file through that filter
+      // hid the closer from the one scanner whose job is finding closers, and
+      // the write three lines below vanished (admin-window/BUG-0030, second
+      // round: the silent fail-open direction the contract excludes). Two
+      // things now stop it: `writeArguments` tokenizes the RAW file, and
+      // `template` gives up rather than blank to end of file.
       const reported = withProbes(
         [
           [
@@ -959,6 +988,74 @@ describe("the argument scan and string literals", () => {
       (base) => filesWritingColumn(ADMIN_LOCKED, base),
     );
     expect(reported).toEqual(["src/bullets-quoted.ts"]);
+  });
+
+  it("over-reports rather than blinding itself when a TEMPLATE cannot be closed", () => {
+    // The give-up path on its own, with no help from reading the raw file: a
+    // backtick with no partner anywhere. `template` blanks nothing and the
+    // backtick is read as ordinary code, so the write below it stays visible.
+    // Blanking to end of file here is what made the case above fail open.
+    const reported = withProbes(
+      [
+        [
+          "src/unterminated.ts",
+          "export const ODD = ` no partner for this one;\n" +
+            "\n" +
+            "export const stamp = (db: Db, id: string) =>\n" +
+            '  db.from("field_provenance").update({\n' +
+            "    admin_locked: true,\n" +
+            '  }).eq("id", id);\n',
+        ],
+      ],
+      (base) => filesWritingColumn(ADMIN_LOCKED, base),
+    );
+    expect(reported).toEqual(["src/unterminated.ts"]);
+  });
+
+  it("reports a WRITE on a payload line that opens with a block comment", () => {
+    // Valid TypeScript, and the other half of the same root: `codeLines` drops
+    // a whole line whose trimmed form starts with "/*" — comment and code
+    // alike — so a payload key sharing its line with a leading comment is lost
+    // to any scan that reads the file through that filter. The wrapped payload
+    // hides it from the line pin too, so this is the fail-open direction again.
+    // Tokenizing the RAW file, and asking every file rather than only the ones
+    // the filtered scan can see the name in, is what reports it.
+    const reported = withProbes(
+      [
+        [
+          "src/commented-payload.ts",
+          "export const stamp = (db: Db, id: string) =>\n" +
+            '  db.from("field_provenance").update({\n' +
+            "    /* legacy */ admin_locked: true,\n" +
+            '  }).eq("id", id);\n',
+        ],
+      ],
+      (base) => filesWritingColumn(ADMIN_LOCKED, base),
+    );
+    expect(reported).toEqual(["src/commented-payload.ts"]);
+  });
+
+  it("reports a WRITE under a backtick that is only ever mentioned in a comment", () => {
+    // A backtick inside commentary opens nothing: comments are excluded by the
+    // tokenizer, whole, before any literal is read. Both shapes the line filter
+    // used to handle for it are here — a trailing "//" and a block comment
+    // opened mid-line — and neither may swallow the write beneath.
+    const reported = withProbes(
+      [
+        [
+          "src/commented-backtick.ts",
+          "export const NOTE = 1; // a stray ` and a ) in a trailing comment\n" +
+            "const other = 2; /* another ` and ( in a block comment */\n" +
+            "\n" +
+            "export const stamp = (db: Db, id: string) =>\n" +
+            '  db.from("field_provenance").update({\n' +
+            "    admin_locked: true,\n" +
+            '  }).eq("id", id);\n',
+        ],
+      ],
+      (base) => filesWritingColumn(ADMIN_LOCKED, base),
+    );
+    expect(reported).toEqual(["src/commented-backtick.ts"]);
   });
 
   it("leaves no probe behind for another suite to walk into", () => {
