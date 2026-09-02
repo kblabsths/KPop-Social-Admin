@@ -1,6 +1,7 @@
-# Tracker index (regenerated 2026-09-02T15:25:01Z — do not edit)
+# Tracker index (regenerated 2026-09-02T15:31:47Z — do not edit)
 
 ## open
+- BUG-0023 [P1][bug][M1] Cycles: a ?cycle= link asserts the cycle is absent when resolution_runs was never read  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts from:TASK-0014)
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
 - FEAT-0002 [P1][feat][M1] Staging reads, the not-provisioned state, and the live/offline test harness
 - FEAT-0004 [P1][feat][M1] Queues and the review item rendered, read-only  (deps:FEAT-0001,FEAT-0002(unmet:2))
@@ -8,13 +9,12 @@
 - FEAT-0006 [P1][feat][M1] The six threshold gauges  (deps:FEAT-0001,FEAT-0002(unmet:2))
 - FEAT-0008 [P1][feat][M1] The edit surface — the config map and pre-cutover direct edits  (deps:FEAT-0001,FEAT-0002(unmet:2))
 - TASK-0019 [P1][task][M1] Cross-page proofs: graceful absence on all six pages, in_window nowhere, auth on every route, zero residue  (deps:TASK-0009,TASK-0010,TASK-0011,TASK-0012,TASK-0013,TASK-0014,TASK-0015,TASK-0018,TASK-0027(unmet:1) scope:tests/offline/absence,tests/http,tests/live/residue.live.test.ts)
-- BUG-0021 [P2][bug][M1] Review-item detail miscounts resolved evidence when an id repeats  (scope:src/app/queues/[reviewItemId]/page.tsx,src/lib/db/review-item.ts,tests/offline/review-item from:TASK-0011)
 - BUG-0022 [P2][bug][-] Sources narrowed to one source reports the FLEET's unattributed-rejection count as that source's  (scope:src/app/sources/page.tsx,tests/offline/sources from:TASK-0013)
 - TASK-0016 [P2][task][M1] Cycles & runs — the adapter framework's runs half  (deps:TASK-0014,TASK-0023(unmet:2) scope:src/app/cycles/page.tsx,src/lib/db/runs.ts,tests/offline/runs,tests/live/runs.live.test.ts)
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 
-## built
-- TASK-0014 [P1][task][M1] Cycles & runs — the resolver's cycles, newest first, with their counts and errors  (deps:TASK-0005,TASK-0007,TASK-0008,TASK-0026,TASK-0030 scope:src/app/cycles/page.tsx,src/lib/db/cycles.ts,tests/offline/cycles,tests/live/cycles.live.test.ts @builder-44)
+## claimed
+- BUG-0021 [P2][bug][M1] Review-item detail miscounts resolved evidence when an id repeats  (scope:src/app/queues/[reviewItemId]/page.tsx,src/lib/db/review-item.ts,tests/offline/review-item @builder-45 from:TASK-0011)
 
 ## blocked
 - TASK-0021 [P0][task][M1] ASK BEN: which Supabase env names does the APP read at runtime, and what do the campaign's live tests read?  (scope:src/lib/db/client.ts,tests/live,agenticflow/docs/SERVICES.md)
@@ -25,4 +25,7 @@
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 - TASK-0029 [P2][task][M1] ASK: what does a resolver-owned record page DISPLAY in M1? events/venues currently render their id and nothing else  (scope:src/lib/edit/config.ts,src/lib/db/records.ts from:TASK-0018)
 
-Totals — blocked:7, built:1, done:42, open:11. Archived: 0.
+## reopened
+- TASK-0014 [P1][task][M1] Cycles & runs — the resolver's cycles, newest first, with their counts and errors  (deps:TASK-0005,TASK-0007,TASK-0008,TASK-0026,TASK-0030 scope:src/app/cycles/page.tsx,src/lib/db/cycles.ts,tests/offline/cycles,tests/live/cycles.live.test.ts)
+
+Totals — blocked:7, claimed:1, done:42, open:11, reopened:1. Archived: 0.
