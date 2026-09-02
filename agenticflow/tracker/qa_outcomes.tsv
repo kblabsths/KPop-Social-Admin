@@ -68,3 +68,5 @@
 2026-09-02T18:25:09Z	BUG-0030	qa->reopened	-	qa
 2026-09-02T18:47:55Z	BUG-0032	qa->reopened	-	qa
 2026-09-02T18:58:39Z	BUG-0030	qa->done	fixed	qa
+2026-09-02T19:21:17Z	BUG-0032	qa->done	fixed	qa
+2026-09-02T19:21:29Z	BUG-0033	blocked->done	already_done	qa
