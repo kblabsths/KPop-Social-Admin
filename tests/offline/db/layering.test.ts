@@ -251,6 +251,25 @@ describe("the credential guard itself", () => {
     expect(scanWithProbe(source, SUPABASE_CREDENTIAL_READ)).not.toContain(PROBE);
   });
 
+  // Strict xfail (admin-window/BUG-0005): the scanner requires the character
+  // after `process.env` to be `.` or `[`, so the spellings below are invisible
+  // to both real rules above. `it.fails` errors the day it starts passing —
+  // when the scanner is widened, drop the `.fails` and it asserts normally.
+  it.fails("detects a reader that destructures or optionally chains process.env", () => {
+    // Spellings a reader can use that name the credential just as plainly as
+    // the three above. Destructuring an env name is ordinary Node/Next code,
+    // and `process.env?.` is habitual TypeScript; a concatenated bracket key is
+    // the dynamic-read family this scanner claims to catch by construction.
+    for (const source of [
+      "const { SUPABASE_SERVICE_ROLE_KEY } = process.env;\nexport const key = SUPABASE_SERVICE_ROLE_KEY;\n",
+      "export const key = process.env?.SUPABASE_SERVICE_ROLE_KEY;\n",
+      'export const key = process.env?.["SUPABASE_SERVICE_ROLE_KEY"];\n',
+      'export const key = process.env["SUPABASE_" + "SERVICE_ROLE_KEY"];\n',
+    ]) {
+      expect(scanWithProbe(source, SERVICE_ROLE_KEY_READ), source).toContain(PROBE);
+    }
+  });
+
   it("leaves the seam file itself reported by both scanners", () => {
     // The rules assert `toEqual([CLIENT])`; that is only meaningful while the
     // scanners still see the real reader.
