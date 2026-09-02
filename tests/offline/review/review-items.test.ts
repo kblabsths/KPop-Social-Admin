@@ -450,3 +450,34 @@ describe("readReviewAttention over the edge population (QA attack)", () => {
     expect(result.kind).toBe("error");
   });
 });
+
+describe("truncation beats every filter (QA attack)", () => {
+  it("refuses a derived filter over a truncated set rather than reporting its matches", async () => {
+    // `shape` and `kind` have no column, so they are applied in code AFTER the
+    // read. Over a truncated row set that would produce a confident short (or
+    // empty) match list for a filter the database never saw — indistinguishable
+    // from "nothing matches". The refusal has to come first.
+    for (const filter of [{ shape: "entity_link_fact" } as const, { kind: "signal" } as const]) {
+      const stub = stubClient({
+        [T.reviewItems]: { data: reviewItemEdgePopulation(), count: ROW_CAP + 40 },
+      });
+      const result = await listReviewItems(filter, stub.asSupabaseClient());
+      expect([filter, result.kind]).toEqual([filter, "error"]);
+      expect(result).not.toHaveProperty("data");
+    }
+  });
+
+  it("reports no attention numbers over an uncounted read", async () => {
+    // An open count and an oldest age are exactness claims. A response with no
+    // count cannot support them, so the summary must refuse rather than
+    // summarise whatever rows happened to arrive.
+    const stub = stubClient({
+      [T.reviewItems]: { data: reviewItemEdgePopulation(), count: null },
+    });
+    const result = await readReviewAttention(stub.asSupabaseClient());
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.message).toContain(T.reviewItems);
+    expect(result).not.toHaveProperty("data");
+  });
+});

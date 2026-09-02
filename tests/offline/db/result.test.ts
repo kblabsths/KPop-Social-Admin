@@ -399,6 +399,90 @@ describe("readComplete", () => {
   });
 });
 
+/**
+ * The cap boundary and the window/complete split (QA attack on
+ * admin-window/TASK-0026). The branch above is decided by `count > rows`, so
+ * the one row on either side of the cap is where an off-by-one would live, and
+ * a refusal that carried rows would be the whole ticket lost.
+ */
+describe("readComplete at the cap boundary", () => {
+  const completeQuery =
+    (table: string) =>
+    (db: SupabaseClient, cap: number) =>
+      db
+        .from(table)
+        .select("*", { count: "exact" })
+        .order("review_item_id", { ascending: true })
+        .range(0, cap - 1);
+
+  const capRows = (n: number) =>
+    Array.from({ length: n }, (_, index) => ({ review_item_id: `row-${index}` }));
+
+  it("returns every row when the matching set is exactly the cap, and refuses at one more", async () => {
+    // A table holding exactly ROW_CAP matching rows IS a whole matching set:
+    // 1000 counted, 1000 returned. Refusing here would make the cap a limit on
+    // what the app can ever show; returning ok at 1001 would make an `ok`
+    // array a partial one.
+    const full = stubClient({
+      [T.reviewItems]: { data: capRows(ROW_CAP), count: ROW_CAP },
+    });
+    const complete = await readComplete(
+      T.reviewItems,
+      completeQuery(T.reviewItems),
+      full.asSupabaseClient(),
+    );
+    expect(complete.kind).toBe("ok");
+    if (complete.kind !== "ok") return;
+    expect(complete.data).toHaveLength(ROW_CAP);
+
+    const overflowing = stubClient({
+      [T.reviewItems]: { data: capRows(ROW_CAP), count: ROW_CAP + 1 },
+    });
+    const refused = await readComplete(
+      T.reviewItems,
+      completeQuery(T.reviewItems),
+      overflowing.asSupabaseClient(),
+    );
+    expect(refused.kind).toBe("error");
+    if (refused.kind !== "error") return;
+    expect(refused.message).toContain(String(ROW_CAP + 1));
+    expect(refused).not.toHaveProperty("data");
+  });
+
+  it("refuses a counted set that came back with no rows at all", async () => {
+    // `data: null` with `error: null` and a count of 12: whatever produced it,
+    // an empty array here would render as "nothing matches" for a set the
+    // database says holds 12 rows. Complete-or-refuse means refuse.
+    const stub = stubClient({ [T.reviewItems]: { data: null, count: 12 } });
+    const result = await readComplete(
+      T.reviewItems,
+      completeQuery(T.reviewItems),
+      stub.asSupabaseClient(),
+    );
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.message).toContain("12");
+    expect(result).not.toHaveProperty("data");
+  });
+
+  it("leaves window reads alone: readRows over a counted response still returns its window", async () => {
+    // The six gauge modules read through `readRows` and name their window
+    // (ARCHITECTURE.md §4.3, §8). A count on the response is not their
+    // business: complete-read refusal must never bleed into a window read.
+    const stub = stubClient({
+      [T.reviewItems]: { data: capRows(3), count: 1732 },
+    });
+    const result = await readRows(
+      T.reviewItems,
+      (db) => db.from(T.reviewItems).select("*").order("opened_at").limit(3),
+      stub.asSupabaseClient(),
+    );
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.data).toHaveLength(3);
+  });
+});
+
 describe("no exported read throws", () => {
   const failures: Array<[string, unknown]> = [
     ["table not in schema cache", tableNotInSchemaCache(T.reviewItems)],
