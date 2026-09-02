@@ -1,0 +1,276 @@
+import { describe, expect, it } from "vitest";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { type Column, DataTable } from "@/components/ui/data-table";
+import { Empty } from "@/components/ui/empty";
+import { ErrorLine } from "@/components/ui/error-line";
+import { Loading } from "@/components/ui/loading";
+import { NotProvisioned } from "@/components/ui/not-provisioned";
+import { Page } from "@/components/ui/page";
+import { Section } from "@/components/ui/section";
+import { StatCard } from "@/components/ui/stat-card";
+import { EM_DASH } from "@/lib/format";
+
+import { classesOf, h, render, tagsOf, textOf } from "./markup";
+
+/**
+ * The primitives every surface is built from (campaign admin-window,
+ * TASK-0004). These assert the tokens a primitive emits and the structure it
+ * guarantees — never its wording, which pages own and copy edits change.
+ */
+
+type Row = { id: string; source: string; failures: number | null };
+
+const ROWS: Row[] = [
+  { id: "a", source: "ticketmaster", failures: 1234 },
+  { id: "b", source: "bandsintown", failures: null },
+];
+
+const COLUMNS: Column<Row>[] = [
+  { key: "source", label: "source", cell: (row) => row.source },
+  { key: "failures", label: "failures", align: "right", cell: (row) => row.failures },
+];
+
+function table(overrides: Partial<Parameters<typeof DataTable<Row>>[0]> = {}) {
+  return render(
+    h(DataTable<Row>, {
+      columns: COLUMNS,
+      rows: ROWS,
+      rowKey: (row: Row) => row.id,
+      ...overrides,
+    }),
+  );
+}
+
+describe("Page and Section", () => {
+  it("puts the page name in an h1 and the section name in an h2, both in title type", () => {
+    const page = render(h(Page, { title: "Cycles & runs" }, h(Section, { title: "Runs" })));
+    expect(page).toMatch(/<h1[^>]*class="[^"]*type-title/);
+    expect(page).toMatch(/<h2[^>]*class="[^"]*type-title/);
+  });
+
+  it("pads the page at the 16px step and spaces its sections at the same step", () => {
+    const classes = classesOf(render(h(Page, { title: "Queues" })));
+    expect(classes).toContain("p-4");
+    expect(classes).toContain("gap-4");
+  });
+});
+
+describe("DataTable", () => {
+  it("labels its header row in micro on a chrome fill and its cells in data", () => {
+    const html = table();
+    expect(html).toMatch(/<th[^>]*class="[^"]*type-micro/);
+    expect(html).toMatch(/<tr[^>]*class="[^"]*bg-chrome/);
+    expect(html).toMatch(/<td[^>]*class="[^"]*type-data/);
+  });
+
+  it("sits on a surface fill inside one hairline border, and scrolls inside it", () => {
+    const html = table();
+    const wrapper = html.slice(0, html.indexOf("<table"));
+    expect(wrapper).toContain("border-hairline");
+    expect(wrapper).toContain("bg-surface");
+    // the scroll container is inside the border, so the page never scrolls sideways
+    expect(wrapper.indexOf("border-hairline")).toBeLessThan(wrapper.indexOf("overflow-x-auto"));
+  });
+
+  it("separates rows with hairlines and fills them on hover — no zebra, no vertical rules", () => {
+    const html = table();
+    const rowClasses = [...html.matchAll(/<tr class="([^"]*)"/g)].map((m) => m[1]).slice(1);
+    for (const row of rowClasses) {
+      expect(row).toContain("border-t");
+      expect(row).toContain("hover:bg-chrome");
+    }
+    const classes = classesOf(html);
+    expect(classes.filter((c) => /^(odd|even|nth)[:-]/.test(c))).toEqual([]);
+    const cellClasses = [...html.matchAll(/<t[dh][^>]*class="([^"]*)"/g)].map((m) => m[1]);
+    for (const cell of cellClasses) {
+      expect(cell).not.toMatch(/\bborder-[lr]\b/);
+    }
+  });
+
+  it("renders a null cell as the dash in disabled-gray, never blank", () => {
+    const html = table();
+    expect(html).toContain(EM_DASH);
+    expect(html).toMatch(/text-ink-disabled[^>]*>—/);
+    expect(html).not.toContain("N/A");
+  });
+
+  it("carries the neutral arrow in disabled-gray on a sortable column that is not the sort", () => {
+    const html = table({
+      columns: [{ ...COLUMNS[0], sort: { href: "?sort=source" } }, COLUMNS[1]],
+    });
+    expect(html).toContain('href="?sort=source"');
+    expect(html).toMatch(/text-ink-disabled/);
+    expect(html).not.toMatch(/text-accent/);
+  });
+
+  it("carries the direction arrow in accent on the active sort, and says so to a screen reader", () => {
+    const html = table({
+      columns: [{ ...COLUMNS[0], sort: { href: "?sort=source", active: "desc" } }, COLUMNS[1]],
+    });
+    expect(html).toMatch(/text-accent/);
+    expect(html).toContain('aria-sort="descending"');
+  });
+
+  it("keeps its header and spans the state line it is handed when there are no rows", () => {
+    const html = table({ rows: [], placeholder: h(Loading, { what: "runs" }) });
+    expect(html).toContain("runs");
+    expect(html).toMatch(/colspan="2"/i);
+    // the header row survives, so the columns do not jump when rows arrive
+    expect(html).toMatch(/<th/);
+  });
+});
+
+describe("StatCard", () => {
+  it("stacks a micro label, the figure, and at most one data sub-line", () => {
+    const classes = classesOf(render(h(StatCard, { label: "decisions", value: 12, sub: "oldest 3d" })));
+    expect(classes).toContain("type-micro");
+    expect(classes).toContain("type-figure");
+    expect(classes).toContain("type-data");
+  });
+
+  it("separates thousands in the figure", () => {
+    expect(render(h(StatCard, { label: "events", value: 1234 }))).toContain("1,234");
+  });
+
+  it("colours the figure only when it is handed a state", () => {
+    expect(classesOf(render(h(StatCard, { label: "open", value: 3 })))).toContain("text-ink");
+    expect(classesOf(render(h(StatCard, { label: "open", value: 3, tone: "attention" })))).toContain(
+      "text-attention",
+    );
+  });
+
+  it("links the number to the page that explains it when given a target", () => {
+    const html = render(h(StatCard, { label: "decisions", value: 12, href: "/queues" }));
+    expect(tagsOf(html)[0]).toBe("a");
+    expect(html).toContain('href="/queues"');
+  });
+
+  it("renders a null figure as the dash, never as a zero", () => {
+    const html = render(h(StatCard, { label: "decisions", value: null }));
+    expect(html).toContain(EM_DASH);
+    expect(html).not.toContain(">0<");
+  });
+});
+
+describe("Badge", () => {
+  it("is never interactive: no link, no button, no handler surface", () => {
+    const html = render(h(Badge, { children: "adapter" }));
+    expect(tagsOf(html)).toEqual(["span"]);
+    expect(html).not.toContain("href");
+  });
+
+  it("is chrome fill with primary text by default, so a page of sources is not a rainbow", () => {
+    const classes = classesOf(render(h(Badge, { children: "ticketmaster" })));
+    expect(classes).toContain("bg-chrome");
+    expect(classes).toContain("text-ink");
+    expect(classes.some((c) => /^text-(attention|broken|healthy|accent)$/.test(c))).toBe(false);
+  });
+
+  it("gives severity a colour and not a scale: high is amber, low is gray", () => {
+    expect(classesOf(render(h(Badge, { tone: "high", children: "high" })))).toContain("text-attention");
+    expect(classesOf(render(h(Badge, { tone: "low", children: "low" })))).toContain("text-ink-secondary");
+  });
+
+  it("keeps the chrome fill for every tone — colour lands on the text", () => {
+    for (const tone of ["neutral", "high", "low", "healthy", "broken"] as const) {
+      expect(classesOf(render(h(Badge, { tone, children: "x" })))).toContain("bg-chrome");
+    }
+  });
+});
+
+describe("Chip", () => {
+  it("is a real link, so a filter is bookmarkable and survives the back button", () => {
+    const html = render(h(Chip, { label: "decision", href: "/queues?shape=decision" }));
+    expect(tagsOf(html)).toEqual(["a"]);
+    expect(html).toContain('href="/queues?shape=decision"');
+  });
+
+  it("fills with accent when active and with chrome when not", () => {
+    const active = classesOf(render(h(Chip, { label: "decision", href: "/q", active: true })));
+    expect(active).toContain("bg-accent");
+    expect(active).toContain("text-on-accent");
+    expect(active).not.toContain("bg-chrome");
+
+    const inactive = classesOf(render(h(Chip, { label: "decision", href: "/q" })));
+    expect(inactive).toContain("bg-chrome");
+    expect(inactive).toContain("text-ink-secondary");
+    expect(inactive).not.toContain("bg-accent");
+  });
+});
+
+describe("Button", () => {
+  it("fills with accent only as the primary", () => {
+    expect(classesOf(render(h(Button, { variant: "primary" }, "Save override")))).toContain("bg-accent");
+    expect(classesOf(render(h(Button, {}, "Close")))).not.toContain("bg-accent");
+  });
+
+  it("gives secondary a hairline border and a transparent fill", () => {
+    const classes = classesOf(render(h(Button, { variant: "secondary" }, "Close")));
+    expect(classes).toContain("border-hairline");
+    expect(classes.some((c) => c.startsWith("bg-"))).toBe(false);
+  });
+
+  it("styles destructive as a red border and red text, never a red fill", () => {
+    const classes = classesOf(render(h(Button, { variant: "destructive" }, "Save override")));
+    expect(classes).toContain("border-broken");
+    expect(classes).toContain("text-broken");
+    expect(classes).not.toContain("bg-broken");
+  });
+
+  it("dims to half opacity when disabled and does not change its label", () => {
+    const enabled = render(h(Button, { variant: "primary" }, "Choose this value"));
+    const disabled = render(h(Button, { variant: "primary", disabled: true }, "Choose this value"));
+    expect(classesOf(disabled)).toContain("opacity-50");
+    expect(classesOf(disabled)).toContain("cursor-not-allowed");
+    expect(disabled).toContain("disabled=");
+    expect(textOf(disabled)).toBe(textOf(enabled));
+  });
+
+  it("defaults to type=button so it never submits a form by accident", () => {
+    expect(render(h(Button, {}, "Close"))).toContain('type="button"');
+  });
+});
+
+describe("the four data-surface states", () => {
+  it("are four separate components, each rendering its own shape", () => {
+    const loading = render(h(Loading, { what: "cycles" }));
+    const empty = render(h(Empty, { holds: "open decisions", filledBy: "the resolver files one here" }));
+    const missing = render(h(NotProvisioned, { missing: "verdicts", arrivesWith: "the scraper repo's migration" }));
+    const failed = render(h(ErrorLine, { failed: "relation does not exist", retry: "reload the page" }));
+    expect(new Set([loading, empty, missing, failed]).size).toBe(4);
+  });
+
+  it("names what is loading on one data line and never animates", () => {
+    const html = render(h(Loading, { what: "cycles" }));
+    expect(classesOf(html)).toContain("type-data");
+    expect(html).toContain("cycles");
+    expect(classesOf(html).some((c) => /animate|pulse|spin/.test(c))).toBe(false);
+  });
+
+  it("renders empty as a surface card carrying both what it holds and what fills it", () => {
+    const html = render(h(Empty, { holds: "open decisions", filledBy: "the resolver files one here" }));
+    expect(classesOf(html)).toContain("bg-surface");
+    expect(classesOf(html)).toContain("border-hairline");
+    expect(html).toContain("open decisions");
+    expect(html).toContain("the resolver files one here");
+  });
+
+  it("names the missing table in mono and stays gray — unavailable is not broken", () => {
+    const html = render(h(NotProvisioned, { missing: "verdicts", arrivesWith: "the scraper repo's migration" }));
+    expect(html).toMatch(/class="type-data[^"]*"[^>]*>verdicts</);
+    expect(classesOf(html)).toContain("text-ink-secondary");
+    expect(classesOf(html)).not.toContain("text-broken");
+    expect(html).not.toContain(">0<");
+  });
+
+  it("renders an error as one red line carrying the failure verbatim and the retry", () => {
+    const html = render(h(ErrorLine, { failed: 'relation "verdicts" does not exist', retry: "reload the page" }));
+    expect(classesOf(html)).toContain("text-broken");
+    expect(html).toContain("does not exist");
+    expect(html).toContain("reload the page");
+    expect(tagsOf(html)[0]).toBe("p");
+  });
+});
