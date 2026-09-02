@@ -22,3 +22,5 @@
 2026-09-02T09:45:32Z	TASK-0017	qa->reopened	-	qa
 2026-09-02T09:56:57Z	BUG-0010	qa->done	fixed	qa
 2026-09-02T09:57:11Z	TASK-0015	qa->done	already_done	qa
+2026-09-02T10:03:27Z	TASK-0017	qa->done	fixed	qa
+2026-09-02T10:03:42Z	BUG-0011	open->done	fixed	qa
