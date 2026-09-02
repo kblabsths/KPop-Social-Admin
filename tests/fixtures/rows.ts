@@ -141,8 +141,15 @@ export interface FieldProvenanceRow {
   entity_type: string;
   entity_id: string;
   field: string;
-  source_id: string;
-  observation_id: string;
+  /**
+   * Null on a verdict unset — the columns dropped NOT NULL in scraper
+   * migration `20260901000005` §1, and a fixture that cannot express the null
+   * forces every test about an unset to cast its way out of the type
+   * (admin-window/BUG-0012). Both default to a real id, so nothing that does
+   * not ask for an unset changes.
+   */
+  source_id: string | null;
+  observation_id: string | null;
   /** The tier AT THE APPLY — frozen, unlike `sources.tier`, which drifts. */
   tier_at_apply: SourceTier;
   applied_at: string;

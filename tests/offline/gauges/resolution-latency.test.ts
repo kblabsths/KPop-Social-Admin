@@ -247,48 +247,130 @@ describe("readResolutionLatency", () => {
  */
 describe("a verdict unset in the apply window", () => {
   /** The row shape the database returns for an unset — both keys null. */
-  function unsetRow(): ProvenanceApplyRow {
-    return {
-      ...fieldProvenanceRow({
-        provenance_id: "01920000-0000-7000-8000-000000000415",
-        entity_type: "events",
-        field: "poster_url",
-        applied_at: "2026-09-01T08:00:00Z",
-      }),
-      // The cast is the finding, not a convenience: `ProvenanceApplyRow`
-      // types both columns non-null against columns that admit null.
+  function unsetRow(overrides: Partial<ProvenanceApplyRow> = {}): ProvenanceApplyRow {
+    return fieldProvenanceRow({
+      provenance_id: "01920000-0000-7000-8000-000000000415",
+      entity_type: "events",
+      field: "poster_url",
+      applied_at: "2026-09-01T08:00:00Z",
+      // No cast: the fixture and the row type both admit the null the
+      // database writes here (admin-window/BUG-0012).
       source_id: null,
       observation_id: null,
-    } as unknown as ProvenanceApplyRow;
+      ...overrides,
+    });
   }
 
-  /**
-   * STRICT PIN — campaign admin-window/BUG-0012. `it.fails` passes only while
-   * the body below still fails; the day the gauge stops calling an unset a
-   * lost join, this turns red and sends the reader to that ticket, where it
-   * flips back to a plain `it(`.
-   */
-  it.fails("is not counted as an apply whose observation the join lost", () => {
-    const measured = aggregateResolutionLatency({
-      applies: [
-        fieldProvenanceRow({
-          observation_id: OBS.fast,
-          entity_type: "events",
-          applied_at: "2026-09-01T04:10:00Z",
-        }),
-        unsetRow(),
-      ],
-      observations: [
-        observationRow({
-          observation_id: OBS.fast,
-          observed_at: "2026-09-01T04:00:00Z",
-          domain: "events",
-        }),
-      ],
+  /** One measurable apply (600s) beside one unset — the ticket's measurement. */
+  const mixed = aggregateResolutionLatency({
+    applies: [
+      fieldProvenanceRow({
+        observation_id: OBS.fast,
+        entity_type: "events",
+        applied_at: "2026-09-01T04:10:00Z",
+      }),
+      unsetRow(),
+    ],
+    observations: [
+      observationRow({
+        observation_id: OBS.fast,
+        observed_at: "2026-09-01T04:00:00Z",
+        domain: "events",
+      }),
+    ],
+    window: WINDOW,
+  });
+
+  it("is not counted as an apply whose observation the join lost", () => {
+    expect(mixed.overall.count).toBe(1);
+    expect(mixed.unmatchedApplies).toBe(0);
+  });
+
+  it("is not counted among the applies, overall or per domain", () => {
+    expect(mixed.applies).toBe(1);
+    expect(mixed.byDomain).toHaveLength(1);
+    expect(mixed.byDomain[0].applies).toBe(1);
+  });
+
+  it("is not an unmeasurable apply either — it is not one of the measurements", () => {
+    expect(mixed.overall.unmeasurable).toBe(0);
+    expect(mixed.byDomain[0].latency.unmeasurable).toBe(0);
+  });
+
+  it("is counted honestly on its own, overall and per domain", () => {
+    expect(mixed.verdictUnsets).toBe(1);
+    expect(mixed.byDomain[0].verdictUnsets).toBe(1);
+  });
+
+  it("does not disturb the measured latency it sits beside", () => {
+    expect(mixed.overall.p50).toBe(600);
+    expect(mixed.byDomain[0].latency.count).toBe(1);
+    expect(mixed.byDomain[0].latency.min).toBe(600);
+  });
+
+  it("still names its domain when the window held nothing else for it", () => {
+    const onlyUnsets = aggregateResolutionLatency({
+      applies: [unsetRow({ entity_type: "groups" }), unsetRow({ entity_type: "groups" })],
+      observations: [],
       window: WINDOW,
     });
 
-    expect(measured.overall.count).toBe(1);
-    expect(measured.unmatchedApplies).toBe(0);
+    expect(onlyUnsets.applies).toBe(0);
+    expect(onlyUnsets.verdictUnsets).toBe(2);
+    expect(onlyUnsets.unmatchedApplies).toBe(0);
+    const groups = onlyUnsets.byDomain.find((entry) => entry.domain === "groups");
+    expect(groups?.applies).toBe(0);
+    expect(groups?.verdictUnsets).toBe(2);
+    // A count of zero applies, not a latency of zero seconds.
+    expect(groups?.latency.p50).toBeNull();
+  });
+
+  it("keeps a real lost join distinguishable from an unset", () => {
+    const both = aggregateResolutionLatency({
+      applies: [
+        fieldProvenanceRow({ observation_id: OBS.missing, entity_type: "events" }),
+        unsetRow(),
+      ],
+      observations: [],
+      window: WINDOW,
+    });
+
+    expect(both.unmatchedApplies).toBe(1);
+    expect(both.verdictUnsets).toBe(1);
+    expect(both.applies).toBe(1);
+    // The lost join IS an unmeasurable apply; the unset is not an apply.
+    expect(both.overall.unmeasurable).toBe(1);
+  });
+
+  it("asks the join for no null id", async () => {
+    const stub = withRows(
+      [
+        fieldProvenanceRow({ observation_id: OBS.fast, applied_at: "2026-09-01T04:10:00Z" }),
+        unsetRow(),
+      ],
+      [observationRow({ observation_id: OBS.fast, observed_at: "2026-09-01T04:00:00Z" })],
+    );
+    await fetchResolutionLatency({ now: NOW }, stub.asSupabaseClient());
+
+    const join = stub.calls[1].steps;
+    expect(join.find((step) => step.method === "in")?.args).toEqual([
+      "observation_id",
+      [OBS.fast],
+    ]);
+  });
+
+  it("is read rather than filtered away, so its count can be a real one", async () => {
+    const stub = withRows([unsetRow()], []);
+    const result = await readResolutionLatency({ now: NOW }, stub.asSupabaseClient());
+
+    // The scan narrows on applied_at alone. A server-side
+    // `.not("observation_id", "is", null)` would keep the unset out of the row
+    // set entirely, and `verdictUnsets` could then only ever be a fabricated 0.
+    const narrowing = stub.calls[0].steps
+      .filter((step) => step.method !== "select" && step.method !== "order")
+      .flatMap((step) => step.args.map((arg) => String(arg)));
+    expect(narrowing).not.toContain("observation_id");
+    expect(result.kind === "ok" && result.data.verdictUnsets).toBe(1);
+    expect(result.kind === "ok" && result.data.applies).toBe(0);
   });
 });

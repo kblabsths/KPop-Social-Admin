@@ -159,14 +159,53 @@ export interface ResolutionRunRow {
  *
  * `entity_type` — not `domain` — is this table's spelling of the canonical
  * table (ARCHITECTURE.md §6 trap 1).
+ *
+ * **Both id columns admit null**, and a reader that types them otherwise is
+ * lying about rows this read really returns. Scraper migration
+ * `20260901000005` §1 drops NOT NULL on the pair, and its own column comments
+ * are the contract: `source_id` — "null on a verdict unset, the one row shape
+ * whose authority is a human verdict rather than a winning observation";
+ * `observation_id` — "null on a verdict unset. A reader takes a null here as
+ * 'no applied observation'". `contracts/data-model.md`, Per-field provenance,
+ * says the same. `readProvenanceApplies` windows on `applied_at` alone, so an
+ * unset is in its row set like any other decision — see `namesNoObservation`
+ * (campaign admin-window/BUG-0012).
  */
 export interface ProvenanceApplyRow {
   provenance_id: string;
   entity_type: string;
   field: string;
-  source_id: string;
-  observation_id: string;
+  /** The source whose claim won the field; null on a verdict unset. */
+  source_id: string | null;
+  /** The winning claim this decision applied; null on a verdict unset. */
+  observation_id: string | null;
   applied_at: string;
+}
+
+/**
+ * Does this decision name no applied observation — the row shape whose
+ * authority is a human verdict rather than a winning observation?
+ *
+ * The test is `observation_id`, because that is the column a reader of this
+ * table is told to read as "no applied observation" (migration
+ * `20260901000005`'s comment, quoted above); `source_id` is null on the same
+ * rows, dropped NOT NULL in the same statement. A row that names an
+ * observation is a real apply whatever else is null on it, so this stays
+ * decidable from the join key alone.
+ *
+ * It lives here, beside the row shape whose contract it states, so the six
+ * gauges cannot each grow their own spelling of the same null check.
+ *
+ * The name reads off the COLUMN rather than the decision, deliberately: the
+ * landed guard in `tests/offline/review/one-place.test.ts` forbids declaring
+ * anything under `src/` whose name carries the M2 close's vocabulary, and this
+ * is a read of a null id, not a step toward that write path (the same
+ * compliance admin-window/TASK-0007 made for `…RejectionStamps`).
+ */
+export function namesNoObservation(
+  row: Pick<ProvenanceApplyRow, "observation_id">,
+): boolean {
+  return row.observation_id === null;
 }
 
 /** `observations`, narrowed to the instant a claim was made. */
@@ -325,8 +364,18 @@ export function readResolutionRuns(
 }
 
 /**
- * Applies in the window — one row per apply, which is exactly the population
- * of measurable latencies. Newest first for the same reason.
+ * Every `field_provenance` decision in the window, newest first — one row per
+ * canonical write.
+ *
+ * It is NOT filtered to applies. A verdict unset (`namesNoObservation`) is in this
+ * row set, deliberately: adding `.not("observation_id", "is", null)` here
+ * would make the unset invisible, and an aggregate could then only ever report
+ * zero of them — a fabricated 0 of exactly the kind the gauges refuse
+ * (`gauge.ts`, "a figure they cannot compute says so"). The population is
+ * separated where every other gauge decision is made, in pure TypeScript
+ * (`aggregateResolutionLatency`), and the window's `truncated` flag keeps
+ * meaning "the read hit its cap", decided against the rows the server actually
+ * returned (admin-window/BUG-0009, BUG-0012).
  */
 export function readProvenanceApplies(
   bounds: ReadBounds,
