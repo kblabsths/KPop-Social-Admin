@@ -274,6 +274,101 @@ export function reviewItemShapes(): ReviewItemRow[] {
   ];
 }
 
+/**
+ * The QA edge population (campaign admin-window, TASK-0006 attack).
+ *
+ * All three shapes in BOTH statuses, plus the rows the schema permits and the
+ * happy-path fixtures never produce: a `data_conflict` row carrying a
+ * `source_id`, an `entity_link` row carrying BOTH a fact subject and a
+ * `source_id`, a settled item that is also `high`, and two rows on the same
+ * instant spelled two different ways (`Z` and `+00:00`) so the age tiebreak is
+ * exercised. Migration `20260901000002` CHECK-constrains `queue`, `severity`
+ * and `status` and constrains nothing else, so every row here is a row the
+ * database can actually hold.
+ *
+ * Deliberately NOT in queue order.
+ */
+export const EDGE_ID = {
+  dcOpenHigh: "01920000-0000-7000-8000-000000000521",
+  dcOpenLowWithSource: "01920000-0000-7000-8000-000000000522",
+  dcSettledHigh: "01920000-0000-7000-8000-000000000523",
+  elOpenLow: "01920000-0000-7000-8000-000000000524",
+  elSettledLow: "01920000-0000-7000-8000-000000000525",
+  spOpenHigh: "01920000-0000-7000-8000-000000000526",
+  spSettledHigh: "01920000-0000-7000-8000-000000000527",
+  spOpenLowBothSubjects: "01920000-0000-7000-8000-000000000528",
+  dcTieEarlierId: "01920000-0000-7000-8000-000000000529",
+  dcTieLaterId: "01920000-0000-7000-8000-000000000530",
+} as const;
+
+export function reviewItemEdgePopulation(): ReviewItemRow[] {
+  return [
+    reviewItemSourcePattern({
+      review_item_id: EDGE_ID.spSettledHigh,
+      status: "settled",
+      severity: "high",
+      opened_at: "2026-08-16T00:00:00Z",
+    }),
+    reviewItemDataConflict({
+      review_item_id: EDGE_ID.dcTieLaterId,
+      severity: "low",
+      opened_at: "2026-08-11T00:00:00+00:00", // same instant as the tie below
+    }),
+    reviewItemEntityLink({
+      review_item_id: EDGE_ID.elSettledLow,
+      status: "settled",
+      severity: "low",
+      opened_at: "2026-08-14T00:00:00Z",
+    }),
+    reviewItemDataConflict({
+      review_item_id: EDGE_ID.dcOpenHigh,
+      severity: "high",
+      opened_at: "2026-08-10T00:00:00Z",
+    }),
+    // A data_conflict row whose source_id is set. The subject is still the
+    // fact: that queue has no per-source subject (resolver.md §11), and no
+    // constraint stops the column being populated.
+    reviewItemDataConflict({
+      review_item_id: EDGE_ID.dcOpenLowWithSource,
+      source_id: ID.sourceBandsintown,
+      severity: "low",
+      opened_at: "2026-08-11T06:00:00Z",
+    }),
+    reviewItemSourcePattern({
+      review_item_id: EDGE_ID.spOpenHigh,
+      severity: "high",
+      opened_at: "2026-08-15T00:00:00Z",
+    }),
+    reviewItemDataConflict({
+      review_item_id: EDGE_ID.dcTieEarlierId,
+      severity: "low",
+      opened_at: "2026-08-11T00:00:00Z",
+    }),
+    // An entity_link row carrying BOTH a fact subject and a source_id — the
+    // partial unique index treats it as its own subject, so the table can hold
+    // it. `source_id` is the discriminator, so it is a source-pattern signal.
+    reviewItemSourcePattern({
+      review_item_id: EDGE_ID.spOpenLowBothSubjects,
+      domain: "events",
+      entity_id: ID.eventEntity,
+      field: "venue",
+      severity: "low",
+      opened_at: "2026-08-17T00:00:00Z",
+    }),
+    reviewItemDataConflict({
+      review_item_id: EDGE_ID.dcSettledHigh,
+      status: "settled",
+      severity: "high",
+      opened_at: "2026-08-12T00:00:00Z",
+    }),
+    reviewItemEntityLink({
+      review_item_id: EDGE_ID.elOpenLow,
+      severity: "low",
+      opened_at: "2026-08-13T00:00:00Z",
+    }),
+  ];
+}
+
 /* ── pending_claims (a VIEW) ─────────────────────────────────────────────── */
 
 /**

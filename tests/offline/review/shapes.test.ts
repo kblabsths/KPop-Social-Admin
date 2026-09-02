@@ -16,8 +16,10 @@ import {
   type Shape,
 } from "@/lib/review/shapes";
 import {
+  EDGE_ID,
   ID,
   reviewItemDataConflict,
+  reviewItemEdgePopulation,
   reviewItemEntityLink,
   reviewItemShapes,
   reviewItemSourcePattern,
@@ -379,5 +381,205 @@ describe("summarizeByKind — the Dashboard's attention summary (§4, §5)", () 
         reviewItemDataConflict({ opened_at: "2026-08-29T23:00:00Z" }),
       ]),
     ).toBe("2026-08-29T23:00:00Z");
+  });
+});
+
+/* ── QA attack (campaign admin-window, TASK-0006) ─────────────────────────── */
+
+/**
+ * The adversarial pass over the edge population: the rows migration
+ * `20260901000002` permits and the happy-path fixtures never produce.
+ *
+ * The oracle below is written out ROW BY ROW rather than computed with
+ * `shapeOf`/`kindOfItem`, on purpose. A filter test whose expected set is
+ * produced by the same derivation the filter uses cannot fail when that
+ * derivation is wrong — both sides move together. Acceptance test 4 says
+ * "exactly the matching items", so the matching items are named here.
+ */
+const EDGE_ORACLE: ReadonlyArray<{
+  id: string;
+  queue: "data_conflict" | "entity_link";
+  status: "open" | "settled";
+  shape: Shape;
+  kind: Kind;
+}> = [
+  // subject is a fact; `source_id` is irrelevant on this queue (resolver §11)
+  { id: EDGE_ID.dcOpenHigh, queue: "data_conflict", status: "open", shape: "data_conflict_fact", kind: "decision" },
+  { id: EDGE_ID.dcOpenLowWithSource, queue: "data_conflict", status: "open", shape: "data_conflict_fact", kind: "decision" },
+  { id: EDGE_ID.dcSettledHigh, queue: "data_conflict", status: "settled", shape: "data_conflict_fact", kind: "decision" },
+  { id: EDGE_ID.dcTieEarlierId, queue: "data_conflict", status: "open", shape: "data_conflict_fact", kind: "decision" },
+  { id: EDGE_ID.dcTieLaterId, queue: "data_conflict", status: "open", shape: "data_conflict_fact", kind: "decision" },
+  { id: EDGE_ID.elOpenLow, queue: "entity_link", status: "open", shape: "entity_link_fact", kind: "decision" },
+  { id: EDGE_ID.elSettledLow, queue: "entity_link", status: "settled", shape: "entity_link_fact", kind: "decision" },
+  // `source_id` set is the whole discriminator — including on the row that
+  // also carries a fact subject
+  { id: EDGE_ID.spOpenHigh, queue: "entity_link", status: "open", shape: "entity_link_source_pattern", kind: "signal" },
+  { id: EDGE_ID.spOpenLowBothSubjects, queue: "entity_link", status: "open", shape: "entity_link_source_pattern", kind: "signal" },
+  { id: EDGE_ID.spSettledHigh, queue: "entity_link", status: "settled", shape: "entity_link_source_pattern", kind: "signal" },
+];
+
+/** The queue order §4 asks for, read off the population by hand. */
+const EDGE_QUEUE_ORDER: readonly string[] = [
+  EDGE_ID.dcOpenHigh, // open, high, 08-10
+  EDGE_ID.spOpenHigh, // open, high, 08-15
+  EDGE_ID.dcTieEarlierId, // open, low, 08-11T00:00Z  — tie, lower id
+  EDGE_ID.dcTieLaterId, // open, low, 08-11T00:00+00:00 — same instant, higher id
+  EDGE_ID.dcOpenLowWithSource, // open, low, 08-11T06:00
+  EDGE_ID.elOpenLow, // open, low, 08-13
+  EDGE_ID.spOpenLowBothSubjects, // open, low, 08-17
+  EDGE_ID.dcSettledHigh, // settled, high, 08-12
+  EDGE_ID.spSettledHigh, // settled, high, 08-16
+  EDGE_ID.elSettledLow, // settled, low, 08-14
+];
+
+/** A deterministic shuffle — a seeded LCG, so a failure reproduces exactly. */
+function shuffled<T>(items: T[], seed: number): T[] {
+  const out = [...items];
+  let state = seed >>> 0;
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    const j = state % (i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+describe("the edge population — rows the schema permits (QA attack)", () => {
+  it("covers all three shapes in both statuses", () => {
+    const pop = reviewItemEdgePopulation();
+    expect(ids(pop).sort()).toEqual(EDGE_ORACLE.map((r) => r.id).sort());
+    for (const shape of SHAPES) {
+      for (const status of ["open", "settled"] as const) {
+        expect(
+          EDGE_ORACLE.filter((r) => r.shape === shape && r.status === status).length,
+        ).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("classifies every row as the oracle says, including the both-subjects and stray-source_id rows", () => {
+    const byId = new Map(reviewItemEdgePopulation().map((i) => [i.review_item_id, i]));
+    for (const row of EDGE_ORACLE) {
+      const item = byId.get(row.id) as ReviewItemRow;
+      expect([row.id, shapeOf(item)]).toEqual([row.id, row.shape]);
+      expect([row.id, kindOfItem(item)]).toEqual([row.id, row.kind]);
+    }
+  });
+
+  it("returns exactly the oracle's id set for every combination of the four filter fields", () => {
+    const pop = reviewItemEdgePopulation();
+    const queues = [undefined, "data_conflict", "entity_link"] as const;
+    const statuses = [undefined, "open", "settled"] as const;
+    const shapes = [undefined, ...SHAPES] as const;
+    const kinds = [undefined, ...KINDS] as const;
+    let exercised = 0;
+
+    for (const queue of queues) {
+      for (const status of statuses) {
+        for (const shape of shapes) {
+          for (const kind of kinds) {
+            const filter = { queue, status, shape, kind };
+            const want = EDGE_ORACLE.filter(
+              (r) =>
+                (queue === undefined || r.queue === queue) &&
+                (status === undefined || r.status === status) &&
+                (shape === undefined || r.shape === shape) &&
+                (kind === undefined || r.kind === kind),
+            ).map((r) => r.id);
+            const got = ids(selectItems(pop, filter));
+            expect([JSON.stringify(filter), got.slice().sort()]).toEqual([
+              JSON.stringify(filter),
+              want.slice().sort(),
+            ]);
+            exercised += 1;
+          }
+        }
+      }
+    }
+    expect(exercised).toBe(queues.length * statuses.length * shapes.length * kinds.length);
+  });
+
+  it("orders the edge population exactly as §4 reads, ties broken stably", () => {
+    expect(ids(queueOrder(reviewItemEdgePopulation()))).toEqual([...EDGE_QUEUE_ORDER]);
+  });
+
+  it("returns the same order from any input permutation, and loses no row", () => {
+    const pop = reviewItemEdgePopulation();
+    for (let seed = 1; seed <= 40; seed += 1) {
+      const ordered = queueOrder(shuffled(pop, seed));
+      expect([seed, ids(ordered)]).toEqual([seed, [...EDGE_QUEUE_ORDER]]);
+    }
+  });
+
+  it("never places a lower-ranked item before a higher-ranked one, pairwise", () => {
+    // The relation, restated independently of the comparator: status outranks
+    // severity outranks age. Every pair of the ordered output must satisfy it.
+    const ordered = queueOrder(reviewItemEdgePopulation());
+    const statusRank = (i: ReviewItemRow) => (i.status === "open" ? 0 : 1);
+    const severityRank = (i: ReviewItemRow) => (i.severity === "high" ? 0 : 1);
+    for (let a = 0; a < ordered.length; a += 1) {
+      for (let b = a + 1; b < ordered.length; b += 1) {
+        const first = ordered[a];
+        const second = ordered[b];
+        const key = `${first.review_item_id} before ${second.review_item_id}`;
+        expect([key, statusRank(first) <= statusRank(second)]).toEqual([key, true]);
+        if (statusRank(first) === statusRank(second)) {
+          expect([key, severityRank(first) <= severityRank(second)]).toEqual([key, true]);
+          if (severityRank(first) === severityRank(second)) {
+            expect([
+              key,
+              Date.parse(first.opened_at) <= Date.parse(second.opened_at),
+            ]).toEqual([key, true]);
+          }
+        }
+      }
+    }
+  });
+
+  it("summarises the edge population per kind without counting settled rows", () => {
+    const summary = summarizeByKind(reviewItemEdgePopulation());
+    expect(summary.decision).toEqual({
+      kind: "decision",
+      open: 5,
+      maxSeverity: "high",
+      oldestOpenedAt: "2026-08-10T00:00:00Z",
+    });
+    expect(summary.signal).toEqual({
+      kind: "signal",
+      open: 2,
+      maxSeverity: "high",
+      oldestOpenedAt: "2026-08-15T00:00:00Z",
+    });
+  });
+
+  it("does not let a SETTLED high raise a kind's max severity or its oldest age", () => {
+    // The fabrication this guards: a summary that reads severity or age over
+    // the whole population would report `high` for a kind whose only open item
+    // is low, and would date the queue from an item nobody is waiting on.
+    const summary = summarizeByKind([
+      reviewItemDataConflict({
+        review_item_id: EDGE_ID.dcSettledHigh,
+        status: "settled",
+        severity: "high",
+        opened_at: "2026-01-01T00:00:00Z",
+      }),
+      reviewItemDataConflict({
+        review_item_id: EDGE_ID.dcOpenLowWithSource,
+        severity: "low",
+        opened_at: "2026-08-11T06:00:00Z",
+      }),
+    ]);
+    expect(summary.decision).toEqual({
+      kind: "decision",
+      open: 1,
+      maxSeverity: "low",
+      oldestOpenedAt: "2026-08-11T06:00:00Z",
+    });
+    expect(summary.signal).toEqual({
+      kind: "signal",
+      open: 0,
+      maxSeverity: null,
+      oldestOpenedAt: null,
+    });
   });
 });

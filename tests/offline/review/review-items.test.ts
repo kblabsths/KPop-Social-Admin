@@ -3,8 +3,10 @@ import { listReviewItems, readReviewAttention } from "@/lib/db/review-items";
 import { SHAPES, kindOfItem, shapeOf, type ReviewItemRow } from "@/lib/review/shapes";
 import { T } from "@/lib/db/tables";
 import {
+  EDGE_ID,
   ID,
   reviewItemDataConflict,
+  reviewItemEdgePopulation,
   reviewItemEntityLink,
   reviewItemSourcePattern,
 } from "../../fixtures/rows";
@@ -241,5 +243,109 @@ describe("readReviewAttention", () => {
       kind: "not_provisioned",
       missing: T.reviewItems,
     });
+  });
+});
+
+/* ── QA attack (campaign admin-window, TASK-0006) ─────────────────────────── */
+
+/**
+ * The same edge population the domain tests attack, driven through the data
+ * layer. The stub answers every query with the WHOLE table regardless of the
+ * `.eq` chain — which is the point: it stands in for a database that does not
+ * narrow (a filter with no column behind it, a stale schema cache, a view that
+ * ignores the predicate), and the returned set must still be exactly the
+ * matching one.
+ */
+const EDGE_SHAPE_IDS: Record<string, string[]> = {
+  data_conflict_fact: [
+    EDGE_ID.dcOpenHigh,
+    EDGE_ID.dcOpenLowWithSource,
+    EDGE_ID.dcSettledHigh,
+    EDGE_ID.dcTieEarlierId,
+    EDGE_ID.dcTieLaterId,
+  ],
+  entity_link_fact: [EDGE_ID.elOpenLow, EDGE_ID.elSettledLow],
+  entity_link_source_pattern: [
+    EDGE_ID.spOpenHigh,
+    EDGE_ID.spOpenLowBothSubjects,
+    EDGE_ID.spSettledHigh,
+  ],
+};
+
+describe("listReviewItems over the edge population (QA attack)", () => {
+  it("returns exactly the matching ids for each shape when the database narrows nothing", async () => {
+    for (const shape of SHAPES) {
+      const stub = withRows(reviewItemEdgePopulation());
+      const result = await listReviewItems({ shape }, stub.asSupabaseClient());
+      expect(result.kind).toBe("ok");
+      if (result.kind !== "ok") return;
+      expect([shape, ids(result.data).sort()]).toEqual([
+        shape,
+        EDGE_SHAPE_IDS[shape].slice().sort(),
+      ]);
+    }
+  });
+
+  it("returns exactly the matching ids for a kind + status combination", async () => {
+    const stub = withRows(reviewItemEdgePopulation());
+    const result = await listReviewItems(
+      { kind: "signal", status: "open" },
+      stub.asSupabaseClient(),
+    );
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(ids(result.data)).toEqual([EDGE_ID.spOpenHigh, EDGE_ID.spOpenLowBothSubjects]);
+  });
+
+  it("returns the whole edge population in queue order for an empty filter", async () => {
+    const stub = withRows(reviewItemEdgePopulation());
+    const result = await listReviewItems({}, stub.asSupabaseClient());
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(ids(result.data)).toEqual([
+      EDGE_ID.dcOpenHigh,
+      EDGE_ID.spOpenHigh,
+      EDGE_ID.dcTieEarlierId,
+      EDGE_ID.dcTieLaterId,
+      EDGE_ID.dcOpenLowWithSource,
+      EDGE_ID.elOpenLow,
+      EDGE_ID.spOpenLowBothSubjects,
+      EDGE_ID.dcSettledHigh,
+      EDGE_ID.spSettledHigh,
+      EDGE_ID.elSettledLow,
+    ]);
+  });
+});
+
+describe("readReviewAttention over the edge population (QA attack)", () => {
+  it("counts only the open items even when the database returns the settled ones too", async () => {
+    // The `.eq("status","open")` push-down is an optimisation; the stub ignores
+    // it, so these numbers come from the in-code filter alone. A summary that
+    // trusted the server would report 10 open items here instead of 7.
+    const stub = withRows(reviewItemEdgePopulation());
+    const result = await readReviewAttention(stub.asSupabaseClient());
+    expect(result).toEqual({
+      kind: "ok",
+      data: {
+        decision: {
+          kind: "decision",
+          open: 5,
+          maxSeverity: "high",
+          oldestOpenedAt: "2026-08-10T00:00:00Z",
+        },
+        signal: {
+          kind: "signal",
+          open: 2,
+          maxSeverity: "high",
+          oldestOpenedAt: "2026-08-15T00:00:00Z",
+        },
+      },
+    });
+  });
+
+  it("reports no attention rather than throwing when the read is refused", async () => {
+    const stub = stubClient({ [T.reviewItems]: { error: permissionDenied(T.reviewItems) } });
+    const result = await readReviewAttention(stub.asSupabaseClient());
+    expect(result.kind).toBe("error");
   });
 });
