@@ -394,3 +394,112 @@ describe("a gauge asked for more rows than the platform will return", () => {
     expect(window.truncated).toBe(true);
   });
 });
+
+/**
+ * The negative twin of "a gauge read the server truncated at its own cap"
+ * (campaign admin-window/BUG-0009, QA re-check). Clamping every scan to the
+ * platform cap made truncation DECIDABLE; it must not have made it
+ * unconditional. A read that stopped one row under the cap saw its whole
+ * window, and a card that caveats it as a floor is as wrong as one that
+ * presents a floor as a total.
+ */
+describe("a gauge read that stopped one row under the cap", () => {
+  for (const scan of SCANS) {
+    it(`is not a floor, so its counts are read as totals — ${scan.gauge}`, async () => {
+      const handedBack = rowsTheServerWillGive(scan.limit) - 1;
+      const stub = stubClient(scan.fill(handedBack) as Record<string, { data: unknown }>);
+      const result = await scan.run(stub.asSupabaseClient());
+      expect(result.kind, scan.gauge).toBe("ok");
+      if (result.kind !== "ok") return;
+
+      const window = scan.windowOf(result.data);
+      expect(
+        window.truncated,
+        `${scan.gauge}: the server gave ${handedBack} of the ${window.limit} asked for — ` +
+          "the window was read whole, so nothing is a floor",
+      ).toBe(false);
+      expect(window.limit, `${scan.gauge} window limit`).toBeLessThanOrEqual(PLATFORM_ROW_CAP);
+    });
+  }
+});
+
+/**
+ * The second leg of a two-step join is bounded by its OWN id list, not by the
+ * scan's cap (ARCHITECTURE.md §4.2, `ID_CHUNK`). `every gauge query is bounded`
+ * above only asks that each leg sit under the platform cap, which a leg asking
+ * for 1000 rows over 100 ids passes while silently dropping rows for a
+ * one-to-many key. This asserts the tighter property the join actually needs:
+ * a leg may never ask for more rows than the ids it filtered on, at any scan
+ * size — including a first leg that came back full.
+ */
+describe("the second leg of every join", () => {
+  const FULL = PLATFORM_ROW_CAP;
+
+  const JOINS: { gauge: string; run: (db: SupabaseClient) => Promise<DbResult<unknown>> }[] = [
+    {
+      gauge: "resolution latency",
+      run: (db) => fetchResolutionLatency({ now: NOW }, db),
+    },
+    { gauge: "pending claims", run: (db) => fetchPendingClaims({ now: NOW }, db) },
+    {
+      gauge: "standing disagreements",
+      run: (db) => fetchStandingDisagreements({ now: NOW }, db),
+    },
+    { gauge: "settled values", run: (db) => fetchRejectionStamps({ now: NOW }, db) },
+  ];
+
+  /** Every scannable table filled to the cap with DISTINCT join keys. */
+  function distinctKeyStub() {
+    return stubClient({
+      [T.fieldProvenance]: {
+        data: repeat(FULL, (i) =>
+          fieldProvenanceRow({ provenance_id: `prov-${i}`, observation_id: `obs-${i}` }),
+        ),
+      },
+      [T.observations]: {
+        data: repeat(FULL, (i) =>
+          observationRow({
+            observation_id: `obs-${i}`,
+            source_id: `src-${i}`,
+            status: "pending",
+            rejected_at: "2026-08-25T06:00:00Z",
+            rejected_by: "resolver",
+          }),
+        ),
+      },
+      [T.pendingClaims]: {
+        data: repeat(FULL, (i) =>
+          pendingClaimRow("standing_disagreement", { observation_id: `obs-${i}` }),
+        ),
+      },
+      [T.sources]: { data: repeat(FULL, (i) => sourceRow({ source_id: `src-${i}` })) },
+    });
+  }
+
+  for (const join of JOINS) {
+    it(`asks for no more rows than the ids it filtered on — ${join.gauge}`, async () => {
+      const stub = distinctKeyStub();
+      const result = await join.run(stub.asSupabaseClient());
+      expect(result.kind, join.gauge).toBe("ok");
+
+      const legs = stub.calls.filter((call) =>
+        call.steps.some((step) => step.method === "in"),
+      );
+      expect(legs.length, `${join.gauge}: expected at least one id-set leg`).toBeGreaterThan(0);
+
+      for (const leg of legs) {
+        const inStep = leg.steps.find((step) => step.method === "in");
+        const ids = inStep?.args[1] as unknown[];
+        const limitArg = leg.steps.find((step) => step.method === "limit")?.args[0] as number;
+        expect(Array.isArray(ids), `${join.gauge}: ${leg.table} leg filtered on an id list`).toBe(
+          true,
+        );
+        expect(
+          limitArg,
+          `${join.gauge}: the ${leg.table} leg filtered on ${ids.length} ids but asked for ` +
+            `${limitArg} rows — anything above the id count is a row set nothing bounds`,
+        ).toBeLessThanOrEqual(ids.length);
+      }
+    });
+  }
+});
