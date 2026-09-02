@@ -101,15 +101,29 @@ describe("every route's page", () => {
     ["/browse", BrowsePage],
   ];
 
-  it("renders with no database credential in the environment", async () => {
-    // The pages carry no read yet, and the shell above them carries none
-    // either. Stripping the names is what proves it: a page that reached for
-    // `getDbClient()` would throw here rather than quietly pass.
+  /**
+   * Run `body` with every SUPABASE name stripped from the environment.
+   *
+   * Two jobs, and both matter now that pages carry real reads
+   * (admin-window/TASK-0018 gave the record route one): it proves a page
+   * renders its own honest state instead of throwing when the app has no
+   * credential, and it keeps this suite OFFLINE — a page rendered with a live
+   * URL in the environment would open a socket, which `npm test` never does.
+   */
+  async function withoutDbCredentials(body: () => Promise<void>): Promise<void> {
     const restore = { ...process.env };
     for (const key of Object.keys(process.env)) {
       if (key.includes("SUPABASE")) delete process.env[key];
     }
     try {
+      await body();
+    } finally {
+      process.env = restore;
+    }
+  }
+
+  it("renders with no database credential in the environment", async () => {
+    await withoutDbCredentials(async () => {
       for (const [route, Page] of pages) {
         const markup = renderToStaticMarkup(await Page());
         expect(markup.length, route).toBeGreaterThan(0);
@@ -118,24 +132,28 @@ describe("every route's page", () => {
         await RecordPage({ params: Promise.resolve({ table: "groups", id: "abc" }) }),
       );
       expect(record.length).toBeGreaterThan(0);
-    } finally {
-      process.env = restore;
-    }
+    });
   });
 
   it("gives the page exactly one h1", async () => {
-    for (const [route, Page] of pages) {
-      const markup = renderToStaticMarkup(await Page());
-      expect([...markup.matchAll(/<h1[\s>]/g)].length, route).toBe(1);
-      expect(markup.replace(/<[^>]*>/g, "").trim().length, route).toBeGreaterThan(0);
-    }
+    await withoutDbCredentials(async () => {
+      for (const [route, Page] of pages) {
+        const markup = renderToStaticMarkup(await Page());
+        expect([...markup.matchAll(/<h1[\s>]/g)].length, route).toBe(1);
+        expect(markup.replace(/<[^>]*>/g, "").trim().length, route).toBeGreaterThan(0);
+      }
+    });
   });
 
   it("names the record the edit surface was asked for", async () => {
-    const markup = renderToStaticMarkup(
-      await RecordPage({ params: Promise.resolve({ table: "groups", id: "2f0b-c11e" }) }),
-    );
-    expect(markup).toContain("2f0b-c11e");
-    expect(markup).toContain("groups");
+    // Whatever the read did — and with no credential it fails — the operator
+    // is still told which row they asked for.
+    await withoutDbCredentials(async () => {
+      const markup = renderToStaticMarkup(
+        await RecordPage({ params: Promise.resolve({ table: "groups", id: "2f0b-c11e" }) }),
+      );
+      expect(markup).toContain("2f0b-c11e");
+      expect(markup).toContain("groups");
+    });
   });
 });
