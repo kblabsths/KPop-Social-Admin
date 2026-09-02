@@ -531,6 +531,46 @@ describe("the awaiting-row trend", () => {
     expect(plotted).toBe(awaitingRowClaims(SOURCE.ticketmaster));
   });
 
+  it("plots the days of the source the URL asked for, not the first series it was handed", async () => {
+    // The narrowing is applied twice today — once at the query and once in
+    // `selectClaims` — so the real read hands this section one series and
+    // taking the first would look right. The RENDERING must not depend on
+    // that (admin-window/BUG-0022): handed a fleet-shaped trend, busiest
+    // first, it still plots the source the URL named. The seam is the same
+    // prepared answer the threshold test above uses.
+    const day = daysAgo(1).slice(0, 10);
+    trendAnswer.value = {
+      kind: "ok",
+      data: {
+        window: { since: daysAgo(7), until: daysAgo(0), limit: 1000, truncated: false },
+        series: [
+          {
+            sourceId: SOURCE.ticketmaster,
+            claims: 9,
+            points: [{ day, claims: 9 }],
+            threshold: null,
+          },
+          {
+            sourceId: SOURCE.bandsintown,
+            claims: 2,
+            points: [{ day, claims: 2 }],
+            threshold: null,
+          },
+        ],
+      },
+    };
+    try {
+      const markup = await renderSources(healthyScript(), {
+        source_id: SOURCE.bandsintown,
+      });
+      const rows = tableRows(markup, AWAITING_BY_DAY);
+      const plotted = rows.reduce((total, cells) => total + Number(cells[1]), 0);
+      expect(plotted).toBe(2);
+    } finally {
+      trendAnswer.value = undefined;
+    }
+  });
+
   it("says a narrowed source has none, rather than showing the fleet's", async () => {
     const markup = await renderSources(healthyScript(), { source_id: SOURCE.fandom });
     expect(awaitingRowClaims(SOURCE.fandom)).toBe(0);
@@ -597,10 +637,10 @@ describe("the settled-values trend", () => {
     );
   });
 
-  // PINNED for admin-window/BUG-0022 — `it.fails` is strict: it is GREEN only
-  // while the defect is live, and turns RED the day the fix lands, sending the
-  // reader to the ticket. Flip it back to a plain `it()` with the fix.
-  it.fails("keeps a stranger's rejection out of a narrowed source's figures", async () => {
+  // Was pinned `it.fails` while admin-window/BUG-0022 was live; plain `it()`
+  // since the fix scoped the section's closing sentence to the same rows its
+  // cards are over.
+  it("keeps a stranger's rejection out of a narrowed source's figures", async () => {
     // Narrowed to ticketmaster, ONLY ticketmaster's rows may move any figure
     // this section reports — the page's own rule (`RejectionSection`: "the
     // figures answer the question the URL asked … not the fleet's total
@@ -633,6 +673,60 @@ describe("the settled-values trend", () => {
       params,
     );
     expect(settledValuesSays(withStranger)).toBe(settledValuesSays(withoutStranger));
+  });
+
+  it("keeps an unregistered source's rejection out of a narrowed source's figures", async () => {
+    // The second clause of the same sentence (admin-window/BUG-0022): a source
+    // with no `sources` row is reported so the operator knows a name is an id.
+    // Whose id, though, is the URL's question — a rejection from a source that
+    // is not in the registry at all must not appear on a page narrowed to
+    // ticketmaster.
+    const mine = REJECTIONS.filter((row) => row.source_id === SOURCE.ticketmaster);
+    const unregistered = observationRow({
+      observation_id: "01920000-0000-7000-8000-00000000ff02",
+      // No `sources` row is scripted for this id, so its split is name-less.
+      source_id: "01920000-0000-7000-8000-0000000001ff",
+      status: "rejected",
+      rejected_at: daysAgo(2),
+      rejected_by: "resolver",
+    });
+    const params = { source_id: SOURCE.ticketmaster };
+    const alone = await renderSources(
+      healthyScript({
+        [T.observations]: [{ data: [...PENDING_OBSERVATIONS] }, { data: mine }],
+      }),
+      params,
+    );
+    const withUnregistered = await renderSources(
+      healthyScript({
+        [T.observations]: [
+          { data: [...PENDING_OBSERVATIONS] },
+          { data: [...mine, unregistered] },
+        ],
+      }),
+      params,
+    );
+    expect(settledValuesSays(withUnregistered)).toBe(settledValuesSays(alone));
+  });
+
+  it("still reports a narrowed source's OWN unattributed rejection", async () => {
+    // The other half of the fix: scoping the sentence must not silence it. The
+    // one fixture rejection carrying no reason belongs to bandsintown, so on a
+    // page narrowed to bandsintown its presence has to change what the section
+    // says — a fact dropped would read identically to a fact absent.
+    const noReason = REJECTIONS.filter((row) => row.rejected_by === null);
+    expect(noReason).toHaveLength(1);
+    expect(noReason[0].source_id).toBe(SOURCE.bandsintown);
+    const attributed = REJECTIONS.filter((row) => row.rejected_by !== null);
+    const params = { source_id: SOURCE.bandsintown };
+    const withIt = await renderSources(healthyScript(), params);
+    const withoutIt = await renderSources(
+      healthyScript({
+        [T.observations]: [{ data: [...PENDING_OBSERVATIONS] }, { data: attributed }],
+      }),
+      params,
+    );
+    expect(settledValuesSays(withIt)).not.toBe(settledValuesSays(withoutIt));
   });
 
   it("names the observations table when the stamps cannot be read", async () => {

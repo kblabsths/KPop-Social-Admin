@@ -186,6 +186,24 @@ describe("aggregateRejectionStamps", () => {
     );
   });
 
+  it("keeps each unattributed stamp with the source that pushed it", () => {
+    // What is missing is the REASON, not the source: `observations.source_id`
+    // is not nullable, so an unattributed rejection belongs to exactly one
+    // source and a reader narrowed to a source can be told whether it is
+    // theirs (admin-window/BUG-0022). Fleet-wide, the splits add back up.
+    expect(sourceOf(values, SOURCE_A)?.unattributed).toBe(1);
+    expect(sourceOf(values, SOURCE_B)?.unattributed).toBe(0);
+    expect(sourceOf(values, SOURCE_UNKNOWN)?.unattributed).toBe(0);
+    expect(
+      values.bySource.reduce((sum, entry) => sum + entry.unattributed, 0),
+    ).toBe(values.unattributed);
+    // Every one of a source's rejections is either reasoned or unattributed.
+    for (const entry of values.bySource) {
+      const reasoned = Object.values(entry.byReason).reduce((sum, n) => sum + n, 0);
+      expect(reasoned + entry.unattributed, entry.sourceId).toBe(entry.total);
+    }
+  });
+
   it("ranks sources by re-rejects, most first", () => {
     expect(values.bySource.map((entry) => entry.sourceId)).toEqual([
       SOURCE_B,
