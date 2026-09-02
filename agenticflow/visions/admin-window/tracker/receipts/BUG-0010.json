@@ -1,0 +1,21 @@
+{
+ "id": "BUG-0010",
+ "created": "2026-09-02T09:56:00Z",
+ "green": true,
+ "git_head": "857d37ef78aad1df4d5ff7cbadc81aca07eef984",
+ "scope": [
+  "src/lib/db/browse.ts",
+  "src/lib/browse/rows.ts",
+  "tests/offline/browse"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "a8e3a2171c65a22bc95930c309fde8272a5e53b4614f40a2ac25b7976ecfc68c",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/browse",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-81200\n\n \u2713 |offline| tests/offline/browse/views.test.ts (52 tests) 16ms\n \u2713 |offline| tests/offline/browse/browse-read.test.ts (27 tests) 10ms\n \u2713 |offline| tests/offline/browse/page.test.ts (24 tests) 82ms\n\n Test Files  3 passed (3)\n      Tests  103 passed (103)\n   Start at  02:55:59\n   Duration  552ms (transform 168ms, setup 0ms, collect 420ms, tests 107ms, environment 0ms, prepare 163ms)\n\n(node:81207) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
