@@ -1,0 +1,29 @@
+{
+ "id": "BUG-0020",
+ "created": "2026-09-02T12:57:10Z",
+ "green": true,
+ "git_head": "68edb089089aa26c580710bf312c70e37479ac27",
+ "scope": [
+  "tests/offline/review/one-place.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "523be26c0bb536a0d8a400deab700d944fdb7bc891668f9afeac798f06e6cf23",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/review tests/offline/edit",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-42790\n\n \u2713 |offline| tests/offline/edit/route.test.ts (19 tests) 17ms\n \u2713 |offline| tests/offline/review/shapes.test.ts (38 tests) 17ms\n \u2713 |offline| tests/offline/edit/records.test.ts (17 tests) 6ms\n \u2713 |offline| tests/offline/review/review-items.test.ts (28 tests) 11ms\n \u2713 |offline| tests/offline/review/one-place.test.ts (12 tests) 59ms\n \u2713 |offline| tests/offline/edit/config.test.ts (19 tests) 69ms\n\n Test Files  6 passed (6)\n      Tests  133 passed (133)\n   Start at  05:57:06\n   Duration  422ms (transform 292ms, setup 0ms, collect 593ms, tests 179ms, environment 1ms, prepare 411ms)\n\n(node:42798) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"grep -q 'use server' tests/offline/review/one-place.test.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
