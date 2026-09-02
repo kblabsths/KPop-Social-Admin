@@ -36,17 +36,34 @@ screen). Every surface ships light and dark.
 | Chrome (sidebar, table header, chips) | `#f9fafb` | `#1e2939` | gray-50 / gray-800 |
 | Hairline (all borders, all dividers) | `#d1d5dc` | `#364153` | gray-300 / gray-700 |
 | Primary text | `#1e2939` | `#e5e7eb` | gray-800 / gray-200 |
-| Secondary text (labels, sub-detail) | `#6a7282` | `#99a1af` | gray-500 / gray-400 |
+| Secondary text (labels, sub-detail) | `#4a5565` | `#99a1af` | gray-600 / gray-400 |
 | Disabled / placeholder / null only | `#99a1af` | `#4a5565` | gray-400 / gray-600 |
 | **Accent** — selection, active nav/tab/chip, focus, primary button | `#9810fa` | `#c27aff` | purple-600 / purple-400 |
-| **Healthy** — succeeded, settled, applied | `#00a63e` | `#05df72` | green-600 / green-400 |
-| **Needs a human** — open items, `high` severity | `#e17100` | `#ffb900` | amber-600 / amber-400 |
-| **Broken** — failed run, error line, irreversible action | `#e7000b` | `#ff6467` | red-600 / red-400 |
+| **Healthy** — succeeded, settled, applied | `#016630` | `#05df72` | green-800 / green-400 |
+| **Needs a human** — open items, `high` severity | `#bb4d00` | `#ffb900` | amber-700 / amber-400 |
+| **Broken** — failed run, error line, irreversible action | `#c10007` | `#ff6467` | red-700 / red-400 |
 
-- **`text-gray-400` on white is banned for anything a person reads to act**
-  (it measures 2.5:1). Secondary text is gray-500 on light, gray-400 on dark.
-  This corrects the existing app, where gray-400 is the most-used class in
-  `src/` (124 uses); do not "reconcile" back toward it.
+- **In light theme a state colour is the ramp's dark step, never its mid
+  step** — that is bar 12, not taste. Ratios are measured against `page`
+  (`#f3f4f6`), the darkest of the three fills text sits on and therefore the
+  one that decides: secondary 6.87:1, healthy 6.48:1, broken 5.83:1,
+  attention 4.57:1. **Amber holds at the 700 step** because 800 stops reading
+  as amber; 4.57:1 is the palette's floor and its tightest ratio. The mid
+  steps this replaces — green-600 3.22:1, amber-600 3.20:1 (3.06:1 on chrome,
+  and amber is the `high` severity colour), red-600 4.33:1, gray-500 4.39:1 —
+  all failed bar 12 on measurement, 2026-09-02. Do not "restore" them. Dark
+  theme is unchanged and passes throughout; its floor is accent purple-400 on
+  chrome at 5.25:1.
+- **The disabled gray is exempt by job, not by oversight.** Disabled,
+  placeholder and the null `—` measure ~2.4:1 in both themes and must: a null
+  may never read as loud as a value. It is the only ink below 4.5:1, and it
+  never carries a word a person acts on — `text-gray-400`-as-secondary-text
+  (the deprecated app's most-used class, 124 uses in `src/`) stays banned.
+- **Text on an accent fill is white in light and page-ink in dark**
+  (`#030712` on purple-400 = 7.21:1; white on purple-400 measures 2.79:1 and
+  is banned). One job, two values — sanctioned deviation from "accent fill,
+  white text", and the primary button and active chip never choose for
+  themselves.
 - **Blue is retired.** The old app's blue info banners and blue "upcoming"
   counts become gray — absence and information are not states.
 - **Severity is a color, not a scale**: `high` = amber, `low` = gray. No
@@ -78,9 +95,11 @@ typographic idea: the operator can always see which words are the machine's.
 
 ### Spacing, borders, density
 
-- **Spacing scale: 2, 4, 6, 8, 12, 16, 24 px.** Nothing outside it. Table
-  cell padding is 8 horizontal / 6 vertical; card padding 12; page padding 16;
-  the gap between page sections 16.
+- **Spacing scale: 2, 4, 6, 8, 12, 16, 24 px**, px-exact — the unit is
+  pinned to 4px rather than a rem multiple, so this density never drifts with
+  the browser's root font size (sanctioned deviation, not a defect). Nothing
+  outside the scale. Table cell padding is 8 horizontal / 6 vertical; card
+  padding 12; page padding 16; the gap between page sections 16.
 - **Radius: 0 for containers** (cards, tables, panels, banners), **4px for
   interactive controls** (buttons, chips, nav items, inputs), full round for
   status dots. No other radius anywhere.
@@ -90,7 +109,9 @@ typographic idea: the operator can always see which words are the machine's.
   listing the six pages as **text labels — no icons**; the deprecated app's
   unicode glyphs (`◈ ◫ ≣ ◈̈`) are dropped, one of which is a combining-mark
   hack that renders differently per platform. Active item = chrome-inverse
-  fill (gray-200 / gray-800) with primary text. Sign-out sits at the bottom
+  fill (gray-200 / gray-700) with primary text (11.9:1 / 8.3:1) — always one
+  step off the chrome it sits in, which in dark is gray-800 already, so a
+  gray-800 active item would be invisible there. Sign-out sits at the bottom
   behind a hairline. Content is 16px-padded; there is no global status strip
   — the Dashboard owns health.
 
@@ -205,8 +226,11 @@ header's `animate-pulse` stale dot is gone).
 11. **State lives in the URL.** Every filter, sort, and page position is
     bookmarkable and survives the back button — the breakfast view is a link.
 12. **Both themes, clean console.** Every page renders in light and dark with
-    nothing invisible or below 4.5:1 on text, and no browser-console error or
-    warning on load.
+    nothing invisible, and every string a person reads to act measures ≥4.5:1
+    against the fill behind it — `page`, `surface` or `chrome`; the active nav
+    item's chrome-inverse fill carries primary text only, and the
+    disabled/placeholder/null gray is exempt by job (see the palette). No
+    browser-console error or warning on load.
 
 ### Key screens
 
