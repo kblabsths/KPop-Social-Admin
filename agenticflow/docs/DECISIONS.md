@@ -515,3 +515,37 @@ And **the pre-decided escape hatch is deletion, not a fourth patch**: if the
 parser route is ever found wrong in the same class, the guard is dropped down to
 its cheap line-wise pin and the gap recorded as a residual — a structural guard
 is worth at most one re-tooling.
+
+## 2026-09-02 — A ticket's bar is what its own repo can decide; an external handoff gets its own gate
+
+TASK-0032 built the live-oracle rule (a page's state kind is read structurally
+and an ERROR page may never pass). It met every criterion but one: criterion 6
+asked the `queues` **and** `sources` live tests to pass against staging, and
+`/sources` reads `public.pending_claims` for its awaiting-row trend
+(`src/lib/gauges/pending-claims.ts`) — a view that times out on staging in every
+shape but an unordered `limit 1` (`57014`, eight shapes measured; TASK-0031).
+Rule 6 therefore fails that surface, correctly. The ticket forbids weakening the
+oracle, TASK-0031 forbids any Admin-side mitigation, and the fix is a migration
+in the sibling scraper repo that only Ben can apply. So the gate was red and no
+agent in this repo was permitted to clear it.
+
+The ruling: **criterion 6 is narrowed to the seven live oracle surfaces whose
+reads do not touch `pending_claims`** (queues, dashboard, cycles, runs, browse,
+review-item, harness — measured 38/38 green), and Claims/Sources parity moves
+onto TASK-0031's own close bar, where the blocking fact already lives. The red
+itself becomes a *requirement*: `claims.live.test.ts` and `sources.live.test.ts`
+stay red, unskipped, un-todo-ed, citing TASK-0031, pinned by two mechanical
+checks — so weakening the oracle to buy green is now a red receipt rather than a
+prose ban.
+
+The doors this closes. **A ticket's acceptance criteria may only assert facts
+the campaign is allowed to change.** A criterion whose green depends on a human
+applying an artifact in another repo is not that ticket's bar; it belongs to the
+handoff ticket that carries the artifact. Filing it on both makes the first
+ticket unclosable and teaches every later agent that a standing red is normal —
+the precise numbness the live suite exists to prevent. **The unmet claim is
+never dropped, it is relocated**: here to TASK-0031 (which carries the SQL, the
+apply command and the re-measure) and to FEAT-0005's acceptance test 2, which
+stays unmet, so M1 cannot claim Claims/Sources parity. **And a correct red is
+pinned, not tolerated** — when a failing test is the deliverable, a check must
+make its removal fail.
