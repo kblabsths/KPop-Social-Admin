@@ -30,6 +30,7 @@ import {
   pageStates,
   readNumber,
   stateOf,
+  whileStill,
 } from "../live/parity";
 import { codeLines, repoRoot } from "./source-tree";
 import {
@@ -965,5 +966,136 @@ describe("the count a live test issues", () => {
           ),
       );
     expect(offenders).toEqual([]);
+  });
+});
+
+/* ── QA attack on the classifier seam (admin-window/TASK-0032) ───────────── */
+
+describe("QA: the classifier, attacked", () => {
+  const empty = () =>
+    render(h(Empty, { holds: "open decisions", filledBy: "the resolver files one" }));
+  const errorLine = () =>
+    render(
+      h(ErrorLine, {
+        reading: "pending_claims",
+        failed: "canceling statement due to statement timeout",
+        retry: "Reload to try the read again.",
+      }),
+    );
+  const rows = () =>
+    render(
+      h(DataTable<{ id: string }>, {
+        label: "items",
+        columns: [{ key: "id", label: "id", cell: (row: { id: string }) => row.id }],
+        rows: [{ id: "one" }],
+        rowKey: (row: { id: string }) => row.id,
+      }),
+    );
+
+  /**
+   * A surface holding TWO reads — one that came back empty, one that refused.
+   * However the classifier answers this, the one answer it may never give is a
+   * green one: rule 6 is unconditional, and "the page rendered an error line"
+   * is not a fact a second card can outvote. This is the guarantee that holds
+   * today (`stateOf` refuses to name a mixed surface at all), and it must
+   * still hold when admin-window/BUG-0035 is fixed and `error` wins outright —
+   * so it is written against the verdict, not against which refusal arrives.
+   */
+  it("never grades a surface as OK or EMPTY while it carries an error card", () => {
+    const both = `<div data-surface="q">${empty()}${errorLine()}</div>`;
+    expect(() => assertState(both, "[data-surface]", "ok")).toThrow();
+    expect(() => assertState(both, "[data-surface]", "empty")).toThrow();
+    expect(() => assertState(both, "[data-surface]", "not_provisioned")).toThrow();
+    // And a grade of the same surface never returns a passing kind either.
+    expect(() => stateOf(both, "[data-surface]")).toThrow();
+  });
+
+  // ── admin-window/BUG-0035: three strict expected-fail pins. Each one is a
+  // divergence measured on this tree; the day the classifier is fixed these
+  // turn RED as unexpected passes and send the reader to the ticket. The fix
+  // converts them to plain `it`.
+
+  it.fails(
+    "admin-window/BUG-0035: a wrapper's declared kind outranks an ERROR card inside it",
+    () => {
+      // The declaration is cross-checked against the card only when there is
+      // exactly ONE distinct kind inside (parity.ts:211), so a surface with two
+      // reads takes the wrapper's word — and passes on a page in its error state.
+      const declared = `<div data-surface="q" data-state="ok">${empty()}${errorLine()}</div>`;
+      expect(() => assertState(declared, "[data-surface]", "ok")).toThrow();
+    },
+  );
+
+  it.fails("admin-window/BUG-0035: an unknown data-state is skipped, not refused", () => {
+    // `pageStates` promises the opposite in its own docstring: "silently
+    // ignoring it is how a broken page goes green."
+    const fifth = `<div data-surface="q"><p data-state="degraded">slow</p>${rows()}</div>`;
+    expect(() => pageStates(fifth)).toThrow(MarkupReadError);
+  });
+
+  it.fails(
+    "admin-window/BUG-0035: a hyphen-misspelled not_provisioned card reads as OK",
+    () => {
+      // The typo this codebase's attribute idiom invites (`data-bucket-claims`,
+      // `data-window-limit`): one character, and an unprovisioned surface grades
+      // green.
+      const typo = `<div data-surface="q"><div data-state="not-provisioned">review_items</div></div>`;
+      expect(stateOf(typo, "[data-surface]")).not.toBe("ok");
+    },
+  );
+});
+
+/**
+ * `whileStill` had no test of any kind, and three live files pin their row
+ * comparisons with it (dashboard, cycles, runs). What it must never do is hand
+ * back a pair the database moved under — a retry-until-green would turn a
+ * dropped row into a pass.
+ */
+describe("QA: whileStill, attacked", () => {
+  it("hands back a pair only when the read did not move around the make", async () => {
+    const order: string[] = [];
+    const outcome = await whileStill(
+      async () => {
+        order.push("read");
+        return { rows: 38 };
+      },
+      async () => {
+        order.push("make");
+        return "markup";
+      },
+    );
+    expect(outcome).toEqual({ made: "markup", held: { rows: 38 } });
+    // The make happens BETWEEN the two reads, or the pair proves nothing.
+    expect(order).toEqual(["read", "make", "read"]);
+  });
+
+  it("refuses rather than comparing across a move, and re-makes every attempt", async () => {
+    let tick = 0;
+    let makes = 0;
+    const attempt = whileStill(
+      async () => ({ rows: 38 + tick++ }),
+      async () => {
+        makes += 1;
+        return "markup";
+      },
+      3,
+    );
+    await expect(attempt).rejects.toThrow(/changed under this comparison/);
+    // Every attempt makes the SAME comparison afresh — never a stale render
+    // compared against a newer read.
+    expect(makes).toBe(3);
+  });
+
+  it("settles once the database does, without lowering what it compares", async () => {
+    let tick = 0;
+    const outcome = await whileStill(
+      async () => {
+        tick += 1;
+        return { rows: tick <= 2 ? tick : 9 };
+      },
+      async () => "markup",
+      4,
+    );
+    expect(outcome.held).toEqual({ rows: 9 });
   });
 });
