@@ -292,17 +292,42 @@ describe("the states", () => {
     expect(controlCount(missingRow)).toBe(0);
   });
 
-  it("has no record page for a table the map does not carry", async () => {
-    readWith.client = stubClient({}).asSupabaseClient();
-    // `notFound()` throws NEXT_HTTP_ERROR_FALLBACK;404 and terminates the
-    // segment (Next 16, `04-functions/not-found.md`) — the page's twin of the
-    // route's 404 for the same table.
-    await expect(
-      RecordPage({
-        params: Promise.resolve({ table: "scraped_events", id: IDS.groups }),
-      }),
-    ).rejects.toThrow(/404/);
-  });
+  /**
+   * Table names that must NOT reach a record page. The segment is attacker-
+   * controlled on an internet-reachable surface, so the map lookup is a gate
+   * and gets attacked as one: a real table Admin may never touch, the same
+   * name in another case, a traversal attempt, and the four keys every plain
+   * JavaScript object answers to. A lookup written `table in EDIT_CONFIG`
+   * would hand `Object.prototype`'s keys an `undefined` config and render a
+   * page — or throw — for each of the last four.
+   */
+  const NOT_ON_THE_MAP = [
+    "scraped_events",
+    "event_listings",
+    "Groups",
+    "GROUPS",
+    "groups ",
+    "../groups",
+    "groups/../events",
+    "__proto__",
+    "constructor",
+    "toString",
+    "hasOwnProperty",
+    "",
+  ];
+
+  it.each(NOT_ON_THE_MAP)(
+    "has no record page for %o, a table the map does not carry",
+    async (table) => {
+      readWith.client = stubClient({}).asSupabaseClient();
+      // `notFound()` throws NEXT_HTTP_ERROR_FALLBACK;404 and terminates the
+      // segment (Next 16, `04-functions/not-found.md`) — the page's twin of the
+      // route's 404 for the same table.
+      await expect(
+        RecordPage({ params: Promise.resolve({ table, id: IDS.groups }) }),
+      ).rejects.toThrow(/404/);
+    },
+  );
 
   it("renders exactly one h1 per record page", async () => {
     for (const table of EDITABLE_TABLES) {
