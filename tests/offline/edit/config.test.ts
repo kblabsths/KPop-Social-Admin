@@ -238,18 +238,18 @@ describe("decideEdit", () => {
 /* ── the source tree ──────────────────────────────────────────────────────── */
 
 /** Every TypeScript source file under `src/`, as repo-relative posix paths. */
-function sourceFiles(): string[] {
+function sourceFiles(base: string = repoRoot): string[] {
   const found: string[] = [];
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(full);
       else if (/\.(ts|tsx|mts)$/.test(entry.name) && !entry.name.startsWith("__")) {
-        found.push(path.relative(repoRoot, full).split(path.sep).join("/"));
+        found.push(path.relative(base, full).split(path.sep).join("/"));
       }
     }
   };
-  walk(path.join(repoRoot, "src"));
+  walk(path.join(base, "src"));
   return found.sort();
 }
 
@@ -260,10 +260,10 @@ function sourceFiles(): string[] {
  * vanishes mid-walk is skipped: the layering suite writes and deletes a probe
  * under `src/` while vitest runs these files in parallel.
  */
-function codeLines(file: string): string[] {
+function codeLines(file: string, base: string = repoRoot): string[] {
   let text: string;
   try {
-    text = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    text = fs.readFileSync(path.join(base, file), "utf8");
   } catch (thrown) {
     if ((thrown as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw thrown;
@@ -279,9 +279,9 @@ function codeLines(file: string): string[] {
   });
 }
 
-function filesWhereCodeMatches(pattern: RegExp): string[] {
-  return sourceFiles().filter((file) =>
-    codeLines(file).some((line) => pattern.test(line)),
+function filesWhereCodeMatches(pattern: RegExp, base: string = repoRoot): string[] {
+  return sourceFiles(base).filter((file) =>
+    codeLines(file, base).some((line) => pattern.test(line)),
   );
 }
 
@@ -327,6 +327,59 @@ describe("there is no second allowlist", () => {
   });
 });
 
+/* ── writing a named column ───────────────────────────────────────────────── */
+
+/**
+ * The column whose WRITE is forbidden and whose READ is required: `admin_locked`
+ * on `field_provenance`, which spec §8 asks the provenance display to show
+ * ("admin-set Jun 12" — admin stickiness visible at the fact).
+ */
+const ADMIN_LOCKED = "admin_locked";
+
+/** The verbs that write through PostgREST. A `.select(` read is not one. */
+const WRITE_VERB = /\.(?:update|upsert|insert)\(/;
+
+/** Files with one CODE LINE carrying both the column name and a write verb. */
+function filesWithWriteLineNaming(column: string, base: string = repoRoot): string[] {
+  const named = new RegExp(column);
+  return filesWhereCodeMatches(named, base).filter((file) =>
+    codeLines(file, base).some((line) => named.test(line) && WRITE_VERB.test(line)),
+  );
+}
+
+/**
+ * The argument text of every write-verb call in a file, balanced across
+ * parentheses and newlines so a payload Prettier split over several lines
+ * reads as one string. Only what is passed TO the verb is returned, so
+ * `.update(values).select("… admin_locked …")` yields `values` — a read
+ * chained onto a write is not a write of that column.
+ */
+function writeArguments(file: string, base: string = repoRoot): string[] {
+  const code = codeLines(file, base).join("\n");
+  const verb = new RegExp(WRITE_VERB.source, "g");
+  const args: string[] = [];
+  for (let hit = verb.exec(code); hit !== null; hit = verb.exec(code)) {
+    const start = hit.index + hit[0].length;
+    let depth = 1;
+    let index = start;
+    while (index < code.length && depth > 0) {
+      if (code[index] === "(") depth += 1;
+      else if (code[index] === ")") depth -= 1;
+      index += 1;
+    }
+    args.push(code.slice(start, depth === 0 ? index - 1 : code.length));
+  }
+  return args;
+}
+
+/** Files that pass the column to a write verb, however the payload is laid out. */
+function filesWritingColumn(column: string, base: string = repoRoot): string[] {
+  const named = new RegExp(column);
+  return filesWhereCodeMatches(named, base).filter((file) =>
+    writeArguments(file, base).some((argument) => named.test(argument)),
+  );
+}
+
 describe("the write surface of the whole repo", () => {
   const DATA_LAYER = (file: string) =>
     file.startsWith("src/lib/db/") || file.startsWith("src/app/api/");
@@ -355,6 +408,177 @@ describe("the write surface of the whole repo", () => {
     // `event_performers` appears in `tables.ts` for reads; nothing else may
     // name it, and no module may special-case events or venues for writing.
     expect(filesWhereCodeMatches(/event_performers/)).toEqual(["src/lib/db/tables.ts"]);
-    expect(filesWhereCodeMatches(/settle_review_item|admin_locked|apply_resolution/)).toEqual([]);
+
+    // The two ACTIONS stay banned by NAME: `settle_review_item` and
+    // `apply_resolution` are the resolver's own procedures, so their name on a
+    // code line under `src/` can only be a call — there is nothing else to
+    // spell it for.
+    expect(filesWhereCodeMatches(/settle_review_item|apply_resolution/)).toEqual([]);
+
+    // `admin_locked` is a COLUMN, not an action, and this case is about WRITES.
+    // Narrowed 2026-09-02 (architect ruling, admin-window/BUG-0028): the old
+    // predicate banned the NAME, which banned READING it too — and spec §8
+    // requires that read. Two pins replace it, neither of which touches a read.
+
+    // 1. The column is in no `editable` list, so the one write path cannot
+    //    carry it: the route and `updateRecordField` both decide from this map,
+    //    and `.update(` lives in `records.ts` alone (the case above). A value
+    //    assertion over the imported map, not a scan of text.
+    for (const [table, config] of Object.entries(EDIT_CONFIG)) {
+      expect(config.editable, table).not.toContain(ADMIN_LOCKED);
+    }
+
+    // 2. The only other shape — a hand-built payload naming the column beside a
+    //    write verb. Pinned on the code LINE as ruled, and again on the verb's
+    //    whole balanced ARGUMENT, because a payload split over lines
+    //    (`.update({\n  admin_locked: true,\n})` — what Prettier produces)
+    //    carries the name and the verb on different lines and would slip a
+    //    line-wise scan. Both are blind to `.select("… admin_locked …")`;
+    //    "the admin_locked write guard itself" below proves that against a
+    //    mirror tree carrying all three shapes.
+    expect(filesWithWriteLineNaming(ADMIN_LOCKED)).toEqual([]);
+    expect(filesWritingColumn(ADMIN_LOCKED)).toEqual([]);
+  });
+});
+
+/**
+ * The guard guarding itself (the technique `tests/offline/db/layering.test.ts`
+ * uses for its credential scanner, and `tests/offline/review/one-place.test.ts`
+ * for the M2-close guard). The narrowed rule above is only worth its green if
+ * its two pins actually report the write they forbid AND actually let the read
+ * spec §8 requires through — a rule that is green because it can see nothing
+ * is not a rule.
+ *
+ * The probe tree is a MIRROR of `src/` under `tests/.probes/`, never files
+ * written into the real `src/`: three other offline suites walk that tree in
+ * parallel and a probe deleted between their readdir and their read reddens a
+ * stranger's suite (measured on admin-window/BUG-0020). The walker, both pins
+ * and the planted map below are the same functions the rule uses — only the
+ * base directory differs.
+ */
+describe("the admin_locked write guard itself", () => {
+  const probeBase = path.join(repoRoot, "tests", ".probes", `admin-locked-${process.pid}`);
+
+  /** The provenance display spec §8 asks for: a read, and nothing else. */
+  const READ_PROBE = "src/lib/records/provenance.ts";
+  /** A write of the column on one line. */
+  const WRITE_LINE_PROBE = "src/lib/db/stamp-inline.ts";
+  /** The same write with the payload split over lines, as Prettier lays it out. */
+  const WRITE_SPREAD_PROBE = "src/lib/db/stamp-spread.ts";
+  /** A write of something else that READS the column back — still not a write of it. */
+  const CHAINED_READ_PROBE = "src/lib/db/update-then-read.ts";
+
+  const SOURCES: ReadonlyArray<readonly [string, string]> = [
+    [
+      READ_PROBE,
+      "export function readProvenance(db: Db, id: string) {\n" +
+        "  return db\n" +
+        '    .from("field_provenance")\n' +
+        '    .select("field, value, admin_locked, decided_at")\n' +
+        '    .eq("entity_id", id);\n' +
+        "}\n",
+    ],
+    [
+      WRITE_LINE_PROBE,
+      "export function stamp(db: Db, id: string) {\n" +
+        '  return db.from("field_provenance").update({ admin_locked: true }).eq("id", id);\n' +
+        "}\n",
+    ],
+    [
+      WRITE_SPREAD_PROBE,
+      "export function stamp(db: Db, id: string) {\n" +
+        '  return db.from("field_provenance").update({\n' +
+        "    admin_locked: true,\n" +
+        "  })\n" +
+        '    .eq("id", id);\n' +
+        "}\n",
+    ],
+    [
+      CHAINED_READ_PROBE,
+      "export function editThenShow(db: Db, id: string) {\n" +
+        "  return db\n" +
+        '    .from("groups")\n' +
+        '    .update({ company: "x" })\n' +
+        '    .eq("id", id)\n' +
+        '    .select("company, admin_locked");\n' +
+        "}\n",
+    ],
+  ];
+
+  it("reports each write of the column and neither read of it", () => {
+    let walked: string[] = [];
+    let named: string[] = [];
+    let byLine: string[] = [];
+    let byArgument: string[] = [];
+    try {
+      for (const [file, source] of SOURCES) {
+        const full = path.join(probeBase, file);
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, source, "utf8");
+      }
+      walked = sourceFiles(probeBase);
+      named = filesWhereCodeMatches(new RegExp(ADMIN_LOCKED), probeBase);
+      byLine = filesWithWriteLineNaming(ADMIN_LOCKED, probeBase);
+      byArgument = filesWritingColumn(ADMIN_LOCKED, probeBase);
+    } finally {
+      fs.rmSync(probeBase, { force: true, recursive: true });
+    }
+
+    // The mirror is the whole world the scan saw, so nothing below is an
+    // accident of the real tree.
+    expect(walked).toEqual(SOURCES.map(([file]) => file).sort());
+
+    // The scanner does see all four files name the column on a code line: the
+    // pins' green is a decision about writes, not blindness to the word.
+    expect(named).toEqual(walked);
+
+    // The ruled LINE pin catches the write written on one line...
+    expect(byLine).toEqual([WRITE_LINE_PROBE]);
+    // ...and the ARGUMENT pin catches that one and the one split over lines,
+    // which is why the rule asserts both.
+    expect(byArgument).toEqual([WRITE_LINE_PROBE, WRITE_SPREAD_PROBE].sort());
+
+    // Neither pin touches a READ — the whole point of admin-window/BUG-0028.
+    // A bare `.select("… admin_locked …")` and a select chained onto an update
+    // of another column both pass, so the spec §8 provenance display can be
+    // built without renaming the column it displays.
+    for (const reported of [byLine, byArgument]) {
+      expect(reported).not.toContain(READ_PROBE);
+      expect(reported).not.toContain(CHAINED_READ_PROBE);
+    }
+  });
+
+  it("reports an editable list that carries the column", () => {
+    // The rule's strong pin is a value assertion over EDIT_CONFIG. Here it is,
+    // the same expression, over a map where the column HAS been planted: it
+    // must throw, naming the table and the column.
+    const planted = {
+      field_provenance: {
+        table: "field_provenance",
+        pk: "field_provenance_id",
+        regime: "pre_cutover",
+        editable: ["value", ADMIN_LOCKED],
+      },
+    };
+    expect(() => {
+      for (const [table, config] of Object.entries(planted)) {
+        expect(config.editable, table).not.toContain(ADMIN_LOCKED);
+      }
+    }).toThrow(/admin_locked/);
+    // And the real map, unplanted, carries it nowhere — the rule's own green.
+    expect(
+      Object.values(EDIT_CONFIG).flatMap((config) => [...config.editable]),
+    ).not.toContain(ADMIN_LOCKED);
+  });
+
+  it("extracts the argument of the one real write in this repo", () => {
+    // If `writeArguments` returned nothing on a file that does write, the
+    // ARGUMENT pin would be vacuously green everywhere.
+    expect(writeArguments(RECORDS_MODULE).length).toBeGreaterThan(0);
+  });
+
+  it("leaves no probe behind for another suite to walk into", () => {
+    // The `finally` above must hold even when its assertions fail.
+    expect(fs.existsSync(probeBase)).toBe(false);
   });
 });
