@@ -225,6 +225,39 @@ describe("GaugeCard", () => {
     expect(classesOf(html)).not.toContain("text-broken");
   });
 
+  // admin-window/BUG-0018 — the same invariant as the test above, for the two
+  // ways an absence reaches this card as a non-null `value`: the app's own
+  // formatters return the em dash as a STRING (`duration(null)`, `count(null)`,
+  // `relativeAge(null).text`), and an arithmetic figure can arrive non-finite.
+  // Both render as the dash, so neither may carry a floor qualifier or a
+  // palette colour — a health tone on a figure nobody measured is the reading
+  // this gauge exists to prevent (spec §5).
+  // it.fails = strict xfail: this passes only while the divergence is live, and
+  // turns RED the moment BUG-0018 is fixed, sending the reader to the ticket.
+  it.fails("never qualifies or colours an absence that arrived as a formatted string", () => {
+    const html = card({
+      label: "median duration",
+      // exactly what a page renders a seconds figure with: the helper this
+      // ticket added, over an aggregate percentile that is null
+      value: duration(UNMEASURED.duration.p50),
+      floor: true,
+      tone: "broken",
+    });
+    expect(textOf(html)).toContain(EM_DASH);
+    expect(classesOf(html)).not.toContain("type-body");
+    expect(classesOf(html)).not.toContain("text-broken");
+  });
+
+  // it.fails = strict xfail, admin-window/BUG-0018 (see above).
+  it.fails("never qualifies or colours a non-finite figure", () => {
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const html = card({ label: "writes per fact", value, floor: true, tone: "broken" });
+      expect(textOf(html), String(value)).toContain(EM_DASH);
+      expect(classesOf(html), String(value)).not.toContain("type-body");
+      expect(classesOf(html), String(value)).not.toContain("text-broken");
+    }
+  });
+
   it("colours the figure only when it carries a palette state", () => {
     expect(classesOf(card({ label: "failed", value: 2, tone: "broken" }))).toContain(
       "text-broken",
