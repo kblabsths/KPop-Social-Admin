@@ -29,7 +29,7 @@ product_dir: src,supabase,public,tests,docs # FILL: where your product's code li
                           # REPO root (not agenticflow/); comma-separate several
                           # paths, files allowed: e.g. mobile,tests,server.py
 ui_port: 8770             # PREFERRED attention-UI port — --ensure steps to the next free port if it's taken; actual URL in tracker/ui.url
-ci_command: bash -c 'npm run lint && ./node_modules/.bin/tsc --noEmit && npm test' # FILL: your app's full test-suite command, run from the repo
+ci_command: bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit && npm test' # FILL: your app's full test-suite command, run from the repo
                           # root (e.g. "cd app && npm test"); empty = CI gate disabled
 ci_scope: src,supabase,public,tests,package.json,package-lock.json,tsconfig.json,eslint.config.mjs,next.config.ts,postcss.config.mjs,vitest.config.mts # paths whose change triggers a CI check (comma-separated,
                           # repo-relative); empty = product_dir. Set when tests/data

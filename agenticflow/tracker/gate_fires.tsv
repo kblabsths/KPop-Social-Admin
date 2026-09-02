@@ -3,3 +3,4 @@
 2026-09-02T06:43:15Z	artifact_gate	blocked write outside repo: /tmp-none
 2026-09-02T07:06:05Z	artifact_gate	blocked write outside repo: /tmp/o
 2026-09-02T07:14:53Z	artifact_gate	blocked write outside repo: /,
+2026-09-02T07:50:57Z	artifact_gate	blocked write outside repo: /tmp/x

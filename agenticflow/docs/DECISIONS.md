@@ -60,3 +60,47 @@ scraper path, and any change needed there is a blocked handoff ticket carrying
 the complete artifact. The door this closes: no "small" grant or registry edit
 lands there autonomously during this campaign, and no Admin-side workaround
 code is written to dodge one.
+
+## 2026-09-02 — Offline tests stay `.ts` with `createElement`; the glob does not change
+
+TASK-0004's builder asked whether `tests/suite-globs.ts` should admit `.tsx` so
+UI tests can use JSX. Ruling: **no** — the glob stays
+`tests/offline/**/*.test.ts` and component tests build elements with
+`createElement`. Three reasons. (1) The pattern is already landed and proven by
+two test files, with a shared helper — `tests/offline/ui/markup.ts` exports
+`h` (aliased `createElement`), `render` (`renderToStaticMarkup`), plus
+`classesOf`, `tagsOf`, `textOf`. Every later UI ticket imports that helper
+rather than rolling its own; a render helper copied per test directory is the
+scope sprawl the shared-helper rule exists to prevent. (2) These tests assert
+*emitted markup* — token classes, tag order — not a JSX tree, so JSX buys
+readability on the setup lines only. (3) `tests/suite-globs.ts` is a
+consolidation-shaped destination: it is imported by `vitest.config.mts` and
+asserted by `tests/offline/toolchain.test.ts`, and it is pinned by TASK-0001's
+checks. Changing it mid-M1 would leave two competing idioms in one suite for
+the rest of the milestone. The door this closes: no JSX in the offline suite,
+no jsdom, no testing-library dependency. Cost accepted: nested component setup
+is wordier; `h` keeps it to one character of noise per node. Revisit at M2 only
+if a ticket needs a genuinely deep tree.
+
+## 2026-09-02 — A ticket that deletes a route must clear `.next` before `tsc`
+
+`tsconfig.json` includes `.next/types/**/*.ts` and `.next/dev/types/**/*.ts`
+(Next 16 generates one route-type module per page). Those files are build
+output, not source: when a ticket deletes or renames a route, a `.next` left
+over from an earlier build in the same worktree still contains a type module
+importing the deleted page, and `tsc --noEmit` fails on code that no longer
+exists. That is the whole of BUG-0008 (CI red today) — environmental, not a
+defect in the landed tree. Rule for every ticket whose diff removes or renames
+a file under `src/app/`: run `rm -rf .next` (or a full `npm run build`, which
+regenerates the types) **before** `tsc --noEmit` in its landing path; a check
+block that lists `tsc` above `npm run build` is ordered wrong for such a
+ticket. **Recommendation to the dispatcher (run.yaml is not mine to edit):**
+`ci_command` should become
+`bash -c 'rm -rf .next && npm run lint && ./node_modules/.bin/tsc --noEmit && npm test'`.
+`rm -rf .next` is preferred over inserting `npm run build` — it costs
+milliseconds instead of a full compile, it is deterministic (the glob then
+matches nothing), and `.next` is gitignored build output that `npm run build`
+and `npm run test:http` regenerate on demand. The door this closes: CI never
+again reds on stale generated route types, and no one "fixes" it by dropping
+`.next/types` from `tsconfig.json`, which is what gives pages their typed
+route params.
