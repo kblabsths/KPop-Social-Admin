@@ -381,4 +381,26 @@ describe("the Frame's nav states", () => {
       expect(el.classes.has("outline-none")).toBe(false);
     }
   });
+
+  it("keeps the active item's claim of place while the pointer is on it", () => {
+    // The other half of BUG-0015, and the one the fix's own guards do not
+    // reach: the tests above stop a non-active item from wearing the active
+    // rendering, but nothing stopped the active item from LOSING it under the
+    // pointer. A hover utility written on the shared part of the className —
+    // the easy edit — would flip the active item to the hover fill too, and
+    // then while the pointer is in the sidebar NO item claims the place. The
+    // Frame's claim of place is a property of the route, not of the mouse.
+    const { active } = frame("/");
+    const el = active[0];
+    expect(underPointer(el)).toEqual(resting(el));
+
+    // …and the check has teeth: the same helper reports a change for an item
+    // that does carry a hover fill over its resting one.
+    const wouldFlip = {
+      tag: "a",
+      attrs: 'aria-current="page"',
+      classes: new Set(["bg-chrome-inverse", "text-ink", "hover:bg-surface"]),
+    };
+    expect(underPointer(wouldFlip)).not.toEqual(resting(wouldFlip));
+  });
 });
