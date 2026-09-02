@@ -323,6 +323,36 @@ describe("the gate over the whole window", () => {
 });
 
 /**
+ * A `notFound()` thrown by a dynamic segment must reach the operator as the
+ * SAME served page an unmatched URL does (campaign admin-window/BUG-0017).
+ *
+ * `/records/[table]/[id]` calls `notFound()` for a table the edit map does not
+ * carry (`src/app/records/[table]/[id]/page.tsx:83`), which a stale bookmark
+ * still reaches. On an unmatched URL the app serves the whole framed surface;
+ * on this one the served document is empty and the page exists only in the
+ * flight payload, so the first paint is a blank document.
+ *
+ * Marked `it.fails` — the pin for a known divergence. When the served document
+ * carries the surface again this test XPASSes and turns red, which is the
+ * signal to drop `.fails` and close BUG-0017.
+ */
+describe("a notFound() thrown inside a dynamic route", () => {
+  it.fails("serves the same not-found surface an unmatched URL serves", async () => {
+    const { child } = await startServer();
+    try {
+      const cookie = await signedInCookie();
+      const route = "/records/no-such-table/2f0bc11e";
+      const res = await fetch(`${base}${route}`, { headers: { cookie }, redirect: "manual" });
+      expect(res.status, route).toBe(404);
+      // The status is already right; what is missing is the document itself.
+      expectOurNotFound(route, await res.text());
+    } finally {
+      await stopServer(child);
+    }
+  });
+});
+
+/**
  * The 404 the built app actually serves is OURS (campaign
  * admin-window/BUG-0014).
  *
