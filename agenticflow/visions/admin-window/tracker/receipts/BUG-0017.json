@@ -1,0 +1,21 @@
+{
+ "id": "BUG-0017",
+ "created": "2026-09-02T12:20:26Z",
+ "green": true,
+ "git_head": "507c47faf2219dd319a78a0eabc50b1be0bd4053",
+ "scope": [
+  "src/app/records/[table]/[id]",
+  "src/app",
+  "tests/http"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "da307663b8a372c028a9e2980b962739c97491bf31907e6031cf0d89d865d7b5",
+ "commands": [
+  {
+   "cmd": "bash -c 'npm run build && ./node_modules/.bin/vitest run --project=http tests/http/auth.http.test.ts'",
+   "exit": 0,
+   "output_tail": "m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-77908\n\n \u2713 |http| tests/http/auth.http.test.ts (8 tests) 2965ms\n   \u2713 the built app over http > serves health and sends an unauthenticated visitor to the login page  672ms\n   \u2713 the gate over the whole window > sends a stranger to /login and answers a signed-in visitor honestly  881ms\n   \u2713 a record URL for a table the edit map does not carry > answers with the app's own 404, server-rendered, without weakening the gate  728ms\n   \u2713 a record URL for a table the edit map does not carry > still sends a stranger to the sign-in page  603ms\n\n Test Files  1 passed (1)\n      Tests  8 passed (8)\n   Start at  05:20:22\n   Duration  3.31s (transform 50ms, setup 0ms, collect 83ms, tests 2.96s, environment 0ms, prepare 61ms)\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-77908/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:77949) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:77976) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
