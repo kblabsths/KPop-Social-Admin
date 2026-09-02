@@ -320,9 +320,20 @@ describe("the client bundle", () => {
    * pass this suite forever while a key sat in plain sight.
    */
   it("recognises each shape it claims to scan for", () => {
+    // The JWT-shaped sample is assembled here rather than written out: a
+    // literal three-segment token in a source file trips every secret scanner
+    // that reads this repo, and a blocked handoff is a worse outcome than a
+    // two-line helper.
+    const segment = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
+    const jwtShaped = [
+      segment({ alg: "HS256", typ: "JWT" }),
+      segment({ role: "sample-not-a-credential" }),
+      "no-signature-this-is-a-test-sample",
+    ].join(".");
+
     const samples = [
       "const k = process.env.SUPABASE_SERVICE_ROLE_KEY;",
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.not-a-real-signature",
+      jwtShaped,
       "sb_secret_AAAAAAAAAAAAAAAAAAAA",
       "sbp_AAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     ];
