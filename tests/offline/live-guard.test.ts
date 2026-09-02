@@ -6,6 +6,7 @@ import { EM_DASH } from "@/lib/format";
 import { stubClient } from "../fixtures/stub-client";
 import {
   MarkupReadError,
+  ParityCountError,
   ParityError,
   assertParity,
   countRows,
@@ -95,6 +96,53 @@ describe("the staging-target declaration", () => {
     const unfilled = servicesDeclaring("<project/env name or id>");
     expect(declaredStagingTarget(unfilled)).toBeNull();
   });
+
+  it("does not read a FILLED-IN example inside a fenced block as a declaration", () => {
+    // The docstring's promise, made structural: a doc that shows what a good
+    // declaration looks like must not thereby become one. Indentation and a
+    // placeholder shape are not what makes the template inert.
+    const fenced = [
+      "# External services",
+      "",
+      "For example:",
+      "",
+      "```md",
+      "## supabase",
+      `- staging target agents may touch: ${STAGING_REF}`,
+      "```",
+      "",
+    ].join("\n");
+    expect(declaredStagingTarget(fenced)).toBeNull();
+
+    const tilde = fenced.replace(/```md/, "~~~").replace(/```/, "~~~");
+    expect(declaredStagingTarget(tilde)).toBeNull();
+  });
+
+  it("does not read an indented example under a real heading as a declaration", () => {
+    const indented = [
+      "## supabase",
+      "- what it is for: the catalog",
+      "",
+      "    Example of the line a human writes:",
+      `    - staging target agents may touch: ${STAGING_REF}`,
+      "",
+    ].join("\n");
+    expect(declaredStagingTarget(indented)).toBeNull();
+  });
+
+  it("still reads a real declaration that follows a fenced example", () => {
+    const both = [
+      "# External services",
+      "",
+      "```md",
+      "## supabase",
+      "- staging target agents may touch: an-example-ref",
+      "```",
+      "",
+      servicesDeclaring(STAGING_REF),
+    ].join("\n");
+    expect(declaredStagingTarget(both)).toBe(STAGING_REF);
+  });
 });
 
 describe("host matching", () => {
@@ -113,6 +161,26 @@ describe("host matching", () => {
     expect(hostMatchesDeclaration(host, "stagingprojectref00-prod")).toBe(false);
     expect(hostMatchesDeclaration(host, "otherref.supabase.co")).toBe(false);
     expect(hostMatchesDeclaration(host, "")).toBe(false);
+  });
+
+  it("refuses a foreign domain that merely shares the declared ref", () => {
+    // A bare ref names a Supabase project, so it resolves against that
+    // domain and nothing else; `<ref>.somewhere-else.tld` is a different
+    // service that happens to share a first label.
+    expect(
+      hostMatchesDeclaration(`${STAGING_REF}.evil.example`, STAGING_REF),
+    ).toBe(false);
+    expect(hostMatchesDeclaration(`${STAGING_REF}.local`, STAGING_REF)).toBe(
+      false,
+    );
+    // A host outside the Supabase domain is reachable only by declaring it
+    // in full — the escape hatch stays open for a self-hosted target.
+    expect(
+      hostMatchesDeclaration(
+        `${STAGING_REF}.evil.example`,
+        `${STAGING_REF}.evil.example`,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -298,18 +366,25 @@ describe("the parity mechanism", () => {
   });
 
   it("returns zero only when the database actually counted zero", async () => {
-    const db = stubClient({ review_items: { count: 0 } }).asSupabaseClient();
+    // "Only" is the whole property: a counted zero resolves, and an answer
+    // that carried no count at all does NOT resolve to the same zero.
+    const counted = stubClient({ review_items: { count: 0 } }).asSupabaseClient();
     await expect(
       countRows(() =>
-        db.from("review_items").select("*", { head: true, count: "exact" }),
+        counted.from("review_items").select("*", { head: true, count: "exact" }),
       ),
     ).resolves.toBe(0);
+
+    const uncounted = stubClient({ review_items: {} }).asSupabaseClient();
+    await expect(
+      countRows(() =>
+        uncounted.from("review_items").select("*", { head: true, count: "exact" }),
+      ),
+    ).rejects.toThrow(ParityCountError);
   });
 
-  // PIN admin-window/BUG-0007 — `it.fails` is strict: the day
-  // `countRows` starts refusing, this XPASSes and goes red, which is the
-  // signal to flip it back to a plain `it` and close the bug.
-  it.fails("refuses a count the database never returned, instead of fabricating zero", async () => {
+  // Regression guard for admin-window/BUG-0007.
+  it("refuses a count the database never returned, instead of fabricating zero", async () => {
     // The query a page ticket writes when it forgets `count: "exact"`:
     // PostgREST answers with no error AND no count. `countRows` promises the
     // opposite of this ("a parity test must never quietly compare against 0
@@ -322,8 +397,8 @@ describe("the parity mechanism", () => {
     ).rejects.toThrow();
   });
 
-  // PIN admin-window/BUG-0007 (same defect, seen from the mechanism).
-  it.fails("does not pass parity by comparing a page's zero against a count it never got", async () => {
+  // The same defect seen from the mechanism (admin-window/BUG-0007).
+  it("does not pass parity by comparing a page's zero against a count it never got", async () => {
     const db = stubClient({ review_items: {} }).asSupabaseClient();
 
     const outcome = await assertParity({
