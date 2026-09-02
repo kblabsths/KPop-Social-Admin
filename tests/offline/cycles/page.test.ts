@@ -24,6 +24,7 @@ import {
   permissionDenied,
   stubClient,
   tableNotInSchemaCache,
+  transportFailure,
   type Script,
 } from "../../fixtures/stub-client";
 
@@ -344,6 +345,69 @@ describe("the cycles the resolver filed", () => {
     expect(cycleRow(markup, SUCCEEDED.run_id).current).toBeUndefined();
   });
 
+  it("keeps the window's own limits on screen beside a cycle it could not find", async () => {
+    // A full window is the one case where "not here" and "does not exist" come
+    // apart: the cap filled, so the asked-for cycle may be older than the
+    // oldest row. The page may only say the cycle is not in THIS window, and
+    // the truncation the reader needs to know that has to be on the same
+    // screen — not dropped because a facet was asked for.
+    const capped = Array.from({ length: CYCLE_WINDOW }, (_, index) => ({
+      ...SUCCEEDED,
+      run_id: `capped-${String(index).padStart(4, "0")}`,
+      started_at: new Date(Date.parse(SUCCEEDED.started_at) - index * 60_000).toISOString(),
+    }));
+    const markup = await renderCycles(
+      {
+        [T.resolutionRuns]: [{ data: capped }, { data: [...CYCLES] }],
+        [T.fieldProvenance]: { data: [...APPLIES] },
+        [T.observations]: { data: [...OBSERVED] },
+      },
+      { cycle: "0192ffff-older-than-the-window" },
+    );
+    const $ = cheerio.load(markup);
+    expect(renderedCycles(markup)).toHaveLength(CYCLE_WINDOW);
+    expect($('[data-cycle-found="false"]').attr("data-cycle-asked")).toBe(
+      "0192ffff-older-than-the-window",
+    );
+    expect($('[data-window="cycles"]').attr("data-window-truncated")).toBe("true");
+    expect($("[data-cycle][aria-current]").length).toBe(0);
+  });
+
+  it("answers a ?cycle= link off an empty read, which is evidence and not a refusal", async () => {
+    // An `ok` read of a table holding nothing IS a window — the page looked
+    // and there was nothing there — so the negative verdict is earned here,
+    // unlike the read that never returned one (admin-window/BUG-0023).
+    const markup = await renderCycles(
+      healthyScript({ [T.resolutionRuns]: [{ data: [] }, { data: [] }] }),
+      { cycle: SUCCEEDED.run_id },
+    );
+    const $ = cheerio.load(markup);
+    expect(renderedCycles(markup)).toEqual([]);
+    expect($('[data-empty="cycles"]').length).toBe(1);
+    expect($('[data-cycle-found="false"]').attr("data-cycle-asked")).toBe(SUCCEEDED.run_id);
+    expect($("[data-cycle-unchecked]").length).toBe(0);
+    expect(notProvisioned(markup)).toEqual([]);
+  });
+
+  it("renders a facet value the URL invented as text, never as markup", async () => {
+    // Both facets put a URL-controlled string into the page, and the value is
+    // named verbatim so the operator sees what was asked for. Verbatim is the
+    // TEXT, never the markup: nothing the URL carries may reach the document
+    // as an element.
+    const markup = await renderCycles(healthyScript(), {
+      cycle: '<script>alert(1)</script>',
+      source: '"><img src=x onerror=alert(1)>',
+    });
+    expect(markup).not.toContain("<script>");
+    expect(markup).not.toContain("<img");
+    const $ = cheerio.load(markup);
+    expect($("script").length).toBe(0);
+    expect($("img").length).toBe(0);
+    // Still named, as text, so a mistyped facet is legible rather than silent.
+    expect($("[data-cycle-asked]").text()).toContain("<script>alert(1)</script>");
+    expect($("[data-source-facet]").text()).toContain('"><img src=x onerror=alert(1)>');
+  });
+
   it("renders the empty state, not a zero, when no cycle has ever run", async () => {
     const markup = await renderCycles(
       healthyScript({ [T.resolutionRuns]: [{ data: [] }, { data: [] }] }),
@@ -584,6 +648,27 @@ describe("the ?cycle= link against a window the page could not read", () => {
       expect(line.text()).toContain(SUCCEEDED.run_id);
       expect($("[data-cycle][aria-current]").length).toBe(0);
     }
+  });
+
+  it("holds the verdict back for a transport failure too, not only a refusal", async () => {
+    // The two pinned states are PostgREST's; a fetch that never reached the
+    // database is the third way a read comes back with no window, and the page
+    // may not answer the link off that one either. The line names the object
+    // it was reading — never the transport's own account, which is the error
+    // card's job below.
+    const markup = await renderCycles(
+      healthyScript({
+        [T.resolutionRuns]: [{ error: transportFailure() }, { data: [...CYCLES] }],
+      }),
+      { cycle: SUCCEEDED.run_id },
+    );
+    const $ = cheerio.load(markup);
+    expect(readsFailed(markup)).toContain(T.resolutionRuns);
+    expect($("[data-cycle-found]").length).toBe(0);
+    expect($(`[data-cycle-asked="${SUCCEEDED.run_id}"]`).attr("data-cycle-unchecked")).toBe(
+      T.resolutionRuns,
+    );
+    expect($("[data-cycle][aria-current]").length).toBe(0);
   });
 
   it("still answers the ?cycle= link when the read did return a window", async () => {
