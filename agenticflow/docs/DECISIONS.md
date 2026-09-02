@@ -205,3 +205,33 @@ with the queues". The obligation this creates instead: the migration that
 widens that CHECK constraint extends `Shape`, `SHAPES`, `KIND_BY_SHAPE` and
 `shapeOf` together — the compiler forces the first three, and `shapeOf` is the
 only one that can go quietly wrong.
+
+## 2026-09-02 — an error result carries `reading`, and its message is the client's whole account, not its `message` field
+
+`DbResult`'s error arm is `{ kind: "error"; reading: string; message: string }`.
+`reading` is the object the query asked for, from `tables.ts` — the same string
+`not_provisioned` carries in `missing` — because a page can make several reads
+(Browse makes four, reported separately on purpose) and a line that says only
+what failed names none of them. The `kind` values are unchanged; the field is
+additive, and `readComplete`/`readCount` stopped spelling the object into their
+own refusal prose now that every error arm carries it in one place.
+
+The message is composed from `message`, `details`, `hint`, `cause` and then
+`code`, in that fixed order, with any part another part already contains
+dropped. Measured against the http harness's sentinel URL on 2026-09-02:
+supabase-js returns `message: "TypeError: fetch failed"`, `hint: ""`,
+`code: ""`, and the only account of what actually happened — "Caused by: Error:
+bad port" — in `details`. Reading `message` alone shipped the generic wrapper
+that the Feel's error principle forbids.
+
+The doors this closes. **Classification does not read the composed account**:
+`classify` mines the raw `message` field for the column an absence names, so a
+`details` payload quoting some other identifier can never become the missing
+column and an absent object stays gray. **An empty string is not a code**: the
+transport failure's `code: ""` is neither an absence code nor something to
+print. **The account is scrubbed of credential shapes before it can reach a
+screen** — a JWT, an `sb_secret_*`, a named key in a query string, a `Bearer`
+header and a DSN password between the colon and the `@` (the one a
+`NAME=value` rule misses). The host of an unreachable database is NOT redacted:
+it is the client's own account of what it could not reach, and it is what tells
+an operator whether to look at the network or the query.
