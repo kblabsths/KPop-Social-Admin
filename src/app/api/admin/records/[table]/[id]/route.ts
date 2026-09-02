@@ -24,9 +24,11 @@ import { updateRecordField, type EditableValue } from "@/lib/db/records";
  *    Having no GET also means `next build` never invokes this file, so it is
  *    not a build-time database read.
  *
- * The request body carries a SCALAR value or null. An object or an array is
- * refused: the catalog's editable columns are typed scalars, and no json
- * column is written from here (root CLAUDE.md, AGENTS.md).
+ * The request body carries a SCALAR value or null, and the `value` key must be
+ * PRESENT: an object or an array is refused, and so is a body that omits
+ * `value` entirely. The catalog's editable columns are typed scalars, no json
+ * column is written from here (root CLAUDE.md, AGENTS.md), and only an
+ * explicit `null` or `""` clears a column.
  */
 
 /** The HTTP status each refusal deserves. */
@@ -51,9 +53,11 @@ type ParsedBody =
  * Read `{ field, value }` off the request — the shape the retired per-table
  * routes used and the shape `EditableCell` produces, carried over unchanged.
  *
- * An empty string clears the field (`null`), which is what a cleared input
+ * Clearing is EXPLICIT and requires the key to be there: an empty string or a
+ * literal `null` sets the column to `null`, which is what a cleared input
  * means; that normalisation belongs here, at the HTTP edge, and not in the
- * data layer.
+ * data layer. A body carrying NO `value` key states no intent at all and is
+ * refused — see the guard below (campaign admin-window/BUG-0011).
  */
 async function parseBody(request: Request): Promise<ParsedBody> {
   let body: unknown;
@@ -66,12 +70,29 @@ async function parseBody(request: Request): Promise<ParsedBody> {
     return { ok: false, message: "the request body must be a JSON object" };
   }
 
-  const { field, value } = body as { field?: unknown; value?: unknown };
+  const { field } = body as { field?: unknown };
   if (typeof field !== "string" || field.length === 0) {
     return { ok: false, message: "field must be a non-empty string" };
   }
 
-  if (value === null || value === undefined || value === "") {
+  // An ABSENT `value` key is malformed, never a clear — campaign
+  // admin-window/BUG-0011. `JSON.stringify` drops a key whose value is
+  // `undefined`, so folding the missing key into the clearing branch let a
+  // widget bug null a vetted catalog column and be told `{"ok":true}`. The
+  // retired route this shape comes from
+  // (`git show 5cf4199^:'src/app/api/admin/groups/[id]/route.ts'`, line 28:
+  // `{ [field]: value === "" ? null : value }`) nulled on `""` alone and let
+  // an explicit `null` through as itself; an omitted key reached PostgREST as
+  // an empty patch, never as a NULL. Both explicit clears are kept below.
+  if (!Object.prototype.hasOwnProperty.call(body, "value")) {
+    return {
+      ok: false,
+      message: 'value is required; send null or "" to clear the field',
+    };
+  }
+  const { value } = body as { value?: unknown };
+
+  if (value === null || value === "") {
     return { ok: true, field, value: null };
   }
   if (
