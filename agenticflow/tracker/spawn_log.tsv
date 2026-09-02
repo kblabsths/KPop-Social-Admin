@@ -1332,3 +1332,6 @@
 2026-09-02T09:50:36Z	builder	TASK-0015	3260	189	47958
 # STRANDED	2026-09-02T09:51:01Z	agent	4 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/notes/TASK-0017.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0010.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0015.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0017.md
 2026-09-02T09:51:01Z	agent	-	-	-	-
+2026-09-02T09:51:07Z	agent	-	-	-	-
+# STRANDED	2026-09-02T09:51:23Z	compactor	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0015.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0017.md
+2026-09-02T09:51:23Z	compactor	TASK-0017	1113	298	50929
