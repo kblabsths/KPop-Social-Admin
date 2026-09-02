@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T10:45:08Z — do not edit)
+# Tracker index (regenerated 2026-09-02T10:47:40Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -25,9 +25,6 @@
 ## claimed
 - BUG-0014 [P2][bug][M1] The 404 renders as Next's default inside the Frame: system-ui type off the scale, body fill off the palette  (scope:src/app/not-found.tsx,tests/offline/shell @builder-28)
 
-## qa
-- BUG-0013 [P2][bug][-] PATCH with a non-finite number (1e999) NULLs a catalog column and answers 200  (scope:src/app/api/admin/records/[table]/[id]/route.ts,tests/offline/edit @builder-27 from:TASK-0017)
-
 ## blocked
 - TASK-0021 [P0][task][M1] ASK BEN: which Supabase env names does the APP read at runtime, and what do the campaign's live tests read?  (scope:src/lib/db/client.ts,tests/live,agenticflow/docs/SERVICES.md)
 - TASK-0022 [P0][task][M1] ASK BEN: what is installed on staging, and may a live test write fixture rows into resolver-owned tables?  (scope:tests/live)
@@ -36,4 +33,4 @@
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 - TASK-0029 [P2][task][M1] ASK: what does a resolver-owned record page DISPLAY in M1? events/venues currently render their id and nothing else  (scope:src/lib/edit/config.ts,src/lib/db/records.ts from:TASK-0018)
 
-Totals — blocked:6, claimed:1, done:26, open:20, qa:1. Archived: 0.
+Totals — blocked:6, claimed:1, done:27, open:20. Archived: 0.
