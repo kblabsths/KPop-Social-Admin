@@ -202,7 +202,10 @@ describe("fetchStandingDisagreements", () => {
     });
     await expect(fetchStandingDisagreements({}, stub.asSupabaseClient())).resolves.toEqual({
       kind: "error",
-      message: `permission denied for table ${T.sources}`,
+      // The read that refused is named as well as the refusal, and the
+      // client's own account reaches the caller intact (BUG-0016).
+      reading: T.sources,
+      message: expect.stringContaining(`permission denied for table ${T.sources}`),
     });
   });
 });

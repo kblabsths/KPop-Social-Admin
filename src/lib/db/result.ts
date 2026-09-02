@@ -11,7 +11,21 @@ import { getDbClient } from "./client";
 export type DbResult<T> =
   | { kind: "ok"; data: T }
   | { kind: "not_provisioned"; missing: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; reading: string; message: string };
+
+/**
+ * A read that produced no rows — the two non-`ok` arms.
+ *
+ * Both name the object they were reading, in the same spelling `tables.ts`
+ * gave the query: `not_provisioned` because the object is what is absent, and
+ * `error` because a page composing several reads (Browse makes four) must be
+ * able to say WHICH read refused. A line reading only "TypeError: fetch
+ * failed" names none of them (admin-window/BUG-0016).
+ */
+export type DbUnavailable = Extract<
+  DbResult<unknown>,
+  { kind: "not_provisioned" | "error" }
+>;
 
 /** The shape every PostgREST response has, narrowed to what a read needs. */
 export type DbResponse<T> = { data: T | null; error: unknown };
@@ -68,12 +82,15 @@ function errorCode(error: unknown): string | null {
 }
 
 /**
- * The database's own message, verbatim.
+ * The `message` field alone, verbatim — what CLASSIFICATION reads.
  *
- * LOOK_AND_FEEL, Interaction: "the app shows what the database said" — this
- * never substitutes a friendlier sentence of our own.
+ * Kept separate from the full account below on purpose: the column-absent
+ * arm mines this string for the column the database named, so it must see
+ * exactly what the database put in `message`. A `details` payload quoting some
+ * other identifier would otherwise be read as the missing column, and the
+ * classification is required to be unchanged (admin-window/BUG-0016).
  */
-function errorMessage(error: unknown): string {
+function messageOf(error: unknown): string {
   if (typeof error === "string") return error;
   const record = asRecord(error);
   const message = record?.message;
@@ -86,6 +103,119 @@ function errorMessage(error: unknown): string {
     }
   }
   return String(error);
+}
+
+/** What replaces anything key-shaped before a string can reach a screen. */
+const REDACTED = "[redacted]";
+
+/**
+ * Value shapes that must never be rendered, whatever carried them.
+ *
+ * A transport failure quotes the request it tried, so the host of the database
+ * URL can legitimately appear in an error line — that is the database's own
+ * account of what it could not reach. A CREDENTIAL never may, and a
+ * `NAME=value` rule alone misses the one that hurts most: a Postgres DSN
+ * carries its password mid-line, between the colon and the `@`. Both are
+ * covered here.
+ */
+const SECRET_SHAPES: ReadonlyArray<readonly [RegExp, string]> = [
+  // A JWT — the shape of the service-role and anon keys.
+  [/\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}/g, REDACTED],
+  // Supabase's newer opaque key format.
+  [/\bsb_(?:secret|publishable)_[A-Za-z0-9_-]{8,}/g, REDACTED],
+  // A DSN's password: scheme://user:HERE@host.
+  [
+    /((?:postgres|postgresql|mysql|mongodb(?:\+srv)?|redis|amqp)s?:\/\/[^\s:@/]+:)[^\s@]+(?=@)/gi,
+    `$1${REDACTED}`,
+  ],
+  // A named credential in a query string, a header dump or a JSON body.
+  [
+    /(\b(?:apikey|api_key|anon_key|service_role_key|access_token|refresh_token|token|secret|password|passwd|pwd)["']?\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s&,;}"']+)/gi,
+    `$1${REDACTED}`,
+  ],
+  [/([?&]key=)[^\s&]+/gi, `$1${REDACTED}`],
+  // An Authorization header, however it was quoted.
+  [/(\bBearer\s+)[A-Za-z0-9._~+/=-]{8,}/gi, `$1${REDACTED}`],
+];
+
+/** The same string with every credential-shaped value replaced. */
+function withoutSecrets(text: string): string {
+  let scrubbed = text;
+  for (const [shape, replacement] of SECRET_SHAPES) {
+    scrubbed = scrubbed.replace(shape, replacement);
+  }
+  return scrubbed;
+}
+
+/** How far a `cause` chain is followed before we stop reading it. */
+const MAX_CAUSE_DEPTH = 4;
+
+/**
+ * Every field of the client's own account, in a FIXED order:
+ * `message`, `details`, `hint`, then whatever its `cause` says.
+ *
+ * Both shapes of the same failure reach us and both must give up their cause:
+ *  - supabase-js hands back an OBJECT — `message: "TypeError: fetch failed"`
+ *    with the real cause ("Caused by: Error: bad port …") in `details`;
+ *  - a fetch that throws straight through is an `Error` whose `cause` is the
+ *    real one.
+ * Reading `message` alone discarded the only field carrying what actually went
+ * wrong (admin-window/BUG-0016).
+ */
+function accountParts(error: unknown, depth: number): string[] {
+  const record = asRecord(error);
+  // No `message` field: `messageOf` serialises the whole object, which already
+  // carries every field there is — appending them again would only repeat it.
+  if (record === null || typeof record.message !== "string") {
+    return [messageOf(error)];
+  }
+
+  const parts = [messageOf(error)];
+  for (const field of ["details", "hint"] as const) {
+    const value = record[field];
+    if (typeof value === "string") parts.push(value);
+  }
+
+  const cause = record.cause;
+  if (cause !== undefined && cause !== null && depth < MAX_CAUSE_DEPTH) {
+    parts.push(...accountParts(cause, depth + 1));
+  }
+  return parts;
+}
+
+/**
+ * The database client's own account of the failure — everything it said,
+ * nothing of ours.
+ *
+ * LOOK_AND_FEEL, Interaction: "the app shows what the database said … Errors
+ * are never swallowed and never replaced with a generic message." So this
+ * substitutes no friendlier sentence, and it also refuses to throw away the
+ * fields where the cause actually lives.
+ *
+ * A part that another part already contains is dropped rather than repeated —
+ * supabase-js's `details` opens with a copy of `message`, and printing the
+ * wrapper twice tells an operator nothing. The `code` is a machine identifier
+ * rather than prose, so it trails in parentheses, and only when the account
+ * does not already spell it.
+ */
+function errorMessage(error: unknown): string {
+  const kept: string[] = [];
+  for (const raw of accountParts(error, 0)) {
+    const part = raw.trim();
+    if (part.length === 0) continue;
+    if (kept.some((held) => held.includes(part))) continue;
+    for (let index = kept.length - 1; index >= 0; index -= 1) {
+      if (part.includes(kept[index])) kept.splice(index, 1);
+    }
+    kept.push(part);
+  }
+
+  let account = kept.join(" ");
+  const code = errorCode(error)?.trim() ?? "";
+  if (code.length > 0 && !account.includes(code)) {
+    account = account.length > 0 ? `${account} (${code})` : `(${code})`;
+  }
+  return withoutSecrets(account);
 }
 
 /**
@@ -149,21 +279,20 @@ function columnFromMessage(message: string): string | null {
  */
 export function classify(error: unknown, missing: string): DbResult<never> {
   const code = errorCode(error);
-  const message = errorMessage(error);
 
   if (code !== null && TABLE_ABSENT_CODES.has(code)) {
     return { kind: "not_provisioned", missing };
   }
 
   if (code !== null && COLUMN_ABSENT_CODES.has(code)) {
-    const column = columnFromMessage(message);
+    const column = columnFromMessage(messageOf(error));
     if (column === null || column === missing || missing.endsWith(`.${column}`)) {
       return { kind: "not_provisioned", missing };
     }
     return { kind: "not_provisioned", missing: `${missing}.${column}` };
   }
 
-  return { kind: "error", message };
+  return { kind: "error", reading: missing, message: errorMessage(error) };
 }
 
 /**
@@ -239,19 +368,21 @@ export async function readComplete<Row>(
     if (count === null || count === undefined) {
       return {
         kind: "error",
+        reading: missing,
         message:
-          `${missing}: the read returned no count, so whether these ` +
-          `${rows.length} rows are all of them is unknown; a complete read ` +
-          `requires { count: "exact" }.`,
+          `the read returned no count, so whether these ${rows.length} rows ` +
+          `are all of them is unknown; a complete read requires ` +
+          `{ count: "exact" }.`,
       };
     }
     if (count > rows.length) {
       return {
         kind: "error",
+        reading: missing,
         message:
-          `${missing}: the database holds ${count} rows matching this read ` +
-          `and it is capped at ${ROW_CAP} (${rows.length} returned); narrow ` +
-          `the filter or raise ROW_CAP.`,
+          `the database holds ${count} rows matching this read and it is ` +
+          `capped at ${ROW_CAP} (${rows.length} returned); narrow the filter ` +
+          `or raise ROW_CAP.`,
       };
     }
     return { kind: "ok", data: rows };
@@ -292,9 +423,10 @@ export async function readCount(
     if (count === null || count === undefined) {
       return {
         kind: "error",
+        reading: missing,
         message:
-          `${missing}: the query returned no count, so the number of rows is ` +
-          `unknown; a count read requires { head: true, count: "exact" }.`,
+          `the query returned no count, so the number of rows is unknown; a ` +
+          `count read requires { head: true, count: "exact" }.`,
       };
     }
     return { kind: "ok", data: count };
