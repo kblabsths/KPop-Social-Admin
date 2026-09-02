@@ -1058,6 +1058,36 @@ describe("the argument scan and string literals", () => {
     expect(reported).toEqual(["src/commented-backtick.ts"]);
   });
 
+  it.fails("reports a WRITE between a regex literal holding a backtick and a later template", () => {
+    // Valid, strict-compiling TypeScript: `tsc --noEmit --strict` exits 0 on
+    // this exact source. `REGEX_MAY_FOLLOW` decides a `/` from ONE previous
+    // character, and neither `=>` nor `return` ends in one of them, so a regex
+    // in the commonest predicate shape is read as division — and the backtick
+    // inside it is then read as opening a template. That template DOES find a
+    // partner (the next ordinary template literal in the file), so the give-up
+    // contract never fires: everything between them is blanked, the write in
+    // between with it. The payload is wrapped, so the line pin misses it too.
+    // Fail-open — the direction this describe exists to forbid
+    // (admin-window/BUG-0030).
+    const reported = withProbes(
+      [
+        [
+          "src/tick-regex.ts",
+          "export const hasTick = (s: string) => /`/.test(s);\n" +
+            "\n" +
+            "export const stamp = (db: Db, id: string) =>\n" +
+            '  db.from("field_provenance").update({\n' +
+            "    admin_locked: true,\n" +
+            '  }).eq("id", id);\n' +
+            "\n" +
+            "export const label = (n: number) => `${n} rows`;\n",
+        ],
+      ],
+      (base) => filesWritingColumn(ADMIN_LOCKED, base),
+    );
+    expect(reported).toEqual(["src/tick-regex.ts"]);
+  });
+
   it("leaves no probe behind for another suite to walk into", () => {
     // Every case above plants under `tests/.probes/` and removes it in a
     // `finally`, so a failing assertion cannot leave a tree for a parallel
