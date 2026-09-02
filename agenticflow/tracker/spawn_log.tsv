@@ -983,3 +983,7 @@
 2026-09-02T08:51:35Z	agent	-	-	-	-
 # STRANDED	2026-09-02T08:51:43Z	builder	2 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0027.md
 2026-09-02T08:51:43Z	builder	TASK-0027	8940	507	90774
+# STRANDED	2026-09-02T08:52:30Z	compactor	2 uncommitted in primary checkout: agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0007.md
+2026-09-02T08:52:30Z	compactor	TASK-0007	918	293	40867
+2026-09-02T08:52:31Z	qa-adversary	TASK-0027	spawned
+2026-09-02T08:52:43Z	builder	BUG-0009	spawned
