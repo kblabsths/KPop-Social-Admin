@@ -238,3 +238,18 @@
 2026-09-02T06:24:57Z	agent	-	-	-	-
 # STRANDED	2026-09-02T06:25:14Z	qa-adversary	5 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/BUG-0001.json, agenticflow/visions/admin-window/tracker/receipts/BUG-0002.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0001.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0002.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
 2026-09-02T06:25:14Z	qa-adversary	BUG-0002	2265	334	64267
+2026-09-02T06:25:43Z	qa-adversary	TASK-0001	spawned
+# STRANDED	2026-09-02T06:26:15Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T06:26:15Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:26:47Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T06:26:47Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:27:18Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T06:27:18Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:27:51Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0001.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T06:27:51Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:28:22Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0001.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T06:28:22Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:28:54Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0001.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T06:28:54Z	agent	-	-	-	-
+# STRANDED	2026-09-02T06:29:06Z	qa-adversary	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0001.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
+2026-09-02T06:29:06Z	qa-adversary	TASK-0001	6027	202	59544

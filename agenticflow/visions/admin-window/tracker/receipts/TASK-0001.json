@@ -1,0 +1,59 @@
+{
+ "id": "TASK-0001",
+ "created": "2026-09-02T06:27:34Z",
+ "green": true,
+ "git_head": "a69e8704fc7d6bfcde5f1527d346e5e58fa38b88",
+ "scope": [
+  "package.json",
+  "package-lock.json",
+  "vitest.config.mts",
+  "eslint.config.mjs",
+  "tests",
+  ".env.example"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "ad5464a01518cbe41005b2a0899abc25dc3cc4e5f13b072590e303f2e8456bfc",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm test",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-10610\n\n \u2713 |offline| tests/offline/toolchain.test.ts (3 tests) 1176ms\n   \u2713 test project layout > collects no live or http file into the offline project  380ms\n   \u2713 test project layout > collects the http suite into the http project only  793ms\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  23:27:30\n   Duration  1.52s (transform 27ms, setup 0ms, collect 25ms, tests 1.18s, environment 0ms, prepare 85ms)\n\nnpm notice run kpop-social-space@0.1.0 test\nnpm notice run vitest run --project=offline\n(node:10661) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:10682) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:10686) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:10691) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"grep -q agenticflow eslint.config.mjs\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"grep -q STAGING_SUPABASE_URL .env.example && grep -q STAGING_SUPABASE_SERVICE_ROLE_KEY .env.example\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"grep -q test:live package.json && grep -q test:http package.json && grep -q typecheck package.json\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"test -f vitest.config.mts\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/toolchain.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-10610\n\n \u2713 |offline| tests/offline/toolchain.test.ts (3 tests) 1252ms\n   \u2713 test project layout > collects no live or http file into the offline project  433ms\n   \u2713 test project layout > collects the http suite into the http project only  816ms\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  23:27:32\n   Duration  1.62s (transform 30ms, setup 0ms, collect 27ms, tests 1.25s, environment 0ms, prepare 74ms)\n\n(node:10723) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:10755) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:10761) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:10769) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
