@@ -13,7 +13,15 @@ import { editConfigFor, type TableEditConfig } from "@/lib/edit/config";
  * (`/records/events/<id>`). The MAP decides everything below:
  *
  *  - a table the map does not carry has no record surface at all — `notFound()`,
- *    which is the page's twin of the route's 404 for the same request;
+ *    which is the page's twin of the route's 404 for the same request. It is
+ *    the SECOND of two layers: `next.config.ts` rewrites such a URL to a path
+ *    no route matches, so Next's own routing-level 404 answers first and the
+ *    operator gets the app's framed not-found page, server-rendered, with
+ *    status 404 (campaign admin-window/BUG-0017 — the throw below cannot
+ *    produce both, and that config comment records the measurements). The
+ *    throw stays because a refusal is the page's own business: it still
+ *    answers for the spellings the rewrite deliberately leaves alone, and the
+ *    surface must never render a table the map does not carry;
  *  - `groups` and `idols` are pre-cutover, so a column their allowlist carries
  *    edits directly, as a cell — the `EditableCell` primitive (TASK-0004),
  *    reached through `src/components/records/field-editor.tsx`. That wrapper
@@ -79,7 +87,10 @@ export default async function RecordPage({
 
   const config = editConfigFor(table);
   // Not a table the edit surface knows about: there is no record page here,
-  // and saying so with a 404 is the same answer the write route gives.
+  // and saying so with a 404 is the same answer the write route gives. In
+  // practice `next.config.ts` has already turned this URL into one no route
+  // matches (admin-window/BUG-0017), so this is the backstop, not the usual
+  // path — see the header comment.
   if (config === null) notFound();
 
   const result = await readRecord(config, id);
