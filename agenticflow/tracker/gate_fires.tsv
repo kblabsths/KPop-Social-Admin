@@ -1,1 +1,2 @@
 2026-09-02T05:50:40Z	supply_gate	blocked archive fetch from registry.npmjs.org (https://registry.npmjs.org/vite-tsconfig-paths)
+2026-09-02T06:03:14Z	artifact_gate	blocked write outside repo: /tmp_out_lint.txt
