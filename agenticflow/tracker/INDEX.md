@@ -1,6 +1,7 @@
-# Tracker index (regenerated 2026-09-02T17:15:42Z — do not edit)
+# Tracker index (regenerated 2026-09-02T17:30:25Z — do not edit)
 
 ## open
+- BUG-0031 [P0][bug][-] CI red: 1 failing test(s)  (scope:src,supabase,public,tests,docs)
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
 - FEAT-0002 [P1][feat][M1] Staging reads, the not-provisioned state, and the live/offline test harness
 - FEAT-0005 [P1][feat][M1] Claims, Sources, and Cycles and runs  (deps:FEAT-0001,FEAT-0002(unmet:2))
@@ -12,10 +13,10 @@
 - TASK-0029 [P2][task][M1] ASK: what does a resolver-owned record page DISPLAY in M1? events/venues currently render their id and nothing else  (deps:BUG-0028 scope:src/lib/edit/config.ts,src/lib/db/records.ts,src/app/records,src/components/records,tests/offline/records,tests/offline/edit from:TASK-0018)
 - BUG-0027 [P3][bug][M1] An empty queue renders no open count: /queues drops the figure the Dashboard renders as a real 0  (scope:src/app/queues/page.tsx,src/components/queues,tests/offline/queues from:TASK-0010)
 
-## claimed
+## built
 - BUG-0029 [P2][bug][M1] The offline suite is flaky in a fresh worktree: its slowest test sits 6% under vitest's 5s default, so receipts go red at random  (scope:vitest.config.mts,tests/offline/claims/page.test.ts,tests/offline/toolchain.test.ts @builder-53 from:BUG-0024)
 
 ## blocked
 - TASK-0031 [P1][task][M1] ASK BEN: pending_claims view times out on staging (handoff: index or view rewrite in the scraper repo)  (scope:agenticflow/docs/vision/ARCHITECTURE.md)
 
-Totals — blocked:1, claimed:1, done:60, open:10. Archived: 0.
+Totals — blocked:1, built:1, done:60, open:11. Archived: 0.
