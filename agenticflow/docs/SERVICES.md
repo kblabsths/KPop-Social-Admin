@@ -38,7 +38,8 @@ the gate sees, e.g. `## railway`, `## supabase`):
 - console: https://supabase.com/dashboard/project/nexuvegwukhyhrktxhha
 - tier / cost ceiling: Free tier, $0 (Pro planned, not yet purchased — update
   this line on upgrade),
-- staging target agents may touch: kspace-staging, ref ubfjjqlvnpnoborczbdb
+- staging target agents may touch: ubfjjqlvnpnoborczbdb
+  (project name kspace-staging;
   (console: https://supabase.com/dashboard/project/ubfjjqlvnpnoborczbdb) —
   the ONLY test target per Ben's 2026-08-17 ruling
   (contracts/infrastructure.md § Tech stack); secrets in staging.env at the
