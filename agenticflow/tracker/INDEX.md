@@ -1,7 +1,6 @@
-# Tracker index (regenerated 2026-09-02T05:47:28Z — do not edit)
+# Tracker index (regenerated 2026-09-02T05:53:44Z — do not edit)
 
 ## open
-- DEP-0001 [P1][dep][M1] Test runner: vitest + vite-tsconfig-paths  (scope:agenticflow/docs/ALLOWED_DEPS.md)
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
 - FEAT-0002 [P1][feat][M1] Staging reads, the not-provisioned state, and the live/offline test harness
 - FEAT-0003 [P1][feat][M1] Dashboard — the breakfast view  (deps:FEAT-0001,FEAT-0002(unmet:2))
@@ -10,7 +9,7 @@
 - FEAT-0006 [P1][feat][M1] The six threshold gauges  (deps:FEAT-0001,FEAT-0002(unmet:2))
 - FEAT-0007 [P1][feat][M1] Browse — the recent-events curated view  (deps:FEAT-0001,FEAT-0002(unmet:2))
 - FEAT-0008 [P1][feat][M1] The edit surface — the config map and pre-cutover direct edits  (deps:FEAT-0001,FEAT-0002(unmet:2))
-- TASK-0001 [P1][task][M1] Toolchain: Vitest, the offline/live/http suites, and a lint that exits 0  (deps:DEP-0001(unmet:1) scope:package.json,package-lock.json,vitest.config.mts,eslint.config.mjs,tests,.env.example)
+- TASK-0001 [P1][task][M1] Toolchain: Vitest, the offline/live/http suites, and a lint that exits 0  (deps:DEP-0001 scope:package.json,package-lock.json,vitest.config.mts,eslint.config.mjs,tests,.env.example)
 - TASK-0002 [P1][task][M1] The staging data layer: the client seam, DbResult, and the table-name constants  (deps:TASK-0001(unmet:1) scope:src/lib/db,tests/offline/db,tests/fixtures)
 - TASK-0003 [P1][task][M1] The live harness: staging-only credentials, the parity helper, the sweep helper  (deps:TASK-0002(unmet:1) scope:tests/live,tests/offline/live-guard.test.ts,agenticflow/docs/SERVICES.md)
 - TASK-0004 [P1][task][M1] Design tokens and the UI primitives every surface is built from  (deps:TASK-0001(unmet:1) scope:src/app/globals.css,src/components/ui,src/components/evidence,src/lib/format.ts,tests/offline/ui,tests/offline/format.test.ts)
@@ -38,4 +37,4 @@
 - TASK-0024 [P1][task][M1] ASK BEN: where does Admin read the per-source stuck_pattern dial, which lives only in scraper YAML?  (scope:src/lib/gauges/pending-claims.ts,src/app/sources/page.tsx)
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 
-Totals — blocked:5, open:29. Archived: 0.
+Totals — blocked:5, done:1, open:28. Archived: 0.

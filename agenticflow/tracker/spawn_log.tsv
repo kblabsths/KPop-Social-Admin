@@ -122,3 +122,18 @@
 # STRANDED	2026-09-02T05:47:20Z	architect	30 uncommitted in primary checkout: agenticflow/docs/DECISIONS.md, agenticflow/run.yaml, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/docs/STACK.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0001.md
 2026-09-02T05:47:20Z	architect	FEAT-0001	54729	1712	259753
 2026-09-02T05:47:56Z	toolsmith	DEP-0001	spawned
+2026-09-02T05:48:11Z	agent	-	-	-	-
+2026-09-02T05:48:27Z	agent	-	-	-	-
+2026-09-02T05:48:58Z	agent	-	-	-	-
+2026-09-02T05:49:30Z	agent	-	-	-	-
+2026-09-02T05:50:01Z	agent	-	-	-	-
+2026-09-02T05:50:33Z	agent	-	-	-	-
+2026-09-02T05:51:04Z	agent	-	-	-	-
+2026-09-02T05:51:36Z	agent	-	-	-	-
+2026-09-02T05:52:07Z	agent	-	-	-	-
+2026-09-02T05:52:39Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:53:11Z	agent	1 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md
+2026-09-02T05:53:11Z	agent	-	-	-	-
+# STRANDED	2026-09-02T05:53:40Z	toolsmith	2 uncommitted in primary checkout: agenticflow/docs/ALLOWED_DEPS.md, agenticflow/visions/admin-window/tracker/tickets/DEP-0001.md
+2026-09-02T05:53:40Z	toolsmith	DEP-0001	6100	343	64175
+2026-09-02T05:54:10Z	builder	TASK-0001	spawned

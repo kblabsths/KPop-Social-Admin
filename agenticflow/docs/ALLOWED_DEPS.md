@@ -70,6 +70,69 @@ package is visible as a change.
 - eslint-config-next (16.2.2) — (grandfathered) Next.js ESLint ruleset, version-matched to `next` [lock 16.2.2, recorded 2026-09-01, brownfield intake]
 - tailwindcss (^4) — (grandfathered) Tailwind 4 CSS engine [lock 4.2.2, recorded 2026-09-01, brownfield intake]
 - typescript (^5) — (grandfathered) TypeScript compiler; `tsc --noEmit` is this repo's CI check [lock 5.9.3, recorded 2026-09-01, brownfield intake]
+- vite-tsconfig-paths (^6.1.1) — vetted; resolves this repo's `@/*` tsconfig aliases inside Vitest runs; dev-only, 6.x line only [vetted 2026-09-01, DEP-0001]
+- vitest (^3.2.7) — vetted; offline-first test runner, TypeScript/ESM native; dev-only, 3.x line only [vetted 2026-09-01, DEP-0001]
+
+### DEP-0001 vetting notes — vitest + vite-tsconfig-paths, 2026-09-01
+
+The first two **vetted** (not grandfathered) entries in this file. Both are
+`devDependencies`, both were checked for necessity, identity, health and
+behavior; the findings that constrain future work are recorded here.
+
+* **Necessity.** `node:test` is stdlib but does not run TypeScript on the
+  `node>=20` this repo declares, so it would need a loader plus alias
+  wiring — more dependencies for the same result, not fewer. Vitest is one
+  of the four runners Next.js documents itself. Accepted.
+* **Identity.** `vitest` — registry package points at `vitest-dev/vitest`
+  (17,037 stars, pushed 2026-09-01), maintainers include the Vite/Vue core
+  set; ~99.9M downloads/week. `vite-tsconfig-paths` — points at
+  `aleclarson/vite-tsconfig-paths` (1,632 stars, pushed 2026-08-28, MIT);
+  ~30.5M downloads/week. Neither name is within typo distance of any entry
+  above (checked with the supply gate's own parser), so no near-name marker
+  is needed or proposed.
+* **Advisories.** Both known critical Vitest advisories are patched inside
+  the approved range: GHSA-9crc-q9x8-hgqq (patched 3.0.5) and
+  GHSA-5xrq-8626-4rwp (patched 3.2.6). Both concern the Vitest UI/API
+  server being reachable from a browser; `@vitest/ui` is not requested and
+  must not be added without a new DEP. `vite-tsconfig-paths` and its deps
+  (`tsconfck`, `globrex`) carry no advisories.
+* **Version floors are the vetting.** `^3.2.7` sits above the 3.2.6
+  security floor and excludes vitest 4.x/5.x. vitest 4 pulls a different
+  transitive set (vite 8 / rolldown / `obug`) that was NOT vetted here —
+  moving majors is a new DEP ticket, as is `vite-tsconfig-paths` 7.x
+  (currently alpha, an oxc-resolver rewrite).
+* **Install-script posture — a THIRD install-script package arrives.**
+  Neither requested package has an install script, and neither does vite.
+  But vitest 3.x depends on `vite ^5||^6||^7`, and vite 7.x depends on
+  `esbuild`, whose npm package runs `postinstall: node install.js` to place
+  a platform binary. So a clean install grows the intake count of
+  install-script packages from two (`sharp`, `unrs-resolver`) to three.
+  This is esbuild's long-standing, widely-audited binary-fetch step, not a
+  finding against these two packages — but it is a real change to this
+  repo's install-time execution surface and is stated here because the
+  intake note made the count a tripwire. A fourth arrival is a new finding.
+* **`debug` range spans a known-malicious version.** Both packages depend
+  on `debug` with caret ranges that include `debug@4.4.2` — the version
+  published from a hijacked maintainer account (GHSA-4x49-vf9v-38px,
+  2025-09-15, patched 4.4.3). This repo's committed lockfile already
+  resolves `debug` to 4.4.3, so a lockfile-faithful install dedupes to the
+  patched version. Install these with the lockfile, verify `debug` did not
+  move to 4.4.2 afterwards, and never resolve this tree with the lockfile
+  deleted.
+* **Residual risks, accepted and recorded.** `vite-tsconfig-paths` has a
+  single npm maintainer (`aleclarson`) and version 6.1.1 ships without npm
+  provenance (the project adds provenance only in its 7.0 alphas);
+  `vitest@3.2.7` does carry an SLSA provenance attestation. The lockfile's
+  `integrity` hash is the practical defense for the former. Also: vite 7.x
+  declares `node ^20.19.0 || >=22.12.0` while this repo's `engines` says
+  `node >=20.0.0` — a dev on node 20.0-20.18 will see an engine warning.
+* **Not inspected.** The published tarballs were not unpacked: the supply
+  gate correctly blocks archive downloads, and the toolsmith installs
+  nothing. Evidence here is registry metadata, the GitHub repos and the
+  advisory databases, not a read of the shipped bytes.
+* **Scope.** Only these two names are approved. jsdom, @testing-library/*,
+  @vitejs/plugin-react, @vitest/ui, Playwright and Cypress are explicitly
+  out of scope for DEP-0001 and each needs its own ticket.
 
 ## Re-vet candidates (flagged at intake, not acted on)
 
@@ -109,3 +172,14 @@ path. The human adds them, or not:
 * `supabase-js` (unscoped) — squat neighbor of `@supabase/supabase-js`
 * `tailwind` (unscoped, not `tailwindcss`) — squat neighbor of `tailwindcss`
 * `react-dom.js` / `reactdom` — squat neighbors of `react-dom`
+
+Added by DEP-0001 (2026-09-01), squat neighbors of the two new entries —
+the first two exist on npm today as unrelated/stale packages, which is
+exactly the fat-finger hazard:
+
+* `vitest-tsconfig-paths` — exists on npm (unrelated, last published 2022);
+  one keystroke from `vite-tsconfig-paths`
+* `vite-test` — exists on npm (unrelated, last published 2021); a plausible
+  mistyping of `vitest`
+* `vite-tsconfig-path` (singular) — unregistered today; a prime future squat
+* `vite-tsconfig` — name exists with no published version; squattable
