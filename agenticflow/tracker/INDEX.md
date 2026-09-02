@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T16:19:23Z — do not edit)
+# Tracker index (regenerated 2026-09-02T16:22:42Z — do not edit)
 
 ## open
 - BUG-0024 [P1][bug][M1] Review-item evidence is always empty on staging: the app selects observations.entity_type, a column the schema owner dropped  (scope:src/lib/db/review-item.ts,tests/live/review-item.live.test.ts,tests/offline/review-item from:TASK-0011)
@@ -10,7 +10,7 @@
 - TASK-0016 [P2][task][M1] Cycles & runs — the adapter framework's runs half  (deps:TASK-0014,TASK-0023(unmet:1) scope:src/app/cycles/page.tsx,src/lib/db/runs.ts,tests/offline/runs,tests/live/runs.live.test.ts)
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 
-## built
+## qa
 - TASK-0019 [P1][task][M1] Cross-page proofs: graceful absence on all six pages, in_window nowhere, auth on every route, zero residue  (deps:TASK-0009,TASK-0010,TASK-0011,TASK-0012,TASK-0013,TASK-0014,TASK-0015,TASK-0018,TASK-0027 scope:tests/offline/absence,tests/http,tests/live/residue.live.test.ts @builder-49)
 
 ## blocked
@@ -22,4 +22,4 @@
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 - TASK-0029 [P2][task][M1] ASK: what does a resolver-owned record page DISPLAY in M1? events/venues currently render their id and nothing else  (scope:src/lib/edit/config.ts,src/lib/db/records.ts from:TASK-0018)
 
-Totals — blocked:7, built:1, done:48, open:8. Archived: 0.
+Totals — blocked:7, done:48, open:8, qa:1. Archived: 0.
