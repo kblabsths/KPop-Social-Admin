@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-02T15:49:49Z — do not edit)
+# Tracker index (regenerated 2026-09-02T15:55:57Z — do not edit)
 
 ## open
 - FEAT-0001 [P1][feat][M1] Remove the deprecated app and stand up the window shell
@@ -10,7 +10,7 @@
 - TASK-0016 [P2][task][M1] Cycles & runs — the adapter framework's runs half  (deps:TASK-0014,TASK-0023(unmet:1) scope:src/app/cycles/page.tsx,src/lib/db/runs.ts,tests/offline/runs,tests/live/runs.live.test.ts)
 - TASK-0020 [P2][task][M1] Compile docs/build_judgments.md for the milestone-close review  (deps:TASK-0019(unmet:1) scope:docs/build_judgments.md)
 
-## claimed
+## built
 - BUG-0022 [P2][bug][-] Sources narrowed to one source reports the FLEET's unattributed-rejection count as that source's  (scope:src/app/sources/page.tsx,tests/offline/sources @builder-48 from:TASK-0013)
 
 ## blocked
@@ -22,4 +22,4 @@
 - TASK-0025 [P2][task][M1] ASK BEN: what does the edit surface show for provenance on groups and idols, which have none?  (scope:src/app/records/[table]/[id]/page.tsx)
 - TASK-0029 [P2][task][M1] ASK: what does a resolver-owned record page DISPLAY in M1? events/venues currently render their id and nothing else  (scope:src/lib/edit/config.ts,src/lib/db/records.ts from:TASK-0018)
 
-Totals — blocked:7, claimed:1, done:46, open:8. Archived: 0.
+Totals — blocked:7, built:1, done:46, open:8. Archived: 0.
