@@ -746,6 +746,54 @@ describe("absence and failure", () => {
     expect(claimIds(markup)).toEqual([]);
   });
 
+  /**
+   * PINNED `it.fails` (strict) for admin-window/BUG-0063: the window line's
+   * own count hook survives a failed read as a `0`.
+   *
+   * This page's rule on a failed read is that a count is ABSENT, not zero —
+   * the bucket table drops `data-bucket-claims` entirely two tests above
+   * ("Never a zero standing in for a table nobody could read"),
+   * ARCHITECTURE.md §4.3 promoted it ("a null count is a refusal, never a
+   * zero"), and `/runs` pins the stronger form for a window line
+   * (`tests/offline/runs/page.test.ts`, "claims no window it never read").
+   * `data-window-held` is also the hook the live parity oracle grades this
+   * page by (`tests/live/claims.live.test.ts`), and `0` is a value it can
+   * reach in no other state: an empty matching set renders the Empty card
+   * with no window line at all.
+   *
+   * It grades the COUNT and nothing else, so either fix passes — dropping the
+   * attribute on a non-ok read, or dropping the whole line. Flip it back to a
+   * plain `it(...)` in the commit that fixes it.
+   */
+  it.fails("claims no count it never took when the list's read fails", async () => {
+    const failures: Array<[string, Script]> = [
+      [
+        "refused",
+        {
+          [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
+          [T.observations]: { data: [] },
+          [T.sources]: { data: [] },
+        },
+      ],
+      [
+        "transport",
+        {
+          [T.pendingClaims]: { error: transportFailure("bad port") },
+          [T.observations]: { data: [] },
+          [T.sources]: { data: [] },
+        },
+      ],
+    ];
+    for (const [label, script] of failures) {
+      const markup = await renderClaims(script);
+      // The error state is what is on screen — not an empty view.
+      expect(markup, label).toContain(T.pendingClaims);
+      expect(claimIds(markup), label).toEqual([]);
+      // ... and no count hook stands in for the count nobody could take.
+      expect(cheerio.load(markup)("[data-window-held]"), label).toHaveLength(0);
+    }
+  });
+
   it("keeps the transport failure's cause, which the message alone does not carry", async () => {
     const markup = await renderClaims({
       [T.pendingClaims]: { error: transportFailure("bad port") },
