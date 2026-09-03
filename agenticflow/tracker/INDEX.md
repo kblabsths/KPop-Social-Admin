@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-03T22:32:05Z — do not edit)
+# Tracker index (regenerated 2026-09-03T22:34:07Z — do not edit)
 
 ## open
 - BUG-0056 [P1][bug][M1] Cycles & runs: BUG-0040's lead section broke the page's live parity oracle (4 live tests throw)  (scope:src/app/cycles/page.tsx,tests/live/cycles.live.test.ts from:BUG-0040)
@@ -6,7 +6,6 @@
 - BUG-0043 [P2][bug][M1] A source is labelled by raw uuid on the review item and on Claims, while the rest of the app names it  (scope:src/components/review/item-header.tsx,src/components/claims/claim-list.tsx,src/components/claims/filter-bar.tsx,src/app/claims/page.tsx,tests/offline/review-item/page.test.ts,tests/offline/claims/page.test.ts from:M1-endgame-designer-walk)
 - BUG-0044 [P2][bug][M1] Cycles table: raw snake_case headers mixed with prose, and a cycle's id headed RUN_ID against the glossary  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts from:M1-endgame-designer-walk)
 - BUG-0045 [P2][bug][M1] Sources and Claims render an internal factory ticket id in product copy, and 'stuck_patterndial' has no space  (scope:src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/cycles/page.tsx,tests/offline/sources/page.test.ts,tests/offline/claims/page.test.ts,tests/offline/cycles/page.test.ts from:M1-endgame-designer-walk)
-- BUG-0051 [P2][bug][-] STACK.md 5's production-like walk row is not runnable as documented: the step-1 prefix binds to 'npm run build' only, so 'npm run start' launches with no database and the wrong origin  (scope:agenticflow/docs/vision/STACK.md from:BUG-0039)
 - BUG-0052 [P2][bug][M1] Record page: the unknown-id empty state sends the operator to Browse, which does not list groups or idols  (scope:src/app/records/[table]/[id]/page.tsx,tests/offline/records/page.test.ts from:M1-endgame-user-sim)
 - BUG-0053 [P2][bug][M1] Event record page: a whole PROVENANCE column of dashes with no line saying what a dash means, while the pre-cutover page explains its own  (scope:src/app/records/[table]/[id]/page.tsx,src/components/records/record-fields.tsx,tests/offline/records/page.test.ts,tests/offline/records/provenance.test.ts from:M1-endgame-user-sim)
 - BUG-0054 [P2][bug][M1] Cycles & runs: 'Cycle <id> is marked in the table below' — the row carries only aria-current and is visually identical to all 68 others  (scope:src/app/cycles/page.tsx,src/components/ui/data-table.tsx,tests/offline/cycles/page.test.ts from:M1-endgame-user-sim)
@@ -22,10 +21,7 @@
 ## claimed
 - BUG-0041 [P2][bug][M1] Claims: the all-claims table is unwindowed (877 rows, 30,079px), so the pending-claims gauge moves with the data  (scope:src/app/claims/page.tsx,src/components/claims/claim-list.tsx,tests/offline/claims/page.test.ts @builder-72 from:M1-endgame-designer-walk)
 
-## qa
-- BUG-0039 [P2][bug][-] STACK.md 5's walk launch line is not runnable from a fresh shell: the staging names it maps are unset there, so the walk instance has no database  (scope:agenticflow/docs/vision/STACK.md @builder-70 from:BUG-0038)
-
 ## reopened
 - BUG-0040 [P2][bug][M1] Cycles & runs: the newest adapter run sits 4,419px below the fold (Feel bar 1)  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts from:M1-endgame-designer-walk)
 
-Totals — claimed:1, done:83, open:17, qa:1, reopened:1. Archived: 0.
+Totals — claimed:1, done:85, open:16, reopened:1. Archived: 0.

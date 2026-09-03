@@ -1,0 +1,19 @@
+{
+ "id": "BUG-0051",
+ "created": "2026-09-03T22:33:16Z",
+ "green": true,
+ "git_head": "9c47cb7f14216d8efd1fd7e44c508389e80b9371",
+ "scope": [
+  "agenticflow/docs/vision/STACK.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "de3d6572cb3a395f7e752f2b31eb7cf7029cbd456c241de647d179fa9a284366",
+ "commands": [
+  {
+   "cmd": "cd \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\" && python3 -c 'import re,sys; s=open(\"agenticflow/docs/vision/STACK.md\",encoding=\"utf-8\").read(); b=[re.sub(r\"\\\\\\n\\s*\",\" \",x) for x in re.findall(chr(96)*3+r\"sh\\n(.*?)\"+chr(96)*3,s,re.S)]; st=[x for x in b if \"npm run start\" in x]; sys.exit(0 if st and all(re.search(r\"SUPABASE_URL=\\x22\\x24STAGING_SUPABASE_URL\\x22[^&|;]*npm run start\",x) for x in st) else 1)'",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

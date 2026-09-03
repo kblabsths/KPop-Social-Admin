@@ -86,3 +86,5 @@
 2026-09-03T21:59:18Z	TASK-0034	qa->done	fixed	qa
 2026-09-03T22:10:58Z	BUG-0039	qa->reopened	-	qa
 2026-09-03T22:31:20Z	BUG-0040	qa->reopened	-	qa
+2026-09-03T22:32:54Z	BUG-0039	qa->done	fixed	qa
+2026-09-03T22:33:28Z	BUG-0051	open->done	already_done	qa
