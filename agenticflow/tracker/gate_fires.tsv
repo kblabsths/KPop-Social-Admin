@@ -61,3 +61,4 @@
 2026-09-03T22:25:04Z	artifact_gate	blocked write outside repo: /.env .env`); never copy it around.
 
 **The production-like walk repeats the mapping on both commands.**
+2026-09-03T22:31:20Z	evidence_budget	qa_evidence_overbudget: BUG-0040 4272/4000 chars
