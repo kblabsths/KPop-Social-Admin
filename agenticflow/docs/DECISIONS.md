@@ -593,3 +593,67 @@ live assertion grades the standing tab against the whole-view count
 (admin-window/BUG-0037, ARCHITECTURE Common violations row 7) — a test-arithmetic
 defect that the page's former error state had been hiding. It is fixed in the
 test, never in `src/`.
+
+## 2026-09-03 — how an endgame walker reaches a screen: staging credentials on the launch line, a minted session cookie for the gate
+
+Ben ruled on the two things standing between the M1 endgame (designer walk,
+user-sims, verifier) and a first rendered screen. Both are recorded here because
+both close doors, and one of them closes a door on a whole category of
+convenience.
+
+**1. The walk instance's database credentials live in its own process
+environment, never in a file.** `.env` no longer carries `SUPABASE_URL` or
+`SUPABASE_SERVICE_ROLE_KEY`; production values exist only in Railway's
+production environment, and `.env.example` now says so. A walk instance is
+launched with the two names mapped from the staging names on the launching
+shell's command line —
+`SUPABASE_URL="$STAGING_SUPABASE_URL" SUPABASE_SERVICE_ROLE_KEY="$STAGING_SUPABASE_SERVICE_ROLE_KEY" AUTH_URL="http://localhost:8771" npm run dev -- --port 8771`
+— and nothing in code falls back to another name, nothing prints a value, and
+`.env` is not edited to make a walk easier. **The door this closes:** the
+tempting fix for "the walk cannot read anything" is a line of product code that
+reads a `STAGING_` name, or a second env file, or a fallback chain. None of
+those may be written. The app reads exactly `SUPABASE_URL` /
+`SUPABASE_SERVICE_ROLE_KEY` in exactly one seam (`src/lib/db/client.ts`,
+ARCHITECTURE §4 rule 3), and *pointing* those at staging is the launcher's job —
+which is the same division `tests/live/setup.ts` has always had. The `AUTH_URL`
+on that line is mine, not Ben's, and it is env-only: next-auth rewrites the
+request origin to `AUTH_URL` (`node_modules/next-auth/lib/env.js`), so a walk
+instance launched without it sends its redirects to `:3000` while the walker is
+on `:8771`.
+
+**2. Walkers get past the Google-only NextAuth gate with a minted session
+cookie, not with a second way in.** next-auth v5 already ships the JWT `encode`
+its own sign-in uses; a helper *outside* `src/` — `tests/walk/session-cookie.mts`,
+filed as admin-window/TASK-0033 — reads `AUTH_SECRET` from the environment,
+encodes a session JWT for a fixed, clearly-labelled identity
+(`walker@admin-window.local`, "Endgame Walker" — never a real person's address),
+and prints a cookie descriptor a Playwright script hands to `context.add_cookies`.
+The cookie name is `authjs.session-token`: `@auth/core` prefixes `__Secure-` only
+when the resolved URL is `https:`, and it uses that same name as the JWT salt, so
+a cookie minted under any other name is refused. **The doors this closes, and
+they are the point:** no dev-only auth provider, no `SKIP_AUTH` flag, no bypass
+branch in `src/middleware.ts` or `src/lib/auth.ts`, no new dependency, and no
+credential read anywhere under `src/` (it holds zero mentions of `AUTH_SECRET`
+and a ticket check keeps it that way). The gate the walkers walk through is the
+same gate production has; the only thing the factory owns is a cookie the gate
+would have issued anyway. The helper sits in the test tree for the same reason
+`tests/live/setup.ts` does: that is where a credential name may be read outside
+the app's one seam, and the layering guard scans `src/` alone.
+
+**The blind spot, accepted with eyes open.** The sign-in flow itself — the
+Google round trip and the `admin_allowed_emails` check inside the `signIn`
+callback — is never exercised by a walk. Ben accepts that; it is Google's
+surface plus one allowlist query, and buying it would cost a second auth path
+in production code, which is a far worse trade.
+
+**One consequence Ben has not yet ruled on, and no agent may decide.** The
+allowlist is consulted at sign-in, so a minted cookie opens every page — but
+`src/app/api/admin/records/[table]/[id]/route.ts` calls `requireAdmin()`
+(`src/lib/admin.ts`), which re-checks `admin_allowed_emails` **per request**.
+Staging's allowlist holds exactly one row (`kb.labs.ths@gmail.com`, added by Ben
+today), so a walker minted as `walker@admin-window.local` gets a correct **403
+on save** from the edit surface. Reads are fully walkable; the save path is not,
+until either a labelled walker row exists in staging's allowlist or a walk is
+run with `--email` naming an address that allowlist already holds. Recorded as a
+caveat in the walk recipe (STACK §5) rather than resolved by a guess: adding a
+row to a live table and choosing whose identity a walker wears are both Ben's.
