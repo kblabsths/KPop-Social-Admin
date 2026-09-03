@@ -1,0 +1,36 @@
+{
+ "id": "TASK-0034",
+ "created": "2026-09-03T21:58:49Z",
+ "green": true,
+ "git_head": "5beca34093c528c422efe8b48b888f00d7cf48d8",
+ "scope": [
+  "agenticflow/docs/vision/ARCHITECTURE.md",
+  "agenticflow/docs/vision/STACK.md",
+  "agenticflow/docs/DECISIONS.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "74883932a4544bcc34c9110dabb366fff4e0dfa392289c6e645688feff8dfd30",
+ "commands": [
+  {
+   "cmd": "grep -qF \"walk_sandbox\" agenticflow/docs/vision/ARCHITECTURE.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"walk_sandbox\" agenticflow/docs/DECISIONS.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"walk_sandbox\" agenticflow/tracker/for-human/TASK-0034.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"allowImportingTsExtensions\" agenticflow/docs/vision/ARCHITECTURE.md",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

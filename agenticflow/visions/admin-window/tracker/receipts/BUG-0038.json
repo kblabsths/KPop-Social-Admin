@@ -1,0 +1,29 @@
+{
+ "id": "BUG-0038",
+ "created": "2026-09-03T21:56:58Z",
+ "green": true,
+ "git_head": "5beca34093c528c422efe8b48b888f00d7cf48d8",
+ "scope": [
+  "agenticflow/docs/vision/STACK.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "e579b0c55e279888295088c34ef7dd89020343d5974c113c21ff993f5e4bbac0",
+ "commands": [
+  {
+   "cmd": "! grep -qF \"allowlist does not hold\" agenticflow/docs/vision/STACK.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"walker@admin-window.local\" agenticflow/docs/vision/STACK.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "cd \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\" && npm run test:http",
+   "exit": 0,
+   "output_tail": "alth\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\n\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\n\n \u2713 |http| tests/http/auth.http.test.ts (11 tests) 3303ms\n   \u2713 the built app over http > serves health and sends an unauthenticated visitor to the login page  671ms\n   \u2713 the gate over the whole window > sends a stranger to /login and answers a signed-in visitor honestly  1134ms\n   \u2713 a record URL for a table the edit map does not carry > answers with the app's own 404, server-rendered, without weakening the gate  762ms\n   \u2713 a record URL for a table the edit map does not carry > still sends a stranger to the sign-in page  643ms\n \u2713 |http| tests/http/walk-cookie.http.test.ts (1 test) 1043ms\n   \u2713 the walker's minted cookie against the running app > opens the gated pages, and only under the server's own secret  1042ms\n \u2713 |http| tests/http/edit.http.test.ts (1 test) 813ms\n   \u2713 the record PATCH route over http > gates it, refuses every forged edit, and offers no other method  813ms\n\n Test Files  3 passed (3)\n      Tests  13 passed (13)\n   Start at  14:56:52\n   Duration  5.64s (transform 76ms, setup 0ms, collect 135ms, tests 5.16s, environment 0ms, prepare 74ms)\n\nnpm notice run kpop-social-space@0.1.0 test:http\nnpm notice run next build && vitest run --project=http\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:58022) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:58069) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
