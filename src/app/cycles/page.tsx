@@ -141,6 +141,31 @@ const RETRY = "Reload to try the read again.";
 const HEALTH_LABEL = "Cycle health";
 const LATENCY_LABEL = "Resolution latency";
 
+/**
+ * The name each of this page's surfaces answers to — `data-surface`, rendered
+ * by `Section` and read by the live parity oracle
+ * (`tests/live/cycles.live.test.ts`).
+ *
+ * A NAME, never a position. The oracle used to address these surfaces as
+ * `section:nth-of-type(n)`, which made it hostage to this file's element
+ * order: admin-window/BUG-0040 added the lead section and wrapped the runs
+ * window in a `<div>`, so `section:nth-of-type(1)` matched two surfaces and
+ * four live tests threw, while the two gauge selectors kept grading the right
+ * surfaces only because +1 section and -1 section happened to cancel
+ * (admin-window/BUG-0056). Rearranging this page must not be able to repoint
+ * an oracle at the wrong surface, so every surface a test grades carries its
+ * own name and none of them is addressed by where it sits.
+ *
+ * Each has to match exactly one element (`stateOf` refuses otherwise), which
+ * is why the runs window keeps its own hand-written `data-surface="runs"`
+ * wrapper (`AdapterRuns`) and the `<Section>` around it takes no name: two
+ * elements answering to `runs` would break `runs.live.test.ts` the same way.
+ */
+const LATEST_RUN_SURFACE = "latest_run";
+const CYCLES_SURFACE = "cycles";
+const HEALTH_SURFACE = "cycle_health";
+const LATENCY_SURFACE = "resolution_latency";
+
 /** What an empty cycle table holds, and the one thing that fills it. */
 const NOTHING_RECORDED: EmptyWords = {
   holds: "cycles recorded",
@@ -1066,7 +1091,7 @@ function LatestRun({
 
   if (newest === undefined) {
     return (
-      <Section title={LATEST_RUN_LABEL}>
+      <Section title={LATEST_RUN_LABEL} surface={LATEST_RUN_SURFACE}>
         <p data-latest-run-state={kind} className="type-body text-ink-secondary">
           {runs.kind === "not_provisioned" ? (
             <>
@@ -1114,7 +1139,7 @@ function LatestRun({
   }
 
   return (
-    <Section title={LATEST_RUN_LABEL}>
+    <Section title={LATEST_RUN_LABEL} surface={LATEST_RUN_SURFACE}>
       <div data-latest-run-state={kind}>
         <DataTable<RunRow>
           label={LATEST_RUN_LABEL}
@@ -1191,7 +1216,7 @@ export default async function CyclesPage({
           repeated — never a second read. */}
       <LatestRun runs={runs} now={now} source={askedSource} />
 
-      <Section title="Cycles">
+      <Section title="Cycles" surface={CYCLES_SURFACE}>
         <p
           data-window="cycles"
           data-window-limit={String(CYCLE_WINDOW)}
@@ -1246,7 +1271,7 @@ export default async function CyclesPage({
         <AdapterRuns runs={runs} now={now} source={askedSource} />
       </div>
 
-      <Section title={HEALTH_LABEL}>
+      <Section title={HEALTH_LABEL} surface={HEALTH_SURFACE}>
         {health.kind === "ok" ? (
           <CycleHealthSection health={health.data} />
         ) : (
@@ -1254,7 +1279,7 @@ export default async function CyclesPage({
         )}
       </Section>
 
-      <Section title={LATENCY_LABEL}>
+      <Section title={LATENCY_LABEL} surface={LATENCY_SURFACE}>
         {latency.kind === "ok" ? (
           <LatencySection latency={latency.data} />
         ) : (
