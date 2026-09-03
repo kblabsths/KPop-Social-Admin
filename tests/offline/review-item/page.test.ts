@@ -950,3 +950,76 @@ describe("a claim's value", () => {
     expect(row.text).not.toContain("object Object");
   });
 });
+
+/* ── the table scrolls inside its own border, not the page ───────────────── */
+
+describe("a table wider than its column", () => {
+  /**
+   * LOOK_AND_FEEL, Component rules / Data table: "Tables that exceed their
+   * width scroll horizontally *inside their own border*; the page does not."
+   *
+   * `DataTable` has always carried the scroll container. What broke the rule
+   * on this page was an ANCESTOR (admin-window/BUG-0042): the source-pattern
+   * view lays its records column and its dial out as a grid, and a grid item's
+   * `min-width` is `auto` — its CONTENT's minimum. The payload column's
+   * unbreakable `sha256/…` pointers therefore sized the `2fr` track to the
+   * table's intrinsic width, the grid outgrew the content pane, and the
+   * horizontal scroll landed on `main` while the table's right border sat off
+   * screen and the lede paragraph was stretched out with it.
+   *
+   * So the pin is on the ANCESTOR CHAIN rather than on the table: no ancestor
+   * of a table may be a track of a content-sized container that is free to
+   * grow. A later wrapper that reintroduces one reddens here.
+   */
+  const layoutOf = (node: { attr(name: string): string | undefined }) =>
+    new Set((node.attr("class") ?? "").split(/\s+/).filter(Boolean));
+
+  /** A container that sizes its children by their content unless stopped. */
+  const growsToItsChildren = (classes: Set<string>) =>
+    [...classes].some(
+      (name) =>
+        name === "grid" ||
+        name.endsWith(":grid") ||
+        ((name === "flex" || name.endsWith(":flex")) && !classes.has("flex-col")),
+    );
+
+  it.each([
+    ["a data_conflict item", () => conflictScript(), reviewItemDataConflict()],
+    ["an entity_link fact item", () => stuckScript(), reviewItemEntityLink()],
+    ["a source-pattern item", () => patternScript(), reviewItemSourcePattern()],
+  ] as const)("keeps %s's horizontal scroll inside the table's border", async (
+    _name,
+    script,
+    item,
+  ) => {
+    const $ = cheerio.load(await renderItem(script(), item.review_item_id));
+    const tables = $("table").toArray();
+    expect(tables.length).toBeGreaterThan(0);
+
+    for (const table of tables) {
+      const ancestors = $(table)
+        .parents()
+        .toArray()
+        .map((element) => $(element));
+
+      // The scroll container is an ancestor of the table and sits INSIDE the
+      // bordered box, so the table's own border is on screen on both sides.
+      const scrollers = ancestors.filter((node) =>
+        layoutOf(node).has("overflow-x-auto"),
+      );
+      expect(scrollers).toHaveLength(1);
+      expect(layoutOf(scrollers[0].parent()).has("border")).toBe(true);
+
+      // Nothing above the table may hand that scroll back to the page: an
+      // ancestor that is a track of a content-sized container is pinned to a
+      // zero minimum, so the track takes its share and the table overflows
+      // into its own scroll container instead of into `main`.
+      for (const node of ancestors) {
+        const parent = node.parent();
+        if (parent.length === 0) continue;
+        if (!growsToItsChildren(layoutOf(parent))) continue;
+        expect(layoutOf(node).has("min-w-0")).toBe(true);
+      }
+    }
+  });
+});
