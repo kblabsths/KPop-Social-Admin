@@ -11,6 +11,7 @@ import {
   independentClient,
   readNumber,
   renderPage,
+  whileStill,
 } from "./parity";
 
 /**
@@ -79,6 +80,44 @@ const OPEN_LABEL: Record<Kind, string> = {
  * not inside a queue block. Structural — no heading text is read.
  */
 const HEALTH = "section:not([data-queue] section)";
+
+/**
+ * The per-queue SLICES inside that section. Each makes its own statement and
+ * carries its own state cards — an age spread with nothing open in it is
+ * `empty` about that ONE queue and says nothing about the gauge — so they are
+ * not the section's to answer for and are excluded from its state
+ * (`stateOf`'s `excluding`; admin-window/BUG-0062, where the `data_conflict`
+ * slice's honestly-empty age panel was read as the whole gauge's state and
+ * this file's only figure assertions were never reached).
+ *
+ * This can never silence the gauge's OWN refusals: a window that could not be
+ * read renders no slice at all, and its error / not-provisioned card is a
+ * direct child of the section, outside every slice.
+ */
+const GAUGE_SLICES = "[data-gauge-queue]";
+
+/**
+ * The window the gauge reads, spelled HERE from spec §5 rather than imported
+ * from `lib/gauges/queue-health.ts`: the items **opened in the last 180
+ * days**, oldest first, at most the platform's row cap. Importing the gauge's
+ * own defaults would make this one path to one number instead of two
+ * (ARCHITECTURE.md §10).
+ */
+const WINDOW_DAYS = 180;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * PostgREST's `db-max-rows` on this platform — the most rows one windowed read
+ * can return. At the cap the gauge's figures are FLOORS over the OLDEST rows
+ * of the window (the read is `opened_at` ascending), so this test compares
+ * them as floors there instead of as equals, rather than reporting an honest
+ * truncation as a wrong number.
+ */
+const WINDOW_ROW_CAP = 1000;
+
+/** The registry's two queues — the slices the gauge always reports. */
+const GAUGE_QUEUES = ["data_conflict", "entity_link"] as const;
+type GaugeQueue = (typeof GAUGE_QUEUES)[number];
 
 /** The page as the URL renders it. Every read happens per request. */
 async function queuesMarkup(params: Params = {}): Promise<string> {
@@ -316,23 +355,74 @@ describe("the filters against staging", () => {
   });
 });
 
+/** This test's own count over the set the GAUGE reads: opened inside the window. */
+function openedInWindow(since: string) {
+  return exactCount(T.reviewItems).gte("opened_at", since);
+}
+
+interface WindowCounts {
+  /** Every item opened in the window, whatever its status — the gauge's set. */
+  rows: number;
+  /** The OPEN ones per queue: the figure each slice states. */
+  open: Record<GaugeQueue, number>;
+}
+
+/**
+ * The gauge's set, counted by this test, against a `since` resolved at call
+ * time — the same 180 days back the page resolves when it renders.
+ *
+ * `gte` on `opened_at` is the gauge's own narrowing and this one: a row whose
+ * `opened_at` is NULL is in neither set, so it can never make one side count
+ * what the other cannot see.
+ */
+async function windowCounts(): Promise<WindowCounts | "absent"> {
+  const since = new Date(Date.now() - WINDOW_DAYS * MS_PER_DAY).toISOString();
+  const rows = await countOrAbsent(() => openedInWindow(since));
+  if (rows === "absent") return "absent";
+  const open: Record<GaugeQueue, number> = { data_conflict: 0, entity_link: 0 };
+  for (const queue of GAUGE_QUEUES) {
+    open[queue] = await countRows(() =>
+      openedInWindow(since).eq("status", "open").eq("queue", queue),
+    );
+  }
+  return { rows, open };
+}
+
 describe("the queue-health gauge against staging", () => {
   it("renders each queue's open count over its own window", async () => {
-    const markup = await queuesMarkup();
+    // TWO windows are in play — the page resolves its own `since` while it
+    // renders, this test resolves its own while it counts — and staging is
+    // live besides. `whileStill` brackets the render between two identical
+    // reads and compares only when nothing moved between them, so neither an
+    // arriving row nor the boundary sliding under the comparison is reported
+    // as a defect in the page.
+    const { made: markup, held: counted } = await whileStill(windowCounts, () =>
+      queuesMarkup(),
+    );
+
     // The gauge is its own read of the same table, so it is its own surface
-    // with its own state — graded before a figure is read off it.
-    const open = await countOrAbsent(() => exactCount(T.reviewItems).eq("status", "open"));
+    // with its own state — graded before a figure is read off it, and graded
+    // against the set the GAUGE reads (items opened in the window), never the
+    // table's whole open count: one count cannot grade two different sets
+    // (admin-window/BUG-0037, admin-window/BUG-0062).
+    //
+    // `emptyAtZero: false` because this section states every figure as a real
+    // number in every counted state and draws no empty card of its own: a
+    // window holding nothing still renders both slices with a labelled 0, and
+    // that is `ok` (LOOK_AND_FEEL bar 1, like the Dashboard's attention cards).
     const state = await gradeSurface({
       markup,
       within: HEALTH,
       object: T.reviewItems,
-      counted: open,
+      counted: counted === "absent" ? "absent" : counted.rows,
+      excluding: GAUGE_SLICES,
+      emptyAtZero: false,
     });
-    if (state !== "ok" || open === "absent") return;
+    if (state !== "ok" || counted === "absent") return;
 
-    // The gauge is a WINDOW read, not a total: its figure counts the items
-    // opened inside the window it names, so the open count is its ceiling and
-    // never its equal by definition.
+    // Each slice's open figure against this test's own count of that queue's
+    // open items INSIDE the window — the two-paths-to-one-number comparison
+    // this case exists for, and the reason nothing above may return early.
     //
     // Read the figure by its LABEL, the way every other parity assertion in
     // this suite does. A regex over the slice's text cannot: `.text()`
@@ -340,8 +430,18 @@ describe("the queue-health gauge against staging", () => {
     // open count of 4 followed by "1 high, 3 low" reads back as 41 — measured
     // on the offline edge population 2026-09-02 (4 -> 41, 3 -> 31), which
     // would fail this assertion against correct code.
-    for (const queue of ["data_conflict", "entity_link"]) {
-      expect(readNumber(markup, `${queue} open`), queue).toBeLessThanOrEqual(open);
+    const floors = counted.rows >= WINDOW_ROW_CAP;
+    for (const queue of GAUGE_QUEUES) {
+      const rendered = readNumber(markup, `${queue} open`);
+      if (floors) {
+        expect(
+          rendered,
+          `${queue} open (the window filled its ${WINDOW_ROW_CAP}-row cap, so ` +
+            `the page's figure is a floor over the oldest rows in it)`,
+        ).toBeLessThanOrEqual(counted.open[queue]);
+      } else {
+        expect(rendered, `${queue} open`).toBe(counted.open[queue]);
+      }
     }
   });
 });
