@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-03T22:11:50Z — do not edit)
+# Tracker index (regenerated 2026-09-03T22:19:59Z — do not edit)
 
 ## open
 - BUG-0041 [P2][bug][M1] Claims: the all-claims table is unwindowed (877 rows, 30,079px), so the pending-claims gauge moves with the data  (scope:src/app/claims/page.tsx,src/components/claims/claim-list.tsx,tests/offline/claims/page.test.ts from:M1-endgame-designer-walk)
@@ -15,10 +15,10 @@
 - BUG-0049 [P3][bug][M1] Micro labels uppercase machine identifiers: DATA_CONFLICT OPEN, ENTITY_LINK FOLDED, TICKETMASTER STUCK RECORDS  (scope:src/app/queues/page.tsx,src/app/sources/page.tsx,tests/offline/queues/page.test.ts,tests/offline/sources/page.test.ts from:M1-endgame-designer-walk)
 - BUG-0050 [P3][bug][M1] Phone (390px): the fixed 192px sidebar takes half the viewport and the content column collapses  (scope:src/components/shell/shell.tsx,tests/offline/shell/shell.test.ts from:M1-endgame-designer-walk)
 
-## claimed
+## built
 - BUG-0040 [P2][bug][M1] Cycles & runs: the newest adapter run sits 4,419px below the fold (Feel bar 1)  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts @builder-71 from:M1-endgame-designer-walk)
 
 ## reopened
 - BUG-0039 [P2][bug][-] STACK.md 5's walk launch line is not runnable from a fresh shell: the staging names it maps are unset there, so the walk instance has no database  (scope:agenticflow/docs/vision/STACK.md from:BUG-0038)
 
-Totals — claimed:1, done:83, open:13, reopened:1. Archived: 0.
+Totals — built:1, done:83, open:13, reopened:1. Archived: 0.

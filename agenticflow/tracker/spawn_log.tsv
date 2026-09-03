@@ -5640,3 +5640,95 @@
 2026-09-03T22:11:40Z	agent	-	-	-	-
 # STRANDED	2026-09-03T22:11:41Z	qa-adversary	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0039.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0051.md
 2026-09-03T22:11:41Z	qa-adversary	BUG-0039	8656	481	74480
+# STRANDED	2026-09-03T22:11:59Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:11:59Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:12:00Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:12:00Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:12:02Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:12:02Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:12:12Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:12:12Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:12:31Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:12:31Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:12:34Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:12:34Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:12:43Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:12:43Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:13:02Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:13:02Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:13:06Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:13:06Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:13:14Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:13:14Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:13:34Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:13:34Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:13:38Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:13:38Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:13:45Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:13:45Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:14:05Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:14:05Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:14:09Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:14:09Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:14:17Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:14:17Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:14:36Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:14:36Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:14:41Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:14:41Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:14:48Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:14:48Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:15:07Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:15:07Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:15:13Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:15:13Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:15:19Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:15:19Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:15:38Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:15:38Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:15:44Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:15:44Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:15:50Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:15:50Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:16:10Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:16:10Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:16:16Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:16:16Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:16:22Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:16:22Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:16:41Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:16:41Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:16:48Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:16:48Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:16:53Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:16:53Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:17:12Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:17:12Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:17:44Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:17:44Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:17:50Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:17:50Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:18:06Z	user-sim	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:18:06Z	user-sim	-	9197	585	94378
+# STRANDED	2026-09-03T22:18:15Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:18:15Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:18:18Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:18:18Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:18:25Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:18:25Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:18:27Z	user-sim	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:18:27Z	user-sim	-	6242	594	85177
+2026-09-03T22:18:45Z	designer	BUG-0040	spawned
+# STRANDED	2026-09-03T22:18:46Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:18:46Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:18:56Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:18:56Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:19:16Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:19:16Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:19:17Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-03T22:19:17Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:19:49Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0040.md
+2026-09-03T22:19:49Z	agent	-	-	-	-
+# STRANDED	2026-09-03T22:19:53Z	builder	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0040.md
+2026-09-03T22:19:53Z	builder	BUG-0040	28162	966	146204
+2026-09-03T22:20:24Z	qa-adversary	BUG-0040	spawned
