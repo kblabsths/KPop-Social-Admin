@@ -1037,3 +1037,99 @@ describe("the newest adapter run, above the cycles window", () => {
     );
   });
 });
+
+/* ── the names the live parity oracle addresses these surfaces by ────────── */
+
+/**
+ * Every surface this page renders, by the `data-surface` name it answers to.
+ * `runs` is the runs window's own hand-written wrapper, which
+ * `tests/live/runs.live.test.ts` has always used; the other four are the
+ * `<Section>` hooks added by admin-window/BUG-0056.
+ */
+const SURFACE_HOOKS = {
+  latest_run: '[data-surface="latest_run"]',
+  cycles: '[data-surface="cycles"]',
+  runs: '[data-surface="runs"]',
+  cycle_health: '[data-surface="cycle_health"]',
+  resolution_latency: '[data-surface="resolution_latency"]',
+} as const;
+
+describe("the surface hooks the live parity oracle addresses", () => {
+  /**
+   * `tests/live/cycles.live.test.ts` grades ONE surface at a time, and
+   * `stateOf` (`tests/live/parity.ts`) refuses any selector matching other
+   * than exactly one element. Until admin-window/BUG-0056 that oracle
+   * addressed the surfaces POSITIONALLY — `section:nth-of-type(n)` — so
+   * admin-window/BUG-0040's lead section and its `<div>` wrapper around the
+   * runs window made one selector match two surfaces (four live tests threw),
+   * while the two gauge selectors kept naming the right surfaces only because
+   * a section added above and a section buried below happened to cancel.
+   *
+   * Nothing offline could see any of that: `npm test` runs the offline and
+   * isolated projects only, so the live oracle's addressing had no pin in CI.
+   * These two cases are that pin, and they live in the file that owns this
+   * page's markup on purpose — a reorder should redden the suite that runs on
+   * every ticket, not only the one that needs staging.
+   */
+  it("gives each surface exactly one element, in every state and under a facet", async () => {
+    const populated = await renderCycles(healthyScript({ [T.runs]: { data: [...RUNS] } }));
+    const empty = await renderCycles(healthyScript({ [T.runs]: { data: [] } }));
+    const faceted = await renderCycles(
+      healthyScript({ [T.runs]: { data: [...RUNS] } }),
+      { source: RUN_FAILED.source, cycle: SUCCEEDED.run_id },
+    );
+    // Nothing readable at all: the states that swap a surface's table for a
+    // card are exactly where a wrapper is most likely to appear or vanish.
+    const absent = await renderCycles({
+      [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
+      [T.fieldProvenance]: { error: tableNotInSchemaCache(T.fieldProvenance) },
+      [T.observations]: { error: tableNotInSchemaCache(T.observations) },
+      [T.runs]: { error: tableNotInSchemaCache(T.runs) },
+    });
+    const refused = await renderCycles({
+      [T.resolutionRuns]: { error: permissionDenied(T.resolutionRuns) },
+      [T.fieldProvenance]: { error: permissionDenied(T.fieldProvenance) },
+      [T.observations]: { error: permissionDenied(T.observations) },
+      [T.runs]: { error: permissionDenied(T.runs) },
+    });
+
+    for (const markup of [populated, empty, faceted, absent, refused]) {
+      const $ = cheerio.load(markup);
+      for (const hook of Object.values(SURFACE_HOOKS)) {
+        expect($(hook).length, hook).toBe(1);
+      }
+      // …and no surface sits inside another, so grading one never reads a
+      // card that belongs to its neighbour.
+      for (const outer of Object.values(SURFACE_HOOKS)) {
+        for (const inner of Object.values(SURFACE_HOOKS)) {
+          if (outer === inner) continue;
+          expect($(outer).find(inner).length, `${outer} inside ${inner}`).toBe(0);
+        }
+      }
+    }
+  });
+
+  it("keeps each surface's own rows and window line inside its own hook", async () => {
+    // A hook that is unique but points at the wrong surface is the same bug
+    // wearing a different hat, so each name is checked against what that
+    // surface actually reads.
+    const $ = cheerio.load(
+      await renderCycles(healthyScript({ [T.runs]: { data: [...RUNS] } })),
+    );
+
+    expect($(SURFACE_HOOKS.latest_run).find("[data-latest-run-state]").length).toBe(1);
+    expect($(SURFACE_HOOKS.cycles).find("[data-cycle]").length).toBe(CYCLES.length);
+    expect($(SURFACE_HOOKS.cycles).find('[data-window="cycles"]').length).toBe(1);
+    expect($(SURFACE_HOOKS.runs).find("[data-run]").length).toBe(RUNS.length);
+    expect($(SURFACE_HOOKS.cycle_health).find('[data-window="cycle_health"]').length).toBe(1);
+    expect(
+      $(SURFACE_HOOKS.resolution_latency).find('[data-window="resolution_latency"]').length,
+    ).toBe(1);
+
+    // The two tables never bleed into each other's surface: the lead's copy of
+    // a run is the lead's, and the cycles surface holds no run at all.
+    expect($(SURFACE_HOOKS.cycles).find("[data-run], [data-latest-run]").length).toBe(0);
+    expect($(SURFACE_HOOKS.runs).find("[data-cycle], [data-latest-run]").length).toBe(0);
+    expect($(SURFACE_HOOKS.latest_run).find("[data-cycle], [data-run]").length).toBe(0);
+  });
+});

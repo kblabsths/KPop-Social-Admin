@@ -54,13 +54,39 @@ import {
 type Params = Record<string, string>;
 
 /**
- * The page's four surfaces, in the order `src/app/cycles/page.tsx` renders
- * them. Structural — no heading text is read. (The runs half is the second,
- * and is graded by `runs.live.test.ts` through its own `data-surface` hook.)
+ * The surfaces this file grades, each named by the `data-surface` hook
+ * `src/app/cycles/page.tsx` gives it. Structural — no heading text is read.
+ * (The runs half is graded by `runs.live.test.ts` through its own hook,
+ * `[data-surface="runs"]`.)
+ *
+ * NAMES, not positions. These three were `section:nth-of-type(1|3|4)` until
+ * admin-window/BUG-0056: admin-window/BUG-0040 added a lead section above the
+ * cycles and wrapped the runs window in a `<div>`, so `:nth-of-type(1)`
+ * matched two surfaces — the new lead, and the runs section that had become
+ * the first `section` inside that div — and `stateOf` rightly refused to read
+ * a state of two surfaces. The gauges' selectors survived only by luck (+1
+ * section above, -1 below, cancelling). A hook does not move when the page is
+ * rearranged, which is the whole point: `stateOf` still demands exactly one
+ * match, and now a reorder cannot silently hand it a different surface.
  */
-const CYCLES = "section:nth-of-type(1)";
-const HEALTH = "section:nth-of-type(3)";
-const LATENCY = "section:nth-of-type(4)";
+const CYCLES = '[data-surface="cycles"]';
+const HEALTH = '[data-surface="cycle_health"]';
+const LATENCY = '[data-surface="resolution_latency"]';
+
+/**
+ * Every surface hook this page is expected to carry, including the lead
+ * section this file does not otherwise grade and the runs window
+ * `runs.live.test.ts` owns. Asserted to be present and UNIQUE before any of
+ * them is graded, so the next reorder fails as one legible assertion here
+ * rather than as four `MarkupReadError`s scattered across the file.
+ */
+const SURFACES = [
+  '[data-surface="latest_run"]',
+  CYCLES,
+  '[data-surface="runs"]',
+  HEALTH,
+  LATENCY,
+];
 
 interface StagingCycle {
   run_id: string;
@@ -122,6 +148,21 @@ async function stagingCycles(limit: number): Promise<StagingCycle[]> {
 }
 
 describe("the resolver's cycles against staging", () => {
+  it("names every surface on the page once, whatever order they are in", async () => {
+    // The oracle's addressing itself, asserted before it is used: each hook
+    // has to reach exactly one element, which is the precondition `stateOf`
+    // enforces per call. Rendered with a facet as well as bare, because the
+    // `?source=` and `?cycle=` branches add sentences and swap the lead's
+    // whole body — none of that may duplicate or drop a surface
+    // (admin-window/BUG-0056).
+    const $bare = cheerio.load(await cyclesMarkup());
+    const $faceted = cheerio.load(await cyclesMarkup({ source: "ticketmaster" }));
+    for (const hook of SURFACES) {
+      expect($bare(hook).length, hook).toBe(1);
+      expect($faceted(hook).length, hook).toBe(1);
+    }
+  });
+
   it("renders the newest cycles, newest first, as the table holds them", async () => {
     // The resolver writes cycles while this runs, so the render and the query
     // are pinned to one still moment (`whileStill`) — otherwise a row arriving
