@@ -192,8 +192,8 @@ lib/gauges/**   ->  lib/db/**            ->  @supabase/supabase-js
                     everything above     ->  lib/<leaf>/**  ->  (nothing)
 
 <leaf> = the PURE DOMAIN LEAVES, the bottom of the app:
-         lib/review/**, lib/format.ts, lib/edit/config.ts
-         (and lib/browse/** when TASK-0015 lands)
+         lib/review/**, lib/browse/**, lib/claims/**, lib/records/**,
+         lib/format.ts, lib/edit/config.ts
 ```
 
 1. **`components/**` never imports from `lib/db/**` and never fetches.** A
@@ -451,17 +451,31 @@ down:**
     moves with the queues", and inventing a `queue` value the database cannot
     hold in order to test a branch it cannot reach is work with no user
     behind it.
-12. **`pending_claims` cannot be read on staging today, and no Admin-side read
-    shape rescues it** (measured 2026-09-02, architect; evidence
-    `agenticflow/tracker/evidence/architect/claims-probe*.tsv`). Every shape
-    times out at the 8s statement timeout with `57014` — the page's own query,
+12. **`pending_claims` was unreadable on staging, and no Admin-side read shape
+    rescued it — the fix was the scraper repo's, and it landed.** Measured
+    2026-09-02 (architect; evidence
+    `agenticflow/tracker/evidence/architect/claims-probe*.tsv`): every shape
+    timed out at the 8s statement timeout with `57014` — the page's own query,
     a narrowed `select`, `limit 2`, `limit 1` **with an order**, an
     `.in("observation_id", …)` over 10 known ids, a `head:true` exact count,
     and a per-bucket `eq("bucket", …)` count, one per bucket. Exactly one shape
-    returns: an unordered, unfiltered `limit 1` (0.85–1.1s). So there is no
-    honest fast read to write, and `/claims` plus the Sources awaiting-row
-    gauge sit in their **error** state, correctly, until the view is fixed in
-    the scraper repo (ASK-ticket, §12). Two things follow and both are rules.
+    returned: an unordered, unfiltered `limit 1` (0.85–1.1s). Five candidate
+    Admin-side mitigations were measured and all five timed out, so **no
+    mitigation was written and none may be invented later** — there was no
+    honest fast read to write. The artifact was a handoff
+    (admin-window/TASK-0031) and the scraper repo applied it as migration
+    `20260903000001_the_creation_bar_is_read_once_and_the_incumbent_is_one_seek.sql`:
+    one index, `field_provenance_current_per_fact` on `field_provenance
+    (entity_type, entity_id, field, applied_at desc, provenance_id desc)`, plus
+    the word `materialized` on the view's `required_column` CTE so the creation
+    bar is computed once per read instead of per uncreated record. Re-measured
+    2026-09-03 through the same guard (`claims-probe3.tsv`): every one of the
+    thirteen shapes returns, and the Claims page's own shape — six columns,
+    `neq bucket in_window`, `order bucket, observation_id`, `range(0,999)`,
+    `count: "exact"` — returns all 859 rows in **281–312 ms**, against 8.1 s
+    and `57014` before. `src/lib/db/claims.ts` and `src/lib/db/gauges.ts` were
+    not changed, which was the point. Two things follow and **both remain
+    rules, cost or no cost**.
     **(a) No workaround code.** Not a narrower read, not a cache, not a
     swallowed timeout, not a "temporarily hidden" surface — spec §10, and the
     error state is the honest rendering of a database that will not answer.
@@ -698,14 +712,22 @@ Each carries a marker. **A question is closed only when its marker leaves this
 list** — that is the structural bar its ASK ticket checks, and the architect is
 the only one who removes a marker.
 
-1. `OPEN-CLAIMS-COST` — **the `pending_claims` view cannot be read on staging**
-   (§6 trap 12): every shape but an unordered `limit 1` hits the 8s statement
-   timeout. The fix is a scraper-repo artifact — an index, a `not materialized`
-   hint, or a rewrite — so it is a **handoff**, not work this campaign can do.
-   `/claims` and the Sources awaiting-row gauge render their error state until
-   it lands, and no Admin-side workaround is written. (admin-window/TASK-0031,
-   which carries the eight measured shapes, the candidate SQL and the apply
-   command.)
+**No question is open.** The list is empty as of 2026-09-03, and an empty list
+is a state this section is allowed to be in — it is not an invitation to
+invent one, and a new silence is a new blocked ASK ticket with its own marker.
+
+**The sixth question — the claims-cost one — was settled 2026-09-03**, and its
+marker left this list for that reason (it is not spelled here: the ticket's
+structural check is the marker's ABSENCE from this file, so quoting it would
+re-open the question on a grep). `pending_claims` could not be read on staging
+in any shape but an unordered `limit 1`, the fix was a
+scraper-repo artifact and therefore a handoff, and Ben licensed the migration
+that carries it — an index on `field_provenance` and one `materialized` hint on
+the view's creation-bar CTE. Re-measured through the same live guard, the
+Claims page's own shape returns all 859 rows in 281–312 ms with **no change to
+Admin**, which is what the handoff was for. See §6 trap 12, whose two standing
+rules (no workaround code; Admin never re-computes the classification) survive
+the fix untouched, and admin-window/TASK-0031.
 
 **Five questions were settled 2026-09-02** by Ben, and their markers are gone
 from this list for that reason — each ruling is a dated paragraph in
@@ -741,6 +763,8 @@ decomposition brief of every ticket touching that surface.
 
 | 6 | **A live oracle whose fallback branch accepts the ERROR state, so a broken page grades as a pass (or an honest EMPTY page grades as a failure)** | 3 | `tests/live/claims.live.test.ts` — 4 of its 6 assertions passed on a page in its error state, because the not-provisioned branch only asks that the markup contain `pending_claims`; `queues.live.test.ts` and `sources.live.test.ts` — an empty queue takes the same branch and is graded not-provisioned | **Promoted to a rule 2026-09-02** — §10: a live test names the state kind (read structurally from `data-state`) before it compares a number; `empty` is a pass with a 0; `error` is always a FAIL. Filed as the test-hardening TASK of the same date; cited in the brief of every ticket owning a `tests/live/*.live.test.ts`. |
 
+| 7 | **A live oracle counting a DIFFERENT set than the surface it grades** | 1 | `tests/live/claims.live.test.ts`, the parked-bucket test: it grades the STANDING tab's list (`section:nth-of-type(1)`) against `claimCount()` — the whole view, 859 — so the page's honest EMPTY (staging holds 0 standing disagreements) reads as a failure, and three of the four param sets never reach the assertion the test exists for. Its own sibling test four lines above gets this right, counting `eq("bucket","standing_disagreement")`. | **Count 1, not yet a rule.** Filed as admin-window/BUG-0037 against the test alone — no product code is implicated, and the fix is the count, not the page. If a second instance appears, the rule is: an oracle's `counted` reads the same narrowing the surface renders, and a per-tab surface takes a per-tab count. Recorded 2026-09-03 by the architect, from the TASK-0031 confirmation run. |
+
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
 findings on TASK-0001/0003/0006; rows 4–5 at the second pass the same day,
 from measurement of the open tickets' own checks; row 6 at the third pass, from
@@ -748,6 +772,39 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-03, claims-cost confirmation (TASK-0031)** — the handoff landed in
+  the scraper repo and I confirmed it read-only rather than taking it on
+  report. What landed there:
+  `20260903000001_the_creation_bar_is_read_once_and_the_incumbent_is_one_seek.sql`,
+  Ben-licensed in session, carrying **candidate A exactly as this campaign
+  specified it** (`field_provenance_current_per_fact` on `field_provenance
+  (entity_type, entity_id, field, applied_at desc, provenance_id desc)` — that
+  table previously held nothing but its primary key) and a **different, better
+  candidate B than the one I proposed**: not `not materialized` on the
+  five-times-referenced `live_pending_claim`, but `materialized` on
+  `required_column`, which was referenced ONCE and therefore inlined into
+  `record_bar`'s per-record lateral — 6,586 `pg_attribute` scans, ~10s of the
+  11.5s their own EXPLAIN measured. My diagnosis named the right table and the
+  right kind of fix and the wrong dominant cost; recording that here because
+  the next reader should trust their EXPLAIN over my inference from SQL.
+  Amendments: **§6 trap 12 rewritten** from "cannot be read today" to what was
+  measured, what fixed it, and the re-measurement (every one of thirteen shapes
+  returns; the Claims page's own shape returns all 859 rows in **281–312 ms**
+  against 8.1s and `57014` before — evidence `claims-probe3.tsv` beside the
+  earlier two). Its two rules — no workaround code, and Admin never re-computes
+  the classification — are **unchanged and still binding**: they were never
+  contingent on the cost. **§12's claims-cost marker struck**, leaving that list
+  empty, which is a legal state and not an invitation. **§4's pure-leaf list
+  corrected** to `lib/review/**`, `lib/browse/**`, `lib/claims/**`,
+  `lib/records/**`, `lib/format.ts`, `lib/edit/config.ts` — `lib/records/**` is
+  the leaf DEBT-0001 landed (`routes.ts`, `provenance.ts`, both importing
+  nothing), and the list still carried "`lib/browse/**` when TASK-0015 lands"
+  after TASK-0015 was done and never named `lib/claims/**` at all. **No product
+  code changed, by anyone, for any of this** — which was the whole point of
+  ruling that no Admin-side mitigation existed. One live assertion is still red
+  and it is a defect in the test's arithmetic, not in the page: Common
+  violations row 7, admin-window/BUG-0037.
 
 - **2026-09-02, fourth ruling pass (one item)** — Ben answered the adapter-runs
   column question (TASK-0023), so **§12's runs marker is struck** and the

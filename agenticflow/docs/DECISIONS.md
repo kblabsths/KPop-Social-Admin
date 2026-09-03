@@ -549,3 +549,47 @@ apply command and the re-measure) and to FEAT-0005's acceptance test 2, which
 stays unmet, so M1 cannot claim Claims/Sources parity. **And a correct red is
 pinned, not tolerated** — when a failing test is the deliverable, a check must
 make its removal fail.
+
+## 2026-09-03 — The claims-cost handoff is confirmed by re-measurement, and "no Admin-side mitigation" is now a permanent rule rather than a temporary posture
+
+TASK-0031 held that `pending_claims` could not be read on staging in any shape
+but an unordered `limit 1`, that the fix was a scraper-repo artifact, and that
+**no Admin-side mitigation existed or might be built**. The scraper repo applied
+`20260903000001_the_creation_bar_is_read_once_and_the_incumbent_is_one_seek.sql`
+(Ben-licensed in session): the index this campaign specified —
+`field_provenance_current_per_fact` on `field_provenance (entity_type,
+entity_id, field, applied_at desc, provenance_id desc)` — plus one word,
+`materialized`, on the view's `required_column` CTE. Re-measured read-only
+through the live guard, same shapes as before (evidence
+`agenticflow/tracker/evidence/architect/claims-probe3.tsv` beside
+`claims-probe.tsv` and `claims-probe2.tsv`): all thirteen shapes return, and the
+Claims page's own shape returns all 859 rows in 281–312 ms against 8.1 s and
+`57014` before. Not one line of `src/` changed.
+
+The door this closes is not "the view is fast now" — that is a fact, not a
+decision, and it can regress. It is this: **the two rules trap 12 carried are
+kept, decoupled from the cost that motivated them.** No workaround code (no
+cache, no narrowed read substituting for a complete one, no swallowed timeout,
+no surface hidden because it is red), and **Admin never re-computes the
+classification** from `observations` + `field_provenance` + `review_items`. Both
+were written while the view was unreadable and both would now be easy to read as
+expired. They are not. If the view slows again — and a classification view over
+a growing catalog is exactly the thing that will — the answer is another handoff
+with another measurement, never a second copy of the resolver's precedence rules
+living in this repo. The bucket of a claim is the ledger's answer or it is
+nothing.
+
+Two things recorded because the next reader should weight them. **My diagnosis
+was half right and the scraper campaign's EXPLAIN corrected it.** I named
+`field_provenance`'s missing index (right, and applied verbatim) and then
+proposed `not materialized` on the five-times-referenced `live_pending_claim`;
+the actual dominant cost was the opposite shape — `required_column` was
+referenced ONCE, so the planner inlined it into a per-record lateral and re-ran
+a `pg_catalog` join per uncreated record, ~10 s of an 11.5 s read. Inference
+from SQL text located the right table and the wrong hot spot; a plan beats a
+reading, and the step-0 EXPLAIN on the handoff ticket earned its place.
+**And the confirmation found one red that is not the page**: the parked-bucket
+live assertion grades the standing tab against the whole-view count
+(admin-window/BUG-0037, ARCHITECTURE Common violations row 7) — a test-arithmetic
+defect that the page's former error state had been hiding. It is fixed in the
+test, never in `src/`.
