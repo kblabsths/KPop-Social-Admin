@@ -1,0 +1,29 @@
+{
+ "id": "BUG-0037",
+ "created": "2026-09-03T05:12:59Z",
+ "green": true,
+ "git_head": "73b370b89132e99689ba01dfdb2bf6ff131bdecd",
+ "scope": [
+  "tests/live/claims.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 0,
+ "tree_hash": "186acc01f7a3dcd9d1cefbaac58861d3c50faddbe3c8b54cead58c460ad31b41",
+ "commands": [
+  {
+   "cmd": "npm run test:live -- tests/live/claims.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-32069\n\n \u2713 |live| tests/live/claims.live.test.ts (6 tests) 30318ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it  4193ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it, per source filter  9441ms\n   \u2713 the classification buckets against staging > lists every claim the view holds \u2014 a complete read, nothing dropped  2957ms\n   \u2713 the classification buckets against staging > renders the standing tab as exactly that bucket's subset  2773ms\n   \u2713 the parked bucket against staging > is a string the database still spells, and the page never does  10706ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  22:11:54\n   Duration  31.07s (transform 149ms, setup 30ms, collect 367ms, tests 30.32s, environment 0ms, prepare 100ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/claims.live.test.ts\n(node:32119) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm test",
+   "exit": 0,
+   "output_tail": "ect 13.40s, tests 46.47s, environment 10ms, prepare 6.41s)\n\n\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-32069\n\n \u2713 |isolated| tests/isolated/probe-race.isolated.test.ts (6 tests) 15512ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is readable  1441ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is listed but cannot be opened  1405ms\n   \u2713 walking src/ while the layering probe comes and goes > survives the probe directory appearing and vanishing under the walk  3918ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no OTHER offline file that walks the tree either  8747ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  22:12:36\n   Duration  15.85s (transform 32ms, setup 0ms, collect 31ms, tests 15.51s, environment 0ms, prepare 77ms)\n\nnpm notice run kpop-social-space@0.1.0 test\nnpm notice run vitest run --project=offline && vitest run --project=isolated\n(node:33630) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:33654) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:33660) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:33704) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:33829) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}

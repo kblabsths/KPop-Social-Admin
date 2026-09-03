@@ -5148,3 +5148,17 @@
 2026-09-03T05:08:27Z	agent	-	-	-	-
 2026-09-03T05:08:28Z	agent	-	-	-	-
 2026-09-03T05:08:37Z	qa-adversary	TASK-0031	6755	669	110891
+2026-09-03T05:08:58Z	agent	-	-	-	-
+# STRANDED	2026-09-03T05:09:30Z	agent	1 uncommitted in primary checkout: tests/live/claims.live.test.ts
+2026-09-03T05:09:30Z	agent	-	-	-	-
+# STRANDED	2026-09-03T05:10:01Z	agent	1 uncommitted in primary checkout: tests/live/qa-probe.live.test.ts
+2026-09-03T05:10:01Z	agent	-	-	-	-
+# STRANDED	2026-09-03T05:11:04Z	agent	1 uncommitted in primary checkout: tests/live/qa-probe.live.test.ts
+2026-09-03T05:11:04Z	agent	-	-	-	-
+2026-09-03T05:12:06Z	agent	-	-	-	-
+# STRANDED	2026-09-03T05:13:07Z	agent	1 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/BUG-0037.json
+2026-09-03T05:13:07Z	agent	-	-	-	-
+# STRANDED	2026-09-03T05:13:39Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/BUG-0037.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0037.md
+2026-09-03T05:13:39Z	agent	-	-	-	-
+# STRANDED	2026-09-03T05:13:51Z	qa-adversary	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/BUG-0037.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0037.md
+2026-09-03T05:13:51Z	qa-adversary	BUG-0037	4763	450	75033
