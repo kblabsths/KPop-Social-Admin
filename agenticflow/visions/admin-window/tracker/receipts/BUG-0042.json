@@ -1,0 +1,31 @@
+{
+ "id": "BUG-0042",
+ "created": "2026-09-03T23:50:24Z",
+ "green": true,
+ "git_head": "4ed89e0ea9daf161727550fb73044a05e2f95fd3",
+ "scope": [
+  "src/components/review/shape-views.tsx",
+  "src/components/ui/data-table.tsx",
+  "tests/offline/review-item/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "4e33ada72897b9f4101b1111383a781da7464f8f40b79fe8c509915e54980519",
+ "commands": [
+  {
+   "cmd": "npx vitest run --project=offline tests/offline/review-item/page.test.ts tests/offline/ui/primitives.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-83581\n\n \u2713 |offline| tests/offline/ui/primitives.test.ts (40 tests) 51ms\n \u2713 |offline| tests/offline/review-item/page.test.ts (39 tests) 286ms\n\n Test Files  2 passed (2)\n      Tests  79 passed (79)\n   Start at  16:50:12\n   Duration  1.19s (transform 254ms, setup 0ms, collect 720ms, tests 336ms, environment 0ms, prepare 179ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline tests/offline/review-item/page.test.ts tests/offline/ui/primitives.test.ts\n(node:83612) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
