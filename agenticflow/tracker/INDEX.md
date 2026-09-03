@@ -1,7 +1,6 @@
-# Tracker index (regenerated 2026-09-03T23:03:44Z — do not edit)
+# Tracker index (regenerated 2026-09-03T23:04:59Z — do not edit)
 
 ## open
-- BUG-0058 [P1][bug][M1] The staging residue sweep never runs: it ilikes a timestamp column and throws, so no walk's write was ever verified clean  (scope:tests/live/residue.live.test.ts from:qa:BUG-0041)
 - BUG-0061 [P1][bug][M1] Claims: BUG-0041's 50-row window broke the page's live parity oracle (claims.live is red on the run branch)  (scope:tests/live/claims.live.test.ts,src/components/claims/claim-list.tsx from:BUG-0056)
 - BUG-0042 [P2][bug][M1] Review item detail: the evidence table overflows the page instead of scrolling inside its own border  (scope:src/components/review/shape-views.tsx,src/components/ui/data-table.tsx,tests/offline/review-item/page.test.ts from:M1-endgame-designer-walk)
 - BUG-0043 [P2][bug][M1] A source is labelled by raw uuid on the review item and on Claims, while the rest of the app names it  (scope:src/components/review/item-header.tsx,src/components/claims/claim-list.tsx,src/components/claims/filter-bar.tsx,src/app/claims/page.tsx,tests/offline/review-item/page.test.ts,tests/offline/claims/page.test.ts from:M1-endgame-designer-walk)
@@ -22,13 +21,13 @@
 - BUG-0050 [P3][bug][M1] Phone (390px): the fixed 192px sidebar takes half the viewport and the content column collapses  (scope:src/components/shell/shell.tsx,tests/offline/shell/shell.test.ts from:M1-endgame-designer-walk)
 - BUG-0055 [P3][bug][M1] Cycles & runs names one state two ways on one screen: the rows say 'died', the health panel says 'unfinished'  (scope:src/app/cycles/page.tsx,src/lib/gauges/cycle-health.ts,tests/offline/cycles/page.test.ts,tests/offline/gauges/cycle-health.test.ts from:M1-endgame-user-sim)
 
-## built
-- BUG-0057 [P1][bug][M1] Claims: BUG-0041's 50-row window leaves the page's live parity oracle red — it still asserts every claim of the view is rendered  (scope:tests/live/claims.live.test.ts,src/app/claims/page.tsx @builder-75 from:BUG-0041)
+## claimed
+- BUG-0058 [P1][bug][M1] The staging residue sweep never runs: it ilikes a timestamp column and throws, so no walk's write was ever verified clean  (scope:tests/live/residue.live.test.ts @builder-76 from:qa:BUG-0041)
 
 ## qa
-- BUG-0056 [P1][bug][M1] Cycles & runs: BUG-0040's lead section broke the page's live parity oracle (4 live tests throw)  (scope:src/app/cycles/page.tsx,tests/live/cycles.live.test.ts @builder-73 from:BUG-0040)
+- BUG-0057 [P1][bug][M1] Claims: BUG-0041's 50-row window leaves the page's live parity oracle red — it still asserts every claim of the view is rendered  (scope:tests/live/claims.live.test.ts,src/app/claims/page.tsx @builder-75 from:BUG-0041)
 
 ## reopened
 - BUG-0041 [P2][bug][M1] Claims: the all-claims table is unwindowed (877 rows, 30,079px), so the pending-claims gauge moves with the data  (scope:src/app/claims/page.tsx,src/components/claims/claim-list.tsx,tests/offline/claims/page.test.ts from:M1-endgame-designer-walk)
 
-Totals — built:1, done:86, open:20, qa:1, reopened:1. Archived: 0.
+Totals — claimed:1, done:87, open:19, qa:1, reopened:1. Archived: 0.
