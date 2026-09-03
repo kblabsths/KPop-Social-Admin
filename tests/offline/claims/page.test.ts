@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
+import { CLAIM_WINDOW } from "@/components/claims";
 import { T } from "@/lib/db/tables";
 import { render } from "../ui/markup";
 import { CLAIMS, ENTITY, OBSERVATIONS, OBSERVED_AT, SOURCE } from "./population";
@@ -441,6 +442,193 @@ describe("the claim list", () => {
     const $ = cheerio.load(markup);
     expect($("button, form, input, select, textarea")).toHaveLength(0);
     expect($("a").length).toBeGreaterThan(0);
+  });
+});
+
+/* ── the list's window ───────────────────────────────────────────────────── */
+
+/**
+ * The list's BOUND (campaign admin-window/BUG-0041).
+ *
+ * The read stays complete — the bucket counts are the view's — but the table
+ * is drawn as a window, because an unbounded list made the page's own sections
+ * move with the backlog: measured on staging 2026-09-03, 877 claims rendered a
+ * 30,079px page with the gauge heading at y=29,486.
+ *
+ * These tests are over a population BIGGER than the cap, generated here, so
+ * they fail the moment the bound is removed, raised silently, or applied
+ * before the order instead of after it. `CLAIM_WINDOW` is imported rather than
+ * spelled: the number is the product's to choose, the BEHAVIOUR is what is
+ * pinned.
+ */
+describe("the claim list's window", () => {
+  /** A claim per index, oldest first by index, alternating bucket and source. */
+  function crowd(size: number): {
+    claims: PendingClaimRow[];
+    observations: ReturnType<typeof observationRow>[];
+    instants: Map<string, string>;
+  } {
+    const claims: PendingClaimRow[] = [];
+    const observations: ReturnType<typeof observationRow>[] = [];
+    const instants = new Map<string, string>();
+    for (let index = 0; index < size; index += 1) {
+      const id = `01920000-0000-7000-8000-0000000${(70000 + index).toString()}`;
+      const bucket = index % 2 === 0 ? "awaiting_row" : "awaiting_link";
+      const source = index % 3 === 0 ? SOURCE.first : SOURCE.second;
+      // Ascending instants from a fixed origin: index 0 is the oldest, so the
+      // expected window is the first `CLAIM_WINDOW` indices, in index order.
+      const observedAt = new Date(Date.UTC(2026, 0, 1) + index * 3_600_000).toISOString();
+      claims.push(
+        pendingClaimRow(bucket, {
+          observation_id: id,
+          domain: "events",
+          entity_id: bucket === "awaiting_row" ? null : ENTITY.event,
+          field: "title",
+          source_id: source,
+        }),
+      );
+      observations.push(
+        observationRow({
+          observation_id: id,
+          entity_id: bucket === "awaiting_row" ? null : ENTITY.event,
+          domain: "events",
+          field: "title",
+          source_id: source,
+          observed_at: observedAt,
+          status: "pending",
+        }),
+      );
+      instants.set(id, observedAt);
+    }
+    return { claims, observations, instants };
+  }
+
+  /** The window line's own hooks — the app's stated bound, read structurally. */
+  function windowLine(markup: string) {
+    const line = cheerio.load(markup)('[data-window="claims"]');
+    return {
+      present: line.length === 1,
+      limit: Number(line.attr("data-window-limit")),
+      held: Number(line.attr("data-window-held")),
+      truncated: line.attr("data-window-truncated") === "true",
+      text: line.text().replace(/\s+/g, " ").trim(),
+    };
+  }
+
+  const OVERFLOW = CLAIM_WINDOW + 17;
+
+  function crowdedScript(size: number): Script {
+    const population = crowd(size);
+    return {
+      [T.pendingClaims]: { data: population.claims, count: population.claims.length },
+      [T.observations]: { data: population.observations },
+      [T.sources]: { data: [] },
+    };
+  }
+
+  it("draws at most the window's rows however many claims the view holds", async () => {
+    const markup = await renderClaims(crowdedScript(OVERFLOW));
+    expect(claimIds(markup)).toHaveLength(CLAIM_WINDOW);
+    // And a bigger backlog draws the same number of rows: the page's height is
+    // a function of the cap, not of the queue.
+    const bigger = await renderClaims(crowdedScript(CLAIM_WINDOW * 3));
+    expect(claimIds(bigger)).toHaveLength(CLAIM_WINDOW);
+  });
+
+  it("draws the LONGEST-WAITING claims, in the page's oldest-first order", async () => {
+    const population = crowd(OVERFLOW);
+    const markup = await renderClaims(crowdedScript(OVERFLOW));
+    // The window is the head of the order, not the head of the read: the
+    // oldest `CLAIM_WINDOW` claims, oldest first.
+    expect(claimIds(markup)).toEqual(
+      population.claims.slice(0, CLAIM_WINDOW).map((claim) => claim.observation_id),
+    );
+  });
+
+  it("states the cap and the number of claims it holds back", async () => {
+    const line = windowLine(await renderClaims(crowdedScript(OVERFLOW)));
+    expect(line.present).toBe(true);
+    expect(line.limit).toBe(CLAIM_WINDOW);
+    // The honest figure: every claim matching, not the rows drawn.
+    expect(line.held).toBe(OVERFLOW);
+    expect(line.truncated).toBe(true);
+    // The sentence carries both numbers, so the truncation is never silent.
+    expect(line.text).toContain(String(CLAIM_WINDOW));
+    expect(line.text).toContain(String(OVERFLOW));
+  });
+
+  it("does not claim to be truncated when every matching claim is drawn", async () => {
+    const line = windowLine(await renderClaims(crowdedScript(CLAIM_WINDOW)));
+    expect(line.truncated).toBe(false);
+    expect(line.held).toBe(CLAIM_WINDOW);
+    expect(line.text).not.toContain(String(CLAIM_WINDOW * 2));
+    // The fixture population is well under the cap, so nothing there is held
+    // back either — the window never hides a row it did not have to.
+    const small = windowLine(await renderClaims(healthyScript()));
+    expect(small.truncated).toBe(false);
+    expect(small.held).toBe(SHOWABLE.length);
+  });
+
+  it("counts held claims per narrowing, not per rendered page", async () => {
+    // Big enough that EACH bucket alone overflows the cap, so a narrowing is
+    // windowed too and its held count is the narrowing's, not the page's.
+    const size = CLAIM_WINDOW * 2 + 17;
+    const population = crowd(size);
+    for (const bucket of ["awaiting_row", "awaiting_link"]) {
+      const expected = population.claims.filter((claim) => claim.bucket === bucket);
+      expect(expected.length, bucket).toBeGreaterThan(CLAIM_WINDOW);
+      const markup = await renderClaims(crowdedScript(size), { bucket });
+      const line = windowLine(markup);
+      expect(line.held, bucket).toBe(expected.length);
+      expect(claimIds(markup).length, bucket).toBe(
+        Math.min(CLAIM_WINDOW, expected.length),
+      );
+      expect(line.truncated, bucket).toBe(expected.length > CLAIM_WINDOW);
+    }
+  });
+
+  it("leaves every bucket count the view's own, with the list windowed", async () => {
+    // EC5 parity, under the window: the table above the list still counts the
+    // whole classification, so no figure on the page became a window
+    // aggregate.
+    const population = crowd(OVERFLOW);
+    const markup = await renderClaims(crowdedScript(OVERFLOW));
+    for (const row of bucketRows(markup)) {
+      const held = population.claims.filter((claim) => claim.bucket === row.bucket);
+      expect(row.claims, row.bucket).toBe(held.length);
+      expect(row.sources, `${row.bucket} sources`).toBe(
+        new Set(held.map((claim) => claim.source_id)).size,
+      );
+    }
+    expect(
+      bucketRows(markup).reduce((total, row) => total + row.claims, 0),
+    ).toBe(OVERFLOW);
+    // The counted total is bigger than what the list drew — which is the whole
+    // point of the sentence above it.
+    expect(OVERFLOW).toBeGreaterThan(claimIds(markup).length);
+  });
+
+  it("windows the standing tab's list the same way", async () => {
+    const size = CLAIM_WINDOW + 9;
+    const standing = crowd(size);
+    const script: Script = {
+      [T.pendingClaims]: {
+        data: standing.claims.map((claim) => ({
+          ...claim,
+          bucket: "standing_disagreement" as PendingClaimRow["bucket"],
+          unmet_requirement: null,
+        })),
+        count: size,
+      },
+      [T.observations]: { data: standing.observations },
+      [T.sources]: { data: [] },
+    };
+    const markup = await renderClaims(script, { tab: "standing" });
+    expect(claimIds(markup)).toHaveLength(CLAIM_WINDOW);
+    const line = windowLine(markup);
+    expect(line.limit).toBe(CLAIM_WINDOW);
+    expect(line.held).toBe(size);
+    expect(line.truncated).toBe(true);
   });
 });
 

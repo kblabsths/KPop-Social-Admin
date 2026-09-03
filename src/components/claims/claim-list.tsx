@@ -46,6 +46,56 @@ export interface ClaimLine {
   provenanceHref: string | null;
 }
 
+/**
+ * The list's BOUND — campaign admin-window/BUG-0041.
+ *
+ * The claims read is complete on purpose (`src/lib/db/claims.ts`: the bucket
+ * counts must equal the view's), but rendering every row it holds made the
+ * page a function of the backlog: 877 claims on staging rendered a 30,079px
+ * page with the pending-claims gauge's heading at y=29,486, so the gauge's
+ * position moved by tens of thousands of pixels as the resolver drained the
+ * queue — the operator relearnt where it sat every morning (LOOK_AND_FEEL,
+ * Interaction, "Repeat use").
+ *
+ * So the LIST is a window, in the app's existing idiom (`/cycles`, `/browse`,
+ * the four gauges): at most this many rows, the longest-waiting ones, with the
+ * cap and the number held stated on screen. **It bounds only what is drawn** —
+ * nothing above it re-derives a count from these rows, and the bucket table
+ * still counts the whole view under the current filters, so no figure on the
+ * page becomes a window aggregate wearing a total's clothes.
+ *
+ * 50, the same bound `/browse` puts on a list of records: at the ~33px per row
+ * this table measures, a full window is ~1,650px of list, so every section
+ * heading keeps a position the backlog cannot move by thousands of pixels.
+ */
+export const CLAIM_WINDOW = 50;
+
+/** A bounded list: the rows drawn, how many were held, whether it filled. */
+export interface ClaimWindow {
+  /** The rows to draw — at most `limit`, in the order they arrived in. */
+  rows: ClaimLine[];
+  /** How many rows the caller had — the honest figure the sentence states. */
+  held: number;
+  /** Did the window fill its cap, leaving rows undrawn? */
+  truncated: boolean;
+}
+
+/**
+ * The first `limit` rows, and the truth about the rest. Pure: it re-orders
+ * nothing, so the window is the HEAD of whatever order it was handed —
+ * `claimOrder`'s oldest-first, which makes it the longest-waiting claims.
+ */
+export function claimWindow(
+  rows: readonly ClaimLine[],
+  limit: number = CLAIM_WINDOW,
+): ClaimWindow {
+  return {
+    rows: rows.slice(0, limit),
+    held: rows.length,
+    truncated: rows.length > limit,
+  };
+}
+
 export function ClaimList({
   rows,
   label,
