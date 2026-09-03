@@ -1,7 +1,6 @@
-# Tracker index (regenerated 2026-09-03T22:41:12Z — do not edit)
+# Tracker index (regenerated 2026-09-03T22:49:42Z — do not edit)
 
 ## open
-- BUG-0056 [P1][bug][M1] Cycles & runs: BUG-0040's lead section broke the page's live parity oracle (4 live tests throw)  (scope:src/app/cycles/page.tsx,tests/live/cycles.live.test.ts from:BUG-0040)
 - BUG-0042 [P2][bug][M1] Review item detail: the evidence table overflows the page instead of scrolling inside its own border  (scope:src/components/review/shape-views.tsx,src/components/ui/data-table.tsx,tests/offline/review-item/page.test.ts from:M1-endgame-designer-walk)
 - BUG-0043 [P2][bug][M1] A source is labelled by raw uuid on the review item and on Claims, while the rest of the app names it  (scope:src/components/review/item-header.tsx,src/components/claims/claim-list.tsx,src/components/claims/filter-bar.tsx,src/app/claims/page.tsx,tests/offline/review-item/page.test.ts,tests/offline/claims/page.test.ts from:M1-endgame-designer-walk)
 - BUG-0044 [P2][bug][M1] Cycles table: raw snake_case headers mixed with prose, and a cycle's id headed RUN_ID against the glossary  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts from:M1-endgame-designer-walk)
@@ -19,9 +18,12 @@
 - BUG-0055 [P3][bug][M1] Cycles & runs names one state two ways on one screen: the rows say 'died', the health panel says 'unfinished'  (scope:src/app/cycles/page.tsx,src/lib/gauges/cycle-health.ts,tests/offline/cycles/page.test.ts,tests/offline/gauges/cycle-health.test.ts from:M1-endgame-user-sim)
 
 ## built
+- BUG-0056 [P1][bug][M1] Cycles & runs: BUG-0040's lead section broke the page's live parity oracle (4 live tests throw)  (scope:src/app/cycles/page.tsx,tests/live/cycles.live.test.ts @builder-73 from:BUG-0040)
+
+## qa
 - BUG-0041 [P2][bug][M1] Claims: the all-claims table is unwindowed (877 rows, 30,079px), so the pending-claims gauge moves with the data  (scope:src/app/claims/page.tsx,src/components/claims/claim-list.tsx,tests/offline/claims/page.test.ts @builder-72 from:M1-endgame-designer-walk)
 
 ## reopened
 - BUG-0040 [P2][bug][M1] Cycles & runs: the newest adapter run sits 4,419px below the fold (Feel bar 1)  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts from:M1-endgame-designer-walk)
 
-Totals — built:1, done:85, open:16, reopened:1. Archived: 0.
+Totals — built:1, done:85, open:15, qa:1, reopened:1. Archived: 0.
