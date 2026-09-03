@@ -597,6 +597,138 @@ export const EDIT_CONFIG: Readonly<Record<string, TableEditConfig>>;
   route — those are physically impossible over PostgREST and must also never
   be built.
 
+### 9.1 The walk sandbox — a staging-only table walkers may edit
+
+Ben's exception, granted 2026-09-03 ("we should just create a table that always
+exists which walkers can interact with. After a walk it should be reset for the
+next walk"), and the mechanism ruled by the architect the same day
+(admin-window/TASK-0034). VISION's non-goal — no schema change from Admin code,
+no migration in this repo — stays literally true: nothing here enters `src/`,
+nothing becomes a migration, nothing reaches production.
+
+**1. Mechanism: the table is created BY HAND, once, on staging.** Ben pastes the
+DDL below into the staging SQL editor (`agenticflow/tracker/for-human/TASK-0034.md`
+carries it paste-ready). Kit-side tooling then only DELETEs and re-INSERTs rows,
+which is pure DML and which `@supabase/supabase-js` does over PostgREST with the
+service key. *Rejected*: tooling that creates the table itself over
+`STAGING_SUPABASE_DB_URL` with a Postgres driver — it costs a supply-gated DEP,
+a second credential SHAPE in this repo (a DSN with an embedded password), and
+either a fourth home for walk tooling or an amendment to a standing pin, and it
+buys only self-healing on a staging project that would be missing every other
+table too (where the surface already says `not_provisioned`, honestly).
+**TASK-0021's pin is untouched**: `STAGING_SUPABASE_DB_URL` stays a name nothing
+under `src/` or `tests/` reads, and no `pg` / `postgres.js` dependency enters
+this repo.
+
+**2. The table.** `public.walk_sandbox`, on the staging project ONLY. One vetted
+scalar per edit type the record surface can produce, because the widget is a
+single text cell (`components/records/values.ts`) and every type question is
+answered by PostgREST on the way in:
+
+```sql
+create table if not exists public.walk_sandbox (
+  sandbox_id  text primary key,               -- deterministic key: walk-1, walk-2, walk-3
+  label       text not null,                  -- text
+  note        text,                           -- nullable text: the em-dash absence, then fill it
+  tally       integer not null default 0,     -- integer coercion
+  is_flagged  boolean not null default false, -- boolean coercion (no catalog table covers one)
+  observed_on date,                           -- date coercion, nullable
+  created_at  timestamptz not null default now()  -- set at seed, never written, NOT in the map
+);
+```
+
+Deterministic keys so a recipe deep-links without a lookup: `/records/walk_sandbox/walk-1`.
+`created_at` is deliberately outside the map — the read selects `mappedColumns`
+explicitly, so a column the map does not name is never read and never drawn, and
+it is `created_at` rather than `updated_at` because nothing updates it and a
+column that claims otherwise lies to whoever queries the table by hand.
+
+**The three NOT NULL columns are deliberate.** Clearing a cell sends `null`
+(`route.ts`: `""` and `null` both mean clear), so clearing `label`, `tally` or
+`is_flagged` is refused by the database (23502) and the surface must show that
+refusal without claiming the save landed. That is a walkable error path, not a
+defect: a walker files a bug only if the cell claims success, blanks the value,
+or reports nothing at all.
+
+**3. Exposure and grants.** It lives in `public`, so PostgREST exposes it — it
+has to, since Admin's only client speaks PostgREST. **RLS is enabled with no
+policy**, `anon` and `authenticated` are revoked, `service_role` granted: the
+service role bypasses RLS, so Admin reads and writes it exactly like any other
+table, and no browser-side key could ever reach it.
+
+**4. The reset tool, and when it runs.** `tests/walk/reset-sandbox.mts`, run by
+`node` exactly as `tests/walk/session-cookie.mts` is (admin-window/TASK-0036).
+It DELETEs every row and re-INSERTs a checked-in fixture — PostgREST cannot
+`TRUNCATE`, and it does not need to.
+
+- **It reads no `STAGING_` name and loads no `.env`.** It takes `SUPABASE_URL`
+  and `SUPABASE_SERVICE_ROLE_KEY` from its own process environment, mapped from
+  the staging names on the command line, which is already how a walk instance is
+  launched (STACK §5). So `tests/live/setup.ts` remains the ONE place the
+  `STAGING_` names are read, and a stale `.env` can never silently supply a
+  target.
+- **It refuses through the one guard.** `resolveStagingTarget`
+  (`tests/live/staging-target.ts`) against `SERVICES.md`'s declared staging
+  target: an unset name, an unparseable URL, no declaration, or a host that is
+  not the declared one all exit non-zero having written nothing. No second host
+  check exists anywhere.
+- **Cadence: immediately BEFORE every walk, mandatory**; again after a walk that
+  wrote, when convenient. Ben asked for "reset for the next walk", and a
+  before-reset is the only one a crashed, abandoned or forgetful walk cannot
+  skip — the guarantee a walk starts from the fixture must not depend on the
+  previous walk's manners.
+- `tsconfig.json` gains **`allowImportingTsExtensions: true`** so the node-run
+  `.mts` tool may import `../live/staging-target.ts` by its real extension (Node
+  resolves no extensionless TS specifier, and the alternative was a second copy
+  of the guard). Measured on this tree 2026-09-03: `tsc --noEmit` 0,
+  `npm run lint` 0, `npm run build` green, and Next does not rewrite the flag.
+
+**5. Its `Regime` is `pre_cutover`, reused on purpose.** `Regime` answers one
+question — which WRITE PATH — and the sandbox's answer is identical to
+`groups`/`idols`': a direct PATCH within the map's `editable` allowlist,
+unprovenanced. A third member would be a second answer to a question the type
+does not ask, and it would cost a change to `decideEdit` plus `regimeNote`'s
+two-way ternary in `src/app/records/[table]/[id]/page.tsx` — which, left
+unchanged, would render "resolver-owned and read-only" beside an editable cell
+until someone noticed. The inaccuracy accepted instead: `pre_cutover` reads as a
+historical claim ("not yet cut over to the resolver") that the sandbox cannot
+make, and the regime note on its record page says a value written here goes "to
+the catalog", which for a staging fixture it does not. Both are carried in a
+docstring rather than paid for in a third code path, and neither is a bug to
+file. **The door left open**: if a second non-catalog table ever enters the map,
+or if any code starts reading `pre_cutover` to mean "a catalog table", the third
+regime is earned then and this paragraph is the one to revisit.
+
+**6. The fixture carries no `admin-window` marker.** The moment the entry lands,
+`tests/live/residue.live.test.ts` derives the sandbox into its search space and
+fails on any value containing that string, which is coverage worth having — and
+which makes a fixture containing it read as campaign residue on every single
+run. The fixture is checked in at `tests/walk/sandbox-fixture.ts` (the tool
+imports it; an offline test asserts the marker's absence and that every
+fixture key is a mapped column), and its rows say "sandbox", never the
+campaign name.
+
+**7. Production renders the honest absence, permanently.** The table exists on
+staging only, so in production the record read gets `PGRST205` and the page
+draws the `not_provisioned` card naming `walk_sandbox` — acceptance test 9's
+existing code path, no new branch. The card's generic line ("arrives with the
+scraper repo's migrations") is wrong for this one table and is **accepted as
+is**: the surface has no nav entry, no Browse row and no link anywhere, so it is
+reachable only by an agent typing a URL it already knows, and the load-bearing
+half — this table is not here, and here is its name — is true. Do not add a
+per-table branch for it. If the sandbox ever becomes reachable from a link, that
+line becomes a per-entry field and this is the sentence to revisit.
+
+**8. One consequence for the live suite.** `residue.live.test.ts` reads every
+mapped table with `select("*")`; against a staging project where Ben has not yet
+pasted the DDL, that read errors and the sweep fails on a table nobody wrote to.
+The sweep therefore treats the sandbox's ABSENCE as "nothing to sweep" — the
+absence code, read with the existing `codeOf` / `objectIsAbsent` idiom
+(`tests/live/parity.ts`), skipped with a stated note — and never as an error.
+An absent table is not a residue finding, and it is not a pass it can hide in
+either: the scanned-column floor still has to be met by the tables that ARE
+there.
+
 ## 10. Tests
 
 - `tests/offline/**` — the default suite (`npm test`). Pure functions, page
@@ -608,6 +740,11 @@ export const EDIT_CONFIG: Readonly<Record<string, TableEditConfig>>;
   fallback) when either is unset, and it refuses when the staging host does not
   match the staging target declared in `agenticflow/docs/SERVICES.md`. Product
   code never mentions a `STAGING_` name.
+- `tests/walk/**` — **not a test project**: the walk agents' two tools, run by
+  `node` and matched by no vitest glob. `session-cookie.mts` mints the session
+  cookie (admin-window/TASK-0033); `reset-sandbox.mts` resets the walk sandbox
+  (§9.1). Both live outside `src/` because that is where a credential name may
+  be read, and neither is importable from the app.
 - `tests/http/**` (`npm run test:http`) — builds and starts the app on port
   8772 for the things only a real server proves: unauthenticated redirects to
   `/login` for every route, and the client-bundle scan for service-role

@@ -210,17 +210,21 @@ page.goto("http://localhost:8771/")
 - **The sign-in flow itself is never walked.** That blind spot is accepted, not
   overlooked: a minted cookie starts the walk already past the gate, so nothing
   the walk sees says anything about Google sign-in.
-- **The PATCH route answers 403 for the walker identity, and that is correct.**
-  The middleware gate asks only `!!session?.user` (`src/lib/auth.ts`), so the
-  minted cookie opens **every page**. The edit route is stricter:
-  `src/app/api/admin/records/[table]/[id]/route.ts` calls `requireAdmin()`
-  (`src/lib/admin.ts`), which looks the session email up in
-  `admin_allowed_emails` **on every request**. Staging's allowlist does not hold
-  `walker@admin-window.local`, so a save from `EditableCell` gets a 403. Every
-  read surface walks fine. Whether a save-path walk gets an allowlisted identity
-  — a labelled row in staging's allowlist, or `--email` naming an address the
-  allowlist already holds — is **Ben's call**; no agent adds the row and no
-  agent picks the address.
+- **A walker's saves LAND on staging — the walk writes real rows.** Ben added
+  the labelled row `walker@admin-window.local` to staging's
+  `admin_allowed_emails` on 2026-09-03 (beside `kb.labs.ths@gmail.com`), which
+  is the table `requireAdmin()` (`src/lib/admin.ts`) consults on **every**
+  request from `src/app/api/admin/records/[table]/[id]/route.ts`. Measured the
+  same day (admin-window/BUG-0038): a PATCH carrying the minted cookie answers
+  **200** and the column really changes. The middleware gate is the looser one —
+  it asks only `!!session?.user` (`src/lib/auth.ts`) — so reads were never the
+  question. **What this obliges a walker to do**, until the walk sandbox lands
+  (`ARCHITECTURE.md` §9.1, admin-window/TASK-0035/0036): a save-path walk edits
+  **one field of one existing `groups` / `idols` row**, notes the original value
+  first, restores it before the walk ends, and sweeps for residue afterwards.
+  Never a resolver-owned table (`events`, `venues`), never an insert, never a
+  delete. A save that fails is a finding worth reporting; a save that succeeds
+  and is left behind is catalog damage in a shared database.
 
 ## 6. Deploy (untouched by this campaign)
 

@@ -657,3 +657,60 @@ until either a labelled walker row exists in staging's allowlist or a walk is
 run with `--email` naming an address that allowlist already holds. Recorded as a
 caveat in the walk recipe (STACK §5) rather than resolved by a guess: adding a
 row to a live table and choosing whose identity a walker wears are both Ben's.
+
+## 2026-09-03 — the walk sandbox: one staging-only table, created by hand, reset through PostgREST, and no pg driver anywhere
+
+Ben granted the exception (inbox note, 2026-09-03: "we should just create a
+table that always exists which walkers can interact with. After a walk it should
+be reset for the next walk", staging only, never production); the mechanism is
+the architect's ruling on admin-window/TASK-0034 and is written out in
+`ARCHITECTURE.md` §9.1. In one paragraph: `public.walk_sandbox` — `sandbox_id`
+text pk, `label` text not null, `note` text, `tally` integer not null,
+`is_flagged` boolean not null, `observed_on` date, `created_at` timestamptz
+outside the map — is **created once by hand** in the staging SQL editor from the
+paste in `agenticflow/tracker/for-human/TASK-0034.md`, RLS enabled with no
+policy and grants to `service_role` alone. `tests/walk/reset-sandbox.mts`
+DELETEs and re-INSERTs a checked-in fixture through PostgREST with the service
+key, taking `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` from its own process
+environment (mapped from the staging names on the command line, the launch
+recipe's own idiom), loading no `.env`, and refusing non-zero through the one
+existing guard (`resolveStagingTarget`, `SERVICES.md`'s declared target) against
+any other host. It runs **before every walk**, mandatory — Ben asked for "reset
+for the next walk", and a before-reset is the only one a crashed or abandoned
+walk cannot skip. Its `EDIT_CONFIG` entry carries `regime: "pre_cutover"`
+because `Regime` decides the WRITE PATH and the sandbox's is identical to
+`groups`/`idols`'; a third member would change `decideEdit` and would leave
+`regimeNote`'s two-way ternary rendering "resolver-owned and read-only" beside
+an editable cell.
+
+**The doors this closes.** No `pg` / `postgres.js` dependency, still — the
+create-it-itself candidates (B and C on the ticket) are rejected, so
+`STAGING_SUPABASE_DB_URL` remains a name nothing under `src/` or `tests/` reads
+and the 2026-09-02 pin stands unamended. No second reader of the `STAGING_`
+names: `tests/live/setup.ts` keeps that job alone. No second host check: one
+guard, reused. No migration in this repo and no DDL from any code path — the
+only DDL that exists is a human's paste into a staging SQL editor. No new
+surface in the app: one entry in the one map, reachable only at
+`/records/walk_sandbox/walk-1`, which renders the ordinary `not_provisioned`
+card in production forever. **The costs accepted, named so nobody re-opens them
+as bugs**: a manual step Ben owns (a fresh staging project has no sandbox until
+he pastes it, and the surface says so honestly); `pre_cutover`'s name reading as
+a historical claim the sandbox cannot make, and its regime note saying a value
+goes "to the catalog"; the not-provisioned card's generic "arrives with the
+scraper repo's migrations" line being wrong for this one table on a surface
+nothing links to; and `tsconfig.json` gaining `allowImportingTsExtensions: true`
+so a node-run `.mts` tool may import `../live/staging-target.ts` by its real
+extension rather than carry a second copy of the guard (measured on this tree:
+tsc 0, lint 0, `npm run build` green, and Next does not rewrite the flag).
+
+## 2026-09-03 — the walker identity is on staging's allowlist, so a walk's saves land
+
+Ben added `walker@admin-window.local` to staging's `admin_allowed_emails` on
+2026-09-03, answering the question TASK-0033's ruling left open (recorded there
+as "Ben's call; no agent adds the row"). QA measured the consequence the same
+day (admin-window/BUG-0038): a PATCH with the minted cookie answers 200 and the
+column really changes. STACK §5's caveat, which said the opposite, is rewritten
+— the walk recipe now states that saves LAND and that a save-path walk confines
+itself to one field of one existing `groups`/`idols` row, notes the original,
+restores it, and sweeps. That exception is the walk-write rule until the sandbox
+of §9.1 lands, and the sandbox retires it.
