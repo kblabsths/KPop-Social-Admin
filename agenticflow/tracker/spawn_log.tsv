@@ -5231,3 +5231,40 @@
 # STRANDED	2026-09-03T21:17:40Z	architect	1 uncommitted in primary checkout: .env.example
 2026-09-03T21:17:40Z	architect	-	9776	563	128883
 2026-09-03T21:17:54Z	builder	TASK-0033	spawned
+# STRANDED	2026-09-03T21:18:26Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:18:26Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:18:58Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:18:58Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:19:30Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:19:30Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:20:02Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:20:02Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:21:04Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:21:04Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:21:37Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:21:37Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:22:08Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:22:08Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:22:40Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:22:40Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:23:12Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:23:12Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:23:44Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:23:44Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:24:15Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:24:15Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:24:47Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:24:47Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:25:20Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:25:20Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:25:52Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:25:52Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:26:24Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:26:24Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:26:56Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:26:56Z	agent	-	-	-	-
+# STRANDED	2026-09-03T21:27:27Z	builder	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:27:27Z	builder	TASK-0033	8938	572	108842
+# STRANDED	2026-09-03T21:27:34Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0033.md
+2026-09-03T21:27:34Z	agent	-	-	-	-
+2026-09-03T21:27:53Z	qa-adversary	TASK-0033	spawned
