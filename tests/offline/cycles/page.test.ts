@@ -1132,4 +1132,59 @@ describe("the surface hooks the live parity oracle addresses", () => {
     expect($(SURFACE_HOOKS.runs).find("[data-cycle], [data-latest-run]").length).toBe(0);
     expect($(SURFACE_HOOKS.latest_run).find("[data-cycle], [data-run]").length).toBe(0);
   });
+
+  /**
+   * The states above are the four whole-page ones. These are the awkward
+   * middles: ONE read failing while its neighbours succeed, and URL facets
+   * that are not the well-formed link a Dashboard tile emits. Both are where
+   * admin-window/BUG-0040 actually did its damage — a wrapper appearing in one
+   * branch and not another — and neither is reachable from a whole-page
+   * script, because a partial failure swaps exactly one surface's table for a
+   * card while the rest of the page keeps its shape.
+   */
+  it("keeps every hook unique and disjoint when one read fails and the others do not", async () => {
+    // Thunks, not promises: `renderCycles` installs the script on a SHARED
+    // stub client, so six renders started at once would read each other's
+    // database. Each is built and awaited in turn.
+    const states: Array<[string, () => Promise<string>]> = [
+      // The runs half absent, the cycles half fine: the only branch where the
+      // hand-written `data-surface="runs"` wrapper holds a card, not a table.
+      ["runs absent", () => renderCycles(healthyScript({ [T.runs]: { error: tableNotInSchemaCache(T.runs) } }))],
+      // The latency gauge refused, everything above it readable.
+      ["latency refused", () => renderCycles(healthyScript({ [T.observations]: { error: permissionDenied(T.observations) } }))],
+      // The cycles table and its health gauge both refused — two surfaces
+      // swapped for cards at once, the runs half untouched.
+      [
+        "cycles refused",
+        () =>
+          renderCycles(
+            healthyScript({
+              [T.resolutionRuns]: [
+                { error: permissionDenied(T.resolutionRuns) },
+                { error: permissionDenied(T.resolutionRuns) },
+              ],
+              [T.runs]: { data: [...RUNS] },
+            }),
+          ),
+      ],
+      // Facets that are not the shape a link emits: a cycle id in no window,
+      // a source name given twice, and an empty source name.
+      ["unknown cycle", () => renderCycles(healthyScript({ [T.runs]: { data: [...RUNS] } }), { cycle: "no-such-run-id" })],
+      ["repeated source", () => renderCycles(healthyScript({ [T.runs]: { data: [...RUNS] } }), { source: ["ticketmaster", "eventbrite"] })],
+      ["empty source", () => renderCycles(healthyScript({ [T.runs]: { data: [...RUNS] } }), { source: "" })],
+    ];
+
+    for (const [name, render] of states) {
+      const $ = cheerio.load(await render());
+      for (const hook of Object.values(SURFACE_HOOKS)) {
+        expect($(hook).length, `${name}: ${hook}`).toBe(1);
+      }
+      for (const outer of Object.values(SURFACE_HOOKS)) {
+        for (const inner of Object.values(SURFACE_HOOKS)) {
+          if (outer === inner) continue;
+          expect($(outer).find(inner).length, `${name}: ${outer} inside ${inner}`).toBe(0);
+        }
+      }
+    }
+  });
 });

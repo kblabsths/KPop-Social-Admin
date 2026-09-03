@@ -1,3 +1,4 @@
+import * as cheerio from "cheerio";
 import { describe, expect, it } from "vitest";
 
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +56,36 @@ describe("Page and Section", () => {
     const classes = classesOf(render(h(Page, { title: "Queues" })));
     expect(classes).toContain("p-4");
     expect(classes).toContain("gap-4");
+  });
+
+  /**
+   * `surface` is the live parity oracle's ADDRESS for a section
+   * (admin-window/BUG-0056), and it is optional because seven of the eight
+   * pages that use `Section` omit it and must keep the markup they had — four
+   * live files still address their sections by POSITION
+   * (`section:nth-of-type(n)` in dashboard/sources/claims/browse/review-item),
+   * so an attribute this primitive grows unconditionally would move every one
+   * of those pages at once. Measured on the fix: with the prop omitted the
+   * rendered bytes are identical to the pre-`surface` primitive (md5
+   * dbbf6f06bae0bfff49cee4b0ac69ae85 on both, 2026-09-03).
+   *
+   * Both directions are asserted, because "omitted renders nothing" is only
+   * half the contract: a `surface ?? ""` written later would satisfy the first
+   * half and still put `data-surface=""` on all eight pages.
+   */
+  it("carries a data-surface only where a caller named one", () => {
+    const unnamed = render(h(Section, { title: "Runs" }, h("p", null, "body")));
+    expect(unnamed).not.toContain("data-surface");
+
+    const named = render(
+      h(Section, { title: "Runs", surface: "runs_window" }, h("p", null, "body")),
+    );
+    expect(cheerio.load(named)('[data-surface="runs_window"]').length).toBe(1);
+    // The name goes on the section itself — that is the element `stateOf`
+    // reads a state of — not on a wrapper around or inside it.
+    expect(cheerio.load(named)('section[data-surface="runs_window"]').length).toBe(1);
+    // Naming it changes nothing else about the markup.
+    expect(named.replace(' data-surface="runs_window"', "")).toBe(unnamed);
   });
 });
 
