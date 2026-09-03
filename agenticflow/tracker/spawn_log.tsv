@@ -5133,3 +5133,15 @@
 2026-09-03T05:06:20Z	qa-adversary	BUG-0037	spawned
 # STRANDED	2026-09-03T05:06:20Z	agent	3 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0037.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0031.md, tests/live/qa-probe.live.test.ts
 2026-09-03T05:06:20Z	agent	-	-	-	-
+# STRANDED	2026-09-03T05:06:52Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0037.md, tests/live/qa-probe.live.test.ts
+2026-09-03T05:06:52Z	agent	-	-	-	-
+# STRANDED	2026-09-03T05:06:52Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/tickets/BUG-0037.md, tests/live/qa-probe.live.test.ts
+2026-09-03T05:06:52Z	agent	-	-	-	-
+# STRANDED	2026-09-03T05:07:23Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0031.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0037.md
+2026-09-03T05:07:23Z	agent	-	-	-	-
+# STRANDED	2026-09-03T05:07:24Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0031.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0037.md
+2026-09-03T05:07:24Z	agent	-	-	-	-
+# STRANDED	2026-09-03T05:07:55Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0031.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0037.md
+2026-09-03T05:07:55Z	agent	-	-	-	-
+# STRANDED	2026-09-03T05:07:56Z	agent	2 uncommitted in primary checkout: agenticflow/visions/admin-window/tracker/receipts/TASK-0031.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0037.md
+2026-09-03T05:07:56Z	agent	-	-	-	-
