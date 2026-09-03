@@ -1,5 +1,5 @@
-import { encode } from "next-auth/jwt";
 import { describe, expect, it } from "vitest";
+import { mintSessionCookie } from "../walk/session-cookie.mjs";
 import { AUTH_SECRET, base, startServer, stopServer } from "./server-harness";
 
 /**
@@ -29,16 +29,22 @@ const RECORD_ID = "2f0bc11e-0000-4000-8000-000000000001";
 const url = (table: string, id = RECORD_ID) =>
   `${base}/api/admin/records/${table}/${id}`;
 
-/** A session cookie the running app accepts — the pattern `auth.http.test` uses. */
+/** The identity this suite signs in as. Not a real address. */
+const SUITE_CLAIMS = { sub: "http-suite", email: "http-suite@example.invalid" };
+
+/**
+ * A session cookie the running app accepts — the pattern `auth.http.test` uses.
+ *
+ * Both mint through `tests/walk/session-cookie.mts`, the one copy of that call
+ * in `tests/` and the same function a walker runs (admin-window/TASK-0033).
+ */
 async function signedInCookie(): Promise<string> {
-  const name = "authjs.session-token";
-  const token = await encode({
-    token: { sub: "http-suite", email: "http-suite@example.invalid" },
+  const { name, value } = await mintSessionCookie({
     secret: AUTH_SECRET,
-    salt: name,
-    maxAge: 60 * 60,
+    claims: SUITE_CLAIMS,
+    maxAgeSeconds: 60 * 60,
   });
-  return `${name}=${token}`;
+  return `${name}=${value}`;
 }
 
 /** The forgeries a real attacker would send at this route. */
@@ -84,16 +90,15 @@ describe("the record PATCH route over http", () => {
 
       // 2. A forged session is turned away the same way — the cookie is only
       //    accepted because this server was started with the throwaway secret.
-      const badToken = await encode({
-        token: { sub: "http-suite", email: "http-suite@example.invalid" },
+      const bad = await mintSessionCookie({
         secret: `${AUTH_SECRET}-but-not-really`,
-        salt: "authjs.session-token",
-        maxAge: 60 * 60,
+        claims: SUITE_CLAIMS,
+        maxAgeSeconds: 60 * 60,
       });
       const forgedSession = await patch(
         url("groups"),
         { field: "name", value: "forged" },
-        { cookie: `authjs.session-token=${badToken}` },
+        { cookie: `${bad.name}=${bad.value}` },
       );
       expect(forgedSession.status).toBeGreaterThanOrEqual(300);
       expect(forgedSession.status).toBeLessThan(400);
