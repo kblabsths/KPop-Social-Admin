@@ -79,7 +79,12 @@ export function DataTable<T>({
   placeholder?: ReactNode;
 }) {
   return (
-    <div className="border border-hairline bg-surface">
+    // `min-w-0` so the promise above survives the table being laid out as a
+    // flex or grid item: those default to a CONTENT-sized minimum width, which
+    // makes the track grow to the table's intrinsic width and hands the
+    // horizontal scroll to the page (admin-window/BUG-0042). It is inert in
+    // normal flow.
+    <div className="min-w-0 border border-hairline bg-surface">
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left" aria-label={label}>
           <thead>

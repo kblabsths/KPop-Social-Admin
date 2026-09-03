@@ -298,7 +298,7 @@ function StuckFactEvidence({
  */
 function Dial({ label, series, window: read, empty, state }: DialProps) {
   return (
-    <div data-dial className="flex flex-col gap-2">
+    <div data-dial className="flex min-w-0 flex-col gap-2">
       {state !== undefined || series === null ? (
         <GaugeCard
           label={label}
@@ -355,6 +355,19 @@ function Dial({ label, series, window: read, empty, state }: DialProps) {
   );
 }
 
+/**
+ * Both columns of the pattern view are `min-w-0`, and that is load-bearing
+ * rather than decorative: a grid item's `min-width` is `auto`, which is its
+ * CONTENT's minimum — so the records table (91 rows of unbreakable
+ * `sha256/…` payload pointers) sizes the `2fr` track to the table's intrinsic
+ * width, the grid outgrows the content pane, and the horizontal scroll lands
+ * on the page instead of inside the table's border. It dragged the lede
+ * paragraph out with it too (admin-window/BUG-0042: the header cell measured
+ * 142px past a 1440 viewport). Zeroing the minimum lets each track take its
+ * fr share, which is what hands the overflow back to `DataTable`'s own
+ * scroll container. LOOK_AND_FEEL, data table: a table wider than its column
+ * scrolls inside its own border; the page does not.
+ */
 function PatternEvidence({
   rows,
   unresolved,
@@ -366,7 +379,7 @@ function PatternEvidence({
       data-evidence-view="source-pattern"
       className="grid gap-4 lg:grid-cols-[2fr_1fr]"
     >
-      <div className="flex flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-3">
         <Lede>
           One source, many records stuck the same way. Every record folded into
           this signal is listed here; the source&rsquo;s own dial is beside it.
