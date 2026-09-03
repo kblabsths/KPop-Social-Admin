@@ -27,6 +27,19 @@ import {
   transportFailure,
   type Script,
 } from "../../fixtures/stub-client";
+/**
+ * The other half's fixtures, borrowed rather than re-hand-rolled: the property
+ * this file pins about them is a property of THIS PAGE's order (the lead that
+ * puts the newest run above the fold, admin-window/BUG-0040), and a second
+ * population of runs written here could drift from the one
+ * `tests/offline/runs/` renders the same page against.
+ */
+import {
+  FAILED as RUN_FAILED,
+  NEWEST_FIRST as RUNS_NEWEST_FIRST,
+  NO_SUCH_SOURCE,
+  RUNS,
+} from "../runs/population";
 
 /**
  * The Cycles & runs page, rendered (campaign admin-window/TASK-0014).
@@ -202,6 +215,80 @@ function sections(markup: string): string[] {
   return $("h2")
     .toArray()
     .map((element) => $(element).text().trim());
+}
+
+/**
+ * The lead the page opens with: which run it repeats, in which state, and the
+ * cells it put on screen (admin-window/BUG-0040).
+ *
+ * The lead's copy of a run answers to `data-latest-run` and never to
+ * `data-run`, so `tests/offline/runs/` and `tests/live/runs.live.test.ts` — the
+ * files that own the runs WINDOW — keep seeing exactly the window's own rows.
+ */
+function leadRun(markup: string) {
+  const $ = cheerio.load(markup);
+  const marker = $("[data-latest-run]");
+  const row = marker.closest("tr");
+  return {
+    markers: marker.length,
+    state: $("[data-latest-run-state]").attr("data-latest-run-state"),
+    runId: marker.attr("data-latest-run"),
+    source: marker.attr("data-latest-run-source"),
+    startedAt: row.find("[data-run-started]").attr("data-run-started"),
+    outcome: row.find("[data-run-outcome]").attr("data-run-outcome"),
+    inFlight: row.find("[data-run-inflight]").length > 0,
+    error: row.find("[data-run-error]").text().trim(),
+    cells: row
+      .find("td")
+      .toArray()
+      .map((cell) => $(cell).text().replace(/\s+/g, " ").trim()),
+    /** Where the lead points for the rest of the window. */
+    href: $("[data-latest-run-state]")
+      .closest("section")
+      .find("a")
+      .first()
+      .attr("href"),
+  };
+}
+
+/** One window row's cells, as their texts — for comparing the lead against it. */
+function windowRunCells(markup: string, runId: string): string[] {
+  const $ = cheerio.load(markup);
+  return $(`[data-run="${runId}"]`)
+    .closest("tr")
+    .find("td")
+    .toArray()
+    .map((cell) => $(cell).text().replace(/\s+/g, " ").trim());
+}
+
+/**
+ * Every row marker on the page, in document order: `run` for anything the lead
+ * rendered, `cycle` for a row of the cycles window.
+ *
+ * This is the fold property in structural form. The bug was ORDER: the runs
+ * half sat below a window of up to 200 cycle rows, 4,419px down at 1440×900,
+ * so the newest run could not be read without scrolling. A later reorder that
+ * pushes runs back under the cycles window puts a `cycle` in front of a `run`
+ * here, and this file goes red.
+ */
+function rowOrder(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("[data-latest-run], [data-latest-run-state], [data-cycle]")
+    .toArray()
+    .map((element) =>
+      $(element).attr("data-cycle") === undefined ? "run" : "cycle",
+    );
+}
+
+/** A cycles window filled to its cap, so the fold pin faces the real page. */
+function fullCycleWindow() {
+  return Array.from({ length: CYCLE_WINDOW }, (_, index) => ({
+    ...SUCCEEDED,
+    run_id: `capped-${String(index).padStart(4, "0")}`,
+    started_at: new Date(
+      Date.parse(SUCCEEDED.started_at) - index * 60_000,
+    ).toISOString(),
+  }));
 }
 
 /** One distribution or trend table's rows, as their cell texts. */
@@ -743,9 +830,11 @@ describe("a ?source= link arriving from the Sources page", () => {
 describe("the adapter framework's runs, beside the cycles", () => {
   it("is a second section, and the cycles half is unchanged by it", async () => {
     const markup = await renderCycles(healthyScript());
-    // Four sections: the two halves spec §4 names, then the two gauges §5 puts
-    // on this page.
+    // Five sections: the lead that puts the newest run above the fold
+    // (admin-window/BUG-0040), then the two halves spec §4 names, then the two
+    // gauges §5 puts on this page.
     expect(sections(markup)).toEqual([
+      "Newest adapter run",
       "Cycles",
       "Adapter runs",
       "Cycle health",
@@ -773,5 +862,178 @@ describe("the adapter framework's runs, beside the cycles", () => {
     // (ARCHITECTURE.md §4.1).
     expect(stub.tablesRead()).toContain(T.resolutionRuns);
     expect(stub.tablesRead()).toContain(T.runs);
+  });
+});
+/* ── the newest run, above the fold (admin-window/BUG-0040) ──────────────── */
+
+/**
+ * LOOK_AND_FEEL bar 1 names this page: at 1440×900, without scrolling,
+ * "Cycles & runs shows the newest run with its counts and error". Both halves
+ * are windows of at most 200 rows and they are stacked, so on the M1 endgame
+ * designer walk the runs heading measured y=4,419px — 4.9 viewport-heights
+ * below the fold — and the newest run could not be read at a glance.
+ *
+ * The fold is not a thing offline markup can measure, so what these tests pin
+ * is the ORDER that caused it: the newest run renders BEFORE the cycles
+ * window, whole. Everything the runs half itself promises — its nine columns,
+ * its four states, its facet — stays the property of `tests/offline/runs/`;
+ * what is asserted here is this page's own arrangement, and that the lead is a
+ * repeat of the window's first row rather than a second read or a second run.
+ */
+describe("the newest adapter run, above the cycles window", () => {
+  it("leads with the window's newest run, ahead of a cycles window at its cap", async () => {
+    const markup = await renderCycles({
+      [T.resolutionRuns]: [{ data: fullCycleWindow() }, { data: [...CYCLES] }],
+      [T.fieldProvenance]: { data: [...APPLIES] },
+      [T.observations]: { data: [...OBSERVED] },
+      [T.runs]: { data: [...RUNS] },
+    });
+
+    // The page the walk measured: 200 cycle rows between the top and the runs.
+    expect(renderedCycles(markup)).toHaveLength(CYCLE_WINDOW);
+
+    const lead = leadRun(markup);
+    expect(lead.markers).toBe(1);
+    expect(lead.state).toBe("ok");
+    // The newest by started_at — computed here from the fixtures, which are
+    // handed to the page deliberately out of order.
+    expect(lead.runId).toBe(RUNS_NEWEST_FIRST[0].run_id);
+
+    // And it is ahead of every one of those 200 rows: nothing of the cycles
+    // window renders before the run does.
+    const order = rowOrder(markup);
+    expect(order).toContain("cycle");
+    expect(order.lastIndexOf("run")).toBeLessThan(order.indexOf("cycle"));
+  });
+
+  it("shows that run's source, start, outcome and error, verbatim", async () => {
+    // A window whose newest run FAILED is the case bar 1 exists for: "did
+    // anything happen last night" is answered by the run that broke.
+    const markup = await renderCycles(
+      healthyScript({ [T.runs]: { data: [RUN_FAILED] } }),
+    );
+
+    const lead = leadRun(markup);
+    expect(lead.runId).toBe(RUN_FAILED.run_id);
+    expect(lead.source).toBe(RUN_FAILED.source);
+    expect(lead.startedAt).toBe(RUN_FAILED.started_at);
+    expect(lead.outcome).toBe(RUN_FAILED.outcome);
+    // The producer's own failure line, not trimmed and not summarised.
+    expect(lead.error).toBe(RUN_FAILED.error_summary);
+  });
+
+  it("renders the lead as the very row the window renders below, cell for cell", async () => {
+    // Same read, same columns, same cell bodies: the lead cannot drift from
+    // the row it repeats, dash included.
+    const markup = await renderCycles(
+      healthyScript({ [T.runs]: { data: [...RUNS] } }),
+    );
+    const newest = RUNS_NEWEST_FIRST[0];
+    expect(leadRun(markup).cells).toEqual(windowRunCells(markup, newest.run_id));
+    expect(leadRun(markup).cells.length).toBeGreaterThan(0);
+  });
+
+  it("is a repeat and not a second run: the window below still holds each row once", async () => {
+    const markup = await renderCycles(
+      healthyScript({ [T.runs]: { data: [...RUNS] } }),
+    );
+    const $ = cheerio.load(markup);
+    // `[data-run]` is what the files owning the runs window read. The lead
+    // answers to `data-latest-run` instead, so the window is still the window.
+    expect(
+      $("[data-run]")
+        .toArray()
+        .map((element) => $(element).attr("data-run")),
+    ).toEqual(RUNS_NEWEST_FIRST.map((row) => row.run_id));
+    // One window, one window line: the lead describes no window of its own.
+    expect($('[data-window="runs"]').length).toBe(1);
+    // And states no figure — a lead is a row, never a count
+    // (ARCHITECTURE.md §4.3).
+    expect(() => readNumber(markup, "Runs in this window")).toThrow();
+  });
+
+  it("links to the window it took the row from", async () => {
+    const markup = await renderCycles(
+      healthyScript({ [T.runs]: { data: [...RUNS] } }),
+    );
+    const href = leadRun(markup).href;
+    expect(href).toBeDefined();
+    expect(href?.startsWith("#")).toBe(true);
+    // The target exists on this page, so "below" is a click and not a hunt.
+    expect(cheerio.load(markup)(href ?? "#none").length).toBe(1);
+  });
+
+  it("leaves the cycles half exactly as it was", async () => {
+    // The bug was the runs half only. The 200-row cycles window, its
+    // "at most N, not a count" line and the newest cycle's own counts and
+    // error are what the page already got right, and they stay above the fold
+    // beside the run.
+    const markup = await renderCycles(
+      healthyScript({ [T.runs]: { data: [...RUNS] } }),
+    );
+    const $ = cheerio.load(markup);
+    expect(renderedCycles(markup)).toEqual(NEWEST_FIRST.map((row) => row.run_id));
+    expect($('[data-window="cycles"]').attr("data-window-limit")).toBe(
+      String(CYCLE_WINDOW),
+    );
+    // The newest cycle still renders all eight counters and its error cell.
+    const newestCycle = cycleRow(markup, NEWEST_FIRST[0].run_id);
+    expect(Object.keys(newestCycle.counts).sort()).toEqual(
+      [...CYCLE_COUNTERS].sort(),
+    );
+    expect(newestCycle.cells).toHaveLength(CYCLE_COUNTERS.length + 5);
+  });
+
+  it("says which absence it is when there is no run to lead with, and draws no second card", async () => {
+    // Three row-less states, three different sentences, each naming the object
+    // its read named — and each rendered ONCE on the page: the state cards
+    // below belong to the surface that made the read, and the lead adds none.
+    const empty = await renderCycles(healthyScript({ [T.runs]: { data: [] } }));
+    expect(leadRun(empty).state).toBe("empty");
+    expect(leadRun(empty).markers).toBe(0);
+    expect(cheerio.load(empty)('[data-empty="runs"]').length).toBe(1);
+    expect(notProvisioned(empty)).toEqual([]);
+    expect(readsFailed(empty)).toEqual([]);
+
+    const absent = await renderCycles(
+      healthyScript({ [T.runs]: { error: tableNotInSchemaCache(T.runs) } }),
+    );
+    expect(leadRun(absent).state).toBe("not_provisioned");
+    expect(leadRun(absent).markers).toBe(0);
+    // The object is named in the lead, in the spelling the read used …
+    expect(cheerio.load(absent)("[data-latest-run-state]").text()).toContain(T.runs);
+    // … and the not-provisioned CARD is still rendered exactly once, by the
+    // surface that read it.
+    expect(notProvisioned(absent)).toEqual([T.runs]);
+
+    const refused = await renderCycles(
+      healthyScript({ [T.runs]: { error: permissionDenied(T.runs) } }),
+    );
+    expect(leadRun(refused).state).toBe("error");
+    expect(leadRun(refused).markers).toBe(0);
+    expect(cheerio.load(refused)("[data-latest-run-state]").text()).toContain(T.runs);
+    expect(readsFailed(refused)).toEqual([T.runs]);
+
+    // Whatever it says, it says it above the cycles window — an operator who
+    // cannot see a run must not have to scroll 200 rows to find out why.
+    for (const markup of [empty, absent, refused]) {
+      const order = rowOrder(markup);
+      expect(order).toContain("cycle");
+      expect(order.lastIndexOf("run")).toBeLessThan(order.indexOf("cycle"));
+    }
+  });
+
+  it("names the source a facet asked for when nothing was filed under it", async () => {
+    const markup = await renderCycles(
+      healthyScript({ [T.runs]: { data: [] } }),
+      { source: NO_SUCH_SOURCE },
+    );
+    const lead = leadRun(markup);
+    expect(lead.state).toBe("empty");
+    expect(lead.markers).toBe(0);
+    // The name is stated verbatim, so the operator sees which one was meant.
+    expect(cheerio.load(markup)("[data-latest-run-state]").text()).toContain(
+      NO_SUCH_SOURCE,
+    );
   });
 });

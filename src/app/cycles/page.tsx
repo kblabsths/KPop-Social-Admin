@@ -724,6 +724,26 @@ function LatencySection({ latency }: { latency: ResolutionLatency }) {
 /** The heading of the page's other half, and the eyebrow its state cards carry. */
 const RUNS_LABEL = "Adapter runs";
 
+/**
+ * The id the runs window carries, so the lead at the top of the page links to
+ * the window itself instead of leaving the operator to hunt for it four
+ * screenfuls down (campaign admin-window/BUG-0040).
+ */
+const RUNS_ANCHOR = "adapter-runs";
+
+/** The heading of that lead, and the label its one-row table carries. */
+const LATEST_RUN_LABEL = "Newest adapter run";
+
+/**
+ * Which copy of a run row is being rendered: the window's own rows, or the
+ * single LEAD row repeated above the cycles table.
+ *
+ * Only the identity hooks differ — every cell body is the same cell body, from
+ * the same `RUN_COLUMNS`, so the lead cannot render a run differently from the
+ * row it is a copy of.
+ */
+type RunRole = "window" | "lead";
+
 /** The figure the empty state puts on screen, and the label a parity test reads it under. */
 const RUNS_IN_WINDOW = "Runs in this window";
 
@@ -769,7 +789,11 @@ function noRunsFrom(source: string): EmptyWords {
  * and a React element is never absent to it, so a `<Cell />` would leave the
  * cell BLANK instead of drawing the shared em dash (admin-window/TASK-0019).
  */
-function runCells(now: string): Record<RunColumn, (row: RunRow) => ReactNode> {
+function runCells(
+  now: string,
+  role: RunRole,
+): Record<RunColumn, (row: RunRow) => ReactNode> {
+  const lead = role === "lead";
   return {
     source: (row) => (
       // The run's own source TEXT, verbatim: there is no foreign key here and
@@ -778,9 +802,17 @@ function runCells(now: string): Record<RunColumn, (row: RunRow) => ReactNode> {
       // `data-run` is the row's identity for a test to read it back by; the
       // primary key is not a rendered column (Ben's ruling: nine, and this is
       // not one of them).
+      //
+      // The LEAD copy carries `data-latest-run` instead, and never `data-run`:
+      // the window's rows are what `[data-run]` means everywhere that reads
+      // this page (`tests/offline/runs/`, `tests/live/runs.live.test.ts`), and
+      // a repeated row answering to the same hook would double the window
+      // those readers see (campaign admin-window/BUG-0040).
       <span
-        data-run={row.run_id}
-        data-run-source={row.source}
+        data-run={lead ? undefined : row.run_id}
+        data-run-source={lead ? undefined : row.source}
+        data-latest-run={lead ? row.run_id : undefined}
+        data-latest-run-source={lead ? row.source : undefined}
         className="type-data text-ink"
       >
         {row.source}
@@ -870,8 +902,8 @@ const RIGHT_ALIGNED: ReadonlySet<string> = new Set(RUN_COUNTS);
  * identifier the migration and the ruling both spell, never a prettified one:
  * an operator reading this table is reading the `runs` row.
  */
-function runColumns(now: string): Column<RunRow>[] {
-  const cells = runCells(now);
+function runColumns(now: string, role: RunRole): Column<RunRow>[] {
+  const cells = runCells(now, role);
   return RUN_COLUMNS.map((column) => ({
     key: column,
     label: column,
@@ -951,7 +983,7 @@ function AdapterRuns({
         ) : (
           <DataTable<RunRow>
             label={RUNS_LABEL}
-            columns={runColumns(now)}
+            columns={runColumns(now, "window")}
             rows={rows}
             // The primary key is the row key and the order's tiebreak. It is
             // not a tenth column and is never rendered as one.
@@ -973,6 +1005,133 @@ function AdapterRuns({
           appears here.
         </p>
       ) : null}
+    </Section>
+  );
+}
+
+/* ── the newest run, above the fold (admin-window/BUG-0040) ──────────────── */
+
+/** The prose link into the runs window, in the one style prose links use here. */
+const LEAD_LINK = "text-ink hover:text-accent";
+
+/**
+ * The newest adapter run, rendered ABOVE the cycles window.
+ *
+ * LOOK_AND_FEEL bar 1 names this page by name: at 1440×900, without
+ * scrolling, "Cycles & runs shows the newest run with its counts and error".
+ * The two halves are stacked and the cycles half is a window of at most 200
+ * rows, so against a populated database the runs heading sat 4,419px below the
+ * fold — 4.9 viewport-heights down — and the operator had to scroll the whole
+ * cycles window to reach the first run (measured on the M1 endgame designer
+ * walk, 2026-09-03, admin-window/BUG-0040). Dropping the 200-row cycles window
+ * would trade one honesty for another; the newest run is repeated here
+ * instead, and both windows below stay exactly what they were.
+ *
+ * Three rules keep the repetition honest:
+ *
+ *  - **It is the same READ.** The row is `runs.data.rows[0]` — the first row
+ *    of the window rendered below, in the order that read returned (newest
+ *    first, `readRuns` in `lib/db/runs.ts`). Not a second query, which could
+ *    answer from a different instant, and not a re-sort of the window here.
+ *  - **It is the same CELLS.** `runColumns(now, "lead")` is the same nine
+ *    columns from the same `RUN_COLUMNS`, so the lead renders a run exactly as
+ *    the table does, down to the dash. Only the identity hook differs, so
+ *    nothing that reads `[data-run]` counts this row as a second run.
+ *  - **It states no FIGURE.** A lead is a row, never a count: the window line
+ *    below is the only place this half describes its window, and no number
+ *    here comes from `rows.length` (ARCHITECTURE.md §4.3).
+ *
+ * With no row to lead with — an empty window, a refused read, an absent table
+ * — it says which of those it is, in one sentence naming the object the read
+ * itself named, and links to the section that says it in full. It draws no
+ * second state card: each of the four states is rendered once, by the surface
+ * that made the read (LOOK_AND_FEEL, Emptiness).
+ */
+function LatestRun({
+  runs,
+  now,
+  source,
+}: {
+  runs: DbResult<RunWindow>;
+  now: string;
+  /** The `?source=` facet as the URL carried it, or undefined for no facet. */
+  source: string | undefined;
+}): ReactNode {
+  const newest: RunRow | undefined =
+    runs.kind === "ok" ? runs.data.rows[0] : undefined;
+  // What the lead is showing, for a test to read before it reads a row: the
+  // window's first row, or which of the three row-less states this is.
+  const kind =
+    runs.kind === "ok" ? (newest === undefined ? "empty" : "ok") : runs.kind;
+
+  if (newest === undefined) {
+    return (
+      <Section title={LATEST_RUN_LABEL}>
+        <p data-latest-run-state={kind} className="type-body text-ink-secondary">
+          {runs.kind === "not_provisioned" ? (
+            <>
+              No newest run to show: the read named{" "}
+              <span className="type-data text-ink">{runs.missing}</span>, and
+              this database holds no such object —{" "}
+              <a href={`#${RUNS_ANCHOR}`} className={LEAD_LINK}>
+                what creates it is below
+              </a>
+              .
+            </>
+          ) : runs.kind === "error" ? (
+            <>
+              No newest run to show: the read of{" "}
+              <span className="type-data text-ink">{runs.reading}</span> failed
+              —{" "}
+              <a href={`#${RUNS_ANCHOR}`} className={LEAD_LINK}>
+                what the database said is below
+              </a>
+              .
+            </>
+          ) : source === undefined ? (
+            <>
+              No adapter has filed a run in this window, so there is no newest
+              run to lead with —{" "}
+              <a href={`#${RUNS_ANCHOR}`} className={LEAD_LINK}>
+                the runs window is below
+              </a>
+              .
+            </>
+          ) : (
+            <>
+              No run in this window carries the source name{" "}
+              <span className="type-data text-ink">{source}</span>, so there is
+              no newest run to lead with under it —{" "}
+              <a href={`#${RUNS_ANCHOR}`} className={LEAD_LINK}>
+                the runs window is below
+              </a>
+              .
+            </>
+          )}
+        </p>
+      </Section>
+    );
+  }
+
+  return (
+    <Section title={LATEST_RUN_LABEL}>
+      <div data-latest-run-state={kind}>
+        <DataTable<RunRow>
+          label={LATEST_RUN_LABEL}
+          columns={runColumns(now, "lead")}
+          rows={[newest]}
+          rowKey={(row) => row.run_id}
+        />
+      </div>
+      <p className="type-body text-ink-secondary">
+        The first row of the{" "}
+        <a href={`#${RUNS_ANCHOR}`} className={LEAD_LINK}>
+          adapter-runs window below
+        </a>
+        , repeated here so the last thing that ran is on screen without
+        scrolling the cycles. It is that one row and nothing else: what the
+        window holds, and what it does not, is stated with the table itself.
+      </p>
     </Section>
   );
 }
@@ -1026,6 +1185,12 @@ export default async function CyclesPage({
 
   return (
     <Page title="Cycles & runs">
+      {/* The newest run leads the page, because bar 1 asks for it above the
+          fold and the cycles window below is up to 200 rows tall
+          (admin-window/BUG-0040). It is the first row of that same window,
+          repeated — never a second read. */}
+      <LatestRun runs={runs} now={now} source={askedSource} />
+
       <Section title="Cycles">
         <p
           data-window="cycles"
@@ -1075,8 +1240,11 @@ export default async function CyclesPage({
       </Section>
 
       {/* The page's two halves, adjacent — spec §4 names them in one breath,
-          and §5's two gauges follow both tables. */}
-      <AdapterRuns runs={runs} now={now} source={askedSource} />
+          and §5's two gauges follow both tables. The id is what the lead at
+          the top links to, so "below" is one click and not a scroll hunt. */}
+      <div id={RUNS_ANCHOR}>
+        <AdapterRuns runs={runs} now={now} source={askedSource} />
+      </div>
 
       <Section title={HEALTH_LABEL}>
         {health.kind === "ok" ? (
