@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-03T22:58:26Z — do not edit)
+# Tracker index (regenerated 2026-09-03T22:59:34Z — do not edit)
 
 ## open
 - BUG-0058 [P1][bug][M1] The staging residue sweep never runs: it ilikes a timestamp column and throws, so no walk's write was ever verified clean  (scope:tests/live/residue.live.test.ts from:qa:BUG-0041)
@@ -25,9 +25,8 @@
 
 ## qa
 - BUG-0056 [P1][bug][M1] Cycles & runs: BUG-0040's lead section broke the page's live parity oracle (4 live tests throw)  (scope:src/app/cycles/page.tsx,tests/live/cycles.live.test.ts @builder-73 from:BUG-0040)
-- BUG-0040 [P2][bug][M1] Cycles & runs: the newest adapter run sits 4,419px below the fold (Feel bar 1)  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts @builder-74 from:M1-endgame-designer-walk)
 
 ## reopened
 - BUG-0041 [P2][bug][M1] Claims: the all-claims table is unwindowed (877 rows, 30,079px), so the pending-claims gauge moves with the data  (scope:src/app/claims/page.tsx,src/components/claims/claim-list.tsx,tests/offline/claims/page.test.ts from:M1-endgame-designer-walk)
 
-Totals — claimed:1, done:85, open:18, qa:2, reopened:1. Archived: 0.
+Totals — claimed:1, done:86, open:18, qa:1, reopened:1. Archived: 0.
