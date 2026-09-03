@@ -21,6 +21,11 @@ import { countRows, exactCount, gradeSurface, independentClient, renderPage } fr
  * landed. Do not weaken these assertions, do not skip this file and do not
  * mark its cases `todo`. It goes green by itself the day the view answers.
  *
+ * **That day arrived**: as of 2026-09-02 the view answers and all six cases
+ * are green against staging (admin-window/BUG-0037). The banner above is kept
+ * because the rule it states is unchanged — if the read regresses, this file
+ * goes red again and that red is the signal, never a reason to soften it.
+ *
  * Before this rewrite it did the opposite: **4 of 6 cases PASSED against a
  * page in its error state**, because the fallback branch only asked that the
  * markup contain the string `pending_claims` — which the red error line
@@ -52,9 +57,12 @@ import { countRows, exactCount, gradeSurface, independentClient, renderPage } fr
 
 type Params = Record<string, string>;
 
+/** The bucket the standing tab is the subset of, spelled from the migration. */
+const STANDING_BUCKET = "standing_disagreement";
+
 /** The five buckets a page may render, spelled from the migration. */
 const RENDERED_BUCKETS = [
-  "standing_disagreement",
+  STANDING_BUCKET,
   "awaiting_link",
   "awaiting_row",
   "escalated",
@@ -101,6 +109,26 @@ function claimIds(markup: string): string[] {
 /** This test's own count over the view, before any narrowing. */
 function claimCount() {
   return exactCount(T.pendingClaims).neq("bucket", PARKED_BUCKET);
+}
+
+/** This test's own count of the standing tab's set — one bucket, not the view. */
+function standingCount() {
+  return exactCount(T.pendingClaims).eq("bucket", STANDING_BUCKET);
+}
+
+/**
+ * The count of the set the LIST on `tab` renders — the two tabs read two
+ * different sets, so one count cannot grade both (admin-window/BUG-0037).
+ *
+ * The standing tab's list is `bucket = standing_disagreement` and nothing
+ * else: `page.tsx` drops the bucket facet on that tab before reading, so a
+ * `?bucket=` in the URL never narrows it. The buckets tab's list is the whole
+ * view, and a `?bucket=` naming a value outside the offered vocabulary
+ * narrows NOTHING there either (`chosen()` in `lib/claims/filters.ts`), so it
+ * is graded against the same whole-view count as the bare URL.
+ */
+function listCount(tab?: string): Promise<number> {
+  return countRows(() => (tab === "standing" ? standingCount() : claimCount()));
 }
 
 describe("the classification buckets against staging", () => {
@@ -189,15 +217,14 @@ describe("the classification buckets against staging", () => {
       markup,
       within: listOf("standing"),
       object: T.pendingClaims,
-      counted: () =>
-        countRows(() => exactCount(T.pendingClaims).eq("bucket", "standing_disagreement")),
+      counted: () => listCount("standing"),
     });
     if (state !== "ok") return;
 
     const { data, error } = await independentClient()
       .from(T.pendingClaims)
       .select("observation_id")
-      .eq("bucket", "standing_disagreement")
+      .eq("bucket", STANDING_BUCKET)
       .limit(1000);
     if (error) throw new Error(`the standing query failed: ${JSON.stringify(error)}`);
     expect(new Set(claimIds(markup))).toEqual(
@@ -216,21 +243,34 @@ describe("the parked bucket against staging", () => {
     // The state kind is named first, because a page that could not read the
     // view spells nothing at all: "the word is absent" off an ERROR page is
     // the vacuous pass this rewrite exists to stop.
-    for (const params of [
+    const asked: Params[] = [
       {},
       { tab: "standing" },
       { bucket: PARKED_BUCKET },
       { bucket: PARKED_BUCKET, tab: "standing" },
-    ] as Params[]) {
+    ];
+    const checked: string[] = [];
+
+    for (const params of asked) {
       const markup = await claimsMarkup(params);
+      // Each surface is graded against the count of the set IT renders: the
+      // standing tab's list is one bucket's subset, and grading it against
+      // the whole view's count read that tab's honest EMPTY as a mismatch and
+      // threw before the assertion below (admin-window/BUG-0037).
       await gradeSurface({
         markup,
         within: listOf(params.tab),
         object: T.pendingClaims,
-        counted: () => countRows(() => claimCount()),
+        counted: () => listCount(params.tab),
       });
       expect(markup, JSON.stringify(params)).not.toContain(PARKED_BUCKET);
+      checked.push(JSON.stringify(params));
     }
+
+    // The property is only verified where the assertion was REACHED, so the
+    // count of reached sets is itself asserted: a future early return or a
+    // throw part-way leaves this list short and reds the test.
+    expect(checked).toEqual(asked.map((params) => JSON.stringify(params)));
   });
 
   it("holds no row in the view either, so nothing was hidden that exists", async () => {
