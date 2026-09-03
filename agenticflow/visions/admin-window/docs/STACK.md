@@ -128,7 +128,7 @@ space — quote it).
 | --- | --- | --- |
 | dev server (default) | `npm run dev` | **3000** |
 | **walk / sandbox instance** | `npm run dev -- --port 8771` | **8771** |
-| production-like walk | `npm run build && npm run start -- --port 8771` | **8771** |
+| production-like walk | `npm run build && npm run start -- --port 8771` (walk launch: step 1's second block — the prefix goes on **both** commands) | **8771** |
 | type check | `./node_modules/.bin/tsc --noEmit` | — |
 | lint | `npm run lint` | — |
 | offline suite | `npm test` | — |
@@ -144,10 +144,11 @@ space — quote it).
   `STAGING_*` pair, which the launch line loads (recipe below, step 1) —
   production values live only in Railway's production environment (Ben's
   ruling, 2026-09-03, recorded in `agenticflow/docs/DECISIONS.md`). Nothing in
-  code falls back to another name, and no value is ever printed. **Both
-  walk rows in the table above take the same step-1 prefix** — the
-  production-like row (`npm run build && npm run start`) exactly as much as
-  `npm run dev`.
+  code falls back to another name, and no value is ever printed. **Both walk
+  rows in the table above need that mapping, and neither gets it from the table
+  cell alone** — step 1 below has a verbatim block for each, because a
+  command-prefix assignment binds to one command and the production-like row is
+  two.
 - `npm run lint` and `npm run build` both complete in seconds here (measured
   2026-09-01: lint 2.8s once `agenticflow/**` is ignored, build 6.2s, tsc
   1.1s) — cheap enough to sit in every ticket's checks.
@@ -181,11 +182,14 @@ works in both bash and zsh. Two things about it are not optional:
   an unset shell variable expands to the empty string, so the app starts with
   `SUPABASE_URL=""` — and `.env` cannot repair that, because Next's env loader
   skips any name already present in the process environment, empty string
-  included (`node_modules/@next/env/dist/index.js`). Nothing complains until
-  the first server-side read, which dies in `getSupabaseAdmin()` with
-  `supabaseUrl is required` (`src/lib/supabase.ts`); a walker who does not know
-  this reports app-wide breakage that does not exist. Measured 2026-09-03
-  (admin-window/BUG-0039).
+  included (`node_modules/@next/env/dist/index.js`). Nothing complains at
+  startup: the first server-side read throws in `getSupabaseAdmin()`
+  (`supabaseUrl is required`, `src/lib/supabase.ts`), each panel catches that
+  and renders its named refusal — **`SUPABASE_URL is not set`** — and the page
+  still answers 200. A walker who does not know this reports app-wide breakage
+  that does not exist. **If every panel of every page says that one line,
+  suspect your launch line before you file anything.** Measured 2026-09-03
+  (admin-window/BUG-0039, admin-window/BUG-0051).
 - **The surrounding `( … )`.** `set -a` exports *every* name in `.env` for the
   length of that subshell — OAuth secrets included — and the closing paren is
   what keeps them out of your interactive shell and out of every later command
@@ -199,6 +203,33 @@ prints one word:
 ```sh
 [ -n "${STAGING_SUPABASE_URL:-}" ] && echo SET || echo UNSET
 ```
+
+`.env` is gitignored, so it exists **only in the primary checkout** — a walk
+driven from a git worktree fails at `source .env` with `No such file or
+directory` (loud, at least). Walk from the primary repo root, or symlink the
+primary checkout's copy into the worktree with `ln -s`; never copy it around.
+
+**The production-like walk repeats the mapping on both commands.** A
+command-prefix assignment binds to a *single* simple command, so in
+`A=1 npm run build && npm run start` the started server — the thing a walker
+actually drives — inherits nothing, and `set -a` cannot rescue it (`.env`
+carries the `STAGING_*` pair, not the two names the app reads). Both halves
+therefore carry the prefix:
+
+```sh
+( set -a && source .env && set +a && \
+  SUPABASE_URL="$STAGING_SUPABASE_URL" SUPABASE_SERVICE_ROLE_KEY="$STAGING_SUPABASE_SERVICE_ROLE_KEY" \
+  AUTH_URL="http://localhost:8771" npm run build && \
+  SUPABASE_URL="$STAGING_SUPABASE_URL" SUPABASE_SERVICE_ROLE_KEY="$STAGING_SUPABASE_SERVICE_ROLE_KEY" \
+  AUTH_URL="http://localhost:8771" npm run start -- --port 8771 )
+```
+
+Get it wrong and both symptoms are quiet: every panel renders the
+`SUPABASE_URL is not set` refusal with zero staging rows, and an uncookied
+request answers `307` to `http://localhost:3000/login?...` — the `:3000` chase
+`AUTH_URL` exists to prevent, from a server that never received it. Measured
+2026-09-03 (admin-window/BUG-0051); the corrected block above was re-driven on
+a scratch port the same day and serves real staging rows.
 
 `AUTH_URL` is not optional. next-auth resolves the app's own origin from it
 (`node_modules/next-auth/lib/env.js`); without it every redirect the walk
