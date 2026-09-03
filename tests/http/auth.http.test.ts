@@ -2,10 +2,10 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
-import { encode } from "next-auth/jwt";
 import { describe, expect, it } from "vitest";
 import { EDITABLE_TABLES } from "@/lib/edit/config";
 import { HTTP_TEST_PORT } from "../suite-globs";
+import { SESSION_COOKIE_NAME, mintSessionCookie } from "../walk/session-cookie.mjs";
 import {
   AUTH_SECRET,
   assertChildOwnsPort,
@@ -162,24 +162,33 @@ const RETIRED_ROUTES = [
   "/data-management/completeness",
 ];
 
+/** The identity this suite signs in as. Not a real address, and not the walker's. */
+const SUITE_CLAIMS = { sub: "http-suite", email: "http-suite@example.invalid" };
+
+/** How long every cookie minted in this file is good for. */
+const ONE_HOUR = 60 * 60;
+
 /**
  * A session cookie the running app accepts.
  *
  * Auth.js JWT sessions are encrypted with a key derived from the secret and
- * the cookie name as salt; `encode` is the same function the app's own sign-in
- * uses. Nothing here reaches a database — the JWT strategy decodes the cookie
- * and never looks a user up, which is why this works against a server started
- * with every Supabase name stripped from its environment.
+ * the cookie name as salt. `mintSessionCookie` (`tests/walk/session-cookie.mts`)
+ * wraps the same `encode` the app's own sign-in uses and is the ONE copy of
+ * that call in `tests/` — a walker mints its cookie with the very same function
+ * (admin-window/TASK-0033), so this suite and the endgame walk cannot drift
+ * apart on the cookie name, the salt or the shape.
+ *
+ * Nothing here reaches a database — the JWT strategy decodes the cookie and
+ * never looks a user up, which is why this works against a server started with
+ * every Supabase name stripped from its environment.
  */
 async function signedInCookie(): Promise<string> {
-  const name = "authjs.session-token";
-  const token = await encode({
-    token: { sub: "http-suite", email: "http-suite@example.invalid" },
+  const { name, value } = await mintSessionCookie({
     secret: AUTH_SECRET,
-    salt: name,
-    maxAge: 60 * 60,
+    claims: SUITE_CLAIMS,
+    maxAgeSeconds: ONE_HOUR,
   });
-  return `${name}=${token}`;
+  return `${name}=${value}`;
 }
 
 /**
@@ -192,30 +201,20 @@ async function signedInCookie(): Promise<string> {
  * not just the root.
  */
 async function forgedCookies(): Promise<ReadonlyArray<readonly [string, string]>> {
-  const name = "authjs.session-token";
-  const claims = { sub: "http-suite", email: "http-suite@example.invalid" };
+  const name = SESSION_COOKIE_NAME;
+  const claims = SUITE_CLAIMS;
+  // Every forgery is the SAME mint with one thing wrong — which is the point:
+  // if the mint and the forgeries came from different code, a change to the
+  // mint could make the forgeries stale and this suite quietly vacuous.
+  const mint = (overrides: Parameters<typeof mintSessionCookie>[0]) =>
+    mintSessionCookie({ claims, maxAgeSeconds: ONE_HOUR, ...overrides });
 
-  const wrongSecret = await encode({
-    token: claims,
-    secret: `${AUTH_SECRET}-but-not-really`,
-    salt: name,
-    maxAge: 60 * 60,
-  });
+  const wrongSecret = (await mint({ secret: `${AUTH_SECRET}-but-not-really` })).value;
   // Right secret, wrong salt: Auth.js binds the cookie name into the key it
   // derives, so a token minted for another cookie must not open this one.
-  const wrongSalt = await encode({
-    token: claims,
-    secret: AUTH_SECRET,
-    salt: "authjs.csrf-token",
-    maxAge: 60 * 60,
-  });
-  const expired = await encode({
-    token: claims,
-    secret: AUTH_SECRET,
-    salt: name,
-    maxAge: -60,
-  });
-  const valid = await encode({ token: claims, secret: AUTH_SECRET, salt: name, maxAge: 60 * 60 });
+  const wrongSalt = (await mint({ secret: AUTH_SECRET, salt: "authjs.csrf-token" })).value;
+  const expired = (await mint({ secret: AUTH_SECRET, maxAgeSeconds: -60 })).value;
+  const valid = (await mint({ secret: AUTH_SECRET })).value;
 
   return [
     ["a token signed with a different secret", `${name}=${wrongSecret}`],

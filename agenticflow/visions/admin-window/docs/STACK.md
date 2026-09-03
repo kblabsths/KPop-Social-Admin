@@ -136,14 +136,91 @@ space — quote it).
 | http suite | `npm run test:http` | 8772 (its own server) |
 
 - **8770 is the factory's attention UI** (`run.yaml` `ui_port`). Never bind it.
-- A walk needs `SUPABASE_URL` **and** `SUPABASE_SERVICE_ROLE_KEY` in `.env`;
-  as of 2026-09-01 `.env` carries `SUPABASE_URL` and `SUPABASE_ANON_KEY` and
-  **no service-role key**, so a local walk cannot read anything yet. That is
-  one of the open questions in the env-names ASK ticket — do not improvise a
-  fallback, and never print a value.
+- A walk instance takes its database credentials from **its own process
+  environment**, never from `.env` — see the recipe below. `.env` no longer
+  carries `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` at all; production values
+  live only in Railway's production environment (Ben's ruling, 2026-09-03,
+  recorded in `agenticflow/docs/DECISIONS.md`). Nothing in code falls back to
+  another name, and no value is ever printed.
 - `npm run lint` and `npm run build` both complete in seconds here (measured
   2026-09-01: lint 2.8s once `agenticflow/**` is ignored, build 6.2s, tsc
   1.1s) — cheap enough to sit in every ticket's checks.
+
+### The walk instance: launch it, get past the gate, drive it
+
+Everything below is verbatim and runnable from the repo root. It is the whole
+recipe for the M1 endgame walkers (designer walk, user-sims, verifier), settled
+by Ben's two rulings of 2026-09-03 and proved by
+`tests/http/walk-cookie.http.test.ts`.
+
+**1. Launch the instance.** The two names the app reads are mapped from the
+staging names on the launching shell's command line, so they exist for this
+process and nowhere else:
+
+```sh
+SUPABASE_URL="$STAGING_SUPABASE_URL" SUPABASE_SERVICE_ROLE_KEY="$STAGING_SUPABASE_SERVICE_ROLE_KEY" \
+  AUTH_URL="http://localhost:8771" npm run dev -- --port 8771
+```
+
+`AUTH_URL` is not optional. next-auth resolves the app's own origin from it
+(`node_modules/next-auth/lib/env.js`); without it every redirect the walk
+follows is rewritten to `:3000` and the walk chases a server that is not there.
+It also decides the **cookie name**: `@auth/core`'s `defaultCookies()` prefixes
+`__Secure-` only for an `https:` URL
+(`node_modules/next-auth/node_modules/@auth/core/lib/utils/cookie.js`), so an
+`http://` walk instance uses the unprefixed `authjs.session-token` the mint
+below produces.
+
+The instance also needs `AUTH_SECRET` in that same environment — the mint and
+the server must agree on it, and neither has a default.
+
+**2. Mint a session cookie.** Sign-in is Google-only, so a walker gets past the
+gate with a minted cookie rather than a sign-in flow. The minting helper lives
+outside `src/` on purpose (`tests/walk/session-cookie.mts`); the app gains no
+provider, no dev flag and no second sign-in path:
+
+```sh
+node tests/walk/session-cookie.mts
+```
+
+stdout is **exactly one line**: the cookie as JSON. Diagnostics and refusals go
+to stderr, and `AUTH_SECRET`'s value never appears on either stream. Flags:
+`--domain <host>` (default `localhost`), `--max-age <seconds>` (default 7200),
+`--email <address>` (default the walker identity). With `AUTH_SECRET` unset,
+empty or whitespace-only, the CLI exits non-zero naming that one name and mints
+nothing — there is no fallback to invent.
+
+**3. Drive it.** Add the descriptor to the browser context before the first
+navigation (Playwright, Python):
+
+```python
+import json, subprocess
+cookie = json.loads(
+    subprocess.run(
+        ["node", "tests/walk/session-cookie.mts"],
+        capture_output=True, text=True, check=True, cwd=REPO_ROOT,
+    ).stdout
+)
+context.add_cookies([cookie])
+page.goto("http://localhost:8771/")
+```
+
+**Two caveats a walker must know before it reports a bug.**
+
+- **The sign-in flow itself is never walked.** That blind spot is accepted, not
+  overlooked: a minted cookie starts the walk already past the gate, so nothing
+  the walk sees says anything about Google sign-in.
+- **The PATCH route answers 403 for the walker identity, and that is correct.**
+  The middleware gate asks only `!!session?.user` (`src/lib/auth.ts`), so the
+  minted cookie opens **every page**. The edit route is stricter:
+  `src/app/api/admin/records/[table]/[id]/route.ts` calls `requireAdmin()`
+  (`src/lib/admin.ts`), which looks the session email up in
+  `admin_allowed_emails` **on every request**. Staging's allowlist does not hold
+  `walker@admin-window.local`, so a save from `EditableCell` gets a 403. Every
+  read surface walks fine. Whether a save-path walk gets an allowlisted identity
+  — a labelled row in staging's allowlist, or `--email` naming an address the
+  allowlist already holds — is **Ben's call**; no agent adds the row and no
+  agent picks the address.
 
 ## 6. Deploy (untouched by this campaign)
 
