@@ -55,3 +55,4 @@
 2026-09-02T21:15:13Z	evidence_budget	qa_evidence_overbudget: TASK-0032 4284/4000 chars
 2026-09-02T21:42:50Z	artifact_gate	blocked write outside repo: /b
 2026-09-02T21:59:16Z	artifact_gate	blocked write outside repo: /tmp/ci.log
+2026-09-03T05:02:20Z	artifact_gate	blocked write outside repo: /NaN
