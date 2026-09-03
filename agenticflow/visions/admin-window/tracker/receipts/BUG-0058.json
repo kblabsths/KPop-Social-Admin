@@ -1,0 +1,24 @@
+{
+ "id": "BUG-0058",
+ "created": "2026-09-03T23:20:43Z",
+ "green": true,
+ "git_head": "68abbe9f8cb6e7bf9cf937b08d32e9f9f562d1de",
+ "scope": [
+  "tests/live/residue.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "b23b11020394f0b1d0e1bf9db3587a2a01aa347ab8a99f2722d319d88c37f47c",
+ "commands": [
+  {
+   "cmd": "npx vitest run --project=live tests/live/residue.live.test.ts",
+   "exit": 0,
+   "output_tail": " wikidata_qid=0, wikipedia_url=0, spotify_id=0, bio=0, blood_type=0, mbti=0, agency=0, birth_place=0, image_source_url=0, image_license=0, source=0, source_page_id=0, source_url=0, source_license=0, status=0]; not scannable, ilike has no operator for their type: [id (uuid), group_id (uuid), birth_date (date), created_at (timestamp with time zone), updated_at (timestamp with time zone), profile_image_id (uuid), spotify_followers (integer), spotify_popularity (integer), height_cm (smallint), weight_kg (smallint), debut_date (date), social_links (jsonb), source_rev_id (bigint), last_synced_at (timestamp with time zone), last_verified_at (timestamp with time zone)]\n  events: scanned 7 text column(s) for \"admin-window\" [title=0, event_type=0, status=0, time_precision=0, description=0, poster_url=0, ticket_url=0]; not scannable, ilike has no operator for their type: [event_id (uuid), starts_at (timestamp with time zone), ends_at (timestamp with time zone), venue_id (uuid), created_at (timestamp with time zone)]\n  venues: scanned 7 text column(s) for \"admin-window\" [name=0, address=0, city=0, country=0, timezone=0, website=0, image_url=0]; not scannable, ilike has no operator for their type: [venue_id (uuid), aliases (text[]), latitude (double precision), longitude (double precision), created_at (timestamp with time zone)]\n\n \u2713 |live| tests/live/residue.live.test.ts (4 tests) 8460ms\n   \u2713 staging, after the campaign > carries no value this campaign wrote, in any column it could write  8286ms\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n   Start at  16:20:30\n   Duration  8.96s (transform 59ms, setup 31ms, collect 171ms, tests 8.46s, environment 0ms, prepare 78ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=live tests/live/residue.live.test.ts\n(node:54020) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
