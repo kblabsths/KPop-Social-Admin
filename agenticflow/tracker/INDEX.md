@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-03T23:35:20Z — do not edit)
+# Tracker index (regenerated 2026-09-03T23:38:35Z — do not edit)
 
 ## open
 - BUG-0043 [P2][bug][M1] A source is labelled by raw uuid on the review item and on Claims, while the rest of the app names it  (scope:src/components/review/item-header.tsx,src/components/claims/claim-list.tsx,src/components/claims/filter-bar.tsx,src/app/claims/page.tsx,tests/offline/review-item/page.test.ts,tests/offline/claims/page.test.ts from:M1-endgame-designer-walk)
@@ -9,6 +9,7 @@
 - BUG-0054 [P2][bug][M1] Cycles & runs: 'Cycle <id> is marked in the table below' — the row carries only aria-current and is visually identical to all 68 others  (scope:src/app/cycles/page.tsx,src/components/ui/data-table.tsx,tests/offline/cycles/page.test.ts from:M1-endgame-user-sim)
 - BUG-0059 [P2][bug][M1] Not-provisioned card jams the missing object's name into the sentence: 'eventsisn't in this database yet'  (scope:src/components/ui/not-provisioned.tsx,tests/offline/absence/pages.test.ts from:M1-endgame-verifier)
 - BUG-0060 [P2][bug][M1] Edit cell shows no way to save: no control, no hint, Enter is undocumented, and blur silently discards what was typed  (scope:src/components/records/field-editor.tsx,src/app/records/[table]/[id]/page.tsx,tests/offline/records/page.test.ts,tests/offline/records/submit.test.ts from:M1-endgame-verifier)
+- BUG-0063 [P2][bug][M1] Claims: the window line renders a count it never took — data-window-held="0" on a failed read  (scope:src/app/claims/page.tsx,tests/offline/claims/page.test.ts from:qa:BUG-0041)
 - DEBT-0002 [P2][debt][M1] Five live parity oracles still address their surfaces by POSITION (section:nth-of-type) — the class BUG-0056 fixed on one page only  (scope:tests/live/dashboard.live.test.ts,tests/live/sources.live.test.ts,tests/live/claims.live.test.ts,tests/live/browse.live.test.ts,tests/live/review-item.live.test.ts,src/app/page.tsx,src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/browse/page.tsx,src/app/queues/[reviewItemId]/page.tsx from:BUG-0056)
 - TASK-0035 [P2][task][patch] The walk sandbox in the one map: an EDIT_CONFIG entry that renders not-provisioned wherever the table is absent  (deps:TASK-0034 scope:src/lib/edit/config.ts,src/lib/db/tables.ts,tests/offline/edit/config.test.ts,tests/offline/records/page.test.ts,tests/offline/absence,tests/live/residue.live.test.ts,tests/http/auth.http.test.ts from:inbox:2026-09-03-walker-sandbox-table.md)
 - TASK-0036 [P2][task][patch] Reset the walk sandbox between walks: the seed fixture, the reset tool, and the walk recipe  (deps:TASK-0034 scope:tests/walk,tests/offline/walk,tests/live/staging-target.ts,tests/offline/live-guard.test.ts,tsconfig.json,agenticflow/docs/vision/STACK.md from:inbox:2026-09-03-walker-sandbox-table.md)
@@ -22,10 +23,7 @@
 - DEBT-0004 [P3][debt][M1] /cycles and /sources carry their own presentation: 1,291- and 793-line pages, no components module, while every other page has one  (deps:DEBT-0003(unmet:1) scope:src/components/cycles,src/components/sources,src/app/cycles/page.tsx,src/app/sources/page.tsx,tests/offline/cycles/page.test.ts,tests/offline/sources/page.test.ts from:M1-endgame-structure-walk)
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:4) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
-## claimed
+## built
 - BUG-0042 [P2][bug][M1] Review item detail: the evidence table overflows the page instead of scrolling inside its own border  (scope:src/components/review/shape-views.tsx,src/components/ui/data-table.tsx,tests/offline/review-item/page.test.ts @builder-79 from:M1-endgame-designer-walk)
 
-## qa
-- BUG-0041 [P2][bug][M1] Claims: the all-claims table is unwindowed (877 rows, 30,079px), so the pending-claims gauge moves with the data  (scope:src/app/claims/page.tsx,src/components/claims/claim-list.tsx,tests/offline/claims/page.test.ts @builder-78 from:M1-endgame-designer-walk)
-
-Totals — claimed:1, done:91, open:20, qa:1. Archived: 0.
+Totals — built:1, done:92, open:21. Archived: 0.
