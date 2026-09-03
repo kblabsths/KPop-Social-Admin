@@ -58,3 +58,6 @@
 2026-09-03T05:02:20Z	artifact_gate	blocked write outside repo: /NaN
 2026-09-03T20:57:55Z	artifact_gate	blocked write outside repo: /tmp/nope
 2026-09-03T21:38:28Z	evidence_budget	qa_evidence_overbudget: TASK-0033 4312/4000 chars
+2026-09-03T22:25:04Z	artifact_gate	blocked write outside repo: /.env .env`); never copy it around.
+
+**The production-like walk repeats the mapping on both commands.**
