@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { T } from "@/lib/db/tables";
 import { EM_DASH, absoluteUtc } from "@/lib/format";
 import { render } from "../ui/markup";
-import { readNumber } from "../../live/parity";
+import { readNumber, stateOf as surfaceStateOf } from "../../live/parity";
 import {
   reviewItemEdgePopulation,
   type ReviewItemRow,
@@ -1089,5 +1089,72 @@ describe("a hand-edited URL", () => {
       // Equal standing survives the arrival: the other queue is still there.
       expect(cheerio.load(markup)("[data-queue]"), kind).toHaveLength(2);
     }
+  });
+});
+
+/* ── the queue-health SECTION, graded the way the live oracle grades it ──── */
+
+/**
+ * The live oracle's own two selectors, spelled here (admin-window/BUG-0062):
+ * the gauge's section, and the per-queue slices inside it that carry their own
+ * state cards. `tests/live/queues.live.test.ts` grades the section with
+ * `stateOf(markup, HEALTH, GAUGE_SLICES)`, and staging can only ever exhibit
+ * whichever of the four states it happens to be in that hour. These four cases
+ * put the page in all four, deterministically, so the exclusion's BOUNDS are
+ * pinned: it must silence a slice's own emptiness and nothing else.
+ */
+const HEALTH_SURFACE = "section:not([data-queue] section)";
+const HEALTH_SLICES = "[data-gauge-queue]";
+
+describe("the queue-health section's state, as the live oracle reads it", () => {
+  /** Rows in ONE queue only, so the other queue's slice is honestly empty. */
+  const ONE_QUEUE_ONLY: Script = (() => {
+    const rows = matching({ queue: "entity_link" });
+    return { [T.reviewItems]: { data: rows, count: rows.length } };
+  })();
+
+  it("stays ok while a slice of it is empty, and the slice really is empty", async () => {
+    const markup = await renderQueues(ONE_QUEUE_ONLY);
+    const $ = cheerio.load(markup);
+
+    // The condition the live oracle met on staging: the gauge holds rows, and
+    // one slice inside it carries an emptiness of its own.
+    expect($(`${HEALTH_SLICES} [data-state="empty"]`).length).toBeGreaterThan(0);
+    expect(readNumber(markup, "data_conflict open")).toBe(0);
+    expect(readNumber(markup, "entity_link open")).toBe(
+      matching({ queue: "entity_link", status: "open" }).length,
+    );
+    // A sub-panel's emptiness is not the gauge's state.
+    expect(surfaceStateOf(markup, HEALTH_SURFACE, HEALTH_SLICES)).toBe("ok");
+  });
+
+  it("is ok with a real zero when the window holds nothing at all", async () => {
+    // Every figure is stated as a counted zero and the section draws no empty
+    // card of its own — which is what lets the live oracle grade a counted 0
+    // as `ok` rather than as an emptiness.
+    const markup = await renderQueues(EMPTY_TABLE);
+    const $ = cheerio.load(markup);
+
+    expect($(HEALTH_SLICES)).toHaveLength(2);
+    for (const queue of QUEUE_NAMES) {
+      expect(readNumber(markup, `${queue} open`), queue).toBe(0);
+    }
+    expect(surfaceStateOf(markup, HEALTH_SURFACE, HEALTH_SLICES)).toBe("ok");
+  });
+
+  it("still reports NOT_PROVISIONED through the exclusion", async () => {
+    const markup = await renderQueues({
+      [T.reviewItems]: { error: tableNotInSchemaCache(T.reviewItems) },
+    });
+
+    expect(surfaceStateOf(markup, HEALTH_SURFACE, HEALTH_SLICES)).toBe("not_provisioned");
+  });
+
+  it("still reports ERROR through the exclusion", async () => {
+    const markup = await renderQueues({
+      [T.reviewItems]: { error: permissionDenied(T.reviewItems) },
+    });
+
+    expect(surfaceStateOf(markup, HEALTH_SURFACE, HEALTH_SLICES)).toBe("error");
   });
 });
