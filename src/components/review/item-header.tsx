@@ -29,7 +29,17 @@ export interface ItemLink {
   /** What the link opens, in the app's voice. */
   label: string;
   href: string;
-  /** The machine value the link is narrowed by, shown verbatim beside it. */
+  /**
+   * WHAT it is narrowed to, as the app names it — shown beside the label.
+   *
+   * The caller resolves it, and this component prints exactly what it is
+   * handed: a source arrives as the registry's name (`ticketmaster`), a record
+   * as `domain/entity_id`, and anything the app could not resolve as the
+   * machine value verbatim. It used to be documented as "the machine value" and
+   * a source-pattern item duly read `Its source 01a05782-…` above evidence
+   * cells that read `ticketmaster` and pointed at the same href — one page, one
+   * destination, two labels (admin-window/BUG-0043).
+   */
   value?: string;
 }
 

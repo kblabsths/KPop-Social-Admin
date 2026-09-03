@@ -2,9 +2,11 @@ import {
   ID,
   observationRow,
   pendingClaimRow,
+  sourceRow,
   type ObservationRow,
   type PendingClaimBucket,
   type PendingClaimRow,
+  type SourceRow,
 } from "../../fixtures/rows";
 
 /**
@@ -25,6 +27,9 @@ import {
  *    the provenance link exists in both directions;
  *  - a claim whose observation is ABSENT from `observations`, so its age is
  *    unknown rather than zero;
+ *  - a registry that names two of its three sources and NOT the third, so a
+ *    label test has one row it must name and one it must leave as the uuid
+ *    (admin-window/BUG-0043);
  *  - two claims made on the SAME instant, spelled `Z` and `+00:00`, so the
  *    order's tiebreak is exercised.
  *
@@ -47,6 +52,40 @@ export const ENTITY = {
   venue: "01920000-0000-7000-8000-000000000204",
   group: ID.groupEntity,
 } as const;
+
+/**
+ * The registry rows behind those sources — **two of the three, on purpose**
+ * (campaign admin-window/BUG-0043).
+ *
+ * `pending_claims` carries `source_id` and no name, so every claims surface
+ * labels its sources from `sources`. A fixture that named all three would let
+ * a page that never looked one up pass just as well as one that did, and a
+ * fixture that named none would let the id-verbatim fallback pass vacuously.
+ * `SOURCE.third` is deliberately unregistered: it is the id an operator must
+ * still see, spelled out, wherever the other two read as words.
+ *
+ * Full rows, not just the two label columns: the standing-disagreements gauge
+ * reads this same table for tier and lifecycle, and a fixture short of them
+ * would render an `undefined` no database can produce.
+ */
+export const SOURCE_NAME: ReadonlyMap<string, string> = new Map([
+  [SOURCE.first, "ticketmaster"],
+  [SOURCE.second, "bandsintown"],
+]);
+
+/** The `sources` rows a healthy read returns for this population. */
+export const REGISTRY: readonly SourceRow[] = [...SOURCE_NAME].map(([id, name]) =>
+  sourceRow({
+    source_id: id,
+    source: name,
+    tier: name === "ticketmaster" ? "official" : "standard",
+  }),
+);
+
+/** What a source is CALLED on screen: its registry name, or its id verbatim. */
+export function nameOf(sourceId: string): string {
+  return SOURCE_NAME.get(sourceId) ?? sourceId;
+}
 
 interface ClaimSpec {
   id: string;

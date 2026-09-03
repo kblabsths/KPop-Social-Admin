@@ -787,6 +787,59 @@ describe("the investigation continues", () => {
       attrsOf(markup, "[data-out]").some((href) => href.startsWith("/records/")),
     ).toBe(false);
   });
+
+  /**
+   * admin-window/BUG-0043 — one page, one destination, ONE label.
+   *
+   * The header's `Its source` link and the evidence cells directly below it
+   * point at the same `/sources?source_id=…` href, and the header printed the
+   * uuid while the cells read the source's name. Both now come from the one
+   * registry map the evidence read builds, so they cannot drift apart, and a
+   * stranger reading the page is not left checking whether two labels over one
+   * id mean two different things (user-sim Tomas, 2026-09-03).
+   */
+  it("names the source in both header links, in the evidence table's own words", async () => {
+    const item = reviewItemSourcePattern();
+    const markup = await renderItem(patternScript(), item.review_item_id);
+    const $ = cheerio.load(markup);
+    const sourceId = item.source_id as string;
+    const toSource = `/sources?source_id=${sourceId}`;
+
+    for (const href of [toSource, `/claims?source_id=${sourceId}`]) {
+      const link = $(`a[data-out="${href}"]`);
+      expect(link, href).toHaveLength(1);
+      expect(link.text(), href).toContain(BANDSINTOWN.source);
+      // The uuid is not what the link SAYS, only where it goes.
+      expect(link.text(), href).not.toContain(sourceId);
+      expect(link.attr("href"), href).toBe(href);
+    }
+
+    // The same href, in the evidence table below: the same word.
+    const headerLabel = $(`a[data-out="${toSource}"] span`).text().trim();
+    const cellLabel = $(`a[data-claim-source][href="${toSource}"]`)
+      .first()
+      .text()
+      .trim();
+    expect(cellLabel).toBe(BANDSINTOWN.source);
+    expect(headerLabel).toBe(cellLabel);
+  });
+
+  it("keeps the id verbatim when the registry named nothing", async () => {
+    // The other fixture of the pair: a registry that answered and holds no row
+    // for this source. The id is then the only true thing the page can say, so
+    // it says it (LOOK_AND_FEEL Voice bar 5) rather than blanking the link.
+    const item = reviewItemSourcePattern();
+    const markup = await renderItem(
+      patternScript({ [T.sources]: { data: [] } }),
+      item.review_item_id,
+    );
+    const $ = cheerio.load(markup);
+    const sourceId = item.source_id as string;
+    const link = $(`a[data-out="/sources?source_id=${sourceId}"]`);
+    expect(link).toHaveLength(1);
+    expect(link.text()).toContain(sourceId);
+    expect(link.text()).not.toContain(BANDSINTOWN.source);
+  });
 });
 
 /* ── the states ──────────────────────────────────────────────────────────── */

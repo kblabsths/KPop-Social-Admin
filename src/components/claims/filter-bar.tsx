@@ -12,9 +12,11 @@ import type { FilterFacet } from "@/lib/claims/filters";
  * so the screen and the URL use one word for one thing.
  *
  * It chooses nothing: `filterBar` in `src/lib/claims/filters.ts` decides which
- * chips exist, where each goes and which is active — including the one chip
- * that can never exist here, the parked bucket, which is not in the
- * vocabulary the page offers.
+ * chips exist, where each goes, which is active and **what each one says** —
+ * including the one chip that can never exist here, the parked bucket, which
+ * is not in the vocabulary the page offers. A chip's label and the value its
+ * href narrows by are two different strings on the `source_id` facet (the
+ * registry's name, and the uuid), and neither is computed here.
  *
  * It is a near-twin of `components/queues/filter-bar.tsx`, which renders the
  * same primitive over its own facet type. The shared thing is `ui/Chip`; the
@@ -37,7 +39,11 @@ export function FilterBar({ facets }: { facets: readonly FilterFacet[] }) {
           <span className="type-micro text-ink-secondary">{group.facet}</span>
           {group.choices.map((choice) => (
             <Chip
-              key={choice.label}
+              // Keyed by where it goes, not by what it says: a chip's label is
+              // the source's NAME now (admin-window/BUG-0043), and a name is
+              // not this component's to assume unique — the href is, one per
+              // narrowing, by construction.
+              key={choice.href}
               label={choice.label}
               href={choice.href}
               active={choice.active}

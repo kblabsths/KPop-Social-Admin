@@ -3,7 +3,16 @@ import { describe, expect, it, vi } from "vitest";
 import { CLAIM_WINDOW } from "@/components/claims";
 import { T } from "@/lib/db/tables";
 import { render } from "../ui/markup";
-import { CLAIMS, ENTITY, OBSERVATIONS, OBSERVED_AT, SOURCE } from "./population";
+import {
+  CLAIMS,
+  ENTITY,
+  OBSERVATIONS,
+  OBSERVED_AT,
+  REGISTRY,
+  SOURCE,
+  SOURCE_NAME,
+  nameOf,
+} from "./population";
 import {
   observationRow,
   pendingClaimRow,
@@ -44,6 +53,17 @@ const readWith = vi.hoisted(() => ({ client: undefined as unknown }));
 vi.mock("@/lib/db/claims", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/db/claims")>();
   return { ...actual, listClaims: () => actual.listClaims(readWith.client as never) };
+});
+
+// The label leg (admin-window/BUG-0043) is its own module and its own read,
+// so it is stubbed at its own boundary like every other one.
+vi.mock("@/lib/db/sources", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/db/sources")>();
+  return {
+    ...actual,
+    readSourceNames: (ids: readonly string[]) =>
+      actual.readSourceNames(ids, readWith.client as never),
+  };
 });
 
 vi.mock("@/lib/gauges/pending-claims", async (importActual) => {
@@ -135,7 +155,10 @@ function healthyScript(overrides: Script = {}): Script {
     // server-side exclusion did nothing.
     [T.pendingClaims]: { data: [...CLAIMS], count: CLAIMS.length },
     [T.observations]: { data: [...OBSERVATIONS] },
-    [T.sources]: { data: [] },
+    // Two of the three sources are registered; `SOURCE.third` is not, so every
+    // label assertion has a row it must name and a row it must not
+    // (admin-window/BUG-0043).
+    [T.sources]: { data: [...REGISTRY] },
     ...overrides,
   };
 }
@@ -183,6 +206,8 @@ function claimRow(markup: string, id: string) {
     bucket: row.find("[data-claim-bucket]").attr("data-claim-bucket"),
     sourceHref: row.find("[data-claim-source]").attr("href"),
     sourceId: row.find("[data-claim-source]").attr("data-claim-source"),
+    /** What the SOURCE cell says, as against the id it is keyed and linked by. */
+    sourceLabel: row.find("[data-claim-source]").text().trim(),
     provenanceHref: row.find("[data-claim-provenance]").attr("href"),
     requirement: row.find("[data-claim-requirement]").attr("data-claim-requirement"),
     text: row.text().replace(/\s+/g, " ").trim(),
@@ -851,7 +876,9 @@ describe("the filters", () => {
     const markup = await renderClaims(healthyScript());
     expect(chipsOf(markup, "source_id").map((chip) => chip.label)).toEqual([
       "all",
-      ...[...new Set(CLAIMS.map((claim) => claim.source_id))].sort(),
+      // Named, and in the order those names sort — the same facet `/sources`
+      // renders, reading the same way (admin-window/BUG-0043).
+      ...[...new Set(CLAIMS.map((claim) => claim.source_id))].map(nameOf).sort(),
     ]);
     expect(chipsOf(markup, "domain").map((chip) => chip.label)).toEqual([
       "all",
@@ -866,7 +893,11 @@ describe("the filters", () => {
     });
     const chips = chipsOf(markup, "source_id");
     expect(chips.filter((chip) => chip.active).map((chip) => chip.label)).toEqual([
-      SOURCE.second,
+      nameOf(SOURCE.second),
+    ]);
+    // The chip SAYS the name and still narrows by the id.
+    expect(chips.filter((chip) => chip.active).map((chip) => chip.href)).toEqual([
+      expect.stringContaining(encodeURIComponent(SOURCE.second)),
     ]);
     // Every chip keeps the tab, so crossing a filter does not change the view.
     for (const chip of chips) expect(chip.href).toContain("tab=standing");
@@ -888,6 +919,85 @@ describe("the filters", () => {
   });
 });
 
+/* ── what a source is called ─────────────────────────────────────────────── */
+
+/**
+ * admin-window/BUG-0043 — a source is a NAME on this page, not a uuid.
+ *
+ * `pending_claims` keys a source by `source_id`, and this page used to print
+ * that uuid in all 877 rows of the SOURCE column and in its one `source_id`
+ * chip, while `/sources`' identical facet, `/browse`'s SOURCES column and a
+ * record's provenance line all read `ticketmaster`. The id keeps every job it
+ * had — it keys the row, it travels in the href, it is what a chip narrows by —
+ * and it stays on screen verbatim for a source the registry has no row for,
+ * which is the only case where it is the only true thing to say.
+ */
+describe("a source is named", () => {
+  it("says the registry's name in the SOURCE cell, and still narrows by the id", async () => {
+    const markup = await renderClaims(healthyScript());
+    const named = SHOWABLE.filter((claim) => SOURCE_NAME.has(claim.source_id));
+    expect(named.length).toBeGreaterThan(1);
+
+    for (const claim of named) {
+      const row = claimRow(markup, claim.observation_id);
+      const name = SOURCE_NAME.get(claim.source_id) as string;
+      expect(row.sourceLabel, claim.observation_id).toBe(name);
+      // The uuid is gone from the cell, and gone from the row's text with it.
+      expect(row.text, claim.observation_id).not.toContain(claim.source_id);
+      // ... while the row's key and its link still carry it.
+      expect(row.sourceId, claim.observation_id).toBe(claim.source_id);
+      expect(row.sourceHref, claim.observation_id).toContain(
+        encodeURIComponent(claim.source_id),
+      );
+    }
+    // Both registered sources are exercised, not one of them twice.
+    expect(new Set(named.map((claim) => claim.source_id)).size).toBe(SOURCE_NAME.size);
+  });
+
+  it("spells out the id of a source the registry holds no row for", async () => {
+    const markup = await renderClaims(healthyScript());
+    const unregistered = SHOWABLE.filter((claim) => !SOURCE_NAME.has(claim.source_id));
+    expect(unregistered.length).toBeGreaterThan(0);
+
+    for (const claim of unregistered) {
+      // Verbatim, in the table's own mono cell — never a blank and never a
+      // guess (LOOK_AND_FEEL Voice bar 5).
+      expect(claimRow(markup, claim.observation_id).sourceLabel).toBe(claim.source_id);
+    }
+    // The same id, as the chip that narrows to it.
+    const labels = chipsOf(markup, "source_id").map((chip) => chip.label);
+    expect(labels).toContain(unregistered[0].source_id);
+  });
+
+  it("names the chips exactly as the same facet on /sources does", async () => {
+    const markup = await renderClaims(healthyScript());
+    for (const [id, name] of SOURCE_NAME) {
+      const chip = chipsOf(markup, "source_id").find((one) => one.label === name);
+      expect(chip, name).toBeDefined();
+      expect((chip as { href: string }).href).toContain(encodeURIComponent(id));
+    }
+    // Not one chip anywhere reads as a uuid the registry could have named.
+    expect(chipsOf(markup, "source_id").map((chip) => chip.label)).not.toContain(
+      SOURCE.first,
+    );
+  });
+
+  it("reports the registry leg when it refuses, and leaves every source its id", async () => {
+    const markup = await renderClaims(
+      healthyScript({ [T.sources]: { error: permissionDenied(T.sources) } }),
+    );
+    // The claims are still the claims: a label that could not be read takes
+    // nothing down with it.
+    expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
+    for (const claim of SHOWABLE) {
+      expect(claimRow(markup, claim.observation_id).sourceLabel).toBe(claim.source_id);
+    }
+    // ... and the failure is on screen, naming the object that refused.
+    expect(markup).toContain(T.sources);
+    expect(markup).toContain("permission denied");
+  });
+});
+
 /* ── the fixture the assertions rest on ──────────────────────────────────── */
 
 describe("the population this file reads", () => {
@@ -897,6 +1007,16 @@ describe("the population this file reads", () => {
     );
     expect(CLAIMS.filter((claim) => claim.bucket === PARKED)).toHaveLength(1);
     expect(new Set(CLAIMS.map((claim) => claim.source_id)).size).toBe(3);
+    // Two of those three are registered and one is not, so a label assertion
+    // has an input it must name and an input it must leave alone
+    // (admin-window/BUG-0043).
+    expect(REGISTRY.map((row) => row.source_id).sort()).toEqual(
+      [...SOURCE_NAME.keys()].sort(),
+    );
+    expect(
+      CLAIMS.some((claim) => !SOURCE_NAME.has(claim.source_id)),
+      "a source the registry does not name",
+    ).toBe(true);
     expect(CLAIMS.some((claim) => claim.entity_id === ENTITY.event)).toBe(true);
   });
 });

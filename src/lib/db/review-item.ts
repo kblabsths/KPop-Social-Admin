@@ -12,6 +12,7 @@ import { REVIEW_ITEM_COLUMNS } from "./review-items";
 import { T } from "./tables";
 import { currentDecisions, type EventProvenanceRow } from "../browse/rows";
 import type { ReviewItemRow } from "../review/shapes";
+import { sourceNamesOf } from "../sources/names";
 
 /**
  * The review-item DETAIL reads — campaign admin-window/TASK-0011.
@@ -377,6 +378,19 @@ export interface ItemEvidence {
   ids: EvidenceIdCount;
   canonical: CanonicalSide;
   /**
+   * What every source THIS PAGE mentions is called — the item's own
+   * `source_id` included, whether or not one of its claims is here to carry it
+   * (admin-window/BUG-0043).
+   *
+   * One map, from one registry read, so the header link, an evidence row and
+   * the dial cannot disagree about the name of one source: the header link
+   * `Its source` and the evidence cells below it point at the SAME href, and
+   * a walk found them printing two different labels for it — the uuid above,
+   * `ticketmaster` below. An id the map has no entry for renders verbatim
+   * (`sourceLabel` in `lib/sources/names.ts`).
+   */
+  sourceNames: ReadonlyMap<string, string>;
+  /**
    * The `sources` leg's refusal, when that one leg refused — `null` otherwise.
    *
    * It is carried BESIDE the claims rather than returned instead of them
@@ -450,8 +464,12 @@ export async function readItemEvidence(
     for (const row of winner.data) byId.set(row.observation_id, row);
   }
 
-  // Every source named by anything on this page, in one read.
+  // Every source named by anything on this page, in one read — the ITEM's own
+  // source first, because a source-pattern item is ABOUT a source and its
+  // header names it whether or not one of its claims happens to be evidence
+  // here (admin-window/BUG-0043).
   const sourceIds = distinct([
+    ...(item.source_id === null ? [] : [item.source_id]),
     ...claims.map((id) => byId.get(id)?.source_id ?? ""),
     ...(decision?.source_id === undefined || decision.source_id === null
       ? []
@@ -467,6 +485,7 @@ export async function readItemEvidence(
     data: {
       ids: { stored: item.evidence.length, distinct: evidenceIds.length },
       sourcesUnavailable: sources.kind === "ok" ? null : sources,
+      sourceNames: sourceNamesOf([...sourceById.values()]),
       claims: claims.map((id) => {
         const observation = byId.get(id) as ObservationRow;
         const source = sourceById.get(observation.source_id);

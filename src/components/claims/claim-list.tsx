@@ -13,6 +13,12 @@ import { relativeAge } from "@/lib/format";
  * bucket name there is the defect that column exists to prevent (migration
  * `20260901000004`).
  *
+ * **A source is NAMED, never spelled as a uuid** (admin-window/BUG-0043): the
+ * cell says `ticketmaster` while its link still narrows by `source_id`, so one
+ * screen never carries two labels for one destination. An id the registry has
+ * no row for stays on screen verbatim, in the table's own mono `data` cell —
+ * the id is then the only true thing the app can say.
+ *
  * **Every claim leads somewhere twice** (LOOK_AND_FEEL bar 10): to its SOURCE,
  * and to the record where its fact's provenance is shown — each one click,
  * each a real URL, both built by `src/lib/claims/filters.ts`. A claim whose
@@ -35,7 +41,15 @@ export interface ClaimLine {
   field: string;
   /** The canonical row this claim is about; null while it has none. */
   entityId: string | null;
+  /** The claim's source, as the machine keys it — what the link narrows by. */
   sourceId: string;
+  /**
+   * What that source is CALLED: the registry's `sources.source`, which is the
+   * name `/sources`, `/browse` and every provenance line already show — or the
+   * id verbatim when the registry holds no row for it
+   * (admin-window/BUG-0043; `sourceLabel` in `lib/sources/names.ts`).
+   */
+  source: string;
   /** When the claim was made — `observations.observed_at`; null if unknown. */
   observedAt: string | null;
   /** What an `awaiting_row` claim still needs, named. Null in other buckets. */
@@ -157,7 +171,7 @@ export function ClaimList({
           data-claim-source={row.sourceId}
           className="transition-colors hover:text-accent"
         >
-          {row.sourceId}
+          {row.source}
         </a>
       ),
     },
