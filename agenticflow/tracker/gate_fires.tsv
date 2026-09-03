@@ -65,3 +65,4 @@
 2026-09-03T22:37:58Z	supply_gate	blocked npx of /Users/ben-m4/Desktop/Coding/KPOP/kspace
 2026-09-03T22:44:47Z	artifact_gate	blocked write outside repo: /queues/[0-9a-f-]\{36\}
 2026-09-03T23:18:29Z	artifact_gate	blocked write outside repo: /residue
+2026-09-03T23:26:48Z	artifact_gate	blocked write outside repo: /tmp/x

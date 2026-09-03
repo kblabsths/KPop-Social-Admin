@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-03T23:25:45Z — do not edit)
+# Tracker index (regenerated 2026-09-03T23:29:22Z — do not edit)
 
 ## open
 - BUG-0042 [P2][bug][M1] Review item detail: the evidence table overflows the page instead of scrolling inside its own border  (scope:src/components/review/shape-views.tsx,src/components/ui/data-table.tsx,tests/offline/review-item/page.test.ts from:M1-endgame-designer-walk)
@@ -24,9 +24,9 @@
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:4) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
 ## built
+- BUG-0041 [P2][bug][M1] Claims: the all-claims table is unwindowed (877 rows, 30,079px), so the pending-claims gauge moves with the data  (scope:src/app/claims/page.tsx,src/components/claims/claim-list.tsx,tests/offline/claims/page.test.ts @builder-78 from:M1-endgame-designer-walk)
+
+## qa
 - BUG-0062 [P1][bug][M1] Queues: the queue-health live oracle reads one honest sub-empty card as the whole surface's state, so it is red on the run branch and the gauge's figures are never graded  (scope:tests/live/queues.live.test.ts @builder-77 from:qa:BUG-0057)
 
-## reopened
-- BUG-0041 [P2][bug][M1] Claims: the all-claims table is unwindowed (877 rows, 30,079px), so the pending-claims gauge moves with the data  (scope:src/app/claims/page.tsx,src/components/claims/claim-list.tsx,tests/offline/claims/page.test.ts from:M1-endgame-designer-walk)
-
-Totals — built:1, done:90, open:21, reopened:1. Archived: 0.
+Totals — built:1, done:90, open:21, qa:1. Archived: 0.
