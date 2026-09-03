@@ -714,3 +714,32 @@ column really changes. STACK §5's caveat, which said the opposite, is rewritten
 itself to one field of one existing `groups`/`idols` row, notes the original,
 restores it, and sweeps. That exception is the walk-write rule until the sandbox
 of §9.1 lands, and the sandbox retires it.
+
+## 2026-09-03 — a ticket that touches a page carries that page's live suite; the offline suite is not the bar
+
+The M1 root-cause pass over 60 bugs found one class that no ticket could have
+caught as ticket checks were being written: `ci_command` is
+`rm -rf .next/types && npm run lint && tsc --noEmit && npm test`, and `npm test`
+is `vitest --project=offline && vitest --project=isolated`. **`tests/live/**` and
+`tests/http/**` run in no gate at all** — not in CI, not in a receipt, unless a
+ticket names them. Five M1 bugs are exactly that hole: BUG-0024 (the app read a
+column the schema owner had dropped, invisible to a stub that still had it),
+BUG-0056 and BUG-0057 (a page change left the page's live parity oracle red;
+found by a walker after the ticket closed green), BUG-0058 (a live sweep with a
+type error that had never been executed), BUG-0037 (an oracle counting a
+different set than the surface renders). DEBT-0002 holds five more files of the
+same shape.
+
+The door this closes: from now on a ticket whose `touch_scope` includes a page
+under `src/app/**`, or a shared render primitive under `src/components/ui/**`,
+**carries `npm run test:live -- tests/live/<page>.live.test.ts` in its
+`## Checks`** (ARCHITECTURE §13.1). The alternative — making `ci_command` run
+the live tier — was rejected: it would put a staging database and ~30 s per file
+in the path of every landing, including the many that cannot touch a page, and
+`run.yaml` is the dispatcher's anyway. Measured before ruling it: a live check
+runs green inside `receipt.py`'s private worktree (BUG-0037's receipt records
+that command at exit 0, six live tests, in
+`agenticflow/.worktrees/_receipt-32069`), and when the staging names are absent
+the guard refuses non-zero naming the missing name — so the failure mode of this
+rule is a loud false RED, never a silent green. That asymmetry is what makes it
+safe to require.

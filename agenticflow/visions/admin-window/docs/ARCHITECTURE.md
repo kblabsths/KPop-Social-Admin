@@ -147,19 +147,33 @@ src/
       runs.ts          the adapter framework's runs
       browse.ts        the recent-events view's query + its provenance join
       records.ts       one canonical record for the edit surface, + the direct update
-    review/
-      shapes.ts        shape -> kind (decision | signal), ordering, filter predicates
+      gauges.ts        the six gauges' bounded windows (one file, one per read)
+    review/            LEAF: shapes.ts (shape -> kind, ordering, predicates), queue-filters.ts
+    browse/            LEAF: rows.ts (row shaping), views.ts (the column sets)
+    claims/            LEAF: filters.ts (bucket + source narrowing)
+    records/           LEAF: provenance.ts, routes.ts (`recordHref` — the ONE record URL)
     gauges/
+      gauge.ts         the window/figure shapes every gauge returns
       cycle-health.ts  resolution-latency.ts  pending-claims.ts
       queue-health.ts  standing-disagreements.ts  settled-values.ts
     edit/
-      config.ts        THE ONE hand-written {table -> editable columns} map (§8)
+      config.ts        THE ONE hand-written {table -> editable columns} map (§9)
     format.ts          relative ages, absolute UTC timestamps, thousand separators, the null dash
+    supabase.ts        the SIGN-IN path's service-role client (§2 carry-over):
+                       `admin.ts` and `auth.ts` import it. The one ruled
+                       exemption to §4 rule 3 — see that rule.
   components/
     ui/                Page, Section, DataTable, StatCard, Badge, Chip, Button,
-                       Loading, Empty, NotProvisioned, ErrorLine, EditableCell
-    gauges/            the gauge cards (figure, trend table, distribution)
+                       Loading, Empty, NotProvisioned, ErrorLine
+    EditableCell.tsx   the one old component that re-earned its place (§2), at
+                       the components root and PascalCase for that reason (§11)
+    gauges/            the gauge cards (figure, trend table, distribution, state)
     evidence/          EvidencePair — the app's signature block (LOOK_AND_FEEL)
+    shell/             the frame: nav items + the sidebar/content shell
+    browse/  claims/  queues/  records/  review/
+                       one directory per page, holding that page's presentation
+                       (§5: the page reads and shapes; components render).
+                       `/cycles` and `/sources` have none yet — DEBT-0004.
   app/
     layout.tsx         shell: sidebar of six text labels, sign-out. NO data reads.
     globals.css        Tailwind 4 @theme — the design tokens (§7)
@@ -203,7 +217,16 @@ lib/gauges/**   ->  lib/db/**            ->  @supabase/supabase-js
    own client is a defect.
 3. **Only `lib/db/client.ts` reads `process.env`** for database credentials.
    One seam, one file — the env question (§12.1) changes this file and nothing
-   else.
+   else. **One exemption, by ruling and not by oversight** (recorded here at
+   the M1 structure walk, 2026-09-03, because rule 3 as written read as
+   absolute while the tree has always held a second reader): `src/lib/supabase.ts`
+   is the pre-campaign service-role client that `lib/admin.ts` and `lib/auth.ts`
+   — the UNCHANGED sign-in path §2 carries over — import. It reads
+   `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` and builds its own client. The
+   exemption is named, and only named, in `CARRIED_OVER` in
+   `tests/offline/db/layering.test.ts`, which is a ratchet: every entry must
+   still exist, and any NEW second reader reddens. Nothing the campaign writes
+   may import it — the window's reads go through `lib/db/client.ts`.
 4. **Only `lib/db/tables.ts` spells a table or view name.** A page containing
    the literal `"review_items"` is a defect; a typo'd name must be one grep
    away, and the not-provisioned message must name the same string the query
@@ -560,12 +583,17 @@ it**, everything else derives.
 ```ts
 // src/lib/edit/config.ts — the ONLY place a table becomes editable
 export type Regime = "pre_cutover" | "resolver_owned";
+export interface ReferenceColumn {
+  readonly field: string;          // the `display` column holding the linked row's id
+  readonly domain: string;         // the table it points at, as the map keys it: /records/<domain>/<id>
+}
 export interface TableEditConfig {
   readonly table: string;          // the canonical table
   readonly pk: string;             // its primary-key column (groups.id, events.event_id, ...)
   readonly regime: Regime;         // decides the WRITE PATH — never configured per column
   readonly editable: readonly string[]; // user-facing scalars only: never ids, keys, timestamps
   readonly display: readonly string[];  // shown READ-ONLY; never a write target (Ben, 2026-09-02)
+  readonly reference: ReferenceColumn | null; // the ONE display column that links (BUG-0034)
 }
 export const EDIT_CONFIG: Readonly<Record<string, TableEditConfig>>;
 ```
@@ -582,6 +610,18 @@ export const EDIT_CONFIG: Readonly<Record<string, TableEditConfig>>;
   answers the write question, and a column in `display` is not editable by
   being there. It is the same file, so adding a column to any surface remains
   one edit in one place.
+- **`reference` is a third QUESTION about those columns, not a third list**
+  (admin-window/BUG-0034, added to this block 2026-09-03 — it had been in
+  `config.ts` and missing here since). It names the one `display` column that
+  carries another record's id, and the domain that id belongs to, so the record
+  page draws that line as a link to `/records/<domain>/<id>` (`recordHref`)
+  with the linked row's name resolved by `readRecordReference` in
+  `lib/db/records.ts` — an operator never lands on a bare uuid. The column must
+  already stand in `display`; naming it here changes only how the line is
+  DRAWN, never whether it may be written, and a table with no such column
+  carries `null`. Where the linked table's NAME is read from is deliberately
+  not in the map: that is a relation name, and §4 rule 4 leaves
+  `lib/db/tables.ts` the only file in `src/` that spells one.
 - `events` and `venues` appear with `regime: "resolver_owned"` and render
   **read-only**. **No write path to them exists in M1** — no PATCH branch, no
   helper, no scaffold. Their override path is M2's, through
@@ -783,6 +823,24 @@ there.
   A `head: true` count carries no body, so supabase-js parses no error out of
   it (measured: `code=undefined, msg=""` on a 57014) — the helper that reports
   a failed parity count issues a GET-shaped count, or says it could not tell.
+- **An oracle counts the SAME narrowing the surface renders, and names its
+  surface by `data-surface`, never by position** (added 2026-09-03 at the M1
+  structure walk; common violations 7 and 8). Two failures of one idea — an
+  oracle that is not addressed to the thing on screen:
+  1. *The count.* A per-tab surface takes a per-tab count; a WINDOWED table
+     takes the window's count, not the view's. `claims.live.test.ts` graded the
+     standing tab against the whole view's 859 (BUG-0037), and went on
+     asserting "every claim of the view is rendered" after BUG-0041 windowed
+     the table to 50 (BUG-0057). Write the independent query with the page's
+     own filter and limit beside it, and say in the assertion message which
+     window is being compared.
+  2. *The address.* `section:nth-of-type(1)` names whatever is first today.
+     BUG-0040 added a lead section to `/cycles` and four live tests died with
+     `matches 2 surfaces` — a red the ticket's own checks could not see,
+     because `npm test` does not run this tier. Every surface a live test
+     grades carries `data-surface="<name>"`, unique on the page, and the
+     oracle selects on that. Five files still address by position: DEBT-0002.
+
 - **Every live test sweeps what it wrote** (acceptance test 13), in a `finally`,
   restoring the prior value. M1's only writer is the edit-surface test, and it
   writes **only `groups` / `idols`** — one field of an existing row, prior value
@@ -822,6 +880,11 @@ there.
 - Files: kebab-case (`review-items.ts`, `not-provisioned.tsx`). React
   components: PascalCase exports. Route folders: lower-case, plural
   (`/queues`, `/claims`, `/sources`, `/cycles`, `/browse`, `/records`).
+  **One file is PascalCase and stays that way**: `src/components/EditableCell.tsx`,
+  the single old component §2 carries over by name ("re-earns its place"). §3's
+  map used to draw it inside `ui/`; the tree has it at the components root,
+  which is where §2 put it (structure walk, 2026-09-03 — the map was corrected,
+  not the file: a rename costs four test files and buys a letter).
 - **Contract vocabulary is the app's vocabulary**, in code as in copy:
   `claim`, `review item`, `decision` / `signal`, `verdict`, `override`,
   `cycle` (resolver) / `run` (adapter), `bucket`, `tier`, `canonical`
@@ -883,6 +946,55 @@ that half honours `?source=<name>`, matched by name because `runs.source` is
 text with no foreign key (§6 trap 6). Built by admin-window/TASK-0016; the
 other thirteen columns are out of scope for M1.
 
+## 13. Decomposition guidance — what a ticket on this tree must carry
+
+*(Written at the M1 root-cause pass, 2026-09-03, from the milestone's 60 bugs.
+`agenticflow/docs/LESSONS.md` is the builder-facing half of the same pass — the
+six classes; this is the authoring half. Each rule below exists because a class
+of bugs would not have survived it.)*
+
+1. **A ticket whose `touch_scope` includes a page under `src/app/**` — or a
+   shared render primitive under `src/components/ui/**` — carries that page's
+   live suite in its `## Checks`.** `ci_command` is
+   `npm run lint && tsc --noEmit && npm test`, and `npm test` is the **offline
+   and isolated projects only**: `tests/live/**` and `tests/http/**` run in no
+   gate at all. That is the whole mechanism behind BUG-0024 (the app selected a
+   column the schema owner had dropped; the offline stub still had it),
+   BUG-0056 and BUG-0057 (a page change left its live parity oracle red, both
+   caught by a walker rather than by the ticket), and BUG-0058 (a live sweep
+   nobody had ever executed). The form is
+   `npm run test:live -- tests/live/<page>.live.test.ts`, and it is
+   **measured runnable inside `receipt.py`'s private worktree** — BUG-0037's
+   receipt (2026-09-03) records that exact command at exit 0 with six live
+   tests green in `agenticflow/.worktrees/_receipt-32069`. It costs ~30 s per
+   file. When the staging names are absent from the environment the live guard
+   refuses non-zero, so the failure mode is a false RED that names the missing
+   name — never a silent green.
+2. **Offline checks are TARGETED** — the page's own test files, not `npm test`.
+   The full suite belongs to `ci_check` and the run-end gate. The exception is
+   a ticket whose scope touches a shared surface (`components/ui/**`,
+   `lib/db/result.ts`, `lib/format.ts`, the edit config): say so in the ticket.
+3. **A user-facing ticket's criteria name the ABSENT case explicitly** — the
+   null field, the empty set, the missing table — because eight M1 bugs were a
+   value that renders as nothing (LESSONS 1). "Renders X" is half a criterion;
+   "renders X, and renders the dash with no qualifier when X is null, and
+   renders a labelled 0 when the set is empty" is the whole one.
+4. **A ticket that adds or changes a structural guard states BOTH fixtures** in
+   its criteria: the input the guard must flag, and the input it must NOT flag.
+   Ten M1 bugs were guards that passed vacuously or reddened correct work
+   (LESSONS 3, common violations 4 and 5).
+5. **A ticket that writes a command into a doc carries that command as a
+   check.** Three M1 bugs were recipes in STACK.md that had never been run
+   (BUG-0038/0039/0051). A `grep -q` for the doc's own words proves the
+   sentence exists, not that it works.
+6. **A new page ships with its own `src/components/<page>/` module.** The page
+   function reads, shapes and hands plain props down (§5); its presentation
+   lives beside every other page's. Promoted from common violation 8.
+7. **A helper two pages will need is seeded as its own ticket, first.**
+   Builders work in isolated worktrees and cannot see each other's code, so a
+   helper nobody seeded becomes N hand-copies that drift (common violation 9:
+   `StateOf` stands in four pages byte-for-byte, including its comment).
+
 ## Common violations
 
 The milestone structure walk maintains this ledger: violation class, count, one
@@ -900,7 +1012,11 @@ decomposition brief of every ticket touching that surface.
 
 | 6 | **A live oracle whose fallback branch accepts the ERROR state, so a broken page grades as a pass (or an honest EMPTY page grades as a failure)** | 3 | `tests/live/claims.live.test.ts` — 4 of its 6 assertions passed on a page in its error state, because the not-provisioned branch only asks that the markup contain `pending_claims`; `queues.live.test.ts` and `sources.live.test.ts` — an empty queue takes the same branch and is graded not-provisioned | **Promoted to a rule 2026-09-02** — §10: a live test names the state kind (read structurally from `data-state`) before it compares a number; `empty` is a pass with a 0; `error` is always a FAIL. Filed as the test-hardening TASK of the same date; cited in the brief of every ticket owning a `tests/live/*.live.test.ts`. |
 
-| 7 | **A live oracle counting a DIFFERENT set than the surface it grades** | 1 | `tests/live/claims.live.test.ts`, the parked-bucket test: it grades the STANDING tab's list (`section:nth-of-type(1)`) against `claimCount()` — the whole view, 859 — so the page's honest EMPTY (staging holds 0 standing disagreements) reads as a failure, and three of the four param sets never reach the assertion the test exists for. Its own sibling test four lines above gets this right, counting `eq("bucket","standing_disagreement")`. | **Count 1, not yet a rule.** Filed as admin-window/BUG-0037 against the test alone — no product code is implicated, and the fix is the count, not the page. If a second instance appears, the rule is: an oracle's `counted` reads the same narrowing the surface renders, and a per-tab surface takes a per-tab count. Recorded 2026-09-03 by the architect, from the TASK-0031 confirmation run. |
+| 7 | **A live oracle counting a DIFFERENT set than the surface it grades** | 2 | `tests/live/claims.live.test.ts`, the parked-bucket test: it grades the STANDING tab's list (`section:nth-of-type(1)`) against `claimCount()` — the whole view, 859 — so the page's honest EMPTY (staging holds 0 standing disagreements) reads as a failure, and three of the four param sets never reach the assertion the test exists for. Its own sibling test four lines above gets this right, counting `eq("bucket","standing_disagreement")`. | **Count 2 at the M1 structure walk — PROMOTED to a rule 2026-09-03** (§10, and cited in the brief of every ticket owning a `tests/live/*.live.test.ts`): an oracle's independent count reads the SAME narrowing the surface renders, and a per-tab or windowed surface takes a per-tab or windowed count. Second instance: BUG-0057 — BUG-0041 windowed the Claims table to 50 rows and `claims.live.test.ts` went on asserting that every claim of the view is rendered, so the oracle now grades a set the page never claimed to show. Original count-1 note follows. Filed as admin-window/BUG-0037 against the test alone — no product code is implicated, and the fix is the count, not the page. If a second instance appears, the rule is: an oracle's `counted` reads the same narrowing the surface renders, and a per-tab surface takes a per-tab count. Recorded 2026-09-03 by the architect, from the TASK-0031 confirmation run. |
+| 8 | **A live oracle addressing a surface by POSITION (`section:nth-of-type(n)`)** | 6 | `tests/live/cycles.live.test.ts:61` died the moment BUG-0040 added a section above it (`section:nth-of-type(1) matches 2 surfaces`); the same spelling stands in five more live files, filed as DEBT-0002 | **Promoted to a rule 2026-09-03** — §10: a live oracle names its surface with the `data-surface` attribute the page carries, never with a position. Position makes an oracle a hostage of layout: every page ticket becomes a live-test ticket, and the failure arrives as a walker's bug rather than as the builder's own check. BUG-0056 fixed `/cycles` only; DEBT-0002 owns the other five. |
+| 9 | **A page helper hand-copied into every page that needs it** | 4 | `StateOf` stands byte-for-byte, comment included, in `cycles`, `sources`, `claims` and `queues/[reviewItemId]` — and it is what renders the `data-not-provisioned` / `data-read-failed` hooks the live oracles read, so four copies is four chances for the oracle contract to drift. Also `WindowLine` ×3, `RETRY` ×4, `ARRIVES_WITH` ×8 | **Promoted to a rule 2026-09-03** — §13.7 (decomposition): a helper two pages will need is seeded as its own ticket BEFORE them, because builders in isolated worktrees cannot see each other's code. Existing copies: DEBT-0003. |
+| 10 | **A page's presentation living in `app/` because it has no component module** | 2 | `src/app/cycles/page.tsx` is 1,291 lines with 8 local components; `src/app/sources/page.tsx` is 793 with 6. Every other page has a `src/components/<page>/` directory and its page is 85–300 code lines | **Promoted to a rule 2026-09-03** — §13.6: a new page ships with its own `src/components/<page>/` module. §5's division (page reads and shapes, components render) was never wrong; nothing said where the components go, so two pages grew them inline. DEBT-0004 extracts the existing two. |
+| 3 (re-count) | A list read with no `.range()`, no `.limit()` and no `.order()` | **0 new** | — | **The rule held.** M1 structure walk, 2026-09-03: every `.select(` in `src/lib/db/**` was traced. Fourteen chains a crude scan flagged are all either `.maybeSingle()` by primary key or by-id chunks bounded with `.limit(ids.length)`; every list read goes through `readComplete` / `readRows` with a total order and a bound. Count stays 1 (the original, fixed under TASK-0026). |
 
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
 findings on TASK-0001/0003/0006; rows 4–5 at the second pass the same day,
@@ -909,6 +1025,32 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-03, M1 endgame: root-cause pass + structure walk (architect).**
+  Six recurring bug classes written whole into `agenticflow/docs/LESSONS.md`
+  (the builder-facing half) and seven authoring rules into the new **§13**
+  (the ticket-facing half) — the load-bearing one being §13.1: a ticket
+  touching a page under `src/app/**` carries that page's live suite in its
+  checks, because `npm test` is the offline and isolated projects only and the
+  live and http tiers therefore run in no gate. Amendments from walking the
+  tree against the contract: **§3's module map** was stale in five places and
+  now documents what is (the six per-page component directories, the four pure
+  leaves, `lib/db/gauges.ts`, `lib/gauges/gauge.ts`, and `EditableCell.tsx`
+  where §2 actually put it); **§4 rule 3** now records its one ruled exemption
+  (`src/lib/supabase.ts`, the sign-in path's carried-over service-role client
+  that `admin.ts`/`auth.ts` import — the rule read as absolute while the tree
+  never was, and the exemption is a ratchet in `layering.test.ts`); **§9's
+  `TableEditConfig` block** gained the `reference` member `config.ts` has
+  declared since BUG-0034; **§10** gained the oracle rule promoted from common
+  violations 7 and 8; **§11** records that `EditableCell.tsx` is PascalCase by
+  §2's carry-over and stays so. Verified clean and recorded as such in
+  `tracker/milestones/M1.md`: dependency rules 1, 2, 5, 6, 7 and 8 (zero
+  violations), the DbResult contract (no `throw` anywhere in `src/lib/`), the
+  one-async-boundary rule, and common violation 3 re-counted at **0 new**.
+  Filed: DEBT-0003 (four byte-identical `StateOf` copies, and a `WindowLine`
+  that has already drifted on `/claims`), DEBT-0004 (two pages carry their own
+  presentation), DEBT-0005 (the unclamped `error_summary` in the `/cycles`
+  lead — BUG-0040's residual, ticketed rather than left as a note).
 
 - **2026-09-03, claims-cost confirmation (TASK-0031)** — the handoff landed in
   the scraper repo and I confirmed it read-only rather than taking it on
