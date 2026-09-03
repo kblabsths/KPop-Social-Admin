@@ -570,10 +570,14 @@ describe("the claim list's window", () => {
   });
 
   it("counts held claims per narrowing, not per rendered page", async () => {
-    const population = crowd(OVERFLOW);
+    // Big enough that EACH bucket alone overflows the cap, so a narrowing is
+    // windowed too and its held count is the narrowing's, not the page's.
+    const size = CLAIM_WINDOW * 2 + 17;
+    const population = crowd(size);
     for (const bucket of ["awaiting_row", "awaiting_link"]) {
       const expected = population.claims.filter((claim) => claim.bucket === bucket);
-      const markup = await renderClaims(crowdedScript(OVERFLOW), { bucket });
+      expect(expected.length, bucket).toBeGreaterThan(CLAIM_WINDOW);
+      const markup = await renderClaims(crowdedScript(size), { bucket });
       const line = windowLine(markup);
       expect(line.held, bucket).toBe(expected.length);
       expect(claimIds(markup).length, bucket).toBe(
