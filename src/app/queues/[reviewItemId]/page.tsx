@@ -30,6 +30,7 @@ import {
 } from "@/lib/gauges/pending-claims";
 import { recordHref } from "@/lib/records/routes";
 import { kindOfItem, shapeOf, type ReviewItemRow } from "@/lib/review/shapes";
+import { sourceLabel } from "@/lib/sources/names";
 
 /**
  * A review item, rendered — **three typed views over one anatomy** (campaign
@@ -234,19 +235,31 @@ function canonicalCard(side: CanonicalSide): EvidenceCanonical | null {
  * evidence rows, one per contending claim; an `entity_link` fact item has no
  * record link because its record is exactly what does not exist yet, and the
  * canonical card says so in the same words.
+ *
+ * **A source link says the source's NAME** (admin-window/BUG-0043). Both links
+ * a source-pattern item carries are narrowed by `source_id`, and both used to
+ * print that uuid — while the evidence cells directly below, pointing at the
+ * SAME href, read `ticketmaster`. The names come from the evidence read's one
+ * registry map, so the two labels are the same string by construction; an id
+ * the registry answered nothing for renders verbatim, which is then the only
+ * true thing the page can say about it.
  */
-function linksOf(item: ReviewItemRow): ItemLink[] {
+function linksOf(
+  item: ReviewItemRow,
+  names: ReadonlyMap<string, string>,
+): ItemLink[] {
   const links: ItemLink[] = [];
   if (item.source_id !== null) {
+    const source = sourceLabel(names, item.source_id);
     links.push({
       label: "Its claims",
       href: claimsHref(CLAIMS_PATH, { source_id: item.source_id }),
-      value: item.source_id,
+      value: source,
     });
     links.push({
       label: "Its source",
       href: sourceHref(item.source_id),
-      value: item.source_id,
+      value: source,
     });
   } else if (item.domain !== null) {
     links.push({
@@ -401,16 +414,16 @@ export default async function ReviewItemPage({
       : [];
   const buckets = await readPendingClaims(claimIds);
 
+  // What every source on this page is called — one map, from the evidence
+  // read's single registry query, so the header link, the evidence cells and
+  // the dial cannot label one source three ways (admin-window/BUG-0043). An
+  // evidence read that refused resolved no name at all, and every id then
+  // renders verbatim rather than being guessed at.
+  const names =
+    evidence.kind === "ok" ? evidence.data.sourceNames : new Map<string, string>();
+
   // The per-source dial, only for the shape whose view carries one.
   const dialSource = DIAL_BY_SHAPE[shape] ? row.source_id : null;
-  // The dial's source, named rather than spelled as a uuid where one of its
-  // own claims is on this page to carry the name.
-  const dialSourceName =
-    (evidence.kind === "ok" && dialSource !== null
-      ? evidence.data.claims.find(
-          (claim) => claim.observation.source_id === dialSource,
-        )?.source
-      : null) ?? dialSource;
   const trend =
     dialSource === null
       ? null
@@ -432,7 +445,12 @@ export default async function ReviewItemPage({
       {identity}
 
       <Section title="What happened">
-        <ItemHeader item={row} kind={kind} shape={shape} links={linksOf(row)} />
+        <ItemHeader
+          item={row}
+          kind={kind}
+          shape={shape}
+          links={linksOf(row, names)}
+        />
       </Section>
 
       {/* The recommendation slot. It exists in the anatomy and renders nothing
@@ -454,7 +472,7 @@ export default async function ReviewItemPage({
               dial={
                 dialSource === null || trend === null
                   ? null
-                  : dialProps(dialSource, dialSourceName ?? dialSource, trend)
+                  : dialProps(dialSource, sourceLabel(names, dialSource), trend)
               }
             />
             {buckets.kind === "ok" || claimIds.length === 0 ? null : (

@@ -167,15 +167,32 @@ export function claimsHref(
 /** One filter chip: where it goes, and whether it is the state we are in. */
 export interface FilterChoice {
   /**
-   * What the chip says. Every narrowing choice is the DATABASE'S OWN VALUE,
-   * verbatim — `awaiting_row`, a source id, `events` — because that is the
-   * word the URL carries and the word the row shows. Only the "no narrowing"
-   * chip is a word of the app's.
+   * What the chip SAYS. Every narrowing choice is the database's own word for
+   * that value — `awaiting_row`, `events`, a source's registry NAME — because
+   * that is the word the row beside it shows. Only the "no narrowing" chip is
+   * a word of the app's.
+   *
+   * It is not always the value in the URL: a source is keyed by `source_id`, a
+   * uuid, and named by `sources.source`, so the chip reads `ticketmaster`
+   * while `value` carries the id (admin-window/BUG-0043). A label the caller
+   * cannot resolve falls back to the value verbatim — never a blank, never a
+   * guess.
    */
   label: string;
   href: string;
   active: boolean;
 }
+
+/**
+ * What a facet's values are CALLED, when the value is not readable.
+ *
+ * Handed in rather than looked up: this module is a pure domain leaf and may
+ * not reach a database (ARCHITECTURE.md §4 rule 7), and the only facet that
+ * needs one — `source_id` — is named by a registry row the page has already
+ * read. Absent, or returning nothing for a value, means the value is its own
+ * label, which is what the two other facets want.
+ */
+export type FacetLabel = (facet: ClaimFacet, value: string) => string;
 
 /** One group of chips: the facet it sets, and every choice it offers. */
 export interface FilterFacet {
@@ -198,6 +215,7 @@ export function facetChips(
   tab: ClaimsTab,
   facet: ClaimFacet,
   values: readonly string[],
+  labelOf?: FacetLabel,
 ): FilterFacet {
   const current = filter[facet];
   return {
@@ -209,7 +227,9 @@ export function facetChips(
         active: current === undefined,
       },
       ...values.map((value) => ({
-        label: value,
+        // The chip says what the value is CALLED; the href still carries the
+        // value itself, so naming a source never changes what a chip narrows.
+        label: labelOf === undefined ? value : labelOf(facet, value),
         href: claimsHref(path, withFacet(filter, facet, value), tab),
         active: current === value,
       })),
@@ -229,10 +249,11 @@ export function filterBar(
   filter: ClaimsFilter,
   tab: ClaimsTab,
   options: FacetOptions,
+  labelOf?: FacetLabel,
 ): FilterFacet[] {
   return CLAIM_FACETS.filter(
     (facet) => !(tab === "standing" && facet === "bucket"),
-  ).map((facet) => facetChips(path, filter, tab, facet, options[facet]));
+  ).map((facet) => facetChips(path, filter, tab, facet, options[facet], labelOf));
 }
 
 /** One tab: its word, where it goes, and whether we are on it. */

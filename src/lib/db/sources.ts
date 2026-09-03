@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   readComplete,
   readRows,
+  readRowsByIds,
   type DbCountedResponse,
   type DbResponse,
   type DbResult,
@@ -103,6 +104,19 @@ export interface SourcesFilter {
   source_id?: string;
 }
 
+/**
+ * A source's id and the name an operator reads — the label leg's row.
+ *
+ * Structurally the same pair `lib/browse/rows.ts` and `lib/records/provenance.ts`
+ * each declare for their own joins; those two are pure leaves and may not
+ * import this module (ARCHITECTURE.md §4 rule 7), so the shape is stated here
+ * for the readers that live above it rather than imported across that edge.
+ */
+export interface SourceNameRow {
+  source_id: string;
+  source: string;
+}
+
 /* ── the reads ───────────────────────────────────────────────────────────── */
 
 const SOURCE_COLUMNS = [
@@ -116,6 +130,13 @@ const SOURCE_COLUMNS = [
   "created_at",
   "updated_at",
 ].join(", ");
+
+/**
+ * The two columns a LABEL needs. `readSourceNames` answers "what is this
+ * source called", so it selects the name and the key it is asked by, and
+ * nothing else (§4.2).
+ */
+const SOURCE_NAME_COLUMNS = ["source_id", "source"].join(", ");
 
 const LAST_RUN_COLUMNS = [
   "run_id",
@@ -153,6 +174,46 @@ export function readSources(db?: SupabaseClient): Promise<DbResult<SourceRow[]>>
         .order("source", { ascending: true })
         .order("source_id", { ascending: true })
         .range(0, cap - 1) as unknown as PromiseLike<DbCountedResponse<SourceRow[]>>,
+    db,
+  );
+}
+
+/**
+ * The NAME each of a set of source ids is known by — campaign
+ * admin-window/BUG-0043.
+ *
+ * A second leg (§4.2's two-step) for the surfaces whose own read keys a source
+ * by `source_id` and has no name to show for it: `/claims` renders one per row
+ * and one per filter chip, and the rest of the app has always shown the name
+ * (`/sources`, `/browse`, a record's provenance, the Dashboard's runs table).
+ *
+ * Two columns, not nine: reads are explicit (§4.2) and this leg's whole job is
+ * the label. It is `readRowsByIds`, so no ids means no round trip and an id
+ * the registry holds no row for simply comes back missing — `sourceLabel` in
+ * `lib/sources/names.ts` renders that id verbatim rather than guessing.
+ *
+ * A REFUSAL here costs a label and nothing else, which is why the caller is
+ * free to render the ids it already has beside the reported failure; it is not
+ * `readComplete`, because the caller asked for a named id set rather than "the
+ * registry", and there is nothing to be partial about.
+ */
+export function readSourceNames(
+  ids: readonly string[],
+  db?: SupabaseClient,
+): Promise<DbResult<SourceNameRow[]>> {
+  return readRowsByIds<SourceNameRow>(
+    T.sources,
+    ids,
+    (client, chunkIds) =>
+      client
+        .from(T.sources)
+        .select(SOURCE_NAME_COLUMNS)
+        .in("source_id", chunkIds)
+        // At most one row per id — `source_id` is the table's key — so the leg
+        // can never ask for more rows than the ids it filtered on.
+        .limit(chunkIds.length) as unknown as PromiseLike<
+        DbResponse<SourceNameRow[]>
+      >,
     db,
   );
 }

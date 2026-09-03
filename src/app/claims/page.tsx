@@ -26,6 +26,7 @@ import {
   type ClaimRow,
 } from "@/lib/db/claims";
 import type { DbUnavailable } from "@/lib/db/result";
+import { readSourceNames } from "@/lib/db/sources";
 import { absoluteUtc, count, duration } from "@/lib/format";
 import {
   claimsHref,
@@ -33,6 +34,7 @@ import {
   filterFrom,
   isNarrowed,
   sourceHref,
+  type FacetLabel,
   tabFrom,
   tabLinks,
   withFacet,
@@ -50,6 +52,7 @@ import {
   type StandingDisagreements,
 } from "@/lib/gauges/standing-disagreements";
 import { recordHref } from "@/lib/records/routes";
+import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
 
 /**
  * Claims — **the classification view rendered**: what is stuck, and whose
@@ -246,8 +249,18 @@ function bucketStats(
   });
 }
 
-/** One claim, as the list renders it: its row, its age, and its two links. */
-function claimLines(claims: readonly ClaimRow[]): ClaimLine[] {
+/**
+ * One claim, as the list renders it: its row, its age, and its two links.
+ *
+ * The source is carried twice on purpose (admin-window/BUG-0043): `sourceId`
+ * is the machine value the link narrows by and the row is keyed on, `source`
+ * is what the cell SAYS — the registry's name, or that same id verbatim when
+ * the registry holds no row for it.
+ */
+function claimLines(
+  claims: readonly ClaimRow[],
+  names: ReadonlyMap<string, string>,
+): ClaimLine[] {
   return claimOrder(claims).map((claim) => ({
     observationId: claim.observation_id,
     bucket: claim.bucket,
@@ -255,6 +268,7 @@ function claimLines(claims: readonly ClaimRow[]): ClaimLine[] {
     field: claim.field,
     entityId: claim.entity_id,
     sourceId: claim.source_id,
+    source: sourceLabel(names, claim.source_id),
     observedAt: claim.observed_at,
     unmetRequirement: claim.unmet_requirement,
     sourceHref: sourceHref(claim.source_id),
@@ -427,10 +441,39 @@ export default async function ClaimsPage({
   // and the sources and domains the view actually carries. A parameter naming
   // anything else narrows nothing, so a hand-typed URL lands on a real state
   // and carries nothing forward into the chips' hrefs.
-  const options =
+  const asFound =
     claims.kind === "ok"
       ? facetOptions(claims.data)
       : { bucket: RENDERABLE_BUCKETS, source_id: [], domain: [] };
+
+  // What each source is CALLED — admin-window/BUG-0043. `pending_claims` keys
+  // a source by `source_id` and carries no name, so the label is a second leg
+  // (§4.2) over exactly the ids this view holds; the rest of the app has
+  // always shown the name, and 877 rows of uuid said nothing an operator
+  // could read. The id keeps every job it had: it keys the row, it travels in
+  // the URL, and it is what a chip narrows by.
+  //
+  // A refusal here costs the LABEL and nothing else, so it is carried beside
+  // the list rather than replacing it (the review item does the same with its
+  // own registry leg): every claim still renders, named by its id verbatim.
+  const registry = await readSourceNames(asFound.source_id);
+  const names = sourceNamesOf(registry.kind === "ok" ? registry.data : []);
+  const labelOf: FacetLabel = (facet, value) =>
+    facet === "source_id" ? sourceLabel(names, value) : value;
+
+  const options = {
+    ...asFound,
+    // The chips read in the order their LABELS sort, so this facet reads the
+    // same here as the identical one on `/sources` instead of in uuid order
+    // (LOOK_AND_FEEL: the anatomy does not change between screens). The id
+    // breaks a tie, so the order is total.
+    source_id: [...asFound.source_id].sort((a, b) => {
+      const left = sourceLabel(names, a);
+      const right = sourceLabel(names, b);
+      if (left !== right) return left < right ? -1 : 1;
+      return a < b ? -1 : 1;
+    }),
+  };
   // The standing tab is one bucket's subset, so it carries no bucket facet at
   // all: dropping it here — rather than overriding it at render — is what
   // keeps the chips, the hrefs and the "nothing matched" words telling the
@@ -460,7 +503,7 @@ export default async function ClaimsPage({
   // The list is DRAWN as a window; `shown` stays the whole matching set, so
   // the sentence above the table can state how many claims it really holds
   // (admin-window/BUG-0041). Nothing else on the page reads these rows.
-  const listed = claimWindow(claimLines(shown));
+  const listed = claimWindow(claimLines(shown, names));
   const emptyWords = isNarrowed(filter)
     ? NOTHING_MATCHED
     : tab === "standing"
@@ -470,7 +513,7 @@ export default async function ClaimsPage({
   return (
     <Page title="Claims">
       <ClaimTabs tabs={tabLinks(CLAIMS_PATH, filter, tab)} />
-      <FilterBar facets={filterBar(CLAIMS_PATH, filter, tab, options)} />
+      <FilterBar facets={filterBar(CLAIMS_PATH, filter, tab, options, labelOf)} />
 
       {tab === "standing" ? null : (
         <Section title="Buckets">
@@ -527,6 +570,12 @@ export default async function ClaimsPage({
                 claims.kind === "error" ? <StateOf result={claims} /> : undefined
               }
             />
+            {registry.kind === "ok" ? null : (
+              // The claims rendered fine; only what NAMES their sources could
+              // not be read, so it is reported on its own, naming its own
+              // object, and every row above is named by its id verbatim.
+              <StateOf result={registry} eyebrow="Source names" />
+            )}
           </>
         )}
       </Section>
