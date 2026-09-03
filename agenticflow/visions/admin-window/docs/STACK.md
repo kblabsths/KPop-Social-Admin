@@ -137,11 +137,17 @@ space — quote it).
 
 - **8770 is the factory's attention UI** (`run.yaml` `ui_port`). Never bind it.
 - A walk instance takes its database credentials from **its own process
-  environment**, never from `.env` — see the recipe below. `.env` no longer
-  carries `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` at all; production values
-  live only in Railway's production environment (Ben's ruling, 2026-09-03,
-  recorded in `agenticflow/docs/DECISIONS.md`). Nothing in code falls back to
-  another name, and no value is ever printed.
+  environment** under the names `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`,
+  mapped there from the `STAGING_*` names by the launching shell — the app
+  itself never reads a `STAGING_*` name. `.env` no longer carries
+  `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` at all; it carries the
+  `STAGING_*` pair, which the launch line loads (recipe below, step 1) —
+  production values live only in Railway's production environment (Ben's
+  ruling, 2026-09-03, recorded in `agenticflow/docs/DECISIONS.md`). Nothing in
+  code falls back to another name, and no value is ever printed. **Both
+  walk rows in the table above take the same step-1 prefix** — the
+  production-like row (`npm run build && npm run start`) exactly as much as
+  `npm run dev`.
 - `npm run lint` and `npm run build` both complete in seconds here (measured
   2026-09-01: lint 2.8s once `agenticflow/**` is ignored, build 6.2s, tsc
   1.1s) — cheap enough to sit in every ticket's checks.
@@ -153,13 +159,45 @@ recipe for the M1 endgame walkers (designer walk, user-sims, verifier), settled
 by Ben's two rulings of 2026-09-03 and proved by
 `tests/http/walk-cookie.http.test.ts`.
 
-**1. Launch the instance.** The two names the app reads are mapped from the
-staging names on the launching shell's command line, so they exist for this
-process and nowhere else:
+**1. Launch the instance.** The two names the app reads (`SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`) are mapped from the staging names on the launching
+shell's command line, so they exist for that process and nowhere else. The
+staging names themselves live in exactly one place — the **repo-root `.env`**
+(gitignored; its names, and only its names, are listed in `.env.example`) — and
+a fresh shell does not have them, so loading `.env` is part of the launch line.
+Run the whole thing inside a subshell `( … )`, so the loaded values die with
+that process:
 
 ```sh
-SUPABASE_URL="$STAGING_SUPABASE_URL" SUPABASE_SERVICE_ROLE_KEY="$STAGING_SUPABASE_SERVICE_ROLE_KEY" \
-  AUTH_URL="http://localhost:8771" npm run dev -- --port 8771
+( set -a && source .env && set +a && \
+  SUPABASE_URL="$STAGING_SUPABASE_URL" SUPABASE_SERVICE_ROLE_KEY="$STAGING_SUPABASE_SERVICE_ROLE_KEY" \
+  AUTH_URL="http://localhost:8771" npm run dev -- --port 8771 )
+```
+
+That is verbatim how the walk instance running on 8771 was launched, and it
+works in both bash and zsh. Two things about it are not optional:
+
+- **The `set -a` prefix.** Drop it and the failure is silent rather than loud:
+  an unset shell variable expands to the empty string, so the app starts with
+  `SUPABASE_URL=""` — and `.env` cannot repair that, because Next's env loader
+  skips any name already present in the process environment, empty string
+  included (`node_modules/@next/env/dist/index.js`). Nothing complains until
+  the first server-side read, which dies in `getSupabaseAdmin()` with
+  `supabaseUrl is required` (`src/lib/supabase.ts`); a walker who does not know
+  this reports app-wide breakage that does not exist. Measured 2026-09-03
+  (admin-window/BUG-0039).
+- **The surrounding `( … )`.** `set -a` exports *every* name in `.env` for the
+  length of that subshell — OAuth secrets included — and the closing paren is
+  what keeps them out of your interactive shell and out of every later command
+  in the session.
+
+**Never print a value to check your work.** No `echo "$STAGING_SUPABASE_URL"`,
+no `printenv`, no `cat .env`, no `env | grep` — a secret value that reaches a
+transcript is burned and Ben has to rotate it. Test *presence* instead, which
+prints one word:
+
+```sh
+[ -n "${STAGING_SUPABASE_URL:-}" ] && echo SET || echo UNSET
 ```
 
 `AUTH_URL` is not optional. next-auth resolves the app's own origin from it
@@ -172,7 +210,10 @@ It also decides the **cookie name**: `@auth/core`'s `defaultCookies()` prefixes
 below produces.
 
 The instance also needs `AUTH_SECRET` in that same environment — the mint and
-the server must agree on it, and neither has a default.
+the server must agree on it, and neither has a default. The `source .env` above
+is what supplies it to the server; the mint helper below reaches the same value
+on its own (its process environment first, then the repo-root `.env`), so the
+two agree without either printing it.
 
 **2. Mint a session cookie.** Sign-in is Google-only, so a walker gets past the
 gate with a minted cookie rather than a sign-in flow. The minting helper lives
