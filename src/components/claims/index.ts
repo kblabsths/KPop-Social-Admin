@@ -4,6 +4,12 @@
  * database (ARCHITECTURE.md §4 rule 1, §5).
  */
 export { BucketTable, type BucketStat } from "./bucket-table";
-export { ClaimList, type ClaimLine } from "./claim-list";
+export {
+  ClaimList,
+  claimWindow,
+  CLAIM_WINDOW,
+  type ClaimLine,
+  type ClaimWindow,
+} from "./claim-list";
 export { ClaimTabs } from "./tabs";
 export { FilterBar } from "./filter-bar";

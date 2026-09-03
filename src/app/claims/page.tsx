@@ -3,6 +3,8 @@ import {
   BucketTable,
   ClaimList,
   ClaimTabs,
+  claimWindow,
+  CLAIM_WINDOW,
   FilterBar,
   type BucketStat,
   type ClaimLine,
@@ -78,6 +80,13 @@ import { recordHref } from "@/lib/records/routes";
  * than hopeful; a read that could not answer completely arrives as the error
  * state and is rendered as one.
  *
+ * The read is complete; the **LIST is drawn as a window** (`CLAIM_WINDOW`,
+ * admin-window/BUG-0041): the longest-waiting rows only, with the cap and the
+ * number of matching claims stated above the table in the app's window voice.
+ * That bound is a rendering bound and nothing else — every count on this page
+ * is still computed from the whole matching set, so a window never becomes a
+ * total.
+ *
  * The two GAUGES on this page are the other kind of read — bounded, ordered
  * WINDOWS (§4.3 kind 2, spec §5) — so their sections name the window they are
  * showing instead of presenting a window aggregate as a total. Only the
@@ -115,6 +124,23 @@ const ARRIVES_WITH = "the scraper repo's migrations";
 /** The order the claim list is in, stated on screen (LOOK_AND_FEEL bar 6). */
 const SORT_STATEMENT =
   "Oldest first — the longest-waiting claim at the top; a claim whose instant is unknown sorts last.";
+
+/**
+ * What the list is showing, in the app's window voice — campaign
+ * admin-window/BUG-0041. Every other long list on this app states its bound
+ * ("a window of at most 200, not a count of the cycles that exist"); this one
+ * did not, and it was the one list that was actually unbounded, so the gauge
+ * below it sat wherever the backlog put it. The cap and the number held are
+ * both on screen, so the window is never a silent truncation.
+ */
+function windowSentence(held: number, truncated: boolean): string {
+  const bound = `A window of at most ${count(CLAIM_WINDOW)} rows, not the whole view.`;
+  return truncated
+    ? `${bound} ${count(held)} claims match these filters; the ${count(
+        CLAIM_WINDOW,
+      )} longest-waiting are below — narrow with the filters above to reach the rest.`
+    : bound;
+}
 
 /** What an empty claims table holds and what fills it — never a bare "No data". */
 const NOTHING_HELD: EmptyWords = {
@@ -431,6 +457,10 @@ export default async function ClaimsPage({
           tab === "standing" ? { ...filter, bucket: STANDING_BUCKET } : filter,
         )
       : [];
+  // The list is DRAWN as a window; `shown` stays the whole matching set, so
+  // the sentence above the table can state how many claims it really holds
+  // (admin-window/BUG-0041). Nothing else on the page reads these rows.
+  const listed = claimWindow(claimLines(shown));
   const emptyWords = isNarrowed(filter)
     ? NOTHING_MATCHED
     : tab === "standing"
@@ -481,10 +511,18 @@ export default async function ClaimsPage({
           <Empty holds={emptyWords.holds} filledBy={emptyWords.filledBy} />
         ) : (
           <>
-            <p className="type-body text-ink-secondary">{SORT_STATEMENT}</p>
+            <p
+              data-window="claims"
+              data-window-limit={String(CLAIM_WINDOW)}
+              data-window-held={String(listed.held)}
+              data-window-truncated={listed.truncated ? "true" : "false"}
+              className="type-body text-ink-secondary"
+            >
+              {SORT_STATEMENT} {windowSentence(listed.held, listed.truncated)}
+            </p>
             <ClaimList
               label={LIST_TITLE[tab]}
-              rows={claims.kind === "ok" ? claimLines(shown) : []}
+              rows={claims.kind === "ok" ? listed.rows : []}
               line={
                 claims.kind === "error" ? <StateOf result={claims} /> : undefined
               }
