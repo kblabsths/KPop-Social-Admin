@@ -13,6 +13,7 @@ import {
   type PendingObservationRow,
 } from "@/lib/gauges/pending-claims";
 import { T } from "@/lib/db/tables";
+import type { WindowInfo } from "@/lib/gauges/gauge";
 import { ID, observationRow, pendingClaimRow } from "../../fixtures/rows";
 import {
   permissionDenied,
@@ -36,7 +37,14 @@ import {
  */
 
 const NOW = "2026-09-01T12:00:00.000Z";
-const WINDOW = { since: "2026-06-03T12:00:00.000Z", until: NOW, limit: 900, truncated: false };
+// `over` as `windowOf` sets it: this gauge scans `observations`, a table.
+const WINDOW: WindowInfo = {
+  since: "2026-06-03T12:00:00.000Z",
+  until: NOW,
+  limit: 900,
+  truncated: false,
+  over: "table",
+};
 
 const SOURCE_A = ID.sourceTicketmaster;
 const SOURCE_B = ID.sourceBandsintown;
@@ -289,7 +297,7 @@ describe("aggregatePendingClaims", () => {
 describe("aggregateAwaitingRowTrend", () => {
   const trend = aggregateAwaitingRowTrend(
     rows({
-      window: { since: "2026-08-29T12:00:00.000Z", until: NOW, limit: 900, truncated: false },
+      window: { ...WINDOW, since: "2026-08-29T12:00:00.000Z" },
     }),
   );
 

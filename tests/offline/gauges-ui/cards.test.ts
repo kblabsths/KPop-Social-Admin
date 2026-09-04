@@ -50,6 +50,8 @@ function windowOfFixture(overrides: Partial<WindowInfo> = {}): WindowInfo {
     until: NOW,
     limit: 800,
     truncated: false,
+    // As `windowOf` sets it — the cycle-health scan is over `resolution_runs`.
+    over: "table",
     ...overrides,
   };
 }

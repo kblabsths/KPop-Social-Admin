@@ -1,4 +1,5 @@
 import type { DbResult } from "../db/result";
+import { T } from "../db/tables";
 import {
   namesNoObservation,
   readObservedAt,
@@ -147,7 +148,7 @@ export async function fetchResolutionLatency(
     data: {
       applies: applies.data,
       observations: observations.data,
-      window: windowOf(bounds, applies.data.length),
+      window: windowOf(bounds, applies.data.length, T.fieldProvenance),
     },
   };
 }

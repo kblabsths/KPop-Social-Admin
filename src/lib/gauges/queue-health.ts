@@ -1,4 +1,5 @@
 import type { DbResult } from "../db/result";
+import { T } from "../db/tables";
 import { readReviewItemsOpenedSince, type DbClient } from "../db/gauges";
 import {
   oldestOpenedAt,
@@ -139,7 +140,7 @@ export async function fetchQueueHealth(
   if (result.kind !== "ok") return result;
   return {
     kind: "ok",
-    data: { items: result.data, window: windowOf(bounds, result.data.length) },
+    data: { items: result.data, window: windowOf(bounds, result.data.length, T.reviewItems) },
   };
 }
 

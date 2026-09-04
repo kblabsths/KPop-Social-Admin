@@ -609,9 +609,20 @@ describe("WindowLine", () => {
     until: "2026-09-01T00:00:00.000Z",
     limit: 2000,
     truncated: false,
+    over: "table",
   };
+  /**
+   * `over` rides on the WINDOW, not on the component (admin-window/BUG-0077) —
+   * so these cases vary the read, which is the only thing that may vary it.
+   */
   const line = (over: "table" | "view", window: ReadWindow = WINDOW) =>
-    render(h(WindowLine, { gauge: "cycle_health", window, measured: "Cycles started", over }));
+    render(
+      h(WindowLine, {
+        gauge: "cycle_health",
+        window: { ...window, over },
+        measured: "Cycles started",
+      }),
+    );
 
   it("publishes the window it was handed, attribute by attribute", () => {
     const $ = cheerio.load(line("table"));
@@ -641,15 +652,32 @@ describe("WindowLine", () => {
 
   it("names what the window was read OVER, and never the other kind of object", () => {
     // The three copies said "table" twice and "view" once for the same
-    // sentence; the word now follows the object the caller read
-    // (admin-window/DEBT-0003). Asserted against the prop, so no copy is
-    // pinned here.
+    // sentence; the word follows the object the READ ran over
+    // (admin-window/DEBT-0003, admin-window/BUG-0077). Asserted against the
+    // window's own field, so no copy is pinned here.
     for (const over of ["table", "view"] as const) {
       const other = over === "table" ? "view" : "table";
       const text = textOf(line(over));
       expect(text, over).toContain(over);
       expect(text, over).not.toContain(other);
     }
+  });
+
+  it("gives a caller no way to name a different object than the window did", () => {
+    // The regression admin-window/BUG-0077 is: while the word was a prop, two
+    // call sites rendering ONE window described it as two different objects.
+    // A stray `over` on the element — the shape those call sites had — must
+    // change nothing; only `window.over` may. Cast because the prop is gone
+    // from the type, which is the first half of the same guarantee.
+    const props = {
+      gauge: "cycle_health",
+      window: { ...WINDOW, over: "table" as const },
+      measured: "Cycles started",
+      over: "view",
+    };
+    const text = textOf(render(h(WindowLine, props as unknown as never)));
+    expect(text, "the window was read over a table").toContain("not the whole table.");
+    expect(text).not.toContain("view");
   });
 
   it("is one line, and says which gauge's window it is", () => {

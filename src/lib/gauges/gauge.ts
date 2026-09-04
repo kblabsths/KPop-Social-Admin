@@ -1,4 +1,5 @@
 import { ROW_CAP, type DbResult } from "../db/result";
+import { objectKindOf, type ObjectKind, type TableName } from "../db/tables";
 
 /**
  * What every gauge shares — campaign admin-window/TASK-0007.
@@ -15,10 +16,12 @@ import { ROW_CAP, type DbResult } from "../db/result";
  * a bounded window, a percentile spread, and a per-period bucketing — and
  * three hand-written percentile functions would disagree within a milestone.
  *
- * **This module is pure.** From the data layer it imports one TYPE and one
- * NUMBER (`ROW_CAP`, the platform row cap — see `GAUGE_ROW_CAP` below); it
- * imports no client, no query builder and no chain, so nothing under
- * `lib/gauges/` can reach a database — which is what makes "the aggregate is
+ * **This module is pure.** From the data layer it imports one TYPE, one
+ * NUMBER (`ROW_CAP`, the platform row cap — see `GAUGE_ROW_CAP` below) and the
+ * table registry's `objectKindOf` (a lookup in a frozen map, which is why
+ * `windowOf` can say what its scan ran over without asking a renderer —
+ * admin-window/BUG-0077); it imports no client, no query builder and no chain,
+ * so nothing under `lib/gauges/` can reach a database — which is what makes "the aggregate is
  * pure" a structural fact rather than a promise (ARCHITECTURE.md §4 rule 2:
  * only `lib/db/**` imports `@supabase/supabase-js`; every PostgREST chain is
  * in `lib/db/gauges.ts`).
@@ -93,6 +96,18 @@ export interface WindowInfo {
    * complete.
    */
   truncated: boolean;
+  /**
+   * The kind of database object the scan ran over — the word a window line
+   * ends on ("…not the whole table.").
+   *
+   * It rides on the window because it is a fact of the READ, established by
+   * `windowOf` from the `tables.ts` name the query itself used, not a prop a
+   * page picks. Two surfaces rendering one `WindowInfo` therefore cannot
+   * describe it with two different objects, which is exactly what `/claims`
+   * ("view") and `/sources` ("table") did to the one pending-claims window
+   * while the word was a call-site choice (admin-window/BUG-0077).
+   */
+  over: ObjectKind;
 }
 
 /** The bounds a fetch resolved to before it ran. */
@@ -148,7 +163,8 @@ export function resolveBounds(
 }
 
 /**
- * The window a fetch of `rows.length` rows under `bounds` actually covered.
+ * The window a fetch of `rows.length` rows under `bounds` actually covered,
+ * over the object `scanned` names.
  *
  * Truncation is decided against the SMALLER of the cap asked for and
  * `GAUGE_ROW_CAP`, because the server stops at its own cap whatever the query
@@ -156,14 +172,21 @@ export function resolveBounds(
  * same number; the `min` here is what keeps the answer honest for bounds built
  * any other way, instead of leaving the guard in one place a caller can walk
  * around (admin-window/BUG-0009).
+ *
+ * `scanned` is the `T.*` constant the scanning query passed to `.from()` —
+ * the same value, not a second spelling of it — and its table/view kind is
+ * looked up rather than asserted. That is what makes `WindowInfo.over` a
+ * property of the read: a caller cannot hand it a word, only the object
+ * (admin-window/BUG-0077).
  */
-export function windowOf(bounds: Bounds, rowCount: number): WindowInfo {
+export function windowOf(bounds: Bounds, rowCount: number, scanned: TableName): WindowInfo {
   const effectiveLimit = Math.min(bounds.limit, GAUGE_ROW_CAP);
   return {
     since: bounds.since,
     until: bounds.until,
     limit: effectiveLimit,
     truncated: rowCount >= effectiveLimit,
+    over: objectKindOf(scanned),
   };
 }
 

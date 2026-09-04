@@ -1,4 +1,5 @@
 import type { DbResult } from "../db/result";
+import { T } from "../db/tables";
 import { cycleState } from "../cycles/state";
 import {
   readResolutionRuns,
@@ -136,7 +137,7 @@ export async function fetchCycleHealth(
   if (result.kind !== "ok") return result;
   return {
     kind: "ok",
-    data: { rows: result.data, window: windowOf(bounds, result.data.length) },
+    data: { rows: result.data, window: windowOf(bounds, result.data.length, T.resolutionRuns) },
   };
 }
 

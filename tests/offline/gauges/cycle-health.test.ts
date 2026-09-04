@@ -6,6 +6,7 @@ import {
   type ResolutionRunRow,
 } from "@/lib/gauges/cycle-health";
 import { T } from "@/lib/db/tables";
+import type { WindowInfo } from "@/lib/gauges/gauge";
 import { ID, resolutionRunRow } from "../../fixtures/rows";
 import {
   permissionDenied,
@@ -139,7 +140,14 @@ describe("fetchCycleHealth", () => {
 });
 
 describe("aggregateCycleHealth", () => {
-  const window = { since: "2026-08-25T12:00:00.000Z", until: NOW, limit: 800, truncated: false };
+  // `over` as `windowOf` sets it: this gauge scans `resolution_runs`, a table.
+  const window: WindowInfo = {
+    since: "2026-08-25T12:00:00.000Z",
+    until: NOW,
+    limit: 800,
+    truncated: false,
+    over: "table",
+  };
   const health = aggregateCycleHealth({ rows: population(), window });
 
   it("counts every outcome, with a cycle that has not finished under its own name", () => {

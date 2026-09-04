@@ -580,7 +580,6 @@ function CycleHealthSection({ health }: { health: CycleHealth }) {
         gauge="cycle_health"
         window={info}
         measured="Cycles started"
-        over="table"
       />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
@@ -707,7 +706,6 @@ function LatencySection({ latency }: { latency: ResolutionLatency }) {
         gauge="resolution_latency"
         window={info}
         measured="Canonical decisions applied"
-        over="table"
       />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard

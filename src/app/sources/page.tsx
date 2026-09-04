@@ -466,7 +466,6 @@ function AwaitingRowTrendSection({
         gauge="awaiting_row"
         window={info}
         measured="Claims observed"
-        over="table"
       />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
@@ -586,7 +585,6 @@ function RejectionSection({
         gauge="rejections"
         window={info}
         measured="Claims adjudicated"
-        over="table"
       />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard

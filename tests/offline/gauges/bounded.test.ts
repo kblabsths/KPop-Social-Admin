@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DbResult } from "@/lib/db/result";
-import { T } from "@/lib/db/tables";
+import { objectKindOf, T, TABLE_NAMES, type TableName } from "@/lib/db/tables";
 import type { WindowInfo } from "@/lib/gauges/gauge";
 import { fetchCycleHealth, CYCLE_HEALTH_DEFAULTS } from "@/lib/gauges/cycle-health";
 import { fetchPendingClaims, PENDING_CLAIMS_DEFAULTS } from "@/lib/gauges/pending-claims";
@@ -253,6 +253,11 @@ function repeat<Row>(count: number, build: (index: number) => Row): Row[] {
 const SCANS: {
   gauge: string;
   limit: number;
+  /**
+   * The object the scanning query runs over — asserted against the name the
+   * stub really saw, never trusted as a declaration (admin-window/BUG-0077).
+   */
+  scanObject: TableName;
   fill: (rows: number) => Record<string, { data: unknown }>;
   run: (db: SupabaseClient) => Promise<DbResult<unknown>>;
   windowOf: (data: unknown) => WindowInfo;
@@ -260,6 +265,7 @@ const SCANS: {
   {
     gauge: "cycle health",
     limit: CYCLE_HEALTH_DEFAULTS.limit,
+    scanObject: T.resolutionRuns,
     fill: (rows) => ({
       [T.resolutionRuns]: { data: repeat(rows, (i) => resolutionRunRow({ run_id: `run-${i}` })) },
     }),
@@ -269,6 +275,7 @@ const SCANS: {
   {
     gauge: "resolution latency",
     limit: RESOLUTION_LATENCY_DEFAULTS.limit,
+    scanObject: T.fieldProvenance,
     fill: (rows) => ({
       [T.fieldProvenance]: {
         data: repeat(rows, (i) =>
@@ -283,6 +290,7 @@ const SCANS: {
   {
     gauge: "pending claims",
     limit: PENDING_CLAIMS_DEFAULTS.limit,
+    scanObject: T.observations,
     fill: (rows) => ({
       [T.observations]: {
         data: repeat(rows, (i) =>
@@ -297,6 +305,7 @@ const SCANS: {
   {
     gauge: "queue health",
     limit: QUEUE_HEALTH_DEFAULTS.limit,
+    scanObject: T.reviewItems,
     fill: (rows) => ({
       [T.reviewItems]: {
         data: repeat(rows, (i) => reviewItemDataConflict({ review_item_id: `item-${i}` })),
@@ -308,6 +317,7 @@ const SCANS: {
   {
     gauge: "standing disagreements",
     limit: PENDING_CLAIMS_DEFAULTS.limit,
+    scanObject: T.observations,
     fill: (rows) => ({
       [T.observations]: {
         data: repeat(rows, (i) =>
@@ -323,6 +333,7 @@ const SCANS: {
   {
     gauge: "settled values",
     limit: REJECTION_STAMP_DEFAULTS.limit,
+    scanObject: T.observations,
     fill: (rows) => ({
       [T.observations]: {
         data: repeat(rows, (i) =>
@@ -340,6 +351,73 @@ const SCANS: {
     windowOf: (data) => (data as { window: WindowInfo }).window,
   },
 ];
+
+/**
+ * The window says what it was read OVER, and the object is the one the query
+ * named (campaign admin-window/BUG-0077).
+ *
+ * The defect this replaces: the closing noun of every window line
+ * ("…not the whole table.") was a prop each page passed by hand, so `/claims`
+ * and `/sources` — rendering ONE `WindowInfo`, the pending-claims window over
+ * `observations` — described it as a view and as a table. Nothing graded the
+ * value, so flipping either page left every suite green.
+ *
+ * Both legs run together on purpose, and neither is sufficient alone:
+ *
+ *  - leg 1 grounds `scanObject` in the query the stub really recorded, so this
+ *    table cannot drift into a second, wrong spelling of what each gauge reads;
+ *  - leg 2 grades `window.over` against the kind `tables.ts` gives THAT object,
+ *    so a `windowOf` that answered "table" unconditionally still fails as soon
+ *    as a gauge scans a view.
+ *
+ * The pages then have no say at all — `WindowLine` takes the word off the
+ * window, which is why `tests/offline/absence/pages.test.ts` can assert that
+ * two surfaces over one read describe it identically.
+ */
+describe("the window a gauge reports", () => {
+  for (const scan of SCANS) {
+    it(`is over the object its scanning query named — ${scan.gauge}`, async () => {
+      const stub = stubClient(scan.fill(1) as Record<string, { data: unknown }>);
+      const result = await scan.run(stub.asSupabaseClient());
+      expect(result.kind, scan.gauge).toBe("ok");
+      if (result.kind !== "ok") return;
+
+      // Leg 1: the scan is the gauge's FIRST query, and it ran over the object
+      // this table names. Read off the recorded call, so the declaration above
+      // is checked rather than believed.
+      expect(
+        stub.tablesRead()[0],
+        `${scan.gauge}: the scan this window is about must be the query it named`,
+      ).toBe(scan.scanObject);
+
+      // Leg 2: and the window's closing noun is that object's kind.
+      expect(
+        scan.windowOf(result.data).over,
+        `${scan.gauge}: the window line would end on the wrong object`,
+      ).toBe(objectKindOf(scan.scanObject));
+    });
+  }
+
+  it("could have said view: the kind is looked up per object, not fixed", () => {
+    // Non-vacuous guard (LESSONS 3). Every gauge above scans a table today, so
+    // the six cases pass for a lookup that only ever answers "table". This is
+    // the input the registry MUST classify the other way — and the reason the
+    // union has two arms at all, since the app's other window lines are over
+    // the `pending_claims` view.
+    expect(objectKindOf(T.pendingClaims)).toBe("view");
+    expect(objectKindOf(T.observations)).toBe("table");
+  });
+
+  it("has an answer for every object the app can query", () => {
+    // Total by construction (`Record<TableName, ObjectKind>`), asserted anyway:
+    // a name that entered `T` without a kind would render a window line ending
+    // on `undefined`.
+    for (const name of TABLE_NAMES) {
+      expect(["table", "view"], name).toContain(objectKindOf(name));
+    }
+    expect(TABLE_NAMES.length).toBeGreaterThan(0);
+  });
+});
 
 describe("a gauge read the server truncated at its own cap", () => {
   for (const scan of SCANS) {
