@@ -1,0 +1,22 @@
+{
+ "id": "BUG-0060",
+ "created": "2026-09-04T01:44:49Z",
+ "green": true,
+ "git_head": "3639fdab6818cc391274ec3aec1536b949f27ff5",
+ "scope": [
+  "src/components/records/field-editor.tsx",
+  "src/app/records/[table]/[id]/page.tsx",
+  "tests/offline/records/page.test.ts",
+  "tests/offline/records/submit.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "8cf4e91a334f57bfdfb9b765da66e60f7a48d8fef71c8aaea0ca6b82fe73d267",
+ "commands": [
+  {
+   "cmd": "npx vitest run --project=offline tests/offline/records/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-41914\n\n \u2713 |offline| tests/offline/records/page.test.ts (67 tests) 359ms\n\n Test Files  1 passed (1)\n      Tests  67 passed (67)\n   Start at  18:44:48\n   Duration  1.05s (transform 181ms, setup 0ms, collect 365ms, tests 359ms, environment 0ms, prepare 121ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline tests/offline/records/page.test.ts\n(node:41942) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
