@@ -1,0 +1,64 @@
+{
+ "id": "TASK-0036",
+ "created": "2026-09-04T03:57:49Z",
+ "green": true,
+ "git_head": "a7a79e60e2552521dbdc50990872246d6d67456c",
+ "scope": [
+  "tests/walk",
+  "tests/offline/walk",
+  "tests/live/staging-target.ts",
+  "tests/offline/live-guard.test.ts",
+  "tsconfig.json",
+  "agenticflow/docs/vision/STACK.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "5d6953da04be6ff3d228886f3594b9eb6a0119eb99ff5f1cd4607380e4fbbc14",
+ "commands": [
+  {
+   "cmd": "npx vitest run --project=offline tests/offline/walk",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-98509\n\n \u2713 |offline| tests/offline/walk/sandbox-fixture.test.ts (10 tests) 6ms\n \u2713 |offline| tests/offline/walk/reset-sandbox.test.ts (15 tests) 828ms\n \u2713 |offline| tests/offline/walk/session-cookie.test.ts (15 tests) 1142ms\n\n Test Files  3 passed (3)\n      Tests  40 passed (40)\n   Start at  20:57:41\n   Duration  1.53s (transform 144ms, setup 0ms, collect 285ms, tests 1.98s, environment 0ms, prepare 259ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline tests/offline/walk\n(node:98537) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npx vitest run --project=offline tests/offline/live-guard.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-98509\n\n \u2713 |offline| tests/offline/live-guard.test.ts (87 tests) 1143ms\n   \u2713 npm run test:live > refuses, non-zero, naming the missing name \u2014 and never falls back  1061ms\n\n Test Files  1 passed (1)\n      Tests  87 passed (87)\n   Start at  20:57:43\n   Duration  1.72s (transform 115ms, setup 0ms, collect 302ms, tests 1.14s, environment 0ms, prepare 90ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline tests/offline/live-guard.test.ts\n(node:98600) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "! grep -q \"the live suite refuses\" tests/live/staging-target.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q \"admin-window\" tests/walk/sandbox-fixture.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"resolveStagingTarget\" tests/walk/reset-sandbox.mts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q \"STAGING_SUPABASE\" tests/walk/reset-sandbox.mts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"reset-sandbox\" agenticflow/docs/vision/STACK.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"/records/walk_sandbox/00000000-0000-4000-8000-000000000001\" agenticflow/docs/vision/STACK.md",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
