@@ -74,6 +74,63 @@ export function recordColumns(config: TableEditConfig): string {
   return mappedColumns(config).join(", ");
 }
 
+/**
+ * Postgres's own uuid syntax, as `uuid_in` accepts it — the grammar this
+ * predicate mirrors deliberately, rather than the canonical spelling alone
+ * (`src/backend/utils/adt/uuid.c`, `string_to_uuid`): 32 hex digits, either
+ * case, with a hyphen permitted — never required — after any EVEN number of
+ * them up to 28. So `259e2030-00bd-4200-8730-4669e46a0c04`, the same value
+ * unhyphenated and the same value uppercased are one id, and each of the three
+ * really does resolve to the same staging row (measured on a production build,
+ * 2026-09-03: `/records/groups/<id>` renders 11 field rows in all three
+ * spellings).
+ *
+ * Being no stricter than Postgres is the whole point. A canonical-only test
+ * would refuse an id the database would have resolved to a real row, and
+ * telling an operator that a working id "is not an id" is a worse failure
+ * than the one this guard exists to fix.
+ *
+ * Postgres also accepts a uuid wrapped in BRACES, and this deliberately does
+ * not: the brace cannot survive the URL. Next hands a dynamic segment over
+ * still percent-encoded — measured the same day, `/records/groups/{<id>}` and
+ * `/records/groups/%7B<id>%7D` both reach the page as the literal
+ * `%7B<id>%7D` — so what an operator's braced paste actually asks for is a row
+ * whose id contains percent signs, which Postgres refuses as well. Answering
+ * "that is not an id" is therefore the same answer the database would give,
+ * and a brace arm here would be a grammar no request can reach.
+ */
+const RECORD_ID = /^[0-9a-f]{4}(?:-?[0-9a-f]{4}){7}$/i;
+
+/**
+ * Does this URL segment spell a record id AT ALL — campaign
+ * admin-window/BUG-0065.
+ *
+ * Every table in the map is keyed by a uuid, so an id that is not one can
+ * match no row anywhere and needs no database to say so: the comparison is
+ * refused by Postgres before a row is considered, with `22P02 invalid input
+ * syntax for type uuid` — which the data layer classifies, correctly, as an
+ * arbitrary failure and the surface then renders as "the read failed, reload"
+ * (measured on a production build against staging, 2026-09-03). Reloading
+ * re-sends the same malformed segment forever, so that advice can never work.
+ *
+ * The caller asks this BEFORE it reads. That placement is the fix and not an
+ * optimisation: it is what makes one bad address produce ONE answer on a
+ * resolver-owned table, where three reads would otherwise each report the same
+ * refusal separately. And a segment that is not a uuid can equal no uuid
+ * primary key in any table, so "no record at this address" is knowable here
+ * with certainty — which is what lets the surface answer without either
+ * claiming the database failed or claiming it answered.
+ *
+ * It is a question about the REQUEST, so it takes the raw segment and no
+ * config: the map carries a table's primary-key COLUMN, never its type, and
+ * inventing a per-table id grammar here would be a second allowlist
+ * (ARCHITECTURE.md §9). If a future catalog table were keyed by anything but a
+ * uuid, this is the one line that learns it.
+ */
+export function isRecordId(id: string): boolean {
+  return RECORD_ID.test(id);
+}
+
 function selectRecord(
   db: SupabaseClient,
   config: TableEditConfig,

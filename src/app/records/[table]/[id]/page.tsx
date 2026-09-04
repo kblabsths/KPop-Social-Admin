@@ -1,9 +1,11 @@
+import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { recordFields } from "@/components/records/fields";
 import { RecordFields } from "@/components/records/record-fields";
 import { Empty, ErrorLine, NotProvisioned, Page, Section } from "@/components/ui";
 import type { DbUnavailable } from "@/lib/db/result";
 import {
+  isRecordId,
   readRecord,
   readRecordProvenance,
   readRecordReference,
@@ -175,6 +177,54 @@ function foundBy(config: TableEditConfig): string {
 }
 
 /**
+ * What answers a URL whose id is not an id at all — campaign
+ * admin-window/BUG-0065.
+ *
+ * The state before this one was the READ-FAILED line, over "Reload to try the
+ * read again": Postgres refused the comparison (`22P02 invalid input syntax
+ * for type uuid`), the data layer classified that correctly as an arbitrary
+ * failure, and the surface then offered the operator the one action that can
+ * never work — a reload re-sends the same malformed segment forever. Measured
+ * on a production build against staging, 2026-09-03, on every table in the
+ * map, and TWICE on the resolver-owned pair, once per read leg.
+ *
+ * It is the EMPTY state and not a fifth one, chosen among the four the Look
+ * mandates (`isRecordId`, `lib/db/records.ts`, carries why the page can decide
+ * this without reading):
+ *
+ *  - not the failed read: nothing failed. No query was issued, and the
+ *    database is not implicated in a segment that was never sent to it;
+ *  - not not-provisioned: the table is there;
+ *  - empty is the one state that makes no claim about what a read did — "the
+ *    surface holds nothing, and here is the one thing that fills it" — and a
+ *    segment that is not a uuid can equal no uuid primary key, so "no record
+ *    at this address" is true here with certainty rather than on a read's say-so.
+ *    The Look already runs several emptinesses through this one state and
+ *    separates them by their WORDS ("an empty bucket, a table with no rows,
+ *    and an unprovisioned table are three different states and never share a
+ *    rendering"), which is what these words do: they never say the table
+ *    answered and held no such row, because the unknown-ID state next door
+ *    means exactly that and this one must not be mistaken for it.
+ *
+ * The recovery half is `foundBy` — the same sentence the unknown-id state
+ * gives this regime, from the one place that answers "where does an id come
+ * from", so the two states cannot drift apart on the only advice they share
+ * (admin-window/BUG-0052). What stands in front of it is this state's own
+ * business: what is wrong with the address, and what a correct one looks like,
+ * so an operator whose paste dropped a character or carried a trailing space
+ * can see it. The id itself is NOT quoted back into this sentence — it is
+ * already above the section, verbatim in mono, and a trailing space quoted
+ * mid-sentence is invisible exactly where it matters.
+ */
+function notAnId(config: TableEditConfig): string {
+  return (
+    `The address bar does not hold an id: ${config.table} ids are uuids, 32 ` +
+    `hexadecimal digits usually written in five hyphenated groups. ` +
+    foundBy(config)
+  );
+}
+
+/**
  * A leg's own state, when it could not fill what it was for — the same shape
  * and the same two cards Browse gives a leg that failed (`LegNote` in
  * `src/app/browse/page.tsx`). Two legs report through it: the per-field
@@ -200,6 +250,42 @@ function LegNote({ note }: { note: DbUnavailable }) {
   );
 }
 
+/**
+ * Everything on this route that does not depend on the reads: the title, the
+ * id the operator asked for, and the section with its regime note. Factored
+ * out when the malformed-id answer arrived (admin-window/BUG-0065) so the two
+ * exits of `RecordPage` cannot drift into two different pages — the operator
+ * who mistyped an id must find the same frame, with the same things in the
+ * same places, as the one who did not (LOOK_AND_FEEL, Repeat use: "nothing
+ * moves between visits").
+ *
+ * A pure sync component over plain props, like every other child on this route
+ * (ARCHITECTURE.md §5).
+ */
+function RecordFrame({
+  config,
+  id,
+  children,
+}: {
+  config: TableEditConfig;
+  /** The id segment as the URL carried it, whether or not it is an id. */
+  id: string;
+  children: ReactNode;
+}) {
+  return (
+    <Page title={`${config.table} record`}>
+      {/* The record's identity, rendered whatever the read did: an operator
+          looking at a failed read still needs to know which row they asked
+          for. Mono, because it is a value the database produced. */}
+      <p className="type-data text-ink-secondary">{id}</p>
+      <Section title="Fields">
+        <p className="type-body text-ink-secondary">{regimeNote(config)}</p>
+        {children}
+      </Section>
+    </Page>
+  );
+}
+
 export default async function RecordPage({
   params,
 }: {
@@ -215,6 +301,24 @@ export default async function RecordPage({
   // matches (admin-window/BUG-0017), so this is the backstop, not the usual
   // path — see the header comment.
   if (config === null) notFound();
+
+  // The segment is not an id at all, which is a question about the REQUEST and
+  // is settled here, BEFORE any read (`isRecordId` carries why, and why this
+  // is the empty state; `notAnId` carries what it says). Answering it first is
+  // what keeps one bad address to ONE answer on a resolver-owned table, where
+  // each of the three legs below would otherwise report the same refusal
+  // separately — and it means no query is issued for a value no row can carry
+  // (admin-window/BUG-0065).
+  if (!isRecordId(id)) {
+    return (
+      <RecordFrame config={config} id={id}>
+        <Empty
+          holds={`${config.table} record at this address`}
+          filledBy={notAnId(config)}
+        />
+      </RecordFrame>
+    );
+  }
 
   // Two reads, reported separately: the record's values, then the per-field
   // provenance behind them. A table with no `display` columns issues no
@@ -272,18 +376,11 @@ export default async function RecordPage({
     config.regime === "resolver_owned" && provenance.note === null && record !== null;
 
   return (
-    <Page title={`${config.table} record`}>
-      {/* The record's identity, rendered whatever the read did: an operator
-          looking at a failed read still needs to know which row they asked
-          for. Mono, because it is a value the database produced. */}
-      <p className="type-data text-ink-secondary">{id}</p>
-      <Section title="Fields">
-        <p className="type-body text-ink-secondary">{regimeNote(config)}</p>
-        {provenanceLegend ? <ProvenanceLegend /> : null}
-        {provenance.note ? <LegNote note={provenance.note} /> : null}
-        {reference.note ? <LegNote note={reference.note} /> : null}
-        {body}
-      </Section>
-    </Page>
+    <RecordFrame config={config} id={id}>
+      {provenanceLegend ? <ProvenanceLegend /> : null}
+      {provenance.note ? <LegNote note={provenance.note} /> : null}
+      {reference.note ? <LegNote note={reference.note} /> : null}
+      {body}
+    </RecordFrame>
   );
 }
