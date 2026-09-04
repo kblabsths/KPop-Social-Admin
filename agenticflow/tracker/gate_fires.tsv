@@ -87,3 +87,4 @@
 2026-09-04T07:06:18Z	artifact_gate	blocked write outside repo: /tmp/x
 2026-09-04T07:06:57Z	artifact_gate	blocked write outside repo: ../../tracker/evidence/DEBT-0005
 2026-09-04T07:08:49Z	artifact_gate	blocked write outside repo: ../next.log
+2026-09-04T07:20:49Z	evidence_budget	qa_evidence_overbudget: DEBT-0003 5097/4000 chars
