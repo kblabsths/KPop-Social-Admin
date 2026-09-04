@@ -840,6 +840,78 @@ describe("the investigation continues", () => {
     expect(link.text()).toContain(sourceId);
     expect(link.text()).not.toContain(BANDSINTOWN.source);
   });
+
+  /**
+   * admin-window/BUG-0043, the case the fixture pair above cannot reach: the
+   * item's source is named because THE ITEM names it, not because one of its
+   * claims happened to be on this page carrying the name.
+   *
+   * The page's earlier per-source label did exactly that — it searched the
+   * evidence rows for a claim of the same source and fell back to the uuid
+   * when it found none — so an item whose evidence contends between OTHER
+   * sources, and an item with no evidence at all, both read as uuids in the
+   * header while `/sources` named them. The registry read now resolves the
+   * item's own `source_id` whether or not any claim carries it.
+   */
+  it("names the item's own source when its evidence carries a different one", async () => {
+    const item = reviewItemSourcePattern({ evidence: [CLAIM_A.observation_id] });
+    const markup = await renderItem(
+      patternScript({
+        [T.reviewItems]: { data: item },
+        [T.observations]: [{ data: [CLAIM_A] }, { data: [] }],
+        [T.sources]: { data: [BANDSINTOWN, TICKETMASTER] },
+      }),
+      item.review_item_id,
+    );
+    const $ = cheerio.load(markup);
+    const sourceId = item.source_id as string;
+
+    // The header names the ITEM's source — bandsintown — though the only
+    // claim below it belongs to ticketmaster.
+    for (const href of [
+      `/sources?source_id=${sourceId}`,
+      `/claims?source_id=${sourceId}`,
+    ]) {
+      const link = $(`a[data-out="${href}"]`);
+      expect(link, href).toHaveLength(1);
+      expect(link.text(), href).toContain(BANDSINTOWN.source);
+      expect(link.text(), href).not.toContain(sourceId);
+    }
+    // ... and the evidence row still names ITS own source, not the header's:
+    // one map, two sources, neither borrowing the other's name.
+    const cell = $(`a[data-claim-source][href="/sources?source_id=${CLAIM_A.source_id}"]`);
+    expect(cell.first().text().trim()).toBe(TICKETMASTER.source);
+    expect(rowOf(markup, CLAIM_A.observation_id).text).not.toContain(sourceId);
+    // The dial on this shape is about the same source, and says the same word.
+    expect($("[data-dial]").text()).toContain(BANDSINTOWN.source);
+    expect($("[data-dial]").text()).not.toContain(sourceId);
+  });
+
+  it("names the item's own source when it has no evidence to borrow a name from", async () => {
+    const item = reviewItemSourcePattern({ evidence: [] });
+    const markup = await renderItem(
+      patternScript({
+        [T.reviewItems]: { data: item },
+        [T.observations]: [{ data: [] }, { data: [] }],
+        [T.sources]: { data: [BANDSINTOWN] },
+      }),
+      item.review_item_id,
+    );
+    const $ = cheerio.load(markup);
+    const sourceId = item.source_id as string;
+    for (const href of [
+      `/sources?source_id=${sourceId}`,
+      `/claims?source_id=${sourceId}`,
+    ]) {
+      const link = $(`a[data-out="${href}"]`);
+      expect(link, href).toHaveLength(1);
+      expect(link.text(), href).toContain(BANDSINTOWN.source);
+      expect(link.text(), href).not.toContain(sourceId);
+      // The link still GOES to the id: naming it changed the words, not the
+      // destination.
+      expect(link.attr("href"), href).toBe(href);
+    }
+  });
 });
 
 /* ── the states ──────────────────────────────────────────────────────────── */

@@ -478,3 +478,109 @@ describe("the parked bucket against staging", () => {
     ).toBe(0);
   });
 });
+
+/**
+ * admin-window/BUG-0043 — the LIVE oracle for what a source is called.
+ *
+ * The offline suite stubs the registry leg at its module boundary, so it
+ * cannot see the two things only staging shows: that the label read the app
+ * issues (`select("source_id, source").in("source_id", …)` against `sources`)
+ * is a query this database actually answers, and that the ids
+ * `pending_claims` carries really do resolve to registry rows here. The
+ * defect this pins is what a walk found on 877 rendered rows — every SOURCE
+ * cell reading `01a05782-8e7f-752c-ae60-3ce4c51962f6` while `/sources`,
+ * `/browse` and every provenance line read `ticketmaster` (LESSONS 5).
+ *
+ * The expectation is computed from THIS FILE's own read of the registry
+ * (ARCHITECTURE §10 rule 1), never from `lib/db/sources.ts`, and it is graded
+ * both ways: a source the registry names must be NAMED, and one it does not
+ * must still be its own id, verbatim.
+ */
+describe("a source is named against staging", () => {
+  /** This file's own registry read of exactly the ids the page rendered. */
+  async function registryNames(ids: readonly string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const { data, error } = await independentClient()
+      .from(T.sources)
+      .select("source_id, source")
+      .in("source_id", [...ids]);
+    if (error) {
+      // A registry this test cannot read proves nothing about the labels; it
+      // is a refusal, never an empty registry (admin-window/BUG-0007).
+      throw new Error(`this test could not read ${T.sources}: ${JSON.stringify(error)}`);
+    }
+    return new Map(
+      (data as { source_id: string; source: string }[]).map((row) => [
+        row.source_id,
+        row.source,
+      ]),
+    );
+  }
+
+  it("says the registry's name in every SOURCE cell, and still links by the id", async () => {
+    const markup = await claimsMarkup();
+    await gradeSurface({
+      markup,
+      within: listOf(),
+      object: T.pendingClaims,
+      counted: () => listCount(),
+    });
+
+    const $ = cheerio.load(markup);
+    const cells = $("[data-claim-source]")
+      .toArray()
+      .map((element) => ({
+        id: $(element).attr("data-claim-source") ?? "",
+        says: $(element).text().trim(),
+        href: $(element).attr("href") ?? "",
+      }));
+    expect(cells.length, "the window drew rows to grade").toBeGreaterThan(0);
+
+    const named = await registryNames([...new Set(cells.map((cell) => cell.id))]);
+    // Without at least one registered source among them, "no cell shows a
+    // uuid" would pass vacuously (LESSONS 3: a guard proves itself on two
+    // fixtures — here, on staging's own data).
+    expect(named.size, "at least one rendered source is in the registry").toBeGreaterThan(0);
+
+    for (const cell of cells) {
+      expect(cell.says, cell.id).toBe(named.get(cell.id) ?? cell.id);
+      if (named.has(cell.id)) {
+        // The name is the WORD; the uuid survives only as the destination.
+        expect(cell.says, cell.id).not.toContain(cell.id);
+      }
+      expect(cell.href, cell.id).toContain(encodeURIComponent(cell.id));
+    }
+  });
+
+  it("names the source_id chips the same way, each still narrowing by its id", async () => {
+    const markup = await claimsMarkup();
+    const $ = cheerio.load(markup);
+    const chips = $('[data-facet="source_id"] a')
+      .toArray()
+      .map((element) => ({
+        label: $(element).text().trim(),
+        href: $(element).attr("href") ?? "",
+      }));
+    // The first chip is the "no narrowing" one and carries no source id.
+    const narrowing = chips.slice(1);
+    expect(narrowing.length, "the facet offers at least one source").toBeGreaterThan(0);
+
+    const ids = narrowing.map((chip) => {
+      const value = new URL(chip.href, "http://localhost").searchParams.get("source_id");
+      expect(value, chip.label).not.toBeNull();
+      return value as string;
+    });
+    const named = await registryNames(ids);
+    expect(named.size).toBeGreaterThan(0);
+
+    narrowing.forEach((chip, index) => {
+      expect(chip.label, ids[index]).toBe(named.get(ids[index]) ?? ids[index]);
+    });
+    // The chips read in the order their labels sort — the same facet on
+    // `/sources` reads that way, and the anatomy does not change between
+    // screens.
+    expect(narrowing.map((chip) => chip.label)).toEqual(
+      [...narrowing.map((chip) => chip.label)].sort(),
+    );
+  });
+});

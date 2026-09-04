@@ -371,3 +371,78 @@ describe("a real review item, rendered", () => {
     }
   });
 });
+
+/**
+ * admin-window/BUG-0043 — the live oracle for the two header links.
+ *
+ * A source-pattern item's header carries `Its claims` and `Its source`, both
+ * narrowed by the item's `source_id`, and both printed that uuid while the
+ * evidence cells directly below — pointing at the SAME href — read the
+ * source's name. One page, one destination, two labels; a document-blind
+ * user-sim stopped on it to check whether one of them was wrong.
+ *
+ * Only staging can answer whether the ids this table carries resolve to
+ * registry rows at all, so the expectation is read here, from `sources`,
+ * independently of `lib/db/review-item.ts`.
+ */
+describe("the header names its source, against staging", () => {
+  /** An item whose subject IS a source — the only shape with these links. */
+  async function sourcePatternItem(): Promise<Item | null | "absent"> {
+    const { data, error } = await independentClient()
+      .from(T.reviewItems)
+      .select(
+        "review_item_id, queue, source_id, domain, entity_id, field, summary, severity, folded_count, evidence",
+      )
+      .not("source_id", "is", null)
+      .order("last_evidence_at", { ascending: false })
+      .order("review_item_id", { ascending: true })
+      .limit(1);
+    if (error) {
+      const code = (error as { code?: string }).code ?? "";
+      if (code === "PGRST205" || code === "42P01") return "absent";
+      throw new Error(`the source-pattern query failed: ${(error as Error).message}`);
+    }
+    return ((data ?? []) as Item[])[0] ?? null;
+  }
+
+  it("says the name the registry holds, in both links and in the cells below", async () => {
+    const item = await sourcePatternItem();
+    if (item === "absent" || item === null) return;
+    const sourceId = item.source_id as string;
+
+    // This test's own registry read — the expectation, not the app's.
+    const { data, error } = await independentClient()
+      .from(T.sources)
+      .select("source_id, source")
+      .eq("source_id", sourceId);
+    if (error) {
+      throw new Error(`this test could not read ${T.sources}: ${JSON.stringify(error)}`);
+    }
+    const registered = ((data ?? []) as { source: string }[])[0]?.source ?? null;
+
+    const markup = await itemMarkup(item.review_item_id);
+    assertState(markup, "section:nth-of-type(1)", "ok");
+    const $ = cheerio.load(markup);
+
+    const toSource = `/sources?source_id=${sourceId}`;
+    const expected = registered ?? sourceId;
+    for (const href of [toSource, `/claims?source_id=${sourceId}`]) {
+      const link = $(`a[data-out="${href}"]`);
+      expect(link, href).toHaveLength(1);
+      expect(link.text().trim(), href).toContain(expected);
+      expect(link.attr("href"), href).toBe(href);
+      if (registered !== null) {
+        // A registered source is NAMED: the uuid is where it goes, not what
+        // it says.
+        expect(link.text(), href).not.toContain(sourceId);
+      }
+    }
+
+    // The evidence cells that point at the same destination say the same
+    // word — the self-contradiction this ticket is about was on one screen.
+    const cells = $(`a[data-claim-source][href="${toSource}"]`)
+      .toArray()
+      .map((element) => $(element).text().trim());
+    for (const said of cells) expect(said).toBe(expected);
+  });
+});
