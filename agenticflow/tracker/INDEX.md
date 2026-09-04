@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-04T04:04:51Z — do not edit)
+# Tracker index (regenerated 2026-09-04T04:07:48Z — do not edit)
 
 ## open
 - BUG-0071 [P2][bug][patch] STACK 5 retires the groups/idols walk-write exception before walk_sandbox exists, leaving the M1 endgame walks no write surface at all  (scope:agenticflow/docs/vision/STACK.md,agenticflow/tracker/for-human/TASK-0034.md from:qa:TASK-0036)
@@ -13,7 +13,7 @@
 - DEBT-0004 [P3][debt][M1] /cycles and /sources carry their own presentation: 1,291- and 793-line pages, no components module, while every other page has one  (deps:DEBT-0003(unmet:1) scope:src/components/cycles,src/components/sources,src/app/cycles/page.tsx,src/app/sources/page.tsx,tests/offline/cycles/page.test.ts,tests/offline/sources/page.test.ts from:M1-endgame-structure-walk)
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:1) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
-## claimed
+## built
 - BUG-0048 [P3][bug][M1] Browse: the poster cell is a 24x24 thumbnail that navigates out of the app to the CDN  (scope:src/components/browse/browse-table.tsx,tests/offline/browse/page.test.ts @builder-98 from:M1-endgame-designer-walk)
 
-Totals — claimed:1, done:110, open:11. Archived: 0.
+Totals — built:1, done:110, open:11. Archived: 0.
