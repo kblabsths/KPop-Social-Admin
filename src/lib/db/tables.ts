@@ -27,6 +27,10 @@ export const T = {
   idols: "idols",
   eventPerformers: "event_performers",
   verdicts: "verdicts",
+  // The ONE name here that is NOT the scraper repo's: `walk_sandbox` exists on
+  // the staging project only, created by hand, and never in production
+  // (ARCHITECTURE.md §9.1, campaign admin-window/TASK-0034).
+  walkSandbox: "walk_sandbox",
 } as const;
 
 /** The key side of `T` — e.g. `"reviewItems"`. */
