@@ -646,6 +646,50 @@ describe("the states", () => {
       expect([...markup.matchAll(/<h1[\s>]/g)].length, table).toBe(1);
     }
   });
+
+  /**
+   * PINNED `it.fails` (strict) for admin-window/BUG-0073: the page h1 is
+   * `` `${config.table} record` `` in `type-title`, and `type-title` is sans
+   * with `text-transform: uppercase` — so the TABLE NAME, a machine
+   * identifier, is rewritten on screen. Measured in Chromium against staging,
+   * both colour schemes, 2026-09-03: at
+   * `/records/walk_sandbox/00000000-0000-4000-8000-000000000001` the h1's
+   * `textContent` is `walk_sandbox record` and its `innerText` —  what the
+   * operator reads — is `WALK_SANDBOX RECORD`, while the row id three lines
+   * lower renders in mono at `text-transform: none`.
+   *
+   * Voice copy bar 5: machine identifiers "render verbatim in mono and are
+   * never prettified into Title Case prose". This is the same defect
+   * admin-window/BUG-0049 removed from the `micro` eyebrow; its guard
+   * (`uppercasedIdentifiers`, `tests/offline/ui/markup.ts`) reads `type-micro`
+   * elements only, so the h1 was invisible to it.
+   *
+   * What is asserted is the STRUCTURAL property that fix established — the
+   * identifier is never inside the element that uppercases — and, second, that
+   * it is still on the page, so the pin cannot be satisfied by deleting the
+   * word rather than by moving it out of the sans step. Whether it becomes a
+   * mono span beside `record` or leaves the h1 entirely is BUG-0073's design
+   * call; both spellings turn this green.
+   *
+   * Flip it back to a plain `it(...)` when the fix lands. Strict: the day the
+   * divergence disappears this XPASSes and reddens the suite, which is what
+   * sends the next reader to the ticket.
+   */
+  it.fails("keeps the table identifier out of the uppercasing h1", async () => {
+    for (const table of EDITABLE_TABLES) {
+      const markup = await renderRecord(table);
+      const $ = cheerio.load(markup);
+      const uppercasing = $("[class]")
+        .toArray()
+        .filter((element) =>
+          ($(element).attr("class") ?? "").split(/\s+/).includes("type-title"),
+        )
+        .map((element) => $(element).text().replace(/\s+/g, " ").trim());
+      expect(uppercasing.filter((text) => text.includes(table)), table).toEqual([]);
+      // and the identifier is still there, so the remedy cannot be deletion
+      expect(markup.includes(table), table).toBe(true);
+    }
+  });
 });
 
 /* ── the walk sandbox, the one table that is usually not there ────────────── */
