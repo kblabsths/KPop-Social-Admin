@@ -1,0 +1,69 @@
+{
+ "id": "DEBT-0004",
+ "created": "2026-09-04T08:56:12Z",
+ "green": true,
+ "git_head": "97b2b68453a353a7b09fc4ba5a8234818bf095e1",
+ "scope": [
+  "src/components/cycles",
+  "src/components/sources",
+  "src/app/cycles/page.tsx",
+  "src/app/sources/page.tsx",
+  "tests/offline/cycles/page.test.ts",
+  "tests/offline/sources/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "82b758d7e12df02ebaf738ca042fb5bf19e77a5610fdf27e4db44fef40e21217",
+ "commands": [
+  {
+   "cmd": "test -d src/components/cycles && test -d src/components/sources",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -qE \"^function [A-Z]\" src/app/cycles/page.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -qE \"^function [A-Z]\" src/app/sources/page.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -vE \"^[[:space:]]*(\\*|//|/\\*|$)\" src/app/cycles/page.tsx | wc -l)\" -lt 300",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -vE \"^[[:space:]]*(\\*|//|/\\*|$)\" src/app/sources/page.tsx | wc -l)\" -lt 300",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test -d src/components/cycles && test -d src/components/sources && ! grep -rq \"@/lib/db\" src/components/cycles src/components/sources",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npx vitest run --project=offline tests/offline/cycles/page.test.ts tests/offline/sources/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-27841\n\n \u2713 |offline| tests/offline/sources/page.test.ts (54 tests) 472ms\n \u2713 |offline| tests/offline/cycles/page.test.ts (64 tests) 1247ms\n\n Test Files  2 passed (2)\n      Tests  118 passed (118)\n   Start at  01:55:32\n   Duration  2.06s (transform 406ms, setup 0ms, collect 983ms, tests 1.72s, environment 0ms, prepare 197ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline tests/offline/cycles/page.test.ts tests/offline/sources/page.test.ts\n(node:27883) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/cycles.live.test.ts tests/live/runs.live.test.ts tests/live/sources.live.test.ts",
+   "exit": 0,
+   "output_tail": "renders every count, every failure class and every error line the row carries  2317ms\n   \u2713 the adapter framework's runs against staging > reads a run still in flight and a completed run as what they are  2283ms\n   \u2713 the ?source= facet against staging > narrows the runs half to the source name, matched by name  4337ms\n   \u2713 the ?source= facet against staging > renders the empty state with a 0 for a name nothing was filed under  2362ms\n   \u2713 the ?source= facet against staging > leaves the resolver's cycles unnarrowed, because they carry no source  8558ms\n \u2713 |live| tests/live/sources.live.test.ts (7 tests) 25990ms\n   \u2713 the Sources page's surface hooks against staging > names every surface on the page once, whatever order they are in  6303ms\n   \u2713 the source state rows against staging > renders every source the registry holds, with its state verbatim  2855ms\n   \u2713 the source state rows against staging > shows each source's last run, matched by NAME, and none where there is none  2920ms\n   \u2713 the source state rows against staging > narrows to one source, and that source alone  3098ms\n   \u2713 the per-source trends against staging > counts each source's awaiting-row claims as the view holds them  6356ms\n   \u2713 the per-source trends against staging > counts each source's re-rejects as the stamps hold them  2630ms\n   \u2713 the per-source trends against staging > draws no threshold line, because the dial is not readable from here  1825ms\n\n Test Files  3 passed (3)\n      Tests  21 passed (21)\n   Start at  01:55:34\n   Duration  26.65s (transform 262ms, setup 91ms, collect 951ms, tests 70.30s, environment 0ms, prepare 262ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/cycles.live.test.ts tests/live/runs.live.test.ts tests/live/sources.live.test.ts\n(node:27928) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
