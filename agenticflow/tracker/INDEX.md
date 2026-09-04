@@ -1,7 +1,6 @@
-# Tracker index (regenerated 2026-09-03T23:58:00Z — do not edit)
+# Tracker index (regenerated 2026-09-04T00:06:56Z — do not edit)
 
 ## open
-- BUG-0044 [P2][bug][M1] Cycles table: raw snake_case headers mixed with prose, and a cycle's id headed RUN_ID against the glossary  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts from:M1-endgame-designer-walk)
 - BUG-0045 [P2][bug][M1] Sources and Claims render an internal factory ticket id in product copy, and 'stuck_patterndial' has no space  (scope:src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/cycles/page.tsx,tests/offline/sources/page.test.ts,tests/offline/claims/page.test.ts,tests/offline/cycles/page.test.ts from:M1-endgame-designer-walk)
 - BUG-0052 [P2][bug][M1] Record page: the unknown-id empty state sends the operator to Browse, which does not list groups or idols  (scope:src/app/records/[table]/[id]/page.tsx,tests/offline/records/page.test.ts from:M1-endgame-user-sim)
 - BUG-0053 [P2][bug][M1] Event record page: a whole PROVENANCE column of dashes with no line saying what a dash means, while the pre-cutover page explains its own  (scope:src/app/records/[table]/[id]/page.tsx,src/components/records/record-fields.tsx,tests/offline/records/page.test.ts,tests/offline/records/provenance.test.ts from:M1-endgame-user-sim)
@@ -23,6 +22,9 @@
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:4) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
 ## built
+- BUG-0044 [P2][bug][M1] Cycles table: raw snake_case headers mixed with prose, and a cycle's id headed RUN_ID against the glossary  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts @builder-81 from:M1-endgame-designer-walk)
+
+## qa
 - BUG-0043 [P2][bug][M1] A source is labelled by raw uuid on the review item and on Claims, while the rest of the app names it  (scope:src/components/review/item-header.tsx,src/components/claims/claim-list.tsx,src/components/claims/filter-bar.tsx,src/app/claims/page.tsx,tests/offline/review-item/page.test.ts,tests/offline/claims/page.test.ts @builder-80 from:M1-endgame-designer-walk)
 
-Totals — built:1, done:93, open:20. Archived: 0.
+Totals — built:1, done:93, open:19, qa:1. Archived: 0.
