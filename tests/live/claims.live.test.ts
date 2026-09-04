@@ -78,7 +78,10 @@ import {
  * Both tabs are graded that way. The standing tab holds 0 claims on staging
  * today, so its list is an honest EMPTY there — its case still asks this
  * file's own read for that bucket and still windows what it expects, so it
- * does not go red the day that bucket outgrows the cap.
+ * does not go red the day that bucket outgrows the cap. That empty branch
+ * grades the window line too: an empty window is a window the page looked in,
+ * so it states `data-window-held="0"` — the value only an ok-but-empty read
+ * may publish (ARCHITECTURE.md §4.3, admin-window/BUG-0070).
  *
  * Each surface's STATE KIND is named before anything on it is compared:
  * `ok` compares numbers, `empty` is a pass with a stated 0,
@@ -461,6 +464,16 @@ describe("the classification buckets against staging", () => {
       if (state === "empty") {
         expect(await claimsFromDatabase("standing")).toEqual([]);
         expect(claimIds(markup)).toEqual([]);
+        // An empty window is still a window the page LOOKED in, so the line
+        // stands beside the Empty card and states a real zero — the only state
+        // that may publish `data-window-held="0"` (ARCHITECTURE.md §4.3,
+        // admin-window/BUG-0070). Read after the state kind, never instead of
+        // it: a refused read publishes no line at all, and `windowLine` would
+        // then fail for the right reason.
+        const line = windowLine(markup);
+        expect(line.limit).toBe(CLAIM_WINDOW);
+        expect(line.held).toBe(0);
+        expect(line.truncated).toBe(false);
       }
       return;
     }
