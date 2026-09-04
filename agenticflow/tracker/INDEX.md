@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-04T01:21:34Z — do not edit)
+# Tracker index (regenerated 2026-09-04T01:21:43Z — do not edit)
 
 ## open
 - BUG-0063 [P2][bug][M1] Claims: the window line renders a count it never took — data-window-held="0" on a failed read  (scope:src/app/claims/page.tsx,tests/offline/claims/page.test.ts from:qa:BUG-0041)
