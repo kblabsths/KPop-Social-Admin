@@ -74,3 +74,4 @@
 2026-09-04T02:18:52Z	artifact_gate	blocked write outside repo: /records/groups/[0-9a-f-]\{36\}
 2026-09-04T02:25:51Z	artifact_gate	blocked write outside repo: /tmp/nt.log
 2026-09-04T02:34:23Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-04T03:43:22Z	artifact_gate	blocked write outside repo: /tmp/lint.out

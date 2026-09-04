@@ -1,7 +1,6 @@
-# Tracker index (regenerated 2026-09-04T03:41:01Z — do not edit)
+# Tracker index (regenerated 2026-09-04T03:54:36Z — do not edit)
 
 ## open
-- BUG-0047 [P3][bug][M1] Browse: 'Starts (UTC)' states the zone in the header and again in all 50 cells, wrapping every row  (scope:src/lib/format.ts,src/components/browse/browse-table.tsx,tests/offline/format.test.ts,tests/offline/browse/page.test.ts from:M1-endgame-designer-walk)
 - BUG-0048 [P3][bug][M1] Browse: the poster cell is a 24x24 thumbnail that navigates out of the app to the CDN  (scope:src/components/browse/browse-table.tsx,tests/offline/browse/page.test.ts from:M1-endgame-designer-walk)
 - BUG-0049 [P3][bug][M1] Micro labels uppercase machine identifiers: DATA_CONFLICT OPEN, ENTITY_LINK FOLDED, TICKETMASTER STUCK RECORDS  (scope:src/app/queues/page.tsx,src/app/sources/page.tsx,tests/offline/queues/page.test.ts,tests/offline/sources/page.test.ts from:M1-endgame-designer-walk)
 - BUG-0050 [P3][bug][M1] Phone (390px): the fixed 192px sidebar takes half the viewport and the content column collapses  (scope:src/components/shell/shell.tsx,tests/offline/shell/shell.test.ts from:M1-endgame-designer-walk)
@@ -15,6 +14,9 @@
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:1) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
 ## built
+- BUG-0047 [P3][bug][M1] Browse: 'Starts (UTC)' states the zone in the header and again in all 50 cells, wrapping every row  (scope:src/lib/format.ts,src/components/browse/browse-table.tsx,tests/offline/format.test.ts,tests/offline/browse/page.test.ts @builder-97 from:M1-endgame-designer-walk)
+
+## qa
 - TASK-0036 [P2][task][patch] Reset the walk sandbox between walks: the seed fixture, the reset tool, and the walk recipe  (deps:TASK-0034,TASK-0035 scope:tests/walk,tests/offline/walk,tests/live/staging-target.ts,tests/offline/live-guard.test.ts,tsconfig.json,agenticflow/docs/vision/STACK.md @builder-96 from:inbox:2026-09-03-walker-sandbox-table.md)
 
-Totals — built:1, done:108, open:12. Archived: 0.
+Totals — built:1, done:108, open:11, qa:1. Archived: 0.
