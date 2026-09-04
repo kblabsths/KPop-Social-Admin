@@ -1,0 +1,53 @@
+{
+ "id": "DEBT-0006",
+ "created": "2026-09-04T08:29:43Z",
+ "green": true,
+ "git_head": "4a90f0498be76177dcf5671b936b3205e7bf4cec",
+ "scope": [
+  "src/app/page.tsx",
+  "src/app/queues/page.tsx",
+  "src/app/browse/page.tsx",
+  "src/app/records/[table]/[id]/page.tsx",
+  "src/app/claims/page.tsx",
+  "src/app/cycles/page.tsx",
+  "src/components/review/shape-views.tsx",
+  "src/components/ui/window-line.tsx",
+  "src/components/ui/state-of.tsx",
+  "tests/offline/absence/pages.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "8603a3fe09a27a67dfeab5fd504d79114e70fbc858d9baca1bae7a7c6f7309ea",
+ "commands": [
+  {
+   "cmd": "test \"$(grep -rn 'not the whole' src | grep -cv '^src/components/ui/window-line.tsx:')\" -eq 0",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -rn 'data-window=' src/app | grep -cvE '^[^:]*:[0-9]+:[[:space:]]*(\\*|//|/\\*)')\" -eq 0",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npx vitest run --project=offline tests/offline/absence/pages.test.ts tests/offline/ui/primitives.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-18253\n\n \u2713 |offline| tests/offline/ui/primitives.test.ts (75 tests) 80ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (266 tests) 1192ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  418ms\n\n Test Files  2 passed (2)\n      Tests  341 passed (341)\n   Start at  01:29:20\n   Duration  1.98s (transform 871ms, setup 0ms, collect 816ms, tests 1.27s, environment 0ms, prepare 241ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline tests/offline/absence/pages.test.ts tests/offline/ui/primitives.test.ts\n(node:18288) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npx vitest run --project=offline",
+   "exit": 0,
+   "output_tail": " the claims and counts the view holds, on the buckets tab, under bucket=(absent)  649ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=standing_disagreement  681ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=awaiting_row  670ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=agreeing  579ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=in_window  834ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=ESCALATED  838ms\n\n Test Files  58 passed (58)\n      Tests  2033 passed (2033)\n   Start at  01:29:23\n   Duration  9.18s (transform 2.80s, setup 0ms, collect 13.67s, tests 46.04s, environment 12ms, prepare 5.22s)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline\n(node:18333) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:18356) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:18364) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:18398) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
