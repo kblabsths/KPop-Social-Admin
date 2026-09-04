@@ -1,0 +1,19 @@
+{
+ "id": "BUG-0072",
+ "created": "2026-09-04T04:46:06Z",
+ "green": true,
+ "git_head": "3f5dec10ab9b34af2ac061455c1a76422b1c2605",
+ "scope": [
+  "agenticflow/docs/vision/STACK.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "61f455d05823c00dfb74afeca78ae2ed4ea0e8e08ee8bb4b86a160f13be81ff5",
+ "commands": [
+  {
+   "cmd": "grep -qF \"tests/live/residue.live.test.ts\" agenticflow/docs/vision/STACK.md",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

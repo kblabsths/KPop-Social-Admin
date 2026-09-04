@@ -8612,3 +8612,57 @@
 2026-09-04T04:40:38Z	agent	-	-	-	-
 2026-09-04T04:40:57Z	designer	BUG-0050	spawned
 2026-09-04T04:41:07Z	qa-adversary	BUG-0072	spawned
+# STRANDED	2026-09-04T04:41:28Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T04:41:28Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:41:39Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:41:39Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:41:40Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:41:40Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:41:59Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:41:59Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:42:10Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:42:10Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:42:11Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:42:11Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:42:30Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:42:30Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:42:42Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:42:42Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:42:43Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:42:43Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:43:01Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:43:01Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:43:13Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:43:13Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:43:15Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:43:15Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:43:33Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:43:33Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:43:45Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:43:45Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:43:47Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:43:47Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:44:04Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:44:04Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:44:17Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0050.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:44:17Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:44:19Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0050.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:44:19Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:44:35Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0050.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:44:35Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:44:49Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0050.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:44:49Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:44:50Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0050.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md
+2026-09-04T04:44:50Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:45:06Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0050.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0073.md
+2026-09-04T04:45:06Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:45:20Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0050.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0073.md
+2026-09-04T04:45:20Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:45:22Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0050.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0073.md
+2026-09-04T04:45:22Z	agent	-	-	-	-
+# STRANDED	2026-09-04T04:45:33Z	designer	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0050.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0073.md, tests/offline/records/page.test.ts
+2026-09-04T04:45:33Z	designer	BUG-0050	8789	276	53487
+# STRANDED	2026-09-04T04:45:53Z	agent	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0050.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0072.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0073.md, tests/offline/records/page.test.ts
+2026-09-04T04:45:53Z	agent	-	-	-	-
+2026-09-04T04:45:54Z	builder	BUG-0055	spawned
+2026-09-04T04:46:05Z	qa-adversary	BUG-0050	spawned
