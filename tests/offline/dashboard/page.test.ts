@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
-import { cycleState } from "@/lib/db/cycles";
+import { cycleState } from "@/lib/cycles/state";
 import { DASHBOARD_WINDOW } from "@/lib/db/dashboard";
 import { RESOLVER_CADENCE_SECONDS } from "@/lib/gauges/gauge";
 import { T } from "@/lib/db/tables";
@@ -18,6 +18,19 @@ import {
   type ReviewItemRow,
   type RunRow,
 } from "../../fixtures/rows";
+/*
+ * The Cycles & runs fixtures, borrowed rather than re-hand-rolled: the
+ * property pinned below is that the two surfaces agree about ONE population,
+ * and a second copy of it here could drift from the one the other surface is
+ * rendered against.
+ */
+import {
+  APPLIES as CYCLE_APPLIES,
+  CYCLES as CYCLE_POPULATION,
+  DIED as DIED_CYCLE,
+  OBSERVED as CYCLE_OBSERVED,
+  RUNNING as RUNNING_CYCLE,
+} from "../cycles/population";
 import {
   permissionDenied,
   stubClient,
@@ -56,6 +69,42 @@ vi.mock("@/lib/db/dashboard", async (importActual) => {
 });
 
 const { default: DashboardPage } = await import("@/app/page");
+
+/*
+ * The OTHER surface that renders a cycle, routed through the same stub client
+ * so one population can be rendered on both pages and their words compared
+ * ("one word per cycle, on every surface", below). What /cycles renders on its
+ * own is asserted in `tests/offline/cycles/`, never here.
+ */
+vi.mock("@/lib/db/cycles", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/db/cycles")>();
+  return { ...actual, readCycles: (limit?: number) => actual.readCycles(limit, readWith.client as never) };
+});
+vi.mock("@/lib/db/runs", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/db/runs")>();
+  return {
+    ...actual,
+    readRuns: (filter?: unknown) => actual.readRuns((filter ?? {}) as never, readWith.client as never),
+  };
+});
+vi.mock("@/lib/gauges/cycle-health", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/gauges/cycle-health")>();
+  return {
+    ...actual,
+    readCycleHealth: (options?: unknown) =>
+      actual.readCycleHealth((options ?? {}) as never, readWith.client as never),
+  };
+});
+vi.mock("@/lib/gauges/resolution-latency", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/gauges/resolution-latency")>();
+  return {
+    ...actual,
+    readResolutionLatency: (options?: unknown) =>
+      actual.readResolutionLatency((options ?? {}) as never, readWith.client as never),
+  };
+});
+
+const { default: CyclesPage } = await import("@/app/cycles/page");
 
 /* ── the population ──────────────────────────────────────────────────────── */
 
@@ -112,13 +161,37 @@ function openSignals(items: ReviewItemRow[]): ReviewItemRow[] {
   return items.filter((item) => item.status === "open" && isSignal(item));
 }
 
+/**
+ * The instant the cycle fixtures below are built from.
+ *
+ * They are RELATIVE to the moment the suite loads, because the page reads the
+ * real clock to tell a running cycle from one that died
+ * (admin-window/BUG-0074): a literal date decides a fixture's state by how
+ * long ago the file was typed, so the "still running" cycle here was running
+ * on the day it was written and a corpse a week later.
+ * `tests/offline/cycles/population.ts` is built this way for the same reason.
+ */
+const SUITE_NOW = Date.now();
+
+/** An ISO instant `minutes` before the suite loaded. */
+function minutesAgo(minutes: number): string {
+  return new Date(SUITE_NOW - minutes * 60_000).toISOString();
+}
+
+/** `started` plus `seconds` — when a cycle that finished ended. */
+function secondsAfter(started: string, seconds: number): string {
+  return new Date(Date.parse(started) + seconds * 1_000).toISOString();
+}
+
 /** Newest first, as the read asks the database to order them. */
 function cycles(): ResolutionRunRow[] {
+  const skippedAt = minutesAgo(17);
+  const failedAt = minutesAgo(32);
   return [
     resolutionRunRow({
       run_id: CYCLE_NEWEST,
-      started_at: "2026-09-01T05:00:00Z",
-      // still running: no end, no outcome
+      // still running: no end, no outcome, and inside the resolver's cadence
+      started_at: minutesAgo(2),
       ended_at: null,
       outcome: null,
       applied: 0,
@@ -128,8 +201,8 @@ function cycles(): ResolutionRunRow[] {
     }),
     resolutionRunRow({
       run_id: CYCLE_MIDDLE,
-      started_at: "2026-09-01T04:45:00Z",
-      ended_at: "2026-09-01T04:45:02Z",
+      started_at: skippedAt,
+      ended_at: secondsAfter(skippedAt, 2),
       outcome: "skipped",
       applied: 0,
       escalated: 0,
@@ -138,8 +211,8 @@ function cycles(): ResolutionRunRow[] {
     }),
     resolutionRunRow({
       run_id: CYCLE_OLDEST,
-      started_at: "2026-09-01T04:30:00Z",
-      ended_at: "2026-09-01T04:33:20Z",
+      started_at: failedAt,
+      ended_at: secondsAfter(failedAt, 200),
       outcome: "failed",
       applied: 37,
       escalated: 3,
@@ -919,7 +992,7 @@ describe("a cycle with no end recorded", () => {
    * The Dashboard classifies a cycle by `ended_at` ALONE
    * (`src/app/page.tsx`), so every null-outcome, null-`ended_at` row reads as
    * running however old it is. `/cycles` reads the same row through
-   * `cycleState` (`src/lib/db/cycles.ts`) and calls one older than a cadence
+   * `cycleState` (`src/lib/cycles/state.ts`) and calls one older than a cadence
    * `died` — migration 20260901000001's own requirement, "a null older than
    * one cadence is how a crash stays visible".
    *
@@ -967,13 +1040,12 @@ describe("a cycle with no end recorded", () => {
   });
 
   /*
-   * PIN — admin-window/BUG-0074, filed 2026-09-04. `it.fails` is vitest's
-   * strict xfail: it passes only while the divergence is REAL, and goes red
-   * the day the Dashboard starts telling the two states apart. That red is the
-   * signal to delete `.fails` here and close the ticket, not to edit the
-   * assertion.
+   * admin-window/BUG-0074, filed as an `it.fails` xfail and closed here: the
+   * Dashboard classified a cycle by `ended_at` ALONE, so it had no `died`
+   * state at all and this assertion was the divergence itself. It now reads
+   * the row through the same `cycleState` /cycles reads it through.
    */
-  it.fails("does not read a cycle older than one cadence as running", async () => {
+  it("does not read a cycle older than one cadence as running", async () => {
     const now = Date.now();
     const dead = noEndCycles(now)[1];
     // What the OTHER surface makes of the same row, from the one function that
@@ -985,6 +1057,136 @@ describe("a cycle with no end recorded", () => {
       healthyScript({ [T.resolutionRuns]: { data: noEndCycles(now) } }),
     );
     expect(outcomesOf(markup, "cycles")[1]).toBe("died");
+  });
+});
+
+/* ── one word per cycle, on every surface ────────────────────────────────── */
+
+/**
+ * The property admin-window/BUG-0074 exists to hold: **the word the Dashboard
+ * gives a cycle is the word /cycles gives the same row.**
+ *
+ * Not "the Dashboard says died for this fixture" — that would pass while the
+ * two pages agreed about nothing else, and it would pin a word the designer
+ * owns. This renders ONE population on BOTH pages and compares them row by
+ * row, matched by `run_id`, so the surfaces are each other's oracle: a word
+ * changed on one page, a state added to `CycleState`, or a second copy of
+ * either the state function or the word map reddens this.
+ *
+ * The population is `tests/offline/cycles/population.ts` — the same six rows
+ * /cycles is rendered against, covering all four states (each of the three
+ * outcomes, running, died, and ended-with-no-outcome). It is borrowed rather
+ * than re-hand-rolled for the reason that file gives: a second population here
+ * would drift from the one the other surface is tested on.
+ *
+ * The two pages order their rows differently — /cycles sorts newest first, the
+ * Dashboard renders the window the read handed it — so the comparison is by id
+ * and never by position.
+ */
+describe("one word per cycle, on every surface", () => {
+  /**
+   * The text of the outcome cell of each cycle row, keyed by `run_id`.
+   *
+   * The column is found by its header and the row by the id the surface
+   * itself exposes, so this reads what an operator is shown without knowing
+   * where either page puts its columns.
+   */
+  function wordsByCycle(
+    markup: string,
+    table: cheerio.Cheerio<never>,
+    idOf: (row: cheerio.Cheerio<never>) => string | undefined,
+  ): Record<string, string> {
+    const $ = cheerio.load(markup);
+    const at = table
+      .find("thead th")
+      .toArray()
+      .map((th) => $(th).text().trim())
+      .indexOf("outcome");
+    if (at < 0) throw new Error("that cycle table has no outcome column");
+    const words: Record<string, string> = {};
+    table.find("tbody tr").each((_, tr) => {
+      const row = $(tr) as unknown as cheerio.Cheerio<never>;
+      const id = idOf(row);
+      if (id === undefined) throw new Error("a cycle row carries no cycle id");
+      words[id] = $(tr).find("td").eq(at).text().replace(/\s+/g, " ").trim();
+    });
+    return words;
+  }
+
+  /** The Dashboard names the row in the link its started cell carries. */
+  function dashboardWords(markup: string): Record<string, string> {
+    const $ = cheerio.load(markup);
+    const table = $('table[aria-label="cycles"]') as unknown as cheerio.Cheerio<never>;
+    return wordsByCycle(markup, table, (row) => {
+      const href = row.find('a[href*="cycle="]').first().attr("href");
+      if (href === undefined) return undefined;
+      return new URL(href, "http://dashboard.test").searchParams.get("cycle") ?? undefined;
+    });
+  }
+
+  /**
+   * /cycles names the row on its `data-cycle` hook — which is also how its
+   * table is found here, so this comparison needs no copy of that page's
+   * accessible name.
+   */
+  function cyclesPageWords(markup: string): Record<string, string> {
+    const $ = cheerio.load(markup);
+    const table = $("[data-cycle]")
+      .first()
+      .closest("table") as unknown as cheerio.Cheerio<never>;
+    return wordsByCycle(markup, table, (row) =>
+      row.find("[data-cycle]").first().attr("data-cycle"),
+    );
+  }
+
+  async function renderCyclesPage(): Promise<string> {
+    readWith.client = stubClient({
+      // The cycle table's window read, then the cycle-health gauge's own.
+      [T.resolutionRuns]: [{ data: [...CYCLE_POPULATION] }, { data: [...CYCLE_POPULATION] }],
+      [T.fieldProvenance]: { data: [...CYCLE_APPLIES] },
+      [T.observations]: { data: [...CYCLE_OBSERVED] },
+      [T.runs]: { data: [] },
+    }).asSupabaseClient();
+    return render(await CyclesPage({ searchParams: Promise.resolve({}) }));
+  }
+
+  it("gives every cycle the same word the Cycles & runs page gives it", async () => {
+    const dashboard = dashboardWords(
+      await renderDashboard(
+        healthyScript({ [T.resolutionRuns]: { data: [...CYCLE_POPULATION] } }),
+      ),
+    );
+    const cyclesPage = cyclesPageWords(await renderCyclesPage());
+
+    // Neither map may be empty or short, or the comparison below would hold
+    // over nothing: both surfaces rendered every row of the population.
+    const ids = CYCLE_POPULATION.map((row) => row.run_id).sort();
+    expect(Object.keys(dashboard).sort()).toEqual(ids);
+    expect(Object.keys(cyclesPage).sort()).toEqual(ids);
+
+    expect(dashboard).toEqual(cyclesPage);
+  });
+
+  it("tells the two no-outcome states apart on both surfaces", async () => {
+    // The comparison above would also hold if every state rendered one word.
+    // These two rows differ ONLY in how long ago they started, so a surface
+    // that ignores age gives them the same word — which is the defect
+    // admin-window/BUG-0074 was.
+    const dashboard = dashboardWords(
+      await renderDashboard(
+        healthyScript({ [T.resolutionRuns]: { data: [...CYCLE_POPULATION] } }),
+      ),
+    );
+    const cyclesPage = cyclesPageWords(await renderCyclesPage());
+
+    for (const [surface, words] of [
+      ["dashboard", dashboard],
+      ["cycles", cyclesPage],
+    ] as const) {
+      expect(words[RUNNING_CYCLE.run_id], surface).not.toBe(words[DIED_CYCLE.run_id]);
+      expect(words[RUNNING_CYCLE.run_id], surface).not.toBe("");
+      expect(words[DIED_CYCLE.run_id], surface).not.toBe("");
+    }
   });
 });
 

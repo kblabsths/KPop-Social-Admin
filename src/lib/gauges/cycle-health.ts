@@ -1,5 +1,5 @@
 import type { DbResult } from "../db/result";
-import { cycleState } from "../db/cycles";
+import { cycleState } from "../cycles/state";
 import {
   readResolutionRuns,
   type DbClient,
@@ -44,7 +44,7 @@ export const CYCLE_HEALTH_DEFAULTS = { days: 7, limit: 800 } as const;
  *
  * The first three are `resolution_runs.outcome`'s own check-constraint values,
  * carried verbatim (LOOK_AND_FEEL §11). The last three are the states a row
- * with NO outcome can be in, told apart by `cycleState` (`lib/db/cycles.ts`) —
+ * with NO outcome can be in, told apart by `cycleState` (`lib/cycles/state.ts`) —
  * the same function, and so the same three states, the `/cycles` table renders
  * per row.
  *

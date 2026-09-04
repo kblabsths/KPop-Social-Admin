@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { instantOf } from "../cycles/state";
 import { type ResolutionRunRow } from "./gauges";
 import { ROW_CAP, readRows, type DbResponse, type DbResult } from "./result";
 import { T } from "./tables";
@@ -31,6 +32,12 @@ import { T } from "./tables";
  * sits in. The two counts the page does present as figures come from the
  * cycle-health gauge, which carries its own `WindowInfo` and labels a
  * truncated count as a floor.
+ *
+ * **What a row IS is not decided here.** `cycleState`, the `CycleState` union
+ * and the one word each state is called by live in the pure leaf
+ * `src/lib/cycles/state.ts`, which this module and every surface that renders
+ * a cycle read (admin-window/BUG-0074). This file reads the rows; the leaf
+ * says what they are.
  */
 
 export type { ResolutionRunRow };
@@ -117,13 +124,6 @@ function windowSize(limit: number): number {
   return Math.max(1, Math.min(Math.floor(limit), ROW_CAP));
 }
 
-/** Epoch ms for a timestamp string, or `null` when it will not parse. */
-function instantOf(ts: string | null): number | null {
-  if (ts === null || ts === "") return null;
-  const ms = Date.parse(ts);
-  return Number.isNaN(ms) ? null : ms;
-}
-
 /**
  * The display order: **newest first by `started_at`**, `run_id` descending
  * where two cycles share an instant.
@@ -191,73 +191,4 @@ export async function readCycles(
       truncated: result.data.length >= size,
     },
   };
-}
-
-/* ── the three states a reader must tell apart ───────────────────────────── */
-
-/**
- * What a cycle row IS, decided from `ended_at` and `outcome` together.
- *
- * Migration `20260901000001` states the requirement in its own header —
- * "three states a reader must tell apart at a glance … a cycle still running,
- * a cycle that finished with its verdict, and a cycle that died - the last
- * keeps a null `ended_at` forever and nothing rewrites it, so a null older
- * than one cadence is how a crash stays visible".
- *
- *  - `outcome` — the producer said how it ended, and the word is carried
- *    verbatim rather than narrowed to the check constraint's three spellings:
- *    an outcome the constraint gains later renders under its own name instead
- *    of being dropped. `skipped` is one of these, so a skipped cycle is
- *    legible as itself and never as a failure.
- *  - `running` — no `ended_at`, and the cycle started less than one cadence
- *    ago: it may well still be going.
- *  - `died` — no `ended_at`, and the cycle started longer ago than that.
- *    Nothing repairs the row, so rendering it as "running" would show a crash
- *    from last March as work in progress forever.
- *  - `unrecorded` — it ended and recorded no outcome. The producer wrote no
- *    word and this app invents none.
- */
-export type CycleState =
-  | { kind: "outcome"; outcome: string }
-  | { kind: "running" }
-  | { kind: "died"; ageSeconds: number }
-  | { kind: "unrecorded" };
-
-/** What `cycleState` needs from the caller: the clock, and the cadence. */
-export interface CycleStateOptions {
-  /** The instant "now" means, so a render and its test agree on one clock. */
-  now: string | Date;
-  /**
-   * The resolver's cadence in seconds — the age past which an unfinished
-   * cycle is a dead one. Handed in rather than imported: the cadence is
-   * `lib/gauges`' constant (`RESOLVER_CADENCE_SECONDS`, from
-   * `contracts/resolver.md` §12), and `lib/gauges` reads THIS layer, never the
-   * other way about (ARCHITECTURE.md §4).
-   */
-  cadenceSeconds: number;
-}
-
-/** The state of one cycle row. Pure; the clock and the cadence come in. */
-export function cycleState(
-  row: Pick<ResolutionRunRow, "started_at" | "ended_at" | "outcome">,
-  options: CycleStateOptions,
-): CycleState {
-  if (row.outcome !== null && row.outcome.trim() !== "") {
-    return { kind: "outcome", outcome: row.outcome };
-  }
-  if (row.ended_at !== null) return { kind: "unrecorded" };
-
-  const started = instantOf(row.started_at);
-  const now =
-    options.now instanceof Date ? options.now.getTime() : Date.parse(options.now);
-  // An age nobody can measure cannot carry the "older than one cadence" claim
-  // a death is, so the row stays what the schema says it is: a cycle inserted
-  // at start that has not recorded an end. `started_at` is not-null in the
-  // table, so this is the unparseable case alone.
-  if (started === null || Number.isNaN(now)) return { kind: "running" };
-
-  const ageSeconds = (now - started) / 1000;
-  return ageSeconds > options.cadenceSeconds
-    ? { kind: "died", ageSeconds }
-    : { kind: "running" };
 }
