@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { type Column, DataTable } from "@/components/ui/data-table";
 import { Empty } from "@/components/ui/empty";
+import { Eyebrow, microLabelText } from "@/components/ui/micro-label";
 import { ErrorLine } from "@/components/ui/error-line";
 import { Loading } from "@/components/ui/loading";
 import { NotProvisioned } from "@/components/ui/not-provisioned";
@@ -14,7 +15,15 @@ import { Section } from "@/components/ui/section";
 import { StatCard } from "@/components/ui/stat-card";
 import { EM_DASH, absoluteUtc, count, relativeAge } from "@/lib/format";
 
-import { classesOf, h, render, tagsOf, textOf } from "./markup";
+import {
+  classesOf,
+  h,
+  render,
+  runTogetherWords,
+  tagsOf,
+  textOf,
+  uppercasedIdentifiers,
+} from "./markup";
 
 /**
  * The primitives every surface is built from (campaign admin-window,
@@ -524,5 +533,121 @@ describe("absence, across the format helpers and the primitives", () => {
     const [cell] = dashCell(html);
     expect(cell.body).toBe("0");
     expect(render(h(StatCard, { label: "runs", value: 0 }))).not.toContain(EM_DASH);
+  });
+});
+
+/* ── the eyebrow, and the identifier it may carry ────────────────────────── */
+
+/**
+ * `Eyebrow` is the one place a machine identifier is allowed inside a `micro`
+ * label (campaign admin-window/BUG-0049).
+ *
+ * What is asserted here is the PROPERTY the fix has to hold — the identifier
+ * keeps its own case, keeps the mono face, and is not inside the element that
+ * uppercases — never the app's words, which pages own. The words are supplied
+ * by the test itself for exactly that reason.
+ */
+describe("Eyebrow", () => {
+  /** The element that actually carries a class, for one rendering. */
+  function spans(html: string) {
+    const $ = cheerio.load(html);
+    return $("span[class]")
+      .toArray()
+      .map((element) => ({
+        classes: ($(element).attr("class") ?? "").split(/\s+/),
+        text: $(element).text().replace(/\s+/g, " ").trim(),
+      }));
+  }
+
+  it("renders the app's own words as a plain micro label, as it always did", () => {
+    const html = render(h(Eyebrow, { label: "open decisions" }));
+    expect(textOf(html)).toBe("open decisions");
+    expect(classesOf(html)).toContain("type-micro");
+    // one element, not a wrapper and a child: a caller with no identifier gets
+    // exactly the markup that shipped before this component existed
+    expect(spans(html)).toHaveLength(1);
+  });
+
+  it("keeps an identifier verbatim, in mono, and out of the uppercasing element", () => {
+    const html = render(
+      h(Eyebrow, { label: { identifier: "data_conflict", words: "open age" } }),
+    );
+
+    // verbatim: the value the machine produced, character for character
+    expect(textOf(html)).toContain("data_conflict");
+    expect(textOf(html)).not.toContain("DATA_CONFLICT");
+
+    const identifier = spans(html).find((span) => span.text === "data_conflict");
+    expect(identifier).toBeDefined();
+    // mono, and its case survives whatever it is nested in: `type-data` is the
+    // step for a value the database produced, `normal-case` and
+    // `tracking-normal` are what an uppercasing ancestor cannot override
+    expect(identifier?.classes).toContain("type-data");
+    expect(identifier?.classes).toContain("normal-case");
+    expect(identifier?.classes).toContain("tracking-normal");
+    // and it is NOT inside the micro element — the browser uppercases whatever
+    // is, so nesting would undo the two classes above at every ancestor added
+    // later. This is the structural half of the guarantee.
+    expect(identifier?.classes).not.toContain("type-micro");
+    expect(uppercasedIdentifiers(html)).toEqual([]);
+
+    // our words still get the micro treatment
+    const words = spans(html).find((span) => span.text === "open age");
+    expect(words?.classes).toContain("type-micro");
+  });
+
+  it("puts a real space between the identifier and the words, not a flex gap", () => {
+    // A CSS gap is invisible to every reader of text — the accessible name,
+    // the parity readers, a screen reader — and JSX drops whitespace runs that
+    // contain a newline, so only the delivered markup proves it
+    // (admin-window/BUG-0045's `stuck_patterndial`, from the other side).
+    const html = render(
+      h(Eyebrow, { label: { identifier: "entity_link", words: "folded" } }),
+    );
+    expect(textOf(html)).toBe("entity_link folded");
+    expect(runTogetherWords(html)).toEqual([]);
+  });
+
+  it("renders a bare identifier with no trailing words when none are given", () => {
+    const html = render(h(Eyebrow, { label: { identifier: "source_id" } }));
+    expect(textOf(html)).toBe("source_id");
+    expect(uppercasedIdentifiers(html)).toEqual([]);
+    expect(classesOf(html)).toContain("type-data");
+  });
+
+  it("flattens to the same string it renders, for an accessible name", () => {
+    // `DataTable` names itself with `aria-label`, which takes a string and not
+    // markup, so the two must not drift.
+    for (const label of [
+      "open decisions",
+      { identifier: "source_id" },
+      { identifier: "data_conflict", words: "by week" },
+    ] as const) {
+      expect(microLabelText(label)).toBe(textOf(render(h(Eyebrow, { label }))));
+    }
+  });
+});
+
+/**
+ * The guard itself, proved on two inputs — one it MUST flag and one it must
+ * NOT (LESSONS 3). A grep guard that has never seen a passing spelling passes
+ * vacuously, and this one decides whether two page suites are meaningful.
+ */
+describe("the uppercased-identifier guard", () => {
+  it("flags an identifier concatenated into a micro label", () => {
+    // exactly what `/queues` shipped: `` `${stats.queue} open` `` handed to a
+    // StatCard as one string
+    const bad = render(h(StatCard, { label: "data_conflict open", value: 0 }));
+    expect(uppercasedIdentifiers(bad)).toEqual(["data_conflict open"]);
+  });
+
+  it("clears the same card once the identifier is out of the sans label", () => {
+    const good = render(
+      h(StatCard, { label: { identifier: "data_conflict", words: "open" }, value: 0 }),
+    );
+    expect(uppercasedIdentifiers(good)).toEqual([]);
+    // and the identifier really is still on the card — the guard is not
+    // satisfied by deleting the word
+    expect(textOf(good)).toContain("data_conflict");
   });
 });

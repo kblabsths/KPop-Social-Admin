@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { T } from "@/lib/db/tables";
 import { EM_DASH, absoluteUtc } from "@/lib/format";
-import { disagreeingCounts, render } from "../ui/markup";
+import { disagreeingCounts, render, uppercasedIdentifiers } from "../ui/markup";
 import { readNumber, stateOf as surfaceStateOf } from "../../live/parity";
 import {
   reviewItemEdgePopulation,
@@ -606,6 +606,58 @@ describe("the queue-health gauge", () => {
  * the source (campaign admin-window/BUG-0046).
  */
 describe("the copy the operator actually reads", () => {
+  it("never uppercases a queue name into a sans micro label, in any state", async () => {
+    // The `micro` step is uppercase sans, so a queue name concatenated into
+    // one is rewritten on screen: the walk saw `DATA_CONFLICT OPEN` on the
+    // health card three pixels under the `data_conflict` subsection heading —
+    // the same identifier, two spellings, one screen (admin-window/BUG-0049,
+    // LOOK_AND_FEEL Voice bar 5).
+    for (const [state, script] of Object.entries({
+      healthy: healthyScript(),
+      // the queue-health slices fall to their EMPTY cards here, which is where
+      // the eyebrow moves onto a state card instead of a figure card
+      empty: healthyScript({ [T.reviewItems]: { data: [], count: 0 } }),
+      absent: { [T.reviewItems]: { error: tableNotInSchemaCache(T.reviewItems) } },
+      refused: { [T.reviewItems]: { error: permissionDenied(T.reviewItems) } },
+    } satisfies Record<string, Script>)) {
+      // The guard proves itself before it clears the page: the spelling that
+      // shipped MUST be found, or the assertion below is vacuous.
+      expect(
+        uppercasedIdentifiers('<span class="type-micro">data_conflict open</span>'),
+      ).toEqual(["data_conflict open"]);
+      const markup = await renderQueues(script);
+      expect(uppercasedIdentifiers(markup), state).toEqual([]);
+      for (const queue of QUEUE_NAMES) {
+        expect(markup, `${state}/${queue}`).not.toContain(queue.toUpperCase());
+      }
+    }
+  });
+
+  it("keeps the queue name on its health cards, spelled as the heading spells it", async () => {
+    // The remedy is not deletion: the card still says WHICH queue it counts,
+    // verbatim, and `readNumber` finding a figure under `data_conflict open`
+    // is also the proof that the identifier and our word are separated by a
+    // real space and not a flex gap.
+    const markup = await renderQueues(healthyScript());
+    const $ = cheerio.load(markup);
+
+    for (const queue of QUEUE_NAMES) {
+      const slice = $(`[data-gauge-queue="${queue}"]`);
+      expect(slice, queue).toHaveLength(1);
+      // the subsection heading, and every eyebrow under it, spell it one way
+      const spellings = slice
+        .find("*")
+        .toArray()
+        .map((element) => $(element).text().replace(/\s+/g, " ").trim())
+        .filter((text) => text.toLowerCase().includes(queue));
+      expect(spellings.length, queue).toBeGreaterThan(0);
+      for (const spelling of spellings) expect(spelling, queue).toContain(queue);
+
+      expect(readNumber(markup, `${queue} open`), queue).toBeTypeOf("number");
+      expect($(`table[aria-label="${queue} by week"]`), queue).toHaveLength(1);
+    }
+  });
+
   it("agrees every count with its noun when each queue holds exactly one item", async () => {
     // The staging shape that produced "of 1 items read here" on the walk: one
     // folded item in the entity_link queue. The whole population puts several

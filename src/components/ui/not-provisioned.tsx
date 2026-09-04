@@ -1,3 +1,5 @@
+import { Eyebrow, type MicroLabel } from "./micro-label";
+
 /**
  * Data-surface state 3 of 4: the backing table is not in this database yet.
  * Gray, never red — red means broken, never unavailable — and never a zero
@@ -22,7 +24,7 @@ export function NotProvisioned({
    * and always passed by the gauge components — see `Empty` for the ruling
    * (ARCHITECTURE §7, admin-window/TASK-0030).
    */
-  eyebrow?: string;
+  eyebrow?: MicroLabel;
 }) {
   return (
     <div
@@ -30,7 +32,7 @@ export function NotProvisioned({
       className="border border-hairline bg-surface p-3"
     >
       {eyebrow === undefined ? null : (
-        <p className="type-micro text-ink-secondary">{eyebrow}</p>
+        <Eyebrow label={eyebrow} className="block" />
       )}
       <p className="type-body text-ink-secondary">
         <span className="type-data text-ink">{missing}</span>{" "}

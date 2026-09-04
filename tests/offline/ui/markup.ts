@@ -10,8 +10,46 @@
  * dependency — which is exactly the environment they run in, since every one
  * of them is a synchronous server component.
  */
+import * as cheerio from "cheerio";
+
 export { createElement as h } from "react";
 export { renderToStaticMarkup as render } from "react-dom/server";
+
+/**
+ * Every `micro` label in the rendered markup that has swallowed a machine
+ * identifier (campaign admin-window/BUG-0049).
+ *
+ * The `micro` step is uppercase sans (`--text-micro` + `text-transform:
+ * uppercase` in `globals.css`), and Voice bar 5 says machine identifiers
+ * "render verbatim in mono and are never prettified". Put one inside a `micro`
+ * element and the browser rewrites its case: `data_conflict` reaches the
+ * screen as `DATA_CONFLICT`, under a heading rendering the same value
+ * correctly. So the check is STRUCTURAL — not "is this string uppercase" but
+ * "did an identifier end up inside the element that uppercases" — which is
+ * also what the fix does: the identifier renders as a sibling of the `micro`
+ * span, never inside it (`src/components/ui/micro-label.tsx`).
+ *
+ * An underscore is the marker, for the same reason `tests/offline/cycles`
+ * already uses it on table headers (admin-window/BUG-0044): the app's own
+ * words never carry one, and every identifier this window shows —
+ * `data_conflict`, `entity_link`, `source_id`, `entity_link_source_pattern` —
+ * does. A one-word identifier such as `ticketmaster` is invisible to it, which
+ * is why the page tests also assert where those render.
+ *
+ * Read off the DELIVERED markup, never the source: the label may be built from
+ * a template literal, from two JSX expressions or from either side of an
+ * element boundary, and only the rendered string says what the operator reads.
+ */
+export function uppercasedIdentifiers(html: string): string[] {
+  const $ = cheerio.load(html);
+  return $("[class]")
+    .toArray()
+    .filter((element) =>
+      ($(element).attr("class") ?? "").split(/\s+/).includes("type-micro"),
+    )
+    .map((element) => $(element).text().replace(/\s+/g, " ").trim())
+    .filter((text) => text.includes("_"));
+}
 
 /** Every class name the markup emits, in document order, deduplicated per attribute. */
 export function classesOf(html: string): string[] {

@@ -1,5 +1,10 @@
 import type { ReactNode } from "react";
-import { type Column, DataTable } from "@/components/ui";
+import {
+  type Column,
+  DataTable,
+  type MicroLabel,
+  microLabelText,
+} from "@/components/ui";
 import { count } from "@/lib/format";
 import {
   GaugeStateCard,
@@ -51,8 +56,13 @@ export function TrendTable<Row>({
   empty,
   state,
 }: {
-  /** Accessible name for the table — what the series is of. */
-  label: string;
+  /**
+   * Accessible name for the table — what the series is of — and the eyebrow of
+   * the card that replaces it in a surface state. A machine identifier travels
+   * as `{ identifier, words }`; `microLabelText` flattens it for `aria-label`,
+   * which takes a string and not markup (admin-window/BUG-0049).
+   */
+  label: MicroLabel;
   /** The `micro` header of the first column: "week", "day", "source", "domain". */
   period: string;
   rows: Row[];
@@ -116,7 +126,7 @@ export function TrendTable<Row>({
       // or partial data as the answer.
       rows={state === undefined ? rows : []}
       rowKey={rowKey}
-      label={label}
+      label={microLabelText(label)}
       placeholder={state === undefined ? undefined : <GaugeStateLine state={state} />}
     />
   );

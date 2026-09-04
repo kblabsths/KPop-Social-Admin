@@ -1,3 +1,5 @@
+import { Eyebrow, type MicroLabel } from "./micro-label";
+
 /**
  * Data-surface state 2 of 4: the surface exists and holds nothing. Names what
  * it holds and the one thing that fills it — never a bare "No data"
@@ -27,12 +29,12 @@ export function Empty({
    * their card replaces the whole gauge — and a screen of empty gauges with no
    * eyebrows names no knobs (ARCHITECTURE §7, admin-window/TASK-0030).
    */
-  eyebrow?: string;
+  eyebrow?: MicroLabel;
 }) {
   return (
     <div data-state="empty" className="border border-hairline bg-surface p-3">
       {eyebrow === undefined ? null : (
-        <p className="type-micro text-ink-secondary">{eyebrow}</p>
+        <Eyebrow label={eyebrow} className="block" />
       )}
       <p className="type-body text-ink">No {holds}</p>
       <p className="type-body text-ink-secondary">{filledBy}</p>

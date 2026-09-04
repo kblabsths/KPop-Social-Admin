@@ -11,6 +11,7 @@ import {
   DataTable,
   Empty,
   ErrorLine,
+  Eyebrow,
   NotProvisioned,
   Page,
   Section,
@@ -256,7 +257,14 @@ function StateOf({
 
 /* ── the registry table ──────────────────────────────────────────────────── */
 
-/** The narrowing chips: "all", then every source the registry holds. */
+/**
+ * The narrowing chips: "all", then every source the registry holds.
+ *
+ * The group's label is the URL parameter it sets — `source_id`, a column name
+ * and so a machine identifier. It renders verbatim in mono rather than
+ * uppercased into the sans `micro` step, which turned it into `SOURCE_ID` on
+ * screen (LOOK_AND_FEEL Voice bar 5; admin-window/BUG-0049).
+ */
 function SourceChips({
   sources,
   filter,
@@ -271,7 +279,7 @@ function SourceChips({
       aria-label={SOURCE_FACET}
       className="flex flex-wrap items-center gap-2"
     >
-      <span className="type-micro text-ink-secondary">{SOURCE_FACET}</span>
+      <Eyebrow label={{ identifier: SOURCE_FACET }} />
       <Chip
         label={ANY_LABEL}
         href={sourcesHref({})}

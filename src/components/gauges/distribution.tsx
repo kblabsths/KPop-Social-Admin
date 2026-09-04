@@ -1,5 +1,10 @@
 import type { ReactNode } from "react";
-import { type Column, DataTable } from "@/components/ui";
+import {
+  type Column,
+  DataTable,
+  type MicroLabel,
+  microLabelText,
+} from "@/components/ui";
 import { count } from "@/lib/format";
 import type { Spread } from "@/lib/gauges/gauge";
 import {
@@ -97,8 +102,13 @@ export function Distribution({
   empty,
   state,
 }: {
-  /** Accessible name for the table — what is distributed. */
-  label: string;
+  /**
+   * Accessible name for the table — what is distributed — and the eyebrow of
+   * the card that replaces it in a surface state. A machine identifier travels
+   * as `{ identifier, words }`; `microLabelText` flattens it for `aria-label`,
+   * which takes a string and not markup (admin-window/BUG-0049).
+   */
+  label: MicroLabel;
   /** The `micro` header of the label column: "percentile", "bucket", "age". */
   dimension: string;
   /** The `micro` header of the value column. State the unit here, once. */
@@ -188,7 +198,7 @@ export function Distribution({
       columns={columns}
       rows={state === undefined ? rows : []}
       rowKey={(row) => row.key}
-      label={label}
+      label={microLabelText(label)}
       placeholder={state === undefined ? undefined : <GaugeStateLine state={state} />}
     />
   );

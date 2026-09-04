@@ -9,7 +9,12 @@ import {
   type EmptyWords,
   type GaugeState,
 } from "@/components/gauges";
-import { type Column, DataTable, Empty } from "@/components/ui";
+import {
+  type Column,
+  DataTable,
+  Empty,
+  type MicroLabel,
+} from "@/components/ui";
 import { EM_DASH, absoluteUtc, count, counted, pluralise } from "@/lib/format";
 import type { Shape } from "@/lib/review/shapes";
 import {
@@ -88,8 +93,14 @@ export interface DialWindow {
 }
 
 export interface DialProps {
-  /** The `micro` label the figure stands under — the source, and what counts. */
-  label: string;
+  /**
+   * The eyebrow the figure stands under — the source, and what counts. The
+   * source name is a machine identifier, so it travels as
+   * `{ identifier, words }` and keeps its case and its mono face instead of
+   * being uppercased into `TICKETMASTER STUCK RECORDS`
+   * (`ui/micro-label.tsx`, admin-window/BUG-0049).
+   */
+  label: MicroLabel;
   /** The numbers, or `null` when the read did not produce any — see `state`. */
   series: DialSeries | null;
   window: DialWindow | null;

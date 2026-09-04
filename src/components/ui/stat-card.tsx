@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { count, orDash } from "@/lib/format";
 import { cx } from "./cx";
+import { Eyebrow, type MicroLabel } from "./micro-label";
 
 /**
  * Square, 1px border, surface fill, 12px padding: `micro` label, then the
@@ -28,7 +29,13 @@ export function StatCard({
   href,
   floor = false,
 }: {
-  label: string;
+  /**
+   * The `micro` eyebrow. A plain string is the app's own words; a machine
+   * identifier is passed as `{ identifier, words }` so it keeps its case and
+   * its mono face instead of being uppercased into sans prose
+   * (`ui/micro-label.tsx`, admin-window/BUG-0049).
+   */
+  label: MicroLabel;
   /** A number is thousand-separated here; a string is shown verbatim. */
   value: number | string | null;
   /** At most one line of sub-detail. */
@@ -56,7 +63,7 @@ export function StatCard({
 
   const body = (
     <>
-      <span className="type-micro text-ink-secondary">{label}</span>
+      <Eyebrow label={label} />
       {floor ? (
         <span className="flex items-baseline gap-1">
           <span className="type-body text-ink-secondary">at least</span>

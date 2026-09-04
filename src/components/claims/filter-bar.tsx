@@ -1,4 +1,4 @@
-import { Chip } from "@/components/ui";
+import { Chip, Eyebrow } from "@/components/ui";
 import type { FilterFacet } from "@/lib/claims/filters";
 
 /**
@@ -8,7 +8,7 @@ import type { FilterFacet } from "@/lib/claims/filters";
  * LINK, for the reasons the Queues filter bar gives: the filter state lives in
  * `searchParams` (LOOK_AND_FEEL bar 11), so this is a pure synchronous server
  * component with no `useState` a reload forgets, and it is keyboard-reachable
- * by construction (bar 9). The group's `micro` label is the parameter it sets,
+ * by construction (bar 9). The group's label is the parameter it sets,
  * so the screen and the URL use one word for one thing.
  *
  * It chooses nothing: `filterBar` in `src/lib/claims/filters.ts` decides which
@@ -36,7 +36,7 @@ export function FilterBar({ facets }: { facets: readonly FilterFacet[] }) {
           aria-label={group.facet}
           className="flex flex-wrap items-center gap-2"
         >
-          <span className="type-micro text-ink-secondary">{group.facet}</span>
+          <Eyebrow label={{ identifier: group.facet }} />
           {group.choices.map((choice) => (
             <Chip
               // Keyed by where it goes, not by what it says: a chip's label is
