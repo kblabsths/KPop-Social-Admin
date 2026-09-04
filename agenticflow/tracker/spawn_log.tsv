@@ -9946,3 +9946,55 @@
 2026-09-04T07:45:51Z	qa-adversary	DEBT-0003	spawned
 # STRANDED	2026-09-04T07:45:52Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0077.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md
 2026-09-04T07:45:52Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:46:13Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:46:13Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:46:23Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:46:23Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:46:24Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:46:24Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:46:44Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:46:44Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:46:54Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:46:54Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:46:55Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:46:55Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:47:15Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:47:15Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:47:26Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:47:26Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:47:46Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:47:46Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:47:58Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:47:58Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:48:18Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:48:18Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:48:27Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:48:27Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:48:29Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:48:29Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:48:49Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:48:49Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:48:58Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:48:58Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:49:01Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:49:01Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:49:21Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:49:21Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:49:30Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:49:30Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:49:33Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:49:33Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:49:52Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:49:52Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:50:05Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:50:05Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:50:36Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0077.json, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:50:36Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:51:02Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0077.json, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:51:02Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:51:08Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0077.json, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:51:08Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:51:33Z	agent	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0077.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0077.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:51:33Z	agent	-	-	-	-
+# STRANDED	2026-09-04T07:51:37Z	qa-adversary	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0077.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0077.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0003.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
+2026-09-04T07:51:37Z	qa-adversary	BUG-0077	12878	725	98907
