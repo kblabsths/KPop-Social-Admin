@@ -3,9 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import {
+  CLAMP_LIMIT,
+  ELLIPSIS,
   EM_DASH,
   absoluteUtc,
   absoluteUtcInZonedColumn,
+  clamped,
   count,
   counted,
   duration,
@@ -228,6 +231,66 @@ describe("nullDash", () => {
  * ask here rather than each writing `x === null || x === ""`, so a dash a
  * helper produced and a dash a raw null produced render identically.
  */
+describe("clamped", () => {
+  /**
+   * The bound a lead surface puts on a producer's string
+   * (campaign admin-window/DEBT-0005). The two halves of the rule are that a
+   * clamp is VISIBLE and that the full text stays reachable, so every
+   * assertion below is about one of those.
+   */
+  const LONG = "x".repeat(2_000);
+
+  it("returns a string within the bound byte-identical, and adds no title", () => {
+    for (const short of ["", "e", "upstream 503 on page 7 of 12", "y".repeat(CLAMP_LIMIT)]) {
+      expect(clamped(short)).toEqual({ text: short, title: "" });
+    }
+  });
+
+  it("bounds a longer string and keeps the whole of it on the title", () => {
+    const { text, title } = clamped(LONG);
+    expect(Array.from(text).length).toBeLessThanOrEqual(CLAMP_LIMIT);
+    expect(title).toBe(LONG);
+  });
+
+  it("marks a clamp visibly, so nothing is truncated in silence", () => {
+    expect(clamped(LONG).text.endsWith(ELLIPSIS)).toBe(true);
+    // The bound is one character past identity, so the FIRST length that
+    // clamps is proved as well as the last that does not (LESSONS 3).
+    expect(clamped("z".repeat(CLAMP_LIMIT)).text).not.toContain(ELLIPSIS);
+    expect(clamped("z".repeat(CLAMP_LIMIT + 1)).text.endsWith(ELLIPSIS)).toBe(true);
+  });
+
+  it("re-words nothing: what it keeps is the producer's own opening", () => {
+    const sentence = `the adapter said: ${LONG}`;
+    const { text } = clamped(sentence);
+    const kept = text.slice(0, -ELLIPSIS.length);
+    expect(sentence.startsWith(kept)).toBe(true);
+    expect(kept.length).toBeGreaterThan(0);
+  });
+
+  it("cuts on a code point, never inside one, and eats the space before the ellipsis", () => {
+    // A lone surrogate renders as a replacement glyph, so an astral character
+    // is either kept whole or dropped whole.
+    const astral = "😀".repeat(10);
+    const { text } = clamped(astral, 4);
+    expect(text).toBe(`😀😀😀${ELLIPSIS}`);
+    // The guard is shown one string it must flag and one it must not
+    // (LESSONS 3): a UTF-16 cut of the same value strands a high surrogate.
+    const loneSurrogate =
+      /(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])/;
+    expect(loneSurrogate.test(text)).toBe(false);
+    expect(loneSurrogate.test(astral.slice(0, 3))).toBe(true);
+    expect(clamped("ab       cdef", 8).text).toBe(`ab${ELLIPSIS}`);
+  });
+
+  it("renders an absence as the same dash every other helper returns", () => {
+    for (const missing of [null, undefined]) {
+      expect(clamped(missing)).toEqual({ text: EM_DASH, title: "" });
+      expect(isAbsent(clamped(missing).text)).toBe(true);
+    }
+  });
+});
+
 describe("isAbsent and orDash", () => {
   it("calls absent everything React would draw as nothing", () => {
     for (const missing of [null, undefined, "", "   ", false, true, []]) {

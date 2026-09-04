@@ -37,7 +37,9 @@ import {
   type RunWindow,
 } from "@/lib/db/runs";
 import {
+  CLAMP_LIMIT,
   absoluteUtc,
+  clamped,
   count,
   counted,
   duration,
@@ -924,14 +926,41 @@ function runCells(
           <Badge tone={OUTCOME_TONE[row.outcome ?? ""] ?? "neutral"}>{row.outcome}</Badge>
         </span>
       ),
-    error_summary: (row) =>
+    error_summary: (row) => {
       // Inline and VERBATIM — not trimmed, not summarised, not replaced with a
       // friendlier sentence. Red, because a run that reported one is broken.
-      isAbsent(row.error_summary) ? null : (
-        <span data-run-error="" className="type-data text-broken">
-          {row.error_summary}
+      //
+      // The LEAD copy is the one cell a role changes, and it changes only its
+      // LENGTH (campaign admin-window/DEBT-0005). The lead sits ABOVE the
+      // cycles window, so its height is the only height on this page that can
+      // push the newest cycle under the fold, and an `error_summary` past
+      // roughly 700 characters does exactly that — re-breaking half of
+      // LOOK_AND_FEEL bar 1, which the lead exists to satisfy. `CLAMP_LIMIT`
+      // bounds it; the window's own copy below is unbounded, because one row
+      // among two hundred pushes nothing.
+      //
+      // Nothing is hidden by that. The clamp is VISIBLE (it ends in the
+      // ellipsis), the whole string rides the lead's own `title`, and the
+      // window row below still carries it verbatim in its own cell — the two
+      // ways LOOK_AND_FEEL requires the full text to stay reachable. Below the
+      // bound `clamped` returns the value byte-identical with an empty title,
+      // so for every error this database has ever held the lead is still the
+      // window's row cell for cell, `title` attribute included.
+      if (isAbsent(row.error_summary)) return null;
+      const error = clamped(
+        row.error_summary,
+        lead ? CLAMP_LIMIT : Number.POSITIVE_INFINITY,
+      );
+      return (
+        <span
+          data-run-error=""
+          title={error.title === "" ? undefined : error.title}
+          className="type-data text-broken"
+        >
+          {error.text}
         </span>
-      ),
+      );
+    },
     // The three counts of the ruling, thousand-separated. A zero is a real
     // count and renders as one, never as the absence dash: the number is the
     // database's, and nothing on this path substitutes one it did not give
@@ -1152,7 +1181,12 @@ function AdapterRuns({
  *  - **It is the same CELLS.** `runColumns(now, "lead")` is the same nine
  *    columns from the same `RUN_COLUMNS`, so the lead renders a run exactly as
  *    the table does, down to the dash. Only the identity hook differs, so
- *    nothing that reads `[data-run]` counts this row as a second run.
+ *    nothing that reads `[data-run]` counts this row as a second run — and the
+ *    length bound on the error cell, which is a bound and not a second
+ *    rendering: under `CLAMP_LIMIT` the lead is the window's row cell for cell,
+ *    and over it the lead ends in an ellipsis while the whole string stays on
+ *    its `title` and in the window's own cell below
+ *    (campaign admin-window/DEBT-0005).
  *  - **It states no FIGURE.** A lead is a row, never a count: the window line
  *    below is the only place this half describes its window, and no number
  *    here comes from `rows.length` (ARCHITECTURE.md §4.3).
