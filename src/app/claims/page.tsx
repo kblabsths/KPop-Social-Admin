@@ -300,7 +300,6 @@ function PendingClaimsGauge({ gauge }: { gauge: PendingClaims }) {
         gauge={PENDING_WINDOW}
         window={gauge.window}
         measured="Claims observed"
-        over="view"
       />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
@@ -379,7 +378,6 @@ function StandingGauge({ gauge }: { gauge: StandingDisagreements }) {
         gauge={STANDING_WINDOW}
         window={gauge.window}
         measured="Claims observed"
-        over="view"
       />
       <GaugeCard
         label="Live contradictions in this window"

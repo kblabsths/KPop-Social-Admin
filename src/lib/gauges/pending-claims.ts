@@ -1,4 +1,5 @@
 import type { DbResult } from "../db/result";
+import { T } from "../db/tables";
 import {
   PENDING_CLAIM_BUCKETS,
   RENDERABLE_BUCKETS,
@@ -197,7 +198,7 @@ export async function fetchPendingClaims(
     data: {
       claims: claims.data,
       observations: observations.data,
-      window: windowOf(bounds, observations.data.length),
+      window: windowOf(bounds, observations.data.length, T.observations),
       filter,
     },
   };

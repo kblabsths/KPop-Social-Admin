@@ -18,6 +18,12 @@ export interface ReadWindow {
   limit: number;
   /** The scan came back at its cap, so every count over it is a floor. */
   truncated: boolean;
+  /**
+   * The kind of database object the scan ran over — the word the sentence
+   * ends on. Set by `windowOf` from the `tables.ts` name the query used
+   * (admin-window/BUG-0077); a component only renders it.
+   */
+  over: "table" | "view";
 }
 
 /**
@@ -32,11 +38,19 @@ export interface ReadWindow {
  * read structurally was the one on the page whose oracle had already graded a
  * broken state as a pass (common violations 6 and 9).
  *
- * **`over` is the word the sentence ends on, and it names what the window was
- * read over.** The three copies said "not the whole table" twice and "not the
- * whole view" once, which reads as one sentence and is two; the split is
- * settled by the object rather than by whichever copy won — a window over a
- * view says view, a window over a table says table (admin-window/DEBT-0003).
+ * **The word the sentence ends on names what the window was read over, and it
+ * is not a prop.** The three copies said "not the whole table" twice and "not
+ * the whole view" once, which reads as one sentence and is two; DEBT-0003
+ * folded them into this component but left the word a REQUIRED `over` prop, so
+ * the split was parameterised rather than settled — `/claims` and `/sources`
+ * kept describing one and the same `WindowInfo` (the pending-claims window,
+ * over `observations`) as "view" and "table" (admin-window/BUG-0077).
+ *
+ * It now rides on the window itself (`ReadWindow.over`), established once by
+ * `windowOf` from the `T.*` name the scanning query passed to `.from()`. A
+ * window over a view says view and a window over a table says table because
+ * that is what the read did — and two call sites rendering one window can no
+ * longer disagree, because neither of them is asked.
  *
  * The line follows the READ, not the rows: a caller renders it on an `ok`
  * result — with rows or with none — and on no other state, so the absence of
@@ -48,15 +62,12 @@ export function WindowLine({
   gauge,
   window: info,
   measured,
-  over,
 }: {
   /** Which gauge's window this is, for the live suite to read it back. */
   gauge: string;
   window: ReadWindow;
   /** What the window is over, in the app's voice: "Cycles started", … */
   measured: string;
-  /** The kind of object the window was read over. */
-  over: "table" | "view";
 }) {
   return (
     <p
@@ -67,7 +78,7 @@ export function WindowLine({
       className="type-body text-ink-secondary"
     >
       {measured} since {absoluteUtc(info.since)}, read to {absoluteUtc(info.until)}{" "}
-      — a window of at most {count(info.limit)} rows, not the whole {over}.
+      — a window of at most {count(info.limit)} rows, not the whole {info.over}.
       {info.truncated
         ? " The window filled its cap, so every count here is a floor."
         : ""}

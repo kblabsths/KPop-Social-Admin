@@ -1,4 +1,5 @@
 import type { DbResult } from "../db/result";
+import { T } from "../db/tables";
 import {
   readRejectionStamps,
   readSourceStates,
@@ -159,7 +160,7 @@ export async function fetchRejectionStamps(
     data: {
       rejections: rejections.data,
       sources: sources.data,
-      window: windowOf(bounds, rejections.data.length),
+      window: windowOf(bounds, rejections.data.length, T.observations),
     },
   };
 }

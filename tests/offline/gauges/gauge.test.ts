@@ -132,21 +132,43 @@ describe("windowOf", () => {
   const bounds = { since: "2026-08-25T12:00:00.000Z", until: NOW, limit: 3 };
 
   it("is not truncated below the cap", () => {
-    expect(windowOf(bounds, 2).truncated).toBe(false);
+    expect(windowOf(bounds, 2, T.observations).truncated).toBe(false);
   });
 
   it("is truncated at the cap, because more rows may exist unseen", () => {
-    expect(windowOf(bounds, 3).truncated).toBe(true);
+    expect(windowOf(bounds, 3, T.observations).truncated).toBe(true);
   });
 
   it("decides truncation against the platform cap when bounds ask for more", () => {
     // Bounds built by hand rather than through `resolveBounds`: the server
     // still stops at its own cap, so a full read is a floor and says so.
     const oversized = { since: bounds.since, until: NOW, limit: GAUGE_ROW_CAP * 5 };
-    const window = windowOf(oversized, GAUGE_ROW_CAP);
+    const window = windowOf(oversized, GAUGE_ROW_CAP, T.observations);
     expect(window.truncated).toBe(true);
     expect(window.limit, "the window reports the cap that really applied").toBe(GAUGE_ROW_CAP);
-    expect(windowOf(oversized, GAUGE_ROW_CAP - 1).truncated).toBe(false);
+    expect(windowOf(oversized, GAUGE_ROW_CAP - 1, T.observations).truncated).toBe(false);
+  });
+
+  /**
+   * The window carries what it was READ OVER (admin-window/BUG-0077).
+   *
+   * Both arms, because one of them alone proves nothing: a `windowOf` that
+   * answered "table" unconditionally would satisfy the table case and still be
+   * the bug — the noun would once again be independent of the object.
+   */
+  it("reports the kind of the object the scan named, on both kinds", () => {
+    expect(windowOf(bounds, 2, T.observations).over, "observations is a table").toBe("table");
+    expect(windowOf(bounds, 2, T.pendingClaims).over, "pending_claims is a view").toBe("view");
+  });
+
+  it("takes the object, never the word — nothing else about the read moves it", () => {
+    // The same bounds and the same row count over two objects differ in `over`
+    // and in nothing else: the noun is a fact of the object, and the caller has
+    // no way to state it directly.
+    const table = windowOf(bounds, 2, T.observations);
+    const view = windowOf(bounds, 2, T.pendingClaims);
+    expect({ ...table, over: undefined }).toEqual({ ...view, over: undefined });
+    expect(table.over).not.toBe(view.over);
   });
 });
 

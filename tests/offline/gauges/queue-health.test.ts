@@ -7,6 +7,7 @@ import {
 } from "@/lib/gauges/queue-health";
 import type { ReviewItemRow } from "@/lib/review/shapes";
 import { T } from "@/lib/db/tables";
+import type { WindowInfo } from "@/lib/gauges/gauge";
 import {
   reviewItemDataConflict,
   reviewItemEntityLink,
@@ -32,7 +33,14 @@ import {
  */
 
 const NOW = "2026-09-01T12:00:00.000Z";
-const WINDOW = { since: "2026-08-25T12:00:00.000Z", until: NOW, limit: 900, truncated: false };
+// `over` as `windowOf` sets it: this gauge scans `review_items`, a table.
+const WINDOW: WindowInfo = {
+  since: "2026-08-25T12:00:00.000Z",
+  until: NOW,
+  limit: 900,
+  truncated: false,
+  over: "table",
+};
 
 /**
  * Five items across both queues and both statuses. The two settled ones sit in

@@ -7,6 +7,7 @@ import {
   type ProvenanceApplyRow,
 } from "@/lib/gauges/resolution-latency";
 import { T } from "@/lib/db/tables";
+import type { WindowInfo } from "@/lib/gauges/gauge";
 import { ID, fieldProvenanceRow, observationRow } from "../../fixtures/rows";
 import {
   permissionDenied,
@@ -26,7 +27,14 @@ import {
  */
 
 const NOW = "2026-09-01T12:00:00.000Z";
-const WINDOW = { since: "2026-08-25T12:00:00.000Z", until: NOW, limit: 900, truncated: false };
+// `over` as `windowOf` sets it: this gauge scans `field_provenance`, a table.
+const WINDOW: WindowInfo = {
+  since: "2026-08-25T12:00:00.000Z",
+  until: NOW,
+  limit: 900,
+  truncated: false,
+  over: "table",
+};
 
 const OBS = {
   fast: "01920000-0000-7000-8000-000000000301",
