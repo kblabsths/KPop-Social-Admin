@@ -1,11 +1,11 @@
-# Tracker index (regenerated 2026-09-04T00:41:15Z — do not edit)
+# Tracker index (regenerated 2026-09-04T00:47:10Z — do not edit)
 
 ## open
-- BUG-0054 [P2][bug][M1] Cycles & runs: 'Cycle <id> is marked in the table below' — the row carries only aria-current and is visually identical to all 68 others  (scope:src/app/cycles/page.tsx,src/components/ui/data-table.tsx,tests/offline/cycles/page.test.ts from:M1-endgame-user-sim)
 - BUG-0059 [P2][bug][M1] Not-provisioned card jams the missing object's name into the sentence: 'eventsisn't in this database yet'  (scope:src/components/ui/not-provisioned.tsx,tests/offline/absence/pages.test.ts from:M1-endgame-verifier)
 - BUG-0060 [P2][bug][M1] Edit cell shows no way to save: no control, no hint, Enter is undocumented, and blur silently discards what was typed  (scope:src/components/records/field-editor.tsx,src/app/records/[table]/[id]/page.tsx,tests/offline/records/page.test.ts,tests/offline/records/submit.test.ts from:M1-endgame-verifier)
 - BUG-0063 [P2][bug][M1] Claims: the window line renders a count it never took — data-window-held="0" on a failed read  (scope:src/app/claims/page.tsx,tests/offline/claims/page.test.ts from:qa:BUG-0041)
 - BUG-0064 [P2][bug][M1] Adapter runs table still heads its columns with raw database names, so /cycles now speaks two vocabularies  (scope:src/app/cycles/page.tsx,tests/offline/runs/page.test.ts from:qa:BUG-0044)
+- BUG-0065 [P2][bug][M1] Record page: a mistyped id renders the failed-read state, whose only advice is to reload  (scope:src/app/records/[table]/[id]/page.tsx,src/lib/db/records.ts,tests/offline/records/page.test.ts,tests/fixtures/stub-client.ts from:qa:BUG-0052)
 - DEBT-0002 [P2][debt][M1] Five live parity oracles still address their surfaces by POSITION (section:nth-of-type) — the class BUG-0056 fixed on one page only  (scope:tests/live/dashboard.live.test.ts,tests/live/sources.live.test.ts,tests/live/claims.live.test.ts,tests/live/browse.live.test.ts,tests/live/review-item.live.test.ts,src/app/page.tsx,src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/browse/page.tsx,src/app/queues/[reviewItemId]/page.tsx from:BUG-0056)
 - TASK-0035 [P2][task][patch] The walk sandbox in the one map: an EDIT_CONFIG entry that renders not-provisioned wherever the table is absent  (deps:TASK-0034 scope:src/lib/edit/config.ts,src/lib/db/tables.ts,tests/offline/edit/config.test.ts,tests/offline/records/page.test.ts,tests/offline/absence,tests/live/residue.live.test.ts,tests/http/auth.http.test.ts from:inbox:2026-09-03-walker-sandbox-table.md)
 - TASK-0036 [P2][task][patch] Reset the walk sandbox between walks: the seed fixture, the reset tool, and the walk recipe  (deps:TASK-0034 scope:tests/walk,tests/offline/walk,tests/live/staging-target.ts,tests/offline/live-guard.test.ts,tsconfig.json,agenticflow/docs/vision/STACK.md from:inbox:2026-09-03-walker-sandbox-table.md)
@@ -20,9 +20,9 @@
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:2) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
 ## claimed
+- BUG-0054 [P2][bug][M1] Cycles & runs: 'Cycle <id> is marked in the table below' — the row carries only aria-current and is visually identical to all 68 others  (scope:src/app/cycles/page.tsx,src/components/ui/data-table.tsx,tests/offline/cycles/page.test.ts @builder-85 from:M1-endgame-user-sim)
+
+## built
 - BUG-0053 [P2][bug][M1] Event record page: a whole PROVENANCE column of dashes with no line saying what a dash means, while the pre-cutover page explains its own  (scope:src/app/records/[table]/[id]/page.tsx,src/components/records/record-fields.tsx,tests/offline/records/page.test.ts,tests/offline/records/provenance.test.ts @builder-84 from:M1-endgame-user-sim)
 
-## qa
-- BUG-0052 [P2][bug][M1] Record page: the unknown-id empty state sends the operator to Browse, which does not list groups or idols  (scope:src/app/records/[table]/[id]/page.tsx,tests/offline/records/page.test.ts @builder-83 from:M1-endgame-user-sim)
-
-Totals — claimed:1, done:96, open:17, qa:1. Archived: 0.
+Totals — built:1, claimed:1, done:97, open:17. Archived: 0.
