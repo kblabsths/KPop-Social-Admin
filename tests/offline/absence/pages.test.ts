@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import * as cheerio from "cheerio";
 import { TABLE_NAMES } from "@/lib/db/tables";
 import {
   stubClient,
@@ -164,6 +165,13 @@ function absentFrom(base: Script, missing: string, absent: unknown): Script {
   return { ...base, [missing]: { error: absent } };
 }
 
+/** A database that holds none of the ecosystem's objects at all. */
+function nothingProvisioned(): Script {
+  const script: Script = {};
+  for (const name of TABLE_NAMES) script[name] = { error: tableNotInSchemaCache(name) };
+  return script;
+}
+
 const DATABASES: ReadonlyArray<readonly [string, (surface: Surface) => Script]> = [
   ["an empty database", () => emptyScript()],
   ["a populated database", (surface) => populatedScript(surface)],
@@ -216,12 +224,6 @@ describe.each(DATABASES)("against %s missing one object", (_label, base) => {
 /* ── the whole database missing ──────────────────────────────────────────── */
 
 describe("against a database that lacks every ecosystem object", () => {
-  function nothingProvisioned(): Script {
-    const script: Script = {};
-    for (const name of TABLE_NAMES) script[name] = { error: tableNotInSchemaCache(name) };
-    return script;
-  }
-
   it.each(SURFACES.map((surface) => [surface.route, surface] as const))(
     "%s names every object it asked for and invents no number",
     async (route, surface) => {
@@ -267,6 +269,72 @@ describe("against a database that lacks every ecosystem object", () => {
   });
 });
 
+/* ── the object's name is a WORD of the sentence, not glued to it ────── */
+
+/**
+ * Every object a not-provisioned card names, and the ONE character the card
+ * carries on with (campaign admin-window/BUG-0059).
+ *
+ * The card puts the missing object's name in an element of its own and
+ * continues in prose (`src/components/ui/not-provisioned.tsx`). Lose the
+ * separator between the two and an operator reads a single word —
+ * `eventsisn’t` — so the state EC11 requires stops being a sentence while
+ * every structural assertion above still passes: the name is present, in its
+ * own element, in a not-provisioned card.
+ *
+ * Read structurally, and deliberately not as copy: the name is recognised by
+ * matching `TABLE_NAMES` (the one place an object name is spelled), never a
+ * class, and only where it is a LEAF's whole text; `after` is taken from the
+ * TEXT NODE that follows the naming element,
+ * not by searching the paragraph for the name, so a card whose eyebrow happens
+ * to spell an object name cannot fool it; and the assertion is about a
+ * separator, so the sentence’s words stay free to change.
+ *
+ * What it can and cannot see. This is the markup `renderToStaticMarkup`
+ * produces, and that transform KEEPS a JSX whitespace run `next build` is free
+ * to drop (measured on delivered HTML, campaign admin-window/BUG-0045), so it
+ * cannot see the fragile spelling on its own. The source-side rule, repo-wide,
+ * is `tests/offline/ui/copy.test.ts`; the two are complements — that file
+ * forbids the spelling a transform may eat, this one pins the rendered result
+ * on every page of the window at once, whatever future edit removes it.
+ */
+function namedObjects(markup: string): Array<{ named: string; after: string }> {
+  const $ = cheerio.load(markup);
+  const spelled = TABLE_NAMES as readonly string[];
+  const found: Array<{ named: string; after: string }> = [];
+  for (const card of $('[data-state="not_provisioned"]').toArray()) {
+    for (const element of $(card).find("*").toArray()) {
+      // Leaves only, as `figures()` reads a figure: an ancestor whose whole
+      // text is the name (a card that renders nothing else) is the same name
+      // twice, not two names.
+      if ($(element).children().length > 0) continue;
+      const named = $(element).text();
+      if (!spelled.includes(named)) continue;
+      const next = element.next;
+      const after =
+        next !== null && next.type === "text" ? (next.data.slice(0, 1) as string) : "";
+      found.push({ named, after });
+    }
+  }
+  return found;
+}
+
+describe("the not-provisioned card reads as a sentence", () => {
+  it.each(SURFACES.map((surface) => [surface.route, surface] as const))(
+    "%s leaves a space after every object name it renders",
+    async (route, surface) => {
+      scriptDatabase(nothingProvisioned());
+      const named = namedObjects(await renderSurface(surface));
+
+      // Non-vacuous per page: this surface really did draw one of these cards.
+      expect(named, `${route} rendered no not-provisioned card`).not.toEqual([]);
+      for (const { named: object, after } of named) {
+        expect(after, `${route} rendered "${object}${after}…" as one word`).toBe(" ");
+      }
+    },
+  );
+});
+
 /* ── the sweep can fail ──────────────────────────────────────────────────── */
 
 describe("the absence sweep itself", () => {
@@ -279,6 +347,18 @@ describe("the absence sweep itself", () => {
     expect(namesExactly("<p><span>review_items</span> is missing</p>", "review_items")).toBe(
       true,
     );
+  });
+
+  it("tells a name glued to the next word from a name that is spaced", () => {
+    const card = (between: string) =>
+      `<div data-state="not_provisioned"><p><span>events</span>${between}is missing.</p></div>`;
+    expect(namedObjects(card(""))).toEqual([{ named: "events", after: "i" }]);
+    expect(namedObjects(card(" "))).toEqual([{ named: "events", after: " " }]);
+    // Not every element holding the name is the card's naming element: a card
+    // with no text after it names nothing to space.
+    expect(
+      namedObjects('<div data-state="not_provisioned"><p><span>events</span></p></div>'),
+    ).toEqual([{ named: "events", after: "" }]);
   });
 
   it("reads a figure as a figure and prose as prose", () => {
