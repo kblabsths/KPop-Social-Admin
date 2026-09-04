@@ -9,6 +9,7 @@ import {
   readRecordReference,
 } from "@/lib/db/records";
 import { editConfigFor, type TableEditConfig } from "@/lib/edit/config";
+import { EM_DASH } from "@/lib/format";
 
 /**
  * The edit surface for one canonical record — campaign admin-window/TASK-0018.
@@ -86,6 +87,58 @@ function regimeNote(config: TableEditConfig): string {
         `no source is shown beside a value.`
     : `${config.table} is resolver-owned and read-only from Admin: its values ` +
         `change through the resolution pipeline, not by a direct edit.`;
+}
+
+/**
+ * What an EMPTY provenance cell means, said once above the table — campaign
+ * admin-window/BUG-0053.
+ *
+ * The resolver-owned branch of `regimeNote` explains how the values are
+ * written and says nothing about the column beside them, so a record whose
+ * fields carry no `field_provenance` row rendered a whole column of the app's
+ * absence marker with no line anywhere saying what one means. Both
+ * document-blind user-sims reached that independently (2026-09-03): one read
+ * the column as "we lost the data", the other worked the meaning out only by
+ * opening a SECOND event and comparing. The dash itself is right — it is the
+ * Look's mandated null rendering — so what was missing is a legend, not a
+ * state change, and the field table keeps its rows.
+ *
+ * Three things about it are deliberate:
+ *
+ *  - it is a statement about a CELL, not about this record, so it stays true
+ *    on a record where three of six fields are sourced and three are not (the
+ *    contrast case the sim hit). It never varies with the data, which is what
+ *    makes it a legend rather than a verdict the rows could contradict;
+ *  - it is said ONCE, above the table, beside the regime note — never per row,
+ *    and never in place of the `—` (Ben's ruling on admin-window/TASK-0025:
+ *    the reason stands with the record, not repeated on every line);
+ *  - it is only said when the provenance leg ANSWERED. A leg that refused or
+ *    found no table produces the same column of dashes for a completely
+ *    different reason, and `LegNote` already says that reason in the
+ *    database's own words; claiming "no row stands behind this value" over a
+ *    read that never happened would be the page inventing a fact.
+ *
+ * It says nothing on a pre-cutover table: `regimeNote` already explains that
+ * column there ("No field provenance is recorded for it"), and the asymmetry
+ * this ticket is about was that the branch needing no explanation had one.
+ *
+ * It says "field provenance" in prose rather than naming the table, exactly as
+ * the pre-cutover note two functions up does. That is not squeamishness about
+ * a machine identifier: on THIS page the string `field_provenance` is what a
+ * failed or unprovisioned leg prints (`LegNote`), and an operator who has
+ * learned that the table name appears when something went wrong should not
+ * meet it in a line about the ordinary case.
+ */
+function ProvenanceLegend() {
+  return (
+    <p data-note="provenance-absence" className="type-body text-ink-secondary">
+      A{" "}
+      {EM_DASH}
+      {" "}in Provenance means no field provenance is recorded for that field:
+      the value has no source behind it, rather than a source this page failed
+      to read.
+    </p>
+  );
 }
 
 /**
@@ -212,6 +265,12 @@ export default async function RecordPage({
     );
   }
 
+  // The legend under the regime note explains the column the table draws, so
+  // it stands only when there IS such a table and the provenance leg answered
+  // for it — see `ProvenanceLegend`.
+  const provenanceLegend =
+    config.regime === "resolver_owned" && provenance.note === null && record !== null;
+
   return (
     <Page title={`${config.table} record`}>
       {/* The record's identity, rendered whatever the read did: an operator
@@ -220,6 +279,7 @@ export default async function RecordPage({
       <p className="type-data text-ink-secondary">{id}</p>
       <Section title="Fields">
         <p className="type-body text-ink-secondary">{regimeNote(config)}</p>
+        {provenanceLegend ? <ProvenanceLegend /> : null}
         {provenance.note ? <LegNote note={provenance.note} /> : null}
         {reference.note ? <LegNote note={reference.note} /> : null}
         {body}

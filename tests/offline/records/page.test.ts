@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { NAV_ITEMS } from "@/components/shell/nav-items";
 import { EDITABLE_TABLES, EDIT_CONFIG } from "@/lib/edit/config";
+import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
 import {
   invalidUuidSyntax,
@@ -919,5 +920,155 @@ describe("a resolver-owned record", () => {
       );
       expect(db.tablesRead(), table).toEqual([table]);
     }
+  });
+  /* ── the legend that says what an empty provenance cell means ──────────── */
+
+  /**
+   * Campaign admin-window/BUG-0053: a resolver-owned record drew a whole
+   * PROVENANCE column of the app's absence marker with no line anywhere
+   * saying what one means, while the pre-cutover branch of the same page
+   * explained its own. Both document-blind user-sims hit it independently.
+   *
+   * These assert the legend as BEHAVIOUR rather than as a sentence: how many
+   * times it is said, where it stands, that it does not vary with the record's
+   * data (a legend, not a verdict the rows could contradict), that the dash it
+   * explains is untouched, and which states own the explanation instead. The
+   * only literals are the app's own em dash and the table name from the one
+   * registry — both read from the source of truth, so a change to either moves
+   * copy and test together.
+   */
+  describe("the legend under the table", () => {
+    /** Every rendering of the legend on the page, whitespace-normalised. */
+    function legend(markup: string): string[] {
+      const $ = cheerio.load(markup);
+      return $('[data-note="provenance-absence"]')
+        .toArray()
+        .map((node) => $(node).text().replace(/\s+/g, " ").trim());
+    }
+
+    /** A provenance row per displayed column — the most-sourced record there is. */
+    function everyDisplayColumnSourced(): Script {
+      return withProvenance(
+        EDIT_CONFIG.events.display.map((field, index) =>
+          decided({
+            field,
+            provenance_id: `01920000-0000-7000-8000-00000000050${index}`,
+          }),
+        ),
+        [{ source_id: TICKETMASTER, source: "ticketmaster" }],
+      );
+    }
+
+    it("says once what an empty provenance cell means, and leaves the dash alone", async () => {
+      const markup = await renderRecord("events");
+      const said = legend(markup);
+      // Once per record — never per row (Ben's ruling on TASK-0025).
+      expect(said.length).toBe(1);
+      // It explains the app's own absence marker, read from the one place
+      // that character is spelled, so copy and marker cannot drift apart.
+      expect(said[0]).toContain(EM_DASH);
+      // ...and it is a sentence, not a bare glyph repeated above the table.
+      expect(said[0].length).toBeGreaterThan(40);
+      // The table name is this page's signal that a LEG FAILED (`LegNote`
+      // prints it); the ordinary case must not borrow that signal.
+      expect(said[0]).not.toContain(T.fieldProvenance);
+
+      // ...and the table is still the OK state: rows, each with the dash.
+      const drawn = lines(markup);
+      expect(drawn.length).toBeGreaterThan(1);
+      for (const line of drawn) {
+        expect(line.provenanceAbsent, line.name).toBe(true);
+      }
+    });
+
+    it("stands above the table, never inside a row", async () => {
+      const $ = cheerio.load(await renderRecord("events"));
+      expect($('[data-note="provenance-absence"]').length).toBe(1);
+      expect($('tbody [data-note="provenance-absence"]').length).toBe(0);
+      expect($('td [data-note="provenance-absence"]').length).toBe(0);
+    });
+
+    it("reads the same however much of the record is sourced", async () => {
+      // A legend describes the COLUMN. One that varied with the data would be
+      // a claim about this record — and on the partly-sourced record below it
+      // would be a false one ("nothing here is traceable" beside a line that
+      // names ticketmaster).
+      const none = await renderRecord("events");
+      const some = await renderRecord(
+        "events",
+        withProvenance(
+          [decided()],
+          [{ source_id: TICKETMASTER, source: "ticketmaster" }],
+        ),
+      );
+      const most = await renderRecord("events", everyDisplayColumnSourced());
+      expect(legend(some)).toEqual(legend(none));
+      expect(legend(most)).toEqual(legend(none));
+    });
+
+    it("stands beside real provenance without denying it", async () => {
+      // The contrast case the user-sim opened second: some fields sourced,
+      // some not, on one record.
+      const markup = await renderRecord(
+        "events",
+        withProvenance(
+          [decided()],
+          [{ source_id: TICKETMASTER, source: "ticketmaster" }],
+        ),
+      );
+      expect(legend(markup).length).toBe(1);
+      const sourced = lineFor(markup, "title");
+      expect(sourced.provenanceAbsent).toBe(false);
+      expect(sourced.provenance).toContain("ticketmaster");
+      expect(lineFor(markup, "description").provenanceAbsent).toBe(true);
+    });
+
+    it("still has dashes to explain on the most-sourced record possible", async () => {
+      // Not a vacuous legend even at full coverage: the primary key and any
+      // column outside the map carry no decision and never will.
+      const markup = await renderRecord("events", everyDisplayColumnSourced());
+      expect(lineFor(markup, EDIT_CONFIG.events.pk).provenanceAbsent).toBe(true);
+      expect(lineFor(markup, UNMAPPED_COLUMN).provenanceAbsent).toBe(true);
+    });
+
+    it("says nothing on a pre-cutover record, whose regime note already explains it", async () => {
+      // The other fixture of the guard above, and the asymmetry the ticket is
+      // about: the branch that needed no legend is not given a second one.
+      for (const table of ["groups", "idols"]) {
+        expect(EDIT_CONFIG[table].regime, table).toBe("pre_cutover");
+        expect(legend(await renderRecord(table)), table).toEqual([]);
+      }
+    });
+
+    it("leaves a provenance leg that failed to explain its own dashes", async () => {
+      // Same column of dashes, a completely different reason — and the leg
+      // says that reason in the database's own words. Claiming "no row stands
+      // behind this value" over a read that never happened would be a lie.
+      const absent = await renderRecord("events", {
+        events: { data: scriptedRecord("events") },
+        field_provenance: { error: tableNotInSchemaCache(T.fieldProvenance) },
+      });
+      expect(legend(absent)).toEqual([]);
+      expect(cheerio.load(absent)('[data-state="not_provisioned"]').length)
+        .toBeGreaterThan(0);
+
+      const refused = await renderRecord("events", {
+        events: { data: scriptedRecord("events") },
+        field_provenance: { error: permissionDenied(T.fieldProvenance) },
+      });
+      expect(legend(refused)).toEqual([]);
+      expect(cheerio.load(refused)('[data-state="error"]').length).toBeGreaterThan(0);
+    });
+
+    it("says nothing when there is no field table to read", async () => {
+      // The unknown-id state draws no PROVENANCE column, so there is no dash
+      // on screen for a legend to be about.
+      const markup = await renderRecord("events", {
+        ...defaultScript("events"),
+        events: { data: null },
+      });
+      expect(lines(markup)).toEqual([]);
+      expect(legend(markup)).toEqual([]);
+    });
   });
 });
