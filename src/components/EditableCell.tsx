@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useReducer, useRef, useState } from "react";
 import { orDash } from "@/lib/format";
 import { cx } from "@/components/ui/cx";
 
@@ -31,6 +31,103 @@ export type Status =
   | { kind: "saving" }
   | { kind: "saved" }
   | { kind: "failed"; message: string };
+
+/**
+ * The status on screen, and WHICH edit put it there — campaign
+ * admin-window/BUG-0075.
+ *
+ * `edit` is the ordinal of the edit that produced `status`: the cell hands out
+ * a new one every time the operator opens it. Carrying it in the state is the
+ * whole fix. Before, the confirmation's 1.5s clock was a bare `setTimeout`
+ * over a ref cleared in exactly one place (the next successful save), so a
+ * clock armed by edit 1 later reset edit 2's status to idle — measured on a
+ * production build 2026-09-03: a second edit's in-flight statement vanished
+ * 163ms before its own PATCH answered and the button re-enabled under a write
+ * still running, and a 403's refusal was readable for 1374ms and then erased
+ * itself.
+ */
+export type EditState = {
+  readonly status: Status;
+  readonly edit: number;
+};
+
+/** Nothing edited yet: no status, and no edit owns one. */
+export const IDLE_EDIT_STATE: EditState = { status: { kind: "idle" }, edit: 0 };
+
+/**
+ * What happens to a cell. Every event names the edit it belongs to, because
+ * "which edit is this about" is precisely what the defect could not answer.
+ */
+export type EditEvent =
+  /** The operator opened the cell; `edit` is the ordinal handed to this visit. */
+  | { kind: "editing"; edit: number }
+  /** That edit was committed and its write is in flight. */
+  | { kind: "committed"; edit: number }
+  /** That edit's write answered. */
+  | { kind: "settled"; edit: number; outcome: SaveOutcome }
+  /** The confirmation clock ARMED BY `edit` fired. */
+  | { kind: "elapsed"; edit: number };
+
+/**
+ * How long a status stays on screen on its own clock, or `null` if no clock
+ * ever retires it.
+ *
+ * Only a confirmation is on a clock. A refusal is not: it stands until the
+ * operator does something about it — reopening the cell is what clears it —
+ * and an in-flight statement stands until its own write answers. Exported as a
+ * rule rather than buried in `commit()` so the offline suite can drive it
+ * (tests/offline is environment node with `renderToStaticMarkup` and no jsdom,
+ * STACK.md §4), and so the component ARMS the clock as a function of the
+ * state it is in rather than at one call site the other paths forget to clear.
+ */
+export function confirmationDelayMs(status: Status): number | null {
+  return status.kind === "saved" ? CONFIRMATION_MS : null;
+}
+
+/**
+ * The one rule: a status is only ever replaced or retired by the edit that
+ * produced it, or by a later one.
+ *
+ * Pure and total over (state, event) — a stale event returns the state
+ * unchanged BY REFERENCE, which is also what makes `useReducer` bail out and
+ * leave a running confirmation clock alone.
+ *
+ *  - `elapsed` retires a confirmation only if that same edit's save armed it.
+ *    An earlier save's clock reaching a later edit's in-flight statement or
+ *    refusal is the bug, and it is a no-op here.
+ *  - `settled` answers only the edit still on screen; an answer to a
+ *    superseded write does not overwrite a newer statement.
+ *  - `editing` clears what the operator has now acted on, but never speaks
+ *    over a write still in flight.
+ */
+export function reduceEdit(state: EditState, event: EditEvent): EditState {
+  switch (event.kind) {
+    case "editing":
+      // Opening the cell acknowledges the last confirmation or refusal. A
+      // write still in flight keeps its statement: it is still in flight.
+      if (state.status.kind === "saving") return state;
+      if (event.edit < state.edit) return state;
+      return { status: { kind: "idle" }, edit: event.edit };
+    case "committed":
+      if (event.edit < state.edit) return state;
+      return { status: { kind: "saving" }, edit: event.edit };
+    case "settled":
+      if (event.edit !== state.edit) return state;
+      return {
+        status: event.outcome.ok
+          ? { kind: "saved" }
+          : { kind: "failed", message: event.outcome.message },
+        edit: event.edit,
+      };
+    case "elapsed":
+      // The clock belongs to the confirmation that armed it, and to nothing
+      // else on screen.
+      if (event.edit !== state.edit || state.status.kind !== "saved") return state;
+      return { status: { kind: "idle" }, edit: event.edit };
+    default:
+      return state;
+  }
+}
 
 /**
  * What the operator is told, in edit mode, about how this edit ends —
@@ -185,17 +282,29 @@ export function EditableCell({
   const [shown, setShown] = useState<string | null>(value);
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
-  const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const [cell, dispatch] = useReducer(reduceEdit, IDLE_EDIT_STATE);
   const reverting = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Ordinals handed out one per visit to edit mode; see `EditState.edit`. */
+  const edits = useRef(0);
   const hintId = useId();
+  const status = cell.status;
 
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-    },
-    [],
-  );
+  /**
+   * The confirmation's clock, armed FROM the state it belongs to.
+   *
+   * This is why the defect cannot come back at a call site: there is no ref to
+   * forget to clear. React tears the timeout down whenever the state changes
+   * (and on unmount), and the one it arms carries the ordinal of the edit whose
+   * confirmation is on screen — so a clock outliving its own status is both
+   * cleared here and ignored by `reduceEdit`.
+   */
+  useEffect(() => {
+    const delay = confirmationDelayMs(cell.status);
+    if (delay === null) return;
+    const edit = cell.edit;
+    const timer = setTimeout(() => dispatch({ kind: "elapsed", edit }), delay);
+    return () => clearTimeout(timer);
+  }, [cell]);
 
   async function commit() {
     if (reverting.current) return;
@@ -205,9 +314,10 @@ export function EditableCell({
     const next = trimmed === "" ? null : trimmed;
     if (next === shown) return; // nothing changed; no call, no confirmation
 
+    const edit = edits.current;
     const previous = shown;
     setShown(next);
-    setStatus({ kind: "saving" });
+    dispatch({ kind: "committed", edit });
 
     let outcome: SaveOutcome;
     try {
@@ -225,14 +335,11 @@ export function EditableCell({
         setShown(outcome.value);
         setDraft(outcome.value ?? "");
       }
-      setStatus({ kind: "saved" });
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setStatus({ kind: "idle" }), CONFIRMATION_MS);
     } else {
       setShown(previous);
       setDraft(previous ?? "");
-      setStatus({ kind: "failed", message: outcome.message });
     }
+    dispatch({ kind: "settled", edit, outcome });
   }
 
   function onKeyDown(event: React.KeyboardEvent) {
@@ -268,7 +375,8 @@ export function EditableCell({
           disabled={status.kind === "saving"}
           onClick={() => {
             reverting.current = false;
-            setStatus({ kind: "idle" });
+            edits.current += 1;
+            dispatch({ kind: "editing", edit: edits.current });
             setEditing(true);
           }}
           className={cx(
