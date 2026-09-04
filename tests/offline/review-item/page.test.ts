@@ -14,6 +14,7 @@ import {
   type ObservationRow,
 } from "../../fixtures/rows";
 import {
+  invalidUuidSyntax,
   permissionDenied,
   stubClient,
   tableNotInSchemaCache,
@@ -1301,5 +1302,53 @@ describe("the surface hooks the live parity oracle addresses", () => {
     const refusals = $('[data-state="error"]');
     expect(refusals.length).toBeGreaterThan(0);
     expect($(EVIDENCE_HOOK).find('[data-state="error"]').length).toBe(0);
+  });
+});
+
+
+/* ── an address that can be no review-item id ─────────────────────────────── */
+
+/**
+ * The queues detail page's half of the mistyped-address question — QA, found
+ * attacking campaign admin-window/BUG-0068.
+ *
+ * `review_items.review_item_id` is a `uuid` (scraper migration
+ * `20260901000002_the_review_item_opens_once_per_subject.sql`, line 39), so a
+ * segment that is not a uuid can equal no key in that table: "no such item" is
+ * knowable here without a database, exactly as it is on the record page
+ * (`isRecordId`, `src/lib/db/records.ts`, admin-window/BUG-0065) and on the
+ * PATCH route (admin-window/BUG-0068). This page instead hands the segment
+ * straight to PostgREST (`src/app/queues/[reviewItemId]/page.tsx:399`), which
+ * refuses it with `22P02`, and the surface reports a FAILED READ — the state
+ * whose recovery line is "reload", advice that can never work because the
+ * reload re-sends the same segment forever.
+ *
+ * Both halves are asserted: no read is issued, and whatever state answers, it
+ * is not the one that means the database failed.
+ */
+describe("a queues address that is not a review-item id", () => {
+  // PINNED `it.fails` (strict) for admin-window/BUG-0076: green only while the
+  // divergence is live, so the fix turns it RED and is flipped back to a plain
+  // `it()` in the same commit — the convention admin-window/BUG-0013 used.
+  // Watched RED as a plain `it()` on run/admin-window @ 2bbe138, one half at a
+  // time: "expected [ { table: 'review_items', ... } ] to have a length of +0
+  // but got 1", and "expected [ 'error' ] to not include 'error'".
+  it.fails("does not report an address that can be no id as a failed database read", async () => {
+    const stub = stubClient({
+      // The script carries the error the database WOULD answer with. A page
+      // that decides the address first never gets that far.
+      [T.reviewItems]: { error: invalidUuidSyntax("walk-1") },
+    });
+    readWith.client = stub.asSupabaseClient();
+    const markup = render(
+      await ReviewItemPage({ params: Promise.resolve({ reviewItemId: "walk-1" }) }),
+    );
+
+    const states = cheerio
+      .load(markup)("[data-state]")
+      .toArray()
+      .map((element) => element.attribs["data-state"]);
+    expect(states, "the answer to a bad address is not a failed read").not.toContain("error");
+    expect(stub.calls, "a segment that can be no review_item_id needs no read").toHaveLength(0);
   });
 });

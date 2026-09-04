@@ -448,6 +448,170 @@ describe("a segment that is not a record id", () => {
   });
 });
 
+/**
+ * QA attack on the id gate — campaign admin-window/BUG-0068.
+ *
+ * The list above is the builder's. These are the segments it does not reach,
+ * and the other half of the same claim: the gate must refuse non-ids WITHOUT
+ * over-refusing an id the DATABASE itself accepts, because an id form Postgres
+ * would resolve is a row an operator can legitimately address.
+ *
+ * Postgres's uuid input takes (its documented alternative forms) the canonical
+ * spelling, upper case, every hyphen omitted, and a hyphen after ANY group of
+ * four hex digits. Each of those must still reach the writer verbatim: a gate
+ * that answered 404 for one of them would be this bug's mirror image — the
+ * route telling an operator "no record at this address" about a record that IS
+ * at that address.
+ */
+const MORE_NON_IDS: ReadonlyArray<readonly [string, string]> = [
+  ["braces around a real id (a form Postgres takes, a URL cannot)", `{${RECORD_ID}}`],
+  ["the same braces percent-encoded, as Next hands them over", `%7B${RECORD_ID}%7D`],
+  ["a percent-encoded hyphen", RECORD_ID.replace(/-/g, "%2D")],
+  ["Arabic-Indic digits", "٢f0bc11e-0000-4000-8000-00000000001"],
+  ["fullwidth digits", "２f0bc11e-0000-4000-8000-00000000001"],
+  ["a zero-width space inside an otherwise real id", `${RECORD_ID.slice(0, 20)}\u200B${RECORD_ID.slice(20)}`],
+  ["a NUL inside an otherwise real id", `${RECORD_ID.slice(0, 10)}\u0000${RECORD_ID.slice(11)}`],
+  ["a NUL after a real id", `${RECORD_ID}\u0000`],
+  ["a newline after a real id", `${RECORD_ID}\n`],
+  ["a carriage return after a real id", `${RECORD_ID}\r`],
+  ["a tab after a real id", `${RECORD_ID}\t`],
+  ["a leading hyphen", `-${RECORD_ID}`],
+  ["a trailing hyphen", `${RECORD_ID}-`],
+  ["a doubled hyphen", "2f0bc11e--0000-4000-8000-000000000001"],
+  ["a hyphen at a position Postgres does not allow (after seven digits)", "2f0bc11-e0000-4000-8000-000000000001"],
+  ["8000 characters", "a".repeat(8000)],
+  ["8000 hex characters", "0123".repeat(2000)],
+  ["8000 characters of hex groups and hyphens", "0123-".repeat(1600)],
+  ["a path traversal", "../../groups/00000000-0000-4000-8000-000000000000"],
+  ["a wildcard PostgREST would read as a pattern", "*"],
+  ["a PostgREST filter operator", "eq.2f0bc11e-0000-4000-8000-000000000001"],
+];
+
+/** Every id form Postgres's own uuid input accepts — none may be over-refused. */
+const POSTGRES_ID_FORMS: ReadonlyArray<readonly [string, string]> = [
+  ["canonical", RECORD_ID],
+  ["upper case", RECORD_ID.toUpperCase()],
+  ["every hyphen omitted", RECORD_ID.replace(/-/g, "")],
+  ["a hyphen after every group of four", "2f0b-c11e-0000-4000-8000-000000000001"],
+  ["hyphens after some groups of four", "2f0b-c11e00004000-8000000000000001"],
+  ["the nil uuid", "00000000-0000-0000-0000-000000000000"],
+  // A hyphen after the 28th digit is still "after a group of four", which
+  // Postgres takes and this route must therefore not refuse. Written here
+  // because QA first put it in the refusal list above and the suite said no.
+  ["a hyphen splitting the last group", "2f0bc11e-0000-4000-8000-00000000-0001"],
+];
+
+describe("the id gate, attacked (QA, admin-window/BUG-0068)", () => {
+  it("refuses every one of these segments 404 and attempts no database call", async () => {
+    for (const [what, id] of MORE_NON_IDS) {
+      const { status } = await patch("groups", { field: "bio", value: "x" }, id);
+      expect(status, what).toBe(404);
+      expect(updateRecordField, what).not.toHaveBeenCalled();
+      updateRecordField.mockReset();
+    }
+  });
+
+  it("says nothing the database said for any of them, and echoes no segment back", async () => {
+    for (const [what, id] of MORE_NON_IDS) {
+      const { text } = await patch("groups", { field: "bio", value: "x" }, id);
+      expect(text, what).not.toMatch(/22P02|invalid input syntax|uuid|postgres|pgrst/i);
+      expect(JSON.parse(text), what).toEqual({ error: "no groups record with that id" });
+      updateRecordField.mockReset();
+    }
+  });
+
+  it("answers a segment of 8000 characters promptly rather than backtracking on it", async () => {
+    // The grammar is fixed-width groups with optional separators, so a
+    // pathological input must not turn the refusal into work. The bound is
+    // loose on purpose: it catches a hang, it does not police speed.
+    const started = Date.now();
+    for (const id of ["a".repeat(8000), "0123".repeat(2000), "0123-".repeat(1600)]) {
+      const { status } = await patch("groups", { field: "bio", value: "x" }, id);
+      expect(status).toBe(404);
+      updateRecordField.mockReset();
+    }
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it("does not over-refuse an id form the database itself accepts", async () => {
+    for (const [what, id] of POSTGRES_ID_FORMS) {
+      const { status } = await patch("groups", { field: "bio", value: "x" }, id);
+      expect(status, what).toBe(200);
+      expect(updateRecordField, what).toHaveBeenCalledTimes(1);
+      expect(updateRecordField.mock.calls[0][1], what).toBe(id);
+      updateRecordField.mockReset();
+      updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+    }
+  });
+
+  it("gives the malformed miss and the well-formed miss the same body on every editable table", async () => {
+    // One sentence, one status, per table: a caller cannot learn from the
+    // answer whether the id it sent was even shaped like an id.
+    for (const [table, field] of [
+      ["groups", "bio"],
+      ["idols", "stage_name"],
+    ] as const) {
+      updateRecordField.mockResolvedValue({ kind: "ok", data: null });
+      const wellFormed = await patch(table, { field, value: "x" }, RECORD_ID);
+      expect(wellFormed.status, table).toBe(404);
+      expect(updateRecordField, table).toHaveBeenCalledTimes(1);
+      updateRecordField.mockReset();
+
+      const malformed = await patch(table, { field, value: "x" }, "walk-1");
+      expect(malformed.status, table).toBe(404);
+      expect(malformed.text, table).toBe(wellFormed.text);
+      expect(updateRecordField, table).not.toHaveBeenCalled();
+      updateRecordField.mockReset();
+      updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+    }
+  });
+
+  it("keeps the map's and the body parser's answers for these segments too", async () => {
+    // The ordering claim, driven with ids the builder's list does not carry:
+    // the gate added exactly one answer, it did not relabel the others.
+    const cases: ReadonlyArray<readonly [string, string, unknown, number]> = [
+      ["a".repeat(8000), "nosuchtable", { field: "name", value: "x" }, 404],
+      [`{${RECORD_ID}}`, "events", { field: "title", value: "x" }, 403],
+      ["٢f0b", "groups", { field: "spotify_id", value: "x" }, 403],
+      [`${RECORD_ID}\n`, "groups", { field: "bio" }, 400],
+      [`${RECORD_ID}\u0000`, "groups", "not json at all", 400],
+      ["*", "scraped_events", { field: "payload", value: "x" }, 404],
+    ];
+    for (const [id, table, body, status] of cases) {
+      const answer = await patch(table, body, id);
+      expect(answer.status, `${table} ${JSON.stringify(id).slice(0, 24)}`).toBe(status);
+      expect(updateRecordField, table).not.toHaveBeenCalled();
+      updateRecordField.mockReset();
+    }
+  });
+
+  it("makes exactly one database call for a well-formed id, whatever the writer answers", async () => {
+    // The other half of "no call for a malformed id": the route never retries,
+    // never double-writes, and never falls through to a second attempt.
+    for (const outcome of [
+      { kind: "ok", data: { id: RECORD_ID } },
+      { kind: "ok", data: null },
+      { kind: "error", message: "connection refused" },
+      { kind: "not_provisioned", missing: "groups" },
+    ]) {
+      updateRecordField.mockResolvedValue(outcome);
+      await patch("groups", { field: "bio", value: "x" }, RECORD_ID);
+      expect(updateRecordField, outcome.kind).toHaveBeenCalledTimes(1);
+      updateRecordField.mockReset();
+    }
+  });
+
+  it("refuses a malformed id the same way when the same request arrives twice at once", async () => {
+    const both = await Promise.all([
+      patch("groups", { field: "bio", value: "x" }, "walk-1"),
+      patch("groups", { field: "bio", value: "x" }, "walk-1"),
+    ]);
+    for (const answer of both) expect(answer.status).toBe(404);
+    expect(both[0].text).toBe(both[1].text);
+    expect(updateRecordField).not.toHaveBeenCalled();
+  });
+});
+
 /* ── what the route makes of each writer outcome ──────────────────────────── */
 
 describe("a write that really happened", () => {
