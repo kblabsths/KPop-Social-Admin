@@ -10,6 +10,7 @@ import {
   stubClient,
   tableNotInSchemaCache,
   type Script,
+  type StubClient,
 } from "../../fixtures/stub-client";
 
 /**
@@ -115,16 +116,32 @@ function defaultScript(table: string): Script {
   };
 }
 
+/**
+ * The stub the LAST `renderRecord` rendered against, so a test can ask what
+ * the page actually read — including the answer "nothing at all", which is
+ * what a request the page can settle without a database looks like from here
+ * (admin-window/BUG-0065).
+ */
+let lastStub: StubClient | null = null;
+
 async function renderRecord(
   table: string,
   script?: Script,
   id = IDS[table],
 ): Promise<string> {
   const { renderToStaticMarkup } = await import("react-dom/server");
-  readWith.client = stubClient(script ?? defaultScript(table)).asSupabaseClient();
+  const stub = stubClient(script ?? defaultScript(table));
+  lastStub = stub;
+  readWith.client = stub.asSupabaseClient();
   return renderToStaticMarkup(
     await RecordPage({ params: Promise.resolve({ table, id }) }),
   );
+}
+
+/** The tables the last render queried, in order. */
+function tablesRead(): string[] {
+  if (lastStub === null) throw new Error("nothing has been rendered yet");
+  return lastStub.tablesRead();
 }
 
 /**
@@ -418,10 +435,11 @@ describe("the states", () => {
    * A malformed id is a bad REQUEST, decidable without a database. Whatever
    * state answers it, it must not be the one that means "the database failed".
    */
-  // Strict xfail (admin-window/BUG-0065): `it.fails` passes only while the
-  // body throws, so the day a fix lands this test goes RED as an XPASS and
-  // sends the reader to the ticket. The fixing builder deletes `.fails`.
-  it.fails("does not report a mistyped id as a failed database read", async () => {
+  // Fixed in admin-window/BUG-0065; QA's strict `it.fails` marker removed with
+  // the fix, so this reddens if the failed-read state ever comes back. The
+  // script still carries the 22P02 the database WOULD answer with, and the
+  // page never gets that far.
+  it("does not report a mistyped id as a failed database read", async () => {
     const markup = await renderRecord(
       "groups",
       { ...defaultScript("groups"), groups: { error: invalidUuidSyntax("not-a-uuid") } },
@@ -432,6 +450,98 @@ describe("the states", () => {
     expect($("[data-state]").length).toBeGreaterThan(0);
     // ...and it is not the failed-read state.
     expect($('[data-state="error"]').length).toBe(0);
+  });
+
+  /**
+   * The three spellings QA measured against staging on a production build,
+   * 2026-09-03 (admin-window/BUG-0065): a segment that is no kind of uuid, a
+   * uuid one character short, and a uuid carrying a trailing space — which a
+   * browser sends as `%20` and Next hands the page decoded.
+   */
+  const MISTYPED_IDS = [
+    "not-a-uuid",
+    "00000000-0000-0000-0000-00000000000",
+    // The trailing space as the page really receives it: Next hands a dynamic
+    // segment over still percent-encoded (measured 2026-09-03 on a production
+    // build — `/records/groups/<id>%20` echoes `%20` back on screen), so the
+    // decoded spelling is here too and both answer the same way.
+    "00000000-0000-0000-0000-000000000000%20",
+    "00000000-0000-0000-0000-000000000000 ",
+    "%7B01920000-0000-7000-8000-0000000000a1%7D",
+  ];
+
+  /**
+   * Every spelling of a uuid Postgres itself accepts and a URL can carry
+   * (`string_to_uuid`): canonical, uppercased, and with the hyphens left out.
+   * Each names the SAME row, so the guard must NOT flag one — the second
+   * fixture every guard owes (ARCHITECTURE §10 / LESSONS 3), and the failure
+   * it protects against is telling an operator that a working id is not an id.
+   * All three were driven against staging on a production build, 2026-09-03,
+   * and each rendered the same 11-field `groups` record.
+   *
+   * A BRACED uuid is Postgres-legal and absent on purpose: a dynamic segment
+   * reaches the page still percent-encoded, so `{id}` arrives as `%7Bid%7D`
+   * and is not an id by anyone's grammar (`RECORD_ID`, lib/db/records.ts).
+   */
+  const WELL_FORMED_IDS = [
+    "01920000-0000-7000-8000-0000000000a1",
+    "01920000-0000-7000-8000-0000000000A1",
+    "019200000000700080000000000000a1",
+  ];
+
+  it.each(MISTYPED_IDS)(
+    "answers %o without reading anything, on every table the map carries",
+    async (id) => {
+      for (const table of EDITABLE_TABLES) {
+        const markup = await renderRecord(table, defaultScript(table), id);
+        const $ = cheerio.load(markup);
+        // No query was issued: a malformed id is decided from the request.
+        expect(tablesRead(), `${table} read for ${JSON.stringify(id)}`).toEqual([]);
+        // It is answered, and not as a failure of a database never asked.
+        expect($("[data-state]").length, table).toBeGreaterThan(0);
+        expect($('[data-state="error"]').length, table).toBe(0);
+        // ONE answer, not one per read leg — the resolver-owned pair reported
+        // the same refusal twice before this fix.
+        expect($("[data-state]").length, `${table} state cards`).toBe(1);
+        // The operator still sees the address they asked for.
+        expect(markup, table).toContain(id.trim());
+      }
+    },
+  );
+
+  it.each(MISTYPED_IDS)(
+    "does not answer %o with the unknown-id state, in either regime",
+    async (id) => {
+      for (const table of ["groups", "events"]) {
+        const mistyped = await renderRecord(table, defaultScript(table), id);
+        const unknown = await renderRecord(table, missingRowScript(table));
+        // Both states are a single card, and they are different cards: a
+        // mistyped id is not "the table answered and holds no such row".
+        expect(emptyText(mistyped), table).not.toBe(emptyText(unknown));
+      }
+    },
+  );
+
+  it.each(WELL_FORMED_IDS)(
+    "still reads the database for %o, an id Postgres accepts",
+    async (id) => {
+      for (const table of EDITABLE_TABLES) {
+        const markup = await renderRecord(table, defaultScript(table), id);
+        expect(tablesRead(), `${table} read for ${id}`).toContain(table);
+        // ...and what came back is rendered as a record, not as any state card.
+        expect(cheerio.load(markup)("[data-state]").length, table).toBe(0);
+      }
+    },
+  );
+
+  it("leaves the unknown-id state to a well-formed id that matches no row", async () => {
+    for (const table of EDITABLE_TABLES) {
+      const markup = await renderRecord(table, missingRowScript(table));
+      // The read happened, and its answer — not the request — is what emptied
+      // the surface (admin-window/BUG-0052, unchanged by BUG-0065).
+      expect(tablesRead(), table).toContain(table);
+      expect(cheerio.load(markup)('[data-state="empty"]').length, table).toBe(1);
+    }
   });
 
   it("says something different on each side of the cutover, from one map", async () => {
