@@ -27,9 +27,11 @@ import {
   countRows,
   exactCount,
   gradeSurface,
+  oneEach,
   pageStates,
   readNumber,
   stateOf,
+  surfaceHooks,
   whileStill,
 } from "../live/parity";
 import { codeLines, repoRoot } from "./source-tree";
@@ -1233,5 +1235,127 @@ describe("QA: whileStill, attacked", () => {
       4,
     );
     expect(outcome.held).toEqual({ rows: 9 });
+  });
+});
+
+describe("QA: surfaceHooks, attacked", () => {
+  /**
+   * The helper ten files lean on, pinned HERE rather than only through them
+   * (campaign admin-window, DEBT-0002).
+   *
+   * `surfaceHooks` is the precondition every live oracle asserts before it
+   * grades anything, and each of the five page twins states its expectation as
+   * `oneEach(HOOKS)`. That shape is self-fulfilling: measured 2026-09-03, a
+   * `surfaceHooks` stubbed to return `{counts: oneEach(hooks), nested: []}`
+   * unconditionally left 54 of 56 offline files GREEN — every `oneEach`
+   * assertion passed against a helper that never counted, and the only two
+   * failures were the tests that happen to expect a ZERO (the standing tab's
+   * absent bucket table, and the review item that has no row). The helper's
+   * own three behaviours therefore need saying somewhere that does not use
+   * `oneEach` to say them.
+   */
+  const surface = (name: string, inner = "") =>
+    `<section data-surface="${name}">${inner}</section>`;
+  const HOOK = (name: string) => `[data-surface="${name}"]`;
+
+  it("counts a duplicated name as more than one — the failure it exists to catch", () => {
+    // BUG-0040's shape: a later ticket wraps a window and a second element
+    // ends up answering to a name that already had an owner.
+    const markup = `<main>${surface("runs")}${surface("runs")}${surface("cycles")}</main>`;
+    expect(surfaceHooks(markup, [HOOK("runs"), HOOK("cycles")]).counts).toEqual({
+      [HOOK("runs")]: 2,
+      [HOOK("cycles")]: 1,
+    });
+  });
+
+  it("counts a hook nothing answers to as zero, never as one", () => {
+    const markup = `<main>${surface("cycles")}</main>`;
+    expect(surfaceHooks(markup, [HOOK("runs"), HOOK("cycles")]).counts).toEqual({
+      [HOOK("runs")]: 0,
+      [HOOK("cycles")]: 1,
+    });
+  });
+
+  it("reports one named surface swallowing another, and stays silent for siblings", () => {
+    // A hook can be unique and still wrong: a surface holding its neighbour
+    // grades the neighbour's state cards as its own.
+    const siblings = `<main>${surface("what_happened")}${surface("evidence")}</main>`;
+    expect(surfaceHooks(siblings, [HOOK("what_happened"), HOOK("evidence")]).nested).toEqual(
+      [],
+    );
+
+    const swallowed = `<main>${surface("what_happened", surface("evidence"))}</main>`;
+    const report = surfaceHooks(swallowed, [HOOK("what_happened"), HOOK("evidence")]);
+    // Still one element each — the counts alone would call this healthy.
+    expect(report.counts).toEqual({ [HOOK("what_happened")]: 1, [HOOK("evidence")]: 1 });
+    expect(report.nested).toEqual([`${HOOK("what_happened")} contains ${HOOK("evidence")}`]);
+  });
+
+  it("names the containment in one direction only, so the report says which swallowed which", () => {
+    const markup = `<main>${surface("a", surface("b"))}</main>`;
+    expect(surfaceHooks(markup, [HOOK("a"), HOOK("b")]).nested).toHaveLength(1);
+  });
+
+  it("asks nothing of a page when given no hooks", () => {
+    expect(surfaceHooks("<main></main>", [])).toEqual({ counts: {}, nested: [] });
+  });
+
+  it("oneEach states the expectation for exactly the hooks it was given", () => {
+    expect(oneEach([HOOK("a"), HOOK("b")])).toEqual({ [HOOK("a")]: 1, [HOOK("b")]: 1 });
+    expect(oneEach([])).toEqual({});
+  });
+});
+
+describe("QA: no live oracle addresses a surface by position", () => {
+  /**
+   * The ratchet, resident in the SUITE (campaign admin-window, DEBT-0002).
+   *
+   * DEBT-0002 replaced twelve positional selectors across five live oracles
+   * with `data-surface` names, and proved it with a grep run once, as that
+   * ticket's own check. A check written in a ticket stops running the day the
+   * ticket closes — and this class has already shipped twice on this branch
+   * (admin-window/BUG-0056 on `/cycles`, DEBT-0002 on five more files). The
+   * page twins pin that each page's hooks EXIST and are unique; nothing until
+   * this case stopped the next oracle from addressing a surface by position
+   * all over again.
+   *
+   * Broader than that ticket's grep on purpose: it looked for `nth-of-type`
+   * alone, so `[data-surface="evidence"] > :nth-child(2)` — half of the exact
+   * spelling DEBT-0002 removed from `review-item.live.test.ts` — would have
+   * walked straight past it.
+   *
+   * What is banned is a selector that moves when the page is REARRANGED: the
+   * positional pseudo-classes. Structural descent (`[data-pair] > div > div`)
+   * and negation (`section:not([data-queue] section)`) are not positions and
+   * are not this rule's business.
+   */
+  const POSITIONAL =
+    /:(?:nth-of-type|nth-last-of-type|nth-child|nth-last-child|first-of-type|last-of-type|first-child|last-child|only-of-type|only-child)\b/;
+
+  const LIVE_DIR = "tests/live";
+
+  const liveFiles = fs
+    .readdirSync(path.join(repoRoot, LIVE_DIR))
+    .filter((name) => name.endsWith(".ts"))
+    .sort()
+    .map((name) => `${LIVE_DIR}/${name}`);
+
+  it("reads a live directory that actually holds the oracles", () => {
+    // Guards the rule below against a silent vacuous pass if the directory
+    // moves: a rule that scans nothing reports nothing wrong.
+    expect(liveFiles.length).toBeGreaterThan(5);
+    expect(liveFiles).toContain(`${LIVE_DIR}/parity.ts`);
+  });
+
+  it("carries no positional selector in any live file's code", () => {
+    const offences: string[] = [];
+    for (const file of liveFiles) {
+      codeLines(file).forEach((line) => {
+        if (POSITIONAL.test(line)) offences.push(`${file}: ${line.trim()}`);
+      });
+    }
+    // Comment lines are excluded by `codeLines`, so the JSDoc in each oracle
+    // may keep naming the spelling it replaced.
+    expect(offences).toEqual([]);
   });
 });
