@@ -19,6 +19,7 @@ import {
   permissionDenied,
   stubClient,
   tableNotInSchemaCache,
+  transportFailure,
   type Script,
 } from "../../fixtures/stub-client";
 import { oneEach, stateOf, surfaceHooks } from "../../live/parity";
@@ -740,6 +741,57 @@ describe("each shape gets its own view", () => {
     const item = reviewItemDataConflict();
     const markup = await renderItem(conflictScript(), item.review_item_id);
     expect(cheerio.load(markup)("[data-dial]")).toHaveLength(0);
+  });
+
+  /**
+   * The dial's window line, by the rule every other window on the app is
+   * graded by (ARCHITECTURE.md §4.3): the line follows the READ, so its
+   * absence means "this read did not happen" and never "this read found
+   * nothing".
+   *
+   * It is graded HERE and not in `tests/offline/absence/pages.test.ts` for the
+   * reason that file's `WINDOWED` comment gives: the dial renders only for a
+   * source-pattern item and that file's populated fixture builds a fact item,
+   * so its two legs cannot reach this surface. The dial published no
+   * `data-window` hook at all before admin-window/DEBT-0006 and no test read
+   * it after, which is the state `/queues` was in when DEBT-0006 was filed
+   * (qa-DEBT-0006, 2026-09-04).
+   */
+  it("states the dial's window on a read that happened, and on no other state", async () => {
+    const item = reviewItemSourcePattern();
+
+    const healthy = cheerio.load(await renderItem(patternScript(), item.review_item_id));
+    const line = healthy('[data-dial] [data-window="awaiting_row"]');
+    expect(line, "the dial published no window line on a healthy read").toHaveLength(1);
+    // A SCAN: bounded in rows and in time, so it states all five facts.
+    for (const hook of [
+      "data-window-since",
+      "data-window-until",
+      "data-window-limit",
+      "data-window-held",
+      "data-window-truncated",
+    ]) {
+      expect(line.attr(hook), `the dial's window published no ${hook}`).toBeDefined();
+    }
+
+    // The trend read refused, both ways. A window line here would describe a
+    // table the page could not read, and `truncated="false"` would be a
+    // confident boolean about a read that returned nothing.
+    for (const [state, response] of [
+      ["not provisioned", { error: tableNotInSchemaCache(T.observations) }],
+      ["failed", { error: transportFailure() }],
+    ] as const) {
+      const refused = cheerio.load(
+        await renderItem(
+          patternScript({ [T.observations]: [{ data: [CLAIM_B] }, response] }),
+          item.review_item_id,
+        ),
+      );
+      expect(
+        refused("[data-window]"),
+        `the dial still stated a window over a trend read that ${state}`,
+      ).toHaveLength(0);
+    }
   });
 });
 
