@@ -10180,3 +10180,46 @@
 2026-09-04T08:30:17Z	agent	-	-	-	-
 # STRANDED	2026-09-04T08:30:37Z	qa-adversary	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/DEBT-0006.json, agenticflow/visions/admin-window/tracker/tickets/DEBT-0004.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0006.md
 2026-09-04T08:30:37Z	qa-adversary	DEBT-0006	25421	790	148276
+# STRANDED	2026-09-04T08:30:48Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:30:48Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:31:20Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:31:20Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:31:51Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:31:51Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:32:22Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:32:22Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:32:54Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:32:54Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:33:25Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:33:25Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:33:57Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:33:57Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:34:29Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:34:29Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:35:00Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:35:00Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:35:32Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:35:32Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:36:03Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:36:03Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:36:35Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:36:35Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:37:37Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:37:37Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:38:08Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:38:08Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:38:40Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:38:40Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:39:12Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:39:12Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:39:43Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:39:43Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:40:15Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:40:15Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:41:17Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:41:17Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:41:48Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T08:41:48Z	agent	-	-	-	-
+# STRANDED	2026-09-04T08:42:02Z	builder	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/DEBT-0004.md
+2026-09-04T08:42:02Z	builder	DEBT-0004	36239	1487	256219
+2026-09-04T08:42:23Z	qa-adversary	DEBT-0004	spawned
