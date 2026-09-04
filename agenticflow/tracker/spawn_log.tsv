@@ -8198,3 +8198,25 @@
 2026-09-04T03:35:19Z	agent	-	-	-	-
 # STRANDED	2026-09-04T03:35:42Z	qa-adversary	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0046.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0046.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0036.md
 2026-09-04T03:35:42Z	qa-adversary	BUG-0046	21785	780	116432
+# STRANDED	2026-09-04T03:36:04Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T03:36:04Z	agent	-	-	-	-
+# STRANDED	2026-09-04T03:36:40Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T03:36:40Z	agent	-	-	-	-
+# STRANDED	2026-09-04T03:37:11Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T03:37:11Z	agent	-	-	-	-
+# STRANDED	2026-09-04T03:37:46Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T03:37:46Z	agent	-	-	-	-
+# STRANDED	2026-09-04T03:38:17Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T03:38:17Z	agent	-	-	-	-
+# STRANDED	2026-09-04T03:38:48Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T03:38:48Z	agent	-	-	-	-
+# STRANDED	2026-09-04T03:39:20Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T03:39:20Z	agent	-	-	-	-
+# STRANDED	2026-09-04T03:39:53Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T03:39:53Z	agent	-	-	-	-
+# STRANDED	2026-09-04T03:40:25Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T03:40:25Z	agent	-	-	-	-
+# STRANDED	2026-09-04T03:40:54Z	builder	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0036.md
+2026-09-04T03:40:54Z	builder	TASK-0036	32270	1103	170332
+2026-09-04T03:41:17Z	builder	BUG-0047	spawned
+2026-09-04T03:41:31Z	qa-adversary	TASK-0036	spawned

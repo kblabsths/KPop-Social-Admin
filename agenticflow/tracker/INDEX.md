@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-04T03:35:48Z — do not edit)
+# Tracker index (regenerated 2026-09-04T03:41:01Z — do not edit)
 
 ## open
 - BUG-0047 [P3][bug][M1] Browse: 'Starts (UTC)' states the zone in the header and again in all 50 cells, wrapping every row  (scope:src/lib/format.ts,src/components/browse/browse-table.tsx,tests/offline/format.test.ts,tests/offline/browse/page.test.ts from:M1-endgame-designer-walk)
@@ -14,7 +14,7 @@
 - DEBT-0004 [P3][debt][M1] /cycles and /sources carry their own presentation: 1,291- and 793-line pages, no components module, while every other page has one  (deps:DEBT-0003(unmet:1) scope:src/components/cycles,src/components/sources,src/app/cycles/page.tsx,src/app/sources/page.tsx,tests/offline/cycles/page.test.ts,tests/offline/sources/page.test.ts from:M1-endgame-structure-walk)
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:1) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
-## claimed
+## built
 - TASK-0036 [P2][task][patch] Reset the walk sandbox between walks: the seed fixture, the reset tool, and the walk recipe  (deps:TASK-0034,TASK-0035 scope:tests/walk,tests/offline/walk,tests/live/staging-target.ts,tests/offline/live-guard.test.ts,tsconfig.json,agenticflow/docs/vision/STACK.md @builder-96 from:inbox:2026-09-03-walker-sandbox-table.md)
 
-Totals — claimed:1, done:108, open:12. Archived: 0.
+Totals — built:1, done:108, open:12. Archived: 0.
