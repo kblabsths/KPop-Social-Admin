@@ -149,7 +149,10 @@ describe("the map", () => {
     // that is not a column of the table is one red test away, not one
     // production page away.
     const SANDBOX_COLUMNS: Readonly<Record<string, string>> = {
-      sandbox_id: "text",
+      // uuid, not text: the architect's key ruling (2026-09-04, §9.1 item 9)
+      // is exactly this column's type, and the DDL Ben pastes spells it
+      // `sandbox_id uuid` (QA, admin-window/TASK-0035).
+      sandbox_id: "uuid",
       label: "text",
       note: "text",
       tally: "integer",

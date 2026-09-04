@@ -1,9 +1,10 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
-import { NAV_ITEMS } from "@/components/shell/nav-items";
+import { NAV_ITEMS, isNavItemActive } from "@/components/shell/nav-items";
 import { EDITABLE_TABLES, EDIT_CONFIG } from "@/lib/edit/config";
 import { T } from "@/lib/db/tables";
-import { EM_DASH } from "@/lib/format";
+import { EM_DASH, isAbsent } from "@/lib/format";
+import { isRecordId } from "@/lib/db/records";
 import {
   invalidUuidSyntax,
   permissionDenied,
@@ -232,7 +233,21 @@ describe("the id fixture", () => {
       expect(IDS[table], table).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
       );
+      // ...and the grammar that matters is the PAGE's own gate, not the
+      // canonical spelling above: `isRecordId` is what every render below
+      // passes through before a read is issued (`lib/db/records.ts`), and it
+      // is the exact predicate the sandbox's key ruling turned on (architect,
+      // 2026-09-04, §9.1 item 9 — `walk-1` failed it, so neither state the
+      // sandbox owes was reachable at its own address). Asserting the regex
+      // alone would leave the loops passing against a fixture the page
+      // refuses, which is the vacuity this describe exists to prevent
+      // (QA, admin-window/TASK-0035).
+      expect(isRecordId(IDS[table]), `${table}'s address is one the record page refuses before it reads`).toBe(true);
     }
+    // The negative fixture, and the measured one: `walk-1` — the sandbox's
+    // key before the ruling — is what this gate refuses, which is why the
+    // assertion above is not vacuous.
+    expect(isRecordId("walk-1")).toBe(false);
   });
 });
 
@@ -644,6 +659,22 @@ describe("the states", () => {
 describe("the walk sandbox", () => {
   const SANDBOX = "walk_sandbox";
 
+  it("is reachable at its own address and from no other surface", async () => {
+    // "One entry in the one map, and nothing else": the sandbox is a staging
+    // fixture an operator must never trip over, so the window's navigation
+    // must lead nowhere near it while `/records/walk_sandbox/<uuid>` still
+    // answers. Both halves, because either alone is passable
+    // (QA, admin-window/TASK-0035).
+    expect(NAV_ITEMS.length, "a nav with no items proves nothing").toBeGreaterThan(0);
+    for (const item of NAV_ITEMS) {
+      expect(item.href, item.label).not.toContain(SANDBOX);
+      expect(isNavItemActive(`/records/${SANDBOX}/${IDS[SANDBOX]}`, item.href), item.label).toBe(false);
+    }
+    const markup = await renderRecord(SANDBOX);
+    expect([...markup.matchAll(/<h1[\s>]/g)].length).toBe(1);
+    expect(markup).toContain(SANDBOX);
+  });
+
   it("renders the not-provisioned card naming it where the table is absent", async () => {
     const markup = await renderRecord(SANDBOX, {
       [SANDBOX]: { error: tableNotInSchemaCache(T.walkSandbox) },
@@ -669,6 +700,59 @@ describe("the walk sandbox", () => {
     }
     expect(lineFor(markup, config.pk).editable).toBe(false);
     expect(markup).toContain(IDS[SANDBOX]);
+  });
+
+  it("draws a false boolean and a zero as their own values, never as the absence", async () => {
+    // The seam this entry opens: `walk_sandbox` puts the map's FIRST boolean
+    // column (`is_flagged`) and its first zero-defaulted integer (`tally`) on
+    // the edit surface — no catalog table has either. Both are values, and the
+    // surface must say so: the app's own absence predicate calls a raw boolean
+    // an absence outright (asserted below, so this is not a straw man), so a
+    // line that reached the cell without `scalarText` would draw the em dash
+    // over `false` and tell an operator the column is empty when the database
+    // holds `false`. `0` is the same trap one falsy step away
+    // (QA, admin-window/TASK-0035).
+    expect(isAbsent(false), "the app's absence predicate treats a raw boolean as an absence").toBe(true);
+    const markup = await renderRecord(SANDBOX, {
+      [SANDBOX]: {
+        data: {
+          sandbox_id: IDS[SANDBOX],
+          label: "First sandbox row",
+          note: "a note",
+          tally: 0,
+          is_flagged: false,
+          observed_on: "2026-01-15",
+        },
+      },
+    });
+    for (const [column, shown] of [
+      ["is_flagged", "false"],
+      ["tally", "0"],
+    ] as const) {
+      const line = lineFor(markup, column);
+      expect(line.value, column).toBe(shown);
+      expect(line.value, column).not.toContain(EM_DASH);
+      // ...and it is still the editable cell: a value the surface can draw is
+      // a value a walker can rewrite.
+      expect(line.editable, column).toBe(true);
+    }
+    // The other fixture, so the pair above cannot pass vacuously: the em dash
+    // is what a column that really is empty draws, on this same line.
+    const cleared = await renderRecord(SANDBOX, {
+      [SANDBOX]: {
+        data: {
+          sandbox_id: IDS[SANDBOX],
+          label: "First sandbox row",
+          note: "a note",
+          tally: null,
+          is_flagged: null,
+          observed_on: "2026-01-15",
+        },
+      },
+    });
+    for (const column of ["is_flagged", "tally"]) {
+      expect(lineFor(cleared, column).value, column).toContain(EM_DASH);
+    }
   });
 
   it("leaves an unset nullable column as the absence, still editable", async () => {
