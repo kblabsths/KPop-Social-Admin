@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-04T01:21:43Z — do not edit)
+# Tracker index (regenerated 2026-09-04T01:28:17Z — do not edit)
 
 ## open
 - BUG-0063 [P2][bug][M1] Claims: the window line renders a count it never took — data-window-held="0" on a failed read  (scope:src/app/claims/page.tsx,tests/offline/claims/page.test.ts from:qa:BUG-0041)
@@ -17,7 +17,7 @@
 - DEBT-0004 [P3][debt][M1] /cycles and /sources carry their own presentation: 1,291- and 793-line pages, no components module, while every other page has one  (deps:DEBT-0003(unmet:1) scope:src/components/cycles,src/components/sources,src/app/cycles/page.tsx,src/app/sources/page.tsx,tests/offline/cycles/page.test.ts,tests/offline/sources/page.test.ts from:M1-endgame-structure-walk)
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:1) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
-## claimed
+## built
 - BUG-0060 [P2][bug][M1] Edit cell shows no way to save: no control, no hint, Enter is undocumented, and blur silently discards what was typed  (scope:src/components/records/field-editor.tsx,src/app/records/[table]/[id]/page.tsx,tests/offline/records/page.test.ts,tests/offline/records/submit.test.ts @builder-87 from:M1-endgame-verifier)
 
-Totals — claimed:1, done:100, open:15. Archived: 0.
+Totals — built:1, done:100, open:15. Archived: 0.
