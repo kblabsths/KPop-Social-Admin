@@ -339,6 +339,20 @@ user-visible path; a null count is a refusal, never a zero. The same rule is
 why the complete read refuses a null count instead of returning the rows it
 happens to hold.
 
+> **A window line states a read that HAPPENED, and an empty window is still a
+> window** (promoted 2026-09-04, third instance of the class: BUG-0063 on
+> `/claims`, BUG-0067 on `/cycles`, BUG-0070 on `/claims` again). A surface
+> publishes its `data-window` hook and the sentence around it when, and only
+> when, the read it describes RETURNED — `ok` with rows, or `ok` with none. A
+> refused, absent or unmade read publishes no line and no count. That is what
+> makes the absence of the line mean one thing on every surface ("this read did
+> not happen") and `data-window-held="0"` mean one thing ("it happened and found
+> nothing") — and it is what lets a live oracle grade the empty case at all,
+> instead of reading an honest empty page as a failure. An `Empty` card and a
+> window line stand TOGETHER: the card says what would fill the surface, the
+> line says where the app looked. The rule is graded once for every surface at
+> once, in `tests/offline/absence/pages.test.ts`, never per page.
+
 Paging is not the answer to a cap and none is built: nothing in the spec asks
 for it, and complete-or-refuse means there is never a partial page to
 continue. When a table genuinely outgrows `ROW_CAP` the app says so with the
@@ -667,7 +681,7 @@ answered by PostgREST on the way in:
 
 ```sql
 create table if not exists public.walk_sandbox (
-  sandbox_id  text primary key,               -- deterministic key: walk-1, walk-2, walk-3
+  sandbox_id  uuid primary key,               -- uuid, like every mapped table (item 9)
   label       text not null,                  -- text
   note        text,                           -- nullable text: the em-dash absence, then fill it
   tally       integer not null default 0,     -- integer coercion
@@ -677,7 +691,12 @@ create table if not exists public.walk_sandbox (
 );
 ```
 
-Deterministic keys so a recipe deep-links without a lookup: `/records/walk_sandbox/walk-1`.
+Deterministic keys so a recipe deep-links without a lookup, and **uuids**
+because the id gate is one grammar for the whole map (item 9):
+`00000000-0000-4000-8000-000000000001`, `…0002`, `…0003`, seeded literally, so
+the walk URL is `/records/walk_sandbox/00000000-0000-4000-8000-000000000001`.
+Zeros to the last digit on purpose — a value nothing generates, so a row of it
+in a residue sweep or a database console is unmistakably the fixture.
 `created_at` is deliberately outside the map — the read selects `mappedColumns`
 explicitly, so a column the map does not name is never read and never drawn, and
 it is `created_at` rather than `updated_at` because nothing updates it and a
@@ -758,6 +777,36 @@ reachable only by an agent typing a URL it already knows, and the load-bearing
 half — this table is not here, and here is its name — is true. Do not add a
 per-table branch for it. If the sandbox ever becomes reachable from a link, that
 line becomes a per-entry field and this is the sentence to revisit.
+
+**9. Its primary key is a `uuid`, because the id gate is ONE grammar for the
+whole map** (ruled 2026-09-04, from builder-93's measurement on TASK-0035; this
+paragraph replaced the `text` key the first draft of this section carried).
+`isRecordId` (`src/lib/db/records.ts`, admin-window/BUG-0065) refuses a segment
+that is not a uuid BEFORE any read, on the premise its docstring states —
+"every table in the map is keyed by a uuid". Text keys made that premise false
+the moment the sandbox entered the map: at `/records/walk_sandbox/walk-1` the
+page issued no query at all and rendered the not-an-id empty state, so **neither
+state this section requires was reachable at the sandbox's own keys** — the
+absent table drew the wrong card, and a seeded table would never have been read.
+
+The invariant that decides it: **the gate never refuses an id the table could
+hold.** Two ways to keep it, and the cheap one wins. *Rejected*: a per-table key
+shape in the edit config (`idShape: "uuid" | "text"`, consumed by the gate). It
+is a second allowlist about the same columns (§9's own rule), it widens
+`TableEditConfig` and changes `isRecordId`'s signature at every call site for
+one staging fixture, and it degenerates for a text table to "accept anything" —
+paying a config field to buy back exactly nothing. *Chosen*: the sandbox is
+uuid-keyed, which costs one word in a DDL Ben has not pasted yet and leaves
+`src/` untouched by the entire sandbox chain, entry aside. The legibility of
+`walk-1` was the only thing given up, and a constant uuid in the recipe is
+copied, not remembered.
+
+**The door left open, and it is `isRecordId`'s own**: if a catalog table keyed
+by something other than a uuid ever enters the map, that one function learns it
+— by grammar if the shapes are distinguishable, by config if they are not. What
+must not happen is a table entering the map whose real ids the gate refuses; the
+map's entry and the gate's grammar are two halves of one claim, and this is the
+sentence to revisit when they stop agreeing.
 
 **8. One consequence for the live suite.** `residue.live.test.ts` reads every
 mapped table with `select("*")`; against a staging project where Ben has not yet
@@ -1016,6 +1065,8 @@ decomposition brief of every ticket touching that surface.
 | 8 | **A live oracle addressing a surface by POSITION (`section:nth-of-type(n)`)** | 6 | `tests/live/cycles.live.test.ts:61` died the moment BUG-0040 added a section above it (`section:nth-of-type(1) matches 2 surfaces`); the same spelling stands in five more live files, filed as DEBT-0002 | **Promoted to a rule 2026-09-03** — §10: a live oracle names its surface with the `data-surface` attribute the page carries, never with a position. Position makes an oracle a hostage of layout: every page ticket becomes a live-test ticket, and the failure arrives as a walker's bug rather than as the builder's own check. BUG-0056 fixed `/cycles` only; DEBT-0002 owns the other five. |
 | 9 | **A page helper hand-copied into every page that needs it** | 4 | `StateOf` stands byte-for-byte, comment included, in `cycles`, `sources`, `claims` and `queues/[reviewItemId]` — and it is what renders the `data-not-provisioned` / `data-read-failed` hooks the live oracles read, so four copies is four chances for the oracle contract to drift. Also `WindowLine` ×3, `RETRY` ×4, `ARRIVES_WITH` ×8 | **Promoted to a rule 2026-09-03** — §13.7 (decomposition): a helper two pages will need is seeded as its own ticket BEFORE them, because builders in isolated worktrees cannot see each other's code. Existing copies: DEBT-0003. |
 | 10 | **A page's presentation living in `app/` because it has no component module** | 2 | `src/app/cycles/page.tsx` is 1,291 lines with 8 local components; `src/app/sources/page.tsx` is 793 with 6. Every other page has a `src/components/<page>/` directory and its page is 85–300 code lines | **Promoted to a rule 2026-09-03** — §13.6: a new page ships with its own `src/components/<page>/` module. §5's division (page reads and shapes, components render) was never wrong; nothing said where the components go, so two pages grew them inline. DEBT-0004 extracts the existing two. |
+| 11 | **A window line that disagrees with its own read — stated over a read that never happened, or dropped on a read that happened and found nothing** | 3 | BUG-0063 (`/claims` published `data-window-held="0"` over a refused read); BUG-0067 (`/cycles`, the same shape on two hooks); BUG-0070 (`/claims` drops the whole line on an ok-but-empty read, where six other hooks on two routes keep theirs — measured 2026-09-04) | **Promoted to a rule 2026-09-04** — §4.3: a window line states a read that happened, and an empty window is still a window. The first two were fixed one surface at a time and pinned only in their own page suites, which is how the third arrived under a test whose docstring claims to grade the rule; BUG-0070 generalises `tests/offline/absence/pages.test.ts` so the next surface inherits the rule rather than a comment about it. Cited in the brief of every ticket that renders a windowed surface. |
+
 | 3 (re-count) | A list read with no `.range()`, no `.limit()` and no `.order()` | **0 new** | — | **The rule held.** M1 structure walk, 2026-09-03: every `.select(` in `src/lib/db/**` was traced. Fourteen chains a crude scan flagged are all either `.maybeSingle()` by primary key or by-id chunks bounded with `.limit(ids.length)`; every list read goes through `readComplete` / `readRows` with a total order and a bound. Count stays 1 (the original, fixed under TASK-0026). |
 
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
@@ -1025,6 +1076,23 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-04, key-shape ruling + residual pass (architect).**
+  **§9.1 item 9 (new)** — the walk sandbox is uuid-keyed. Text keys made
+  `isRecordId`'s stated premise false and left both of the sandbox's required
+  states unreachable at its own keys; the invariant kept is that the gate never
+  refuses an id the table could hold, and the rejected alternative (a per-table
+  `idShape` in the edit config) is written down with its cost. The DDL in
+  `agenticflow/tracker/for-human/TASK-0034.md` changed with it, before Ben
+  pasted anything.
+  **§4.3** — the window-line rule promoted: a window line states a read that
+  happened, and an empty window is still a window (violation class 11, third
+  instance; BUG-0070 filed to fix `/claims` and to generalise the one test that
+  grades the rule).
+  Filed the same pass: BUG-0068 (the PATCH route makes the page's own id
+  decision), BUG-0069 (focus is never returned when an edit ends), both from QA
+  residuals that had no ticket. Doors closed are in
+  `agenticflow/docs/DECISIONS.md`, same date.
 
 - **2026-09-03, M1 endgame: root-cause pass + structure walk (architect).**
   Six recurring bug classes written whole into `agenticflow/docs/LESSONS.md`

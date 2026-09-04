@@ -743,3 +743,63 @@ that command at exit 0, six live tests, in
 the guard refuses non-zero naming the missing name — so the failure mode of this
 rule is a loud false RED, never a silent green. That asymmetry is what makes it
 safe to require.
+
+## 2026-09-04 — the walk sandbox is uuid-keyed: one id grammar for the whole map
+
+TASK-0035 filed the sandbox's `EDIT_CONFIG` entry against §9.1's `text` keys
+(`walk-1`, `walk-2`, `walk-3`) and its builder measured what those keys actually
+render: at `/records/walk_sandbox/walk-1` the page issues **no query at all** and
+draws the "that is not an id" empty state. `isRecordId`
+(`src/lib/db/records.ts`, BUG-0065) gates every record page before any read, on
+the premise its own docstring states — every table in the map is keyed by a uuid
+— and a text-keyed table made that premise false. Both of the states §9.1
+requires were therefore unreachable at the sandbox's own keys: absent, the wrong
+card; present, never read.
+
+The invariant that decided it: **the gate never refuses an id the table could
+hold.** *Rejected*: a per-table key shape in the edit config (`idShape:
+"uuid" | "text"`, consumed by the gate). It is a second allowlist about the same
+columns, it widens `TableEditConfig` and changes `isRecordId`'s signature at
+every call site, and for a text-keyed table it degenerates to "accept anything"
+— a config field bought for no refusal it could ever make. *Chosen*: the sandbox
+is keyed by `uuid`, seeded as `00000000-0000-4000-8000-00000000000{1,2,3}`. Ben
+had not pasted the DDL, so the cost was one word in a paste-ready note and two
+strings in TASK-0036's fixture; the whole sandbox chain still changes nothing in
+`src/` beyond the one map entry, which was §9.1's point.
+
+The door this closes: a table may enter `EDIT_CONFIG` only if its real ids
+satisfy `isRecordId`. The door left open is that function's own — if a catalog
+table keyed by something else ever arrives, `isRecordId` learns it there, by
+grammar if the shapes are distinguishable and by config only if they are not.
+What must never happen again is a map entry and an id gate disagreeing about
+what an id is, because the failure is silent: a page that renders a plausible
+empty state having asked the database nothing.
+
+## 2026-09-04 — a window line states a read that happened; an empty window keeps its line
+
+Two suites pinned two readings of the same rule.
+`tests/offline/absence/pages.test.ts` says the rule is "a page that could not
+read its table publishes no window hook for it; an EMPTY window is still a
+window the page looked in, and keeps its line" — and grades the second half on
+`/cycles` alone. `/claims` renders the `Empty` card and returns before its
+window line, with a comment stating the opposite reading as fact. Measured
+2026-09-04: of the seven `data-window` hooks three routes publish against a
+populated database, six survive an empty read and one (`/claims`) does not.
+
+Ruled: **the line follows the read, not the rows.** A surface publishes its
+window line when the read returned, `ok` with rows or `ok` with none, and drops
+it whole when the read was refused, absent or never made. The alternative —
+drop the line whenever nothing is shown — was rejected because it makes an
+honest empty read and a failed read identical on screen, which is the exact
+confusion BUG-0016, BUG-0063 and BUG-0067 each fixed one surface at a time, and
+because it takes the `0` away from the live oracles that grade a page by
+`data-window-held`. The `Empty` card and the line say different things and both
+are true at once: the card says what would fill the surface, the line says where
+the app looked.
+
+The door this closes: no surface may decide this for itself again. The rule is
+§4.3 of `ARCHITECTURE.md`, and it is graded for every surface at once in
+`tests/offline/absence/pages.test.ts` — BUG-0070 both fixes `/claims` and
+generalises that test's second leg from one route to every surface that
+publishes a window, so the fourth windowed surface inherits the rule instead of
+a docstring about it.
