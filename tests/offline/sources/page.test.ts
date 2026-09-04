@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
 import {
+  codeText,
   implicitInterElementSpaces,
   implicitInterElementSpacesIn,
+  sourceFiles,
 } from "../source-tree";
 import {
   disagreeingCounts,
@@ -1170,5 +1172,74 @@ describe("the surface hooks the live parity oracle addresses", () => {
     expect($(SURFACE_HOOKS.registry).find("[data-trend-source], [data-window]").length).toBe(0);
     expect($(SURFACE_HOOKS.awaiting_row).find('[data-window="rejections"]').length).toBe(0);
     expect($(SURFACE_HOOKS.rejections).find('[data-window="awaiting_row"]').length).toBe(0);
+  });
+});
+
+/* ── where this page's presentation lives (admin-window/DEBT-0004) ───────── */
+
+/**
+ * The structural half of ARCHITECTURE.md §13.6, asserted here rather than left
+ * to the next builder's discipline: this page ships its own
+ * `src/components/sources/` module, the page file defines no component of its
+ * own, nothing in that module can reach a database, and the URL work sits in a
+ * pure leaf below both of them.
+ *
+ * It was 793 lines with six components written where the page function is
+ * (common violation 10). Each rule below is stated with BOTH fixtures — the
+ * input it must flag and the input it must not.
+ */
+describe("the module this page's presentation lives in", () => {
+  const PAGE = "src/app/sources/page.tsx";
+  const MODULE = "src/components/sources/";
+  const LEAF = "src/lib/sources/routes.ts";
+
+  /** A component DEFINITION at the top level of a file, in either spelling. */
+  const COMPONENT = /^(export\s+)?(default\s+)?function\s+[A-Z]/m;
+
+  /** Anything below the page that awaits — §5's one-async-boundary rule. */
+  const AWAITS = /\basync\b|\bawait\b/;
+
+  it("contains the page, the module and the leaf these rules are about", () => {
+    const files = sourceFiles();
+    expect(files).toContain(PAGE);
+    expect(files).toContain("src/components/sources/index.ts");
+    expect(files).toContain(LEAF);
+    expect(files.filter((file) => file.startsWith(MODULE)).length).toBeGreaterThan(1);
+  });
+
+  it("keeps every component out of the page file", () => {
+    // The scanner must see a component where there is one...
+    expect(COMPONENT.test("function SourceChips({ sources }: Props) {")).toBe(true);
+    expect(COMPONENT.test("export function RejectionSection() {")).toBe(true);
+    // ...and the page, which defines only its async page function, is clean.
+    expect(COMPONENT.test(codeText(PAGE))).toBe(false);
+  });
+
+  it("keeps the components off lib/db and off the client library", () => {
+    const files = sourceFiles().filter((file) => file.startsWith(MODULE));
+    for (const file of files) {
+      const text = codeText(file);
+      expect(text, file).not.toMatch(/from\s+["']@\/lib\/db\//);
+      expect(text, file).not.toContain("@supabase/supabase-js");
+      expect(text, file).not.toMatch(AWAITS);
+    }
+    // The same scanners on inputs they MUST flag.
+    expect(/from\s+["']@\/lib\/db\//.test('import { listSources } from "@/lib/db/sources";')).toBe(
+      true,
+    );
+    expect(AWAITS.test("const sources = await listSources();")).toBe(true);
+  });
+
+  it("keeps the URL leaf below lib/db: it imports nothing at all", () => {
+    // ARCHITECTURE §4 rule 7 — a pure domain leaf reaches no database, not even
+    // by a type-only import, so no directory-level cycle can be written into
+    // it. The page and the chips both read the facet from here.
+    const importLine = /^\s*import\b|\brequire\s*\(|\bfrom\s+["']/;
+    expect(importLine.test('import { T } from "@/lib/db/tables";')).toBe(true);
+    expect(codeText(LEAF).split("\n").filter((line) => importLine.test(line))).toEqual([]);
+  });
+
+  it("leaves the page function the only async component on the route", () => {
+    expect(codeText(PAGE)).toMatch(/export default async function SourcesPage/);
   });
 });
