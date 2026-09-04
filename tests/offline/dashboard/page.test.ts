@@ -1,6 +1,8 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
+import { cycleState } from "@/lib/db/cycles";
 import { DASHBOARD_WINDOW } from "@/lib/db/dashboard";
+import { RESOLVER_CADENCE_SECONDS } from "@/lib/gauges/gauge";
 import { T } from "@/lib/db/tables";
 import { absoluteUtc } from "@/lib/format";
 import { render } from "../ui/markup";
@@ -907,6 +909,82 @@ describe("a cycle or run that reported nothing", () => {
     expect(errorLinesOf(markup, "runs")).toEqual([]);
     expect(absencesOf(markup, "runs", "error")).toEqual([true]);
     expect(blankCells(markup)).toBe(0);
+  });
+});
+
+/* ── the two states a null outcome can be in ─────────────────────────────── */
+
+describe("a cycle with no end recorded", () => {
+  /*
+   * The Dashboard classifies a cycle by `ended_at` ALONE
+   * (`src/app/page.tsx`), so every null-outcome, null-`ended_at` row reads as
+   * running however old it is. `/cycles` reads the same row through
+   * `cycleState` (`src/lib/db/cycles.ts`) and calls one older than a cadence
+   * `died` — migration 20260901000001's own requirement, "a null older than
+   * one cadence is how a crash stays visible".
+   *
+   * `data-outcome` is the STATE hook both surfaces expose for a test, not the
+   * word on screen: this asserts the classification, and a rename of either
+   * page's copy never touches it.
+   *
+   * Two fixtures on purpose: one the surface must flag (a month old) and one
+   * it must not (a minute old). Both are built off the wall clock, because
+   * this page reads its own — a fixture with a literal date decides nothing.
+   */
+  const CADENCE = RESOLVER_CADENCE_SECONDS;
+
+  function noEndCycles(now: number): ResolutionRunRow[] {
+    return [
+      resolutionRunRow({
+        run_id: CYCLE_NEWEST,
+        started_at: new Date(now - 60_000).toISOString(),
+        ended_at: null,
+        outcome: null,
+        errors: 0,
+        error_summary: null,
+      }),
+      resolutionRunRow({
+        run_id: CYCLE_OLDEST,
+        started_at: new Date(now - 30 * 24 * 3_600_000).toISOString(),
+        ended_at: null,
+        outcome: null,
+        errors: 0,
+        error_summary: null,
+      }),
+    ];
+  }
+
+  it("reads a cycle younger than one cadence as running", async () => {
+    const now = Date.now();
+    const [fresh] = noEndCycles(now);
+    expect(cycleState(fresh, { now: new Date(now), cadenceSeconds: CADENCE }).kind).toBe(
+      "running",
+    );
+    const markup = await renderDashboard(
+      healthyScript({ [T.resolutionRuns]: { data: noEndCycles(now) } }),
+    );
+    expect(outcomesOf(markup, "cycles")[0]).toBe("running");
+  });
+
+  /*
+   * PIN — admin-window/BUG-0074, filed 2026-09-04. `it.fails` is vitest's
+   * strict xfail: it passes only while the divergence is REAL, and goes red
+   * the day the Dashboard starts telling the two states apart. That red is the
+   * signal to delete `.fails` here and close the ticket, not to edit the
+   * assertion.
+   */
+  it.fails("does not read a cycle older than one cadence as running", async () => {
+    const now = Date.now();
+    const dead = noEndCycles(now)[1];
+    // What the OTHER surface makes of the same row, from the one function that
+    // decides it.
+    expect(cycleState(dead, { now: new Date(now), cadenceSeconds: CADENCE }).kind).toBe(
+      "died",
+    );
+    const markup = await renderDashboard(
+      healthyScript({ [T.resolutionRuns]: { data: noEndCycles(now) } }),
+    );
+    expect(outcomesOf(markup, "cycles")[1]).toBe("died");
   });
 });
 
