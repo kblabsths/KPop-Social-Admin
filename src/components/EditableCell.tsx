@@ -25,7 +25,8 @@ export type SaveOutcome =
 
 const CONFIRMATION_MS = 1500;
 
-type Status =
+/** What this cell's own edit is doing, or what it did. */
+export type Status =
   | { kind: "idle" }
   | { kind: "saving" }
   | { kind: "saved" }
@@ -62,6 +63,56 @@ export function editHint(multiline: boolean): string {
   return multiline
     ? "Leaving the field saves. Enter adds a line. Escape cancels the edit."
     : "Enter or leaving the field saves. Escape cancels the edit.";
+}
+
+/**
+ * The line beside the field: what this edit is doing, or what it did —
+ * campaign admin-window/BUG-0066.
+ *
+ * Pure over `Status` and exported for the same reason `EditField` below is:
+ * `saving` is React state a click produces, and the offline suite renders with
+ * `renderToStaticMarkup` and no jsdom (STACK.md §4), so a status rendered only
+ * from inside `EditableCell` is a status no offline test can reach. Rendering
+ * every kind through ONE unit is also what keeps them comparable: the
+ * in-flight state and the confirmation are the same element in the same slot,
+ * so an operator (and a screen reader) is told which of the two this is.
+ *
+ * Before this, `saving` rendered nothing at all: from commit until the PATCH
+ * answered, the cell showed the new value in a disabled button and stated no
+ * work, so a write in flight and a write that had landed differed only by 50%
+ * opacity. On a remote database that window is seconds long, and a verifier
+ * who reloaded inside it read the pre-write value and filed a data-loss bug
+ * that was not one (measured 2026-09-03: a 2.087s write, nothing on the page
+ * matching /settl|saving|writing/, zero live regions).
+ *
+ * `saving` and `saved` announce politely (`role="status"`, as the confirmation
+ * already did); a refusal interrupts (`role="alert"`). The word never lands on
+ * the button itself — the Look's button rule says a disabled control's label
+ * does not change, so the statement of work stands beside the field.
+ */
+export function EditStatus({ status }: { status: Status }) {
+  switch (status.kind) {
+    case "saving":
+      return (
+        <span className="type-data text-ink-secondary" role="status">
+          saving…
+        </span>
+      );
+    case "saved":
+      return (
+        <span className="type-data text-healthy" role="status">
+          saved
+        </span>
+      );
+    case "failed":
+      return (
+        <span className="type-data text-broken" role="alert">
+          {status.message}
+        </span>
+      );
+    default:
+      return null;
+  }
 }
 
 const FIELD_CLASS =
@@ -228,16 +279,7 @@ export function EditableCell({
           {orDash(shown)}
         </button>
       )}
-      {status.kind === "saved" ? (
-        <span className="type-data text-healthy" role="status">
-          saved
-        </span>
-      ) : null}
-      {status.kind === "failed" ? (
-        <span className="type-data text-broken" role="alert">
-          {status.message}
-        </span>
-      ) : null}
+      <EditStatus status={status} />
     </span>
   );
 }
