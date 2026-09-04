@@ -1,6 +1,10 @@
 import { requireAdmin } from "@/lib/admin";
 import { decideEdit, type EditRefusal } from "@/lib/edit/config";
-import { updateRecordField, type EditableValue } from "@/lib/db/records";
+import {
+  isRecordId,
+  updateRecordField,
+  type EditableValue,
+} from "@/lib/db/records";
 
 /**
  * The ONE write path of the edit surface — campaign admin-window/TASK-0017.
@@ -12,6 +16,11 @@ import { updateRecordField, type EditableValue } from "@/lib/db/records";
  *    (STACK §3). Nothing below runs for a visitor who is not an allowlisted
  *    admin, and `src/middleware.ts` has already turned away anyone without a
  *    session before the handler is reached at all.
+ *  - **Then the id**: `isRecordId()` (`src/lib/db/records.ts`), the record
+ *    PAGE's own question, asked AFTER the map so every refusal the map owns
+ *    keeps the status it has (campaign admin-window/BUG-0068). See
+ *    `noSuchRecord` below for why a segment that is not an id is an answer and
+ *    not a database call.
  *  - **Then the map**: `decideEdit()` in `src/lib/edit/config.ts`. A column
  *    absent from the map, a resolver-owned table and a table the map does not
  *    carry are all refused HERE, server-side, with the row unchanged and the
@@ -44,6 +53,33 @@ function statusFor(refusal: EditRefusal): number {
     case "field_not_editable":
       return 403;
   }
+}
+
+/**
+ * "No record at this address" — the ONE sentence this route has for it, and
+ * both ways of reaching it (campaign admin-window/BUG-0068).
+ *
+ * A well-formed id the writer looked for and did not find, and a URL segment
+ * that is not a record id at all, are the same answer to the caller: there is
+ * no such record here. The second needs no database to say so — every table in
+ * the map is keyed by a uuid, so a segment that is not one can equal no
+ * primary key anywhere (`isRecordId` carries why, and carries the grammar;
+ * this file writes no second one — ARCHITECTURE §9.1 item 9).
+ *
+ * What it replaces: handing the segment to PostgREST, which returned Postgres's
+ * `22P02 invalid input syntax for type uuid`, which the data layer classified —
+ * correctly, for a read it did make — as an arbitrary failure, which this route
+ * then answered as HTTP 500 carrying the database's own words. The status said
+ * the app broke when the request was malformed, and the body handed raw
+ * Postgres syntax text back to the caller who supplied the bad input. The 500
+ * branch below is unchanged and still says what the database said: that rule is
+ * for a read or write that really happened.
+ */
+function noSuchRecord(table: string): Response {
+  return Response.json(
+    { error: `no ${table} record with that id` },
+    { status: 404 },
+  );
 }
 
 /** The parsed body, or the reason it is unusable. */
@@ -151,6 +187,12 @@ export async function PATCH(
     );
   }
 
+  // The segment is not an id at all — a question about the REQUEST, settled
+  // here, BEFORE any database call, exactly as the record page settles it
+  // before any read (admin-window/BUG-0065, admin-window/BUG-0068). It is
+  // asked AFTER `decideEdit` so the map's refusals above keep their statuses.
+  if (!isRecordId(id)) return noSuchRecord(table);
+
   const result = await updateRecordField(decision.edit, id, body.value);
 
   if (result.kind === "not_provisioned") {
@@ -164,12 +206,7 @@ export async function PATCH(
     // the database said").
     return Response.json({ error: result.message }, { status: 500 });
   }
-  if (result.data === null) {
-    return Response.json(
-      { error: `no ${table} record with that id` },
-      { status: 404 },
-    );
-  }
+  if (result.data === null) return noSuchRecord(table);
 
   return Response.json({ ok: true, record: result.data });
 }
