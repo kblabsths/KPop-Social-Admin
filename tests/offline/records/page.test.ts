@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
+import { NAV_ITEMS } from "@/components/shell/nav-items";
 import { EDITABLE_TABLES, EDIT_CONFIG } from "@/lib/edit/config";
 import { EM_DASH } from "@/lib/format";
 import {
@@ -344,6 +345,64 @@ describe("the states", () => {
     // Three different states never share a rendering (LOOK_AND_FEEL).
     expect(missingRow).not.toBe(absentTable);
     expect(controlCount(missingRow)).toBe(0);
+  });
+
+  /**
+   * The unknown-id state's own words, isolated from the rest of the page —
+   * campaign admin-window/BUG-0052. There is exactly one empty card on this
+   * screen, and it is the state under test.
+   */
+  function emptyText(markup: string): string {
+    const $ = cheerio.load(markup);
+    const cards = $('[data-state="empty"]');
+    expect(cards.length).toBe(1);
+    return cards.text().replace(/\s+/g, " ").trim();
+  }
+
+  /**
+   * Just the "what fills it" half of that card — the last line of the state,
+   * which is the sentence this ticket is about. Isolating it is what lets the
+   * two regimes be compared without the id sentence (which names the table and
+   * so always differs) making the comparison vacuous.
+   */
+  function emptyFiller(markup: string): string {
+    const $ = cheerio.load(markup);
+    return $('[data-state="empty"] p').last().text().replace(/\s+/g, " ").trim();
+  }
+
+  /** The unknown-id render: the row read answers, and holds nothing. */
+  function missingRowScript(table: string): Script {
+    return { ...defaultScript(table), [table]: { data: null } };
+  }
+
+  it("tells a pre-cutover operator the record is reached by id, naming no surface that could list it", async () => {
+    for (const table of ["groups", "idols"]) {
+      expect(EDIT_CONFIG[table].regime, table).toBe("pre_cutover");
+      const text = emptyText(await renderRecord(table, missingRowScript(table)));
+      // The bug: the state pointed at Browse, which is the recent-events view
+      // and structurally cannot list a pre-cutover table (spec F7). No page of
+      // this app can, so the state may name none of them.
+      for (const item of NAV_ITEMS) {
+        expect(text, `${table} names ${item.label}`).not.toContain(item.label);
+      }
+      // ...and it still says what fills the surface (Voice bar 4): the id.
+      expect(text, table).toMatch(/\bid\b/i);
+    }
+  });
+
+  it("keeps naming Browse for a resolver-owned table, which Browse does list", async () => {
+    // The other fixture of the guard above: were the fix a blanket deletion,
+    // this would go red — the empty state of a table Browse DOES lead to must
+    // still send the operator there.
+    const filler = emptyFiller(await renderRecord("events", missingRowScript("events")));
+    expect(EDIT_CONFIG.events.regime).toBe("resolver_owned");
+    expect(filler).toContain("Browse");
+  });
+
+  it("says something different on each side of the cutover, from one map", async () => {
+    const preCutover = emptyFiller(await renderRecord("groups", missingRowScript("groups")));
+    const resolverOwned = emptyFiller(await renderRecord("events", missingRowScript("events")));
+    expect(preCutover).not.toBe(resolverOwned);
   });
 
   /**

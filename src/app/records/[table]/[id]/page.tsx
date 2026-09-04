@@ -89,6 +89,39 @@ function regimeNote(config: TableEditConfig): string {
 }
 
 /**
+ * What actually fills a record page the operator asked for by id and did not
+ * get — campaign admin-window/BUG-0052.
+ *
+ * Regime-aware, because the app has two regimes and only one of them has a
+ * listing. Browse is the recent-EVENTS view and the only curated view M1 ships
+ * (spec F7), so it lists the resolver-owned side and structurally cannot list
+ * a pre-cutover table. The old blanket sentence ("Browse lists the records
+ * that exist") was therefore true for `events`/`venues` and false for
+ * `groups`/`idols`, and it was false in the one moment the operator most
+ * needed it to be true: the user-sim walk left the app for a SQL client here
+ * (Priya, 2026-09-03).
+ *
+ * So the pre-cutover line says the true thing instead — that such a record is
+ * reached by its id alone, and where an id comes from when the app cannot hand
+ * one over. Neither line names a surface that cannot lead anywhere: the
+ * address bar is always there, the catalog database is where these rows are
+ * written, and Browse really does list events (and links each event's record
+ * on to its venue, which is how the second resolver-owned table is reached).
+ *
+ * It keys on `regime` and not on the table name, for the same reason
+ * everything else on this page does (ARCHITECTURE.md §4 rule 4): the map
+ * already answers which side of the cutover a table is on.
+ */
+function foundBy(config: TableEditConfig): string {
+  return config.regime === "pre_cutover"
+    ? `Admin has no ${config.table} listing: such a record is reached by its ` +
+        `id alone. Check the id in the address bar, or take one from the ` +
+        `catalog database.`
+    : `Browse lists recent events, and an event's record links to its venue. ` +
+        `Check the id in the address bar.`;
+}
+
+/**
  * A leg's own state, when it could not fill what it was for — the same shape
  * and the same two cards Browse gives a leg that failed (`LegNote` in
  * `src/app/browse/page.tsx`). Two legs report through it: the per-field
@@ -161,7 +194,7 @@ export default async function RecordPage({
     body = (
       <Empty
         holds={`${config.table} record with that id`}
-        filledBy="Browse lists the records that exist; check the id in the address bar."
+        filledBy={foundBy(config)}
       />
     );
   } else {
