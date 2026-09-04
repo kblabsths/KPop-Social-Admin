@@ -931,6 +931,87 @@ describe("a database without the resolver's tables", () => {
     // replacing it.
     expect(headers(markup, CYCLES_TABLE).length).toBeGreaterThan(0);
   });
+
+  /**
+   * PINNED `it.fails` (strict) for admin-window/BUG-0067: `/cycles` renders
+   * its cycles window line in EVERY state, publishing `data-window="cycles"`,
+   * `data-window-limit="200"` and `data-window-truncated="false"` over a table
+   * it could not read. `/runs` (`AdapterRuns`, src/app/cycles/page.tsx) and
+   * `/claims` (admin-window/BUG-0063) both drop the line on a non-ok read;
+   * this is the third surface and the last one diverging.
+   *
+   * Flip it back to a plain `it(...)` in the commit that fixes it.
+   */
+  it.fails("claims no cycles window it never read", async () => {
+    // The rule `/runs` sets and `/claims` was moved onto
+    // (admin-window/BUG-0063): the window line describes a window this page
+    // actually read. A refused, absent or transport-failed read looked in no
+    // window, so the sentence would describe a table that is not there and
+    // `data-window-truncated="false"` would be a confident boolean about a
+    // read that returned nothing (LOOK_AND_FEEL states 3 and 4,
+    // ARCHITECTURE.md "a null count is a refusal, never a zero").
+    const failures: Array<[string, Script]> = [
+      [
+        "refused",
+        {
+          [T.resolutionRuns]: [
+            { error: permissionDenied(T.resolutionRuns) },
+            { data: [...CYCLES] },
+          ],
+          [T.fieldProvenance]: { data: [...APPLIES] },
+          [T.observations]: { data: [...OBSERVED] },
+          [T.runs]: { data: [] },
+        },
+      ],
+      [
+        "absent",
+        {
+          [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
+          [T.fieldProvenance]: { error: tableNotInSchemaCache(T.fieldProvenance) },
+          [T.observations]: { data: [...OBSERVED] },
+          [T.runs]: { data: [] },
+        },
+      ],
+      [
+        "transport",
+        {
+          [T.resolutionRuns]: [
+            { error: transportFailure("bad port") },
+            { data: [...CYCLES] },
+          ],
+          [T.fieldProvenance]: { data: [...APPLIES] },
+          [T.observations]: { data: [...OBSERVED] },
+          [T.runs]: { data: [] },
+        },
+      ],
+    ];
+    for (const [label, script] of failures) {
+      const markup = await renderCycles(script);
+      const $ = cheerio.load(markup);
+      expect($('[data-window="cycles"]'), label).toHaveLength(0);
+      // The refusal itself is still on screen: the line goes, the state stays.
+      expect(markup, label).toContain(T.resolutionRuns);
+      expect(renderedCycles(markup), label).toEqual([]);
+    }
+  });
+
+  it("still states the cycles window on a read that happened, empty or not", async () => {
+    // The other half of the same rule: an EMPTY window is still a window —
+    // the page looked in it, and nothing was there.
+    for (const [label, script] of [
+      ["populated", healthyScript()],
+      [
+        "empty",
+        healthyScript({ [T.resolutionRuns]: [{ data: [] }, { data: [] }] }),
+      ],
+    ] as const) {
+      const $ = cheerio.load(await renderCycles(script));
+      expect($('[data-window="cycles"]'), label).toHaveLength(1);
+      expect($('[data-window="cycles"]').attr("data-window-limit"), label).toBe(
+        String(CYCLE_WINDOW),
+      );
+    }
+  });
 });
 
 /* ── what the page may claim when it never read the window ───────────────── */

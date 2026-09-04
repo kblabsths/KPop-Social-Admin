@@ -867,6 +867,26 @@ describe("absence and failure", () => {
     }
   });
 
+  it("still states the window when only the leg that NAMES the sources refused", async () => {
+    // The seam the fix has to get right: the line is gated on the LIST's read,
+    // not on the page having no failure at all. The registry leg is a second
+    // leg that costs the source LABEL and nothing else (admin-window/BUG-0043),
+    // so the list read happened, the window is real, and it is still stated —
+    // with the count the page actually drew, beside the refusal for the leg
+    // that did fail.
+    const markup = await renderClaims(
+      healthyScript({ [T.sources]: { error: permissionDenied(T.sources) } }),
+    );
+    const line = cheerio.load(markup)('[data-window="claims"]');
+    expect(line).toHaveLength(1);
+    // The figure is the set the read really held, not a constant: it is the
+    // number of claims this population shows on this tab.
+    expect(Number(line.attr("data-window-held"))).toBe(claimIds(markup).length);
+    expect(line.attr("data-window-truncated")).toBe("false");
+    // ... and the leg that refused is still reported.
+    expect(markup).toContain(T.sources);
+  });
+
   it("keeps the transport failure's cause, which the message alone does not carry", async () => {
     const markup = await renderClaims({
       [T.pendingClaims]: { error: transportFailure("bad port") },
