@@ -1309,6 +1309,7 @@ export default async function CyclesPage({
   ]);
 
   const rows = cycles.kind === "ok" ? cycles.data.rows : [];
+  const cyclesTruncated = cycles.kind === "ok" && cycles.data.truncated;
   // A verdict about the asked-for cycle comes off an `ok` read and nothing
   // else: a refused or absent read leaves the page with no window to have
   // looked in, which is a third state and not a negative one
@@ -1329,20 +1330,29 @@ export default async function CyclesPage({
       <LatestRun runs={runs} now={now} source={askedSource} />
 
       <Section title="Cycles" surface={CYCLES_SURFACE}>
-        <p
-          data-window="cycles"
-          data-window-limit={String(CYCLE_WINDOW)}
-          data-window-truncated={
-            cycles.kind === "ok" && cycles.data.truncated ? "true" : "false"
-          }
-          className="type-body text-ink-secondary"
-        >
-          The resolver&rsquo;s newest cycles, newest first — a window of at most{" "}
-          {count(CYCLE_WINDOW)}, not a count of the cycles that exist.
-          {cycles.kind === "ok" && cycles.data.truncated
-            ? " The window filled its cap, so older cycles ran than the ones below."
-            : ""}
-        </p>
+        {/* The window line describes a window this page actually read. A
+            refused, absent or transport-failed read returned none, so the
+            sentence would describe a table that is not there and
+            `data-window-truncated="false"` would be a confident boolean about
+            a read that returned nothing (LOOK_AND_FEEL states 3 and 4,
+            ARCHITECTURE.md "a null count is a refusal, never a zero"). An
+            EMPTY window is still a window — the page looked, and nothing was
+            there — so it keeps its line. Same rule and same shape as
+            `AdapterRuns` below and `/claims` (admin-window/BUG-0067). */}
+        {cycles.kind === "ok" ? (
+          <p
+            data-window="cycles"
+            data-window-limit={String(CYCLE_WINDOW)}
+            data-window-truncated={cyclesTruncated ? "true" : "false"}
+            className="type-body text-ink-secondary"
+          >
+            The resolver&rsquo;s newest cycles, newest first — a window of at most{" "}
+            {count(CYCLE_WINDOW)}, not a count of the cycles that exist.
+            {cyclesTruncated
+              ? " The window filled its cap, so older cycles ran than the ones below."
+              : ""}
+          </p>
+        ) : null}
         {askedFor === undefined ? null : (
           <AskedCycle askedFor={askedFor} state={asked} />
         )}
