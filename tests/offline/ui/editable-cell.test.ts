@@ -8,6 +8,7 @@ import {
   EditField,
   EditStatus,
   IDLE_EDIT_STATE,
+  type SaveOutcome,
   type Status,
   confirmationDelayMs,
   editHint,
@@ -469,3 +470,205 @@ describe("a status belongs to the edit that produced it", () => {
     expect(confirmationDelayMs(IDLE_EDIT_STATE.status)).toBeNull();
   });
 });
+
+/**
+ * The seam driven the way the COMPONENT composes it — QA, admin-window/BUG-0075.
+ *
+ * The tests above fire `elapsed` by hand, which proves the reducer's rule but
+ * not the rule the defect actually lived in: WHICH clock is running, and for
+ * how long. In the component that is `confirmationDelayMs` read from the state
+ * inside a `useEffect` keyed on the state OBJECT (EditableCell.tsx:301-307), so
+ * an event that returns the state by reference leaves the running clock alone
+ * and every real transition tears it down and re-arms from scratch.
+ * `driveCell` is exactly that arming rule over a virtual clock: it is the
+ * cheapest thing that can answer "what is on screen at t=1630ms", which is the
+ * question both measured divergences were.
+ *
+ * Behaviour only: which status is showing, and until when. The words are
+ * `EditStatus`'s, and the button an operator can click again is
+ * `disabled={status.kind === "saving"}`, so "still states its work" and "still
+ * refuses a second click" are one assertion here — the walk measures the
+ * button itself.
+ */
+type Beat = { at: number; event: EditEvent };
+
+/**
+ * `leakClocks: true` is the shape the defect had: a timeout armed by a save
+ * and NOT torn down when the state moved on (the old `timer` ref was cleared
+ * at exactly one call site). Every timeline below is driven BOTH ways, so the
+ * cell is required to survive a straggler clock rather than merely never to
+ * have one — two independent defenses, and only one of them is the reducer's.
+ */
+function driveCell(script: Beat[], { leakClocks = false }: { leakClocks?: boolean } = {}) {
+  let state = IDLE_EDIT_STATE;
+  let pending: Array<{ at: number; edit: number }> = [];
+  const timeline: Array<{ at: number; state: EditState }> = [{ at: 0, state }];
+
+  function apply(at: number, event: EditEvent) {
+    const next = reduceEdit(state, event);
+    // useReducer bails out on an unchanged reference: no re-render, so the
+    // effect does not re-run and the clock already running is untouched.
+    if (next === state) return;
+    state = next;
+    // React runs the effect's cleanup and the effect itself on every change.
+    if (!leakClocks) pending = [];
+    const delay = confirmationDelayMs(state.status);
+    if (delay !== null) pending.push({ at: at + delay, edit: state.edit });
+    pending.sort((a, b) => a.at - b.at);
+    timeline.push({ at, state });
+  }
+
+  function fireDueClocks(before: number) {
+    while (pending.length > 0 && pending[0].at <= before) {
+      const firing = pending.shift();
+      if (firing !== undefined) apply(firing.at, { kind: "elapsed", edit: firing.edit });
+    }
+  }
+
+  for (const beat of [...script].sort((a, b) => a.at - b.at)) {
+    fireDueClocks(beat.at);
+    apply(beat.at, beat.event);
+  }
+  fireDueClocks(Number.MAX_SAFE_INTEGER);
+
+  return {
+    timeline,
+    /** What the cell is showing at `at` — the last transition at or before it. */
+    at(when: number): Status {
+      let showing = IDLE_EDIT_STATE.status;
+      for (const entry of timeline) if (entry.at <= when) showing = entry.state.status;
+      return showing;
+    },
+  };
+}
+
+/** One edit, opened → committed → answered, as the component emits them. */
+function edit(ordinal: number, opened: number, committed: number, answered: number, outcome: SaveOutcome): Beat[] {
+  return [
+    { at: opened, event: { kind: "editing", edit: ordinal } },
+    { at: committed, event: { kind: "committed", edit: ordinal } },
+    { at: answered, event: { kind: "settled", edit: ordinal, outcome } },
+  ];
+}
+
+const OK: SaveOutcome = { ok: true };
+const NO: SaveOutcome = { ok: false, message: REFUSAL };
+
+describe.each([{ leaked: false }, { leaked: true }])(
+  "the clock the component arms retires only its own confirmation (straggler clock: $leaked)",
+  ({ leaked }) => {
+    const drive = (script: Beat[]) => driveCell(script, { leakClocks: leaked });
+
+  it("leaves no silent, clickable window under the second edit's live write", () => {
+    // Measurement (1) as a clock: edit 1 confirms at 130 (its clock would fire
+    // at 1630), edit 2 commits at 200 and its write answers at 2200.
+    const cell = drive([
+      ...edit(1, 0, 10, 130, OK),
+      ...edit(2, 200, 210, 2200, OK),
+    ]);
+    for (let t = 210; t < 2200; t += 10) {
+      expect(cell.at(t).kind, `t=${t}ms, mid-write`).toEqual("saving");
+    }
+    expect(cell.at(1630).kind, "the previous save's clock fires here").toEqual("saving");
+    expect(cell.at(2200).kind).toEqual("saved");
+  });
+
+  it("gives the second edit's own confirmation its own full 1.5s, and no more", () => {
+    const cell = drive([...edit(1, 0, 10, 130, OK), ...edit(2, 200, 210, 2200, OK)]);
+    expect(cell.at(3699).kind, "still confirming").toEqual("saved");
+    expect(cell.at(3700).kind, "its own clock, 1500ms after its own save").toEqual("idle");
+    // and it is retired once: nothing fires again afterwards.
+    expect(cell.timeline.filter((entry) => entry.at > 3700)).toEqual([]);
+  });
+
+  it("holds the statement at every interval between the two edits", () => {
+    // "at any interval between the two edits, no silent clickable window."
+    for (let gap = 0; gap <= 1600; gap += 50) {
+      const commit = 130 + gap;
+      const answer = commit + 1800;
+      const cell = drive([...edit(1, 0, 10, 130, OK), ...edit(2, commit - 5, commit, answer, OK)]);
+      for (let t = commit; t < answer; t += 25) {
+        expect(cell.at(t).kind, `gap=${gap}ms, t=${t}ms`).toEqual("saving");
+      }
+      expect(cell.at(answer).kind, `gap=${gap}ms`).toEqual("saved");
+    }
+  });
+
+  it("keeps a refusal raised inside the window on screen indefinitely", () => {
+    // Measurement (2): readable 1374ms, then erased. Its own edit never armed
+    // a clock, and the earlier save's clock is not its to answer to.
+    const cell = drive([...edit(1, 0, 10, 130, OK), ...edit(2, 200, 210, 400, NO)]);
+    for (const t of [401, 1630, 4000, 60_000]) {
+      expect(cell.at(t), `t=${t}ms`).toEqual({ kind: "failed", message: REFUSAL });
+    }
+    expect(cell.timeline.at(-1)?.at, "nothing happens after the refusal").toEqual(400);
+  });
+
+  it("lets the success after a refusal confirm and clear on its own clock", () => {
+    const cell = drive([
+      ...edit(1, 0, 10, 400, NO),
+      ...edit(2, 5_000, 5_010, 5_200, OK),
+    ]);
+    expect(cell.at(4_999).kind, "the refusal stands until the operator acts").toEqual("failed");
+    expect(cell.at(5_000).kind, "reopening acknowledges it").toEqual("idle");
+    expect(cell.at(5_100).kind).toEqual("saving");
+    expect(cell.at(6_699).kind).toEqual("saved");
+    expect(cell.at(6_700).kind, "1500ms after ITS save, not the refusal's age").toEqual("idle");
+  });
+
+  it("survives a third edit committed inside the second's window", () => {
+    const cell = drive([
+      ...edit(1, 0, 10, 130, OK),
+      ...edit(2, 200, 210, 900, OK),
+      ...edit(3, 950, 960, 3_000, OK),
+    ]);
+    for (let t = 960; t < 3_000; t += 10) {
+      expect(cell.at(t).kind, `t=${t}ms, third write in flight`).toEqual("saving");
+    }
+    expect(cell.at(1_630).kind, "edit 1's clock").toEqual("saving");
+    expect(cell.at(2_400).kind, "edit 2's clock").toEqual("saving");
+    expect(cell.at(3_000).kind).toEqual("saved");
+    expect(cell.at(4_500).kind).toEqual("idle");
+  });
+
+  it("does not let a stale event stretch the confirmation that is running", () => {
+    // The bail-out is load-bearing, not tidiness: a stale event that returned
+    // a new-but-equal state would re-run the effect and re-arm the clock, and
+    // the confirmation would outlive its 1.5s by however late the straggler is.
+    const stragglers: EditEvent[] = [
+      { kind: "settled", edit: 1, outcome: NO },
+      { kind: "settled", edit: 1, outcome: OK },
+      { kind: "committed", edit: 1 },
+      { kind: "editing", edit: 1 },
+      { kind: "elapsed", edit: 1 },
+    ];
+    for (const straggler of stragglers) {
+      const cell = drive([
+        ...edit(1, 0, 10, 100, OK),
+        ...edit(2, 200, 210, 300, OK),
+        { at: 1_000, event: straggler },
+      ]);
+      const where = `straggler ${straggler.kind}(edit 1) at t=1000ms`;
+      expect(cell.at(1_000).kind, where).toEqual("saved");
+      expect(cell.at(1_799).kind, where).toEqual("saved");
+      expect(cell.at(1_800).kind, `${where}: its own clock still runs out`).toEqual("idle");
+    }
+  });
+
+  it("arms no clock a navigation could outlive", () => {
+    // Unmounting mid-write is the operator navigating away: the only status
+    // that can be on screen then is the in-flight one, and it is on no clock,
+    // so nothing is pending to fire into a component that is gone.
+    const inFlight = drive(edit(1, 0, 10, 9_999, OK).slice(0, 2));
+    expect(inFlight.at(5_000).kind).toEqual("saving");
+    expect(inFlight.timeline.at(-1)?.at, "no clock ever fired").toEqual(10);
+    for (const status of [
+      { kind: "idle" } as const,
+      { kind: "saving" } as const,
+      { kind: "failed", message: REFUSAL } as const,
+    ]) {
+      expect(confirmationDelayMs(status), status.kind).toBeNull();
+    }
+  });
+  },
+);
