@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-04T01:48:10Z — do not edit)
+# Tracker index (regenerated 2026-09-04T01:58:27Z — do not edit)
 
 ## open
 - BUG-0067 [P2][bug][M1] Cycles: the cycles window line renders in every state — data-window="cycles" over a table it could not read  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts from:qa:BUG-0063)
@@ -19,7 +19,4 @@
 ## claimed
 - BUG-0065 [P2][bug][M1] Record page: a mistyped id renders the failed-read state, whose only advice is to reload  (scope:src/app/records/[table]/[id]/page.tsx,src/lib/db/records.ts,tests/offline/records/page.test.ts,tests/fixtures/stub-client.ts @builder-90 from:qa:BUG-0052)
 
-## built
-- BUG-0064 [P2][bug][M1] Adapter runs table still heads its columns with raw database names, so /cycles now speaks two vocabularies  (scope:src/app/cycles/page.tsx,tests/offline/runs/page.test.ts @builder-89 from:qa:BUG-0044)
-
-Totals — built:1, claimed:1, done:102, open:14. Archived: 0.
+Totals — claimed:1, done:103, open:14. Archived: 0.
