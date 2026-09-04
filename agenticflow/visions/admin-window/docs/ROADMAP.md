@@ -11,15 +11,20 @@ clocks"** (spec §2). The read slice touches only this repo and needs zero
 schema. The verdict slice's schema lives in the scraper repo and lands after
 the resolver campaign closes there.
 
-| milestone | the slice | schema footprint | acceptance tests |
-| --- | --- | --- | --- |
-| **M1** | read surfaces + the pre-cutover edit surface | **zero** | 1, 2, 3, 4, 5, 7 (pre-cutover half), 9, 10, 11, 12, 13 |
-| **M2** | the verdict slice: UI built, both migrations authored as handoffs | **zero installed** | (M1's, still green) + both handoffs complete and reviewed |
-| **patch run** (deferred) | live proof of the §7 actions, after Ben installs the handoffs | the two §9 items, installed by Ben | 6, 8, 7 (override half) |
+| milestone | the slice | schema footprint | acceptance tests | status |
+| --- | --- | --- | --- | --- |
+| **M1** | read surfaces + the pre-cutover edit surface | **zero** | 1, 2, 3, 4, 5, 7 (pre-cutover half), 9, 10, 11, 12, 13 | **SHIPPED** 2026-09-04, tag `m1` at 26cec8d |
+| **M2** | the verdict slice: UI built, both migrations authored as handoffs | **zero installed** | (M1's, still green) + both handoffs complete and reviewed | **final milestone of this campaign** |
+| **patch run** (deferred) | live proof of the §7 actions, after Ben installs the handoffs | the two §9 items, installed by Ben | 6, 8, 7 (override half) | after Ben installs |
+
+**There is no M3.** VISION's own words define satisfaction — "The campaign is
+satisfied when the verdict UI is built and both handoffs are complete and
+reviewed" — so when M2 closes, the run stops and Ben verifies. Planning an M3 to
+keep the team busy would be scope this campaign never bought.
 
 ---
 
-## M1 — the read slice, plus editing what is safe to edit today
+## M1 — the read slice, plus editing what is safe to edit today — SHIPPED
 
 **Precisely: the app becomes the window, and nothing it does needs a migration.**
 
@@ -61,51 +66,119 @@ picker, both §9 migrations, and every parked section.
   the remote gate refuses an undeclared service's CLI, and nothing matching
   prod is ever a target.
 
-Exit criteria: `agenticflow/tracker/milestones/M1.md`.
+Exit criteria and the retro: `agenticflow/tracker/milestones/M1.md`.
+**Closed 2026-09-04**: all eight features landed, fourteen exit criteria walked
+(twelve PASS, one PASS with a clause staging's data could not reach, one FAIL
+since closed), 129 tickets, zero schema, zero sibling-repo commits.
 
 ---
 
-## M2 — the verdict slice (sketch)
+## M2 — the verdict slice, and the campaign's last milestone
 
-Loose by design; it gets its precision when M1 closes and real M2 review items
-exist to render (spec §6 calls its own anatomy the weakest-held section).
+**Precisely: the close slot F4 left empty gets filled, `events` and `venues`
+become editable only as recorded overrides, and the two pieces of schema that
+makes possible are authored complete for Ben — installed by nobody here.**
 
-Roughly:
+M2 is still **zero installed schema**. Every surface it builds must render its
+honest not-provisioned state against a database that lacks `verdicts` and
+`settle_review_item`, because that is exactly the database `main` deploys
+against until Ben installs them. That constraint is not a compromise; it is
+what keeps every push deployable, and it is how M2 is gradeable at all.
 
-- **The two handoff artifacts, authored complete**: the `verdicts` table and
-  `settle_review_item` (spec §7, §9) — exact file content, target path, apply
-  command, filed as blocked handoff tickets for Ben to install from the scraper
-  repo. Nothing in this repo applies them.
-- **The §7 verdict UI**: on a decision item, choose a claimed value / supply a
-  different value / keep current & settle (`data_conflict`), link to an
-  existing entity / settle (`entity_link`); on a signal item, `fixed` or
-  `wont_fix` with its required note. One typed decision per action, the note
-  field beside it.
-- **The override half of the edit surface**: `events` and `venues` edit only as
-  admin-tier observations through the gate, applied through `apply_resolution`,
-  provenance stamped `admin_locked`, logged in `verdicts` as `override`; the
-  reference field edits through an entity picker whose choice carries the
-  confirmed match. Per-field provenance shows at the field.
-- **The bar M2 closes on**: the verdict UI is built and both handoffs are
-  complete and reviewed. **M2 is satisfiable with zero installed schema** — the
-  campaign never blocks on the resolver campaign's close.
+In:
+
+1. **F9 — the two handoff artifacts, authored complete.** The `verdicts` table
+   and `settle_review_item`, as exact migration file content with target path
+   and apply command, authored against the sibling repo's *actually installed*
+   `apply_resolution`, gate, `observations` and `review_items` — never against
+   an invented signature. Filed as blocked handoff tickets for Ben. Nothing in
+   this repo applies them, and no Admin-side workaround exists for their
+   absence. (spec §7, §9)
+2. **F10 — the verdict UI.** On a `data_conflict` decision item: choose a
+   claimed value, supply a different value, or keep current & settle. On an
+   `entity_link` fact item: link to an existing entity, or settle. On a signal
+   item: `fixed`, or `wont_fix` with its required note. One typed decision per
+   action, the note field beside it, one call to `settle_review_item`.
+   (spec §7; toward tests 6 and 8)
+3. **F11 — the edit surface's override half.** `events` and `venues` edit only
+   as admin-tier observations through the gate, applied through
+   `apply_resolution`, provenance stamped `admin_locked`, logged in `verdicts`
+   as `override` with a null `review_item_id`. The regime decides the write
+   path; configuration never does. Per-field provenance shows at the field.
+   Carries the two edit-cell affordances the sims earned. (spec §8; toward
+   test 7's override half)
+4. **F12 — the reference field.** A `kind: reference` field edits through an
+   entity picker whose choice carries the confirmed match, so the apply
+   produces `venue_id` / `event_performers` rows instead of text. Its display
+   half ends the idol↔group islands: a reference renders as a link to the
+   record it names. (spec §8; toward test 8)
+5. **F13 — the verdict log made visible.** `verdicts` rows rendered newest
+   first as a tab on Queues — not a seventh nav item, because VISION names six
+   pages — and each settled item's detail carrying its own verdict inline.
+   (spec §7: "the verdict log is the one record of every admin data action")
+
+Out (M2 must not depend on any of it, and must not build it): installing either
+migration; any third schema item; any Admin-side workaround for absent schema;
+a groups/idols listing or search (SPEC F7 — Ben's question, below); a second
+Browse view; whole-table browsing; a SQL runner; any dial, threshold line, or
+dial-shaped control (Ben builds dials himself after the campaign closes); phone
+or responsive work; every parked section, in full.
+
+**Preconditions, human-owned:**
+
+- M1's two, still: the `STAGING_SUPABASE_*` names in `.env`, and the staging
+  project declared in `agenticflow/docs/SERVICES.md`.
+- **`public.walk_sandbox` pasted into staging** from
+  `agenticflow/tracker/for-human/TASK-0034.md`. Until it exists, the interim
+  walk-write exception stands (one field of one existing `groups`/`idols` row,
+  noted, restored, swept) and M2's walks are narrower than they should be.
+- **Ben's two fork answers** in `agenticflow/tracker/for-human/M2-roadmap.md`,
+  before M2 builds.
+
+Exit criteria: `agenticflow/tracker/milestones/M2.md`.
 
 ## The deferred patch run — live proof of the §7 actions
 
-Named here so nobody mistakes it for a hole. **After** the resolver campaign
-closes and **Ben installs** the two §9 migrations, a patch run proves on
-staging: every §7 action end to end, one transaction per settlement with its
-apply and rejection stamps sharing a timestamp, a killed call leaving no
-partial write, `wont_fix` without a note refused, grant introspection showing
-`verdicts` written and `review_items.status` set by `settle_review_item`
-alone, an events/venues edit landing as an `admin_locked` observation with its
-`override` row, and a reference-field override producing `venue_id` /
-`event_performers` rows instead of text. → **tests 6, 8, and test 7's override
-half.** This is the one acceptance item deliberately deferred (VISION).
+Named here so nobody mistakes it for a hole. **After** Ben installs the two §9
+migrations, a patch run proves on staging: every §7 action end to end, one
+transaction per settlement with its apply and rejection stamps sharing a
+timestamp, a killed call leaving no partial write, `wont_fix` without a note
+refused, grant introspection showing `verdicts` written and
+`review_items.status` set by `settle_review_item` alone, an events/venues edit
+landing as an `admin_locked` observation with its `override` row, and a
+reference-field override producing `venue_id` / `event_performers` rows instead
+of text. → **tests 6, 8, and test 7's override half.** This is the one
+acceptance item deliberately deferred (VISION).
+
+The resolver campaign in the sibling repo **closed 2026-09-03**
+(`fe58bfda`), so the schema M2 authors against is settled. That retires the
+"everything is major while a campaign runs there" blanket; it changes nothing
+else, because a migration is major by size in every case.
+
+## Two questions for Ben, addressed to him and not decided here
+
+Put to him in `agenticflow/tracker/for-human/M2-roadmap.md` before M2 builds.
+Neither is a campaign judgment call.
+
+1. **Groups and idols have no door.** `/records/groups/<uuid>` is complete and
+   was the most-praised surface of either user-sim walk, and nothing in the app
+   lists it, links it, or searches for it — a stranger spent fifteen minutes
+   and ended in a SQL client. SPEC F7 and spec §1/§4 explicitly ship one
+   curated view and forbid a second, so a listing or a search cannot be traced
+   to VISION honestly and is **not built without Ben's word**. Three prices are
+   costed for him there.
+2. **The group row's own provenance is on the row and not on the screen.**
+   `groups` carries `source`, `source_url`, `source_page_id`, `source_rev_id`,
+   `source_license` and `last_synced_at`; the record page shows none of them
+   while saying "no provenance recorded (pre-cutover table)". Ben ruled that
+   slot's wording on 2026-09-02, so it is not overturned from here. Cheapest
+   change in either walk report if he wants it; a patch ticket if he says yes.
 
 ## Not on this roadmap, ever, under this campaign
 
 Production as a target; repointing the deployed service; any schema beyond the
 two handoff items; the parked operator, free-form tickets, recommendations,
 incidents, agent runs, commands, registry mirror, severity formula, AI calls;
-the mobile app, the scrapers, the pipeline's rules, app-user social data.
+the mobile app, the scrapers, the pipeline's rules, app-user social data; a
+count of unprovenanced catalog rows on Browse (no vision trace); phone and
+responsive layout; any dial or threshold control.

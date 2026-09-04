@@ -803,3 +803,74 @@ The door this closes: no surface may decide this for itself again. The rule is
 generalises that test's second leg from one route to every surface that
 publishes a window, so the fourth windowed surface inherits the rule instead of
 a docstring about it.
+
+## 2026-09-04 — the M1-close cuts: no unprovenanced-row count, no phone work, no second Browse view, and no groups door without Ben
+
+Four scope decisions taken at the M1/M2 boundary, recorded because each closes a
+door that a later ticket would otherwise reopen as a good idea.
+
+**(1) A count of unprovenanced catalog rows on Browse is CUT.** A user-sim named
+it as a return condition ("a way to see how many catalog rows carry no provenance
+at all"), and the designer routed it to the retro as scope rather than a bar. It
+has no honest vision trace: VISION's "who keeps being wrong" is about sources
+disagreeing, not about coverage of the catalog. Cut, and it does not come back
+inside this campaign.
+
+**(2) Phone and responsive layout are CUT for the campaign's life.** Ben already
+ruled the window desktop-only on 2026-09-02 (both themes kept); this restates it
+as a campaign-lifetime cut so no M2 ticket reopens it under cover of a fix.
+BUG-0050 fixed the 390px sidebar collapse; nothing further is in scope. Phone is
+a later nice-to-have, after this campaign closes.
+
+**(3) A second Browse view, whole-table browsing and a SQL runner stay out.**
+SPEC F7 and spec §1/§4's Rationale ship exactly one curated view. This is
+unchanged; it is written here because M2 builds a picker (FEAT-0012) that
+searches a table, and a picker is not a view.
+
+**(4) The groups/idols door is NOT a campaign judgment call.** M1 shipped
+`/records/groups/<uuid>` complete, keyboard-navigable and the most-praised
+surface of either user-sim walk — and unreachable: nothing lists it, links it, or
+searches for it, and a stranger spent fifteen minutes before opening a SQL
+client. Every cheap door (a listing, a name lookup, a search box) is a second
+curated view, which SPEC F7 forbids by contract, so no `vision_trace:` line can
+be written for one honestly. **Ruled: not built in M2; put to Ben as a fork
+question** in `tracker/for-human/M2-roadmap.md`, with the designer's three costed
+options. If Ben says no, the asymmetry is the campaign's deliberate answer and
+BUG-0052's corrected copy is the whole remedy. The door this closes: no agent
+builds a groups listing, a search input, or a "browse groups" affordance inside
+this campaign without Ben's written answer — including under cover of FEAT-0012,
+whose criteria pin exactly that.
+
+**Two consequences that are NOT cuts, and are carried openly instead:** the
+idol↔group islands are answered by FEAT-0012's display half (a reference renders
+as a link — the rendering `events.venue_id` already ships), which does not create
+a door and must not be sold as one; and the "human edit leaves no fingerprint"
+tension between VISION ("every change is attributed") and SPEC F8 ("legal and
+unprovenanced") SURVIVES M2, because spec §7's `action` CHECK admits no verdict
+row for a pre-cutover edit and the only honest alternative is a trigger, which is
+schema this repo may never carry. It is SPEC named gap 8 and it is already Ben's
+in `tracker/for-human/M1-contract-gaps.md`.
+
+## 2026-09-04 — M2 is the campaign's last milestone, and the verdict log is a tab rather than a seventh page
+
+Two shape decisions for M2, taken at the boundary.
+
+**No M3.** VISION states its own satisfaction condition — "The campaign is
+satisfied when the verdict UI is built and both handoffs are complete and
+reviewed" — and M2 is exactly that scope. When M2 closes the run stops and Ben
+verifies; his sign-off merges the run branch and closes the campaign. `run.yaml`
+allows six milestones, which is a runaway guard and not a target. The door this
+closes: no milestone may be planned after M2 to keep the loop moving. A genuine
+reason to continue is a recommendation to Ben in ROADMAP.md, never a milestone
+this campaign files for itself.
+
+**The verdict log is a tab on Queues, not a seventh page.** Ben's ruling names
+"the verdicts table UI" as part of the satisfied condition, and VISION names
+exactly six pages. Both hold at once only if the log renders as a URL facet of an
+existing surface. Chosen: a tab on Queues — the surface whose items it settles —
+using the standing-disagreements tab on Claims as the shipped rendering
+precedent, plus each settled item's verdict inline on its own detail. *Rejected*:
+a seventh nav item (contradicts VISION's enumeration); a Dashboard card (the log
+is a history, not a breakfast figure); no UI at all (contradicts Ben's ruling).
+The door this closes: the sidebar holds exactly six links at the M2 close, and
+FEAT-0013's criteria grade that.
