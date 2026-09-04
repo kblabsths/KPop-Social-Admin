@@ -13,6 +13,8 @@ import { NotProvisioned } from "@/components/ui/not-provisioned";
 import { Page, pageTitleText } from "@/components/ui/page";
 import { Section } from "@/components/ui/section";
 import { StatCard } from "@/components/ui/stat-card";
+import { ARRIVES_WITH, RETRY, StateOf } from "@/components/ui/state-of";
+import { WindowLine, type ReadWindow } from "@/components/ui/window-line";
 import { EM_DASH, absoluteUtc, count, relativeAge } from "@/lib/format";
 
 import {
@@ -516,6 +518,144 @@ describe("the four data-surface states", () => {
     expect(html).toContain("does not exist");
     expect(html).toContain("reload the page");
     expect(tagsOf(html)[0]).toBe("p");
+  });
+});
+
+/**
+ * The refusal card and the window line — the two helpers every page used to
+ * carry its own copy of (campaign admin-window/DEBT-0003).
+ *
+ * They are primitives for one reason beyond tidiness: both render the hooks a
+ * live oracle reads a page's STATE back by, and four hand-copies is four
+ * chances for that contract to drift where a drift grades a broken page as a
+ * pass (ARCHITECTURE.md §10, common violations 6 and 9). Two copies had
+ * already lost the `StateOf` wrappers and the `/claims` `WindowLine` had lost
+ * every `data-window*` attribute before this fold.
+ */
+describe("StateOf", () => {
+  const MISSING = { kind: "not_provisioned", missing: "pending_claims" } as const;
+  const FAILED = {
+    kind: "error",
+    reading: "observations",
+    message: "relation does not exist",
+  } as const;
+
+  it("wraps each refusal in the hook that NAMES the read it refused", () => {
+    const missing = cheerio.load(render(h(StateOf, { result: MISSING })));
+    const failed = cheerio.load(render(h(StateOf, { result: FAILED })));
+
+    expect(missing("[data-not-provisioned]").attr("data-not-provisioned")).toBe(
+      MISSING.missing,
+    );
+    expect(failed("[data-read-failed]").attr("data-read-failed")).toBe(FAILED.reading);
+
+    // Neither state may answer to the other's hook: a page composing several
+    // reads reports each one separately, and an oracle asking "which read
+    // refused?" must get one answer per refusal.
+    expect(missing("[data-read-failed]").length).toBe(0);
+    expect(failed("[data-not-provisioned]").length).toBe(0);
+  });
+
+  it("draws the two refusals as the two primitives that own them, never as one shape", () => {
+    const missing = cheerio.load(render(h(StateOf, { result: MISSING })));
+    const failed = cheerio.load(render(h(StateOf, { result: FAILED })));
+
+    expect(missing('[data-state="not_provisioned"]').length).toBe(1);
+    expect(missing('[data-state="error"]').length).toBe(0);
+    expect(failed('[data-state="error"]').length).toBe(1);
+    expect(failed('[data-state="not_provisioned"]').length).toBe(0);
+  });
+
+  it("keeps the object name verbatim in both the hook and the card", () => {
+    // A machine identifier is never prettified (LOOK_AND_FEEL Voice bar 5), and
+    // the hook must carry the same spelling the query used, or an oracle
+    // reading the hook and an operator reading the card are looking at two
+    // different objects (admin-window/BUG-0016).
+    const html = render(h(StateOf, { result: MISSING }));
+    expect(html).toContain(`data-not-provisioned="${MISSING.missing}"`);
+    expect(textOf(html)).toContain(MISSING.missing);
+  });
+
+  it("spends the window's one arrival sentence and its one retry sentence", () => {
+    // The point of the fold: these two sentences are spelled ONCE. A page that
+    // re-spelled either could drift from every other page's wording, which is
+    // exactly what eight hand-copies of `ARRIVES_WITH` risked.
+    // Read through cheerio, which decodes: the card's sentence reaches the
+    // screen as text, and React escapes the apostrophe of "repo's" on the way
+    // out — a raw-markup comparison would be asserting the escaping, not the
+    // sentence.
+    const said = (html: string) => cheerio.load(html).text();
+    expect(said(render(h(StateOf, { result: MISSING })))).toContain(ARRIVES_WITH);
+    expect(said(render(h(StateOf, { result: FAILED })))).toContain(RETRY);
+  });
+
+  it("carries an eyebrow where the surface has no heading, and none where it does", () => {
+    for (const result of [MISSING, FAILED] as const) {
+      const labelled = render(h(StateOf, { result, eyebrow: "cycle health" }));
+      const bare = render(h(StateOf, { result }));
+      expect(textOf(bare)).not.toContain("cycle health");
+      // `ErrorLine` is a line inside a surface that already names itself, so
+      // only the card takes the label — asserted per state rather than assumed.
+      if (result.kind === "not_provisioned") {
+        expect(textOf(labelled).indexOf("cycle health")).toBe(0);
+      }
+    }
+  });
+});
+
+describe("WindowLine", () => {
+  const WINDOW: ReadWindow = {
+    since: "2026-06-01T00:00:00.000Z",
+    until: "2026-09-01T00:00:00.000Z",
+    limit: 2000,
+    truncated: false,
+  };
+  const line = (over: "table" | "view", window: ReadWindow = WINDOW) =>
+    render(h(WindowLine, { gauge: "cycle_health", window, measured: "Cycles started", over }));
+
+  it("publishes the window it was handed, attribute by attribute", () => {
+    const $ = cheerio.load(line("table"));
+    const published = $("[data-window]");
+    expect(published.attr("data-window")).toBe("cycle_health");
+    expect(published.attr("data-window-since")).toBe(WINDOW.since);
+    expect(published.attr("data-window-until")).toBe(WINDOW.until);
+    expect(textOf(line("table"))).toContain(count(WINDOW.limit));
+  });
+
+  it("states truncation as a confident boolean, present in both directions", () => {
+    // Never an absent attribute for "not truncated": an oracle reading the
+    // hook back must be able to tell a complete window from a missing claim
+    // (ARCHITECTURE.md §4.3 — a null is a refusal, never a zero).
+    const complete = cheerio.load(line("table"))("[data-window]");
+    const filled = cheerio.load(line("table", { ...WINDOW, truncated: true }))("[data-window]");
+    expect(complete.attr("data-window-truncated")).toBe("false");
+    expect(filled.attr("data-window-truncated")).toBe("true");
+  });
+
+  it("qualifies a filled window by ADDING to the sentence, never by replacing it", () => {
+    const complete = textOf(line("table"));
+    const filled = textOf(line("table", { ...WINDOW, truncated: true }));
+    expect(filled.startsWith(complete)).toBe(true);
+    expect(filled.length).toBeGreaterThan(complete.length);
+  });
+
+  it("names what the window was read OVER, and never the other kind of object", () => {
+    // The three copies said "table" twice and "view" once for the same
+    // sentence; the word now follows the object the caller read
+    // (admin-window/DEBT-0003). Asserted against the prop, so no copy is
+    // pinned here.
+    for (const over of ["table", "view"] as const) {
+      const other = over === "table" ? "view" : "table";
+      const text = textOf(line(over));
+      expect(text, over).toContain(over);
+      expect(text, over).not.toContain(other);
+    }
+  });
+
+  it("is one line, and says which gauge's window it is", () => {
+    const html = line("view");
+    expect(tagsOf(html)).toEqual(["p"]);
+    expect(cheerio.load(html)("[data-window]").length).toBe(1);
   });
 });
 

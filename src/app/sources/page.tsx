@@ -10,11 +10,11 @@ import {
   Chip,
   DataTable,
   Empty,
-  ErrorLine,
   Eyebrow,
-  NotProvisioned,
   Page,
   Section,
+  StateOf,
+  WindowLine,
   type Column,
 } from "@/components/ui";
 import {
@@ -23,15 +23,7 @@ import {
   type SourceState,
   type SourcesFilter,
 } from "@/lib/db/sources";
-import type { DbUnavailable } from "@/lib/db/result";
-import {
-  absoluteUtc,
-  count,
-  counted,
-  isAbsent,
-  pluralise,
-  relativeAge,
-} from "@/lib/format";
+import { count, counted, isAbsent, pluralise, relativeAge } from "@/lib/format";
 import {
   readAwaitingRowTrend,
   type AwaitingRowPoint,
@@ -104,12 +96,6 @@ const SOURCES_PATH = "/sources";
  * the convention `queue-filters.ts` set and `claims/filters.ts` followed.
  */
 const SOURCE_FACET = "source_id";
-
-/** What creates the ecosystem objects this page reads. */
-const ARRIVES_WITH = "the scraper repo's migrations";
-
-/** One retry sentence, in the app's voice, for every failed read on this page. */
-const RETRY = "Reload to try the read again.";
 
 /** The chip that clears the narrowing. The app's own word, not a value. */
 const ANY_LABEL = "all";
@@ -219,40 +205,6 @@ function queueItemsHref(sourceId: string): string {
  */
 function runsHref(sourceName: string): string {
   return `/cycles?source=${encodeURIComponent(sourceName)}`;
-}
-
-/* ── the states every surface here can be in ─────────────────────────────── */
-
-/**
- * The state a failed or absent read renders as. `reading` and `missing` come
- * from the result itself, so the line names the object the query named
- * (admin-window/BUG-0016, TASK-0030).
- */
-function StateOf({
-  result,
-  eyebrow,
-}: {
-  result: DbUnavailable;
-  /** Passed only where no `Section` heading already names the surface. */
-  eyebrow?: string;
-}): ReactNode {
-  // The wrapper carries which read refused, in the object's own spelling — the
-  // one thing that distinguishes state 3 from state 4 and from an empty
-  // surface without reading the card's words back (the three never share a
-  // rendering, LOOK_AND_FEEL, Emptiness).
-  return result.kind === "not_provisioned" ? (
-    <div data-not-provisioned={result.missing}>
-      <NotProvisioned
-        missing={result.missing}
-        arrivesWith={ARRIVES_WITH}
-        eyebrow={eyebrow}
-      />
-    </div>
-  ) : (
-    <div data-read-failed={result.reading}>
-      <ErrorLine reading={result.reading} failed={result.message} retry={RETRY} />
-    </div>
-  );
 }
 
 /* ── the registry table ──────────────────────────────────────────────────── */
@@ -440,35 +392,6 @@ function sourceColumns(filter: SourcesFilter): Column<SourceState>[] {
 
 /* ── the two per-source trends (spec §4: they live beside the rows) ──────── */
 
-/** The window line every gauge section carries — which window, and whether it filled. */
-function WindowLine({
-  gauge,
-  window: info,
-  measured,
-}: {
-  /** Which gauge's window this is, for the live suite to read it back. */
-  gauge: string;
-  window: AwaitingRowTrend["window"];
-  /** What the window is over, in the app's voice: "Claims observed", … */
-  measured: string;
-}) {
-  return (
-    <p
-      data-window={gauge}
-      data-window-since={info.since}
-      data-window-until={info.until}
-      data-window-truncated={info.truncated ? "true" : "false"}
-      className="type-body text-ink-secondary"
-    >
-      {measured} since {absoluteUtc(info.since)}, read to {absoluteUtc(info.until)}{" "}
-      — a window of at most {count(info.limit)} rows, not the whole table.
-      {info.truncated
-        ? " The window filled its cap, so every count here is a floor."
-        : ""}
-    </p>
-  );
-}
-
 /** The name a per-source row is known by: the registry's name, or the raw id. */
 function sourceLabel(sourceId: string, name: string | null): ReactNode {
   return (
@@ -539,7 +462,12 @@ function AwaitingRowTrendSection({
 
   return (
     <>
-      <WindowLine gauge="awaiting_row" window={info} measured="Claims observed" />
+      <WindowLine
+        gauge="awaiting_row"
+        window={info}
+        measured="Claims observed"
+        over="table"
+      />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
           label="Awaiting-row claims in this window"
@@ -654,7 +582,12 @@ function RejectionSection({
 
   return (
     <>
-      <WindowLine gauge="rejections" window={info} measured="Claims adjudicated" />
+      <WindowLine
+        gauge="rejections"
+        window={info}
+        measured="Claims adjudicated"
+        over="table"
+      />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
           label="Re-rejected claims in this window"

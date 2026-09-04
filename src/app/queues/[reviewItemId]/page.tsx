@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import type { EvidenceCanonical } from "@/components/evidence/evidence-pair";
 import type { EmptyWords, GaugeState } from "@/components/gauges";
 import {
@@ -10,7 +9,7 @@ import {
   type EvidenceRow,
   type ItemLink,
 } from "@/components/review";
-import { Empty, ErrorLine, NotProvisioned, Page, Section } from "@/components/ui";
+import { ARRIVES_WITH, Empty, Page, RETRY, Section, StateOf } from "@/components/ui";
 import { claimsHref, sourceHref } from "@/lib/claims/filters";
 import { readPendingClaims, type PendingClaimRow } from "@/lib/db/claims";
 import { isRecordId } from "@/lib/db/records";
@@ -94,12 +93,6 @@ import { sourceLabel } from "@/lib/sources/names";
  * Next 16.2.2.
  */
 export const dynamic = "force-dynamic";
-
-/** What creates the ecosystem tables this page reads. */
-const ARRIVES_WITH = "the scraper repo's migrations";
-
-/** One retry sentence, in the app's voice, for every failed read on this page. */
-const RETRY = "Reload to try the read again.";
 
 /** The Claims page, which every "its claims" link narrows. */
 const CLAIMS_PATH = "/claims";
@@ -188,26 +181,6 @@ const EVIDENCE_SURFACE = "evidence";
  * default would be ninety mostly-zero rows beside the evidence.
  */
 const DIAL_DAYS = 14;
-
-/** The state a failed or absent read renders as, naming the object that refused. */
-function StateOf({
-  result,
-  eyebrow,
-}: {
-  result: DbUnavailable;
-  /** Passed only where no `Section` heading already names the surface. */
-  eyebrow?: string;
-}): ReactNode {
-  return result.kind === "not_provisioned" ? (
-    <NotProvisioned
-      missing={result.missing}
-      arrivesWith={ARRIVES_WITH}
-      eyebrow={eyebrow}
-    />
-  ) : (
-    <ErrorLine reading={result.reading} failed={result.message} retry={RETRY} />
-  );
-}
 
 /** The same refusal, as the gauge components' own state prop. */
 function gaugeStateOf(result: DbUnavailable): GaugeState {

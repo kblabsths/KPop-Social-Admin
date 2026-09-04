@@ -1,7 +1,15 @@
 import type { ReactNode } from "react";
 import { BrowseTable } from "@/components/browse/browse-table";
 import { ColumnSelector } from "@/components/browse/column-selector";
-import { Empty, ErrorLine, NotProvisioned, Page, Section } from "@/components/ui";
+import {
+  ARRIVES_WITH,
+  Empty,
+  ErrorLine,
+  NotProvisioned,
+  Page,
+  RETRY,
+  Section,
+} from "@/components/ui";
 import { readRecentEvents, type DbUnavailable } from "@/lib/db/browse";
 import {
   COLUMNS_PARAM,
@@ -46,9 +54,6 @@ import {
 /** This route's own path — the base every selector link is built on. */
 const BROWSE_PATH = "/browse";
 
-/** What creates the ecosystem objects this page reads. */
-const ARRIVES_WITH = "the scraper repo's migrations";
-
 /**
  * The name the events BODY answers to — `data-surface`, read by the live
  * parity oracle (`tests/live/browse.live.test.ts`) and pinned offline by
@@ -80,7 +85,7 @@ function LegNote({ note }: { note: DbUnavailable }) {
     <ErrorLine
       reading={note.reading}
       failed={note.message}
-      retry="Reload to try the read again."
+      retry={RETRY}
     />
   );
 }
@@ -122,7 +127,7 @@ export default async function BrowsePage({
           <ErrorLine
             reading={events.reading}
             failed={events.message}
-            retry="Reload to try the read again."
+            retry={RETRY}
           />
         }
       />

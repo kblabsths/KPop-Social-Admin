@@ -7,7 +7,15 @@ import {
   spreadRows,
   type EmptyWords,
 } from "@/components/gauges";
-import { Empty, ErrorLine, NotProvisioned, Page, Section } from "@/components/ui";
+import {
+  ARRIVES_WITH,
+  Empty,
+  ErrorLine,
+  NotProvisioned,
+  Page,
+  RETRY,
+  Section,
+} from "@/components/ui";
 import { listReviewItems } from "@/lib/db/review-items";
 import type { DbResult } from "@/lib/db/result";
 import { absoluteUtc, count, counted, duration, relativeAge } from "@/lib/format";
@@ -89,9 +97,6 @@ export const dynamic = "force-dynamic";
 
 /** This route's own path — the base every filter link is built on. */
 const QUEUES_PATH = "/queues";
-
-/** What creates the ecosystem tables this page reads. */
-const ARRIVES_WITH = "the scraper repo's migrations";
 
 /** The order both lists are in, stated on screen (LOOK_AND_FEEL bar 6). */
 const SORT_STATEMENT =
@@ -217,7 +222,7 @@ function Queue({
           <ErrorLine
             reading={result.reading}
             failed={result.message}
-            retry="Reload to try the read again."
+            retry={RETRY}
           />
         }
       />
@@ -387,7 +392,7 @@ export default async function QueuesPage({
           <ErrorLine
             reading={health.reading}
             failed={health.message}
-            retry="Reload to try the read again."
+            retry={RETRY}
           />
         ) : (
           <>
