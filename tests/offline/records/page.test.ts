@@ -1070,5 +1070,53 @@ describe("a resolver-owned record", () => {
       expect(lines(markup)).toEqual([]);
       expect(legend(markup)).toEqual([]);
     });
+
+    /* ── QA (admin-window/BUG-0053): the criterion's other named surface, and
+       the state the gate's third clause owns ─────────────────────────────── */
+
+    it("says it on EVERY resolver-owned table, not only the one the ticket named", async () => {
+      // The criterion names `/records/venues/<id>` beside `/records/events/<id>`,
+      // and the gate keys on the REGIME rather than on a table name — so every
+      // table on that side of the cutover owes the operator the same sentence,
+      // and a future table added to the map inherits it without a test edit.
+      const resolverOwned = EDITABLE_TABLES.filter(
+        (table) => EDIT_CONFIG[table].regime === "resolver_owned",
+      );
+      expect(resolverOwned.length).toBeGreaterThan(1);
+      const said = legend(await renderRecord("events"));
+      for (const table of resolverOwned) {
+        const markup = await renderRecord(table);
+        // Same sentence, said once — the anatomy does not change per table.
+        expect(legend(markup), table).toEqual(said);
+        // ...and it is not vacuous there either: the primary key carries no
+        // decision on any table, so there is always a dash to explain.
+        expect(lineFor(markup, EDIT_CONFIG[table].pk).provenanceAbsent, table).toBe(
+          true,
+        );
+      }
+    });
+
+    it("says nothing when the RECORD read failed, though the provenance leg answered", async () => {
+      // The gate's third clause. Every leg answers for itself, so a healthy
+      // provenance leg does not entitle the page to caption a column that was
+      // never drawn: the record's own refusal is the whole page here, and a
+      // legend about an empty cell beside it would describe nothing on screen.
+      for (const failure of [
+        { error: permissionDenied("events") },
+        { error: tableNotInSchemaCache("events") },
+      ]) {
+        const markup = await renderRecord("events", {
+          ...defaultScript("events"),
+          events: failure,
+        });
+        expect(lines(markup)).toEqual([]);
+        expect(legend(markup)).toEqual([]);
+        // ...and the record's own leg still reports, so the page is not silent.
+        const $ = cheerio.load(markup);
+        expect(
+          $('[data-state="error"], [data-state="not_provisioned"]').length,
+        ).toBeGreaterThan(0);
+      }
+    });
   });
 });
