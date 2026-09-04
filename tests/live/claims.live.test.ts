@@ -3,7 +3,14 @@ import { describe, expect, it } from "vitest";
 import ClaimsPage from "@/app/claims/page";
 import { CLAIM_WINDOW } from "@/components/claims";
 import { T } from "@/lib/db/tables";
-import { countRows, exactCount, gradeSurface, independentClient, renderPage } from "./parity";
+import {
+  countRows,
+  exactCount,
+  gradeSurface,
+  independentClient,
+  renderPage,
+  surfaceHooks,
+} from "./parity";
 
 /**
  * The Claims page against staging (campaign admin-window/TASK-0012, oracle
@@ -104,13 +111,35 @@ const RENDERED_BUCKETS = [
 const PARKED_BUCKET = "in_window";
 
 /**
- * The page's surfaces, in the order `src/app/claims/page.tsx` renders them.
- * The standing tab renders no bucket table at all, so its list is the first
- * section — the order is read structurally, never by heading text.
+ * The page's surfaces, each named by the `data-surface` hook
+ * `src/app/claims/page.tsx` gives it. Never read by heading text — the list
+ * and the gauge both retitle themselves per tab and keep their names.
+ *
+ * NAMES, not positions. These were `section:nth-of-type(n)` until
+ * admin-window/DEBT-0002, and on THIS page the position was already
+ * tab-dependent: the standing tab renders no bucket table, so its list is the
+ * first section, and the oracle had to carry a `listOf(tab)` function whose
+ * only job was to guess a number. `stateOf` (`tests/live/parity.ts`) demands
+ * the selector match EXACTLY ONE element, so one added section — or one
+ * `<div>` wrapping an existing one — either duplicates a match or silently
+ * repoints the selector at the neighbouring surface; on `/cycles` that cost
+ * four live tests (admin-window/BUG-0040, admin-window/BUG-0056). `LIST` is
+ * the list on BOTH tabs.
  */
-const BUCKETS = "section:nth-of-type(1)";
-const listOf = (tab?: string) =>
-  tab === "standing" ? "section:nth-of-type(1)" : "section:nth-of-type(2)";
+const BUCKETS = '[data-surface="buckets"]';
+const LIST = '[data-surface="claims"]';
+const GAUGE = '[data-surface="gauge"]';
+
+/**
+ * How many elements each hook is expected to reach, per tab. Two of the three
+ * surfaces always render; `buckets` renders only where a bucket table belongs,
+ * which is a count of 0 or 1 and never 2 — the one thing that would break
+ * `stateOf`.
+ */
+const SURFACE_COUNTS: Record<string, Record<string, number>> = {
+  buckets: { [BUCKETS]: 1, [LIST]: 1, [GAUGE]: 1 },
+  standing: { [BUCKETS]: 0, [LIST]: 1, [GAUGE]: 1 },
+};
 
 /** The page as the URL renders it. Every read happens per request. */
 async function claimsMarkup(params: Params = {}): Promise<string> {
@@ -316,6 +345,25 @@ function gradeWindow(markup: string, held: readonly ClaimInstant[], whole: numbe
   expect(line.truncated).toBe(whole > CLAIM_WINDOW);
 }
 
+describe("the Claims page's surface hooks against staging", () => {
+  it("names every surface on the page once, on both tabs", async () => {
+    // The oracle's addressing itself, asserted before it is used: each hook
+    // has to reach exactly one element wherever it renders, which is the
+    // precondition `stateOf` enforces per call. Both tabs, because the tab is
+    // what changes this page's section ORDER — the very thing the old
+    // positional selectors had to encode (admin-window/DEBT-0002).
+    // `nested` empty says no surface sits inside another, so grading one never
+    // reads a card that belongs to its neighbour.
+    for (const [tab, counts] of Object.entries(SURFACE_COUNTS)) {
+      const markup = await claimsMarkup({ tab });
+      expect(surfaceHooks(markup, Object.keys(counts)), tab).toEqual({
+        counts,
+        nested: [],
+      });
+    }
+  });
+});
+
 describe("the classification buckets against staging", () => {
   it("renders each bucket's count exactly as the view holds it", async () => {
     const markup = await claimsMarkup();
@@ -382,7 +430,7 @@ describe("the classification buckets against staging", () => {
     const markup = await claimsMarkup();
     const state = await gradeSurface({
       markup,
-      within: listOf(),
+      within: LIST,
       object: T.pendingClaims,
       counted: () => countRows(() => claimCount()),
     });
@@ -401,7 +449,7 @@ describe("the classification buckets against staging", () => {
     // honest state, and not the same thing as an absent view.
     const state = await gradeSurface({
       markup,
-      within: listOf("standing"),
+      within: LIST,
       object: T.pendingClaims,
       counted: () => listCount("standing"),
     });
@@ -455,7 +503,7 @@ describe("the parked bucket against staging", () => {
       // threw before the assertion below (admin-window/BUG-0037).
       await gradeSurface({
         markup,
-        within: listOf(params.tab),
+        within: LIST,
         object: T.pendingClaims,
         counted: () => listCount(params.tab),
       });
@@ -521,7 +569,7 @@ describe("a source is named against staging", () => {
     const markup = await claimsMarkup();
     await gradeSurface({
       markup,
-      within: listOf(),
+      within: LIST,
       object: T.pendingClaims,
       counted: () => listCount(),
     });

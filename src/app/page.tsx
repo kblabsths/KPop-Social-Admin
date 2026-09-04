@@ -95,6 +95,28 @@ const RUN_PARAM = "run";
 const ARRIVES_WITH = "the scraper repo's migrations";
 
 /**
+ * The name each of this page's surfaces answers to — `data-surface`, rendered
+ * by `Section` and read by the live parity oracle
+ * (`tests/live/dashboard.live.test.ts`), pinned offline by
+ * `tests/offline/dashboard/page.test.ts`.
+ *
+ * A NAME, never a position. The oracle addressed these three as
+ * `section:nth-of-type(n)` until admin-window/DEBT-0002, which made it hostage
+ * to this file's element order and to any wrapper a later ticket adds: on
+ * `/cycles` exactly that cost four live tests (admin-window/BUG-0040 added a
+ * section and a `<div>`, so `:nth-of-type(1)` matched two surfaces and
+ * `stateOf` rightly refused to read a state of two — admin-window/BUG-0056).
+ * A name does not move when the page is rearranged.
+ *
+ * The name is the surface's identity, not its heading, and must be unique
+ * within this page — including against any hand-written `data-surface`
+ * wrapper, of which this page has none.
+ */
+const ATTENTION_SURFACE = "attention";
+const CYCLES_SURFACE = "cycles";
+const RUNS_SURFACE = "runs";
+
+/**
  * The `micro` label above each count — and the label a parity test reads the
  * number under. Keyed by `Kind` so a third kind could not be added without the
  * compiler asking for its label.
@@ -329,7 +351,7 @@ export default async function DashboardPage() {
 
   return (
     <Page title="Dashboard">
-      <Section title="Attention">
+      <Section title="Attention" surface={ATTENTION_SURFACE}>
         {attention.kind === "not_provisioned" ? (
           <NotProvisioned missing={attention.missing} arrivesWith={ARRIVES_WITH} />
         ) : attention.kind === "error" ? (
@@ -360,7 +382,7 @@ export default async function DashboardPage() {
         )}
       </Section>
 
-      <Section title="Cycles">
+      <Section title="Cycles" surface={CYCLES_SURFACE}>
         <p className="type-body text-ink-secondary">
           The resolver&rsquo;s newest cycles, newest first — a window of{" "}
           {DASHBOARD_WINDOW}, not a count. Open Cycles &amp; runs for the rest.
@@ -375,7 +397,7 @@ export default async function DashboardPage() {
         />
       </Section>
 
-      <Section title="Runs">
+      <Section title="Runs" surface={RUNS_SURFACE}>
         <p className="type-body text-ink-secondary">
           The adapters&rsquo; newest runs, newest first — a window of{" "}
           {DASHBOARD_WINDOW}, not a count. Open Cycles &amp; runs for the rest.

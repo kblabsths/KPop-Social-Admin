@@ -22,6 +22,7 @@ import {
   rerejects,
   runsResponseFor,
 } from "./population";
+import { oneEach, surfaceHooks } from "../../live/parity";
 import { observationRow } from "../../fixtures/rows";
 import {
   permissionDenied,
@@ -984,5 +985,113 @@ describe("the copy the operator actually reads", () => {
     ).toEqual(['1: <span className=\"type-data text-ink\">stuck_pattern</span> dial lives only']);
     // ...and the page as it stands must be clean of it.
     expect(implicitInterElementSpaces("src/app/sources/page.tsx")).toEqual([]);
+  });
+});
+
+/* ── the addressing the live oracle depends on ───────────────────────────── */
+
+/**
+ * The name each surface answers to (`data-surface`, `src/app/sources/page.tsx`),
+ * as `tests/live/sources.live.test.ts` addresses them. The two trend surfaces
+ * take the names their window lines already carry.
+ */
+const SURFACE_HOOKS = {
+  registry: '[data-surface="registry"]',
+  awaiting_row: '[data-surface="awaiting_row"]',
+  rejections: '[data-surface="rejections"]',
+} as const;
+
+const HOOKS = Object.values(SURFACE_HOOKS);
+
+describe("the surface hooks the live parity oracle addresses", () => {
+  /**
+   * The live oracle grades ONE surface at a time and `stateOf`
+   * (`tests/live/parity.ts`) refuses any selector matching other than exactly
+   * one element. Until admin-window/DEBT-0002 it addressed these three
+   * POSITIONALLY — `section:nth-of-type(n)` — so one added section, or one
+   * `<div>` wrapped around an existing one, either duplicates a match or
+   * silently repoints the selector at the neighbouring surface. On `/cycles`
+   * that is not hypothetical: admin-window/BUG-0040's lead section and its
+   * wrapper made `:nth-of-type(1)` match two surfaces and four live tests
+   * threw (admin-window/BUG-0056).
+   *
+   * Nothing offline could see any of that — `npm test` runs the offline and
+   * isolated projects only — so the live oracle's addressing had no pin in CI.
+   * These cases are that pin, in the file that owns this page's markup.
+   */
+  it("gives each surface exactly one element, in every state and under a narrowing", async () => {
+    const populated = await renderSources(healthyScript());
+    const narrowed = await renderSources(healthyScript(), {
+      source_id: SOURCE.ticketmaster,
+    });
+    // The registry that holds nothing, and the narrowing that matched nothing:
+    // two different emptinesses, and one of them renders an extra `<div>`
+    // wrapper around its card.
+    const empty = await renderSources(
+      healthyScript({ [T.sources]: [{ data: [], count: 0 }, { data: [] }] }),
+    );
+    const matchedNothing = await renderSources(healthyScript(), {
+      source_id: "00000000-0000-7000-8000-000000000000",
+    });
+    // The states that swap a surface's table for a card are exactly where a
+    // wrapper is most likely to appear or vanish.
+    const absent = await renderSources({
+      [T.sources]: { error: tableNotInSchemaCache(T.sources) },
+      [T.runs]: { error: tableNotInSchemaCache(T.runs) },
+      [T.observations]: { error: tableNotInSchemaCache(T.observations) },
+      [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
+    });
+    const refused = await renderSources({
+      [T.sources]: { error: permissionDenied(T.sources) },
+      [T.runs]: { error: permissionDenied(T.runs) },
+      [T.observations]: { error: permissionDenied(T.observations) },
+      [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
+    });
+    // One read failing while its neighbours succeed — the branch no whole-page
+    // script reaches, and the one where a wrapper appears in one surface only.
+    const partial = await renderSources(
+      healthyScript({ [T.observations]: { error: permissionDenied(T.observations) } }),
+    );
+
+    const states: [string, string][] = [
+      ["populated", populated],
+      ["narrowed", narrowed],
+      ["registry empty", empty],
+      ["narrowing matched nothing", matchedNothing],
+      ["absent", absent],
+      ["refused", refused],
+      ["one read refused", partial],
+    ];
+    for (const [name, markup] of states) {
+      // `nested` empty is the second half: a hook can be unique and still
+      // swallow its neighbour's state cards.
+      expect(surfaceHooks(markup, HOOKS), name).toEqual({
+        counts: oneEach(HOOKS),
+        nested: [],
+      });
+    }
+  });
+
+  it("keeps each surface's own table and window line inside its own hook", async () => {
+    // A hook that is unique but points at the wrong surface is the same bug
+    // wearing a different hat, so each name is checked against what that
+    // surface actually reads.
+    const $ = cheerio.load(await renderSources(healthyScript()));
+
+    expect($(SURFACE_HOOKS.registry).find("[data-source]").length).toBe(SOURCES.length);
+    expect(
+      $(SURFACE_HOOKS.awaiting_row).find(`table[aria-label="${AWAITING_BY_SOURCE}"]`).length,
+    ).toBe(1);
+    expect($(SURFACE_HOOKS.awaiting_row).find('[data-window="awaiting_row"]').length).toBe(1);
+    expect(
+      $(SURFACE_HOOKS.rejections).find(`table[aria-label="${REJECTED_BY_SOURCE}"]`).length,
+    ).toBe(1);
+    expect($(SURFACE_HOOKS.rejections).find('[data-window="rejections"]').length).toBe(1);
+
+    // The three never bleed into each other: the registry holds no trend row,
+    // and neither trend holds the other's window line.
+    expect($(SURFACE_HOOKS.registry).find("[data-trend-source], [data-window]").length).toBe(0);
+    expect($(SURFACE_HOOKS.awaiting_row).find('[data-window="rejections"]').length).toBe(0);
+    expect($(SURFACE_HOOKS.rejections).find('[data-window="awaiting_row"]').length).toBe(0);
   });
 });

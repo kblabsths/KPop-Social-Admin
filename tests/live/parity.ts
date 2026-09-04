@@ -443,6 +443,59 @@ function numberBeside(followingTexts: readonly string[]): Beside {
 }
 
 /**
+ * Where each named surface hook lands in one render — the ADDRESSING that
+ * every `stateOf` call on that markup depends on, read once and reported as
+ * data (campaign admin-window/DEBT-0002).
+ *
+ * `stateOf` refuses any selector matching other than exactly one element, so
+ * an oracle's addressing is a precondition, not a detail. Until
+ * admin-window/DEBT-0002 six live oracles addressed their surfaces by POSITION
+ * (`section:nth-of-type(n)`, sometimes compounded with a child position), and
+ * on `/cycles` a single added section plus one `<div>` wrapper made one
+ * selector match two surfaces: four live tests threw `MarkupReadError` at once
+ * and none of them said why (admin-window/BUG-0040, admin-window/BUG-0056).
+ * Asserting this report BEFORE grading turns the next such rearrangement into
+ * one legible failure that names the hook.
+ *
+ * Two things are reported, because two different things go wrong:
+ *
+ *  - `counts` — how many elements each hook reaches. `1` for a surface that
+ *    always renders; `0` is legitimate for one that does not render on this
+ *    branch (the standing tab of `/claims` draws no bucket table), which is
+ *    why the expected number is the caller's to state. Anything above 1 is the
+ *    bug.
+ *  - `nested` — every pair where one named surface sits INSIDE another, as
+ *    `"outer contains inner"`. A hook can be unique and still wrong: a surface
+ *    that swallows its neighbour grades its neighbour's state cards as its own.
+ *
+ * Returning data rather than asserting keeps one `expect` in the test, with a
+ * diff that names the hook and the number — and keeps this module free of the
+ * runner.
+ */
+export function surfaceHooks(
+  markup: string,
+  hooks: readonly string[],
+): { counts: Record<string, number>; nested: string[] } {
+  const $ = cheerio.load(markup);
+  const counts: Record<string, number> = {};
+  for (const hook of hooks) counts[hook] = $(hook).length;
+
+  const nested: string[] = [];
+  for (const outer of hooks) {
+    for (const inner of hooks) {
+      if (outer === inner) continue;
+      if ($(outer).find(inner).length > 0) nested.push(`${outer} contains ${inner}`);
+    }
+  }
+  return { counts, nested };
+}
+
+/** Every hook mapped to exactly one element — the usual expectation. */
+export function oneEach(hooks: readonly string[]): Record<string, number> {
+  return Object.fromEntries(hooks.map((hook) => [hook, 1]));
+}
+
+/**
  * The number the markup shows under `label`.
  *
  * Throws rather than returning a sentinel: a parity test that silently reads

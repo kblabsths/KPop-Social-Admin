@@ -5,7 +5,7 @@ import { T } from "@/lib/db/tables";
 import { absoluteUtc } from "@/lib/format";
 import { render } from "../ui/markup";
 import { blankCells } from "../absence/surfaces";
-import { readNumber } from "../../live/parity";
+import { oneEach, readNumber, surfaceHooks } from "../../live/parity";
 import {
   resolutionRunRow,
   reviewItemDataConflict,
@@ -907,5 +907,102 @@ describe("a cycle or run that reported nothing", () => {
     expect(errorLinesOf(markup, "runs")).toEqual([]);
     expect(absencesOf(markup, "runs", "error")).toEqual([true]);
     expect(blankCells(markup)).toBe(0);
+  });
+});
+
+/* ── the addressing the live oracle depends on ───────────────────────────── */
+
+/**
+ * The name each surface answers to (`data-surface`, `src/app/page.tsx`), as
+ * `tests/live/dashboard.live.test.ts` addresses them.
+ */
+const SURFACE_HOOKS = {
+  attention: '[data-surface="attention"]',
+  cycles: '[data-surface="cycles"]',
+  runs: '[data-surface="runs"]',
+} as const;
+
+const HOOKS = Object.values(SURFACE_HOOKS);
+
+describe("the surface hooks the live parity oracle addresses", () => {
+  /**
+   * The live oracle grades ONE surface at a time and `stateOf`
+   * (`tests/live/parity.ts`) refuses any selector matching other than exactly
+   * one element. Until admin-window/DEBT-0002 it addressed these three
+   * POSITIONALLY — `section:nth-of-type(n)` — so one added section, or one
+   * `<div>` wrapped around an existing one, either duplicates a match or
+   * silently repoints the selector at the neighbouring surface. On `/cycles`
+   * that is not hypothetical: admin-window/BUG-0040's lead section and its
+   * wrapper made `:nth-of-type(1)` match two surfaces and four live tests
+   * threw (admin-window/BUG-0056).
+   *
+   * Nothing offline could see any of that — `npm test` runs the offline and
+   * isolated projects only — so the live oracle's addressing had no pin in CI.
+   * These cases are that pin, in the file that owns this page's markup: a
+   * reorder reddens the suite that runs on every ticket, not only the one that
+   * needs staging.
+   */
+  it("gives each surface exactly one element, in every state", async () => {
+    const populated = await renderDashboard(healthyScript());
+    const empty = await renderDashboard(
+      healthyScript({
+        [T.reviewItems]: { data: [], count: 0 },
+        [T.resolutionRuns]: { data: [] },
+        [T.runs]: { data: [] },
+      }),
+    );
+    // The states that swap a surface's table for a card are exactly where a
+    // wrapper is most likely to appear or vanish.
+    const absent = await renderDashboard({
+      [T.reviewItems]: { error: tableNotInSchemaCache(T.reviewItems) },
+      [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
+      [T.runs]: { error: tableNotInSchemaCache(T.runs) },
+    });
+    const refused = await renderDashboard({
+      [T.reviewItems]: { error: permissionDenied(T.reviewItems) },
+      [T.resolutionRuns]: { error: permissionDenied(T.resolutionRuns) },
+      [T.runs]: { error: permissionDenied(T.runs) },
+    });
+    // One read failing while its neighbours succeed: a partial failure swaps
+    // exactly one surface's table for a card while the rest keeps its shape,
+    // which no whole-page script can reach.
+    const partial = await renderDashboard(
+      healthyScript({
+        [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
+      }),
+    );
+
+    const states: [string, string][] = [
+      ["populated", populated],
+      ["empty", empty],
+      ["absent", absent],
+      ["refused", refused],
+      ["one read absent", partial],
+    ];
+    for (const [name, markup] of states) {
+      // `nested` empty is the second half: a hook can be unique and still
+      // swallow its neighbour's state cards.
+      expect(surfaceHooks(markup, HOOKS), name).toEqual({
+        counts: oneEach(HOOKS),
+        nested: [],
+      });
+    }
+  });
+
+  it("keeps each surface's own rows inside its own hook", async () => {
+    // A hook that is unique but points at the wrong surface is the same bug
+    // wearing a different hat, so each name is checked against what that
+    // surface actually reads.
+    const $ = cheerio.load(await renderDashboard(healthyScript()));
+
+    // One queue link per kind — decisions and signals, of equal standing.
+    expect($(SURFACE_HOOKS.attention).find('a[href^="/queues?"]').length).toBe(2);
+    expect($(SURFACE_HOOKS.cycles).find('table[aria-label="cycles"]').length).toBe(1);
+    expect($(SURFACE_HOOKS.runs).find('table[aria-label="runs"]').length).toBe(1);
+
+    // The two tables never bleed into each other's surface.
+    expect($(SURFACE_HOOKS.cycles).find('table[aria-label="runs"]').length).toBe(0);
+    expect($(SURFACE_HOOKS.runs).find('table[aria-label="cycles"]').length).toBe(0);
+    expect($(SURFACE_HOOKS.attention).find("table").length).toBe(0);
   });
 });

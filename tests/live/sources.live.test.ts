@@ -10,8 +10,10 @@ import {
   gradeSurface,
   independentClient,
   objectIsAbsent,
+  oneEach,
   renderPage,
   stateOf,
+  surfaceHooks,
 } from "./parity";
 
 /**
@@ -55,13 +57,36 @@ import {
 type Params = Record<string, string>;
 
 /**
- * This page's three surfaces, in the order `src/app/sources/page.tsx` renders
- * them: the registry, the awaiting-row trend, the settled-values trend. Each
- * is its own read, so each is its own state.
+ * This page's three surfaces — the registry, the awaiting-row trend, the
+ * settled-values trend — each named by the `data-surface` hook
+ * `src/app/sources/page.tsx` gives it. Each is its own read, so each is its
+ * own state.
+ *
+ * NAMES, not positions. These three were `section:nth-of-type(1|2|3)` until
+ * admin-window/DEBT-0002, which made every assertion below hostage to that
+ * file's element ORDER: `stateOf` (`tests/live/parity.ts`) demands the
+ * selector match EXACTLY ONE element, so one added section — or one `<div>`
+ * wrapping an existing one — either duplicates a match or silently repoints
+ * the selector at the neighbouring surface. On `/cycles` that is exactly what
+ * happened: admin-window/BUG-0040 added a section and a wrapper, and four live
+ * tests threw `MarkupReadError` (admin-window/BUG-0056). A hook does not move
+ * when the page is rearranged.
+ *
+ * The two trend surfaces answer to the same names their window lines already
+ * carry (`data-window="awaiting_row"`, `data-window="rejections"`) — a
+ * different attribute, so nothing collides, and the surface and the figure
+ * inside it are called one thing.
  */
-const REGISTRY = "section:nth-of-type(1)";
-const AWAITING_TREND = "section:nth-of-type(2)";
-const REJECTIONS = "section:nth-of-type(3)";
+const REGISTRY = '[data-surface="registry"]';
+const AWAITING_TREND = '[data-surface="awaiting_row"]';
+const REJECTIONS = '[data-surface="rejections"]';
+
+/**
+ * Every surface hook this page is expected to carry, asserted present and
+ * UNIQUE before any of them is graded — so the next reorder fails as one
+ * legible assertion here rather than as scattered `MarkupReadError`s.
+ */
+const SURFACES = [REGISTRY, AWAITING_TREND, REJECTIONS];
 
 /** The `micro` labels the two trend figures stand under, as an operator reads them. */
 const AWAITING_FIGURE = "Awaiting-row claims in this window";
@@ -138,6 +163,32 @@ async function stagingSources(): Promise<StagingSource[]> {
   if (error) throw new Error(`the sources query failed: ${JSON.stringify(error)}`);
   return (data ?? []) as StagingSource[];
 }
+
+describe("the Sources page's surface hooks against staging", () => {
+  it("names every surface on the page once, whatever order they are in", async () => {
+    // The oracle's addressing itself, asserted before it is used: each hook
+    // has to reach exactly one element, which is the precondition `stateOf`
+    // enforces per call. Rendered bare AND narrowed, because the `?source_id=`
+    // branch swaps the registry's body between a table and a card — and a
+    // branch that adds or drops a wrapper is where this class does its damage
+    // (admin-window/DEBT-0002).
+    const renders: [string, string][] = [
+      ["bare", await sourcesMarkup()],
+      [
+        "narrowed",
+        await sourcesMarkup({ source_id: "00000000-0000-7000-8000-000000000000" }),
+      ],
+    ];
+    // `nested` empty says no surface sits inside another, so grading one never
+    // reads a card that belongs to its neighbour.
+    for (const [name, markup] of renders) {
+      expect(surfaceHooks(markup, SURFACES), name).toEqual({
+        counts: oneEach(SURFACES),
+        nested: [],
+      });
+    }
+  });
+});
 
 describe("the source state rows against staging", () => {
   it("renders every source the registry holds, with its state verbatim", async () => {
