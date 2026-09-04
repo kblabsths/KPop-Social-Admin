@@ -257,7 +257,18 @@ function Queue({
   );
 }
 
-/** One queue's slice of the queue-health gauge (spec §5). */
+/**
+ * One queue's slice of the queue-health gauge (spec §5).
+ *
+ * Every eyebrow here belongs to a QUEUE, and a queue name is a machine
+ * identifier — so it is handed over as `{ identifier, words }` rather than
+ * concatenated into the label string. Concatenation put it inside the `micro`
+ * step, which is uppercase sans, and the same screen then showed
+ * `DATA_CONFLICT OPEN` three pixels under the `data_conflict` subsection
+ * heading below (LOOK_AND_FEEL Voice bar 5; admin-window/BUG-0049). The
+ * primitive keeps the identifier verbatim in mono and gives only OUR words the
+ * `micro` treatment (`ui/micro-label.tsx`).
+ */
 function QueueGauge({
   stats,
   health,
@@ -272,7 +283,7 @@ function QueueGauge({
       <p className="type-data text-ink">{stats.queue}</p>
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
-          label={`${stats.queue} open`}
+          label={{ identifier: stats.queue, words: "open" }}
           value={stats.open}
           floor={window.truncated}
           sub={
@@ -290,7 +301,7 @@ function QueueGauge({
           }
         />
         <GaugeCard
-          label={`${stats.queue} folded`}
+          label={{ identifier: stats.queue, words: "folded" }}
           value={stats.folds.foldedItems}
           floor={window.truncated}
           sub={`of ${counted(stats.folds.items, "item")} read here, ${counted(
@@ -300,7 +311,7 @@ function QueueGauge({
         />
       </div>
       <Distribution
-        label={`${stats.queue} open age`}
+        label={{ identifier: stats.queue, words: "open age" }}
         dimension="percentile"
         measure="age"
         format={duration}
@@ -321,7 +332,7 @@ function QueueGauge({
         }
       />
       <TrendTable<(typeof stats.weeks)[number]>
-        label={`${stats.queue} by week`}
+        label={{ identifier: stats.queue, words: "by week" }}
         period="week (UTC)"
         rows={stats.weeks}
         rowKey={(week) => week.weekStart}

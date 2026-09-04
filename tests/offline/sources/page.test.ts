@@ -11,6 +11,7 @@ import {
   factoryTicketIds,
   render,
   runTogetherWords,
+  uppercasedIdentifiers,
 } from "../ui/markup";
 import {
   PENDING_CLAIMS,
@@ -968,6 +969,45 @@ describe("the copy the operator actually reads", () => {
       ]);
       expect(factoryTicketIds(await renderSources(script)), state).toEqual([]);
     }
+  });
+
+  it("never uppercases a machine identifier into a sans micro label", async () => {
+    // The `micro` step is uppercase sans, so an identifier put inside one is
+    // rewritten on screen — `source_id` reached the walk as `SOURCE_ID` above
+    // its own chips (admin-window/BUG-0049, LOOK_AND_FEEL Voice bar 5). The
+    // identifier still has to be THERE: the group's label is the URL parameter
+    // it sets, which is the whole reason it is spelled that way.
+    for (const [state, script] of Object.entries({
+      healthy: healthyScript(),
+      empty: healthyScript({
+        [T.sources]: [{ data: [], count: 0 }, { data: [] }],
+        [T.observations]: [{ data: [] }, { data: [] }],
+        [T.pendingClaims]: { data: [] },
+        [T.runs]: [],
+      }),
+      absent: healthyScript({
+        [T.sources]: [
+          { error: tableNotInSchemaCache(T.sources) },
+          { error: tableNotInSchemaCache(T.sources) },
+        ],
+      }),
+    })) {
+      // The guard proves itself before it clears the page: the spelling that
+      // shipped MUST be found, or the assertion below is vacuous.
+      expect(
+        uppercasedIdentifiers('<span class="type-micro">source_id</span>'),
+      ).toEqual(["source_id"]);
+      const markup = await renderSources(script);
+      expect(uppercasedIdentifiers(markup), state).toEqual([]);
+      expect(markup, state).not.toContain("SOURCE_ID");
+    }
+
+    // and it is still on screen, verbatim, in the group it names — the guard
+    // must not be satisfiable by deleting the label. (Only the registry state
+    // renders chips at all: with no sources there is nothing to narrow.)
+    const $ = cheerio.load(await renderSources(healthyScript()));
+    expect($('[data-facet="source_id"]').text().replace(/\s+/g, " ").trim())
+      .toContain("source_id");
   });
 
   it("puts a space between a mono identifier and the word after it", async () => {

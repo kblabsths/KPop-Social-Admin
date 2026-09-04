@@ -1,4 +1,10 @@
-import { Empty, ErrorLine, Loading, NotProvisioned } from "@/components/ui";
+import {
+  Empty,
+  ErrorLine,
+  Loading,
+  NotProvisioned,
+  type MicroLabel,
+} from "@/components/ui";
 
 /**
  * The four mandatory data-surface states, as one prop every gauge component
@@ -73,9 +79,11 @@ export function GaugeStateCard({
    * without it a screen of empty or unprovisioned gauges tells the operator
    * which tables are missing but not which knob each one tunes. Every gauge
    * component already requires a `label`, so no caller is asked for a new word
-   * (ARCHITECTURE §7, admin-window/TASK-0030).
+   * (ARCHITECTURE §7, admin-window/TASK-0030). A machine identifier travels as
+   * `{ identifier, words }` and keeps its case and mono face here too
+   * (admin-window/BUG-0049).
    */
-  label: string;
+  label: MicroLabel;
 }) {
   return state.kind === "empty" ? (
     <Empty holds={state.holds} filledBy={state.filledBy} eyebrow={label} />

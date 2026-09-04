@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { StatCard, type StatTone } from "@/components/ui";
+import { StatCard, type MicroLabel, type StatTone } from "@/components/ui";
 import { isAbsent } from "@/lib/format";
 import {
   GaugeStateCard,
@@ -49,8 +49,12 @@ import {
 const UNSTATED_REASON = "not measured";
 
 type GaugeCardBase = {
-  /** The `micro` eyebrow: what the figure counts. */
-  label: string;
+  /**
+   * The `micro` eyebrow: what the figure counts. A machine identifier goes in
+   * as `{ identifier, words }` so it is not uppercased into sans prose
+   * (`ui/micro-label.tsx`, admin-window/BUG-0049).
+   */
+  label: MicroLabel;
   /** At most one `data` line of sub-detail. */
   sub?: ReactNode;
   /** Colour, only when the figure carries a palette state. */

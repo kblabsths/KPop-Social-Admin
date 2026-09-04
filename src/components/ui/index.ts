@@ -9,6 +9,7 @@ export { type Column, DataTable, type SortDirection } from "./data-table";
 export { Empty } from "./empty";
 export { ErrorLine } from "./error-line";
 export { Loading } from "./loading";
+export { Eyebrow, type MicroLabel, microLabelText } from "./micro-label";
 export { NotProvisioned } from "./not-provisioned";
 export { Page } from "./page";
 export { Section } from "./section";

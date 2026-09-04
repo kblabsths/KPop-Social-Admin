@@ -358,7 +358,11 @@ function dialProps(
   name: string,
   trend: DbResult<AwaitingRowTrend>,
 ): DialProps {
-  const label = `${name} stuck records`;
+  // The source name is the machine's own value: it goes into the eyebrow as an
+  // identifier, so it renders verbatim in mono rather than being uppercased
+  // into `TICKETMASTER STUCK RECORDS` by the sans `micro` step
+  // (LOOK_AND_FEEL Voice bar 5; admin-window/BUG-0049).
+  const label = { identifier: name, words: "stuck records" };
   const empty: EmptyWords = {
     holds: "days with a stuck record in this window",
     filledBy:

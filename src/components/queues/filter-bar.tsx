@@ -1,4 +1,4 @@
-import { Chip } from "@/components/ui";
+import { Chip, Eyebrow } from "@/components/ui";
 import type { FilterFacet } from "@/lib/review/queue-filters";
 
 /**
@@ -12,8 +12,10 @@ import type { FilterFacet } from "@/lib/review/queue-filters";
  *
  * It chooses nothing. `filterBar` in `src/lib/review/queue-filters.ts` decides
  * which chips exist, where each goes and which is active; this renders them.
- * The group's `micro` label is the parameter it sets, so the screen and the
- * URL use one word for one thing.
+ * The group's label is the parameter it sets, so the screen and the URL use
+ * one word for one thing — which makes it a machine identifier, and it renders
+ * as one: verbatim, in mono, in its own case, never uppercased into a sans
+ * `micro` label the way `SOURCE_ID` was (admin-window/BUG-0049).
  *
  * A pure component: plain props, no fetching (ARCHITECTURE.md §4 rule 1).
  */
@@ -28,7 +30,7 @@ export function FilterBar({ facets }: { facets: readonly FilterFacet[] }) {
           aria-label={group.facet}
           className="flex flex-wrap items-center gap-2"
         >
-          <span className="type-micro text-ink-secondary">{group.facet}</span>
+          <Eyebrow label={{ identifier: group.facet }} />
           {group.choices.map((choice) => (
             <Chip
               key={choice.label}
