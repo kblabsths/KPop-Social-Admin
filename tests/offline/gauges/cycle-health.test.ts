@@ -144,7 +144,61 @@ describe("aggregateCycleHealth", () => {
 
   it("counts every outcome, with a cycle that has not finished under its own name", () => {
     expect(health.cycles).toBe(3);
-    expect(health.outcomes).toEqual({ succeeded: 1, failed: 1, skipped: 0, unfinished: 1 });
+    expect(health.outcomes).toEqual({
+      succeeded: 1,
+      failed: 1,
+      skipped: 0,
+      running: 0,
+      died: 1,
+      unrecorded: 0,
+    });
+  });
+
+  /*
+   * The three states a row with no `outcome` can be in are counted apart, each
+   * under the word the `/cycles` table already puts on that row
+   * (admin-window/BUG-0055). One bucket for all three named the same four
+   * cycles `unfinished` that the rows called `died`.
+   *
+   * The clock is `window.until`, so these are decidable rather than
+   * wall-clock: 11:59 is one minute before it, 06:00 is six hours before it.
+   */
+  it("tells a cycle still running apart from one that died, by the same cadence the rows use", () => {
+    const running = resolutionRunRow({
+      run_id: "01920000-0000-7000-8000-000000000701",
+      started_at: "2026-09-01T11:59:00Z", // 60s before `until` — inside the 900s cadence
+      ended_at: null,
+      outcome: null,
+    });
+    const died = resolutionRunRow({
+      run_id: "01920000-0000-7000-8000-000000000702",
+      started_at: "2026-09-01T06:00:00Z", // six hours before it — nothing repairs this row
+      ended_at: null,
+      outcome: null,
+    });
+    const split = aggregateCycleHealth({ rows: [running, died], window });
+    expect(split.outcomes.running).toBe(1);
+    expect(split.outcomes.died).toBe(1);
+    // The word the panel used to lump both under is not a bucket any more.
+    expect(split.outcomes.unfinished).toBeUndefined();
+  });
+
+  it("counts a cycle that ended recording no outcome as neither running nor died", () => {
+    const unrecorded = resolutionRunRow({
+      run_id: "01920000-0000-7000-8000-000000000703",
+      started_at: "2026-09-01T04:00:00Z",
+      ended_at: "2026-09-01T04:03:20Z",
+      outcome: null,
+    });
+    const health = aggregateCycleHealth({ rows: [unrecorded], window });
+    expect(health.outcomes.unrecorded).toBe(1);
+    expect(health.outcomes.running).toBe(0);
+    expect(health.outcomes.died).toBe(0);
+  });
+
+  it("counts every row exactly once, whatever state it is in", () => {
+    const total = Object.values(health.outcomes).reduce((sum, n) => sum + n, 0);
+    expect(total).toBe(health.cycles);
   });
 
   it("measures duration and says how many it could NOT measure", () => {
@@ -224,7 +278,14 @@ describe("aggregateCycleHealth", () => {
   it("reports an empty window as zeros for counts and NULLS for figures", () => {
     const empty = aggregateCycleHealth({ rows: [], window });
     expect(empty.cycles).toBe(0);
-    expect(empty.outcomes).toEqual({ succeeded: 0, failed: 0, skipped: 0, unfinished: 0 });
+    expect(empty.outcomes).toEqual({
+      succeeded: 0,
+      failed: 0,
+      skipped: 0,
+      running: 0,
+      died: 0,
+      unrecorded: 0,
+    });
     expect(empty.factsExamined).toBe(0);
     expect(empty.writes.total).toBe(0);
     expect(empty.overCadence).toBe(0);
