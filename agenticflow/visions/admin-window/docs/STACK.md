@@ -134,6 +134,7 @@ space — quote it).
 | offline suite | `npm test` | — |
 | live suite (staging) | `npm run test:live` | — |
 | http suite | `npm run test:http` | 8772 (its own server) |
+| **reset the walk sandbox** | `node tests/walk/reset-sandbox.mts` (walk prep: step 3's block — it needs the same mapping) | — |
 
 - **8770 is the factory's attention UI** (`run.yaml` `ui_port`). Never bind it.
 - A walk instance takes its database credentials from **its own process
@@ -262,7 +263,64 @@ to stderr, and `AUTH_SECRET`'s value never appears on either stream. Flags:
 empty or whitespace-only, the CLI exits non-zero naming that one name and mints
 nothing — there is no fallback to invent.
 
-**3. Drive it.** Add the descriptor to the browser context before the first
+**3. Reset the walk sandbox — immediately before every walk, mandatory.**
+`public.walk_sandbox` is the table a walk WRITES to (see the caveats below). It
+exists on staging only, and this puts it back to its three seed rows so the
+walk you are about to run starts from the same state the last one did:
+
+```sh
+( set -a && source .env && set +a && \
+  SUPABASE_URL="$STAGING_SUPABASE_URL" SUPABASE_SERVICE_ROLE_KEY="$STAGING_SUPABASE_SERVICE_ROLE_KEY" \
+  node tests/walk/reset-sandbox.mts )
+```
+
+Same subshell, same mapping, same reasons as step 1 — the tool reads
+`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` from its own environment, loads no
+`.env` of its own, and refuses through the same staging guard the live suite
+uses (a host that is not the target declared in `agenticflow/docs/SERVICES.md`
+is a non-zero refusal that writes nothing). Run it **before** every walk, not
+just after one: a before-reset is the only one a crashed or abandoned walk
+cannot skip. Running it again after a walk that wrote is welcome but optional.
+
+Four things about that command, so nothing below is a surprise:
+
+- **On success it prints one line** naming the table, the host and the counts
+  it deleted and seeded. On failure it exits non-zero and says why. The
+  service-role key appears on neither stream, ever.
+- **It emits a `MODULE_TYPELESS_PACKAGE_JSON` warning on stderr** before it does
+  anything ("Module type of …/tests/live/staging-target.ts is not specified").
+  That is Node reparsing a `.ts` module in a package without `"type": "module"`,
+  it is expected, and it is the price of the tool sharing the live suite's one
+  staging guard rather than carrying a second copy. Not a bug; do not file it.
+- **If it refuses saying `walk_sandbox` is not on that host**, the table has not
+  been created yet — it is created BY HAND, once, by Ben, from the paste-ready
+  SQL in `agenticflow/tracker/for-human/TASK-0034.md`. The tool never creates
+  it. Until then there is no walk-write surface at all: do a read-and-render
+  walk and say so in your finding. **Do not fall back to editing a catalog
+  row** — that practice is retired (caveats below).
+- **It is DML and nothing else**: four PostgREST requests — read one row to
+  check the table is there, delete every row, insert the fixture
+  (`tests/walk/sandbox-fixture.ts`), read it back and verify. No DDL, no
+  migration, no SQL.
+
+Then walk it at its own address:
+
+    http://localhost:8771/records/walk_sandbox/00000000-0000-4000-8000-000000000001
+
+The three seeded rows are `…0001`, `…0002` and `…0003`. Nothing links to them:
+there is no nav entry and no Browse row, by design, so an operator never trips
+over the sandbox and a walker reaches it by typing the URL above.
+
+**One refusal there is deliberate, and is not a bug.** `label`, `tally` and
+`is_flagged` are `not null` in the table. Clearing a cell sends `null`, so
+clearing one of those three is refused by the database (Postgres `23502`) and
+the surface must show that refusal without claiming the save landed. That is a
+walkable error path put there on purpose. File a bug only if the cell claims
+success, blanks the value, or reports nothing at all. `note` and `observed_on`
+are nullable — those two are where the em-dash absence and the fill-it-in path
+live.
+
+**4. Drive it.** Add the descriptor to the browser context before the first
 navigation (Playwright, Python):
 
 ```python
@@ -290,13 +348,18 @@ page.goto("http://localhost:8771/")
   same day (admin-window/BUG-0038): a PATCH carrying the minted cookie answers
   **200** and the column really changes. The middleware gate is the looser one —
   it asks only `!!session?.user` (`src/lib/auth.ts`) — so reads were never the
-  question. **What this obliges a walker to do**, until the walk sandbox lands
-  (`ARCHITECTURE.md` §9.1, admin-window/TASK-0035/0036): a save-path walk edits
-  **one field of one existing `groups` / `idols` row**, notes the original value
-  first, restores it before the walk ends, and sweeps for residue afterwards.
-  Never a resolver-owned table (`events`, `venues`), never an insert, never a
-  delete. A save that fails is a finding worth reporting; a save that succeeds
-  and is left behind is catalog damage in a shared database.
+  question. **What this obliges a walker to do**: write to the **walk sandbox
+  and nowhere else**. `public.walk_sandbox` (step 3, `ARCHITECTURE.md` §9.1)
+  exists so that a save-path walk has a table of its own — reset before every
+  walk, carrying no catalog fact, reachable only at the address in step 3.
+  Never a catalog table (`groups`, `idols`), never a resolver-owned one
+  (`events`, `venues`), never an insert, never a delete, anywhere.
+  **This RETIRES the old exception** — "edit one field of one existing
+  `groups`/`idols` row, note the original, restore it, sweep" — which this
+  section prescribed until 2026-09-04 and which nobody should follow again. A
+  save that fails is a finding worth reporting; a save left behind in a catalog
+  table is damage in a database three repos share, which is exactly the risk
+  the sandbox exists to remove.
 
 ## 6. Deploy (untouched by this campaign)
 

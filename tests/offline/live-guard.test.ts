@@ -41,6 +41,7 @@ import {
   hostMatchesDeclaration,
   resolveStagingTarget,
 } from "../live/staging-target";
+import { RESET_CALLER_NAME } from "../walk/reset-sandbox.mjs";
 import { SweepError, createSweep, withSweep } from "../live/sweep";
 import { h, render } from "./ui/markup";
 
@@ -65,6 +66,18 @@ afterEach(() => {
 const URL_NAME = "STAGING_SUPABASE_URL";
 const KEY_NAME = "STAGING_SUPABASE_SERVICE_ROLE_KEY";
 const NAMES = { url: URL_NAME, key: KEY_NAME };
+
+/**
+ * The name a refusal is spoken in (admin-window/TASK-0036).
+ *
+ * The guard has two callers with two different pairs of env names, so it takes
+ * the caller's name and every refusal begins with it. This one is deliberately
+ * neither real caller: the cases below are about the PARAMETER being honoured,
+ * and a fixture that happened to equal a real caller's name would pass even if
+ * the name were still hard-coded. The real names are asserted separately —
+ * see "a refusal is spoken in the caller's name".
+ */
+const A_CALLER = "the caller under test";
 
 // A syntactically valid, obviously non-real target. Nothing is ever dialled.
 const STAGING_URL = "https://stagingprojectref00.supabase.co";
@@ -212,20 +225,20 @@ describe("the live guard", () => {
 
   it("refuses and names the url when it is unset", () => {
     expect(() =>
-      resolveStagingTarget({ url: undefined, key: A_KEY, names: NAMES, services }),
+      resolveStagingTarget({ url: undefined, key: A_KEY, names: NAMES, services, caller: A_CALLER }),
     ).toThrow(new RegExp(URL_NAME));
   });
 
   it("refuses and names the service-role name when it is unset", () => {
     expect(() =>
-      resolveStagingTarget({ url: STAGING_URL, key: undefined, names: NAMES, services }),
+      resolveStagingTarget({ url: STAGING_URL, key: undefined, names: NAMES, services, caller: A_CALLER }),
     ).toThrow(new RegExp(KEY_NAME));
   });
 
   it("names both when both are missing, and treats blank as unset", () => {
     let raised: unknown;
     try {
-      resolveStagingTarget({ url: "", key: "   ", names: NAMES, services });
+      resolveStagingTarget({ url: "", key: "   ", names: NAMES, services, caller: A_CALLER });
     } catch (error) {
       raised = error;
     }
@@ -241,6 +254,7 @@ describe("the live guard", () => {
         key: A_KEY,
         names: NAMES,
         services: null,
+        caller: A_CALLER,
       }),
     ).toThrow(LiveGuardError);
   });
@@ -253,6 +267,7 @@ describe("the live guard", () => {
         key: A_KEY,
         names: NAMES,
         services,
+        caller: A_CALLER,
       });
     } catch (error) {
       raised = error;
@@ -272,6 +287,7 @@ describe("the live guard", () => {
         key: A_KEY,
         names: NAMES,
         services,
+        caller: A_CALLER,
       });
     } catch (error) {
       raised = error;
@@ -286,6 +302,7 @@ describe("the live guard", () => {
       key: A_KEY,
       names: NAMES,
       services,
+      caller: A_CALLER,
     });
     expect(target.host).toBe("stagingprojectref00.supabase.co");
     expect(target.ref).toBe(STAGING_REF);
@@ -301,11 +318,119 @@ describe("the live guard", () => {
           key: A_KEY,
           names: NAMES,
           services: services_,
+          caller: A_CALLER,
         });
       } catch (error) {
         expect((error as Error).message).not.toContain(A_KEY);
       }
     }
+  });
+});
+
+/**
+ * The refusals are spoken in the CALLER's name (admin-window/TASK-0036).
+ *
+ * The guard acquired a second caller — `tests/walk/reset-sandbox.mts`, which
+ * reads `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` out of its own
+ * environment — and inherited refusal text that announced the live suite. One
+ * branch went further and told the reader that the caller does NOT read those
+ * two names, which for the reset tool is the opposite of the truth: a walker
+ * who mistyped a name would have been told to fix the thing they did right.
+ */
+describe("whose refusal is it", () => {
+  const services = servicesDeclaring(STAGING_REF);
+
+  /** The four refusal branches, each as the input that provokes it. */
+  const branches: ReadonlyArray<{
+    what: string;
+    input: Parameters<typeof resolveStagingTarget>[0];
+  }> = [
+    {
+      what: "a missing name",
+      input: { url: undefined, key: A_KEY, names: NAMES, services, caller: A_CALLER },
+    },
+    {
+      what: "an unparseable URL",
+      input: { url: "not-a-url", key: A_KEY, names: NAMES, services, caller: A_CALLER },
+    },
+    {
+      what: "no declaration",
+      input: { url: STAGING_URL, key: A_KEY, names: NAMES, services: null, caller: A_CALLER },
+    },
+    {
+      what: "a host that is not the declared one",
+      input: {
+        url: "https://someotherproject.supabase.co",
+        key: A_KEY,
+        names: NAMES,
+        services,
+        caller: A_CALLER,
+      },
+    },
+  ];
+
+  function refusalFrom(input: Parameters<typeof resolveStagingTarget>[0]): string {
+    try {
+      resolveStagingTarget(input);
+    } catch (error) {
+      expect(error).toBeInstanceOf(LiveGuardError);
+      return (error as Error).message;
+    }
+    throw new Error("expected a refusal, got a resolved target");
+  }
+
+  it("begins every refusal with the caller it was given", () => {
+    for (const branch of branches) {
+      const message = refusalFrom(branch.input);
+      expect(message, branch.what).toMatch(
+        new RegExp(`^${A_CALLER} refuses: `),
+      );
+    }
+  });
+
+  it("names a DIFFERENT caller differently, so the name is a parameter", () => {
+    // The other half of the pair: the same branch, two callers, two prefixes.
+    // Without both, a guard that still hard-coded one name could pass.
+    for (const branch of branches) {
+      const asReset = refusalFrom({ ...branch.input, caller: RESET_CALLER_NAME });
+      expect(asReset, branch.what).toMatch(
+        new RegExp(`^${RESET_CALLER_NAME} refuses: `),
+      );
+      expect(asReset, branch.what).not.toContain(A_CALLER);
+    }
+  });
+
+  it("says the walk-sandbox reset tool refuses, when that is who asked", () => {
+    // The concrete regression: the tool's own name reaches the walker who ran
+    // it, rather than a claim about a suite they were not running.
+    const message = refusalFrom({
+      url: undefined,
+      key: undefined,
+      names: { url: "SUPABASE_URL", key: "SUPABASE_SERVICE_ROLE_KEY" },
+      services,
+      caller: RESET_CALLER_NAME,
+    });
+    expect(message.startsWith("the walk-sandbox reset tool refuses: ")).toBe(true);
+    expect(RESET_CALLER_NAME).toBe("the walk-sandbox reset tool");
+  });
+
+  it("does not tell a caller it ignores the very names it reads", () => {
+    // The reset tool reads exactly SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.
+    // The missing-name refusal must therefore mention SUPABASE_URL as the name
+    // that is unset and NOWHERE else — the old wording named it twice, once as
+    // the problem and once as a name the caller supposedly does not consult.
+    const message = refusalFrom({
+      url: "",
+      key: A_KEY,
+      names: { url: "SUPABASE_URL", key: "SUPABASE_SERVICE_ROLE_KEY" },
+      services,
+      caller: RESET_CALLER_NAME,
+    });
+    expect(message).toContain("SUPABASE_URL");
+    expect(message.split("SUPABASE_URL").length - 1).toBe(1);
+    expect(message).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+    // And it still says the load-bearing thing: no fallback, no default.
+    expect(message).toContain("never a fallback");
   });
 });
 
@@ -586,6 +711,10 @@ describe("npm run test:live", () => {
     expect(run.status).not.toBe(0);
     expect(output).toContain(URL_NAME);
     expect(output).toContain(KEY_NAME);
+    // And it says WHO refused (admin-window/TASK-0036): the guard's caller
+    // name is a parameter now, and this is the end-to-end proof that
+    // `tests/live/setup.ts` passes its own.
+    expect(output).toContain("the live suite refuses");
     // The refusal must come from the guard, not from an empty project.
     expect(output).not.toContain("No test files found");
     expect(output).not.toContain("decoy.invalid");
