@@ -2,18 +2,33 @@
  * The staging-target guard (campaign admin-window, admin-window/TASK-0003).
  *
  * PURE by design: it is handed credential VALUES, the names they came from,
- * and the text of `agenticflow/docs/SERVICES.md`. It reads no environment,
- * opens no file and makes no request. `setup.ts` does all three and is the
- * only place the `STAGING_*` names are read — this split is what lets the
- * offline suite prove the refusal path (`tests/offline/live-guard.test.ts`)
- * without whatever `.env` happens to exist on the machine deciding the answer.
+ * the text of `agenticflow/docs/SERVICES.md`, and the NAME OF ITS CALLER. It
+ * reads no environment, opens no file and makes no request. `setup.ts` does
+ * all three and is the only place the `STAGING_*` names are read — this split
+ * is what lets the offline suite prove the refusal path
+ * (`tests/offline/live-guard.test.ts`) without whatever `.env` happens to
+ * exist on the machine deciding the answer.
+ *
+ * **Why the caller names itself** (admin-window/TASK-0036). This guard has two
+ * callers now — the live suite's setup file and the walk-sandbox reset tool
+ * (`tests/walk/reset-sandbox.mts`) — and they read DIFFERENT env names for the
+ * same two credentials. Refusal text that hard-coded the first caller told a
+ * walker who mistyped a name that the LIVE SUITE was refusing, from a program
+ * that is not the live suite; worse, the missing-name branch went on to state
+ * that the caller does not read `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`,
+ * which is exactly and only what the reset tool reads. So the caller passes
+ * its own name, every refusal begins with it, and no refusal asserts anything
+ * about which names a caller does or does not consult beyond the two it was
+ * handed.
  *
  * What it enforces, from the acceptance doc's ground rules ("Staging only …
  * an unset name is a refusal, never a fallback") and SPEC F2:
  *
  *  1. Both names must carry a value. A missing one is a loud refusal that
- *     spells the name — never a fallback to the app's `SUPABASE_*` names,
- *     never a default URL.
+ *     spells the name — never a fallback to some other name, never a default
+ *     URL. (Which names those are is the caller's choice: the live suite hands
+ *     over the `STAGING_*` pair, the reset tool the `SUPABASE_*` pair it was
+ *     launched with. This module only ever sees the two it is given.)
  *  2. The host the URL points at must be the staging target a HUMAN declared
  *     in `agenticflow/docs/SERVICES.md`. No declaration is a refusal too:
  *     that is what makes "production is never a target" structural rather
@@ -201,18 +216,27 @@ export function resolveStagingTarget(input: {
   key: string | undefined | null;
   names: CredentialNames;
   services: string | null;
+  /**
+   * How the refusals refer to whoever is asking — `"the live suite"`,
+   * `"the walk-sandbox reset tool"`. Every message below begins with it, so a
+   * refusal a human reads names the program that produced it.
+   */
+  caller: string;
 }): StagingTarget {
-  const { names } = input;
+  const { names, caller } = input;
 
   const missing: string[] = [];
   if (!present(input.url)) missing.push(names.url);
   if (!present(input.key)) missing.push(names.key);
   if (missing.length > 0) {
+    // Names the names it was handed, and says nothing about names it was
+    // NOT handed: which other name a caller might have read is the caller's
+    // business, and asserting it here was false for the second caller.
     throw new LiveGuardError(
-      `the live suite refuses: ${missing.join(" and ")} ` +
+      `${caller} refuses: ${missing.join(" and ")} ` +
         `${missing.length === 1 ? "is" : "are"} not set. ` +
-        `An unset name is a refusal, never a fallback — the live suite does ` +
-        `not read the app's own SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.`,
+        `An unset name is a refusal, never a fallback — no other name is ` +
+        `read in its place, and there is no default target.`,
     );
   }
 
@@ -227,25 +251,25 @@ export function resolveStagingTarget(input: {
   } catch {
     // The value is never echoed: a malformed URL is still someone's secret.
     throw new LiveGuardError(
-      `the live suite refuses: ${names.url} is not a URL with a host.`,
+      `${caller} refuses: ${names.url} is not a URL with a host.`,
     );
   }
 
   const declared = declaredStagingTarget(input.services);
   if (declared === null) {
     throw new LiveGuardError(
-      `the live suite refuses: no staging target is declared in ` +
+      `${caller} refuses: no staging target is declared in ` +
         `${SERVICES_DOC_PATH} (a top-level "## ${SERVICES_SECTION}" section, ` +
         `outside any code block, with "- ${TARGET_FIELD}: <ref>" — the ` +
         `${DECLARATION_FORMS}). Until a human declares one, ` +
-        `${names.url} is unverifiable and this suite will not run — that is ` +
+        `${names.url} is unverifiable and nothing here will run — that is ` +
         `how "production is never a target" stays structural.`,
     );
   }
 
   if (!hostMatchesDeclaration(host, declared)) {
     throw new LiveGuardError(
-      `the live suite refuses: ${names.url} points at host "${host}", which ` +
+      `${caller} refuses: ${names.url} points at host "${host}", which ` +
         `is not the staging target declared in ${SERVICES_DOC_PATH} ` +
         `("${declared}"). A declaration is the ${DECLARATION_FORMS} — a ` +
         `human-readable project name is not something this guard can check.`,

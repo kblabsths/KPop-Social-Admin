@@ -49,6 +49,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { config as loadEnvFile } from "dotenv";
 import { decode, encode } from "next-auth/jwt";
+import { scrub } from "./scrub.mts";
 
 /**
  * The cookie Auth.js sets on plain-http localhost.
@@ -136,11 +137,12 @@ export function isUnset(value: string | undefined): boolean {
  * not a guarantee, and a burned secret is not recoverable by apologising. Every
  * byte this program writes to stderr after the secret is resolved goes through
  * here.
+ *
+ * The implementation moved to `./scrub.mts` when the walk sandbox's reset tool
+ * needed the same guarantee for a different secret (admin-window/TASK-0036);
+ * it is re-exported here so this module's importers keep working unchanged.
  */
-export function scrub(text: string, secret: string): string {
-  if (secret.length === 0) return text;
-  return text.split(secret).join("[redacted]");
-}
+export { scrub };
 
 /**
  * Mint a session cookie the running app's own `auth()` accepts.

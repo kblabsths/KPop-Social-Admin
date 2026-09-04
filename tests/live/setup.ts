@@ -46,6 +46,15 @@ export const STAGING_KEY_ENV_NAME = "STAGING_SUPABASE_SERVICE_ROLE_KEY";
 export const APP_URL_ENV_NAME = "SUPABASE_URL";
 export const APP_KEY_ENV_NAME = "SUPABASE_SERVICE_ROLE_KEY";
 
+/**
+ * How this caller is named in the guard's refusals (admin-window/TASK-0036).
+ *
+ * The guard has a second caller now — `tests/walk/reset-sandbox.mts` — so the
+ * program that refused says which program it is rather than every refusal
+ * claiming to be this one.
+ */
+export const LIVE_SUITE_CALLER_NAME = "the live suite";
+
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 
 // `quiet` keeps dotenv's banner out of the suite's output; it never prints a
@@ -72,6 +81,7 @@ export const stagingTarget: StagingTarget = resolveStagingTarget({
   key: process.env.STAGING_SUPABASE_SERVICE_ROLE_KEY,
   names: { url: STAGING_URL_ENV_NAME, key: STAGING_KEY_ENV_NAME },
   services: servicesDoc(),
+  caller: LIVE_SUITE_CALLER_NAME,
 });
 
 process.env.SUPABASE_URL = stagingTarget.url;
