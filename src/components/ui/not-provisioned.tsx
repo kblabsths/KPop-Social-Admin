@@ -33,8 +33,8 @@ export function NotProvisioned({
         <p className="type-micro text-ink-secondary">{eyebrow}</p>
       )}
       <p className="type-body text-ink-secondary">
-        <span className="type-data text-ink">{missing}</span> isn&rsquo;t in this
-        database yet — it arrives with {arrivesWith}.
+        <span className="type-data text-ink">{missing}</span>{" "}
+        isn&rsquo;t in this database yet — it arrives with {arrivesWith}.
       </p>
     </div>
   );

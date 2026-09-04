@@ -29,3 +29,36 @@ export function tagsOf(html: string): string[] {
 export function textOf(html: string): string {
   return html.replace(/<[^>]*>/g, "");
 }
+
+/**
+ * Every place the rendered markup runs two words together across an element
+ * boundary — a closing tag with a letter or digit hard against it
+ * (campaign admin-window/BUG-0045).
+ *
+ * This exists because the SOURCE is not evidence. JSX drops whitespace whose
+ * run contains a newline, so `</span>` at the end of one line and ` dial` at
+ * the start of the next reads as `stuck_patterndial` on screen while the file
+ * plainly shows a space. Only the rendered string tells the truth, and only a
+ * reformatting away from the fix. Each hit is returned as the closing tag plus
+ * the characters that collided with it, so a failure names the site.
+ *
+ * Punctuation is not a hit: `<span>x</span>,` and `</span>.` are correct
+ * typography, and `</td><td>` has no text at all.
+ */
+export function runTogetherWords(html: string): string[] {
+  return [...html.matchAll(/<\/(span|a|b|em|strong|code)>[A-Za-z0-9]+/g)].map(
+    (match) => match[0],
+  );
+}
+
+/**
+ * Every factory ticket id the rendered markup carries (campaign
+ * admin-window/BUG-0045). The operator has no tracker to open, so a build id
+ * on screen is copy that cannot be acted on; comments in `src/` may keep
+ * citing them, and comments do not reach the browser.
+ */
+export function factoryTicketIds(html: string): string[] {
+  return [
+    ...html.matchAll(/admin-window\/[A-Z]+-\d+|\b(?:TASK|BUG|DEBT|DEP)-\d{4}\b/g),
+  ].map((match) => match[0]);
+}

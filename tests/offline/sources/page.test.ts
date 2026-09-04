@@ -2,7 +2,11 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
-import { render } from "../ui/markup";
+import {
+  implicitInterElementSpaces,
+  implicitInterElementSpacesIn,
+} from "../source-tree";
+import { factoryTicketIds, render, runTogetherWords } from "../ui/markup";
 import {
   PENDING_CLAIMS,
   PENDING_OBSERVATIONS,
@@ -920,5 +924,65 @@ describe("the settled-values trend", () => {
     );
     expect(notProvisioned(markup)).toContain(T.observations);
     expect(sourceIds(markup)).toEqual(SOURCES.map((source) => source.source_id));
+  });
+});
+
+/**
+ * The prose the page ships, checked against the RENDERED markup rather than
+ * the source (campaign admin-window/BUG-0045).
+ *
+ * Both defects here were invisible in the file: `.tsx` carried an
+ * `(admin-window/TASK-0024)` a reader skims past as a comment, and JSX
+ * silently eats a line-broken space, so a `</span>` and the next word arrive
+ * glued together on screen. Nothing about the app's WORDING is pinned — the
+ * sentence may be rewritten freely; what may not come back is a build id or a
+ * missing space.
+ */
+describe("the copy the operator actually reads", () => {
+  it("names no factory ticket, in any of the page's states", async () => {
+    for (const [state, script] of Object.entries({
+      healthy: healthyScript(),
+      empty: healthyScript({
+        [T.sources]: [{ data: [], count: 0 }, { data: [] }],
+        [T.observations]: [{ data: [] }, { data: [] }],
+        [T.pendingClaims]: { data: [] },
+        [T.runs]: [],
+      }),
+      refused: healthyScript({
+        [T.observations]: [
+          { error: permissionDenied(T.observations) },
+          { error: permissionDenied(T.observations) },
+        ],
+      }),
+    })) {
+      // The guard proves itself before it clears the page: a build id in copy
+      // MUST be found, or the assertion below is vacuous.
+      expect(factoryTicketIds("<p>an open question (admin-window/TASK-0024)</p>")).toEqual([
+        "admin-window/TASK-0024",
+      ]);
+      expect(factoryTicketIds(await renderSources(script)), state).toEqual([]);
+    }
+  });
+
+  it("puts a space between a mono identifier and the word after it", async () => {
+    // Two fixtures, same guard: the run-together spelling the walk saw must
+    // trip it, and this page must not.
+    expect(runTogetherWords('<span class="type-data">stuck_pattern</span>dial lives')).toEqual([
+      "</span>dial",
+    ]);
+    expect(runTogetherWords(await renderSources(healthyScript()))).toEqual([]);
+  });
+  it("writes every inter-element space as an explicit expression, which no transform may drop", () => {
+    // The rendered assertions above CANNOT fail on this defect: vitest's JSX
+    // transform keeps the space that `next build`'s transform drops (measured
+    // on the delivered HTML of :8781, 2026-09-03). The source rule is what
+    // actually guards it, so it stands beside them.
+    //
+    // Two fixtures: the pre-fix spelling of this page must trip the scanner...
+    expect(
+      implicitInterElementSpacesIn('          <span className=\"type-data text-ink\">stuck_pattern</span> dial lives only'),
+    ).toEqual(['1: <span className=\"type-data text-ink\">stuck_pattern</span> dial lives only']);
+    // ...and the page as it stands must be clean of it.
+    expect(implicitInterElementSpaces("src/app/sources/page.tsx")).toEqual([]);
   });
 });

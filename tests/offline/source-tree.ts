@@ -158,3 +158,52 @@ export function codeLines(file: string, base: string = repoRoot): string[] {
 export function codeText(file: string, base: string = repoRoot): string {
   return codeLines(file, base).join("\n");
 }
+
+/**
+ * Every place a source file leans on JSX to keep a space between a closing tag
+ * and the next word — `</span> dial lives only` — instead of writing the space
+ * as `{" "}` (campaign admin-window/BUG-0045).
+ *
+ * **Why this is a source rule and not only a markup one.** Whether that space
+ * survives depends on the JSX transform, and the two transforms this repo runs
+ * disagree. Measured 2026-09-03 on the delivered HTML of a `next build` served
+ * on :8781: `<span …>source</span> is the run’s` arrived as `source</span>is`,
+ * and the same file rendered through vitest's transform by
+ * `renderToStaticMarkup` kept the space. So the offline suite CANNOT see this
+ * defect in markup, and the walker who read `sourceis` off the screen was
+ * right while the file looked innocent. `{" "}` is an expression container; no
+ * transform may drop it.
+ *
+ * Only a LETTER or DIGIT counts as the next word: `</span>,` and `</span>.`
+ * are correct typography, and a space before punctuation would be a defect of
+ * its own.
+ *
+ * Each hit is returned as `line: text` so a failure names the site.
+ */
+export function implicitInterElementSpaces(
+  file: string,
+  base: string = repoRoot,
+): string[] {
+  return implicitInterElementSpacesIn(sourceText(file, base));
+}
+
+/**
+ * The rule itself, over TEXT — so a test can prove the scanner flags the
+ * spelling it exists for without writing a probe file into the tree that other
+ * tree-walking tests are reading (admin-window/BUG-0029's hazard, above).
+ */
+export function implicitInterElementSpacesIn(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line, index) => ({ line, number: index + 1 }))
+    .filter(({ line }) => {
+      // A doc comment may quote the defect while documenting it; only code is
+      // a site. Real line numbers are kept, which `codeText` cannot do.
+      const trimmed = line.trim();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
+        return false;
+      }
+      return /<\/(?:span|a|b|em|strong|code)> +[A-Za-z0-9]/.test(line);
+    })
+    .map(({ line, number }) => `${number}: ${line.trim()}`);
+}

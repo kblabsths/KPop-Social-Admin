@@ -566,10 +566,10 @@ function AwaitingRowTrendSection({
       {dialled.length === 0 ? (
         <p className="type-body text-ink-secondary">
           No threshold line is drawn. The per-source{" "}
-          <span className="type-data text-ink">stuck_pattern</span> dial lives only
-          in the scraper repo&rsquo;s source registry, and where Admin may read it
-          is an open question (admin-window/TASK-0024) — so no default is
-          substituted here.
+          <span className="type-data text-ink">stuck_pattern</span>{" "}
+          dial lives only in the scraper repo&rsquo;s source registry, and where
+          Admin may read it is an open question — so no default is substituted
+          here.
         </p>
       ) : null}
     </>
