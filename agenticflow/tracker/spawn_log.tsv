@@ -6944,3 +6944,55 @@
 2026-09-04T00:36:12Z	agent	-	-	-	-
 2026-09-04T00:36:27Z	builder	BUG-0053	spawned
 2026-09-04T00:36:39Z	qa-adversary	BUG-0052	spawned
+# STRANDED	2026-09-04T00:36:43Z	agent	2 uncommitted in primary checkout: .env.example, tests/offline/ui/copy.test.ts
+2026-09-04T00:36:43Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:36:58Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:36:58Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:37:10Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:37:10Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:37:15Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:37:15Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:37:29Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:37:29Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:37:42Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:37:42Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:37:46Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:37:46Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:38:01Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:38:01Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:38:14Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:38:14Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:38:18Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:38:18Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:38:32Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:38:32Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:38:45Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:38:45Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:38:50Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:38:50Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:39:17Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:39:17Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:39:22Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:39:22Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:39:33Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:39:33Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:39:48Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:39:48Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:39:53Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md, tests/offline/ui/copy.test.ts
+2026-09-04T00:39:53Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:40:05Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md
+2026-09-04T00:40:05Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:40:20Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0045.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md
+2026-09-04T00:40:20Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:40:25Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0045.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md
+2026-09-04T00:40:25Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:40:36Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0045.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md
+2026-09-04T00:40:36Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:40:52Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0045.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0045.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md
+2026-09-04T00:40:52Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:40:57Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0045.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0045.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md
+2026-09-04T00:40:57Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:41:07Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0045.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0045.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md
+2026-09-04T00:41:07Z	agent	-	-	-	-
+# STRANDED	2026-09-04T00:41:09Z	qa-adversary	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0045.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0045.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0052.md
+2026-09-04T00:41:09Z	qa-adversary	BUG-0045	10156	770	97349
