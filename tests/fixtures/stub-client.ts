@@ -185,6 +185,24 @@ export function undefinedColumnOfRelation(table: string, column: string) {
 }
 
 /**
+ * 22P02 — `invalid_text_representation`: the id in the URL is not a uuid at
+ * all, so Postgres refuses the comparison before any row is considered.
+ *
+ * Measured against staging on a production build, 2026-09-03 (QA, campaign
+ * admin-window/BUG-0052): `GET /records/groups/not-a-uuid` answers 200 and the
+ * page renders this error, and so does a uuid one character short, and so does
+ * one carrying a trailing space (which reaches the query as `%20`).
+ */
+export function invalidUuidSyntax(id: string) {
+  return {
+    code: "22P02",
+    details: null,
+    hint: null,
+    message: `invalid input syntax for type uuid: "${id}"`,
+  };
+}
+
+/**
  * 42501 — permission denied. An ARBITRARY failure as far as the data layer is
  * concerned: it is not an absence, so it must surface the database's own
  * message verbatim.

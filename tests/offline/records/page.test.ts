@@ -4,6 +4,7 @@ import { NAV_ITEMS } from "@/components/shell/nav-items";
 import { EDITABLE_TABLES, EDIT_CONFIG } from "@/lib/edit/config";
 import { EM_DASH } from "@/lib/format";
 import {
+  invalidUuidSyntax,
   permissionDenied,
   stubClient,
   tableNotInSchemaCache,
@@ -397,6 +398,39 @@ describe("the states", () => {
     const filler = emptyFiller(await renderRecord("events", missingRowScript("events")));
     expect(EDIT_CONFIG.events.regime).toBe("resolver_owned");
     expect(filler).toContain("Browse");
+  });
+
+  /**
+   * A MISTYPED id is not a failed read — QA, campaign admin-window/BUG-0052.
+   *
+   * A pre-cutover record is reached "by its id alone", and the empty state
+   * this ticket wrote tells the operator to check the id in the address bar.
+   * Hand-carrying an id is therefore the sanctioned path, and mistyping one is
+   * the error that path invites. Measured on a production build against
+   * staging, 2026-09-03: `/records/groups/not-a-uuid` (and a uuid one
+   * character short, and one with a trailing space) answers 200 with the
+   * generic READ-FAILED state — the database's `invalid input syntax for type
+   * uuid ... (22P02)` over the recovery line "Reload to try the read again".
+   * Reloading cannot ever parse a malformed id, so the operator is stranded on
+   * unactionable advice in the same moment BUG-0052 set out to rescue.
+   *
+   * A malformed id is a bad REQUEST, decidable without a database. Whatever
+   * state answers it, it must not be the one that means "the database failed".
+   */
+  // Strict xfail (admin-window/BUG-0065): `it.fails` passes only while the
+  // body throws, so the day a fix lands this test goes RED as an XPASS and
+  // sends the reader to the ticket. The fixing builder deletes `.fails`.
+  it.fails("does not report a mistyped id as a failed database read", async () => {
+    const markup = await renderRecord(
+      "groups",
+      { ...defaultScript("groups"), groups: { error: invalidUuidSyntax("not-a-uuid") } },
+      "not-a-uuid",
+    );
+    const $ = cheerio.load(markup);
+    // Something answered for the request at all...
+    expect($("[data-state]").length).toBeGreaterThan(0);
+    // ...and it is not the failed-read state.
+    expect($('[data-state="error"]').length).toBe(0);
   });
 
   it("says something different on each side of the cutover, from one map", async () => {
