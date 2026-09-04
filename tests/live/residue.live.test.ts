@@ -5,7 +5,8 @@ import {
   mappedColumns,
   type TableEditConfig,
 } from "@/lib/edit/config";
-import { codeOf, exactCount } from "./parity";
+import { T } from "@/lib/db/tables";
+import { codeOf, exactCount, objectIsAbsent } from "./parity";
 import { stagingHost } from "./setup";
 
 /**
@@ -70,6 +71,35 @@ import { stagingHost } from "./setup";
 
 /** The stamp every value this campaign writes carries. */
 const CAMPAIGN_MARKER = "admin-window";
+
+/**
+ * The ONE table in the map that may legitimately not be there — the walk
+ * sandbox (ARCHITECTURE.md §9.1 item 8, campaign admin-window/TASK-0035).
+ *
+ * It is created BY HAND on the staging project and exists nowhere else, so on
+ * a staging project where the DDL has not been pasted yet, every read of it
+ * answers `PGRST205`. Sweeping a table nobody could have written to is not a
+ * finding, and hard-failing on it would redden this whole file over a table
+ * this campaign has never touched.
+ *
+ * It is named here, from the one place table names are spelled, rather than
+ * inferred: absence is tolerated for THIS table and no other, so a `groups`
+ * that vanished from staging is still the loud failure it has always been.
+ */
+const MAY_BE_ABSENT: ReadonlySet<string> = new Set([T.walkSandbox]);
+
+/**
+ * Is this table absent from the database rather than merely undescribed?
+ *
+ * Decided by the database's OWN absence code through the existing idiom
+ * (`objectIsAbsent` / `codeOf`, `tests/live/parity.ts`) — a real read that
+ * comes back `PGRST205` / `42P01` — never by the table missing from the schema
+ * description, which a failed or stale description would also produce. So a
+ * skip below is something the database said, not something this file assumed.
+ */
+async function toleratedAbsent(table: string): Promise<boolean> {
+  return MAY_BE_ABSENT.has(table) && (await objectIsAbsent(table));
+}
 
 /** A hit is re-checked this many times before it is called residue. */
 const RECHECKS = 3;
@@ -323,10 +353,32 @@ describe("staging, after the campaign", () => {
     const described = await describeStaging();
     const found: string[] = [];
     const report: string[] = [];
+    /** The tables this run actually swept, and the ones it could not. */
+    const swept: string[] = [];
+    const absent: string[] = [];
     let scanned = 0;
 
     for (const table of EDITABLE_TABLES) {
       const config = EDIT_CONFIG[table];
+
+      // A table that is NOT THERE is nothing to sweep — but only the one table
+      // the map allows to be missing, and only when the database itself says
+      // so (§9.1 item 8). The skip is stated in the report below rather than
+      // taken silently, so a run that swept four tables never reads as a run
+      // that swept five.
+      if (!described.has(config.table) && (await toleratedAbsent(config.table))) {
+        absent.push(config.table);
+        report.push(
+          `  ${config.table}: not present on ${stagingHost} (the database ` +
+            `returned its absence code for a direct read), so there is ` +
+            `nothing to sweep. This is the staging-only walk sandbox, created ` +
+            `by hand; it is absent until the DDL is pasted, and absent in ` +
+            `production forever.`,
+        );
+        continue;
+      }
+
+      swept.push(config.table);
       const columns = columnsOf(described, config);
       const sweepable = columns.filter((column) => column.sweepable);
       const names = new Set(columns.map((column) => column.column));
@@ -394,12 +446,30 @@ describe("staging, after the campaign", () => {
     // could not look at — an exclusion nobody can see is a silent skip.
     console.log(
       `residue sweep of ${stagingHost}: ${scanned} column(s) scanned across ` +
-        `${EDITABLE_TABLES.length} table(s)\n${report.join("\n")}`,
+        `${swept.length} of ${EDITABLE_TABLES.length} mapped table(s)` +
+        (absent.length === 0 ? "" : `; absent, nothing to sweep: ${absent.join(", ")}`) +
+        `\n${report.join("\n")}`,
     );
 
+    // A table may be skipped only for being absent, and only if it is one the
+    // map allows to be missing: everything else was swept. Without this, a
+    // skip could grow to cover a table that IS there.
+    expect(
+      absent.filter((table) => !MAY_BE_ABSENT.has(table)),
+      "a table was skipped that the map does not allow to be absent",
+    ).toEqual([]);
+    expect(
+      [...swept, ...absent].sort(),
+      "the sweep neither scanned nor accounted for every mapped table",
+    ).toEqual([...EDITABLE_TABLES].sort());
+
     // A scan that found nothing because it looked at nothing is not a pass.
+    // The floor is the tables that ARE there: an absent table lowers what the
+    // sweep can be asked for, and can never lower what it must find on the
+    // rest (§9.1 item 8).
+    expect(swept.length, "the residue sweep swept no table at all").toBeGreaterThan(0);
     expect(scanned, "the residue sweep examined no column").toBeGreaterThan(
-      EDITABLE_TABLES.length,
+      swept.length,
     );
 
     expect(
@@ -450,6 +520,25 @@ describe("staging, after the campaign", () => {
     expect(refusal.message).toContain("groups.created_at");
     expect(refusal.message).toContain("42883");
     expect(refusal.message).toMatch(/never a zero/);
+  });
+
+  it("tolerates the sandbox's absence and no other table's", async () => {
+    // The two fixtures every guard owes (LESSONS 3): one the rule MUST allow
+    // through and one it must NOT. The sandbox is created by hand on staging
+    // and may be missing; a catalog table that vanished is still a loud
+    // failure, and `toleratedAbsent` refuses it before it even reads.
+    expect(MAY_BE_ABSENT.has(T.walkSandbox)).toBe(true);
+    for (const table of EDITABLE_TABLES) {
+      if (table === T.walkSandbox) continue;
+      expect(MAY_BE_ABSENT.has(table), table).toBe(false);
+      expect(await toleratedAbsent(table), table).toBe(false);
+    }
+    // And the sandbox is tolerated only when the DATABASE says it is absent —
+    // never on the strength of being named above. Whichever way staging
+    // stands today, the answer must equal that read's own verdict.
+    expect(await toleratedAbsent(T.walkSandbox)).toBe(
+      await objectIsAbsent(T.walkSandbox),
+    );
   });
 
   it("names a target the sweep could actually have written to", () => {

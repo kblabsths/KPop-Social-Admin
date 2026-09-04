@@ -41,8 +41,14 @@ const FIELDS_MODULE = "src/components/records/fields.ts";
 /* ── the map ──────────────────────────────────────────────────────────────── */
 
 describe("the map", () => {
-  it("carries exactly the four canonical tables, keyed by their own name", () => {
-    expect(EDITABLE_TABLES).toEqual(["groups", "idols", "events", "venues"]);
+  it("carries exactly the four canonical tables and the walk sandbox, keyed by their own name", () => {
+    expect(EDITABLE_TABLES).toEqual([
+      "groups",
+      "idols",
+      "events",
+      "venues",
+      "walk_sandbox",
+    ]);
     for (const [key, config] of Object.entries(EDIT_CONFIG)) {
       expect(config.table, key).toBe(key);
     }
@@ -95,6 +101,72 @@ describe("the map", () => {
       "agency",
       "birth_place",
     ]);
+  });
+
+  it("gives the walk sandbox its staging-only key, regime and column set", () => {
+    // The staging-only walk fixture (ARCHITECTURE §9.1, campaign
+    // admin-window/TASK-0034's ruling). Its five editable columns are one per
+    // coercion the write path can be asked for, and they are asserted exactly
+    // because a name the database does not spell reads back as
+    // `not_provisioned` and makes the map a lie.
+    expect(EDIT_CONFIG.walk_sandbox.pk).toBe("sandbox_id");
+    // `pre_cutover` is reused deliberately: `Regime` answers which WRITE PATH,
+    // and the sandbox's is identical to groups'/idols' (§9.1 item 5). A third
+    // member would change `decideEdit` and `regimeNote` for no new behaviour.
+    expect(EDIT_CONFIG.walk_sandbox.regime).toBe("pre_cutover");
+    expect([...EDIT_CONFIG.walk_sandbox.editable]).toEqual([
+      "label",
+      "note",
+      "tally",
+      "is_flagged",
+      "observed_on",
+    ]);
+    expect([...EDIT_CONFIG.walk_sandbox.display]).toEqual([]);
+    expect(EDIT_CONFIG.walk_sandbox.reference).toBeNull();
+  });
+
+  it("leaves created_at outside the sandbox's map, so no read ever asks for it", () => {
+    // §9.1 item 2: the read selects `mappedColumns` explicitly, so a column
+    // the map does not name is never read and never drawn. `created_at` is
+    // set once at seed and is the one sandbox column deliberately excluded.
+    expect(mappedColumns(EDIT_CONFIG.walk_sandbox)).not.toContain("created_at");
+    expect([...mappedColumns(EDIT_CONFIG.walk_sandbox)]).toEqual([
+      "sandbox_id",
+      "label",
+      "note",
+      "tally",
+      "is_flagged",
+      "observed_on",
+    ]);
+  });
+
+  it("gives the sandbox every column the write path coerces, one of each", () => {
+    // The POINT of the column set (§9.1 item 2): the widget is a single text
+    // cell, so each editable column exists to make PostgREST answer one type
+    // question on the way in. The columns are asserted against the DDL Ben
+    // pastes (`agenticflow/tracker/for-human/TASK-0034.md`), in the idiom the
+    // resolver-owned tables' `CANONICAL_COLUMNS` case uses above: a map name
+    // that is not a column of the table is one red test away, not one
+    // production page away.
+    const SANDBOX_COLUMNS: Readonly<Record<string, string>> = {
+      sandbox_id: "text",
+      label: "text",
+      note: "text",
+      tally: "integer",
+      is_flagged: "boolean",
+      observed_on: "date",
+      created_at: "timestamptz",
+    };
+    for (const column of mappedColumns(EDIT_CONFIG.walk_sandbox)) {
+      expect(SANDBOX_COLUMNS, column).toHaveProperty(column);
+    }
+    // One editable column of each coercion the surface can be asked for, and
+    // at least one of them nullable so the em-dash absence-then-fill path is
+    // walkable (`note` and `observed_on` are the DDL's nullable pair).
+    const types = EDIT_CONFIG.walk_sandbox.editable.map(
+      (column) => SANDBOX_COLUMNS[column],
+    );
+    expect(new Set(types)).toEqual(new Set(["text", "integer", "boolean", "date"]));
   });
 
   it("gives the resolver-owned tables their real keys and no editable column", () => {

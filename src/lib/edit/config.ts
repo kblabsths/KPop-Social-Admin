@@ -215,6 +215,41 @@ const ENTRIES: readonly TableEditConfig[] = [
     display: ["name", "city", "country", "address"],
     reference: null,
   },
+  // The walk sandbox: a STAGING-ONLY table an agent walking the edit surface
+  // may safely write, created by hand on the staging project alone and absent
+  // everywhere else — in production every read of it answers `PGRST205` and
+  // the record page draws the not-provisioned card, permanently and by design
+  // (ARCHITECTURE.md §9.1, campaign admin-window/TASK-0034, TASK-0035).
+  //
+  // It is in the map so a walker can reach
+  // `/records/walk_sandbox/00000000-0000-4000-8000-000000000001`, the first of
+  // the three rows the staging fixture seeds — `sandbox_id` is a uuid like
+  // every other key in this map, because `isRecordId` (`lib/db/records.ts`)
+  // gates every record page before any read: a key it refuses would draw the
+  // not-an-id card at this table's own address, leaving both the absent and
+  // the present rendering unreachable there (architect ruling, 2026-09-04,
+  // §9.1 item 9, from a measurement on TASK-0035). The entry is in NOTHING else — no nav entry, no Browse row, no link — so an operator
+  // never trips over it. Its five editable columns are one per coercion the
+  // write path can be asked for (text, nullable text, integer, boolean, date),
+  // and `note` / `observed_on` are nullable so the em-dash absence-then-fill
+  // path is walkable. `created_at` is deliberately OUTSIDE the map: the read
+  // selects `mappedColumns` explicitly, so a column the map does not name is
+  // never read and never drawn.
+  //
+  // `pre_cutover` is reused on purpose (§9.1 item 5): `Regime` answers which
+  // WRITE PATH, and this table's answer is identical to groups'/idols' — a
+  // direct PATCH within this allowlist. A third member would be a second
+  // answer to a question the type does not ask. The cost accepted: the regime
+  // note on its record page says a value written here goes "to the catalog",
+  // which for a staging fixture it does not.
+  {
+    table: "walk_sandbox",
+    pk: "sandbox_id",
+    regime: "pre_cutover",
+    editable: ["label", "note", "tally", "is_flagged", "observed_on"],
+    display: [],
+    reference: null,
+  },
 ];
 
 /** The map itself: table name -> its edit config. */
