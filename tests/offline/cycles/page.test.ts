@@ -5,8 +5,10 @@ import { T } from "@/lib/db/tables";
 import { CLAMP_LIMIT, ELLIPSIS, EM_DASH } from "@/lib/format";
 import { readNumber } from "../../live/parity";
 import {
+  codeText,
   implicitInterElementSpaces,
   implicitInterElementSpacesIn,
+  sourceFiles,
 } from "../source-tree";
 import { factoryTicketIds, render, runTogetherWords } from "../ui/markup";
 import {
@@ -1672,5 +1674,67 @@ describe("the copy the operator actually reads", () => {
     ).toEqual(['1: <span className=\"type-data text-ink\">source</span> is the run&rsquo;s']);
     // ...and the page as it stands must be clean of it.
     expect(implicitInterElementSpaces("src/app/cycles/page.tsx")).toEqual([]);
+  });
+});
+
+/* ── where this page's presentation lives (admin-window/DEBT-0004) ───────── */
+
+/**
+ * The structural half of ARCHITECTURE.md §13.6, asserted here rather than left
+ * to the next builder's discipline: this page ships its own
+ * `src/components/cycles/` module, the page file defines no component of its
+ * own, and nothing in that module can reach a database.
+ *
+ * It was 1,291 lines with eight components written where the page function is
+ * (common violation 10). The rules below are what stop the eighth from coming
+ * back, and each is stated with BOTH fixtures — the input it must flag and the
+ * input it must not.
+ */
+describe("the module this page's presentation lives in", () => {
+  const PAGE = "src/app/cycles/page.tsx";
+  const MODULE = "src/components/cycles/";
+
+  /** A component DEFINITION at the top level of a file, in either spelling. */
+  const COMPONENT = /^(export\s+)?(default\s+)?function\s+[A-Z]/m;
+
+  /** Anything below the page that awaits — §5's one-async-boundary rule. */
+  const AWAITS = /\basync\b|\bawait\b/;
+
+  it("contains the page and the module these rules are about", () => {
+    const files = sourceFiles();
+    expect(files).toContain(PAGE);
+    expect(files).toContain("src/components/cycles/index.ts");
+    expect(files.filter((file) => file.startsWith(MODULE)).length).toBeGreaterThan(1);
+  });
+
+  it("keeps every component out of the page file", () => {
+    // The scanner must see a component where there is one...
+    expect(COMPONENT.test("function AdapterRuns({ runs }: Props) {")).toBe(true);
+    expect(COMPONENT.test("export function LatestRun() {")).toBe(true);
+    // ...and the page, which defines only its async page function, is clean.
+    expect(COMPONENT.test(codeText(PAGE))).toBe(false);
+  });
+
+  it("keeps the components off lib/db and off the client library", () => {
+    // Rule 1: a component takes plain props and returns markup, which is what
+    // lets every surface below the page be rendered with no database at all.
+    const files = sourceFiles().filter((file) => file.startsWith(MODULE));
+    for (const file of files) {
+      const text = codeText(file);
+      expect(text, file).not.toMatch(/from\s+["']@\/lib\/db\//);
+      expect(text, file).not.toContain("@supabase/supabase-js");
+      expect(text, file).not.toMatch(AWAITS);
+    }
+    // The same scanners on inputs they MUST flag, so none of the three above
+    // can pass by never having recognised a violation.
+    expect(/from\s+["']@\/lib\/db\//.test('import { readRuns } from "@/lib/db/runs";')).toBe(true);
+    expect(AWAITS.test("const rows = await readRuns();")).toBe(true);
+  });
+
+  it("leaves the page function the only async component on the route", () => {
+    // §5: the page reads and shapes; everything below it is pure and sync.
+    // The page itself must still be async — a criterion the rule above would
+    // happily satisfy by deleting the read.
+    expect(codeText(PAGE)).toMatch(/export default async function CyclesPage/);
   });
 });
