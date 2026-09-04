@@ -582,3 +582,30 @@ describe("a run carrying values this app has never heard of", () => {
     expect(runsState(markup)).toBe("ok");
   });
 });
+
+/* ── one page, one vocabulary (admin-window/BUG-0044's neighbour) ─────────── */
+
+describe("what the adapter-runs half calls its columns", () => {
+  /**
+   * The Cycles table directly above this one stopped heading its columns with
+   * raw database names (admin-window/BUG-0044); this half still does, so one
+   * page renders two vocabularies and the SAME column (`error_summary`) is
+   * headed two different ways within one screen. The Dashboard already heads
+   * these columns in the app's words (`src/app/page.tsx` RUN_COLUMNS).
+   *
+   * A property, not a copy of nine strings: no header of a rendered table is a
+   * raw column name. Which words replace them is the designer's call, and this
+   * test does not pin any of them.
+   */
+  // xfail, strict (admin-window/BUG-0064): `it.fails` PASSES only while the
+  // assertion below fails. The day the runs headers stop being raw column
+  // names this line turns red and sends the reader to the ticket — it never
+  // rots into a silently-green test.
+  it.fails("heads no column with a raw database column name", async () => {
+    const markup = await renderCycles(healthyScript());
+    const set = headers(markup, RUNS_TABLE);
+    // Non-vacuous: the table really rendered its nine headers.
+    expect(set).toHaveLength(RUN_COLUMNS.length);
+    expect(set.filter((header) => /_/.test(header))).toEqual([]);
+  });
+});
