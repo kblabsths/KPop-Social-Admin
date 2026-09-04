@@ -264,7 +264,8 @@ empty or whitespace-only, the CLI exits non-zero naming that one name and mints
 nothing — there is no fallback to invent.
 
 **3. Reset the walk sandbox — immediately before every walk, mandatory.**
-`public.walk_sandbox` is the table a walk WRITES to (see the caveats below). It
+`public.walk_sandbox` is the table a walk WRITES to once it exists (see the
+caveats below), and running this is also how you find out whether it does. It
 exists on staging only, and this puts it back to its three seed rows so the
 walk you are about to run starts from the same state the last one did:
 
@@ -295,9 +296,22 @@ Four things about that command, so nothing below is a surprise:
 - **If it refuses saying `walk_sandbox` is not on that host**, the table has not
   been created yet — it is created BY HAND, once, by Ben, from the paste-ready
   SQL in `agenticflow/tracker/for-human/TASK-0034.md`. The tool never creates
-  it. Until then there is no walk-write surface at all: do a read-and-render
-  walk and say so in your finding. **Do not fall back to editing a catalog
-  row** — that practice is retired (caveats below).
+  it. **That refusal is also how a walker learns which walk-write rule it is
+  under**, and it is the only test worth trusting — not a date, not this
+  paragraph's age. Run step 3 first, read what it said, take the matching
+  branch:
+  - **It refused, so the table is absent — the interim exception is live.** A
+    save-path walk writes **one field of one existing `groups`/`idols` row**:
+    note the original value before you change it, restore it in a `finally` so
+    a crashed walk still puts it back, and run the residue sweep afterwards.
+    That is Ben's standing ruling of 2026-09-03, recorded in
+    `agenticflow/tracker/for-human/TASK-0034.md` §1 and in
+    `agenticflow/docs/DECISIONS.md`; it is deliberately interim, and it is what
+    the M1 endgame walks use until the paste lands. Even here: never `events`
+    or `venues`, never an insert, never a delete.
+  - **It succeeded — the exception is over, from that moment on.** The sandbox
+    is the write surface and the only one; the catalog-row practice above is
+    retired for good (caveats below).
 - **It is DML and nothing else**: four PostgREST requests — read one row to
   check the table is there, delete every row, insert the fixture
   (`tests/walk/sandbox-fixture.ts`), read it back and verify. No DDL, no
@@ -348,18 +362,34 @@ page.goto("http://localhost:8771/")
   same day (admin-window/BUG-0038): a PATCH carrying the minted cookie answers
   **200** and the column really changes. The middleware gate is the looser one —
   it asks only `!!session?.user` (`src/lib/auth.ts`) — so reads were never the
-  question. **What this obliges a walker to do**: write to the **walk sandbox
-  and nowhere else**. `public.walk_sandbox` (step 3, `ARCHITECTURE.md` §9.1)
-  exists so that a save-path walk has a table of its own — reset before every
-  walk, carrying no catalog fact, reachable only at the address in step 3.
-  Never a catalog table (`groups`, `idols`), never a resolver-owned one
-  (`events`, `venues`), never an insert, never a delete, anywhere.
-  **This RETIRES the old exception** — "edit one field of one existing
-  `groups`/`idols` row, note the original, restore it, sweep" — which this
-  section prescribed until 2026-09-04 and which nobody should follow again. A
-  save that fails is a finding worth reporting; a save left behind in a catalog
-  table is damage in a database three repos share, which is exactly the risk
-  the sandbox exists to remove.
+  question.
+
+  **What this obliges a walker to do** turns on one fact, and step 3's own
+  answer is how you establish it — so run step 3 before you plan any save.
+
+  - **Once `public.walk_sandbox` is on staging** (step 3 succeeds), write to
+    the **walk sandbox and nowhere else**. The sandbox (`ARCHITECTURE.md` §9.1)
+    exists so that a save-path walk has a table of its own — reset before every
+    walk, carrying no catalog fact, reachable only at the address in step 3 —
+    and **its arrival RETIRES the interim exception** ("edit one field of one
+    existing `groups`/`idols` row, note the original, restore it, sweep"), for
+    good and for everyone.
+  - **While step 3 still refuses**, that interim exception IS the walk-write
+    rule, under the discipline spelled out in step 3's first branch. It is what
+    Ben ruled on 2026-09-03 — the exception holds *until the sandbox exists*,
+    and the sandbox replaces it once it does — and
+    `agenticflow/tracker/for-human/TASK-0034.md` §1 and
+    `agenticflow/docs/DECISIONS.md` record it in the same words. The paste is
+    on Ben's own schedule ("when convenient; nothing is blocked on it"), so a
+    walker arriving on any given day may find either state; nothing here flips
+    on a date.
+
+  Under **both** rules: never a resolver-owned table (`events`, `venues`),
+  never an insert, never a delete, anywhere. A save that fails is a finding
+  worth reporting; a save left behind in a catalog table is damage in a
+  database three repos share — which is exactly the risk the sandbox exists to
+  remove, and why the interim exception buys its one field back with a
+  `finally` and a sweep.
 
 ## 6. Deploy (untouched by this campaign)
 
