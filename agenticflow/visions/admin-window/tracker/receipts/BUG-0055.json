@@ -1,0 +1,32 @@
+{
+ "id": "BUG-0055",
+ "created": "2026-09-04T05:10:33Z",
+ "green": true,
+ "git_head": "4a582677a95a5acbd9410dd61423a22d9820e3be",
+ "scope": [
+  "src/app/cycles/page.tsx",
+  "src/lib/gauges/cycle-health.ts",
+  "tests/offline/cycles/page.test.ts",
+  "tests/offline/gauges/cycle-health.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "87215207e9a650269b9608ab6131426925bec5b6fc097dad711725158280cc4c",
+ "commands": [
+  {
+   "cmd": "npx vitest run --project=offline tests/offline/cycles/page.test.ts tests/offline/gauges/cycle-health.test.ts tests/offline/cycles/read.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-28336\n\n \u2713 |offline| tests/offline/cycles/read.test.ts (18 tests) 7ms\n \u2713 |offline| tests/offline/gauges/cycle-health.test.ts (20 tests) 9ms\n \u2713 |offline| tests/offline/cycles/page.test.ts (58 tests) 1034ms\n\n Test Files  3 passed (3)\n      Tests  96 passed (96)\n   Start at  22:10:21\n   Duration  2.04s (transform 451ms, setup 0ms, collect 1.08s, tests 1.05s, environment 0ms, prepare 492ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline tests/offline/cycles/page.test.ts tests/offline/gauges/cycle-health.test.ts tests/offline/cycles/read.test.ts\n(node:28385) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
