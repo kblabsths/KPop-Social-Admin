@@ -28,17 +28,52 @@ function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
+/** The zone token, spelled once for the whole app. */
+export const UTC_ZONE = "UTC";
+
 /**
- * `2026-08-29 04:12 UTC` — scheduled times, and the title attribute of every
- * relative age. Never a raw ISO string in a scannable column.
+ * The instant itself — `2026-08-29 04:12`, no zone token — or `null` when
+ * there is nothing to render. The two exported renderings below differ ONLY
+ * in whether they append the zone, so an instant reads identically wherever
+ * it appears.
  */
-export function absoluteUtc(ts: Timestamp): string {
+function utcStamp(ts: Timestamp): string | null {
   const date = toDate(ts);
-  if (!date) return EM_DASH;
+  if (!date) return null;
   return (
     `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}` +
-    ` ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())} UTC`
+    ` ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`
   );
+}
+
+/**
+ * `2026-08-29 04:12 UTC` — the instant WEARING its zone. For prose that has
+ * no header to carry it (the window sentences: "read to 2026-09-03 21:44
+ * UTC") and for the title attribute of every relative age. Never a raw ISO
+ * string in a scannable column.
+ *
+ * Voice bar 6 states the zone ONCE. In a column whose header already says
+ * `(UTC)`, the value must not repeat it — use `absoluteUtcInZonedColumn`
+ * below. That choice lives here, in the one place that knows both forms,
+ * rather than at each call site (campaign admin-window/BUG-0047).
+ */
+export function absoluteUtc(ts: Timestamp): string {
+  const stamp = utcStamp(ts);
+  return stamp === null ? EM_DASH : `${stamp} ${UTC_ZONE}`;
+}
+
+/**
+ * `2026-08-29 04:12` — the same instant, still absolute and still UTC, for a
+ * column whose HEADER states the zone ("Starts (UTC)").
+ *
+ * Repeating the token in every cell is not merely redundant: on `/browse` the
+ * suffix overflowed a 135px column and wrapped all 50 rows onto two lines,
+ * doubling the table's height (admin-window/BUG-0047, measured 2026-09-03 at
+ * 1440x900). A caller picks this form exactly when its header carries the
+ * zone, and `absoluteUtc` otherwise — never both, never neither.
+ */
+export function absoluteUtcInZonedColumn(ts: Timestamp): string {
+  return utcStamp(ts) ?? EM_DASH;
 }
 
 /**

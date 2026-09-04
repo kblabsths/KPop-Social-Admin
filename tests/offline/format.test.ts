@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   EM_DASH,
   absoluteUtc,
+  absoluteUtcInZonedColumn,
   count,
   counted,
   duration,
@@ -13,6 +14,7 @@ import {
   orDash,
   pluralise,
   relativeAge,
+  UTC_ZONE,
 } from "@/lib/format";
 
 /**
@@ -37,6 +39,41 @@ describe("absoluteUtc", () => {
   it("renders absence as the dash rather than a blank or the word null", () => {
     for (const missing of [null, undefined, "", "not a date"]) {
       expect(absoluteUtc(missing)).toBe(EM_DASH);
+    }
+  });
+});
+
+/**
+ * The zone is stated ONCE (Voice bar 6): prose and title attributes wear it on
+ * the value, a column whose header already says `(UTC)` does not repeat it in
+ * 50 cells (admin-window/BUG-0047). Both forms come from one stamp, so they
+ * cannot drift apart on the instant itself.
+ */
+describe("absoluteUtcInZonedColumn", () => {
+  it("renders the same instant as absoluteUtc, without the zone token", () => {
+    expect(absoluteUtcInZonedColumn(T)).toBe("2026-08-29 04:12");
+    expect(absoluteUtcInZonedColumn(T)).not.toContain(UTC_ZONE);
+    expect(absoluteUtc(T)).toBe(`${absoluteUtcInZonedColumn(T)} ${UTC_ZONE}`);
+  });
+
+  it("agrees with absoluteUtc across kinds and across the day", () => {
+    for (const instant of [
+      T,
+      "2026-01-01T00:00:00.000Z",
+      "2026-12-31T23:59:59.000Z",
+      new Date(T),
+      new Date(T).getTime(),
+    ]) {
+      expect(absoluteUtc(instant)).toBe(
+        `${absoluteUtcInZonedColumn(instant)} ${UTC_ZONE}`,
+      );
+    }
+  });
+
+  it("renders absence as the dash, like every other formatter", () => {
+    for (const missing of [null, undefined, "", "not a date"]) {
+      expect(absoluteUtcInZonedColumn(missing)).toBe(EM_DASH);
+      expect(isAbsent(absoluteUtcInZonedColumn(missing))).toBe(true);
     }
   });
 });

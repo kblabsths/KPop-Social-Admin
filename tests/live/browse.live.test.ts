@@ -222,10 +222,13 @@ describe("Browse against staging", () => {
     expect(row[label("title")]).toBe(listing.title ?? newest);
     expect(row[label("venue")]).toBe(listing.venue_name ?? EM_DASH);
 
-    // The scheduled time renders absolute UTC, to the minute.
+    // The scheduled time renders absolute UTC, to the minute — with the zone
+    // stated once, by the column HEADER, and not again in the cell
+    // (admin-window/BUG-0047; Voice bar 6).
+    expect(label("starts_at")).toContain("UTC");
     if (listing.starts_at) {
       const utc = new Date(listing.starts_at).toISOString().slice(0, 16);
-      expect(row[label("starts_at")]).toBe(`${utc.replace("T", " ")} UTC`);
+      expect(row[label("starts_at")]).toBe(utc.replace("T", " "));
     }
 
     // And the row really does link at its own record surface.

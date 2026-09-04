@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import * as cheerio from "cheerio";
-import { EM_DASH } from "@/lib/format";
+import { EM_DASH, UTC_ZONE } from "@/lib/format";
 import { T } from "@/lib/db/tables";
 import {
   COLUMNS_PARAM,
@@ -292,15 +292,55 @@ describe("the page's rows", () => {
     expect(textOf(markup)).toContain("has none");
   });
 
-  it("states the scheduled time in UTC, with the zone in the header", async () => {
+  /**
+   * Voice bar 6 states the zone ONCE per column. It was stated twice — header
+   * and all 50 cells — which overflowed the column and wrapped every row onto
+   * two lines (admin-window/BUG-0047). The assertion is over the DELIVERED
+   * markup, header and cells together, because either end alone can carry it
+   * and only the pair can double it.
+   */
+  it("states the scheduled time in UTC, with the zone in the header ONLY", async () => {
     const markup = await renderBrowse(healthyScript());
     const label = labelOf("starts_at");
-    expect(label).toContain("UTC");
     const column = headers(markup).indexOf(label);
-    // The value is the absolute instant, never a raw ISO string.
-    expect(bodyRows(markup)[0][column]).toMatch(
-      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/,
+    const cells = bodyRows(markup).map((row) => row[column]);
+    expect(cells).toHaveLength(2);
+
+    // The value is the absolute instant, never a raw ISO string — and never
+    // the zone again, which the header above it already said.
+    for (const cell of cells) {
+      expect(cell).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    }
+
+    // Exactly one utterance of the zone in the whole column, and it is the
+    // header's: counted, so a second token anywhere fails this.
+    const utterances = (text: string) => text.split(UTC_ZONE).length - 1;
+    expect(utterances(label)).toBe(1);
+    expect([label, ...cells].reduce((n, t) => n + utterances(t), 0)).toBe(1);
+  });
+
+  it("renders a missing scheduled time as the dash, not a bare zone token", () => {
+    const markup = render(
+      h(BrowseTable, {
+        view,
+        shown: ["starts_at"] as BrowseColumnKey[],
+        rows: [
+          {
+            event_id: EVENT_NEW,
+            title: "no date yet",
+            description: null,
+            poster_url: null,
+            starts_at: null,
+            created_at: null,
+            venue_name: null,
+            sources: [],
+          },
+        ],
+      }),
     );
+    const cell = bodyRows(markup)[0][0];
+    expect(cell).toBe(EM_DASH);
+    expect(cell).not.toContain(UTC_ZONE);
   });
 
   it("carries the absolute instant behind every relative age", async () => {

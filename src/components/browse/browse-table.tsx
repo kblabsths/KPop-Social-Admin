@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 import { DataTable, type Column } from "@/components/ui";
-import { absoluteUtc, relativeAge, type Timestamp } from "@/lib/format";
+import {
+  absoluteUtcInZonedColumn,
+  isAbsent,
+  relativeAge,
+  type Timestamp,
+} from "@/lib/format";
 import type { BrowseRow } from "@/lib/browse/rows";
 import type { BrowseColumnKey, BrowseView } from "@/lib/browse/views";
 import { recordHref } from "@/lib/records/routes";
@@ -16,7 +21,8 @@ import { recordHref } from "@/lib/records/routes";
  *
  * LOOK_AND_FEEL, Voice bar 6: ages are relative with the absolute in the title
  * attribute (`arrived`), scheduled times are absolute UTC with the zone stated
- * once in the column header (`starts_at` — "Starts (UTC)"). Nothing here
+ * once in the column header and NOT again in the cell (`starts_at` — the
+ * header reads "Starts (UTC)", the cell "2026-08-31 02:30"). Nothing here
  * decides how an absence renders: a cell returns `null` and `DataTable` draws
  * the em dash in disabled-gray, so every dash on every page reads the same.
  */
@@ -50,7 +56,30 @@ const CELLS: Record<BrowseColumnKey, CellBody> = {
     );
   },
 
-  starts_at: (row) => absoluteUtc(row.starts_at),
+  /**
+   * The scheduled time, absolute UTC — WITHOUT the zone token, because the
+   * column header ("Starts (UTC)", `lib/browse/views.ts`) states it once for
+   * the whole column. Which form a call site takes is decided in
+   * `lib/format.ts`; here the only claim is that this column has a zoned
+   * header (admin-window/BUG-0047).
+   *
+   * An instant is ONE atom: the table's auto layout squeezes this column to
+   * make room for the title, and a broken stamp reads as two half-dates and
+   * doubles every row's height. Dropping the token was not enough on its own
+   * — measured 2026-09-03 at 1440x900, the shorter value simply took a
+   * narrower column (135px → 114px) and all 50 rows still wrapped — so the
+   * value declares itself unbreakable and the column keeps the width it
+   * needs. An ABSENCE stays a bare string so `DataTable`'s `orDash` draws the
+   * one shared em dash rather than this file drawing a second kind.
+   */
+  starts_at: (row) => {
+    const stamp = absoluteUtcInZonedColumn(row.starts_at);
+    return isAbsent(stamp) ? (
+      stamp
+    ) : (
+      <span className="whitespace-nowrap">{stamp}</span>
+    );
+  },
 
   venue: (row) => row.venue_name,
 
