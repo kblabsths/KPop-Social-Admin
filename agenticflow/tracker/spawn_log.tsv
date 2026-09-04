@@ -9082,3 +9082,21 @@
 2026-09-04T05:41:00Z	qa-adversary	BUG-0074	33991	924	145385
 # STRANDED	2026-09-04T05:41:09Z	agent	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0074.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0068.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0074.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0075.md
 2026-09-04T05:41:09Z	agent	-	-	-	-
+# STRANDED	2026-09-04T05:41:41Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T05:41:41Z	agent	-	-	-	-
+# STRANDED	2026-09-04T05:41:51Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T05:41:51Z	agent	-	-	-	-
+# STRANDED	2026-09-04T05:42:12Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T05:42:12Z	agent	-	-	-	-
+# STRANDED	2026-09-04T05:42:23Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-04T05:42:23Z	agent	-	-	-	-
+# STRANDED	2026-09-04T05:42:44Z	agent	2 uncommitted in primary checkout: .env.example, tests/offline/ui/editable-cell.test.ts
+2026-09-04T05:42:44Z	agent	-	-	-	-
+# STRANDED	2026-09-04T05:42:54Z	agent	2 uncommitted in primary checkout: .env.example, tests/offline/ui/editable-cell.test.ts
+2026-09-04T05:42:54Z	agent	-	-	-	-
+# STRANDED	2026-09-04T05:43:03Z	builder	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0068.md, src/components/EditableCell.tsx, tests/offline/ui/editable-cell.test.ts
+2026-09-04T05:43:03Z	builder	BUG-0068	7822	271	65155
+2026-09-04T05:43:26Z	builder	BUG-0069	spawned
+# STRANDED	2026-09-04T05:43:27Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0068.md, src/components/EditableCell.tsx, tests/offline/ui/editable-cell.test.ts
+2026-09-04T05:43:27Z	agent	-	-	-	-
+2026-09-04T05:43:35Z	qa-adversary	BUG-0068	spawned

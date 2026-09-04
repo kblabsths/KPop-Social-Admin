@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-04T05:41:07Z — do not edit)
+# Tracker index (regenerated 2026-09-04T05:43:09Z — do not edit)
 
 ## open
 - BUG-0069 [P3][bug][M1] Edit cell: an edit that ends drops keyboard focus to <body> and never gets it back, so the operator's next Tab restarts at the top of the document  (deps:BUG-0066 scope:src/components/EditableCell.tsx,tests/offline/ui/editable-cell.test.ts from:BUG-0060)
@@ -8,10 +8,10 @@
 - DEBT-0004 [P3][debt][M1] /cycles and /sources carry their own presentation: 1,291- and 793-line pages, no components module, while every other page has one  (deps:DEBT-0003(unmet:1) scope:src/components/cycles,src/components/sources,src/app/cycles/page.tsx,src/app/sources/page.tsx,tests/offline/cycles/page.test.ts,tests/offline/sources/page.test.ts from:M1-endgame-structure-walk)
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055 scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
-## claimed
+## built
 - BUG-0068 [P3][bug][M1] PATCH record route: a malformed id answers 500 with the raw Postgres message, where the page already answers 'no record at this address'  (scope:src/app/api/admin/records/[table]/[id]/route.ts,tests/offline/edit/route.test.ts @builder-107 from:BUG-0065)
 
 ## qa
 - BUG-0075 [P2][bug][M1] Edit cell: a previous save's 1.5s confirmation timer erases the NEXT edit's status — the in-flight 'saving…' vanishes mid-write and a refusal self-erases after 1374ms  (scope:src/components/EditableCell.tsx,tests/offline/ui/editable-cell.test.ts @builder-106 from:BUG-0066)
 
-Totals — claimed:1, done:118, open:6, qa:1. Archived: 0.
+Totals — built:1, done:118, open:6, qa:1. Archived: 0.
