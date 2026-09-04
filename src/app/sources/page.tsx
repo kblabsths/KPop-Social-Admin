@@ -23,7 +23,14 @@ import {
   type SourcesFilter,
 } from "@/lib/db/sources";
 import type { DbUnavailable } from "@/lib/db/result";
-import { absoluteUtc, count, isAbsent, relativeAge } from "@/lib/format";
+import {
+  absoluteUtc,
+  count,
+  counted,
+  isAbsent,
+  pluralise,
+  relativeAge,
+} from "@/lib/format";
 import {
   readAwaitingRowTrend,
   type AwaitingRowPoint,
@@ -530,7 +537,7 @@ function AwaitingRowTrendSection({
           label="Awaiting-row claims in this window"
           value={claims}
           floor={info.truncated}
-          sub={`${count(series.length)} sources holding one`}
+          sub={`from ${counted(series.length, "source")}`}
         />
         <GaugeCard
           label="Sources with awaiting-row claims"
@@ -702,11 +709,11 @@ function RejectionSection({
         A re-reject is the resolver throwing out a value a human already
         adjudicated out — source health, and the evidence behind a tier move.
         {unattributed > 0
-          ? ` ${count(unattributed)} ${
-              unattributed === 1 ? "rejection carries" : "rejections carry"
-            } no reason at all, so ${
-              unattributed === 1 ? "it is" : "they are"
-            } counted in neither column.`
+          ? ` ${counted(unattributed, "rejection carries", "rejections carry")} no reason at all, so ${pluralise(
+              unattributed,
+              "it is",
+              "they are",
+            )} counted in neither column.`
           : ""}
         {unnamed === 0
           ? ""

@@ -6,10 +6,12 @@ import {
   EM_DASH,
   absoluteUtc,
   count,
+  counted,
   duration,
   isAbsent,
   nullDash,
   orDash,
+  pluralise,
   relativeAge,
 } from "@/lib/format";
 
@@ -107,6 +109,68 @@ describe("count", () => {
     expect(count(null)).toBe(EM_DASH);
     expect(count(undefined)).toBe(EM_DASH);
     expect(count(Number.NaN)).toBe(EM_DASH);
+  });
+});
+
+describe("pluralise", () => {
+  it("takes the one form at one and the many form at nothing and at more", () => {
+    expect(pluralise(1, "it is", "they are")).toBe("it is");
+    expect(pluralise(0, "it is", "they are")).toBe("they are");
+    expect(pluralise(2, "it is", "they are")).toBe("they are");
+    expect(pluralise(769, "it is", "they are")).toBe("they are");
+  });
+
+  it("treats a quantity that is not a whole one as many, the way the language does", () => {
+    // English gives `1.5 sources`, not `1.5 source` — the form follows the
+    // quantity, not the rounding of it.
+    expect(pluralise(1.5, "one", "many")).toBe("many");
+    expect(pluralise(0.5, "one", "many")).toBe("many");
+    expect(pluralise(1.0, "one", "many")).toBe("one");
+  });
+
+  it("takes the many form for an unknown quantity, so a dash is never singular", () => {
+    for (const unknown of [null, undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(pluralise(unknown, "one", "many")).toBe("many");
+    }
+  });
+
+  it("carries whatever the caller's two forms are, verb as readily as noun", () => {
+    expect(pluralise(1, "names", "name")).toBe("names");
+    expect(pluralise(3, "names", "name")).toBe("name");
+  });
+});
+
+describe("counted", () => {
+  it("agrees with its noun at nothing, at one, and at many", () => {
+    // The three cases the app got wrong: staging held exactly one source and
+    // the page said "1 sources" (admin-window/BUG-0046).
+    expect(counted(0, "source")).toBe("0 sources");
+    expect(counted(1, "source")).toBe("1 source");
+    expect(counted(2, "source")).toBe("2 sources");
+  });
+
+  it("keeps the thousand separator the count already applies", () => {
+    expect(counted(1234, "item")).toBe("1,234 items");
+    expect(counted(1_000_001, "fold")).toBe("1,000,001 folds");
+  });
+
+  it("takes an explicit second form when the regular -s would be wrong", () => {
+    expect(counted(1, "entity", "entities")).toBe("1 entity");
+    expect(counted(4, "entity", "entities")).toBe("4 entities");
+    // A phrase whose verb has to agree is the same problem, so it is the same
+    // helper — Sources says this about rejection stamps carrying no reason.
+    expect(counted(1, "rejection carries", "rejections carry")).toBe(
+      "1 rejection carries",
+    );
+    expect(counted(2, "rejection carries", "rejections carry")).toBe(
+      "2 rejections carry",
+    );
+  });
+
+  it("renders an unknown count as the dash beside the plural, never as zero and never singular", () => {
+    for (const unknown of [null, undefined, Number.NaN]) {
+      expect(counted(unknown, "source")).toBe(`${EM_DASH} sources`);
+    }
   });
 });
 

@@ -6,7 +6,12 @@ import {
   implicitInterElementSpaces,
   implicitInterElementSpacesIn,
 } from "../source-tree";
-import { factoryTicketIds, render, runTogetherWords } from "../ui/markup";
+import {
+  disagreeingCounts,
+  factoryTicketIds,
+  render,
+  runTogetherWords,
+} from "../ui/markup";
 import {
   CLAIMS,
   ENTITY,
@@ -1604,6 +1609,34 @@ describe("the copy the operator actually reads", () => {
         "</span>dial",
       ]);
       expect(runTogetherWords(await renderClaims(healthyScript(), { tab }))).toEqual([]);
+    });
+
+    it(`agrees every count with its noun on the ${tab} tab when one source holds the window`, async () => {
+      // The staging shape that produced "1 sources, 2 domains" and "0 sources
+      // holding one" on the walk (admin-window/BUG-0046). The whole population
+      // spans three sources and three domains, so the defect cannot render
+      // against it; narrowing to the one source whose claims are all `events`
+      // is what makes the guard below non-vacuous — it puts a 1 under both
+      // gauges, on both tabs.
+      expect(disagreeingCounts("<p>1 sources, 2 domains</p>")).toEqual(["1 sources"]);
+
+      const held = CLAIMS.filter((claim) => claim.source_id === SOURCE.second);
+      expect(new Set(held.map((claim) => claim.source_id)).size).toBe(1);
+      expect(new Set(held.map((claim) => claim.domain)).size).toBe(1);
+      expect(
+        held.filter((claim) => claim.bucket === "standing_disagreement"),
+      ).toHaveLength(1);
+
+      const markup = await renderClaims(
+        healthyScript({
+          [T.pendingClaims]: { data: held, count: held.length },
+          [T.observations]: {
+            data: OBSERVATIONS.filter((row) => row.source_id === SOURCE.second),
+          },
+        }),
+        { tab },
+      );
+      expect(disagreeingCounts(markup)).toEqual([]);
     });
   }
 

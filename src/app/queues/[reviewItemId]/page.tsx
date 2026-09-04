@@ -22,7 +22,7 @@ import {
   type ResolvedClaim,
 } from "@/lib/db/review-item";
 import { T } from "@/lib/db/tables";
-import { count, relativeAge } from "@/lib/format";
+import { count, counted, relativeAge } from "@/lib/format";
 import {
   readAwaitingRowTrend,
   stuckPatternThreshold,
@@ -325,7 +325,7 @@ function linksOf(
  */
 function accountingOf(evidence: ItemEvidence): string {
   const { stored, distinct } = evidence.ids;
-  const resolved = `${count(evidence.claims.length)} of ${count(distinct)} evidence ids resolved to a claim, in the order they folded in.`;
+  const resolved = `${count(evidence.claims.length)} of ${counted(distinct, "evidence id")} resolved to a claim, in the order they folded in.`;
   return stored === distinct
     ? resolved
     : `${resolved} It stores ${count(stored)} ids in all: a claim that folded in again is appended, and counts once here.`;

@@ -10,7 +10,7 @@ import {
   type GaugeState,
 } from "@/components/gauges";
 import { type Column, DataTable, Empty } from "@/components/ui";
-import { EM_DASH, absoluteUtc, count } from "@/lib/format";
+import { EM_DASH, absoluteUtc, count, counted, pluralise } from "@/lib/format";
 import type { Shape } from "@/lib/review/shapes";
 import {
   factColumn,
@@ -137,8 +137,8 @@ function Unresolved({ ids }: { ids: readonly string[] }) {
   if (ids.length === 0) return null;
   return (
     <p className="type-body text-ink-secondary">
-      {count(ids.length)} of this item&rsquo;s evidence ids name no claim this
-      database holds:{" "}
+      {count(ids.length)} of this item&rsquo;s evidence ids{" "}
+      {pluralise(ids.length, "names", "name")} no claim this database holds:{" "}
       {ids.map((id) => (
         <span key={id} data-unresolved={id} className="type-data text-ink">
           {id}{" "}
@@ -335,9 +335,10 @@ function Dial({ label, series, window: read, empty, state }: DialProps) {
       <p className="type-body text-ink-secondary">
         {series === null || series.threshold === null
           ? "No pattern threshold is readable from here — the dial is a source-registry setting in the scraper repo, so the trend is drawn without its line."
-          : `Pattern threshold: ${count(series.threshold.count)} records in ${count(
-              series.threshold.windowDays,
-            )} days.`}
+          : `Pattern threshold: ${counted(
+              series.threshold.count,
+              "record",
+            )} in ${counted(series.threshold.windowDays, "day")}.`}
       </p>
       <TrendTable<{ day: string; claims: number }>
         label={label}

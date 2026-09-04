@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { T } from "@/lib/db/tables";
 import { EM_DASH, absoluteUtc } from "@/lib/format";
-import { render } from "../ui/markup";
+import { disagreeingCounts, render } from "../ui/markup";
 import { readNumber, stateOf as surfaceStateOf } from "../../live/parity";
 import {
   reviewItemEdgePopulation,
@@ -598,6 +598,34 @@ describe("the queue-health gauge", () => {
       expect(cells.length, queue).toBeGreaterThan(0);
       for (const cell of cells) expect(cell, queue).toBe(EM_DASH);
     }
+  });
+});
+
+/**
+ * The prose the page ships, checked against the RENDERED markup rather than
+ * the source (campaign admin-window/BUG-0046).
+ */
+describe("the copy the operator actually reads", () => {
+  it("agrees every count with its noun when each queue holds exactly one item", async () => {
+    // The staging shape that produced "of 1 items read here" on the walk: one
+    // folded item in the entity_link queue. The whole population puts several
+    // items in each queue, so the defect cannot render against it — narrowing
+    // to one per queue is what makes the guard below non-vacuous.
+    expect(disagreeingCounts("<p>of 1 items read here</p>")).toEqual(["1 items"]);
+
+    const single = QUEUE_NAMES.map(
+      (queue) => POPULATION.find((item) => item.queue === queue) as ReviewItemRow,
+    );
+    // The fixture really is singular: one item in each queue, so every gauge
+    // sub-line counting items in a queue is counting to one.
+    for (const queue of QUEUE_NAMES) {
+      expect(single.filter((item) => item.queue === queue), queue).toHaveLength(1);
+    }
+
+    const markup = await renderQueues(
+      healthyScript({ [T.reviewItems]: { data: single, count: single.length } }),
+    );
+    expect(disagreeingCounts(markup)).toEqual([]);
   });
 });
 

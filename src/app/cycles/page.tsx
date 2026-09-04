@@ -37,7 +37,14 @@ import {
   type RunRow,
   type RunWindow,
 } from "@/lib/db/runs";
-import { absoluteUtc, count, duration, isAbsent, relativeAge } from "@/lib/format";
+import {
+  absoluteUtc,
+  count,
+  counted,
+  duration,
+  isAbsent,
+  relativeAge,
+} from "@/lib/format";
 import { readCycleHealth, type CycleHealth } from "@/lib/gauges/cycle-health";
 import {
   RESOLVER_CADENCE_SECONDS,
@@ -626,7 +633,7 @@ function CycleHealthSection({ health }: { health: CycleHealth }) {
           value={health.errors}
           floor={info.truncated}
           tone={health.errors > 0 ? "broken" : "default"}
-          sub={`${count(health.cyclesWithErrors)} cycles reported one`}
+          sub={`${counted(health.cyclesWithErrors, "cycle")} reported one`}
         />
       </div>
       <Distribution
@@ -740,7 +747,7 @@ function LatencySection({ latency }: { latency: ResolutionLatency }) {
           value={overall.p50 === null ? null : duration(overall.p50)}
           absent={`no apply in this window had a claim to measure from${
             latency.verdictUnsets > 0
-              ? `; ${count(latency.verdictUnsets)} decisions in it name no claim`
+              ? `; ${counted(latency.verdictUnsets, "decision")} in it named no claim`
               : ""
           }`}
           sub={`p90 ${duration(overall.p90)}, against a ${cadence} cadence`}

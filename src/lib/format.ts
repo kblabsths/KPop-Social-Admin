@@ -104,12 +104,73 @@ export function duration(seconds: number | null | undefined): string {
 
 /**
  * Thousand-separated, in a fixed locale so the same row reads the same on
- * every machine. Counts carry their noun at the call site ("12 open
- * decisions"), never here.
+ * every machine. A count that is rendered NEXT TO its noun goes through
+ * `counted` below rather than being concatenated here.
  */
 export function count(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return EM_DASH;
   return n.toLocaleString("en-US");
+}
+
+const PLURAL_RULES = new Intl.PluralRules("en-US");
+
+/**
+ * Which of two word forms a quantity takes — the whole pluralisation rule of
+ * this app, in one place (campaign admin-window/BUG-0046).
+ *
+ * `Intl.PluralRules` rather than `n === 1` because the selection of a form by
+ * a quantity is a locale question the platform already answers, and `count`
+ * above is already pinned to `en-US`: the two agree by construction, and a
+ * fractional or negative quantity gets the form the language actually gives it
+ * (`1.5` is `other` — "1.5 sources" — while `1` alone is `one`).
+ *
+ * Both forms are the CALLER'S words, so this handles the verb as readily as
+ * the noun: `pluralise(n, "it is", "they are")`, `pluralise(n, "names",
+ * "name")`. There is no inflection table here and there will not be one —
+ * guessing "entitys" from "entity" is the bug this helper exists to stop.
+ *
+ * A quantity that is not a finite number takes the MANY form: a dash means the
+ * count is unknown, and the unmarked English form for an unknown quantity is
+ * the plural ("— sources").
+ */
+export function pluralise<T>(
+  n: number | null | undefined,
+  one: T,
+  many: T,
+): T {
+  if (n === null || n === undefined || !Number.isFinite(n)) return many;
+  return PLURAL_RULES.select(n) === "one" ? one : many;
+}
+
+/**
+ * A count wearing its noun, agreeing with it: `0 sources`, `1 source`,
+ * `2,481 sources` (LOOK_AND_FEEL Voice bar 6, "counts carry their noun").
+ *
+ * Every call site that renders a figure immediately followed by the thing it
+ * counts uses this instead of `count(n) + " sources"`, which is how the app
+ * came to say "1 sources holding one" and "of 1 items read here" on two of its
+ * six pages (admin-window/BUG-0046). The rule lives here once so that a new
+ * gauge card gets it for free rather than re-deciding it.
+ *
+ * `plural` defaults to the regular `-s` form because every noun this app
+ * counts is regular; an irregular one passes its own second form, and so does
+ * any phrase whose verb has to agree too:
+ *
+ * ```ts
+ * counted(1, "source")                                 // "1 source"
+ * counted(0, "source")                                 // "0 sources"
+ * counted(1, "entity", "entities")                     // "1 entity"
+ * counted(2, "rejection carries", "rejections carry")  // "2 rejections carry"
+ * ```
+ *
+ * An unknown count renders the dash beside the plural: `— sources`.
+ */
+export function counted(
+  n: number | null | undefined,
+  singular: string,
+  plural: string = `${singular}s`,
+): string {
+  return `${count(n)} ${pluralise(n, singular, plural)}`;
 }
 
 /**
