@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import CyclesPage from "@/app/cycles/page";
 import { RUN_COLUMNS, RUN_COUNTS, RUN_WINDOW } from "@/lib/db/runs";
 import { T } from "@/lib/db/tables";
+import { ALWAYS_HOOKED, columnsFromHooks } from "../fixtures/run-hooks";
 import {
   assertState,
   gradeSurface,
@@ -190,14 +191,50 @@ describe("the adapter framework's runs against staging", () => {
     const markup = await cyclesMarkup();
     if (!(await gradeState(markup))) return;
 
-    const headers = cheerio
-      .load(markup)('table[aria-label="Adapter runs"] th')
+    // The ruled SET and ORDER, read off each cell's own machine hook — the
+    // headers are the app's words now (admin-window/BUG-0064), and the hooks
+    // are where the column names live. The same seam every other assertion in
+    // this file selects by, and the same map the offline render reads
+    // (`tests/fixtures/run-hooks.ts`).
+    //
+    // Every rendered row, because staging's rows are whatever the adapters
+    // filed: a nullable column renders the dash and no hook, which is correct,
+    // so a column is graded on the rows that HAVE it and the always-hooked six
+    // are what keeps the grade from passing on nothing.
+    const $ = cheerio.load(markup);
+    const seen = new Set<string>();
+    for (const row of $("[data-run]").toArray()) {
+      const cells = $(row).closest("tr").children("td").toArray();
+      const rendered = columnsFromHooks(cells, (cell, selector) =>
+        $(cell as never).find(selector).length,
+      );
+      expect(rendered, $(row).attr("data-run")).toHaveLength(RUN_COLUMNS.length);
+      rendered.forEach((column, index) => {
+        if (column === null) return;
+        // Whatever this cell is, it sits where the ruling puts that column.
+        expect(column, `${$(row).attr("data-run")} cell ${index}`).toBe(
+          RUN_COLUMNS[index],
+        );
+        seen.add(column);
+      });
+      for (const column of ALWAYS_HOOKED) {
+        expect(rendered, `${$(row).attr("data-run")} ${column}`).toContain(column);
+      }
+    }
+    // Non-vacuous: the six a row cannot render without were all observed.
+    expect([...ALWAYS_HOOKED].filter((column) => !seen.has(column))).toEqual([]);
+
+    const headers = $('table[aria-label="Adapter runs"] th')
       .toArray()
-      .map((element) => cheerio.load(markup)(element).text().replace(/\s+/g, " ").trim());
-    expect(headers).toEqual([...RUN_COLUMNS]);
+      .map((element) => $(element).text().replace(/\s+/g, " ").trim());
     expect(headers).toHaveLength(9);
     // The primary key is the row key, never a column.
     expect(headers).not.toContain("run_id");
+    // No header is a raw database column name, so the page speaks one
+    // vocabulary against real rows too, not only against fixtures.
+    expect(headers.filter((header) => /_/.test(header) || header.trim() === "")).toEqual(
+      [],
+    );
   });
 
   it("renders every count, every failure class and every error line the row carries", async () => {
