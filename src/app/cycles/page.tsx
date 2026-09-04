@@ -43,9 +43,14 @@ import {
   counted,
   duration,
   isAbsent,
+  orDash,
   relativeAge,
 } from "@/lib/format";
-import { readCycleHealth, type CycleHealth } from "@/lib/gauges/cycle-health";
+import {
+  CYCLE_OUTCOME_KEYS,
+  readCycleHealth,
+  type CycleHealth,
+} from "@/lib/gauges/cycle-health";
 import {
   RESOLVER_CADENCE_SECONDS,
   secondsBetween,
@@ -294,6 +299,25 @@ const OUTCOME_TONE: Record<string, "healthy" | "broken" | "neutral"> = {
 };
 
 /**
+ * The ONE word this page gives each no-outcome cycle state — read by the table
+ * row below AND by the cycle-health panel's outcome list, so the two cannot
+ * name one state two ways (Voice glossary: "one name per concept, everywhere").
+ *
+ * admin-window/BUG-0055 is what it is for: the rows said `died` where the panel
+ * said `unfinished`, over the same four cycles on the same screen, and a reader
+ * had to satisfy himself the two sets were one before trusting either count.
+ *
+ * `unrecorded` has no word on purpose. It ended and the producer wrote no
+ * outcome, so neither surface invents one: both render the shared absence dash
+ * through `orDash`, which is the same string in both places too.
+ */
+const STATE_WORD: Record<Exclude<CycleState["kind"], "outcome">, string | null> = {
+  running: "still running",
+  died: "died",
+  unrecorded: null,
+};
+
+/**
  * A cycle's state, as the operator reads it.
  *
  * The producer's own word wins where there is one, verbatim and in mono. Where
@@ -306,12 +330,12 @@ function stateCell(state: CycleState): ReactNode {
     return <Badge tone={OUTCOME_TONE[state.outcome] ?? "neutral"}>{state.outcome}</Badge>;
   }
   if (state.kind === "running") {
-    return <span className="type-body text-ink-secondary">still running</span>;
+    return <span className="type-body text-ink-secondary">{STATE_WORD.running}</span>;
   }
   if (state.kind === "died") {
     return (
       <span title={`no end recorded ${duration(state.ageSeconds)} after it started`}>
-        <Badge tone="broken">died</Badge>
+        <Badge tone="broken">{STATE_WORD.died}</Badge>
       </span>
     );
   }
@@ -571,15 +595,35 @@ function AskedSource({ source }: { source: string }) {
 
 /* ── the cycle-health gauge (spec §5, gauge 1 of 6) ──────────────────────── */
 
-/** The outcome counts, the three the constraint allows first, then the rest. */
+/**
+ * What the panel calls one bucket — the row's own word, never a second one.
+ *
+ * A state key takes its word from `STATE_WORD`, which is where the table's
+ * outcome cell above takes it too; anything else is a producer outcome and is
+ * rendered verbatim. `unrecorded`'s `null` goes through the same `orDash` the
+ * table cell does, so that bucket reads as the same dash the rows read.
+ */
+function outcomeLabel(key: string): ReactNode {
+  const word = key in STATE_WORD ? STATE_WORD[key as keyof typeof STATE_WORD] : key;
+  return orDash(word);
+}
+
+/**
+ * The outcome counts: the buckets the gauge always reports, in its order, then
+ * any outcome word the check constraint gained later, sorted.
+ *
+ * The known set is `CYCLE_OUTCOME_KEYS` and not a second literal list — the
+ * page listing its own four words was half of how the panel came to disagree
+ * with the rows (admin-window/BUG-0055).
+ */
 function outcomeRows(outcomes: CycleHealth["outcomes"]) {
-  const known = ["succeeded", "failed", "skipped", "unfinished"];
+  const known: string[] = [...CYCLE_OUTCOME_KEYS];
   const extra = Object.keys(outcomes)
     .filter((outcome) => !known.includes(outcome))
     .sort();
   return [...known, ...extra].map((outcome) => ({
     key: outcome,
-    label: <span data-outcome-count={outcome}>{outcome}</span>,
+    label: <span data-outcome-count={outcome}>{outcomeLabel(outcome)}</span>,
     value: outcomes[outcome] ?? 0,
   }));
 }
@@ -1311,7 +1355,11 @@ export default async function CyclesPage({
   const [cycles, runs, health, latency] = await Promise.all([
     readCycles(),
     readRuns({ source: askedSource }),
-    readCycleHealth(),
+    // The same instant the table ages its rows against: the gauge tells the
+    // same three no-outcome states apart, with the same `cycleState`, and two
+    // clocks read milliseconds apart could put one row on either side of the
+    // cadence boundary (admin-window/BUG-0055).
+    readCycleHealth({ now }),
     readResolutionLatency(),
   ]);
 

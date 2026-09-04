@@ -1,4 +1,5 @@
 import type { DbResult } from "../db/result";
+import { cycleState } from "../db/cycles";
 import {
   readResolutionRuns,
   type DbClient,
@@ -38,6 +39,30 @@ export type { ResolutionRunRow };
  */
 export const CYCLE_HEALTH_DEFAULTS = { days: 7, limit: 800 } as const;
 
+/**
+ * Every bucket this gauge always reports, in the order the panel lists them.
+ *
+ * The first three are `resolution_runs.outcome`'s own check-constraint values,
+ * carried verbatim (LOOK_AND_FEEL §11). The last three are the states a row
+ * with NO outcome can be in, told apart by `cycleState` (`lib/db/cycles.ts`) —
+ * the same function, and so the same three states, the `/cycles` table renders
+ * per row.
+ *
+ * They used to be one bucket under an invented fourth word, `unfinished`,
+ * which named the same four cycles the rows called `died` and forced a reader
+ * to prove the two sets were one before trusting either count
+ * (admin-window/BUG-0055). Seeded to zero, so an empty set still renders its
+ * labelled figure as a real `0`.
+ */
+export const CYCLE_OUTCOME_KEYS = [
+  "succeeded",
+  "failed",
+  "skipped",
+  "running",
+  "died",
+  "unrecorded",
+] as const;
+
 /** The bounded row set the gauge aggregates, with the window it was read under. */
 export interface CycleHealthRows {
   rows: ResolutionRunRow[];
@@ -74,13 +99,15 @@ export interface CycleHealth {
   /** Cycles read in the window. A floor when `window.truncated`. */
   cycles: number;
   /**
-   * Counts per `outcome`, with the three the table's check constraint allows
-   * always present so a zero renders as a zero, plus `unfinished` for a row
-   * with no outcome yet. An outcome the constraint gains later appears under
-   * its own name rather than being dropped.
+   * Counts per bucket — every key of `CYCLE_OUTCOME_KEYS` always present so a
+   * zero renders as a zero, and an outcome the check constraint gains later
+   * appearing under its own name rather than being dropped.
+   *
+   * A row with no outcome is bucketed by the STATE the `/cycles` table already
+   * shows for it, not lumped into one word (admin-window/BUG-0055).
    */
   outcomes: Record<string, number>;
-  /** Cycle duration in seconds (`ended_at - started_at`); unfinished cycles are unmeasurable. */
+  /** Cycle duration in seconds (`ended_at - started_at`); a cycle with no end is unmeasurable. */
   duration: Spread;
   /** resolver.md §12's cadence, in seconds — what the duration is judged against. */
   cadenceSeconds: number;
@@ -122,17 +149,15 @@ function counter(value: number | null | undefined): number {
  * The pure aggregate. Takes the fetched rows, returns what the card renders.
  *
  * No figure is invented: a cycle with no `ended_at` contributes to
- * `outcomes.unfinished` and to `duration.unmeasurable`, never a zero duration.
+ * `outcomes.running` or `outcomes.died` — whichever the `/cycles` table says
+ * it is — and to `duration.unmeasurable`, never a zero duration.
  */
 export function aggregateCycleHealth(input: CycleHealthRows): CycleHealth {
   const { rows, window } = input;
 
-  const outcomes: Record<string, number> = {
-    succeeded: 0,
-    failed: 0,
-    skipped: 0,
-    unfinished: 0,
-  };
+  const outcomes: Record<string, number> = Object.fromEntries(
+    CYCLE_OUTCOME_KEYS.map((key) => [key, 0]),
+  );
   const writes: CycleWrites = {
     applied: 0,
     entitiesCreated: 0,
@@ -152,9 +177,23 @@ export function aggregateCycleHealth(input: CycleHealthRows): CycleHealth {
   let latestErrorAt = -Infinity;
 
   for (const row of rows) {
-    const outcome =
-      row.outcome === null || row.outcome === undefined ? "unfinished" : row.outcome;
-    outcomes[outcome] = (outcomes[outcome] ?? 0) + 1;
+    // The producer's word where it wrote one; otherwise the state the table's
+    // own row shows, decided by the one function that decides it. `window.until`
+    // is the clock, and `WindowInfo` says what it is: "the instant the window
+    // was measured back from — also the age reference" — the same instant the
+    // page ages its rows against, because `CyclesPage` hands its one clock to
+    // this gauge (admin-window/BUG-0055).
+    //
+    // A future `outcome` value spelled `running`, `died` or `unrecorded` would
+    // land in the matching state's bucket. The check constraint allows three
+    // words, none of them these; if it ever gains one, the two must be
+    // namespaced here rather than left to merge silently.
+    const state = cycleState(row, {
+      now: window.until,
+      cadenceSeconds: RESOLVER_CADENCE_SECONDS,
+    });
+    const bucket = state.kind === "outcome" ? state.outcome : state.kind;
+    outcomes[bucket] = (outcomes[bucket] ?? 0) + 1;
 
     const duration = secondsBetween(row.started_at, row.ended_at);
     durations.push(duration);

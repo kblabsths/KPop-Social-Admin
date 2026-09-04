@@ -791,18 +791,52 @@ describe("the cycle-health gauge", () => {
       CYCLES.reduce((total, row) => total + row.errors, 0),
     );
 
-    // The outcome spread counts each of the constraint's three words plus the
-    // rows that carry none — two here, the running one and the dead one.
+    // The outcome spread counts each of the constraint's three words and each
+    // of the three states a row carrying none can be in — the fixture holds
+    // exactly one cycle in each of the six.
     const outcomes = new Map(
       tableRows(markup, OUTCOMES).map((cells) => [cells[0], cells[1]]),
     );
     expect(outcomes.get("succeeded")).toBe("1");
     expect(outcomes.get("failed")).toBe("1");
     expect(outcomes.get("skipped")).toBe("1");
-    expect(outcomes.get("unfinished")).toBe("3");
+    expect(outcomes.get("died")).toBe("1");
   });
 
-  it("reports a duration spread, and counts the unfinished as unmeasurable", async () => {
+  /*
+   * admin-window/BUG-0055. The panel called four cycles `unfinished` where the
+   * rows called the same four `died`, and a reader had to prove the two sets
+   * were one set before he would trust the count.
+   *
+   * Both sides are read out of the DELIVERED markup and compared to each
+   * other, never to a literal: the property is that this page has one word per
+   * state, not that the word is any particular string. Rename `died` to
+   * anything and this still passes; name one state two ways and it cannot.
+   */
+  it("names each state with the same word the table rows do", async () => {
+    const markup = await renderCycles(healthyScript());
+    const panel = new Map(
+      tableRows(markup, OUTCOMES).map((cells) => [cells[0], cells[1]]),
+    );
+    // One cycle per state in the fixture, so every row's own word must be a
+    // line of the panel reading exactly 1.
+    for (const row of [SUCCEEDED, FAILED, SKIPPED, RUNNING, DIED, UNRECORDED]) {
+      const cell = cycleRow(markup, row.run_id);
+      const word = cell.cells[2];
+      expect(panel.has(word), `${cell.state} row says "${word}"`).toBe(true);
+      expect(panel.get(word), `${cell.state} row says "${word}"`).toBe("1");
+    }
+  });
+
+  it("counts every rendered cycle exactly once across the outcome panel", async () => {
+    const markup = await renderCycles(healthyScript());
+    const total = tableRows(markup, OUTCOMES)
+      .map((cells) => Number(cells[1].replace(/,/g, "")))
+      .reduce((sum, n) => sum + n, 0);
+    expect(total).toBe(renderedCycles(markup).length);
+  });
+
+  it("reports a duration spread, and counts a cycle with no end as unmeasurable", async () => {
     const markup = await renderCycles(healthyScript());
     const rows = tableRows(markup, DURATIONS);
     // min / p50 / p90 / p95 / p99 / max, each a duration and not a raw second
