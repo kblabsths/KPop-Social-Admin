@@ -794,7 +794,7 @@ describe("absence and failure", () => {
    * attribute on a non-ok read, or dropping the whole line. Flip it back to a
    * plain `it(...)` in the commit that fixes it.
    */
-  it.fails("claims no count it never took when the list's read fails", async () => {
+  it("claims no count it never took when the list's read fails", async () => {
     const failures: Array<[string, Script]> = [
       [
         "refused",
@@ -820,6 +820,50 @@ describe("absence and failure", () => {
       expect(claimIds(markup), label).toEqual([]);
       // ... and no count hook stands in for the count nobody could take.
       expect(cheerio.load(markup)("[data-window-held]"), label).toHaveLength(0);
+    }
+  });
+
+  it("drops the whole window line, not just its count, on a read it never made", async () => {
+    // The stronger form the fix took, and the one `/runs` already pins
+    // ("claims no window it never read", tests/offline/runs/page.test.ts): the
+    // sentence claims a window of at most N rows "not the whole view", which
+    // is a claim about a window nobody looked in when the read failed. The
+    // count hook alone going absent would leave that sentence standing.
+    for (const [label, script] of [
+      [
+        "refused",
+        {
+          [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
+          [T.observations]: { data: [] },
+          [T.sources]: { data: [] },
+        },
+      ],
+      [
+        "transport",
+        {
+          [T.pendingClaims]: { error: transportFailure("bad port") },
+          [T.observations]: { data: [] },
+          [T.sources]: { data: [] },
+        },
+      ],
+      [
+        "absent",
+        {
+          [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
+          [T.observations]: { error: tableNotInSchemaCache(T.observations) },
+          [T.sources]: { data: [] },
+        },
+      ],
+    ] as const) {
+      const markup = await renderClaims(script);
+      expect(cheerio.load(markup)('[data-window="claims"]'), label).toHaveLength(0);
+      // The refusal itself is still on screen: the line went, the state did not.
+      expect(markup, label).toContain(T.pendingClaims);
+    }
+    // ... and a read that DID happen still states its window, on both tabs.
+    for (const tab of ["buckets", "standing"]) {
+      const read = await renderClaims(healthyScript(), { tab });
+      expect(cheerio.load(read)('[data-window="claims"]'), tab).toHaveLength(1);
     }
   });
 
