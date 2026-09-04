@@ -145,6 +145,9 @@ describe("aggregateCycleHealth", () => {
     since: "2026-08-25T12:00:00.000Z",
     until: NOW,
     limit: 800,
+    // The scan's row count; this aggregate takes its rows separately
+    // (admin-window/DEBT-0006).
+    held: 0,
     truncated: false,
     over: "table",
   };

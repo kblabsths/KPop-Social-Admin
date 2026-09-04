@@ -14,8 +14,10 @@ import {
   DataTable,
   Empty,
   type MicroLabel,
+  type ReadWindow,
+  WindowLine,
 } from "@/components/ui";
-import { EM_DASH, absoluteUtc, count, counted, pluralise } from "@/lib/format";
+import { EM_DASH, count, counted, pluralise } from "@/lib/format";
 import type { Shape } from "@/lib/review/shapes";
 import {
   factColumn,
@@ -83,14 +85,23 @@ export interface DialSeries {
   threshold: { count: number; windowDays: number } | null;
 }
 
-/** The window the dial was read over, carried so the card can state it. */
-export interface DialWindow {
-  since: string;
-  until: string;
-  limit: number;
-  /** The read filled its cap, so every figure from it is a floor. */
-  truncated: boolean;
-}
+/**
+ * The window the dial was read over, carried so the card can state it.
+ *
+ * It IS the gauge's own window (`WindowInfo`) — the primitive's structural
+ * type, not a second declaration of the same fields. The hand-copy this
+ * replaced dropped `over`, which is why the dial's sentence had the word
+ * "table" written into it rather than reading it off the read
+ * (admin-window/BUG-0077, admin-window/DEBT-0006).
+ */
+export type DialWindow = ReadWindow;
+
+/**
+ * The name the dial's WINDOW answers to — `data-window`. The dial draws the
+ * awaiting-row trend, the same gauge `/sources` publishes under this name over
+ * the same object, so one hook spells one read.
+ */
+const DIAL_WINDOW = "awaiting_row";
 
 export interface DialProps {
   /**
@@ -334,14 +345,10 @@ function Dial({ label, series, window: read, empty, state }: DialProps) {
         />
       )}
       {read === null ? null : (
-        <p className="type-body text-ink-secondary">
-          Claims observed since {absoluteUtc(read.since)}, read to{" "}
-          {absoluteUtc(read.until)} — a window of at most {count(read.limit)}{" "}
-          rows, not the whole table.
-          {read.truncated
-            ? " The window filled its cap, so every count here is a floor."
-            : ""}
-        </p>
+        // The window line follows the READ: `window` is null on exactly the
+        // states where the dial's read did not happen, so the line's absence
+        // means that and nothing else (ARCHITECTURE.md §4.3).
+        <WindowLine gauge={DIAL_WINDOW} window={read} measured="Claims observed" />
       )}
       <p className="type-body text-ink-secondary">
         {series === null || series.threshold === null

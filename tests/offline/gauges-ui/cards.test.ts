@@ -49,6 +49,9 @@ function windowOfFixture(overrides: Partial<WindowInfo> = {}): WindowInfo {
     since: "2026-08-24T00:00:00.000Z",
     until: NOW,
     limit: 800,
+    // The scan's row count (admin-window/DEBT-0006); the cards read the
+    // window's `truncated` and `limit`, never this.
+    held: 0,
     truncated: false,
     // As `windowOf` sets it — the cycle-health scan is over `resolution_runs`.
     over: "table",

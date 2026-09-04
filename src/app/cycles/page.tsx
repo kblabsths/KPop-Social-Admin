@@ -19,6 +19,7 @@ import {
 } from "@/components/ui";
 import { STATE_WORD, cycleState, type CycleState } from "@/lib/cycles/state";
 import {
+  CYCLES_OBJECT,
   CYCLE_COUNTERS,
   CYCLE_WINDOW,
   readCycles,
@@ -27,6 +28,7 @@ import {
 } from "@/lib/db/cycles";
 import type { DbResult, DbUnavailable } from "@/lib/db/result";
 import {
+  RUNS_OBJECT,
   RUN_COLUMNS,
   RUN_COUNTS,
   RUN_WINDOW,
@@ -169,6 +171,15 @@ const LATEST_RUN_SURFACE = "latest_run";
 const CYCLES_SURFACE = "cycles";
 const HEALTH_SURFACE = "cycle_health";
 const LATENCY_SURFACE = "resolution_latency";
+
+/**
+ * The name each of this page's two TABLE windows answers to — `data-window`,
+ * the hook `tests/offline/absence/pages.test.ts` and the live oracles read a
+ * window back by. Unchanged spellings: they were hand-written on the two
+ * paragraphs the fold replaced (admin-window/DEBT-0006).
+ */
+const CYCLES_WINDOW = "cycles";
+const RUNS_WINDOW = "runs";
 
 /** What an empty cycle table holds, and the one thing that fills it. */
 const NOTHING_RECORDED: EmptyWords = {
@@ -1089,18 +1100,20 @@ function AdapterRuns({
           is not there (LOOK_AND_FEEL states 3 and 4); an EMPTY window is still
           a window — the page looked, and nothing was there. */}
       {runs.kind === "ok" ? (
-        <p
-          data-window="runs"
-          data-window-limit={String(RUN_WINDOW)}
-          data-window-truncated={truncated ? "true" : "false"}
-          className="type-body text-ink-secondary"
-        >
-          The adapters&rsquo; newest runs, newest first — a window of at most{" "}
-          {count(RUN_WINDOW)}, not a count of the runs that exist.
-          {truncated
-            ? " The window filled its cap, so older runs ran than the ones below."
-            : ""}
-        </p>
+        <WindowLine
+          gauge={RUNS_WINDOW}
+          window={{
+            limit: RUN_WINDOW,
+            held: rows.length,
+            truncated,
+            over: RUNS_OBJECT,
+          }}
+          shows={{
+            of: "newest",
+            lede: "The adapters’ newest runs, newest first",
+            rows: "runs",
+          }}
+        />
       ) : null}
       {/* The facet sentence answers the URL, so it renders whatever the read
           did: an operator who followed a link deserves to know which half it
@@ -1355,18 +1368,20 @@ export default async function CyclesPage({
             there — so it keeps its line. Same rule and same shape as
             `AdapterRuns` below and `/claims` (admin-window/BUG-0067). */}
         {cycles.kind === "ok" ? (
-          <p
-            data-window="cycles"
-            data-window-limit={String(CYCLE_WINDOW)}
-            data-window-truncated={cyclesTruncated ? "true" : "false"}
-            className="type-body text-ink-secondary"
-          >
-            The resolver&rsquo;s newest cycles, newest first — a window of at most{" "}
-            {count(CYCLE_WINDOW)}, not a count of the cycles that exist.
-            {cyclesTruncated
-              ? " The window filled its cap, so older cycles ran than the ones below."
-              : ""}
-          </p>
+          <WindowLine
+            gauge={CYCLES_WINDOW}
+            window={{
+              limit: CYCLE_WINDOW,
+              held: rows.length,
+              truncated: cyclesTruncated,
+              over: CYCLES_OBJECT,
+            }}
+            shows={{
+              of: "newest",
+              lede: "The resolver’s newest cycles, newest first",
+              rows: "cycles",
+            }}
+          />
         ) : null}
         {askedFor === undefined ? null : (
           <AskedCycle askedFor={askedFor} state={asked} />

@@ -7,7 +7,7 @@ import {
   type DbResult,
   type DbUnavailable,
 } from "./result";
-import { T } from "./tables";
+import { objectKindOf, T, type ObjectKind } from "./tables";
 import {
   currentDecisions,
   eventIdsOf,
@@ -20,6 +20,17 @@ import {
   type SourceNameRow,
 } from "../browse/rows";
 import type { BrowseView } from "../browse/views";
+
+/**
+ * What this module's window read runs OVER — the word its window line ends
+ * its bound clause on.
+ *
+ * Derived from the same `T.*` constant the query passes to `.from()`, in the
+ * module that issues the query, so no page and no component gets a say: the
+ * object a window was read over is a fact of the READ (admin-window/BUG-0077,
+ * admin-window/DEBT-0006).
+ */
+export const EVENTS_OBJECT: ObjectKind = objectKindOf(T.events);
 
 /**
  * Browse's reads — campaign admin-window/TASK-0015.

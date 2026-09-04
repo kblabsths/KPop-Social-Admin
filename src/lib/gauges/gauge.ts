@@ -90,6 +90,17 @@ export interface WindowInfo {
   /** The row cap the query carried. */
   limit: number;
   /**
+   * How many rows the scanning query came back with.
+   *
+   * Carried because it is a fact of the read the surface may be asked for:
+   * every window line publishes `data-window-held`, whatever kind of read
+   * produced it, so an oracle can ask one question of all of them
+   * (`components/ui/window-line.tsx`, admin-window/DEBT-0006). It is also the
+   * number `truncated` below is decided from, which was otherwise
+   * unobservable.
+   */
+  held: number;
+  /**
    * The scanning query came back with exactly `limit` rows, so the window may
    * hold more than was read. Every count in the aggregate is then a FLOOR, not
    * a total — the card must say so rather than present a cut-off number as
@@ -98,7 +109,7 @@ export interface WindowInfo {
   truncated: boolean;
   /**
    * The kind of database object the scan ran over — the word a window line
-   * ends on ("…not the whole table.").
+   * ends its bound clause on.
    *
    * It rides on the window because it is a fact of the READ, established by
    * `windowOf` from the `tables.ts` name the query itself used, not a prop a
@@ -185,6 +196,7 @@ export function windowOf(bounds: Bounds, rowCount: number, scanned: TableName): 
     since: bounds.since,
     until: bounds.until,
     limit: effectiveLimit,
+    held: rowCount,
     truncated: rowCount >= effectiveLimit,
     over: objectKindOf(scanned),
   };

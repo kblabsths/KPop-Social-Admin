@@ -1,15 +1,12 @@
 import type { ReactNode } from "react";
 import {
-  ARRIVES_WITH,
   Badge,
   DataTable,
   Empty,
-  ErrorLine,
-  NotProvisioned,
   Page,
-  RETRY,
   Section,
   StatCard,
+  StateOf,
   type Column,
 } from "@/components/ui";
 import { STATE_WORD, cycleState, type CycleState } from "@/lib/cycles/state";
@@ -394,7 +391,7 @@ function LineTable<Row>({
   filledBy: string;
 }): ReactNode {
   if (result.kind === "not_provisioned") {
-    return <NotProvisioned missing={result.missing} arrivesWith={ARRIVES_WITH} />;
+    return <StateOf result={result} />;
   }
   if (result.kind === "error") {
     return (
@@ -403,13 +400,7 @@ function LineTable<Row>({
         rows={[]}
         rowKey={rowKey}
         label={label}
-        placeholder={
-          <ErrorLine
-            reading={result.reading}
-            failed={result.message}
-            retry={RETRY}
-          />
-        }
+        placeholder={<StateOf result={result} />}
       />
     );
   }
@@ -429,14 +420,8 @@ export default async function DashboardPage() {
   return (
     <Page title="Dashboard">
       <Section title="Attention" surface={ATTENTION_SURFACE}>
-        {attention.kind === "not_provisioned" ? (
-          <NotProvisioned missing={attention.missing} arrivesWith={ARRIVES_WITH} />
-        ) : attention.kind === "error" ? (
-          <ErrorLine
-            reading={attention.reading}
-            failed={attention.message}
-            retry={RETRY}
-          />
+        {attention.kind !== "ok" ? (
+          <StateOf result={attention} />
         ) : (
           <>
             <div className="grid grid-cols-2 gap-4">

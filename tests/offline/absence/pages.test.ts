@@ -406,11 +406,17 @@ function windowHooks(markup: string): string[] {
 
 /**
  * Every surface that publishes a window on a healthy read, and the hooks it
- * publishes — measured on this tree 2026-09-04 (admin-window/BUG-0070, and
- * again after admin-window/DEBT-0003 folded the three hand-copied window lines
- * into one primitive): three routes, eight hooks. The eighth is `/claims`'s
- * gauge window, which stated its sentence and published no hook at all until
- * the fold gave every page the same line.
+ * publishes — measured on this tree 2026-09-04 (admin-window/BUG-0070, then
+ * again after admin-window/DEBT-0003 folded three hand-copied window lines
+ * into one primitive, and again after admin-window/DEBT-0006 folded the six
+ * that stood outside it): FIVE routes, ten hooks.
+ *
+ * The two routes DEBT-0006 added are the two that stated a window in prose and
+ * published no `data-window` hook at all, so the rule below could not reach
+ * them: `/queues`'s queue-health gauge, and `/browse`'s recent events — which
+ * additionally stated its window over a read that had refused, the defect
+ * class BUG-0063, BUG-0067 and BUG-0070 were each filed out of. Both are
+ * graded here now, by the same two legs as every other surface.
  *
  * A FLOOR, not a pin, in the sense the matrix's `COVERED_PAIRS` is one: a
  * surface may GROW a window line and that is not a failure — the legs below
@@ -418,9 +424,16 @@ function windowHooks(markup: string): string[] {
  * this list makes impossible is the opposite, a surface quietly ceasing to
  * publish, which would otherwise let both legs pass over a page that says
  * nothing in any state.
+ *
+ * One windowed surface is deliberately NOT here: the per-source dial on
+ * `/queues/[reviewItemId]` (`data-window="awaiting_row"`), which renders only
+ * for a source-pattern review item and this file's populated fixture builds a
+ * fact item. Its own suite drives it (`tests/offline/review-item/page.test.ts`).
  */
 const WINDOWED: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ["/browse", ["events"]],
   ["/claims", ["claims", "pending"]],
+  ["/queues", ["queue_health"]],
   ["/sources", ["awaiting_row", "rejections"]],
   ["/cycles", ["cycle_health", "cycles", "resolution_latency", "runs"]],
 ];

@@ -17,6 +17,7 @@ import {
 } from "@/components/gauges";
 import { Empty, Page, Section, StateOf, WindowLine } from "@/components/ui";
 import {
+  CLAIMS_OBJECT,
   claimOrder,
   facetOptions,
   listClaims,
@@ -123,23 +124,6 @@ const CLAIMS_PATH = "/claims";
 const SORT_STATEMENT =
   "Oldest first — the longest-waiting claim at the top; a claim whose instant is unknown sorts last.";
 
-/**
- * What the list is showing, in the app's window voice — campaign
- * admin-window/BUG-0041. Every other long list on this app states its bound
- * ("a window of at most 200, not a count of the cycles that exist"); this one
- * did not, and it was the one list that was actually unbounded, so the gauge
- * below it sat wherever the backlog put it. The cap and the number held are
- * both on screen, so the window is never a silent truncation.
- */
-function windowSentence(held: number, truncated: boolean): string {
-  const bound = `A window of at most ${count(CLAIM_WINDOW)} rows, not the whole view.`;
-  return truncated
-    ? `${bound} ${count(held)} claims match these filters; the ${count(
-        CLAIM_WINDOW,
-      )} longest-waiting are below — narrow with the filters above to reach the rest.`
-    : bound;
-}
-
 /** What an empty claims table holds and what fills it — never a bare "No data". */
 const NOTHING_HELD: EmptyWords = {
   holds: "claims waiting",
@@ -224,6 +208,14 @@ const GAUGE_SURFACE = "gauge";
  */
 const PENDING_WINDOW = "pending";
 const STANDING_WINDOW = "standing";
+
+/**
+ * The name the LIST's own window answers to — read back by the live parity
+ * oracle (`tests/live/claims.live.test.ts` grades `data-window-held` against
+ * its own count of the matching set). The spelling is the one the hand-rolled
+ * paragraph carried before admin-window/DEBT-0006 folded it.
+ */
+const LIST_WINDOW = "claims";
 
 /** The per-bucket figures, from the claims a source/domain narrowing keeps. */
 function bucketStats(
@@ -564,15 +556,16 @@ export default async function ClaimsPage({
             rule and same shape as `/runs` (admin-window/BUG-0063,
             LOOK_AND_FEEL states 3 and 4). */}
         {claims.kind === "ok" ? (
-          <p
-            data-window="claims"
-            data-window-limit={String(CLAIM_WINDOW)}
-            data-window-held={String(listed.held)}
-            data-window-truncated={listed.truncated ? "true" : "false"}
-            className="type-body text-ink-secondary"
-          >
-            {SORT_STATEMENT} {windowSentence(listed.held, listed.truncated)}
-          </p>
+          <WindowLine
+            gauge={LIST_WINDOW}
+            window={{
+              limit: CLAIM_WINDOW,
+              held: listed.held,
+              truncated: listed.truncated,
+              over: CLAIMS_OBJECT,
+            }}
+            shows={{ of: "matched", lede: SORT_STATEMENT, rows: "claims" }}
+          />
         ) : null}
         {claims.kind === "not_provisioned" ? (
           <StateOf result={claims} />

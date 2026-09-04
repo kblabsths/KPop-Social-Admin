@@ -7,18 +7,10 @@ import {
   spreadRows,
   type EmptyWords,
 } from "@/components/gauges";
-import {
-  ARRIVES_WITH,
-  Empty,
-  ErrorLine,
-  NotProvisioned,
-  Page,
-  RETRY,
-  Section,
-} from "@/components/ui";
+import { Empty, Page, Section, StateOf, WindowLine } from "@/components/ui";
 import { listReviewItems } from "@/lib/db/review-items";
 import type { DbResult } from "@/lib/db/result";
-import { absoluteUtc, count, counted, duration, relativeAge } from "@/lib/format";
+import { count, counted, duration, relativeAge } from "@/lib/format";
 import {
   readQueueHealth,
   type QueueHealth,
@@ -101,6 +93,18 @@ const QUEUES_PATH = "/queues";
 /** The order both lists are in, stated on screen (LOOK_AND_FEEL bar 6). */
 const SORT_STATEMENT =
   "Open first, severity then age — settled items last, still browsable.";
+
+/**
+ * The name the queue-health gauge's WINDOW answers to — `data-window`, the
+ * hook a live oracle reads a window back by, as `/cycles` and `/sources`
+ * publish theirs.
+ *
+ * This page published NONE: its window line was a hand-rolled `<p>` carrying
+ * the sentence and no attributes at all, so the one surface the window rule
+ * could not be graded on was this one (admin-window/DEBT-0006). Named for the
+ * gauge, the way `cycle_health` is.
+ */
+const HEALTH_WINDOW = "queue_health";
 
 /** The h2 above each queue. Both are sections of the page, at one level. */
 const QUEUE_TITLE: Record<Kind, string> = {
@@ -206,9 +210,7 @@ function Queue({
         {...shared}
         state="not_provisioned"
         items={[]}
-        card={
-          <NotProvisioned missing={result.missing} arrivesWith={ARRIVES_WITH} />
-        }
+        card={<StateOf result={result} />}
       />
     );
   }
@@ -218,13 +220,7 @@ function Queue({
         {...shared}
         state="error"
         items={[]}
-        line={
-          <ErrorLine
-            reading={result.reading}
-            failed={result.message}
-            retry={RETRY}
-          />
-        }
+        line={<StateOf result={result} />}
       />
     );
   }
@@ -386,24 +382,23 @@ export default async function QueuesPage({
       </div>
 
       <Section title="Queue health">
-        {health.kind === "not_provisioned" ? (
-          <NotProvisioned missing={health.missing} arrivesWith={ARRIVES_WITH} />
-        ) : health.kind === "error" ? (
-          <ErrorLine
-            reading={health.reading}
-            failed={health.message}
-            retry={RETRY}
-          />
+        {health.kind !== "ok" ? (
+          <StateOf result={health} />
         ) : (
           <>
-            <p className="type-body text-ink-secondary">
-              Items opened since {absoluteUtc(health.data.window.since)}, read to{" "}
-              {absoluteUtc(health.data.window.until)} — a window of at most{" "}
-              {count(health.data.window.limit)} rows, not the whole table.
-              {health.data.window.truncated
-                ? " The window filled its cap, so every count here is a floor."
-                : ""}
-            </p>
+            {/* The window line follows the READ, not the rows (ARCHITECTURE.md
+                §4.3): it stands on an `ok` result — with rows or with none —
+                and on no other state, so the absence of the line means "this
+                read did not happen" here exactly as it does on every other
+                surface. It said that in prose and published no `data-window`
+                hook at all until admin-window/DEBT-0006, which is why the rule
+                graded in `tests/offline/absence/pages.test.ts` could not reach
+                this page. */}
+            <WindowLine
+              gauge={HEALTH_WINDOW}
+              window={health.data.window}
+              measured="Items opened"
+            />
             {health.data.queues.map((stats) => (
               <QueueGauge key={stats.queue} stats={stats} health={health.data} />
             ))}
