@@ -1,7 +1,6 @@
-# Tracker index (regenerated 2026-09-04T00:06:56Z — do not edit)
+# Tracker index (regenerated 2026-09-04T00:14:51Z — do not edit)
 
 ## open
-- BUG-0045 [P2][bug][M1] Sources and Claims render an internal factory ticket id in product copy, and 'stuck_patterndial' has no space  (scope:src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/cycles/page.tsx,tests/offline/sources/page.test.ts,tests/offline/claims/page.test.ts,tests/offline/cycles/page.test.ts from:M1-endgame-designer-walk)
 - BUG-0052 [P2][bug][M1] Record page: the unknown-id empty state sends the operator to Browse, which does not list groups or idols  (scope:src/app/records/[table]/[id]/page.tsx,tests/offline/records/page.test.ts from:M1-endgame-user-sim)
 - BUG-0053 [P2][bug][M1] Event record page: a whole PROVENANCE column of dashes with no line saying what a dash means, while the pre-cutover page explains its own  (scope:src/app/records/[table]/[id]/page.tsx,src/components/records/record-fields.tsx,tests/offline/records/page.test.ts,tests/offline/records/provenance.test.ts from:M1-endgame-user-sim)
 - BUG-0054 [P2][bug][M1] Cycles & runs: 'Cycle <id> is marked in the table below' — the row carries only aria-current and is visually identical to all 68 others  (scope:src/app/cycles/page.tsx,src/components/ui/data-table.tsx,tests/offline/cycles/page.test.ts from:M1-endgame-user-sim)
@@ -17,14 +16,14 @@
 - BUG-0049 [P3][bug][M1] Micro labels uppercase machine identifiers: DATA_CONFLICT OPEN, ENTITY_LINK FOLDED, TICKETMASTER STUCK RECORDS  (scope:src/app/queues/page.tsx,src/app/sources/page.tsx,tests/offline/queues/page.test.ts,tests/offline/sources/page.test.ts from:M1-endgame-designer-walk)
 - BUG-0050 [P3][bug][M1] Phone (390px): the fixed 192px sidebar takes half the viewport and the content column collapses  (scope:src/components/shell/shell.tsx,tests/offline/shell/shell.test.ts from:M1-endgame-designer-walk)
 - BUG-0055 [P3][bug][M1] Cycles & runs names one state two ways on one screen: the rows say 'died', the health panel says 'unfinished'  (scope:src/app/cycles/page.tsx,src/lib/gauges/cycle-health.ts,tests/offline/cycles/page.test.ts,tests/offline/gauges/cycle-health.test.ts from:M1-endgame-user-sim)
-- DEBT-0003 [P3][debt][M1] Four byte-identical StateOf copies (and three WindowLines, one already drifted) stand in the pages instead of one ui primitive  (deps:BUG-0043,BUG-0044,BUG-0045,BUG-0046,BUG-0049,BUG-0054,BUG-0055,BUG-0057(unmet:7) scope:src/components/ui/state-of.tsx,src/components/ui/window-line.tsx,src/components/ui/index.ts,src/app/cycles/page.tsx,src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/queues/[reviewItemId]/page.tsx,tests/offline/ui/primitives.test.ts,tests/offline/cycles/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/claims/page.test.ts,tests/offline/review-item/page.test.ts from:M1-endgame-structure-walk)
+- DEBT-0003 [P3][debt][M1] Four byte-identical StateOf copies (and three WindowLines, one already drifted) stand in the pages instead of one ui primitive  (deps:BUG-0043,BUG-0044,BUG-0045,BUG-0046,BUG-0049,BUG-0054,BUG-0055,BUG-0057(unmet:6) scope:src/components/ui/state-of.tsx,src/components/ui/window-line.tsx,src/components/ui/index.ts,src/app/cycles/page.tsx,src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/queues/[reviewItemId]/page.tsx,tests/offline/ui/primitives.test.ts,tests/offline/cycles/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/claims/page.test.ts,tests/offline/review-item/page.test.ts from:M1-endgame-structure-walk)
 - DEBT-0004 [P3][debt][M1] /cycles and /sources carry their own presentation: 1,291- and 793-line pages, no components module, while every other page has one  (deps:DEBT-0003(unmet:1) scope:src/components/cycles,src/components/sources,src/app/cycles/page.tsx,src/app/sources/page.tsx,tests/offline/cycles/page.test.ts,tests/offline/sources/page.test.ts from:M1-endgame-structure-walk)
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:4) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
-## built
-- BUG-0044 [P2][bug][M1] Cycles table: raw snake_case headers mixed with prose, and a cycle's id headed RUN_ID against the glossary  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts @builder-81 from:M1-endgame-designer-walk)
+## claimed
+- BUG-0045 [P2][bug][M1] Sources and Claims render an internal factory ticket id in product copy, and 'stuck_patterndial' has no space  (scope:src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/cycles/page.tsx,tests/offline/sources/page.test.ts,tests/offline/claims/page.test.ts,tests/offline/cycles/page.test.ts @builder-82 from:M1-endgame-designer-walk)
 
 ## qa
-- BUG-0043 [P2][bug][M1] A source is labelled by raw uuid on the review item and on Claims, while the rest of the app names it  (scope:src/components/review/item-header.tsx,src/components/claims/claim-list.tsx,src/components/claims/filter-bar.tsx,src/app/claims/page.tsx,tests/offline/review-item/page.test.ts,tests/offline/claims/page.test.ts @builder-80 from:M1-endgame-designer-walk)
+- BUG-0044 [P2][bug][M1] Cycles table: raw snake_case headers mixed with prose, and a cycle's id headed RUN_ID against the glossary  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts @builder-81 from:M1-endgame-designer-walk)
 
-Totals — built:1, done:93, open:19, qa:1. Archived: 0.
+Totals — claimed:1, done:94, open:18, qa:1. Archived: 0.
