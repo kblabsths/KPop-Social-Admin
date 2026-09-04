@@ -554,15 +554,24 @@ export default async function ClaimsPage({
           <Empty holds={emptyWords.holds} filledBy={emptyWords.filledBy} />
         ) : (
           <>
-            <p
-              data-window="claims"
-              data-window-limit={String(CLAIM_WINDOW)}
-              data-window-held={String(listed.held)}
-              data-window-truncated={listed.truncated ? "true" : "false"}
-              className="type-body text-ink-secondary"
-            >
-              {SORT_STATEMENT} {windowSentence(listed.held, listed.truncated)}
-            </p>
+            {/* The window line describes a window this page actually read, and
+                states a count it actually took. A refused or absent read
+                counted nothing, so the line would describe a table that is not
+                there and publish a `0` no other state can produce — an empty
+                matching set renders the Empty card above, with no line at all.
+                Same rule and same shape as `/runs` (admin-window/BUG-0063,
+                LOOK_AND_FEEL states 3 and 4). */}
+            {claims.kind === "ok" ? (
+              <p
+                data-window="claims"
+                data-window-limit={String(CLAIM_WINDOW)}
+                data-window-held={String(listed.held)}
+                data-window-truncated={listed.truncated ? "true" : "false"}
+                className="type-body text-ink-secondary"
+              >
+                {SORT_STATEMENT} {windowSentence(listed.held, listed.truncated)}
+              </p>
+            ) : null}
             <ClaimList
               label={LIST_TITLE[tab]}
               rows={claims.kind === "ok" ? listed.rows : []}
