@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
+import { isRecordId } from "@/lib/db/records";
 import { T } from "@/lib/db/tables";
 import { render } from "../ui/markup";
 import {
@@ -1317,38 +1318,151 @@ describe("the surface hooks the live parity oracle addresses", () => {
  * segment that is not a uuid can equal no key in that table: "no such item" is
  * knowable here without a database, exactly as it is on the record page
  * (`isRecordId`, `src/lib/db/records.ts`, admin-window/BUG-0065) and on the
- * PATCH route (admin-window/BUG-0068). This page instead hands the segment
- * straight to PostgREST (`src/app/queues/[reviewItemId]/page.tsx:399`), which
- * refuses it with `22P02`, and the surface reports a FAILED READ — the state
- * whose recovery line is "reload", advice that can never work because the
- * reload re-sends the same segment forever.
+ * PATCH route (admin-window/BUG-0068). The page used to hand the segment
+ * straight to PostgREST, which refuses it with `22P02`, and the surface then
+ * reported a FAILED READ — the state whose recovery line is "reload", advice
+ * that can never work because the reload re-sends the same segment forever.
+ * Since admin-window/BUG-0076 the page asks `isRecordId` before it reads.
  *
- * Both halves are asserted: no read is issued, and whatever state answers, it
- * is not the one that means the database failed.
+ * Four claims, and the last two are what keep the fix honest: no read is
+ * issued and no failure is reported; the answer is not the state that means
+ * the table answered and held no such row; an id Postgres WOULD accept is
+ * still read for, in each of its three legal spellings; and a well-formed id
+ * that matches nothing still reaches the no-such-row state through a real
+ * read.
  */
 describe("a queues address that is not a review-item id", () => {
-  // PINNED `it.fails` (strict) for admin-window/BUG-0076: green only while the
-  // divergence is live, so the fix turns it RED and is flipped back to a plain
-  // `it()` in the same commit — the convention admin-window/BUG-0013 used.
-  // Watched RED as a plain `it()` on run/admin-window @ 2bbe138, one half at a
-  // time: "expected [ { table: 'review_items', ... } ] to have a length of +0
-  // but got 1", and "expected [ 'error' ] to not include 'error'".
-  it.fails("does not report an address that can be no id as a failed database read", async () => {
+  const REAL = ID.reviewItemDataConflict;
+
+  /**
+   * The mistyped spellings, in the classes QA measured against staging on a
+   * production build for the record page (admin-window/BUG-0065): a segment
+   * that is no kind of uuid, a uuid one character short, and a uuid carrying a
+   * trailing space — which a browser sends as `%20` and which Next hands the
+   * page still percent-encoded, so both spellings are here and both must
+   * answer the same way. `walk-1` is the segment the pin was found on.
+   *
+   * A BRACED uuid is Postgres-legal and belongs here rather than below for the
+   * same reason it does on the record page: the segment arrives still
+   * percent-encoded, so what the URL actually asks for carries percent signs
+   * and is an id by nobody's grammar.
+   */
+  const MISTYPED_IDS = [
+    "walk-1",
+    "not-a-uuid",
+    REAL.slice(0, -1),
+    `${REAL}%20`,
+    `${REAL} `,
+    `%7B${REAL}%7D`,
+  ];
+
+  /**
+   * Every spelling of a uuid Postgres itself accepts (`string_to_uuid`):
+   * canonical, uppercased, and with the hyphens left out. Each names the SAME
+   * row, so the gate must NOT flag one — the second fixture every guard owes
+   * (LESSONS 3), and the failure it protects against is telling an operator
+   * that a working id is not an id, which is worse than the bug being fixed.
+   */
+  const WELL_FORMED_IDS = [REAL, REAL.toUpperCase(), REAL.replace(/-/g, "")];
+
+  /**
+   * Render one address with the database scripted to answer the way it really
+   * would: `22P02` on the item read. A page that settles the address first
+   * never gets that far, which is what makes the recorded calls the assertion.
+   */
+  async function renderAddress(id: string) {
+    const stub = stubClient({ [T.reviewItems]: { error: invalidUuidSyntax(id) } });
+    readWith.client = stub.asSupabaseClient();
+    const markup = render(
+      await ReviewItemPage({ params: Promise.resolve({ reviewItemId: id }) }),
+    );
+    return { markup, stub };
+  }
+
+  /** The one state card the surface answered with, as its text reads. */
+  function emptyText(markup: string): string {
+    const cards = cheerio.load(markup)('[data-state="empty"]');
+    expect(cards.length, "one empty card, not several").toBe(1);
+    return cards.text().replace(/\s+/g, " ").trim();
+  }
+
+  it.each(MISTYPED_IDS)("answers %o having read nothing at all", async (id) => {
+    const { markup, stub } = await renderAddress(id);
+    const $ = cheerio.load(markup);
+
+    // No query was issued — not the item's, and not one of the evidence, bucket
+    // or dial legs that follow it. A malformed address is decided from the
+    // REQUEST (admin-window/BUG-0076).
+    expect(stub.calls, "a segment that can be no review_item_id needs no read")
+      .toHaveLength(0);
+    // It is answered, and not as a failure of a database never asked.
+    expect($("[data-state]").length, "the address is answered").toBeGreaterThan(0);
+    expect($('[data-state="error"]').length, "nothing failed").toBe(0);
+    // ONE answer, not one per leg: the evidence block and the dial are silent.
+    expect($("[data-state]").length, "state cards").toBe(1);
+    expect($("[data-evidence], [data-evidence-view], [data-dial]").length).toBe(0);
+    // The operator still sees the address they asked for, verbatim.
+    expect($(`[data-review-item]`).attr("data-review-item")).toBe(id);
+  });
+
+  it.each(MISTYPED_IDS)(
+    "does not answer %o with the state that means the table held no such row",
+    async (id) => {
+      // Both are a single empty card, and they are DIFFERENT cards: "that is
+      // not an id" is not "the table answered and holds no such row". The Look
+      // separates emptinesses by their words alone, so this is the assertion
+      // that keeps the two apart — without pinning either one's copy.
+      const mistyped = emptyText((await renderAddress(id)).markup);
+      const unknown = emptyText(
+        await renderItem({ ...conflictScript(), [T.reviewItems]: { data: null } }, REAL),
+      );
+      expect(mistyped).not.toBe(unknown);
+    },
+  );
+
+  it.each(WELL_FORMED_IDS)(
+    "still reads the database for %s, an id Postgres accepts",
+    async (id) => {
+      const stub = stubClient(conflictScript());
+      readWith.client = stub.asSupabaseClient();
+      const markup = render(
+        await ReviewItemPage({ params: Promise.resolve({ reviewItemId: id }) }),
+      );
+
+      expect(stub.tablesRead(), "the item is read").toContain(T.reviewItems);
+      // ...and what came back is rendered as the item, not as any state card.
+      expect(cheerio.load(markup)("[data-state]").length).toBe(0);
+      expect(evidenceIds(markup)).toEqual([ID.observationA, ID.observationB]);
+    },
+  );
+
+  it("leaves the no-such-row state to a well-formed id that matches nothing", async () => {
     const stub = stubClient({
-      // The script carries the error the database WOULD answer with. A page
-      // that decides the address first never gets that far.
-      [T.reviewItems]: { error: invalidUuidSyntax("walk-1") },
+      ...conflictScript(),
+      [T.reviewItems]: { data: null },
     });
     readWith.client = stub.asSupabaseClient();
     const markup = render(
-      await ReviewItemPage({ params: Promise.resolve({ reviewItemId: "walk-1" }) }),
+      await ReviewItemPage({ params: Promise.resolve({ reviewItemId: REAL }) }),
     );
 
-    const states = cheerio
-      .load(markup)("[data-state]")
-      .toArray()
-      .map((element) => element.attribs["data-state"]);
-    expect(states, "the answer to a bad address is not a failed read").not.toContain("error");
-    expect(stub.calls, "a segment that can be no review_item_id needs no read").toHaveLength(0);
+    // The read happened, and its ANSWER — not the request — is what emptied the
+    // surface. Unchanged by admin-window/BUG-0076.
+    expect(stub.tablesRead()).toContain(T.reviewItems);
+    expect(cheerio.load(markup)('[data-state="empty"]').length).toBe(1);
+  });
+
+  it("asks the one id grammar this repo has, and no copy of it", async () => {
+    // The gate is `isRecordId` (`src/lib/db/records.ts`) — the same function
+    // the record page and the PATCH route ask (ARCHITECTURE §9.1 item 9). The
+    // claim is that the PAGE agrees with it on every fixture above, which is
+    // what a second regex here would break silently.
+    for (const id of MISTYPED_IDS) {
+      expect(isRecordId(id), `${JSON.stringify(id)} is no id`).toBe(false);
+      expect((await renderAddress(id)).stub.calls).toHaveLength(0);
+    }
+    for (const id of WELL_FORMED_IDS) {
+      expect(isRecordId(id), `${id} is an id Postgres accepts`).toBe(true);
+    }
   });
 });

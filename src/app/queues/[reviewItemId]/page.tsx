@@ -13,6 +13,7 @@ import {
 import { Empty, ErrorLine, NotProvisioned, Page, Section } from "@/components/ui";
 import { claimsHref, sourceHref } from "@/lib/claims/filters";
 import { readPendingClaims, type PendingClaimRow } from "@/lib/db/claims";
+import { isRecordId } from "@/lib/db/records";
 import type { DbResult, DbUnavailable } from "@/lib/db/result";
 import {
   readItemEvidence,
@@ -64,7 +65,9 @@ import { sourceLabel } from "@/lib/sources/names";
  * is one of this surface's own states — rendered at 200, naming the id
  * verbatim in mono and saying it is not in `review_items` — and never a
  * routing outcome. On Next 16.2.2 a `notFound()` thrown here would serve the
- * unstyled error shell instead of the app.
+ * unstyled error shell instead of the app. A segment that is no id AT ALL is a
+ * second state of the same kind and is settled before any read at all
+ * (`NOT_AN_ID` below, admin-window/BUG-0076).
  *
  * **It derives nothing of its own**: `shapeOf` and `kindOfItem`
  * (`src/lib/review/shapes.ts`) are the app's only spellings of shape and kind
@@ -100,6 +103,53 @@ const RETRY = "Reload to try the read again.";
 
 /** The Claims page, which every "its claims" link narrows. */
 const CLAIMS_PATH = "/claims";
+
+/**
+ * Where a review-item id comes from — the ONE recovery sentence the two
+ * emptinesses of this address share.
+ *
+ * Both the row this database does not hold and the segment that can be no id
+ * end with the same advice, so it is written once: two copies drift, and the
+ * pair that shares advice is exactly the pair an operator compares
+ * (the record page keeps its own single copy for the same reason,
+ * `foundBy` in `src/app/records/[table]/[id]/page.tsx`, admin-window/BUG-0052).
+ */
+const FOUND_BY =
+  "Queues lists the items this database holds; check the id in the address bar.";
+
+/**
+ * What answers a queues URL whose segment is not a review-item id at all —
+ * campaign admin-window/BUG-0076.
+ *
+ * The state before this one was the READ-FAILED line over "Reload to try the
+ * read again": `review_items.review_item_id` is a `uuid`, so PostgREST handed
+ * the segment to Postgres, which refused the comparison (`22P02 invalid input
+ * syntax for type uuid`), the data layer classified that correctly as an
+ * arbitrary failure, and the surface offered the operator the one action that
+ * can never work — a reload re-sends the same segment forever.
+ *
+ * It is the EMPTY state and not a fifth one, for the reasons `isRecordId`
+ * (`src/lib/db/records.ts`) and the record page's own answer already carry:
+ * nothing failed, no query was issued, the table is there, and a segment that
+ * is not a uuid can equal no uuid key — so "no such item" is true here with
+ * certainty rather than on a read's say-so.
+ *
+ * Its WORDS are its own, and that is the point of the state rather than a
+ * flourish: the empty card below means "the table answered and holds no such
+ * row", which is a different fact, and the Look separates emptinesses by their
+ * words alone ("an empty bucket, a table with no rows, and an unprovisioned
+ * table are three different states and never share a rendering"). What stands
+ * in front of the shared advice is this state's own business — what is wrong
+ * with the address and what a correct one looks like — so an operator whose
+ * paste dropped a character, or carried a trailing space the address bar
+ * renders as nothing at all, can see it. The id itself is NOT quoted back into
+ * this sentence: it is already above, verbatim in mono, and a trailing space
+ * quoted mid-sentence is invisible exactly where it matters.
+ */
+const NOT_AN_ID =
+  `The address bar does not hold an id: ${T.reviewItems} ids are uuids, 32 ` +
+  `hexadecimal digits usually written in five hyphenated groups. ` +
+  FOUND_BY;
 
 /**
  * The name each of this page's graded surfaces answers to — `data-surface`,
@@ -396,15 +446,38 @@ export default async function ReviewItemPage({
   params: Promise<{ reviewItemId: string }>;
 }) {
   const { reviewItemId } = await params;
-  const item = await readReviewItem(reviewItemId);
 
-  // The identity of what was asked for, rendered whatever the read did: an
-  // operator looking at a refusal still needs to know which item they opened.
+  // The identity of what was asked for, rendered whatever the read did — and
+  // whether or not a read happened at all: an operator looking at a refusal
+  // still needs to know which item they opened.
   const identity = (
     <p data-review-item={reviewItemId} className="type-data text-ink-secondary">
       {reviewItemId}
     </p>
   );
+
+  // The segment is not an id at all, which is a question about the REQUEST and
+  // is settled here, BEFORE any read (`isRecordId`, `src/lib/db/records.ts`,
+  // carries the grammar and why it is Postgres's own; `NOT_AN_ID` carries what
+  // this state says). Asking it first is the fix and not an optimisation: it
+  // is what keeps one bad address to ONE answer, where the item read, the
+  // evidence legs and the dial below would each report the same refusal
+  // separately — and it means no query is issued for a value no row can carry
+  // (admin-window/BUG-0076).
+  if (!isRecordId(reviewItemId)) {
+    return (
+      <Page title="Review item">
+        {identity}
+        <Empty
+          holds="review item at this address"
+          filledBy={NOT_AN_ID}
+          eyebrow="Review item"
+        />
+      </Page>
+    );
+  }
+
+  const item = await readReviewItem(reviewItemId);
 
   if (item.kind !== "ok") {
     return (
@@ -423,7 +496,7 @@ export default async function ReviewItemPage({
         {identity}
         <Empty
           holds={`row with that id in ${T.reviewItems}`}
-          filledBy="Queues lists the items this database holds; check the id in the address bar."
+          filledBy={FOUND_BY}
           eyebrow="Review item"
         />
       </Page>
