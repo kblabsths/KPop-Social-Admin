@@ -1,0 +1,30 @@
+{
+ "id": "BUG-0075",
+ "created": "2026-09-04T05:54:22Z",
+ "green": true,
+ "git_head": "1e91868cb37e6dc5684d557046dab9834331cbca",
+ "scope": [
+  "src/components/EditableCell.tsx",
+  "tests/offline/ui/editable-cell.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "b2b88709f6764ff9785997ad9393944960d4e6f5c7be5ffe7e562a9a86420dd6",
+ "commands": [
+  {
+   "cmd": "npx vitest run --project=offline tests/offline/ui/editable-cell.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-50763\n\n \u2713 |offline| tests/offline/ui/editable-cell.test.ts (45 tests) 70ms\n\n Test Files  1 passed (1)\n      Tests  45 passed (45)\n   Start at  22:54:11\n   Duration  528ms (transform 64ms, setup 0ms, collect 160ms, tests 70ms, environment 0ms, prepare 69ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline tests/offline/ui/editable-cell.test.ts\n(node:50791) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
