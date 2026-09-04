@@ -144,10 +144,19 @@ function bodyRows(markup: string): string[][] {
     );
 }
 
-/** Every href in the markup. */
+/**
+ * Every href a click can FOLLOW — anchors only, never `[href]`.
+ *
+ * React 19's server renderer hoists each `<img src>` into a
+ * `<link rel="preload" as="image" href="…">` in the head (observed on this
+ * page's delivered markup, 2026-09-03: two poster preloads pointing at the
+ * poster host). Those are resource hints the browser fetches, not places the
+ * operator can go, and counting them as links makes the bar-10 assertion
+ * below fail on markup that navigates nowhere.
+ */
 function hrefs(markup: string): string[] {
   const $ = cheerio.load(markup);
-  return $("[href]")
+  return $("a[href]")
     .toArray()
     .map((el) => $(el).attr("href") ?? "");
 }
@@ -165,6 +174,21 @@ function labelOf(key: BrowseColumnKey): string {
   const column = view.columns.find((each) => each.key === key);
   if (!column) throw new Error(`${key} is not configured`);
   return column.label;
+}
+
+/**
+ * The POSTER column's `<td>`s, in row order, with the document they came
+ * from. The column is located by its configured label rather than a literal
+ * index, so adding or reordering a column moves this with it.
+ */
+function posterColumn(markup: string) {
+  const $ = cheerio.load(markup);
+  const index = headers(markup).indexOf(labelOf("poster"));
+  if (index < 0) throw new Error("the poster column is not on screen");
+  const cells = $("tbody tr")
+    .toArray()
+    .map((tr) => $(tr).find("td").toArray()[index]);
+  return { $, cells };
 }
 
 describe("the page's rows", () => {
@@ -245,13 +269,76 @@ describe("the page's rows", () => {
     expect(bodyRows(markup)[0][column]).toBe("Crypto.com Arena");
   });
 
-  it("renders the poster as an image the operator can actually look at", async () => {
-    const markup = await renderBrowse(healthyScript());
+  /**
+   * The poster cell (admin-window/BUG-0048).
+   *
+   * It shipped as a 24x24 thumbnail wrapped in an anchor straight at the
+   * scraped `poster_url` and carrying no `target`, so the one click the
+   * column invites replaced the Admin tab with a raw image on a third-party
+   * CDN. How BIG the image is, is a Look judgement the walk owns and no
+   * markup assertion should pin. The two things that made it a defect are
+   * structural and belong here: the image really is the cell (carrying the
+   * event's own title as its alt, so it is announced as the row it belongs
+   * to), and the cell leads nowhere out of the app.
+   */
+  it("renders the poster as an image whose alt is the event's own title", async () => {
+    const { $, cells } = posterColumn(await renderBrowse(healthyScript()));
+    const images = cells.map((td) => $(td).find("img"));
+    expect(images[0].attr("src")).toBe(
+      "https://example.invalid/posters/new.jpg",
+    );
+    expect(images[0].attr("alt")).toBe("newest arrival");
+    expect(images[1].attr("src")).toBe(
+      "https://example.invalid/posters/old.jpg",
+    );
+    expect(images[1].attr("alt")).toBe("older arrival");
+  });
+
+  it("falls back to the event id for the alt of a poster on an untitled row", () => {
+    // An `alt=""` image is announced as decoration, which a poster is not.
+    // The title cell already stands the machine id in for a missing title;
+    // the alt takes the same substitute rather than going empty.
+    const markup = render(
+      h(BrowseTable, {
+        view,
+        shown: ["poster"] as BrowseColumnKey[],
+        rows: [
+          {
+            event_id: EVENT_NEW,
+            title: null,
+            description: null,
+            poster_url: "https://example.invalid/posters/untitled.jpg",
+            starts_at: null,
+            created_at: null,
+            venue_name: null,
+            sources: [],
+          },
+        ],
+      }),
+    );
     const $ = cheerio.load(markup);
-    const sources = $("img")
-      .toArray()
-      .map((img) => $(img).attr("src"));
-    expect(sources).toContain("https://example.invalid/posters/new.jpg");
+    expect($("img").attr("alt")).toBe(EVENT_NEW);
+  });
+
+  it("does not let the poster — or anything else — navigate out of the app", async () => {
+    const markup = await renderBrowse(healthyScript());
+    const { $, cells } = posterColumn(markup);
+    // The poster is not a link at all, so there is no tab to lose and no
+    // `target` to get wrong: the operator's place in the list survives a
+    // click on it because a click on it goes nowhere.
+    expect(cells).toHaveLength(2);
+    for (const td of cells) {
+      expect($(td).find("img").toArray()).toHaveLength(1);
+      expect($(td).find("a").toArray()).toHaveLength(0);
+    }
+    // LOOK_AND_FEEL bar 10, over the whole page: every href Browse renders
+    // is an in-app path. Non-vacuous — the row links and the column
+    // selector's links are really in this set, and an absolute `https://`
+    // href is what this must catch.
+    const links = hrefs(markup);
+    expect(links).toContain(recordHref("events", EVENT_NEW));
+    expect(links.some((href) => href.startsWith("/browse"))).toBe(true);
+    expect(links.filter((href) => !href.startsWith("/"))).toEqual([]);
   });
 
   it("links every row to its own record surface", async () => {
