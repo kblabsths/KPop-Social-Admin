@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cycleState } from "@/lib/cycles/state";
+import { cycleState, instantOf } from "@/lib/cycles/state";
 import {
   CYCLE_COUNTERS,
   CYCLE_WINDOW,
@@ -237,5 +237,50 @@ describe("the state one cycle row is in", () => {
     // alone: the row is what the schema says it is — inserted at start, no end
     // recorded — and no crash is asserted from a timestamp nobody can read.
     expect(cycleState({ ...RUNNING, started_at: "" }, CLOCK)).toEqual({ kind: "running" });
+    expect(cycleState({ ...RUNNING, started_at: "not a date" }, CLOCK)).toEqual({
+      kind: "running",
+    });
+    // …nor from a clock it cannot read. A caller that hands in an unreadable
+    // `now` gets the schema's reading back, never a death: an age of NaN is no
+    // measurement, and "older than one cadence" is a measurement.
+    expect(
+      cycleState(DIED, { now: "not a clock", cadenceSeconds: RESOLVER_CADENCE_SECONDS }),
+    ).toEqual({ kind: "running" });
+  });
+
+  it("makes no death claim about a cycle that has not started yet", () => {
+    // Clock skew between the resolver's host and this one puts a row's
+    // `started_at` in the future, and a negative age is not an age past the
+    // cadence. The row reads as what it is — inserted, no end recorded — and
+    // never as a crash the producer has not had yet.
+    const ahead = {
+      ...RUNNING,
+      started_at: new Date(Date.parse(NOW) + 3_600_000).toISOString(),
+    };
+    expect(cycleState(ahead, CLOCK)).toEqual({ kind: "running" });
+  });
+
+  it("treats an outcome of whitespace alone as no outcome recorded at all", () => {
+    // The producer writing a blank is the producer writing nothing: the row
+    // falls through to the state its `ended_at` and its age say it is, so a
+    // blank never renders as an outcome word on any surface. Both branches, or
+    // the rule would hold on one of them and nobody would know.
+    expect(cycleState({ ...UNRECORDED, outcome: "   " }, CLOCK)).toEqual({
+      kind: "unrecorded",
+    });
+    expect(cycleState({ ...DIED, outcome: "   " }, CLOCK).kind).toBe("died");
+  });
+});
+
+describe("the instant a timestamp names", () => {
+  it("reads a timestamp the database wrote, and refuses one nobody can", () => {
+    // `instantOf` is what every age on both cycle surfaces is measured from,
+    // so its refusals are the reason no surface asserts a death it cannot
+    // measure. A readable stamp round-trips to its own epoch instant.
+    const at = "2026-09-01T04:00:00Z";
+    expect(instantOf(at)).toBe(Date.parse(at));
+    for (const unreadable of [null, "", "   ", "not a date"]) {
+      expect(instantOf(unreadable), unreadable ?? "null").toBeNull();
+    }
   });
 });

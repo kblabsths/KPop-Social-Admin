@@ -8,12 +8,14 @@ import { absoluteUtc } from "@/lib/format";
 import { render } from "../ui/markup";
 import { blankCells } from "../absence/surfaces";
 import { oneEach, readNumber, surfaceHooks } from "../../live/parity";
+import type { ResolutionRunRow as CycleRow } from "@/lib/db/cycles";
 import {
   resolutionRunRow,
   reviewItemDataConflict,
   reviewItemEntityLink,
   reviewItemSourcePattern,
   runRow,
+  type ResolutionOutcome,
   type ResolutionRunRow,
   type ReviewItemRow,
   type RunRow,
@@ -1139,10 +1141,12 @@ describe("one word per cycle, on every surface", () => {
     );
   }
 
-  async function renderCyclesPage(): Promise<string> {
+  async function renderCyclesPage(
+    population: readonly CycleRow[] = CYCLE_POPULATION,
+  ): Promise<string> {
     readWith.client = stubClient({
       // The cycle table's window read, then the cycle-health gauge's own.
-      [T.resolutionRuns]: [{ data: [...CYCLE_POPULATION] }, { data: [...CYCLE_POPULATION] }],
+      [T.resolutionRuns]: [{ data: [...population] }, { data: [...population] }],
       [T.fieldProvenance]: { data: [...CYCLE_APPLIES] },
       [T.observations]: { data: [...CYCLE_OBSERVED] },
       [T.runs]: { data: [] },
@@ -1167,6 +1171,77 @@ describe("one word per cycle, on every surface", () => {
     expect(dashboard).toEqual(cyclesPage);
   });
 
+  /**
+   * The population the shared fixture cannot express, and the one the ticket
+   * was filed about: **the resolver crashed, so the dead cycle is the NEWEST
+   * row**, and the Dashboard's window is a strict subset of what /cycles
+   * shows.
+   *
+   * `tests/offline/cycles/population.ts` is borrowed everywhere else here, but
+   * it cannot be borrowed for this: its newest rows are minutes old, and a
+   * cycle cannot be both newer than those and older than a cadence. So this
+   * builds the crash — nothing has started since the resolver died 20 minutes
+   * ago — and hands the Dashboard only the six rows the database's `.limit()`
+   * would return while /cycles reads the whole window behind them.
+   */
+  const CYCLE_OUTCOMES: ResolutionOutcome[] = ["succeeded", "failed", "skipped"];
+  const CRASHED_AT = minutesAgo(20);
+  const CRASH_POPULATION: ResolutionRunRow[] = [
+    // The cycle that died, newest of all: at the TOP of the Dashboard's six.
+    resolutionRunRow({
+      run_id: "01920000-0000-7000-8000-000000000dea",
+      started_at: CRASHED_AT,
+      ended_at: null,
+      outcome: null,
+    }),
+    // Seven completed cycles behind it — one more than the Dashboard's window,
+    // so the window truncating is a fact this test can assert rather than hope.
+    ...[35, 50, 65, 80, 95, 110, 125].map((minutes, index) =>
+      resolutionRunRow({
+        run_id: `01920000-0000-7000-8000-000000000d0${index}`,
+        started_at: minutesAgo(minutes),
+        ended_at: secondsAfter(minutesAgo(minutes), 40),
+        // An ended row with no outcome recorded is the fourth state; the rest
+        // carry the producer's own words.
+        outcome: index === 0 ? null : CYCLE_OUTCOMES[index % CYCLE_OUTCOMES.length],
+      }),
+    ),
+  ];
+
+  it("agrees about a dead cycle at the top of a window that truncates", async () => {
+    const inWindow = CRASH_POPULATION.slice(0, DASHBOARD_WINDOW);
+    const dashboard = dashboardWords(
+      await renderDashboard(healthyScript({ [T.resolutionRuns]: { data: inWindow } })),
+    );
+    const cyclesPage = cyclesPageWords(await renderCyclesPage(CRASH_POPULATION));
+
+    // The two surfaces really are showing different sets — a comparison over
+    // one identical list would prove nothing about a window at all.
+    expect(Object.keys(dashboard).sort()).toEqual(inWindow.map((row) => row.run_id).sort());
+    expect(Object.keys(cyclesPage).length).toBeGreaterThan(Object.keys(dashboard).length);
+
+    const dead = CRASH_POPULATION[0].run_id;
+    expect(Object.keys(dashboard)).toContain(dead);
+
+    // Every row the Dashboard shows reads there exactly as it reads on the
+    // page the operator clicks through to.
+    for (const [runId, word] of Object.entries(dashboard)) {
+      expect([runId, word]).toEqual([runId, cyclesPage[runId]]);
+    }
+
+    // …and not because one word is given to everything: the dead row's word is
+    // its own, on both surfaces.
+    for (const [surface, words] of [
+      ["dashboard", dashboard],
+      ["cycles", cyclesPage],
+    ] as const) {
+      expect(words[dead], surface).not.toBe("");
+      for (const other of CRASH_POPULATION.slice(1, DASHBOARD_WINDOW)) {
+        expect(words[other.run_id], `${surface}/${other.run_id}`).not.toBe(words[dead]);
+      }
+    }
+  });
+
   it("tells the two no-outcome states apart on both surfaces", async () => {
     // The comparison above would also hold if every state rendered one word.
     // These two rows differ ONLY in how long ago they started, so a surface
@@ -1187,6 +1262,144 @@ describe("one word per cycle, on every surface", () => {
       expect(words[RUNNING_CYCLE.run_id], surface).not.toBe("");
       expect(words[DIED_CYCLE.run_id], surface).not.toBe("");
     }
+  });
+});
+
+/* ── one word for an unfinished run, across the two producers ────────────── */
+
+/**
+ * The other half of admin-window/BUG-0074's rule, which the ticket scoped OUT
+ * of the fix and which is therefore worth pinning rather than assuming.
+ *
+ * The adapter framework's `runs` are a **different producer** from the
+ * resolver's `resolution_runs`, and nothing in this repo or in
+ * `contracts/resolver.md` gives them a cadence — the 15 minutes is the
+ * resolver's alone (`RESOLVER_CADENCE_SECONDS`, `lib/gauges/gauge.ts`). So a
+ * run with no `ended_at` is read as unfinished at any age, deliberately, and
+ * the ticket left that reading where it was.
+ *
+ * What the Voice glossary still binds is the WORD: "one name per concept,
+ * everywhere". These assert that the two surfaces which render an unfinished
+ * run give it the same word, and that the Dashboard's two tables do too —
+ * which is what stops the reading being *scoped out* from quietly becoming a
+ * second vocabulary. They assert nothing about WHICH word, and nothing about
+ * age: a later decision to age adapter runs out stays free, as long as both
+ * surfaces move together.
+ */
+describe("one word for an unfinished run, on every surface", () => {
+  const RUN_IN_FLIGHT = "01920000-0000-7000-8000-0000000007b1";
+  const RUN_ANCIENT = "01920000-0000-7000-8000-0000000007b2";
+  const RUN_FINISHED = "01920000-0000-7000-8000-0000000007b3";
+
+  /** Newest first, as the read orders them: two unfinished, one ended. */
+  function unfinishedRuns(): RunRow[] {
+    const finishedAt = minutesAgo(30);
+    return [
+      runRow({
+        run_id: RUN_IN_FLIGHT,
+        source: "ticketmaster",
+        started_at: minutesAgo(3),
+        ended_at: null,
+        outcome: null,
+        error_summary: null,
+      }),
+      runRow({
+        run_id: RUN_FINISHED,
+        source: "bandsintown",
+        started_at: finishedAt,
+        ended_at: secondsAfter(finishedAt, 90),
+        outcome: "failed",
+        error_summary: RUN_ERROR,
+      }),
+      // A run whose end was never recorded at all: 400 days of no `ended_at`.
+      // It is here to prove the two surfaces read it the SAME way, not that
+      // either reads it a particular way.
+      runRow({
+        run_id: RUN_ANCIENT,
+        source: "eventbrite",
+        started_at: minutesAgo(400 * 24 * 60),
+        ended_at: null,
+        outcome: null,
+        error_summary: null,
+      }),
+    ];
+  }
+
+  /** /cycles, rendered against the same runs and no cycles at all. */
+  async function renderCyclesRuns(runsRows: RunRow[]): Promise<string> {
+    readWith.client = stubClient({
+      [T.resolutionRuns]: [{ data: [] }, { data: [] }],
+      [T.fieldProvenance]: { data: [] },
+      [T.observations]: { data: [] },
+      [T.runs]: [{ data: [...runsRows] }, { data: [...runsRows] }],
+    }).asSupabaseClient();
+    return render(await CyclesPage({ searchParams: Promise.resolve({}) }));
+  }
+
+  it("gives an unfinished adapter run the word the Cycles & runs page gives it", async () => {
+    const runsRows = unfinishedRuns();
+    const dashboard = rowsOf(await renderDashboard(healthyScript({ [T.runs]: { data: runsRows } })), "runs");
+
+    // /cycles marks the state on the row itself (`data-run-inflight`), so this
+    // reads the word that surface shows without knowing which column it puts
+    // it in — the two pages lay the runs out differently and always have.
+    const $ = cheerio.load(await renderCyclesRuns(runsRows));
+    const onCycles = $("[data-run-inflight]")
+      .toArray()
+      .map((element) => $(element).text().replace(/\s+/g, " ").trim());
+
+    // Both surfaces rendered the unfinished runs at all, or the comparison
+    // below would hold over nothing.
+    expect(dashboard).toHaveLength(runsRows.length);
+    expect(onCycles.length).toBeGreaterThan(0);
+
+    const unfinished = new Set([RUN_IN_FLIGHT, RUN_ANCIENT]);
+    const dashboardWords = new Set(
+      dashboard
+        .filter((_, index) => unfinished.has(runsRows[index].run_id))
+        .map((row) => row.outcome),
+    );
+    // One word for the state, whatever the row's age — on each surface, and
+    // the same one across them.
+    expect(dashboardWords.size).toBe(1);
+    expect(new Set(onCycles).size).toBe(1);
+    expect([...dashboardWords]).toEqual([...new Set(onCycles)]);
+
+    // Not vacuous: the run that ENDED is not given the unfinished word.
+    const ended = dashboard[runsRows.findIndex((row) => row.run_id === RUN_FINISHED)];
+    expect(ended.outcome).not.toBe([...dashboardWords][0]);
+  });
+
+  it("gives an unfinished run and an unfinished cycle one word, and a dead cycle another", async () => {
+    // The Dashboard's two tables are two producers on one screen. The state
+    // they share — nothing has recorded an end yet — is one concept and takes
+    // one word; the state only the resolver has (it died) takes another.
+    const running = resolutionRunRow({
+      run_id: CYCLE_NEWEST,
+      started_at: minutesAgo(1),
+      ended_at: null,
+      outcome: null,
+    });
+    const dead = resolutionRunRow({
+      run_id: CYCLE_OLDEST,
+      started_at: minutesAgo(45),
+      ended_at: null,
+      outcome: null,
+    });
+    const markup = await renderDashboard(
+      healthyScript({
+        [T.resolutionRuns]: { data: [running, dead] },
+        [T.runs]: { data: unfinishedRuns() },
+      }),
+    );
+    const cycles = rowsOf(markup, "cycles");
+    const runs = rowsOf(markup, "runs");
+
+    expect(cycles).toHaveLength(2);
+    expect(runs.length).toBeGreaterThan(0);
+    expect(cycles[0].outcome).not.toBe("");
+    expect(runs[0].outcome).toBe(cycles[0].outcome);
+    expect(cycles[1].outcome).not.toBe(cycles[0].outcome);
   });
 });
 
