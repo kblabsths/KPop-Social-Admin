@@ -1,7 +1,6 @@
-# Tracker index (regenerated 2026-09-04T02:11:55Z — do not edit)
+# Tracker index (regenerated 2026-09-04T02:18:28Z — do not edit)
 
 ## open
-- DEBT-0002 [P2][debt][M1] Five live parity oracles still address their surfaces by POSITION (section:nth-of-type) — the class BUG-0056 fixed on one page only  (scope:tests/live/dashboard.live.test.ts,tests/live/sources.live.test.ts,tests/live/claims.live.test.ts,tests/live/browse.live.test.ts,tests/live/review-item.live.test.ts,src/app/page.tsx,src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/browse/page.tsx,src/app/queues/[reviewItemId]/page.tsx from:BUG-0056)
 - TASK-0035 [P2][task][patch] The walk sandbox in the one map: an EDIT_CONFIG entry that renders not-provisioned wherever the table is absent  (deps:TASK-0034 scope:src/lib/edit/config.ts,src/lib/db/tables.ts,tests/offline/edit/config.test.ts,tests/offline/records/page.test.ts,tests/offline/absence,tests/live/residue.live.test.ts,tests/http/auth.http.test.ts from:inbox:2026-09-03-walker-sandbox-table.md)
 - TASK-0036 [P2][task][patch] Reset the walk sandbox between walks: the seed fixture, the reset tool, and the walk recipe  (deps:TASK-0034 scope:tests/walk,tests/offline/walk,tests/live/staging-target.ts,tests/offline/live-guard.test.ts,tsconfig.json,agenticflow/docs/vision/STACK.md from:inbox:2026-09-03-walker-sandbox-table.md)
 - BUG-0046 [P3][bug][M1] Counts do not agree with their noun: '1 sources holding one', 'of 1 items read here', '1 sources, 2 domains'  (scope:src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/queues/page.tsx,src/lib/format.ts,tests/offline/format.test.ts from:M1-endgame-designer-walk)
@@ -15,10 +14,10 @@
 - DEBT-0004 [P3][debt][M1] /cycles and /sources carry their own presentation: 1,291- and 793-line pages, no components module, while every other page has one  (deps:DEBT-0003(unmet:1) scope:src/components/cycles,src/components/sources,src/app/cycles/page.tsx,src/app/sources/page.tsx,tests/offline/cycles/page.test.ts,tests/offline/sources/page.test.ts from:M1-endgame-structure-walk)
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:1) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
-## built
-- BUG-0067 [P2][bug][M1] Cycles: the cycles window line renders in every state — data-window="cycles" over a table it could not read  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts @builder-91 from:qa:BUG-0063)
+## claimed
+- DEBT-0002 [P2][debt][M1] Five live parity oracles still address their surfaces by POSITION (section:nth-of-type) — the class BUG-0056 fixed on one page only  (scope:tests/live/dashboard.live.test.ts,tests/live/sources.live.test.ts,tests/live/claims.live.test.ts,tests/live/browse.live.test.ts,tests/live/review-item.live.test.ts,src/app/page.tsx,src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/browse/page.tsx,src/app/queues/[reviewItemId]/page.tsx @builder-92 from:BUG-0056)
 
 ## qa
-- BUG-0065 [P2][bug][M1] Record page: a mistyped id renders the failed-read state, whose only advice is to reload  (scope:src/app/records/[table]/[id]/page.tsx,src/lib/db/records.ts,tests/offline/records/page.test.ts,tests/fixtures/stub-client.ts @builder-90 from:qa:BUG-0052)
+- BUG-0067 [P2][bug][M1] Cycles: the cycles window line renders in every state — data-window="cycles" over a table it could not read  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts @builder-91 from:qa:BUG-0063)
 
-Totals — built:1, done:103, open:13, qa:1. Archived: 0.
+Totals — claimed:1, done:104, open:12, qa:1. Archived: 0.
