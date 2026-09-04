@@ -10,7 +10,7 @@ import { Eyebrow, microLabelText } from "@/components/ui/micro-label";
 import { ErrorLine } from "@/components/ui/error-line";
 import { Loading } from "@/components/ui/loading";
 import { NotProvisioned } from "@/components/ui/not-provisioned";
-import { Page } from "@/components/ui/page";
+import { Page, pageTitleText } from "@/components/ui/page";
 import { Section } from "@/components/ui/section";
 import { StatCard } from "@/components/ui/stat-card";
 import { EM_DASH, absoluteUtc, count, relativeAge } from "@/lib/format";
@@ -59,6 +59,83 @@ describe("Page and Section", () => {
     const page = render(h(Page, { title: "Cycles & runs" }, h(Section, { title: "Runs" })));
     expect(page).toMatch(/<h1[^>]*class="[^"]*type-title/);
     expect(page).toMatch(/<h2[^>]*class="[^"]*type-title/);
+  });
+
+  /**
+   * A page title may BE a machine identifier — `/records/[table]/[id]` names
+   * its h1 after the table — and `type-title` is uppercase sans, so the whole
+   * of admin-window/BUG-0049's eyebrow problem repeats one type step up:
+   * `walk_sandbox record` reaching the operator as `WALK_SANDBOX RECORD`
+   * (admin-window/BUG-0073, measured in Chromium both schemes 2026-09-03).
+   *
+   * The property asserted is the structural one — the identifier is never
+   * inside the element that uppercases — not the words, which pages own and
+   * which this test supplies itself.
+   */
+  it("keeps an identifier title verbatim, in mono, and out of the uppercasing h1", () => {
+    const html = render(h(Page, { title: { identifier: "walk_sandbox", words: "record" } }));
+    const $ = cheerio.load(html);
+
+    // verbatim: character for character, no prettified spelling anywhere
+    expect(textOf(html)).toContain("walk_sandbox");
+    expect(textOf(html)).not.toContain("WALK_SANDBOX");
+
+    const identifier = $("h1 span")
+      .toArray()
+      .map((element) => ({
+        classes: ($(element).attr("class") ?? "").split(/\s+/),
+        text: $(element).text(),
+      }))
+      .find((span) => span.text === "walk_sandbox");
+    expect(identifier).toBeDefined();
+    // mono at its own case, and both survive any uppercasing ancestor added later
+    expect(identifier?.classes).toContain("type-data");
+    expect(identifier?.classes).toContain("normal-case");
+    expect(identifier?.classes).toContain("tracking-normal");
+    // the structural half: no element that uppercases contains it — not the
+    // span, and not the h1 above it either
+    expect(identifier?.classes).not.toContain("type-title");
+    expect($("h1").attr("class")?.split(/\s+/)).not.toContain("type-title");
+    expect(uppercasedIdentifiers(html)).toEqual([]);
+
+    // and the app's own word still gets the title treatment, in the same h1
+    expect($("h1 span.type-title").text()).toBe("record");
+  });
+
+  it("puts a real space between an identifier title and its word, not a flex gap", () => {
+    // The h1's accessible name is read as text by everything that reads text,
+    // and a CSS gap is invisible to all of it (admin-window/BUG-0045).
+    const html = render(h(Page, { title: { identifier: "walk_sandbox", words: "record" } }));
+    expect(cheerio.load(html)("h1").text()).toBe("walk_sandbox record");
+    expect(runTogetherWords(html)).toEqual([]);
+  });
+
+  it("renders a bare identifier title with no trailing word when none is given", () => {
+    const html = render(h(Page, { title: { identifier: "walk_sandbox" } }));
+    expect(cheerio.load(html)("h1").text()).toBe("walk_sandbox");
+    expect(uppercasedIdentifiers(html)).toEqual([]);
+    expect(classesOf(html)).toContain("type-data");
+  });
+
+  it("leaves a plain-string title on the h1 itself, as every other page had it", () => {
+    // Twelve of the thirteen `Page` callers pass their own words, and the
+    // identifier form must not move any of them: one element, no wrapper span,
+    // `type-title` on the h1 (admin-window/BUG-0073).
+    const html = render(h(Page, { title: "Queues" }));
+    const $ = cheerio.load(html);
+    expect($("h1").attr("class")?.split(/\s+/)).toContain("type-title");
+    expect($("h1 span").length).toBe(0);
+    expect($("h1").text()).toBe("Queues");
+  });
+
+  it("flattens either title to the string its h1 renders, for an accessible name", () => {
+    for (const title of [
+      "Queues",
+      { identifier: "walk_sandbox" },
+      { identifier: "walk_sandbox", words: "record" },
+    ] as const) {
+      expect(pageTitleText(title)).toBe(cheerio.load(render(h(Page, { title })))("h1").text());
+    }
   });
 
   it("pads the page at the 16px step and spaces its sections at the same step", () => {
@@ -649,5 +726,25 @@ describe("the uppercased-identifier guard", () => {
     // and the identifier really is still on the card — the guard is not
     // satisfied by deleting the word
     expect(textOf(good)).toContain("data_conflict");
+  });
+
+  /**
+   * The same two inputs one type step up, because the guard now reads `title`
+   * as well as `micro` (admin-window/BUG-0073). Without this pair the widening
+   * would be a line of code nothing exercises — a guard that has never flagged
+   * an h1 says nothing about h1s.
+   */
+  it("flags an identifier concatenated into a page title", () => {
+    // exactly what `/records/[table]/[id]` shipped: `` `${config.table} record` ``
+    const bad = render(h(Page, { title: "walk_sandbox record" }));
+    expect(uppercasedIdentifiers(bad)).toEqual(["walk_sandbox record"]);
+  });
+
+  it("clears the same page once the identifier is out of the title element", () => {
+    const good = render(
+      h(Page, { title: { identifier: "walk_sandbox", words: "record" } }),
+    );
+    expect(uppercasedIdentifiers(good)).toEqual([]);
+    expect(textOf(good)).toContain("walk_sandbox");
   });
 });
