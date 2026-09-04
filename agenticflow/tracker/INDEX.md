@@ -1,7 +1,6 @@
-# Tracker index (regenerated 2026-09-04T04:07:48Z — do not edit)
+# Tracker index (regenerated 2026-09-04T04:12:38Z — do not edit)
 
 ## open
-- BUG-0071 [P2][bug][patch] STACK 5 retires the groups/idols walk-write exception before walk_sandbox exists, leaving the M1 endgame walks no write surface at all  (scope:agenticflow/docs/vision/STACK.md,agenticflow/tracker/for-human/TASK-0034.md from:qa:TASK-0036)
 - BUG-0049 [P3][bug][M1] Micro labels uppercase machine identifiers: DATA_CONFLICT OPEN, ENTITY_LINK FOLDED, TICKETMASTER STUCK RECORDS  (scope:src/app/queues/page.tsx,src/app/sources/page.tsx,tests/offline/queues/page.test.ts,tests/offline/sources/page.test.ts from:M1-endgame-designer-walk)
 - BUG-0050 [P3][bug][M1] Phone (390px): the fixed 192px sidebar takes half the viewport and the content column collapses  (scope:src/components/shell/shell.tsx,tests/offline/shell/shell.test.ts from:M1-endgame-designer-walk)
 - BUG-0055 [P3][bug][M1] Cycles & runs names one state two ways on one screen: the rows say 'died', the health panel says 'unfinished'  (scope:src/app/cycles/page.tsx,src/lib/gauges/cycle-health.ts,tests/offline/cycles/page.test.ts,tests/offline/gauges/cycle-health.test.ts from:M1-endgame-user-sim)
@@ -14,6 +13,9 @@
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:1) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
 ## built
+- BUG-0071 [P2][bug][patch] STACK 5 retires the groups/idols walk-write exception before walk_sandbox exists, leaving the M1 endgame walks no write surface at all  (scope:agenticflow/docs/vision/STACK.md,agenticflow/tracker/for-human/TASK-0034.md @builder-99 from:qa:TASK-0036)
+
+## qa
 - BUG-0048 [P3][bug][M1] Browse: the poster cell is a 24x24 thumbnail that navigates out of the app to the CDN  (scope:src/components/browse/browse-table.tsx,tests/offline/browse/page.test.ts @builder-98 from:M1-endgame-designer-walk)
 
-Totals — built:1, done:110, open:11. Archived: 0.
+Totals — built:1, done:110, open:10, qa:1. Archived: 0.
