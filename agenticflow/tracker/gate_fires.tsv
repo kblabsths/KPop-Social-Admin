@@ -83,3 +83,4 @@
 2026-09-04T05:43:46Z	supply_gate	blocked npx of prettier
 2026-09-04T06:17:01Z	artifact_gate	blocked write outside repo: /g,
 2026-09-04T06:25:44Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-04T06:40:34Z	artifact_gate	blocked write outside repo: /tmp/x
