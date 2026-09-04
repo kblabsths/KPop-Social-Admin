@@ -341,6 +341,16 @@ describe("the page's rows", () => {
     const cell = bodyRows(markup)[0][0];
     expect(cell).toBe(EM_DASH);
     expect(cell).not.toContain(UTC_ZONE);
+
+    // And it is the app's ONE absence rendering, not a second em dash this
+    // column draws itself (`nullDash`, LESSONS class 1): the cell hands
+    // `DataTable` a bare string precisely so `orDash` can wrap it. Asserted on
+    // the accessible name, because the dash's TEXT is identical either way —
+    // a starts cell that returned its own dash would satisfy the two lines
+    // above while quietly dropping out of the shared rendering (QA, BUG-0047).
+    const $ = cheerio.load(markup);
+    expect($('tbody td [aria-label="no value"]')).toHaveLength(1);
+    expect($('tbody td [aria-label="no value"]').text()).toBe(EM_DASH);
   });
 
   it("carries the absolute instant behind every relative age", async () => {
