@@ -479,9 +479,10 @@ describe("a status belongs to the edit that produced it", () => {
  * The tests above fire `elapsed` by hand, which proves the reducer's rule but
  * not the rule the defect actually lived in: WHICH clock is running, and for
  * how long. In the component that is `confirmationDelayMs` read from the state
- * inside a `useEffect` keyed on the state OBJECT (EditableCell.tsx:301-307), so
- * an event that returns the state by reference leaves the running clock alone
- * and every real transition tears it down and re-arms from scratch.
+ * inside a `useEffect` keyed on the state OBJECT (`EditableCell`'s clock
+ * effect, which arms from `cell` and nothing else), so an event that returns
+ * the state by reference leaves the running clock alone and every real
+ * transition tears it down and re-arms from scratch.
  * `driveCell` is exactly that arming rule over a virtual clock: it is the
  * cheapest thing that can answer "what is on screen at t=1630ms", which is the
  * question both measured divergences were.
