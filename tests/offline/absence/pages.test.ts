@@ -367,3 +367,83 @@ describe("the absence sweep itself", () => {
     expect(figures("<p>a window of 6, not a count</p>")).toEqual([]);
   });
 });
+
+/* ── a window line describes a window the page actually read ─────────────── */
+
+/**
+ * The window-line rule, graded across every surface at once
+ * (admin-window/BUG-0063 on `/claims`, admin-window/BUG-0067 on `/cycles`).
+ *
+ * Three window lines on two routes fixed the same divergence one ticket at a
+ * time — `/cycles`'s cycles line, `/cycles`'s runs line (`AdapterRuns`) and
+ * `/claims`'s claims line — and each fix was pinned only in its own page
+ * suite, so the fourth surface to grow a window line inherits nothing. This
+ * grades the rule itself, on whatever surfaces publish a `data-window` hook:
+ *
+ *   a page that could not read its table publishes NO window hook for it;
+ *   an EMPTY window is still a window the page looked in, and keeps its line.
+ *
+ * Behaviour, not copy: it reads the `data-window` hooks the live suites
+ * already select by (`tests/live/cycles.live.test.ts`) and asserts nothing
+ * about the sentences around them.
+ *
+ * Non-vacuous by construction. The first leg measures which surfaces publish
+ * a window at all against a database that HOLDS rows, and only those surfaces
+ * are then asked to drop it — so a page that stopped rendering its window
+ * line entirely cannot pass by publishing nothing in both states. The two
+ * `toContain`s below are the floor: lose `/claims` or `/cycles` from that set
+ * and this test fails rather than thinning out.
+ */
+function windowHooks(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("[data-window]")
+    .toArray()
+    .map((element) => $(element).attr("data-window") ?? "")
+    .sort();
+}
+
+describe("a window line describes a window the page read", () => {
+  it("drops every window it publishes on a healthy read when the read never happened", async () => {
+    const publishes = new Map<string, string[]>();
+
+    for (const surface of SURFACES) {
+      scriptDatabase(populatedScript(surface));
+      const healthy = windowHooks(await renderSurface(surface));
+      if (healthy.length === 0) continue;
+      publishes.set(surface.route, healthy);
+
+      // The same surface, against a database that holds none of the objects
+      // it reads: every one of those hooks is a claim about a table it could
+      // not read, and `data-window-truncated="false"` a confident boolean
+      // about a read that returned nothing (ARCHITECTURE.md, "a null count is
+      // a refusal, never a zero"; LOOK_AND_FEEL states 3 and 4).
+      scriptDatabase(nothingProvisioned());
+      expect(
+        windowHooks(await renderSurface(surface)),
+        `${surface.route} still stated [${healthy.join(", ")}] over tables it could not read`,
+      ).toEqual([]);
+    }
+
+    // The floor: the two routes the three fixed window lines live on must be
+    // in the measured set, or the leg above graded nothing.
+    expect([...publishes.keys()], "no surface published a window line").toContain("/claims");
+    expect([...publishes.keys()]).toContain("/cycles");
+    // `/cycles` carries TWO window lines — the cycles table's and the adapter
+    // runs' — and both are the rule's subject, so both are named here.
+    expect(publishes.get("/cycles")).toContain("cycles");
+    expect(publishes.get("/cycles")).toContain("runs");
+  });
+
+  it("keeps the line on a read that happened and found nothing", async () => {
+    // The other half of the rule, and the reason the fix is not "drop the
+    // line whenever the row count is zero": the page looked in the window,
+    // and an empty window is still a window it read.
+    const cycles = SURFACES.find((surface) => surface.route === "/cycles");
+    if (cycles === undefined) throw new Error("no /cycles surface");
+
+    scriptDatabase(emptyScript());
+    const hooks = windowHooks(await renderSurface(cycles));
+    expect(hooks).toContain("cycles");
+    expect(hooks).toContain("runs");
+  });
+});
