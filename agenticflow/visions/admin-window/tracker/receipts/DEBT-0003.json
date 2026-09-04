@@ -1,0 +1,70 @@
+{
+ "id": "DEBT-0003",
+ "created": "2026-09-04T07:54:34Z",
+ "green": true,
+ "git_head": "431a4d59e481787d3e2c70a1ff5fe62c4ed85009",
+ "scope": [
+  "src/components/ui/state-of.tsx",
+  "src/components/ui/window-line.tsx",
+  "src/components/ui/index.ts",
+  "src/app/cycles/page.tsx",
+  "src/app/sources/page.tsx",
+  "src/app/claims/page.tsx",
+  "src/app/queues/[reviewItemId]/page.tsx",
+  "tests/offline/ui/primitives.test.ts",
+  "tests/offline/cycles/page.test.ts",
+  "tests/offline/sources/page.test.ts",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/review-item/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "491751d62c64f4dfba2ae2f809ffce5c7def5265397ed3f3f69c10f7d4206230",
+ "commands": [
+  {
+   "cmd": "test -f src/components/ui/state-of.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"data-not-provisioned\" src/components/ui/state-of.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"data-read-failed\" src/components/ui/state-of.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -rqE \"^function (StateOf|WindowLine)\\(\" src/app",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -rlE \"^const (RETRY|ARRIVES_WITH) =\" src/app | wc -l)\" -eq 0",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npx vitest run --project=offline tests/offline/cycles/page.test.ts tests/offline/sources/page.test.ts tests/offline/claims/page.test.ts tests/offline/review-item/page.test.ts tests/offline/ui/primitives.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-6919\n\n \u2713 |offline| tests/offline/ui/primitives.test.ts (68 tests) 73ms\n \u2713 |offline| tests/offline/review-item/page.test.ts (63 tests) 361ms\n \u2713 |offline| tests/offline/sources/page.test.ts (49 tests) 456ms\n \u2713 |offline| tests/offline/cycles/page.test.ts (60 tests) 1344ms\n \u2713 |offline| tests/offline/claims/page.test.ts (98 tests) 2422ms\n\n Test Files  5 passed (5)\n      Tests  338 passed (338)\n   Start at  00:53:33\n   Duration  3.38s (transform 978ms, setup 0ms, collect 2.86s, tests 4.66s, environment 1ms, prepare 521ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline tests/offline/cycles/page.test.ts tests/offline/sources/page.test.ts tests/offline/claims/page.test.ts tests/offline/review-item/page.test.ts tests/offline/ui/primitives.test.ts\n(node:6955) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/cycles.live.test.ts tests/live/sources.live.test.ts tests/live/claims.live.test.ts tests/live/review-item.live.test.ts",
+   "exit": 0,
+   "output_tail": "lone  3146ms\n   \u2713 the per-source trends against staging > counts each source's awaiting-row claims as the view holds them  6187ms\n   \u2713 the per-source trends against staging > counts each source's re-rejects as the stamps hold them  2616ms\n   \u2713 the per-source trends against staging > draws no threshold line, because the dial is not readable from here  2534ms\n \u2713 |live| tests/live/claims.live.test.ts (9 tests) 44749ms\n   \u2713 the Claims page's surface hooks against staging > names every surface on the page once, on both tabs  6853ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it  4249ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it, per source filter  7431ms\n   \u2713 the classification buckets against staging > draws the view's longest-waiting window, and states the whole it came from  4222ms\n   \u2713 the classification buckets against staging > renders the standing tab as the window of exactly that bucket's subset  3340ms\n   \u2713 the parked bucket against staging > is a string the database still spells, and the page never does  12468ms\n   \u2713 a source is named against staging > says the registry's name in every SOURCE cell, and still links by the id  3083ms\n   \u2713 a source is named against staging > names the source_id chips the same way, each still narrowing by its id  2854ms\n\n Test Files  4 passed (4)\n      Tests  30 passed (30)\n   Start at  00:53:37\n   Duration  45.47s (transform 476ms, setup 125ms, collect 1.54s, tests 100.12s, environment 1ms, prepare 397ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/cycles.live.test.ts tests/live/sources.live.test.ts tests/live/claims.live.test.ts tests/live/review-item.live.test.ts\n(node:7006) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
