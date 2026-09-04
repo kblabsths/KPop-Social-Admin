@@ -1,7 +1,6 @@
-# Tracker index (regenerated 2026-09-04T00:27:53Z — do not edit)
+# Tracker index (regenerated 2026-09-04T00:36:12Z — do not edit)
 
 ## open
-- BUG-0052 [P2][bug][M1] Record page: the unknown-id empty state sends the operator to Browse, which does not list groups or idols  (scope:src/app/records/[table]/[id]/page.tsx,tests/offline/records/page.test.ts from:M1-endgame-user-sim)
 - BUG-0053 [P2][bug][M1] Event record page: a whole PROVENANCE column of dashes with no line saying what a dash means, while the pre-cutover page explains its own  (scope:src/app/records/[table]/[id]/page.tsx,src/components/records/record-fields.tsx,tests/offline/records/page.test.ts,tests/offline/records/provenance.test.ts from:M1-endgame-user-sim)
 - BUG-0054 [P2][bug][M1] Cycles & runs: 'Cycle <id> is marked in the table below' — the row carries only aria-current and is visually identical to all 68 others  (scope:src/app/cycles/page.tsx,src/components/ui/data-table.tsx,tests/offline/cycles/page.test.ts from:M1-endgame-user-sim)
 - BUG-0059 [P2][bug][M1] Not-provisioned card jams the missing object's name into the sentence: 'eventsisn't in this database yet'  (scope:src/components/ui/not-provisioned.tsx,tests/offline/absence/pages.test.ts from:M1-endgame-verifier)
@@ -22,6 +21,9 @@
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:3) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
 ## built
+- BUG-0052 [P2][bug][M1] Record page: the unknown-id empty state sends the operator to Browse, which does not list groups or idols  (scope:src/app/records/[table]/[id]/page.tsx,tests/offline/records/page.test.ts @builder-83 from:M1-endgame-user-sim)
+
+## qa
 - BUG-0045 [P2][bug][M1] Sources and Claims render an internal factory ticket id in product copy, and 'stuck_patterndial' has no space  (scope:src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/cycles/page.tsx,tests/offline/sources/page.test.ts,tests/offline/claims/page.test.ts,tests/offline/cycles/page.test.ts @builder-82 from:M1-endgame-designer-walk)
 
-Totals — built:1, done:95, open:19. Archived: 0.
+Totals — built:1, done:95, open:18, qa:1. Archived: 0.
