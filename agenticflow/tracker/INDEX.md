@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-04T00:47:10Z — do not edit)
+# Tracker index (regenerated 2026-09-04T00:57:14Z — do not edit)
 
 ## open
 - BUG-0059 [P2][bug][M1] Not-provisioned card jams the missing object's name into the sentence: 'eventsisn't in this database yet'  (scope:src/components/ui/not-provisioned.tsx,tests/offline/absence/pages.test.ts from:M1-endgame-verifier)
@@ -22,7 +22,4 @@
 ## claimed
 - BUG-0054 [P2][bug][M1] Cycles & runs: 'Cycle <id> is marked in the table below' — the row carries only aria-current and is visually identical to all 68 others  (scope:src/app/cycles/page.tsx,src/components/ui/data-table.tsx,tests/offline/cycles/page.test.ts @builder-85 from:M1-endgame-user-sim)
 
-## built
-- BUG-0053 [P2][bug][M1] Event record page: a whole PROVENANCE column of dashes with no line saying what a dash means, while the pre-cutover page explains its own  (scope:src/app/records/[table]/[id]/page.tsx,src/components/records/record-fields.tsx,tests/offline/records/page.test.ts,tests/offline/records/provenance.test.ts @builder-84 from:M1-endgame-user-sim)
-
-Totals — built:1, claimed:1, done:97, open:17. Archived: 0.
+Totals — claimed:1, done:98, open:17. Archived: 0.
