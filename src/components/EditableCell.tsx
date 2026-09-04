@@ -15,7 +15,9 @@ import { cx } from "@/components/ui/cx";
  *
  * It knows nothing about routes or tables: `onSave` is the caller's, and
  * returns what happened rather than throwing. The display is a real button, so
- * editing is reachable by Tab and never only on hover (quality bar 9).
+ * editing is reachable by Tab and never only on hover (quality bar 9) — and an
+ * edit the operator ends with Enter or Escape puts focus back on that button,
+ * so the next Tab continues from this field (`focusVerdict`).
  */
 export type SaveOutcome =
   /** Saved. `value` is what the caller actually stored, if it normalised it. */
@@ -163,6 +165,103 @@ export function editHint(multiline: boolean): string {
 }
 
 /**
+ * How the edit ENDED — the fact that decides whether focus comes back —
+ * campaign admin-window/BUG-0069.
+ *
+ * Two of the three ways out leave focus nowhere: `commit()` and Escape both
+ * unmount the input the operator was typing in, and nothing was told to catch
+ * what it dropped. The third — leaving the field — is the operator's own move,
+ * and is exactly the case where pulling focus back would be the worse bug.
+ */
+export type EditEnding =
+  /** Enter committed it (single-line). The operator did not move focus. */
+  | "committed"
+  /** Escape reverted it. The operator did not move focus either. */
+  | "cancelled"
+  /** The operator left the field — clicked or tabbed elsewhere on purpose. */
+  | "left";
+
+/** What to do about focus right now. */
+export type FocusVerdict =
+  /** Not yet: the field still holds it, or the button cannot take it yet. */
+  | "wait"
+  /** Put it on this cell's resting control. */
+  | "return"
+  /** Nothing to do — it is where it should be, or where the operator put it. */
+  | "leave";
+
+/**
+ * Where focus belongs once an edit ends — campaign admin-window/BUG-0069.
+ *
+ * Measured by QA on the BUG-0060 pass (2026-09-03, production build against
+ * staging): committing with Enter left `document.activeElement` as `<body>`,
+ * so the operator's next Tab restarted at the top of the document — the whole
+ * nav and every field above — instead of continuing to the next field.
+ * `autoFocus` covered the way IN and nothing covered the way out. Escape is
+ * the same seam.
+ *
+ * Two orderings in here are the whole of the fix, and both are why this is a
+ * rule rather than a `.focus()` at the end of `commit()`:
+ *
+ *  - **`saving` waits.** The resting button is `disabled` while the write is
+ *    in flight, and a disabled button cannot take focus — focusing it there is
+ *    a no-op that silently leaves focus on `<body>` anyway. The verdict is
+ *    taken again when the write settles and the control is real.
+ *  - **`left`, and anything the operator has since focused, is left alone.**
+ *    Blur commits, so clicking a link or tabbing to the next field ends the
+ *    edit too; that operator went somewhere on purpose. `focusIsAdrift` is the
+ *    caller's reading of `document.activeElement` — true only when focus is on
+ *    nothing (the body, the document, or this cell's own button) — so even a
+ *    seconds-long write that the operator walks away from mid-flight cannot
+ *    have its focus yanked back when the answer arrives.
+ *
+ * Pure and exported because focus is a browser fact the offline tier cannot
+ * see (`tests/offline` is environment node with `renderToStaticMarkup` and no
+ * jsdom, STACK.md §4): the decision is pinned here, and the focus itself is
+ * measured in a browser walk exactly as its absence was.
+ */
+export function focusVerdict({
+  editing,
+  ending,
+  status,
+  focusIsAdrift,
+}: {
+  /** Is the cell still in edit mode? Then the field itself holds focus. */
+  editing: boolean;
+  /** How the last edit ended, or `null` if none has since focus was settled. */
+  ending: EditEnding | null;
+  /** What this cell's edit is doing, or did. */
+  status: Status;
+  /** Is focus on nothing the operator chose? Read from `document`. */
+  focusIsAdrift: boolean;
+}): FocusVerdict {
+  if (editing) return "wait";
+  if (ending === null || ending === "left") return "leave";
+  if (status.kind === "saving") return "wait";
+  return focusIsAdrift ? "return" : "leave";
+}
+
+/**
+ * Is focus on nothing in particular — so that returning it takes it from
+ * nobody? The browser half of `focusVerdict`, kept to one expression.
+ *
+ * The button itself counts as adrift: focusing what is already focused is a
+ * no-op, and it keeps the resting state of a re-entered cell from reading as
+ * "the operator moved".
+ */
+function focusIsAdrift(button: HTMLButtonElement | null): boolean {
+  const owner = button?.ownerDocument;
+  if (!owner) return false;
+  const active = owner.activeElement;
+  return (
+    active === null ||
+    active === owner.body ||
+    active === owner.documentElement ||
+    active === button
+  );
+}
+
+/**
  * The line beside the field: what this edit is doing, or what it did —
  * campaign admin-window/BUG-0066.
  *
@@ -286,6 +385,10 @@ export function EditableCell({
   const reverting = useRef(false);
   /** Ordinals handed out one per visit to edit mode; see `EditState.edit`. */
   const edits = useRef(0);
+  /** The resting control focus is returned to; see `focusVerdict`. */
+  const button = useRef<HTMLButtonElement>(null);
+  /** How the edit on screen ended, until focus has been dealt with. */
+  const ending = useRef<EditEnding | null>(null);
   const hintId = useId();
   const status = cell.status;
 
@@ -305,6 +408,29 @@ export function EditableCell({
     const timer = setTimeout(() => dispatch({ kind: "elapsed", edit }), delay);
     return () => clearTimeout(timer);
   }, [cell]);
+
+  /**
+   * Focus, returned to the cell the operator was in — campaign
+   * admin-window/BUG-0069.
+   *
+   * Sequenced against the settled state rather than fired from `commit()`,
+   * because the control it aims at is `disabled` for the whole of the write:
+   * this runs again on every status change, so the commit path's return lands
+   * the moment the button can hold it, and Escape's lands at once.
+   */
+  useEffect(() => {
+    const verdict = focusVerdict({
+      editing,
+      ending: ending.current,
+      status: cell.status,
+      focusIsAdrift: focusIsAdrift(button.current),
+    });
+    if (verdict === "wait") return;
+    // Decided: this ending is spent either way, so a later status change
+    // cannot re-fire it at whatever the operator has focused by then.
+    ending.current = null;
+    if (verdict === "return") button.current?.focus();
+  }, [editing, cell]);
 
   async function commit() {
     if (reverting.current) return;
@@ -346,10 +472,12 @@ export function EditableCell({
     // In multiline mode Enter inserts a newline; that edit saves on blur.
     if (event.key === "Enter" && !multiline) {
       event.preventDefault();
+      ending.current = "committed";
       void commit();
     }
     if (event.key === "Escape") {
       event.preventDefault();
+      ending.current = "cancelled";
       reverting.current = true;
       setDraft(shown ?? "");
       setEditing(false);
@@ -365,11 +493,17 @@ export function EditableCell({
           hintId={hintId}
           multiline={multiline}
           onChange={(event) => setDraft(event.target.value)}
-          onBlur={() => void commit()}
+          onBlur={() => {
+            // Leaving the field is the operator's own move; the edit still
+            // saves, but focus stays where they put it.
+            if (ending.current === null) ending.current = "left";
+            void commit();
+          }}
           onKeyDown={onKeyDown}
         />
       ) : (
         <button
+          ref={button}
           type="button"
           aria-label={label}
           disabled={status.kind === "saving"}

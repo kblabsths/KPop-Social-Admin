@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import { describe, expect, it } from "vitest";
 
 import {
+  type EditEnding,
   type EditEvent,
   type EditState,
   EditableCell,
@@ -12,6 +13,7 @@ import {
   type Status,
   confirmationDelayMs,
   editHint,
+  focusVerdict,
   reduceEdit,
 } from "@/components/EditableCell";
 import { EM_DASH } from "@/lib/format";
@@ -477,9 +479,10 @@ describe("a status belongs to the edit that produced it", () => {
  * The tests above fire `elapsed` by hand, which proves the reducer's rule but
  * not the rule the defect actually lived in: WHICH clock is running, and for
  * how long. In the component that is `confirmationDelayMs` read from the state
- * inside a `useEffect` keyed on the state OBJECT (EditableCell.tsx:301-307), so
- * an event that returns the state by reference leaves the running clock alone
- * and every real transition tears it down and re-arms from scratch.
+ * inside a `useEffect` keyed on the state OBJECT (`EditableCell`'s clock
+ * effect, which arms from `cell` and nothing else), so an event that returns
+ * the state by reference leaves the running clock alone and every real
+ * transition tears it down and re-arms from scratch.
  * `driveCell` is exactly that arming rule over a virtual clock: it is the
  * cheapest thing that can answer "what is on screen at t=1630ms", which is the
  * question both measured divergences were.
@@ -672,3 +675,141 @@ describe.each([{ leaked: false }, { leaked: true }])(
   });
   },
 );
+
+/**
+ * WHERE FOCUS GOES when an edit ends — campaign admin-window/BUG-0069.
+ *
+ * Measured by QA on the BUG-0060 pass (2026-09-03, production build against
+ * staging): committing with Enter left `document.activeElement` as `<body>`,
+ * so the operator's next Tab restarted at the top of the document instead of
+ * continuing to the next field. `commit()` unmounts the input, the resting
+ * button is `disabled` for the whole of the write, and nothing caught what was
+ * dropped. Escape is the same seam.
+ *
+ * `document.activeElement` is a browser fact and `tests/offline` is
+ * environment node with `renderToStaticMarkup` and no jsdom (STACK.md §4), so
+ * these drive `focusVerdict` — the pure rule the component's effect obeys —
+ * plus what a static render CAN see about the control focus is returned to.
+ * The focus itself, and the Tab that follows it, are measured in a browser
+ * walk exactly the way their absence was.
+ */
+const SETTLED: Status[] = [
+  { kind: "idle" },
+  { kind: "saved" },
+  { kind: "failed", message: REFUSAL },
+];
+const IN_FLIGHT: Status = { kind: "saving" };
+const ENDINGS: EditEnding[] = ["committed", "cancelled", "left"];
+
+describe("an edit that ends gives focus back to the cell", () => {
+  it("returns it after a commit — but not while the control is still disabled", () => {
+    // The bug's own window: the button is `disabled` until the write answers,
+    // and focusing a disabled control is a no-op that leaves focus on <body>.
+    expect(
+      focusVerdict({
+        editing: false,
+        ending: "committed",
+        status: IN_FLIGHT,
+        focusIsAdrift: true,
+      }),
+    ).toEqual("wait");
+    // ...and once the write has settled, however it settled, focus comes back.
+    for (const status of SETTLED) {
+      expect(
+        focusVerdict({ editing: false, ending: "committed", status, focusIsAdrift: true }),
+        status.kind,
+      ).toEqual("return");
+    }
+  });
+
+  it("returns it after a cancel too, which has no write to wait for", () => {
+    // Escape unmounts the same input and re-enables the same button
+    // immediately; a fix that covered only the commit path leaves half the
+    // defect standing.
+    expect(
+      focusVerdict({
+        editing: false,
+        ending: "cancelled",
+        status: { kind: "idle" },
+        focusIsAdrift: true,
+      }),
+    ).toEqual("return");
+  });
+
+  it("never takes focus off something the operator moved to themselves", () => {
+    // A write can run for seconds; an operator who clicked a link or tabbed on
+    // during it went somewhere on purpose, and yanking focus back from there
+    // would be a worse bug than the one being fixed.
+    for (const ending of ENDINGS) {
+      for (const status of [...SETTLED, IN_FLIGHT]) {
+        expect(
+          focusVerdict({ editing: false, ending, status, focusIsAdrift: false }),
+          `${ending}/${status.kind}`,
+        ).not.toEqual("return");
+      }
+    }
+  });
+
+  it("leaves an edit ended BY leaving the field entirely alone", () => {
+    // Blur commits, so clicking or tabbing away is also an ending — and the
+    // one ending whose focus is already where the operator wants it.
+    for (const status of [...SETTLED, IN_FLIGHT]) {
+      expect(
+        focusVerdict({ editing: false, ending: "left", status, focusIsAdrift: true }),
+        status.kind,
+      ).toEqual("leave");
+    }
+  });
+
+  it("does nothing while the operator is still typing", () => {
+    // In edit mode the field holds focus; the rule only ever fires on the way
+    // out, so it can never fight `autoFocus` for the way in.
+    for (const ending of [null, ...ENDINGS]) {
+      expect(
+        focusVerdict({
+          editing: true,
+          ending,
+          status: { kind: "idle" },
+          focusIsAdrift: true,
+        }),
+        String(ending),
+      ).toEqual("wait");
+    }
+  });
+
+  it("does not chase focus when no edit ended", () => {
+    // Every status change re-asks the question, so "nothing ended" has to be a
+    // real answer: a confirmation retiring 1.5s later must not grab focus.
+    for (const status of [...SETTLED, IN_FLIGHT]) {
+      expect(
+        focusVerdict({ editing: false, ending: null, status, focusIsAdrift: true }),
+        status.kind,
+      ).toEqual("leave");
+    }
+  });
+
+  it("aims at a control that can actually hold focus at rest", () => {
+    // What a static render can see: the thing focus is returned to is a real
+    // button, in the tab order, not disabled and not tabindex'd out of it.
+    const resting = render(
+      h(EditableCell, { value: "Tuzi", onSave: noop, label: "short_name of groups" }),
+    );
+    const $ = cheerio.load(resting);
+    expect($("button").length).toBe(1);
+    expect($("button").attr("disabled")).toBeUndefined();
+    expect($("button").attr("tabindex")).toBeUndefined();
+  });
+
+  it("adds nothing to the resting markup to do it", () => {
+    // records/page.test.ts asserts a mapped field is markup-identical to this
+    // primitive; a hidden focus target, an autofocus at rest, or a tabindex
+    // would all be new surface. The ref that carries the fix renders nothing.
+    const resting = render(
+      h(EditableCell, { value: "Tuzi", onSave: noop, label: "short_name of groups" }),
+    );
+    expect(resting).not.toMatch(/tabindex/i);
+    expect(resting).not.toMatch(/autofocus/i);
+    expect(tagsOf(resting)).not.toContain("input");
+    expect(tagsOf(resting)).not.toContain("textarea");
+  });
+});
