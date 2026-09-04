@@ -114,6 +114,20 @@ typographic idea: the operator can always see which words are the machine's.
   gray-800 active item would be invisible there. Sign-out sits at the bottom
   behind a hairline. Content is 16px-padded; there is no global status strip
   — the Dashboard owns health.
+- **Viewport: the frame is desktop-only, 1280px wide and up.** Supported range
+  is 1280px to no upper bound; the design target is 1440x900 (bar 1). Above the
+  target the content column takes the extra width and the sidebar never does.
+  The frame does not respond: no breakpoint, no collapsed or stacked sidebar,
+  no phone layout. **Below 1280px the app is unsupported in M1, and nothing a
+  narrow viewport does is a violation** — at 390px the 192px sidebar takes 49%
+  of the screen and the Dashboard's attention counts wrap one word per line
+  (measured, BUG-0050); that is recorded, not a defect. Ben ruled it 2026-09-02:
+  this is a desktop tool for "Ben, the ecosystem's operator, at breakfast"
+  (VISION), a phone layout is a nice-to-have for a later milestone, and the bar
+  it must meet is written into this bullet before it is built. Width is the only
+  axis narrowed here — **both themes ship at every supported width** (bar 12),
+  and containment holds at every width: the page never scrolls horizontally,
+  only a table inside its own border.
 
 ### Component rules
 
