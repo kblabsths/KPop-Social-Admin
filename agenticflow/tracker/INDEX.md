@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-04T01:58:27Z — do not edit)
+# Tracker index (regenerated 2026-09-04T02:04:33Z — do not edit)
 
 ## open
 - BUG-0067 [P2][bug][M1] Cycles: the cycles window line renders in every state — data-window="cycles" over a table it could not read  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts from:qa:BUG-0063)
@@ -16,7 +16,7 @@
 - DEBT-0004 [P3][debt][M1] /cycles and /sources carry their own presentation: 1,291- and 793-line pages, no components module, while every other page has one  (deps:DEBT-0003(unmet:1) scope:src/components/cycles,src/components/sources,src/app/cycles/page.tsx,src/app/sources/page.tsx,tests/offline/cycles/page.test.ts,tests/offline/sources/page.test.ts from:M1-endgame-structure-walk)
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:1) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
-## claimed
+## built
 - BUG-0065 [P2][bug][M1] Record page: a mistyped id renders the failed-read state, whose only advice is to reload  (scope:src/app/records/[table]/[id]/page.tsx,src/lib/db/records.ts,tests/offline/records/page.test.ts,tests/fixtures/stub-client.ts @builder-90 from:qa:BUG-0052)
 
-Totals — claimed:1, done:103, open:14. Archived: 0.
+Totals — built:1, done:103, open:14. Archived: 0.
