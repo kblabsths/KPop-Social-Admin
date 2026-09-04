@@ -62,3 +62,77 @@ export function factoryTicketIds(html: string): string[] {
     ...html.matchAll(/admin-window\/[A-Z]+-\d+|\b(?:TASK|BUG|DEBT|DEP)-\d{4}\b/g),
   ].map((match) => match[0]);
 }
+
+/** The mark a tag leaves behind, so an element boundary is neither a space nor a digit. */
+const MARK = "\u0000";
+
+/**
+ * Words ending in `-s` that a count of one may legitimately precede, because
+ * they are not plurals: singular nouns whose form ends in `s`, and the verbs
+ * and function words a sentence can put after a figure.
+ *
+ * The set is the guard's only escape hatch and it is deliberately visible: a
+ * future string that trips `disagreeingCounts` wrongly is fixed by adding the
+ * word here, in a diff a reader can argue with, rather than by loosening the
+ * pattern.
+ */
+const SINGULAR_S_WORDS = new Set([
+  "across",
+  "address",
+  "always",
+  "analysis",
+  "as",
+  "basis",
+  "bus",
+  "class",
+  "does",
+  "focus",
+  "gas",
+  "has",
+  "is",
+  "its",
+  "less",
+  "minus",
+  "plus",
+  "process",
+  "series",
+  "status",
+  "this",
+  "thus",
+  "unless",
+  "versus",
+  "was",
+  "yes",
+]);
+
+/**
+ * Every place the rendered markup pairs the count `1` with a plural noun —
+ * "1 sources", "1 items", "1 cycles" (campaign admin-window/BUG-0046,
+ * LOOK_AND_FEEL Voice bar 6, "counts carry their noun").
+ *
+ * Read off the RENDERED text rather than the source, for the same reason
+ * `runTogetherWords` is: the count and its noun may arrive from a template
+ * literal, from two JSX expressions, or from either side of an element
+ * boundary, and only the delivered string says what the operator reads.
+ *
+ * **Every tag becomes a boundary mark rather than nothing**, which is what
+ * makes the guard work on a gauge card at all. A card renders its figure and
+ * its sub-line as siblings, so stripping tags outright turns a figure of `1`
+ * above the line "1 sources holding one" into the text `11 sources…` — and a
+ * `1` preceded by a digit is exactly what this must NOT flag, since
+ * `21,001 sources` and `0.1 rows` are both correct. Measured 2026-09-03: with
+ * a plain strip, the very string this ticket was filed for goes unseen. The
+ * mark is transparent to the count but is not whitespace, so a figure and a
+ * heading in two table cells (`<td>1</td><td>sources</td>`) still do not pair.
+ *
+ * A word is taken for a plural when it ends in `s` and is not in
+ * `SINGULAR_S_WORDS` above — this app counts none of English's irregular
+ * plurals, and a guard that tried to know them all would be a worse thing to
+ * trust. Each hit is returned as the two words that disagree, so a failure
+ * names the string rather than only the page.
+ */
+export function disagreeingCounts(html: string): string[] {
+  return [...html.replace(/<[^>]*>/g, MARK).matchAll(/(?<![\d,.])1\0*\s+([a-z]+s)\b/g)]
+    .filter((match) => !SINGULAR_S_WORDS.has(match[1]))
+    .map((match) => match[0].replace(/[\0\s]+/g, " "));
+}

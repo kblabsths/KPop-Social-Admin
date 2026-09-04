@@ -27,7 +27,7 @@ import {
 } from "@/lib/db/claims";
 import type { DbUnavailable } from "@/lib/db/result";
 import { readSourceNames } from "@/lib/db/sources";
-import { absoluteUtc, count, duration } from "@/lib/format";
+import { absoluteUtc, count, counted, duration } from "@/lib/format";
 import {
   claimsHref,
   filterBar,
@@ -330,9 +330,10 @@ function PendingClaimsGauge({ gauge }: { gauge: PendingClaims }) {
           label="Claims in this window"
           value={gauge.claims}
           floor={gauge.window.truncated}
-          sub={`${count(gauge.sources.length)} sources, ${count(
+          sub={`${counted(gauge.sources.length, "source")}, ${counted(
             gauge.domains.length,
-          )} domains`}
+            "domain",
+          )}`}
         />
         <GaugeCard
           label="Buckets holding claims"
@@ -402,7 +403,7 @@ function StandingGauge({ gauge }: { gauge: StandingDisagreements }) {
         label="Live contradictions in this window"
         value={gauge.claims}
         floor={gauge.window.truncated}
-        sub={`${count(gauge.bySource.length)} sources holding one`}
+        sub={`from ${counted(gauge.bySource.length, "source")}`}
       />
       <TrendTable<StandingDisagreements["bySource"][number]>
         label="Standing disagreements by source"

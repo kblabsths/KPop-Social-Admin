@@ -210,10 +210,13 @@ function textOf(markup: string): string {
  * The sentence's wording is the designer's and is not pinned — only that it
  * states an accounting at all, and that its arithmetic matches what is
  * rendered beside it (admin-window/BUG-0021). Thousands separators are the
- * app's number formatting, not part of the figure.
+ * app's number formatting, not part of the figure, and the noun agrees with
+ * the total it follows — an item carrying one id says "1 evidence id"
+ * (admin-window/BUG-0046), which this reads as readily as the plural. Only
+ * the two figures are the assertion.
  */
 function accountingIn(markup: string): [number, number] {
-  const match = textOf(markup).match(/([\d,]+) of ([\d,]+) evidence ids resolved/);
+  const match = textOf(markup).match(/([\d,]+) of ([\d,]+) evidence ids? resolved/);
   expect(match, "the page accounts for the evidence ids it looked at").not.toBeNull();
   const [, resolved, total] = match as RegExpMatchArray;
   return [Number(resolved.replace(/,/g, "")), Number(total.replace(/,/g, ""))];

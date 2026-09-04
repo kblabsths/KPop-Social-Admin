@@ -10,7 +10,7 @@ import {
 import { Empty, ErrorLine, NotProvisioned, Page, Section } from "@/components/ui";
 import { listReviewItems } from "@/lib/db/review-items";
 import type { DbResult } from "@/lib/db/result";
-import { absoluteUtc, count, duration, relativeAge } from "@/lib/format";
+import { absoluteUtc, count, counted, duration, relativeAge } from "@/lib/format";
 import {
   readQueueHealth,
   type QueueHealth,
@@ -293,9 +293,10 @@ function QueueGauge({
           label={`${stats.queue} folded`}
           value={stats.folds.foldedItems}
           floor={window.truncated}
-          sub={`of ${count(stats.folds.items)} items read here, ${count(
+          sub={`of ${counted(stats.folds.items, "item")} read here, ${counted(
             stats.folds.folds,
-          )} folds in all`}
+            "fold",
+          )} in all`}
         />
       </div>
       <Distribution

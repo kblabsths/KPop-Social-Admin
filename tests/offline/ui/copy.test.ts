@@ -8,6 +8,7 @@ import {
   repoRoot,
   sourceFiles,
 } from "../source-tree";
+import { disagreeingCounts } from "./markup";
 
 /**
  * The inter-element-space rule, asserted over the WHOLE source tree rather
@@ -127,3 +128,49 @@ function offenders(base?: string): string[] {
     implicitInterElementSpaces(file, base).map((hit) => `${file} ${hit}`),
   );
 }
+
+/**
+ * The count-agreement guard, proved on both sides before three page tests lean
+ * on it (campaign admin-window/BUG-0046).
+ *
+ * `disagreeingCounts` is a scanner, and a scanner that has never seen a
+ * spelling it must flag passes vacuously. Every string below is either one the
+ * walk actually read off the running app, or one the app renders correctly and
+ * a blunter pattern would call a defect.
+ */
+describe("the count-with-its-noun guard", () => {
+  it("flags the three strings the walk read off the running app", () => {
+    expect(disagreeingCounts("<p>1 sources holding one</p>")).toEqual(["1 sources"]);
+    expect(disagreeingCounts("<p>of 1 items read here, 700 folds in all</p>")).toEqual([
+      "1 items",
+    ]);
+    expect(disagreeingCounts("<p>1 sources, 2 domains</p>")).toEqual(["1 sources"]);
+  });
+
+  it("flags a count and its noun that a gauge card splits across two elements", () => {
+    // The shape that matters: a card's figure and its sub-line are siblings,
+    // so the text either side of the boundary must not be read as one number.
+    expect(
+      disagreeingCounts('<div><span>1</span><span>1 sources holding one</span></div>'),
+    ).toEqual(["1 sources"]);
+    expect(disagreeingCounts("<span>1</span> rows in this window")).toEqual(["1 rows"]);
+  });
+
+  it("leaves alone the counts that are already correct", () => {
+    for (const correct of [
+      "<p>1 source, 2 domains</p>",
+      "<p>0 sources holding a claim</p>",
+      "<p>21,001 sources</p>",
+      "<p>a window of at most 1,000 rows</p>",
+      "<p>0.1 rows per cycle</p>",
+      // A figure and a heading in two cells are not a phrase, and the app
+      // renders whole tables of them.
+      "<tr><td>1</td><td>sources</td></tr>",
+      // Words ending in -s that no plural rule applies to.
+      "<p>1 status, unchanged</p>",
+      "<p>1 is the floor</p>",
+    ]) {
+      expect(disagreeingCounts(correct), correct).toEqual([]);
+    }
+  });
+});

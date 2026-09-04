@@ -6,7 +6,12 @@ import {
   implicitInterElementSpaces,
   implicitInterElementSpacesIn,
 } from "../source-tree";
-import { factoryTicketIds, render, runTogetherWords } from "../ui/markup";
+import {
+  disagreeingCounts,
+  factoryTicketIds,
+  render,
+  runTogetherWords,
+} from "../ui/markup";
 import {
   PENDING_CLAIMS,
   PENDING_OBSERVATIONS,
@@ -22,7 +27,7 @@ import {
   rerejects,
   runsResponseFor,
 } from "./population";
-import { oneEach, surfaceHooks } from "../../live/parity";
+import { oneEach, readNumber, surfaceHooks } from "../../live/parity";
 import { observationRow } from "../../fixtures/rows";
 import {
   permissionDenied,
@@ -972,6 +977,38 @@ describe("the copy the operator actually reads", () => {
       "</span>dial",
     ]);
     expect(runTogetherWords(await renderSources(healthyScript()))).toEqual([]);
+  });
+
+  it("agrees every count with its noun when the window holds exactly one source", async () => {
+    // The staging shape that produced "1 sources holding one" on the walk
+    // (admin-window/BUG-0046): the awaiting-row window holding claims from a
+    // single source. The healthy population has two, so the defect could not
+    // render — this narrowing is what makes the guard below non-vacuous.
+    expect(disagreeingCounts("<p>1 sources holding one</p>")).toEqual(["1 sources"]);
+
+    const markup = await renderSources(
+      healthyScript({
+        [T.observations]: [
+          {
+            data: PENDING_OBSERVATIONS.filter(
+              (row) => row.source_id === SOURCE.bandsintown,
+            ),
+          },
+          { data: [...REJECTIONS] },
+        ],
+        [T.pendingClaims]: {
+          data: PENDING_CLAIMS.filter(
+            (claim) => claim.source_id === SOURCE.bandsintown,
+          ),
+        },
+      }),
+    );
+
+    // The fixture really is singular, so the assertion below has something to
+    // catch: one source, holding one awaiting-row claim.
+    expect(readNumber(markup, "Sources with awaiting-row claims")).toBe(1);
+    expect(readNumber(markup, "Awaiting-row claims in this window")).toBe(1);
+    expect(disagreeingCounts(markup)).toEqual([]);
   });
   it("writes every inter-element space as an explicit expression, which no transform may drop", () => {
     // The rendered assertions above CANNOT fail on this defect: vitest's JSX
