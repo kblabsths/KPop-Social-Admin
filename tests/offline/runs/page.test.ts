@@ -6,6 +6,7 @@ import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
 import { readNumber } from "../../live/parity";
 import { APPLIES, CYCLES, OBSERVED } from "../cycles/population";
+import { RUN_CELL_HOOK, columnsFromHooks } from "../../fixtures/run-hooks";
 import { runRow, type RunRow as RunFixture } from "../../fixtures/rows";
 import { render } from "../ui/markup";
 import {
@@ -93,6 +94,41 @@ async function renderCycles(
   return render(await CyclesPage({ searchParams: Promise.resolve(params) }));
 }
 
+/**
+ * The **Dashboard**, rendered against the same stubbed client — the app's other
+ * rendering of the `runs` row (admin-window/BUG-0064).
+ *
+ * It is here, in the file that owns this table's vocabulary, because the claim
+ * under test spans two pages: whatever either surface calls a column, they must
+ * call it the same thing. It reaches the database through the same
+ * `getDbClient()` seam already mocked above, so no second mock is needed and
+ * the Dashboard's own suite keeps owning everything else about that page.
+ *
+ * The run carries an outcome and an error line so both hooked cells render;
+ * the counts the Dashboard does not show are the fixture's own.
+ */
+const { default: DashboardPage } = await import("@/app/page");
+
+/** What the Dashboard's runs table calls itself. */
+const DASHBOARD_RUNS_TABLE = "runs";
+
+async function renderDashboard(): Promise<string> {
+  readWith.client = stubClient({
+    [T.reviewItems]: { data: [] },
+    [T.resolutionRuns]: { data: [] },
+    [T.runs]: {
+      data: [
+        runRow({
+          run_id: "0192f0c2-0000-7000-8000-0000000000db",
+          outcome: "failed",
+          error_summary: "ticketmaster: 429 rate limited after 3 retries",
+        }),
+      ],
+    },
+  }).asSupabaseClient();
+  return render(await DashboardPage());
+}
+
 /* ── reading the markup, structurally ────────────────────────────────────── */
 
 const RUNS_TABLE = "Adapter runs";
@@ -152,6 +188,35 @@ function headers(markup: string, label: string): string[] {
     .map((element) => $(element).text().replace(/\s+/g, " ").trim());
 }
 
+/**
+ * The columns one rendered run row really has, in rendered order, named by the
+ * machine hook each cell carries — never by its header
+ * (`tests/fixtures/run-hooks.ts`, shared with the live oracle).
+ */
+function columnsOf(markup: string, runId: string): (string | null)[] {
+  const $ = cheerio.load(markup);
+  return columnsFromHooks(
+    $(`[data-run="${runId}"]`).closest("tr").children("td").toArray(),
+    (cell, selector) => $(cell as never).find(selector).length,
+  );
+}
+
+/**
+ * The header sitting above the cell that carries a given machine hook.
+ *
+ * The seam that lets two surfaces be compared as two INDEPENDENTLY read
+ * strings: the Dashboard and this page render the same `runs` columns through
+ * different components, and the question is whether they call them the same
+ * thing (admin-window/BUG-0064). Nothing here pins a word.
+ */
+function headerAbove(markup: string, table: string, hook: string): string {
+  const $ = cheerio.load(markup);
+  const cell = $(`table[aria-label="${table}"] ${hook}`).first().closest("td");
+  const siblings = cell.parent().children("td").toArray();
+  const index = siblings.findIndex((element) => element === cell[0]);
+  return index === -1 ? "" : (headers(markup, table)[index] ?? "");
+}
+
 /** The objects a not-provisioned card names. */
 function notProvisioned(markup: string): string[] {
   const $ = cheerio.load(markup);
@@ -174,15 +239,24 @@ describe("the columns the adapter-runs half shows", () => {
   it("renders exactly the nine ruled columns, in the ruled order", async () => {
     const markup = await renderCycles(healthyScript());
     expect(runsState(markup)).toBe("ok");
-    // The header is the ruled set itself: nine columns, each under the
-    // machine name the migration and the ruling both spell.
-    expect(headers(markup, RUNS_TABLE)).toEqual([...RUN_COLUMNS]);
+    // The ruled set and the ruled order, read off the CELLS' machine hooks —
+    // the columns the row really has, whatever the header row calls them
+    // (admin-window/BUG-0064). `FAILED` is the fixture that populates all
+    // nine, so every hook is really on screen and nothing is asserted
+    // vacuously.
+    expect(columnsOf(markup, FAILED.run_id)).toEqual([...RUN_COLUMNS]);
+    // And the header row is that same width: one label per ruled column.
+    expect(headers(markup, RUNS_TABLE)).toHaveLength(RUN_COLUMNS.length);
   });
 
   it("shows no tenth column — not the primary key, not one of the other thirteen", async () => {
     const markup = await renderCycles(healthyScript());
-    const header = headers(markup, RUNS_TABLE);
+    // Read off the hooks, not off the headers: the headers are the app's
+    // words, so asking them whether they contain `checkpoint_before` would
+    // pass whatever the table rendered (LESSONS 3 — no vacuous guard).
+    const header = columnsOf(markup, FAILED.run_id);
     expect(header).toHaveLength(9);
+    expect(headers(markup, RUNS_TABLE)).toHaveLength(9);
     // `run_id` is the row key and the order's tiebreak, never a column.
     expect(header).not.toContain("run_id");
     for (const outOfScope of [
@@ -446,8 +520,13 @@ describe("a database without the adapter framework's runs", () => {
     // The database's own account reaches the page, not a sentence of ours.
     expect(markup).toContain("permission denied");
     // The header stays put: an error is a line inside the surface, not a card
-    // replacing it.
-    expect(headers(markup, RUNS_TABLE)).toEqual([...RUN_COLUMNS]);
+    // replacing it. No row rendered, so there is no hook to read a column off
+    // — what this pins is the SHAPE the failed read still draws: all nine
+    // columns headed, and the failure reported across them rather than in one.
+    expect(headers(markup, RUNS_TABLE)).toHaveLength(RUN_COLUMNS.length);
+    expect(
+      cheerio.load(markup)(`table[aria-label="${RUNS_TABLE}"] tbody td`).attr("colspan"),
+    ).toBe(String(RUN_COLUMNS.length));
     expect(renderedCycles(markup)).toHaveLength(CYCLES.length);
   });
 
@@ -588,24 +667,85 @@ describe("a run carrying values this app has never heard of", () => {
 describe("what the adapter-runs half calls its columns", () => {
   /**
    * The Cycles table directly above this one stopped heading its columns with
-   * raw database names (admin-window/BUG-0044); this half still does, so one
-   * page renders two vocabularies and the SAME column (`error_summary`) is
-   * headed two different ways within one screen. The Dashboard already heads
-   * these columns in the app's words (`src/app/page.tsx` RUN_COLUMNS).
+   * raw database names (admin-window/BUG-0044) and this half did too
+   * (admin-window/BUG-0064), so the page speaks one vocabulary: the SAME
+   * column (`error_summary`) is no longer headed two different ways within one
+   * screen, and no longer reads ERROR on `/` and ERROR_SUMMARY here.
    *
-   * A property, not a copy of nine strings: no header of a rendered table is a
-   * raw column name. Which words replace them is the designer's call, and this
-   * test does not pin any of them.
+   * Properties, never a copy of nine strings: no header is a raw column name,
+   * and the two surfaces that render the same column agree on what it is
+   * called. Which words those are is the designer's call, and nothing below
+   * pins one.
    */
-  // xfail, strict (admin-window/BUG-0064): `it.fails` PASSES only while the
-  // assertion below fails. The day the runs headers stop being raw column
-  // names this line turns red and sends the reader to the ticket — it never
-  // rots into a silently-green test.
-  it.fails("heads no column with a raw database column name", async () => {
+
+  /**
+   * What is wrong with a header of the runs table, or `null` when nothing is.
+   *
+   * A predicate rather than an inline regex so the test can prove it
+   * DISCRIMINATES — handed a spelling it must flag as well as the headers it
+   * must clear (LESSONS 3), which is what stops it from rotting into a check
+   * that passes on an empty header row.
+   */
+  function headerFault(header: string): string | null {
+    if (header.trim() === "") return "no header at all";
+    if (/_/.test(header)) return "raw column name";
+    return null;
+  }
+
+  it("heads no column with a raw database column name", async () => {
     const markup = await renderCycles(healthyScript());
     const set = headers(markup, RUNS_TABLE);
-    // Non-vacuous: the table really rendered its nine headers.
+    // Non-vacuous: one header per column the row really rendered.
+    expect(set).toHaveLength(columnsOf(markup, FAILED.run_id).length);
     expect(set).toHaveLength(RUN_COLUMNS.length);
-    expect(set.filter((header) => /_/.test(header))).toEqual([]);
+
+    // The predicate discriminates: the spellings this table used to render are
+    // exactly the ones it flags, and the words it renders now are cleared.
+    expect(headerFault("started_at")).toBe("raw column name");
+    expect(headerFault("error_summary")).toBe("raw column name");
+    expect(headerFault("")).toBe("no header at all");
+    expect(headerFault("started")).toBeNull();
+
+    for (const header of set) {
+      expect(headerFault(header), header).toBeNull();
+    }
+
+    // The machine names did not go anywhere — they are on the CELLS, which is
+    // what every offline and live reader of this table selects by.
+    expect(columnsOf(markup, FAILED.run_id)).toEqual([...RUN_COLUMNS]);
+  });
+
+  it("calls the columns it shares with the Dashboard what the Dashboard calls them", async () => {
+    // Two surfaces, two renders, two independently read header rows: the
+    // Dashboard's runs table (`src/app/page.tsx`) shows four of these nine
+    // columns and already heads them in the app's words. `runs.started_at`
+    // reading STARTED on `/` and STARTED_AT here is what filed this ticket.
+    const here = headers(await renderCycles(healthyScript()), RUNS_TABLE);
+    const dashboard = headers(await renderDashboard(), DASHBOARD_RUNS_TABLE);
+
+    // Non-vacuous: the other surface really rendered its four headers.
+    expect(dashboard).toHaveLength(4);
+    expect(dashboard.filter((header) => header.trim() === "")).toEqual([]);
+
+    // Every word the Dashboard heads a shared column with is a word this
+    // table heads a column with. No literal is named on either side.
+    expect(here).toEqual(expect.arrayContaining(dashboard));
+
+    // And the pairing holds where both surfaces mark the cell: the column an
+    // operator reads as one thing on `/` is that same thing here.
+    for (const [mine, theirs] of [
+      [RUN_CELL_HOOK.outcome, "[data-outcome]"],
+      [RUN_CELL_HOOK.error_summary, "[data-error-line]"],
+    ]) {
+      const label = headerAbove(
+        await renderCycles(healthyScript()),
+        RUNS_TABLE,
+        mine,
+      );
+      expect(label, mine).not.toBe("");
+      expect(headerAbove(await renderDashboard(), DASHBOARD_RUNS_TABLE, theirs)).toBe(
+        label,
+      );
+    }
   });
 });

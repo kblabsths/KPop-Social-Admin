@@ -988,17 +988,65 @@ function runCells(
 const RIGHT_ALIGNED: ReadonlySet<string> = new Set(RUN_COUNTS);
 
 /**
+ * What this table calls each of the nine ruled columns — the app's own words
+ * (campaign admin-window/BUG-0064).
+ *
+ * A table header is a LABEL, and a label is the app speaking: `micro` is a
+ * SANS eyebrow (LOOK_AND_FEEL, Type), while §11's "verbatim in mono" governs
+ * machine identifiers rendered as VALUES. `started_at` uppercased into a sans
+ * eyebrow is neither, and it made this page speak two vocabularies: the cycles
+ * table a few thousand pixels above headed the very same `error_summary`
+ * column ERROR while this one headed it ERROR_SUMMARY.
+ *
+ * Ben's ruling of 2026-09-02 settled WHICH nine columns this half shows — its
+ * one use of "verbatim" qualifies the error VALUE, never a header — so nothing
+ * ruled is overturned by naming them. `RUN_COLUMNS` is untouched: it is still
+ * the select list, the ruled set and the ruled order, and it is still what
+ * this map is keyed by.
+ *
+ * The words come from the app, not from this file's imagination. The four
+ * columns the Dashboard's runs table already shows are headed with the words
+ * it already uses for them (`src/app/page.tsx` — source, started, outcome,
+ * error), so `runs.started_at` cannot read STARTED on `/` and STARTED_AT here;
+ * `ended_at` takes the tense of its neighbour, and the four the Dashboard does
+ * not show are the plain sentence-case reading of the same nouns the page's
+ * own prose uses for them.
+ *
+ * The machine names have not gone anywhere — every cell still carries its own
+ * column name on a `data-run-*` hook, which is what the offline and live tests
+ * select by. The row's identity is the operator's; the hooks are the
+ * machine's.
+ *
+ * A `Record` over `RunColumn` rather than a lookup with a fallback: a column
+ * renamed in the scraper's migration stops COMPILING here, instead of quietly
+ * falling back to its raw name in the header — the exact regression this
+ * ticket exists to prevent (the same device as `CYCLE_COUNTER_LABELS` above,
+ * admin-window/BUG-0044).
+ */
+const RUN_COLUMN_LABELS: Record<RunColumn, string> = {
+  source: "source",
+  started_at: "started",
+  ended_at: "ended",
+  outcome: "outcome",
+  error_summary: "error",
+  records_parsed: "records parsed",
+  claims_emitted: "claims emitted",
+  records_unlinked: "records unlinked",
+  failure_class: "failure class",
+};
+
+/**
  * The nine columns, in the order the ruling names them.
  *
- * The header carries each column's own name, verbatim — the machine
- * identifier the migration and the ruling both spell, never a prettified one:
- * an operator reading this table is reading the `runs` row.
+ * The KEY stays each column's own machine name — it is the react key and what
+ * the cells' hooks spell — and the header is what the operator reads
+ * (`RUN_COLUMN_LABELS` above).
  */
 function runColumns(now: string, role: RunRole): Column<RunRow>[] {
   const cells = runCells(now, role);
   return RUN_COLUMNS.map((column) => ({
     key: column,
-    label: column,
+    label: RUN_COLUMN_LABELS[column],
     align: RIGHT_ALIGNED.has(column) ? ("right" as const) : undefined,
     cell: cells[column],
   }));
