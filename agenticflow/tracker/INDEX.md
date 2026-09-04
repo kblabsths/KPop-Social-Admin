@@ -1,7 +1,6 @@
-# Tracker index (regenerated 2026-09-04T01:28:17Z — do not edit)
+# Tracker index (regenerated 2026-09-04T01:34:46Z — do not edit)
 
 ## open
-- BUG-0063 [P2][bug][M1] Claims: the window line renders a count it never took — data-window-held="0" on a failed read  (scope:src/app/claims/page.tsx,tests/offline/claims/page.test.ts from:qa:BUG-0041)
 - BUG-0064 [P2][bug][M1] Adapter runs table still heads its columns with raw database names, so /cycles now speaks two vocabularies  (scope:src/app/cycles/page.tsx,tests/offline/runs/page.test.ts from:qa:BUG-0044)
 - BUG-0065 [P2][bug][M1] Record page: a mistyped id renders the failed-read state, whose only advice is to reload  (scope:src/app/records/[table]/[id]/page.tsx,src/lib/db/records.ts,tests/offline/records/page.test.ts,tests/fixtures/stub-client.ts from:qa:BUG-0052)
 - DEBT-0002 [P2][debt][M1] Five live parity oracles still address their surfaces by POSITION (section:nth-of-type) — the class BUG-0056 fixed on one page only  (scope:tests/live/dashboard.live.test.ts,tests/live/sources.live.test.ts,tests/live/claims.live.test.ts,tests/live/browse.live.test.ts,tests/live/review-item.live.test.ts,src/app/page.tsx,src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/browse/page.tsx,src/app/queues/[reviewItemId]/page.tsx from:BUG-0056)
@@ -18,6 +17,9 @@
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:1) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
 ## built
+- BUG-0063 [P2][bug][M1] Claims: the window line renders a count it never took — data-window-held="0" on a failed read  (scope:src/app/claims/page.tsx,tests/offline/claims/page.test.ts @builder-88 from:qa:BUG-0041)
+
+## qa
 - BUG-0060 [P2][bug][M1] Edit cell shows no way to save: no control, no hint, Enter is undocumented, and blur silently discards what was typed  (scope:src/components/records/field-editor.tsx,src/app/records/[table]/[id]/page.tsx,tests/offline/records/page.test.ts,tests/offline/records/submit.test.ts @builder-87 from:M1-endgame-verifier)
 
-Totals — built:1, done:100, open:15. Archived: 0.
+Totals — built:1, done:100, open:14, qa:1. Archived: 0.
