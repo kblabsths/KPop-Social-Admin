@@ -14,6 +14,22 @@ import { cx } from "./cx";
  *
  * Sorting is a link, not a handler: state lives in the URL, so a sorted view
  * is bookmarkable and survives the back button (quality bar 11).
+ *
+ * **A row the URL asked for is marked** (`marked`, campaign
+ * admin-window/BUG-0054): page fill plus a 1px accent rule down its left edge
+ * — accent is the palette's selection job, and both are existing tokens, so
+ * the mark adds no colour, no shadow, no motion, and no height. Rows the URL
+ * did not ask for render exactly as they did before, hover included.
+ *
+ * Why the fill is `page` and not `chrome-inverse` (the active nav item's
+ * device, which is what a marked row would otherwise borrow): a table row
+ * carries more than primary text — a red `error_summary`, a secondary
+ * "still running", a badge — and quality bar 12 measures every one of those
+ * against the fill behind it. Measured against this palette's own tokens,
+ * dark theme on chrome-inverse gives broken 3.57:1, accent 3.69:1 and
+ * secondary 3.96:1, all under the 4.5:1 bar, while `page` is one of the three
+ * fills `tests/offline/ui/contrast.test.ts` already asserts every text job
+ * against. So the marked row changes no string's readability.
  */
 export type SortDirection = "asc" | "desc";
 
@@ -63,12 +79,20 @@ export function DataTable<T>({
   rowKey,
   label,
   placeholder,
+  marked,
 }: {
   columns: Column<T>[];
   rows: T[];
   rowKey: (row: T) => string;
   /** Accessible name for the table. */
   label?: string;
+  /**
+   * Which row the URL asked for, if any. The row it answers `true` for is
+   * drawn as the marked row and carries `data-row-marked`; the accessible
+   * marking of what "current" means stays with the caller's own cell, which
+   * is where it already is (campaign admin-window/BUG-0054).
+   */
+  marked?: (row: T) => boolean;
   /**
    * A state *line* — `Loading` or `ErrorLine` — shown in the body while there
    * are no rows, so the header stays put. A surface that simply holds nothing
@@ -125,7 +149,16 @@ export function DataTable<T>({
               rows.map((row) => (
                 <tr
                   key={rowKey(row)}
-                  className="border-t border-hairline transition-colors hover:bg-chrome"
+                  data-row-marked={marked?.(row) === true ? "true" : undefined}
+                  className={
+                    marked?.(row) === true
+                      ? // The marked row holds its fill through hover too: what
+                        // it says about itself must not change under the
+                        // pointer, and hover is the one thing this table
+                        // already says with a fill.
+                        "border-t border-t-hairline border-l border-l-accent bg-page transition-colors"
+                      : "border-t border-hairline transition-colors hover:bg-chrome"
+                  }
                 >
                   {columns.map((column) => {
                     const body = column.cell(row);

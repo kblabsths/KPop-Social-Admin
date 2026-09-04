@@ -166,6 +166,10 @@ function cycleRow(markup: string, runId: string) {
     state: marker.attr("data-cycle-state"),
     outcome: marker.attr("data-cycle-outcome"),
     current: marker.attr("aria-current"),
+    marked: row.attr("data-row-marked"),
+    /** The row's own rendering, compared only against the OTHER rows' — never
+     *  against a literal, so restyling the mark does not redden this file. */
+    rendering: row.attr("class"),
     anchor: marker.attr("id"),
     startedAt: row.find("[data-cycle-started]").attr("data-cycle-started"),
     duration: row.find("[data-cycle-duration]").text().trim(),
@@ -365,6 +369,48 @@ function tableRows(markup: string, label: string): string[][] {
     );
 }
 
+/** Every row rendering the named table emitted, in order. */
+function rowRenderings(markup: string, label: string): (string | undefined)[] {
+  const $ = cheerio.load(markup);
+  return $(`table[aria-label="${label}"] tbody tr`)
+    .toArray()
+    .map((element) => $(element).attr("class"));
+}
+
+/**
+ * The classes an element carries **at rest** — every variant-prefixed class
+ * (`hover:`, `focus:`) dropped, sorted, as one string.
+ *
+ * A link whose only difference from plain text is a `hover:` class is
+ * identical to plain text until the pointer arrives, which is the whole of
+ * admin-window/BUG-0054's second half. Comparing rest spellings to each other
+ * says that without pinning any spelling.
+ */
+function restSpelling(className: string | undefined): string {
+  return (className ?? "")
+    .split(/\s+/)
+    .filter((name) => name !== "" && !name.includes(":"))
+    .sort()
+    .join(" ");
+}
+
+/** The rest spelling of every in-page anchor the markup emitted. */
+function anchorRestSpellings(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $('a[href^="#"]')
+    .toArray()
+    .map((element) => restSpelling($(element).attr("class")));
+}
+
+/** The rest spelling of every mono value the page prints as plain text. */
+function plainValueRestSpellings(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("span.type-data")
+    .toArray()
+    .filter((element) => $(element).parents("a").length === 0)
+    .map((element) => restSpelling($(element).attr("class")));
+}
+
 const CYCLES_TABLE = "Cycles";
 const OUTCOMES = "Cycle outcomes";
 const DURATIONS = "Cycle duration";
@@ -539,6 +585,79 @@ describe("the cycles the resolver filed", () => {
     expect($absent("[data-cycle][aria-current]").length).toBe(0);
     // The id is named verbatim, so the operator can see which cycle was meant.
     expect(absent).toContain("0192ffff-dead");
+  });
+
+  it("draws the mark the sentence claims, on that row and no other [admin-window/BUG-0054]", async () => {
+    // The defect: the asked-for row carried `aria-current` and NOTHING a
+    // reader could see, so "Cycle <id> is marked in the table below" was a
+    // claim the screen did not keep, and the walk scanned 69 uuids by eye.
+    const marked = await renderCycles(healthyScript(), { cycle: FAILED.run_id });
+    const $ = cheerio.load(marked);
+
+    // One row is marked, and it is the row the sentence names.
+    const markedRows = $(`table[aria-label="${CYCLES_TABLE}"] tbody tr[data-row-marked]`);
+    expect(markedRows.length).toBe(1);
+    expect(cycleRow(marked, FAILED.run_id).marked).toBe("true");
+    expect(markedRows.find(`[data-cycle="${FAILED.run_id}"]`).length).toBe(1);
+
+    // ...and it LOOKS different from every other row, without hovering: its
+    // rendering is one no other row shares, and the others still share one.
+    const renderings = rowRenderings(marked, CYCLES_TABLE);
+    expect(renderings.length).toBeGreaterThan(1);
+    const mine = cycleRow(marked, FAILED.run_id).rendering;
+    expect(renderings.filter((rendering) => rendering === mine)).toHaveLength(1);
+    expect(new Set(renderings.filter((rendering) => rendering !== mine)).size).toBe(1);
+
+    // The id the sentence names is drawn differently from every other id in
+    // the window too, so the eye lands on the value it was told to look for.
+    const ids = $("[data-cycle]").toArray().map((element) => $(element).attr("class"));
+    const mineId = $(`[data-cycle="${FAILED.run_id}"]`).attr("class");
+    expect(ids.filter((rendering) => rendering === mineId)).toHaveLength(1);
+
+    // The mark is a rendering and nothing else: same rows, same cells, same
+    // words as the page with no facet — no height, density or content moved.
+    const plain = await renderCycles(healthyScript());
+    expect(renderedCycles(marked)).toEqual(renderedCycles(plain));
+    expect(cycleRow(marked, FAILED.run_id).cells).toEqual(
+      cycleRow(plain, FAILED.run_id).cells,
+    );
+  });
+
+  it("marks no row, and renders every row alike, with no ?cycle= [admin-window/BUG-0054]", async () => {
+    const plain = await renderCycles(healthyScript());
+    const $ = cheerio.load(plain);
+    expect($("[data-row-marked]").length).toBe(0);
+    expect($("[data-cycle][aria-current]").length).toBe(0);
+    expect($('[data-cycle-asked]').length).toBe(0);
+    const renderings = rowRenderings(plain, CYCLES_TABLE);
+    expect(renderings.length).toBe(renderedCycles(plain).length);
+    expect(new Set(renderings).size).toBe(1);
+  });
+
+  it("renders an in-page link as a link at rest, not only on hover [admin-window/BUG-0054]", async () => {
+    // The sentence's id is the one-click route to the row. It used to render
+    // as `text-ink` with an accent only on `hover:`, so at rest it was
+    // spelled exactly like the mono ids this page prints as plain text and
+    // nothing said it could be clicked.
+    const markup = await renderCycles(healthyScript(), { cycle: FAILED.run_id });
+    const anchors = anchorRestSpellings(markup);
+    expect(anchors.length).toBeGreaterThan(1);
+
+    const plainValues = new Set(plainValueRestSpellings(markup));
+    expect(plainValues.size).toBeGreaterThan(0);
+    for (const anchor of anchors) {
+      expect(plainValues.has(anchor), `a link at rest is spelled "${anchor}", and so is a plain value`).toBe(false);
+    }
+
+    // And the page spells link ONE way: every in-page anchor shares its rest
+    // spelling once the type step it inherits from its context is set aside.
+    const withoutTypeStep = anchors.map((spelling) =>
+      spelling
+        .split(" ")
+        .filter((name) => !name.startsWith("type-"))
+        .join(" "),
+    );
+    expect(new Set(withoutTypeStep).size).toBe(1);
   });
 
   it("takes the first value when the URL names a facet twice", async () => {

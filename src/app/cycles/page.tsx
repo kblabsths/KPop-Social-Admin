@@ -198,6 +198,23 @@ function anchorFor(runId: string): string {
   return `cycle-${runId}`;
 }
 
+/**
+ * How every anchor on this page renders **at rest** (campaign
+ * admin-window/BUG-0054).
+ *
+ * These links were `text-ink hover:text-accent`, which made a linked cycle id
+ * identical to the dozens of mono ids this page prints as plain text: the one
+ * thing on screen that would have carried the reader to the row they asked for
+ * announced itself only under the pointer, and the M1 user-sim walk scanned
+ * 36-character uuids by eye instead of finding it. Accent is the palette's
+ * selection-and-interaction job (5.54:1 on surface, 6.36:1 in dark) and the
+ * underline is what `/` and the review header already spell a prose link with,
+ * so this is the app's existing link, not a new one — and the page now spells
+ * link one way, for the cycle id, the newest-error id and the prose links into
+ * the runs window alike.
+ */
+const IN_PAGE_LINK = "text-accent underline";
+
 /* ── the states every surface here can be in ─────────────────────────────── */
 
 /**
@@ -363,9 +380,16 @@ function cycleColumns(
           now,
           cadenceSeconds: RESOLVER_CADENCE_SECONDS,
         });
+        const asked = row.run_id === askedFor;
         return (
           <span
             id={anchorFor(row.run_id)}
+            // The asked-for id in the palette's selection colour, so the value
+            // the sentence above names is the value that catches the eye in a
+            // window of up to 200 mono ids (admin-window/BUG-0054). Accent on
+            // this row's fill measures 5.04:1 light and 7.21:1 dark; it is not
+            // underlined, which is what this page spells a link with.
+            className={asked ? "text-accent" : undefined}
             data-cycle={row.run_id}
             // What this row IS, in one attribute: the four states of a cycle
             // row, decided once in `lib/db/cycles.ts`.
@@ -373,7 +397,7 @@ function cycleColumns(
             // The producer's own word, where it wrote one — never narrowed to
             // the check constraint's three spellings.
             data-cycle-outcome={state.kind === "outcome" ? state.outcome : undefined}
-            aria-current={row.run_id === askedFor ? "true" : undefined}
+            aria-current={asked ? "true" : undefined}
           >
             {row.run_id}
           </span>
@@ -495,7 +519,7 @@ function AskedCycle({
   return state.kind === "found" ? (
     <p data-cycle-asked={askedFor} data-cycle-found="true" className="type-body text-ink-secondary">
       Cycle{" "}
-      <a href={`#${anchorFor(askedFor)}`} className="type-data text-ink hover:text-accent">
+      <a href={`#${anchorFor(askedFor)}`} className={`type-data ${IN_PAGE_LINK}`}>
         {askedFor}
       </a>{" "}
       is marked in the table below.
@@ -643,7 +667,7 @@ function CycleHealthSection({ health }: { health: CycleHealth }) {
           Newest cycle carrying errors:{" "}
           <a
             href={`#${anchorFor(health.latestError.runId)}`}
-            className="type-data text-ink hover:text-accent"
+            className={`type-data ${IN_PAGE_LINK}`}
           >
             {health.latestError.runId}
           </a>
@@ -1079,9 +1103,6 @@ function AdapterRuns({
 
 /* ── the newest run, above the fold (admin-window/BUG-0040) ──────────────── */
 
-/** The prose link into the runs window, in the one style prose links use here. */
-const LEAD_LINK = "text-ink hover:text-accent";
-
 /**
  * The newest adapter run, rendered ABOVE the cycles window.
  *
@@ -1141,7 +1162,7 @@ function LatestRun({
               No newest run to show: the read named{" "}
               <span className="type-data text-ink">{runs.missing}</span>, and
               this database holds no such object —{" "}
-              <a href={`#${RUNS_ANCHOR}`} className={LEAD_LINK}>
+              <a href={`#${RUNS_ANCHOR}`} className={IN_PAGE_LINK}>
                 what creates it is below
               </a>
               .
@@ -1151,7 +1172,7 @@ function LatestRun({
               No newest run to show: the read of{" "}
               <span className="type-data text-ink">{runs.reading}</span>{" "}
               failed —{" "}
-              <a href={`#${RUNS_ANCHOR}`} className={LEAD_LINK}>
+              <a href={`#${RUNS_ANCHOR}`} className={IN_PAGE_LINK}>
                 what the database said is below
               </a>
               .
@@ -1160,7 +1181,7 @@ function LatestRun({
             <>
               No adapter has filed a run in this window, so there is no newest
               run to lead with —{" "}
-              <a href={`#${RUNS_ANCHOR}`} className={LEAD_LINK}>
+              <a href={`#${RUNS_ANCHOR}`} className={IN_PAGE_LINK}>
                 the runs window is below
               </a>
               .
@@ -1170,7 +1191,7 @@ function LatestRun({
               No run in this window carries the source name{" "}
               <span className="type-data text-ink">{source}</span>, so there is
               no newest run to lead with under it —{" "}
-              <a href={`#${RUNS_ANCHOR}`} className={LEAD_LINK}>
+              <a href={`#${RUNS_ANCHOR}`} className={IN_PAGE_LINK}>
                 the runs window is below
               </a>
               .
@@ -1193,7 +1214,7 @@ function LatestRun({
       </div>
       <p className="type-body text-ink-secondary">
         The first row of the{" "}
-        <a href={`#${RUNS_ANCHOR}`} className={LEAD_LINK}>
+        <a href={`#${RUNS_ANCHOR}`} className={IN_PAGE_LINK}>
           adapter-runs window below
         </a>
         , repeated here so the last thing that ran is on screen without
@@ -1291,6 +1312,14 @@ export default async function CyclesPage({
             columns={cycleColumns(now, askedFor)}
             rows={rows}
             rowKey={(row) => row.run_id}
+            // What "is marked in the table below" means on screen: the asked-for
+            // row is drawn as the marked row (admin-window/BUG-0054). The same
+            // predicate decides the row's `aria-current` in `cycleColumns`, so
+            // the drawn mark and the accessible one can never name different
+            // rows.
+            marked={
+              askedFor === undefined ? undefined : (row) => row.run_id === askedFor
+            }
             placeholder={
               cycles.kind === "error" ? <StateOf result={cycles} /> : undefined
             }
