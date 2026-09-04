@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-04T03:59:18Z — do not edit)
+# Tracker index (regenerated 2026-09-04T04:04:51Z — do not edit)
 
 ## open
 - BUG-0071 [P2][bug][patch] STACK 5 retires the groups/idols walk-write exception before walk_sandbox exists, leaving the M1 endgame walks no write surface at all  (scope:agenticflow/docs/vision/STACK.md,agenticflow/tracker/for-human/TASK-0034.md from:qa:TASK-0036)
@@ -16,7 +16,4 @@
 ## claimed
 - BUG-0048 [P3][bug][M1] Browse: the poster cell is a 24x24 thumbnail that navigates out of the app to the CDN  (scope:src/components/browse/browse-table.tsx,tests/offline/browse/page.test.ts @builder-98 from:M1-endgame-designer-walk)
 
-## qa
-- BUG-0047 [P3][bug][M1] Browse: 'Starts (UTC)' states the zone in the header and again in all 50 cells, wrapping every row  (scope:src/lib/format.ts,src/components/browse/browse-table.tsx,tests/offline/format.test.ts,tests/offline/browse/page.test.ts @builder-97 from:M1-endgame-designer-walk)
-
-Totals — claimed:1, done:109, open:11, qa:1. Archived: 0.
+Totals — claimed:1, done:110, open:11. Archived: 0.
