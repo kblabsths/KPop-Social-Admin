@@ -221,8 +221,14 @@ const ENTRIES: readonly TableEditConfig[] = [
   // the record page draws the not-provisioned card, permanently and by design
   // (ARCHITECTURE.md §9.1, campaign admin-window/TASK-0034, TASK-0035).
   //
-  // It is in the map so a walker can reach `/records/walk_sandbox/walk-1`; it
-  // is in NOTHING else — no nav entry, no Browse row, no link — so an operator
+  // It is in the map so a walker can reach
+  // `/records/walk_sandbox/00000000-0000-4000-8000-000000000001`, the first of
+  // the three rows the staging fixture seeds — `sandbox_id` is a uuid like
+  // every other key in this map, because `isRecordId` (`lib/db/records.ts`)
+  // gates every record page before any read: a key it refuses would draw the
+  // not-an-id card at this table's own address, leaving both the absent and
+  // the present rendering unreachable there (architect ruling, 2026-09-04,
+  // §9.1 item 9, from a measurement on TASK-0035). The entry is in NOTHING else — no nav entry, no Browse row, no link — so an operator
   // never trips over it. Its five editable columns are one per coercion the
   // write path can be asked for (text, nullable text, integer, boolean, date),
   // and `note` / `observed_on` are nullable so the em-dash absence-then-fill

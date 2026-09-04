@@ -58,11 +58,29 @@ vi.mock("@/lib/db/records", async (importActual) => {
 
 const { default: RecordPage } = await import("@/app/records/[table]/[id]/page");
 
+/**
+ * One well-formed uuid per mapped table — every loop over `EDITABLE_TABLES`
+ * takes its address from here, so a table entering the map without an id
+ * reaches the page with `undefined` and the loop reports it.
+ *
+ * `walk_sandbox` is keyed by a uuid like the rest (architect, 2026-09-04,
+ * ARCHITECTURE §9.1 item 9): `isRecordId` gates every record page BEFORE any
+ * read, so a non-uuid key would draw the not-an-id card at the sandbox's own
+ * address and neither state this entry owes would ever be reachable. Its value
+ * is the FIRST SEEDED row of the staging fixture, so the address the offline
+ * suite renders and the address a walker types are one string.
+ *
+ * That the unknown-id loop below also uses it is not a contradiction: the row's
+ * existence is decided by the scripted read (`missingRowScript` answers
+ * `data: null`), exactly as it is for the other four, whose ids stand for no
+ * row in any database either.
+ */
 const IDS: Record<string, string> = {
   groups: "01920000-0000-7000-8000-0000000000a1",
   idols: "01920000-0000-7000-8000-0000000000a2",
   events: "01920000-0000-7000-8000-0000000000a3",
   venues: "01920000-0000-7000-8000-0000000000a4",
+  walk_sandbox: "00000000-0000-4000-8000-000000000001",
 };
 
 /**
@@ -197,6 +215,26 @@ function controlCount(markup: string): number {
   const $ = cheerio.load(markup);
   return $("button, input, textarea, select, [contenteditable]").length;
 }
+
+/* ── the addresses every loop below renders at ────────────────────────────── */
+
+describe("the id fixture", () => {
+  it("carries a well-formed uuid for every table in the map", () => {
+    // Without this, a table entering `EDIT_CONFIG` without an `IDS` entry
+    // renders at `undefined` — which `isRecordId` refuses before any read, so
+    // the loops below would go on passing against the not-an-id card instead
+    // of against the record they mean to assert on (LESSONS 3: a loop that
+    // never saw the input it is about passes vacuously).
+    for (const table of EDITABLE_TABLES) {
+      expect(IDS[table], `${table} has no address in the fixture`).toBeTypeOf(
+        "string",
+      );
+      expect(IDS[table], table).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
+    }
+  });
+});
 
 /* ── the widget follows the map, table by table ───────────────────────────── */
 
@@ -591,6 +629,67 @@ describe("the states", () => {
     for (const table of EDITABLE_TABLES) {
       const markup = await renderRecord(table);
       expect([...markup.matchAll(/<h1[\s>]/g)].length, table).toBe(1);
+    }
+  });
+});
+
+/* ── the walk sandbox, the one table that is usually not there ────────────── */
+
+/**
+ * Campaign admin-window/TASK-0035. The sandbox is in the map and in nothing
+ * else, so `/records/walk_sandbox/<uuid>` is its whole surface — and it has to
+ * render honestly in BOTH the states it will be found in: absent (production,
+ * forever, and any unseeded staging project) and present (seeded staging).
+ */
+describe("the walk sandbox", () => {
+  const SANDBOX = "walk_sandbox";
+
+  it("renders the not-provisioned card naming it where the table is absent", async () => {
+    const markup = await renderRecord(SANDBOX, {
+      [SANDBOX]: { error: tableNotInSchemaCache(T.walkSandbox) },
+    });
+    const card = cheerio.load(markup)('[data-state="not_provisioned"]');
+    expect(card.length).toBe(1);
+    expect(card.text()).toContain(T.walkSandbox);
+    // Nothing to edit behind a table that is not there — and nothing threw.
+    expect(controlCount(markup)).toBe(0);
+    // The state is the DATABASE's answer, not a refusal decided from the
+    // address: the read was issued. This is the assertion that goes red if the
+    // sandbox is ever re-keyed to something `isRecordId` refuses, which was
+    // measured on this ticket (builder-93, 2026-09-04) to make the card
+    // unreachable at the sandbox's own address.
+    expect(tablesRead()).toContain(T.walkSandbox);
+  });
+
+  it("draws every mapped column, and the key without a control, where it is present", async () => {
+    const config = EDIT_CONFIG[SANDBOX];
+    const markup = await renderRecord(SANDBOX);
+    for (const column of [config.pk, ...config.editable]) {
+      expect(lineFor(markup, column).value, column).not.toBe("");
+    }
+    expect(lineFor(markup, config.pk).editable).toBe(false);
+    expect(markup).toContain(IDS[SANDBOX]);
+  });
+
+  it("leaves an unset nullable column as the absence, still editable", async () => {
+    // The em-dash absence-then-fill path the entry's nullable columns exist
+    // for: a walker finds the dash, types a value, and saves it.
+    const markup = await renderRecord(SANDBOX, {
+      [SANDBOX]: {
+        data: {
+          sandbox_id: IDS[SANDBOX],
+          label: "stored label",
+          tally: 3,
+          is_flagged: false,
+          note: null,
+          observed_on: null,
+        },
+      },
+    });
+    for (const column of ["note", "observed_on"]) {
+      const line = lineFor(markup, column);
+      expect(line.value, column).toContain(EM_DASH);
+      expect(line.editable, column).toBe(true);
     }
   });
 });
