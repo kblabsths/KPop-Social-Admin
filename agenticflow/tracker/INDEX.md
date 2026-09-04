@@ -1,6 +1,7 @@
-# Tracker index (regenerated 2026-09-04T04:17:50Z — do not edit)
+# Tracker index (regenerated 2026-09-04T04:20:49Z — do not edit)
 
 ## open
+- BUG-0072 [P2][bug][-] STACK 5's interim walk-write branch names no runnable residue sweep, and points at groups/idols columns that sweep cannot see  (scope:agenticflow/docs/vision/STACK.md from:BUG-0071)
 - BUG-0050 [P3][bug][M1] Phone (390px): the fixed 192px sidebar takes half the viewport and the content column collapses  (scope:src/components/shell/shell.tsx,tests/offline/shell/shell.test.ts from:M1-endgame-designer-walk)
 - BUG-0055 [P3][bug][M1] Cycles & runs names one state two ways on one screen: the rows say 'died', the health panel says 'unfinished'  (scope:src/app/cycles/page.tsx,src/lib/gauges/cycle-health.ts,tests/offline/cycles/page.test.ts,tests/offline/gauges/cycle-health.test.ts from:M1-endgame-user-sim)
 - BUG-0066 [P3][bug][M1] Edit cell: while the write is in flight the cell shows the new value and states no work, so 'being written' and 'written' differ only by 50% opacity  (scope:src/components/EditableCell.tsx,tests/offline/ui/editable-cell.test.ts from:qa:BUG-0060)
@@ -14,7 +15,4 @@
 ## claimed
 - BUG-0049 [P3][bug][M1] Micro labels uppercase machine identifiers: DATA_CONFLICT OPEN, ENTITY_LINK FOLDED, TICKETMASTER STUCK RECORDS  (scope:src/app/queues/page.tsx,src/app/sources/page.tsx,tests/offline/queues/page.test.ts,tests/offline/sources/page.test.ts @builder-100 from:M1-endgame-designer-walk)
 
-## built
-- BUG-0071 [P2][bug][patch] STACK 5 retires the groups/idols walk-write exception before walk_sandbox exists, leaving the M1 endgame walks no write surface at all  (scope:agenticflow/docs/vision/STACK.md,agenticflow/tracker/for-human/TASK-0034.md @builder-99 from:qa:TASK-0036)
-
-Totals — built:1, claimed:1, done:111, open:9. Archived: 0.
+Totals — claimed:1, done:112, open:10. Archived: 0.
