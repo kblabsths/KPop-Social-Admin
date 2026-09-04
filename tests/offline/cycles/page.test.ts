@@ -933,16 +933,16 @@ describe("a database without the resolver's tables", () => {
   });
 
   /**
-   * PINNED `it.fails` (strict) for admin-window/BUG-0067: `/cycles` renders
+   * Was a strict `it.fails` pin for admin-window/BUG-0067: `/cycles` rendered
    * its cycles window line in EVERY state, publishing `data-window="cycles"`,
    * `data-window-limit="200"` and `data-window-truncated="false"` over a table
    * it could not read. `/runs` (`AdapterRuns`, src/app/cycles/page.tsx) and
-   * `/claims` (admin-window/BUG-0063) both drop the line on a non-ok read;
-   * this is the third surface and the last one diverging.
-   *
-   * Flip it back to a plain `it(...)` in the commit that fixes it.
+   * `/claims` (admin-window/BUG-0063) already dropped the line on a non-ok
+   * read; this was the third surface and the last one diverging. Fixed by
+   * wrapping the line in `cycles.kind === "ok"`, so it is a plain `it` now and
+   * reddens if the line ever escapes that branch again.
    */
-  it.fails("claims no cycles window it never read", async () => {
+  it("claims no cycles window it never read", async () => {
     // The rule `/runs` sets and `/claims` was moved onto
     // (admin-window/BUG-0063): the window line describes a window this page
     // actually read. A refused, absent or transport-failed read looked in no
