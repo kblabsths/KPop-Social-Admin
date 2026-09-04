@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { EditableCell } from "@/components/EditableCell";
+import { EditStatus, EditableCell } from "@/components/EditableCell";
 import { EvidencePair } from "@/components/evidence/evidence-pair";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -116,6 +116,18 @@ const SAMPLES: Sample[] = [
   {
     name: "EditableCell",
     html: render(h(EditableCell, { value: "BLACKPINK", onSave: async () => ({ ok: true }) as const, label: "name" })),
+  },
+  // The cell's three told states (admin-window/BUG-0066). They are reachable
+  // only from React state, so the sample above — the resting cell — is the
+  // only rendering these rules ever saw, and a raw ramp step in the in-flight
+  // line would have walked straight past them.
+  ...(["saving", "saved"] as const).map((kind) => ({
+    name: `EditStatus/${kind}`,
+    html: render(h(EditStatus, { status: { kind } })),
+  })),
+  {
+    name: "EditStatus/failed",
+    html: render(h(EditStatus, { status: { kind: "failed", message: "not editable" } })),
   },
 ];
 
