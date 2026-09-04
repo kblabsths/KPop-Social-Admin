@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-04T02:18:28Z — do not edit)
+# Tracker index (regenerated 2026-09-04T02:22:52Z — do not edit)
 
 ## open
 - TASK-0035 [P2][task][patch] The walk sandbox in the one map: an EDIT_CONFIG entry that renders not-provisioned wherever the table is absent  (deps:TASK-0034 scope:src/lib/edit/config.ts,src/lib/db/tables.ts,tests/offline/edit/config.test.ts,tests/offline/records/page.test.ts,tests/offline/absence,tests/live/residue.live.test.ts,tests/http/auth.http.test.ts from:inbox:2026-09-03-walker-sandbox-table.md)
@@ -17,7 +17,4 @@
 ## claimed
 - DEBT-0002 [P2][debt][M1] Five live parity oracles still address their surfaces by POSITION (section:nth-of-type) — the class BUG-0056 fixed on one page only  (scope:tests/live/dashboard.live.test.ts,tests/live/sources.live.test.ts,tests/live/claims.live.test.ts,tests/live/browse.live.test.ts,tests/live/review-item.live.test.ts,src/app/page.tsx,src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/browse/page.tsx,src/app/queues/[reviewItemId]/page.tsx @builder-92 from:BUG-0056)
 
-## qa
-- BUG-0067 [P2][bug][M1] Cycles: the cycles window line renders in every state — data-window="cycles" over a table it could not read  (scope:src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts @builder-91 from:qa:BUG-0063)
-
-Totals — claimed:1, done:104, open:12, qa:1. Archived: 0.
+Totals — claimed:1, done:105, open:12. Archived: 0.
