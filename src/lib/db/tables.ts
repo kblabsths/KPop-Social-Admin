@@ -49,7 +49,7 @@ export type ObjectKind = "table" | "view";
  * Table or view, for every name in `T` — the ONE place the app knows which
  * (campaign admin-window/BUG-0077).
  *
- * A window line ends on this word ("…not the whole table."), and before this
+ * A window line's bound clause ends on this word, and before this
  * map the word was a prop each call site chose by hand: `/claims` and
  * `/sources` render the SAME window — `windowOf` over `observations` — and
  * said "view" and "table" respectively, so one read was described as two.

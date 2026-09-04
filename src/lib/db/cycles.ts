@@ -2,7 +2,18 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { instantOf } from "../cycles/state";
 import { type ResolutionRunRow } from "./gauges";
 import { ROW_CAP, readRows, type DbResponse, type DbResult } from "./result";
-import { T } from "./tables";
+import { objectKindOf, T, type ObjectKind } from "./tables";
+
+/**
+ * What this module's window read runs OVER — the word its window line ends
+ * its bound clause on.
+ *
+ * Derived from the same `T.*` constant the query passes to `.from()`, in the
+ * module that issues the query, so no page and no component gets a say: the
+ * object a window was read over is a fact of the READ (admin-window/BUG-0077,
+ * admin-window/DEBT-0006).
+ */
+export const CYCLES_OBJECT: ObjectKind = objectKindOf(T.resolutionRuns);
 
 /**
  * The Cycles & runs page's reads — campaign admin-window/TASK-0014, the

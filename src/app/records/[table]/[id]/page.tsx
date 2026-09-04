@@ -2,16 +2,7 @@ import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { recordFields } from "@/components/records/fields";
 import { RecordFields } from "@/components/records/record-fields";
-import {
-  ARRIVES_WITH,
-  Empty,
-  ErrorLine,
-  NotProvisioned,
-  Page,
-  RETRY,
-  Section,
-} from "@/components/ui";
-import type { DbUnavailable } from "@/lib/db/result";
+import { Empty, Page, Section, StateOf } from "@/components/ui";
 import {
   isRecordId,
   readRecord,
@@ -230,32 +221,6 @@ function notAnId(config: TableEditConfig): string {
 }
 
 /**
- * A leg's own state, when it could not fill what it was for — the same shape
- * and the same two cards Browse gives a leg that failed (`LegNote` in
- * `src/app/browse/page.tsx`). Two legs report through it: the per-field
- * provenance, and the name of the record a reference column points at
- * (admin-window/BUG-0034).
- *
- * It stands ABOVE the field table rather than inside a cell: `NotProvisioned`
- * and `ErrorLine` answer for the whole read, not for one field, and a card
- * drawn inside the table's own border would draw two borders
- * (`DataTable`'s contract). The cells themselves stay the app's absence, so a
- * failed leg reads as "no provenance shown, and here is why" instead of as a
- * per-field lie.
- */
-function LegNote({ note }: { note: DbUnavailable }) {
-  return note.kind === "not_provisioned" ? (
-    <NotProvisioned missing={note.missing} arrivesWith={ARRIVES_WITH} />
-  ) : (
-    <ErrorLine
-      reading={note.reading}
-      failed={note.message}
-      retry={RETRY}
-    />
-  );
-}
-
-/**
  * Everything on this route that does not depend on the reads: the title, the
  * id the operator asked for, and the section with its regime note. Factored
  * out when the malformed-id answer arrived (admin-window/BUG-0065) so the two
@@ -345,16 +310,14 @@ export default async function RecordPage({
   const reference = await readRecordReference(config, id, record);
 
   let body;
-  if (result.kind === "not_provisioned") {
-    body = <NotProvisioned missing={result.missing} arrivesWith={ARRIVES_WITH} />;
-  } else if (result.kind === "error") {
-    body = (
-      <ErrorLine
-        reading={result.reading}
-        failed={result.message}
-        retry={RETRY}
-      />
-    );
+  if (result.kind !== "ok") {
+    // A leg that could not fill what it was for stands ABOVE the field table
+    // rather than inside a cell: the card and the line answer for the whole
+    // read, not for one field, and a card drawn inside the table's own border
+    // would draw two borders (`DataTable`'s contract). The cells themselves
+    // stay the app's absence, so a failed leg reads as "no provenance shown,
+    // and here is why" instead of as a per-field lie (admin-window/BUG-0034).
+    body = <StateOf result={result} />;
   } else if (result.data === null) {
     // The table answered and holds no such row — a different state from the
     // table being absent, and the two never share a rendering.
@@ -388,8 +351,8 @@ export default async function RecordPage({
   return (
     <RecordFrame config={config} id={id}>
       {provenanceLegend ? <ProvenanceLegend /> : null}
-      {provenance.note ? <LegNote note={provenance.note} /> : null}
-      {reference.note ? <LegNote note={reference.note} /> : null}
+      {provenance.note ? <StateOf result={provenance.note} /> : null}
+      {reference.note ? <StateOf result={reference.note} /> : null}
       {body}
     </RecordFrame>
   );

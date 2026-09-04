@@ -982,6 +982,13 @@ describe("absence and failure", () => {
    *
    * It grades the COUNT and nothing else; the test below it grades the whole
    * line going with it.
+   *
+   * Addressed by the LIST's own hook rather than by `[data-window-held]`
+   * anywhere on the page: since admin-window/DEBT-0006 every window line
+   * publishes a held count, so the gauge below — whose `observations` read
+   * succeeded and found nothing — honestly publishes `0` in these same
+   * scripts. The claim graded here is unchanged and is the one the name
+   * makes: the LIST's read failed, so the LIST states no count.
    */
   it("claims no count it never took when the list's read fails", async () => {
     const failures: Array<[string, Script]> = [
@@ -1008,7 +1015,10 @@ describe("absence and failure", () => {
       expect(markup, label).toContain(T.pendingClaims);
       expect(claimIds(markup), label).toEqual([]);
       // ... and no count hook stands in for the count nobody could take.
-      expect(cheerio.load(markup)("[data-window-held]"), label).toHaveLength(0);
+      expect(
+        cheerio.load(markup)('[data-window="claims"][data-window-held]'),
+        label,
+      ).toHaveLength(0);
     }
   });
 

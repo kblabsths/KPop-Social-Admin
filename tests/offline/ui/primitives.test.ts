@@ -14,7 +14,12 @@ import { Page, pageTitleText } from "@/components/ui/page";
 import { Section } from "@/components/ui/section";
 import { StatCard } from "@/components/ui/stat-card";
 import { ARRIVES_WITH, RETRY, StateOf } from "@/components/ui/state-of";
-import { WindowLine, type ReadWindow } from "@/components/ui/window-line";
+import {
+  WindowLine,
+  type DrawnSentence,
+  type DrawnWindow,
+  type ReadWindow,
+} from "@/components/ui/window-line";
 import { EM_DASH, absoluteUtc, count, relativeAge } from "@/lib/format";
 
 import {
@@ -608,6 +613,7 @@ describe("WindowLine", () => {
     since: "2026-06-01T00:00:00.000Z",
     until: "2026-09-01T00:00:00.000Z",
     limit: 2000,
+    held: 1200,
     truncated: false,
     over: "table",
   };
@@ -684,6 +690,128 @@ describe("WindowLine", () => {
     const html = line("view");
     expect(tagsOf(html)).toEqual(["p"]);
     expect(cheerio.load(html)("[data-window]").length).toBe(1);
+  });
+
+  /**
+   * ONE hook set, for every window the app publishes — the reconciliation
+   * admin-window/DEBT-0006 made in this file rather than at whichever call
+   * site was folded last.
+   *
+   * The app had two dialects: the gauge lines published `since`/`until`/
+   * `truncated`, the hand-rolled list lines `limit`/`held`/`truncated` or
+   * nothing at all, so no oracle could ask one question of all of them. The
+   * rule is now: `limit`, `held` and `truncated` are facts of EVERY window and
+   * are always published; `since`/`until` are facts of a window bounded in
+   * TIME, so their absence says that and only that.
+   *
+   * Read structurally — which attributes exist, not what any sentence says.
+   */
+  const HOOKS_EVERY_WINDOW = [
+    "data-window",
+    "data-window-limit",
+    "data-window-held",
+    "data-window-truncated",
+  ] as const;
+
+  const DRAWN: DrawnWindow = { limit: 50, held: 877, truncated: true, over: "view" };
+
+  const drawn = (shows: DrawnSentence, window: DrawnWindow = DRAWN) =>
+    render(h(WindowLine, { gauge: "claims", window, shows }));
+
+  it("publishes the same three facts on a scanned window and on a drawn one", () => {
+    for (const [what, html] of [
+      ["scanned", line("table")],
+      ["drawn", drawn({ of: "matched", lede: "Oldest first.", rows: "claims" })],
+    ] as const) {
+      const published = cheerio.load(html)("[data-window]");
+      for (const hook of HOOKS_EVERY_WINDOW) {
+        expect(published.attr(hook), `${what} published no ${hook}`).toBeDefined();
+      }
+    }
+  });
+
+  it("states the row count and the cap the read actually carried", () => {
+    const published = cheerio.load(
+      drawn({ of: "matched", lede: "Oldest first.", rows: "claims" }),
+    )("[data-window]");
+    expect(published.attr("data-window-held")).toBe(String(DRAWN.held));
+    expect(published.attr("data-window-limit")).toBe(String(DRAWN.limit));
+    const scanned = cheerio.load(line("table"))("[data-window]");
+    expect(scanned.attr("data-window-held")).toBe(String(WINDOW.held));
+    expect(scanned.attr("data-window-limit")).toBe(String(WINDOW.limit));
+  });
+
+  it("bounds a drawn window in rows only, and says so by publishing no instant", () => {
+    // A list window has no time bound; a scan has one. The absence of the pair
+    // is the statement, and it is decided by the window rather than by the
+    // caller — which is why there is no prop to set it either way.
+    const drawnHooks = cheerio.load(
+      drawn({ of: "newest", lede: "The newest cycles", rows: "cycles" }),
+    )("[data-window]");
+    expect(drawnHooks.attr("data-window-since")).toBeUndefined();
+    expect(drawnHooks.attr("data-window-until")).toBeUndefined();
+    const scannedHooks = cheerio.load(line("table"))("[data-window]");
+    expect(scannedHooks.attr("data-window-since")).toBe(WINDOW.since);
+  });
+
+  it("qualifies a filled drawn window by ADDING to its sentence, in every kind", () => {
+    // The same property the scanned line has: truncation is said on top of the
+    // window's own sentence, never in place of it.
+    const kinds: DrawnSentence[] = [
+      { of: "newest", lede: "The newest cycles, newest first", rows: "cycles" },
+      { of: "matched", lede: "Oldest first.", rows: "claims" },
+    ];
+    for (const shows of kinds) {
+      const open = textOf(drawn(shows, { ...DRAWN, truncated: false }));
+      const filled = textOf(drawn(shows, { ...DRAWN, truncated: true }));
+      expect(filled.startsWith(open), shows.of).toBe(true);
+      expect(filled.length, shows.of).toBeGreaterThan(open.length);
+    }
+  });
+
+  it("names the object a drawn window was read over from the window, not the caller", () => {
+    // Same guarantee as the scanned line's (admin-window/BUG-0077): the word
+    // is a fact of the read. Only the arms whose sentence names an object are
+    // asked about it.
+    for (const over of ["table", "view"] as const) {
+      const other = over === "table" ? "view" : "table";
+      const text = textOf(
+        drawn({ of: "matched", lede: "Oldest first.", rows: "claims" }, {
+          ...DRAWN,
+          over,
+        }),
+      );
+      expect(text, over).toContain(`not the whole ${over}.`);
+      expect(text, over).not.toContain(`not the whole ${other}.`);
+    }
+  });
+
+  it("says the page's own noun back, and states no window it was not handed", () => {
+    // The only things a call site may spell are its own words about its own
+    // subject; every figure in the sentence comes from the window.
+    const text = textOf(
+      drawn({ of: "newest", lede: "The adapters’ newest runs, newest first", rows: "runs" }, {
+        ...DRAWN,
+        limit: 200,
+        truncated: true,
+      }),
+    );
+    expect(text.startsWith("The adapters’ newest runs, newest first")).toBe(true);
+    expect(text).toContain(count(200));
+    expect(text).toContain("runs");
+    expect(text).not.toContain(count(DRAWN.held));
+  });
+
+  it("is one paragraph carrying one window, whichever kind it is", () => {
+    for (const shows of [
+      { of: "newest", lede: "The newest cycles", rows: "cycles" },
+      { of: "matched", lede: "Oldest first.", rows: "claims" },
+      { of: "catalog", rows: "events" },
+    ] as DrawnSentence[]) {
+      const html = drawn(shows);
+      expect(tagsOf(html), shows.of).toEqual(["p"]);
+      expect(cheerio.load(html)("[data-window]").length, shows.of).toBe(1);
+    }
   });
 });
 

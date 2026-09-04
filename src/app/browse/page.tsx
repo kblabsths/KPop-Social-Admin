@@ -1,16 +1,8 @@
 import type { ReactNode } from "react";
 import { BrowseTable } from "@/components/browse/browse-table";
 import { ColumnSelector } from "@/components/browse/column-selector";
-import {
-  ARRIVES_WITH,
-  Empty,
-  ErrorLine,
-  NotProvisioned,
-  Page,
-  RETRY,
-  Section,
-} from "@/components/ui";
-import { readRecentEvents, type DbUnavailable } from "@/lib/db/browse";
+import { Empty, Page, Section, StateOf, WindowLine } from "@/components/ui";
+import { EVENTS_OBJECT, readRecentEvents } from "@/lib/db/browse";
 import {
   COLUMNS_PARAM,
   RECENT_EVENTS,
@@ -77,18 +69,17 @@ const BROWSE_PATH = "/browse";
  */
 const EVENTS_SURFACE = "events";
 
-/** A leg that could not fill its column, rendered as its own honest state. */
-function LegNote({ note }: { note: DbUnavailable }) {
-  return note.kind === "not_provisioned" ? (
-    <NotProvisioned missing={note.missing} arrivesWith={ARRIVES_WITH} />
-  ) : (
-    <ErrorLine
-      reading={note.reading}
-      failed={note.message}
-      retry={RETRY}
-    />
-  );
-}
+/**
+ * The name the events WINDOW answers to — `data-window`, the hook
+ * `tests/offline/absence/pages.test.ts` grades the window rule by.
+ *
+ * This page stated a window in prose and published no hook at all, and it
+ * stated it whatever the read did — over an absent `events` table too, which
+ * is the defect class admin-window/BUG-0063, BUG-0067 and BUG-0070 were each
+ * filed out of. The shared `WindowLine` carries the hooks; the `ok` guard
+ * below carries the rule (admin-window/DEBT-0006).
+ */
+const EVENTS_WINDOW = "events";
 
 export default async function BrowsePage({
   searchParams,
@@ -114,7 +105,7 @@ export default async function BrowsePage({
 
   let body: ReactNode;
   if (events.kind === "not_provisioned") {
-    body = <NotProvisioned missing={events.missing} arrivesWith={ARRIVES_WITH} />;
+    body = <StateOf result={events} />;
   } else if (events.kind === "error") {
     // A state LINE inside the table, so the header stays put and the operator
     // can still see which columns they asked for.
@@ -123,13 +114,7 @@ export default async function BrowsePage({
         view={view}
         shown={shown}
         rows={[]}
-        placeholder={
-          <ErrorLine
-            reading={events.reading}
-            failed={events.message}
-            retry={RETRY}
-          />
-        }
+        placeholder={<StateOf result={events} />}
       />
     );
   } else if (events.data.length === 0) {
@@ -146,17 +131,25 @@ export default async function BrowsePage({
   return (
     <Page title="Browse">
       <Section title={view.title}>
-        <p className="type-body text-ink-secondary">
-          The {view.window} newest events by arrival, newest first — a window,
-          not the whole catalog.
-        </p>
+        {events.kind === "ok" ? (
+          <WindowLine
+            gauge={EVENTS_WINDOW}
+            window={{
+              limit: view.window,
+              held: events.data.length,
+              truncated: events.data.length >= view.window,
+              over: EVENTS_OBJECT,
+            }}
+            shows={{ of: "catalog", rows: "events" }}
+          />
+        ) : null}
         <ColumnSelector
           label="Columns"
           options={columnOptions(view, shown)}
           hrefFor={hrefFor}
         />
-        {listing.venues ? <LegNote note={listing.venues} /> : null}
-        {listing.provenance ? <LegNote note={listing.provenance} /> : null}
+        {listing.venues ? <StateOf result={listing.venues} /> : null}
+        {listing.provenance ? <StateOf result={listing.provenance} /> : null}
         <div data-surface={EVENTS_SURFACE}>{body}</div>
       </Section>
     </Page>

@@ -38,6 +38,10 @@ const WINDOW: WindowInfo = {
   since: "2026-08-25T12:00:00.000Z",
   until: NOW,
   limit: 900,
+  // How many rows the scan came back with (admin-window/DEBT-0006). The
+  // aggregates below take their rows as their own argument and never read it;
+  // it is stated because a `WindowInfo` is not one without it.
+  held: 0,
   truncated: false,
   over: "table",
 };
