@@ -572,6 +572,28 @@ export default async function ClaimsPage({
       )}
 
       <Section title={LIST_TITLE[tab]} surface={LIST_SURFACE}>
+        {/* The window line follows the READ, not the rows (ARCHITECTURE.md
+            §4.3, admin-window/BUG-0070): it describes a window this page
+            actually looked in, so it stands on every `ok` read — with rows or
+            with none — and on no other state. A refused or absent read looked
+            nowhere, so the line would describe a table that is not there and
+            publish a `0` an honest empty read is then indistinguishable from;
+            an EMPTY window is still a window, and its line stands BESIDE the
+            Empty card below rather than instead of it — the card says what
+            would fill the surface, the line says where the app looked. Same
+            rule and same shape as `/runs` (admin-window/BUG-0063,
+            LOOK_AND_FEEL states 3 and 4). */}
+        {claims.kind === "ok" ? (
+          <p
+            data-window="claims"
+            data-window-limit={String(CLAIM_WINDOW)}
+            data-window-held={String(listed.held)}
+            data-window-truncated={listed.truncated ? "true" : "false"}
+            className="type-body text-ink-secondary"
+          >
+            {SORT_STATEMENT} {windowSentence(listed.held, listed.truncated)}
+          </p>
+        ) : null}
         {claims.kind === "not_provisioned" ? (
           <StateOf result={claims} />
         ) : claims.kind === "ok" && shown.length === 0 ? (
@@ -581,24 +603,6 @@ export default async function ClaimsPage({
           <Empty holds={emptyWords.holds} filledBy={emptyWords.filledBy} />
         ) : (
           <>
-            {/* The window line describes a window this page actually read, and
-                states a count it actually took. A refused or absent read
-                counted nothing, so the line would describe a table that is not
-                there and publish a `0` no other state can produce — an empty
-                matching set renders the Empty card above, with no line at all.
-                Same rule and same shape as `/runs` (admin-window/BUG-0063,
-                LOOK_AND_FEEL states 3 and 4). */}
-            {claims.kind === "ok" ? (
-              <p
-                data-window="claims"
-                data-window-limit={String(CLAIM_WINDOW)}
-                data-window-held={String(listed.held)}
-                data-window-truncated={listed.truncated ? "true" : "false"}
-                className="type-body text-ink-secondary"
-              >
-                {SORT_STATEMENT} {windowSentence(listed.held, listed.truncated)}
-              </p>
-            ) : null}
             <ClaimList
               label={LIST_TITLE[tab]}
               rows={claims.kind === "ok" ? listed.rows : []}

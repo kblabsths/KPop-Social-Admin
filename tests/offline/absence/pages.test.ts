@@ -372,7 +372,8 @@ describe("the absence sweep itself", () => {
 
 /**
  * The window-line rule, graded across every surface at once
- * (admin-window/BUG-0063 on `/claims`, admin-window/BUG-0067 on `/cycles`).
+ * (ARCHITECTURE.md §4.3; admin-window/BUG-0063 on `/claims`,
+ * admin-window/BUG-0067 on `/cycles`, admin-window/BUG-0070 on `/claims`).
  *
  * Three window lines on two routes fixed the same divergence one ticket at a
  * time — `/cycles`'s cycles line, `/cycles`'s runs line (`AdapterRuns`) and
@@ -387,12 +388,13 @@ describe("the absence sweep itself", () => {
  * already select by (`tests/live/cycles.live.test.ts`) and asserts nothing
  * about the sentences around them.
  *
- * Non-vacuous by construction. The first leg measures which surfaces publish
- * a window at all against a database that HOLDS rows, and only those surfaces
- * are then asked to drop it — so a page that stopped rendering its window
- * line entirely cannot pass by publishing nothing in both states. The two
- * `toContain`s below are the floor: lose `/claims` or `/cycles` from that set
- * and this test fails rather than thinning out.
+ * Non-vacuous by construction. Both legs measure which surfaces publish a
+ * window at all against a database that HOLDS rows, and only those surfaces
+ * are then asked to drop it (leg 1) or keep it (leg 2) — so a page that
+ * stopped rendering its window line entirely cannot pass by publishing
+ * nothing in both states. `WINDOWED` is the floor both legs check the
+ * measurement against: lose a surface or a hook from it and this file fails
+ * rather than thinning out.
  */
 function windowHooks(markup: string): string[] {
   const $ = cheerio.load(markup);
@@ -400,6 +402,39 @@ function windowHooks(markup: string): string[] {
     .toArray()
     .map((element) => $(element).attr("data-window") ?? "")
     .sort();
+}
+
+/**
+ * Every surface that publishes a window on a healthy read, and the hooks it
+ * publishes — measured on this tree 2026-09-04 (admin-window/BUG-0070): three
+ * routes, seven hooks.
+ *
+ * A FLOOR, not a pin, in the sense the matrix's `COVERED_PAIRS` is one: a
+ * surface may GROW a window line and that is not a failure — the legs below
+ * measure what each surface really publishes and grade every hook of it. What
+ * this list makes impossible is the opposite, a surface quietly ceasing to
+ * publish, which would otherwise let both legs pass over a page that says
+ * nothing in any state.
+ */
+const WINDOWED: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ["/claims", ["claims"]],
+  ["/sources", ["awaiting_row", "rejections"]],
+  ["/cycles", ["cycle_health", "cycles", "resolution_latency", "runs"]],
+];
+
+/** Assert the measured healthy set covers the floor, hook by hook. */
+function coversTheFloor(publishes: ReadonlyMap<string, readonly string[]>): void {
+  expect(
+    [...publishes.keys()].sort(),
+    "no surface published a window line at all",
+  ).not.toEqual([]);
+  for (const [route, hooks] of WINDOWED) {
+    const measured = publishes.get(route);
+    expect(measured, `${route} published no window line on a healthy read`).toBeDefined();
+    for (const hook of hooks) {
+      expect(measured, `${route} stopped publishing [${hook}]`).toContain(hook);
+    }
+  }
 }
 
 describe("a window line describes a window the page read", () => {
@@ -424,26 +459,41 @@ describe("a window line describes a window the page read", () => {
       ).toEqual([]);
     }
 
-    // The floor: the two routes the three fixed window lines live on must be
-    // in the measured set, or the leg above graded nothing.
-    expect([...publishes.keys()], "no surface published a window line").toContain("/claims");
-    expect([...publishes.keys()]).toContain("/cycles");
-    // `/cycles` carries TWO window lines — the cycles table's and the adapter
-    // runs' — and both are the rule's subject, so both are named here.
-    expect(publishes.get("/cycles")).toContain("cycles");
-    expect(publishes.get("/cycles")).toContain("runs");
+    coversTheFloor(publishes);
   });
 
-  it("keeps the line on a read that happened and found nothing", async () => {
+  it("keeps every window it publishes on a read that happened and found nothing", async () => {
     // The other half of the rule, and the reason the fix is not "drop the
     // line whenever the row count is zero": the page looked in the window,
     // and an empty window is still a window it read.
-    const cycles = SURFACES.find((surface) => surface.route === "/cycles");
-    if (cycles === undefined) throw new Error("no /cycles surface");
+    //
+    // Asked of EVERY surface that publishes a window, not of `/cycles` alone.
+    // While this leg named one route, `/claims` diverged from the rule under a
+    // test whose docstring claims to grade the rule itself — it dropped its
+    // line on an ok-but-empty matching set, leaving that state one hook away
+    // from the state where the read never happened (admin-window/BUG-0070).
+    // A surface that grows a window line now inherits the rule instead of a
+    // comment about it.
+    const publishes = new Map<string, string[]>();
 
-    scriptDatabase(emptyScript());
-    const hooks = windowHooks(await renderSurface(cycles));
-    expect(hooks).toContain("cycles");
-    expect(hooks).toContain("runs");
+    for (const surface of SURFACES) {
+      scriptDatabase(populatedScript(surface));
+      const healthy = windowHooks(await renderSurface(surface));
+      if (healthy.length === 0) continue;
+      publishes.set(surface.route, healthy);
+
+      // The same surface, against a database that holds every object it reads
+      // and no rows in any of them: every read RETURNED, so every one of those
+      // hooks is a claim the page may still make — and `data-window-held="0"`
+      // means "it happened and found nothing", the value a live oracle grades
+      // the empty case by (ARCHITECTURE.md §4.3).
+      scriptDatabase(emptyScript());
+      expect(
+        windowHooks(await renderSurface(surface)),
+        `${surface.route} dropped a window line on a read that happened and found nothing`,
+      ).toEqual(healthy);
+    }
+
+    coversTheFloor(publishes);
   });
 });

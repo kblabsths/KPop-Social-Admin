@@ -643,6 +643,105 @@ describe("the claim list's window", () => {
     expect(OVERFLOW).toBeGreaterThan(claimIds(markup).length);
   });
 
+  /**
+   * The whole view with the standing bucket taken out of it: the database the
+   * standing TAB reads as empty while the buckets tab reads as populated.
+   * `count` is the row count of that same array — a complete read whose exact
+   * count outruns its rows is an ERROR by design (`readComplete`), which would
+   * grade the wrong state below.
+   */
+  const NO_STANDING = CLAIMS.filter(
+    (claim) => claim.bucket !== "standing_disagreement",
+  );
+
+  /**
+   * A narrowing of the FULL population that matches no claim at all: both
+   * values are in the view's own vocabulary — so the page keeps them rather
+   * than dropping an unknown facet — and no claim carries both.
+   */
+  const MATCHES_NOTHING = { bucket: "escalated", source_id: SOURCE.third };
+
+  it("states the window it read when the read found nothing, beside the Empty card", async () => {
+    // ARCHITECTURE.md §4.3, admin-window/BUG-0070: the line follows the READ,
+    // not the rows. All three of this page's emptinesses are ok reads — the
+    // page looked — so each keeps its line with a real `data-window-held="0"`,
+    // the one value that tells an honest empty read from a read that never
+    // happened (and the value the live oracle grades the empty case by). The
+    // card and the line say different things and both are true: the card says
+    // what would fill the surface, the line says where the app looked.
+    const cases: Array<[string, Script, Record<string, string>]> = [
+      // The view holds nothing at all.
+      ["the view holds nothing", healthyScript({ [T.pendingClaims]: { data: [], count: 0 } }), {}],
+      // The view holds claims; this narrowing matches none of them — the one
+      // escalated claim in the population belongs to another source.
+      ["the filter matched nothing", healthyScript(), MATCHES_NOTHING],
+      // The standing tab's own subset, empty while the view is not.
+      [
+        "the standing subset is empty",
+        healthyScript({ [T.pendingClaims]: { data: NO_STANDING, count: NO_STANDING.length } }),
+        { tab: "standing" },
+      ],
+    ];
+
+    // Non-vacuous: the narrowing case is a narrowing OF a populated view, so
+    // its emptiness is the filter's doing and not the database's.
+    expect(
+      claimIds(await renderClaims(healthyScript(), {})).length,
+      "the population the narrowing narrows",
+    ).toBeGreaterThan(0);
+
+    for (const [label, script, params] of cases) {
+      const markup = await renderClaims(script, params);
+      // The emptiness itself: no rows, and the list is a card rather than a
+      // headers-only table.
+      expect(claimIds(markup), label).toEqual([]);
+      const $ = cheerio.load(markup);
+      expect($(SURFACE_HOOKS.claims).find('[data-state="empty"]'), label).toHaveLength(1);
+
+      // ...and the window line stands WITH it, stating a read that happened.
+      const line = windowLine(markup);
+      expect(line.present, label).toBe(true);
+      expect(line.limit, label).toBe(CLAIM_WINDOW);
+      expect(line.held, label).toBe(0);
+      expect(line.truncated, label).toBe(false);
+      // The line lives inside the list's own surface, where the oracle reads
+      // it — not loose on the page.
+      expect($(SURFACE_HOOKS.claims).find('[data-window="claims"]'), label).toHaveLength(1);
+    }
+  });
+
+  it("keeps the three emptinesses three different renderings, line and all", async () => {
+    // The line is the same sentence in all three; the CARD is what
+    // distinguishes them, and it still does (LOOK_AND_FEEL, Emptiness). Read
+    // as three distinct texts rather than by pinning any one of them, so the
+    // words stay free to change and only their distinctness is the contract.
+    const cardText = async (script: Script, params: Record<string, string>) => {
+      const $ = cheerio.load(await renderClaims(script, params));
+      return $(SURFACE_HOOKS.claims)
+        .find('[data-state="empty"]')
+        .text()
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+    const holdsNothing = await cardText(
+      healthyScript({ [T.pendingClaims]: { data: [], count: 0 } }),
+      {},
+    );
+    const matchedNothing = await cardText(healthyScript(), MATCHES_NOTHING);
+    const standingEmpty = await cardText(
+      healthyScript({ [T.pendingClaims]: { data: NO_STANDING, count: NO_STANDING.length } }),
+      { tab: "standing" },
+    );
+    for (const [label, text] of [
+      ["the view holds nothing", holdsNothing],
+      ["the filter matched nothing", matchedNothing],
+      ["the standing subset is empty", standingEmpty],
+    ] as const) {
+      expect(text.length, label).toBeGreaterThan(0);
+    }
+    expect(new Set([holdsNothing, matchedNothing, standingEmpty]).size).toBe(3);
+  });
+
   it("windows the standing tab's list the same way", async () => {
     const size = CLAIM_WINDOW + 9;
     const standing = crowd(size);
@@ -782,8 +881,8 @@ describe("absence and failure", () => {
   });
 
   /**
-   * PINNED `it.fails` (strict) for admin-window/BUG-0063: the window line's
-   * own count hook survives a failed read as a `0`.
+   * The failed-read half of the window-line rule (admin-window/BUG-0063,
+   * fixed): the line's own count hook must not survive a failed read as a `0`.
    *
    * This page's rule on a failed read is that a count is ABSENT, not zero —
    * the bucket table drops `data-bucket-claims` entirely two tests above
@@ -791,14 +890,17 @@ describe("absence and failure", () => {
    * ARCHITECTURE.md §4.3 promoted it ("a null count is a refusal, never a
    * zero"), and `/runs` pins the stronger form for a window line
    * (`tests/offline/runs/page.test.ts`, "claims no window it never read").
-   * `data-window-held` is also the hook the live parity oracle grades this
-   * page by (`tests/live/claims.live.test.ts`), and `0` is a value it can
-   * reach in no other state: an empty matching set renders the Empty card
-   * with no window line at all.
    *
-   * It grades the COUNT and nothing else, so either fix passes — dropping the
-   * attribute on a non-ok read, or dropping the whole line. Flip it back to a
-   * plain `it(...)` in the commit that fixes it.
+   * `data-window-held` is also the hook the live parity oracle grades this
+   * page by (`tests/live/claims.live.test.ts`), and `0` there means exactly
+   * one thing: the read HAPPENED and found nothing. An ok-but-empty matching
+   * set publishes that `0` beside its Empty card — the line follows the read,
+   * not the rows (admin-window/BUG-0070, and the leg that grades it for every
+   * windowed surface at once, `tests/offline/absence/pages.test.ts`) — which
+   * is precisely why a read that never happened may publish no count at all.
+   *
+   * It grades the COUNT and nothing else; the test below it grades the whole
+   * line going with it.
    */
   it("claims no count it never took when the list's read fails", async () => {
     const failures: Array<[string, Script]> = [
