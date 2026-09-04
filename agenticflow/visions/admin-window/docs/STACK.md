@@ -135,6 +135,7 @@ space — quote it).
 | live suite (staging) | `npm run test:live` | — |
 | http suite | `npm run test:http` | 8772 (its own server) |
 | **reset the walk sandbox** | `node tests/walk/reset-sandbox.mts` (walk prep: step 3's block — it needs the same mapping) | — |
+| **residue sweep** (after any walk that wrote a catalog row) | `npm run test:live -- tests/live/residue.live.test.ts` | — |
 
 - **8770 is the factory's attention UI** (`run.yaml` `ui_port`). Never bind it.
 - A walk instance takes its database credentials from **its own process
@@ -300,15 +301,81 @@ Four things about that command, so nothing below is a surprise:
   under**, and it is the only test worth trusting — not a date, not this
   paragraph's age. Run step 3 first, read what it said, take the matching
   branch:
-  - **It refused, so the table is absent — the interim exception is live.** A
-    save-path walk writes **one field of one existing `groups`/`idols` row**:
-    note the original value before you change it, restore it in a `finally` so
-    a crashed walk still puts it back, and run the residue sweep afterwards.
-    That is Ben's standing ruling of 2026-09-03, recorded in
-    `agenticflow/tracker/for-human/TASK-0034.md` §1 and in
+  - **It refused *naming the table and the host* — `the table "walk_sandbox"
+    is not on <host>` — so the table is absent and the interim exception is
+    live.** That one sentence is the only refusal that means absence: it is
+    the single `SandboxAbsentError` in `tests/walk/reset-sandbox.mts`, raised
+    from the database's own absence code (`PGRST205` / `42P01`) on a real
+    read. **Every other non-zero exit is a refusal that says nothing about the
+    table** — see the next branch — and none of them puts you here.
+    Measured 2026-09-04: this is the branch staging is on
+    (`ubfjjqlvnpnoborczbdb.supabase.co`, sweep agrees: `walk_sandbox: not
+    present`).
+
+    A save-path walk on this branch writes **one field of one existing
+    `groups`/`idols` row**: note the original value before you change it,
+    restore it in a `finally` so a crashed walk still puts it back, and run
+    the residue sweep afterwards. That is Ben's standing ruling of 2026-09-03,
+    recorded in `agenticflow/tracker/for-human/TASK-0034.md` §1 and in
     `agenticflow/docs/DECISIONS.md`; it is deliberately interim, and it is what
     the M1 endgame walks use until the paste lands. Even here: never `events`
     or `venues`, never an insert, never a delete.
+
+    Three things are what make that a safety net rather than a sentence:
+
+    - **Pick a field the sweep can SEE, and stamp what you type.** The sweep
+      counts rows whose value is `ilike '%admin-window%'`, over text columns
+      only. So the write it can police is a **text** column carrying the
+      campaign marker **`admin-window`** in the value — type
+      `admin-window/<your-ticket> probe`, never `test`, or the sweep reports
+      clean straight over your leftover. On `groups` those columns are `name`,
+      `korean_name`, `short_name`, `company`, `status`, `type`, `image_url`,
+      `bio`; on `idols`, every editable column except the three below.
+    - **The sweep is blind to the five editable columns that are not text, and
+      there the `finally` is your only net.** `ilike` has no operator for a
+      date or a number, so `groups.member_count`, `groups.debut_date`,
+      `idols.birth_date`, `idols.height_cm` and `idols.weight_kg` cannot carry
+      the marker and are never scanned (measured 2026-09-04: the sweep names
+      exactly those five, with their types, in its own "not scannable" list).
+      They are in the editable map, so a walk of the save path *may*
+      legitimately need one — prefer a text column; if you must save one of
+      these, say so in the finding, keep the same `finally`, and **verify the
+      restore by hand**: reload the record page and read the field back. Over
+      an unrestored number the sweep still reports `56 column(s) scanned` and
+      exits 0, and a false all-clear is worse than no sweep.
+    - **Run the sweep afterwards, verbatim, from the repo root:**
+
+      ```sh
+      npm run test:live -- tests/live/residue.live.test.ts
+      ```
+
+      No mapping prefix and no subshell: unlike step 3's tool, the live suite
+      loads `.env` itself and reads the `STAGING_*` names
+      (`tests/live/setup.ts`) — but it reads the **repo root's** `.env`, so
+      step 1's worktree caveat applies unchanged. It is **read-only** and runs
+      in under 10s (9.7s and 6.2s measured here). Clean is exit 0 with a
+      per-column report (`groups: scanned 19 text
+      column(s) … [name=0, …]`); residue is a non-zero exit naming table,
+      column and row count (`groups.bio: 1 row(s)`), after three re-checks 2s
+      apart that tell a leftover from a write still in flight. Both outcomes
+      measured 2026-09-04 on `ubfjjqlvnpnoborczbdb.supabase.co`
+      (admin-window/BUG-0072): the marker was written into `groups.bio` of one
+      existing row, the sweep failed on it, the `finally` restored the
+      213-character original, and the next sweep passed 5/5 with `bio=0`.
+  - **It refused any OTHER way — you have learned nothing about the table, and
+    neither branch is open to you.** An unset name (`the walk-sandbox reset
+    tool refuses: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set`), a
+    guard refusal on a host that is not the declared staging target, or any
+    `SandboxResetError` is a refusal about the RUN, not about the table's
+    existence — a refused tool is not an absent table. One of them is a trap
+    worth naming: if the seed leg fails, the tool says the delete already ran
+    and `walk_sandbox` is **now EMPTY** — the table EXISTS, so the sandbox
+    branch is the live one, and a catalog-row write there would be plain wrong.
+    Fix the cause (most often a missing `source .env` — step 1) and run step 3
+    again until it either succeeds or names the table and the host. Measured
+    2026-09-04: `env -u SUPABASE_URL -u SUPABASE_SERVICE_ROLE_KEY node
+    tests/walk/reset-sandbox.mts` exits 1 with the unset-name refusal above,
+    having read nothing at all.
   - **It succeeded — the exception is over, from that moment on.** The sandbox
     is the write surface and the only one; the catalog-row practice above is
     retired for good (caveats below).
@@ -374,8 +441,12 @@ page.goto("http://localhost:8771/")
     and **its arrival RETIRES the interim exception** ("edit one field of one
     existing `groups`/`idols` row, note the original, restore it, sweep"), for
     good and for everyone.
-  - **While step 3 still refuses**, that interim exception IS the walk-write
-    rule, under the discipline spelled out in step 3's first branch. It is what
+  - **While step 3 refuses with that one absence sentence** — `the table
+    "walk_sandbox" is not on <host>`, and no other refusal counts — that
+    interim exception IS the walk-write rule, under the discipline spelled out
+    in step 3's first branch: a **text** column, the value stamped
+    `admin-window`, the original noted, restored in a `finally`, and
+    `npm run test:live -- tests/live/residue.live.test.ts` after. It is what
     Ben ruled on 2026-09-03 — the exception holds *until the sandbox exists*,
     and the sandbox replaces it once it does — and
     `agenticflow/tracker/for-human/TASK-0034.md` §1 and
