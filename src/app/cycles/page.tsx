@@ -10,11 +10,11 @@ import {
   Badge,
   DataTable,
   Empty,
-  ErrorLine,
-  NotProvisioned,
   Page,
   Section,
   StatCard,
+  StateOf,
+  WindowLine,
   type Column,
 } from "@/components/ui";
 import { STATE_WORD, cycleState, type CycleState } from "@/lib/cycles/state";
@@ -50,11 +50,7 @@ import {
   readCycleHealth,
   type CycleHealth,
 } from "@/lib/gauges/cycle-health";
-import {
-  RESOLVER_CADENCE_SECONDS,
-  secondsBetween,
-  type WindowInfo,
-} from "@/lib/gauges/gauge";
+import { RESOLVER_CADENCE_SECONDS, secondsBetween } from "@/lib/gauges/gauge";
 import {
   readResolutionLatency,
   type DomainLatency,
@@ -143,12 +139,6 @@ const CYCLE_FACET = "cycle";
  */
 const SOURCE_FACET = "source";
 
-/** What creates the ecosystem objects this page reads. */
-const ARRIVES_WITH = "the scraper repo's migrations";
-
-/** One retry sentence, in the app's voice, for every failed read on this page. */
-const RETRY = "Reload to try the read again.";
-
 /** The eyebrow each gauge's state card carries, so an absent gauge names its knob. */
 const HEALTH_LABEL = "Cycle health";
 const LATENCY_LABEL = "Resolution latency";
@@ -225,69 +215,6 @@ function anchorFor(runId: string): string {
  * the runs window alike.
  */
 const IN_PAGE_LINK = "text-accent underline";
-
-/* ── the states every surface here can be in ─────────────────────────────── */
-
-/**
- * The state a failed or absent read renders as. `reading` and `missing` come
- * from the result itself, so the line names the object the query named
- * (admin-window/BUG-0016, TASK-0030).
- */
-function StateOf({
-  result,
-  eyebrow,
-}: {
-  result: DbUnavailable;
-  /** Passed only where no `Section` heading already names the surface. */
-  eyebrow?: string;
-}): ReactNode {
-  // The wrapper carries which read refused, in the object's own spelling — the
-  // one thing that distinguishes state 3 from state 4 and from an empty
-  // surface without reading the card's words back (the three never share a
-  // rendering, LOOK_AND_FEEL, Emptiness).
-  return result.kind === "not_provisioned" ? (
-    <div data-not-provisioned={result.missing}>
-      <NotProvisioned
-        missing={result.missing}
-        arrivesWith={ARRIVES_WITH}
-        eyebrow={eyebrow}
-      />
-    </div>
-  ) : (
-    <div data-read-failed={result.reading}>
-      <ErrorLine reading={result.reading} failed={result.message} retry={RETRY} />
-    </div>
-  );
-}
-
-/** The window line a gauge section carries — which window, and whether it filled. */
-function WindowLine({
-  gauge,
-  window: info,
-  measured,
-}: {
-  /** Which gauge's window this is, for the live suite to read it back. */
-  gauge: string;
-  window: WindowInfo;
-  /** What the window is over, in the app's voice: "Cycles started", … */
-  measured: string;
-}) {
-  return (
-    <p
-      data-window={gauge}
-      data-window-since={info.since}
-      data-window-until={info.until}
-      data-window-truncated={info.truncated ? "true" : "false"}
-      className="type-body text-ink-secondary"
-    >
-      {measured} since {absoluteUtc(info.since)}, read to {absoluteUtc(info.until)}{" "}
-      — a window of at most {count(info.limit)} rows, not the whole table.
-      {info.truncated
-        ? " The window filled its cap, so every count here is a floor."
-        : ""}
-    </p>
-  );
-}
 
 /* ── the cycle table ─────────────────────────────────────────────────────── */
 
@@ -647,7 +574,12 @@ function CycleHealthSection({ health }: { health: CycleHealth }) {
 
   return (
     <>
-      <WindowLine gauge="cycle_health" window={info} measured="Cycles started" />
+      <WindowLine
+        gauge="cycle_health"
+        window={info}
+        measured="Cycles started"
+        over="table"
+      />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
           label="Cycles in this window"
@@ -773,6 +705,7 @@ function LatencySection({ latency }: { latency: ResolutionLatency }) {
         gauge="resolution_latency"
         window={info}
         measured="Canonical decisions applied"
+        over="table"
       />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard

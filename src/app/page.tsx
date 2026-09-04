@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 import {
+  ARRIVES_WITH,
   Badge,
   DataTable,
   Empty,
   ErrorLine,
   NotProvisioned,
   Page,
+  RETRY,
   Section,
   StatCard,
   type Column,
@@ -92,9 +94,6 @@ const KIND_PARAM = "kind";
 /** The parameters a cycle line and a run line carry into `/cycles`. */
 const CYCLE_PARAM = "cycle";
 const RUN_PARAM = "run";
-
-/** What creates the ecosystem tables this page reads. */
-const ARRIVES_WITH = "the scraper repo's migrations";
 
 /**
  * The name each of this page's surfaces answers to — `data-surface`, rendered
@@ -408,7 +407,7 @@ function LineTable<Row>({
           <ErrorLine
             reading={result.reading}
             failed={result.message}
-            retry="Reload to try the read again."
+            retry={RETRY}
           />
         }
       />
@@ -436,7 +435,7 @@ export default async function DashboardPage() {
           <ErrorLine
             reading={attention.reading}
             failed={attention.message}
-            retry="Reload to try the read again."
+            retry={RETRY}
           />
         ) : (
           <>

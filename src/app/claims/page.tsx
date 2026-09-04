@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import {
   BucketTable,
   ClaimList,
@@ -16,7 +15,7 @@ import {
   spreadRows,
   type EmptyWords,
 } from "@/components/gauges";
-import { Empty, ErrorLine, NotProvisioned, Page, Section } from "@/components/ui";
+import { Empty, Page, Section, StateOf, WindowLine } from "@/components/ui";
 import {
   claimOrder,
   facetOptions,
@@ -25,9 +24,8 @@ import {
   RENDERABLE_BUCKETS,
   type ClaimRow,
 } from "@/lib/db/claims";
-import type { DbUnavailable } from "@/lib/db/result";
 import { readSourceNames } from "@/lib/db/sources";
-import { absoluteUtc, count, counted, duration } from "@/lib/format";
+import { count, counted, duration } from "@/lib/format";
 import {
   claimsHref,
   filterBar,
@@ -121,9 +119,6 @@ export const dynamic = "force-dynamic";
 /** This route's own path — the base every filter, tab and bucket link is built on. */
 const CLAIMS_PATH = "/claims";
 
-/** What creates the ecosystem objects this page reads. */
-const ARRIVES_WITH = "the scraper repo's migrations";
-
 /** The order the claim list is in, stated on screen (LOOK_AND_FEEL bar 6). */
 const SORT_STATEMENT =
   "Oldest first — the longest-waiting claim at the top; a claim whose instant is unknown sorts last.";
@@ -208,32 +203,27 @@ const BUCKETS_SURFACE = "buckets";
 const LIST_SURFACE = "claims";
 const GAUGE_SURFACE = "gauge";
 
-/** One retry sentence, in the app's voice, for every failed read on this page. */
-const RETRY = "Reload to try the read again.";
-
 /**
- * The state a failed or absent read renders as. `reading` and `missing` come
- * from the result itself, so the line names the object the query named
- * (admin-window/BUG-0016, TASK-0030).
+ * The name each gauge's WINDOW answers to — `data-window`, the hook a live
+ * oracle reads a window back by, as `/cycles` and `/sources` publish theirs
+ * (admin-window/DEBT-0003).
+ *
+ * This page published NONE: its hand-copied window line carried the sentence
+ * and no attributes at all, so the one window an oracle could not read
+ * structurally was on the page whose oracle had already graded a broken state
+ * as a pass (common violations 6 and 9). The shared `WindowLine` carries them
+ * on every page, this one included.
+ *
+ * The two names are the page's own tab vocabulary rather than the gauges'
+ * design names, for one reason a reader should not have to rediscover:
+ * `pending_claims` is a VIEW name, which only `lib/db/tables.ts` may spell
+ * (ARCHITECTURE.md §4 rule 4) — and the list above already publishes
+ * `data-window="claims"` over that same view, so a second hook named for it
+ * would read as the same window twice. Exactly one of these two renders on any
+ * tab.
  */
-function StateOf({
-  result,
-  eyebrow,
-}: {
-  result: DbUnavailable;
-  /** Passed only where no `Section` heading already names the surface. */
-  eyebrow?: string;
-}): ReactNode {
-  return result.kind === "not_provisioned" ? (
-    <NotProvisioned
-      missing={result.missing}
-      arrivesWith={ARRIVES_WITH}
-      eyebrow={eyebrow}
-    />
-  ) : (
-    <ErrorLine reading={result.reading} failed={result.message} retry={RETRY} />
-  );
-}
+const PENDING_WINDOW = "pending";
+const STANDING_WINDOW = "standing";
 
 /** The per-bucket figures, from the claims a source/domain narrowing keeps. */
 function bucketStats(
@@ -302,29 +292,16 @@ function claimLines(
   }));
 }
 
-/** The window line every gauge section carries — which window, and whether it filled. */
-function WindowLine({
-  window,
-}: {
-  window: PendingClaims["window"] | StandingDisagreements["window"];
-}) {
-  return (
-    <p className="type-body text-ink-secondary">
-      Claims observed since {absoluteUtc(window.since)}, read to{" "}
-      {absoluteUtc(window.until)} — a window of at most {count(window.limit)} rows,
-      not the whole view.
-      {window.truncated
-        ? " The window filled its cap, so every count here is a floor."
-        : ""}
-    </p>
-  );
-}
-
 /** The pending-claims gauge (spec §5, gauge 3 of 6) — the buckets tab's. */
 function PendingClaimsGauge({ gauge }: { gauge: PendingClaims }) {
   return (
     <>
-      <WindowLine window={gauge.window} />
+      <WindowLine
+        gauge={PENDING_WINDOW}
+        window={gauge.window}
+        measured="Claims observed"
+        over="view"
+      />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
           label="Claims in this window"
@@ -398,7 +375,12 @@ function PendingClaimsGauge({ gauge }: { gauge: PendingClaims }) {
 function StandingGauge({ gauge }: { gauge: StandingDisagreements }) {
   return (
     <>
-      <WindowLine window={gauge.window} />
+      <WindowLine
+        gauge={STANDING_WINDOW}
+        window={gauge.window}
+        measured="Claims observed"
+        over="view"
+      />
       <GaugeCard
         label="Live contradictions in this window"
         value={gauge.claims}

@@ -2,7 +2,15 @@ import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { recordFields } from "@/components/records/fields";
 import { RecordFields } from "@/components/records/record-fields";
-import { Empty, ErrorLine, NotProvisioned, Page, Section } from "@/components/ui";
+import {
+  ARRIVES_WITH,
+  Empty,
+  ErrorLine,
+  NotProvisioned,
+  Page,
+  RETRY,
+  Section,
+} from "@/components/ui";
 import type { DbUnavailable } from "@/lib/db/result";
 import {
   isRecordId,
@@ -65,9 +73,6 @@ import { EM_DASH } from "@/lib/format";
  * link to it, and a failed value read still shows the record's id. None ever
  * blanks another (admin-window/TASK-0029, BUG-0034).
  */
-
-/** What creates the catalog objects this page reads. */
-const ARRIVES_WITH = "the scraper repo's migrations";
 
 /**
  * What the operator is told about how this table is written — the regime's
@@ -245,7 +250,7 @@ function LegNote({ note }: { note: DbUnavailable }) {
     <ErrorLine
       reading={note.reading}
       failed={note.message}
-      retry="Reload to try the read again."
+      retry={RETRY}
     />
   );
 }
@@ -347,7 +352,7 @@ export default async function RecordPage({
       <ErrorLine
         reading={result.reading}
         failed={result.message}
-        retry="Reload to try the read again."
+        retry={RETRY}
       />
     );
   } else if (result.data === null) {

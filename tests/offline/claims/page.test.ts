@@ -837,6 +837,87 @@ describe("the standing-disagreements tab", () => {
   });
 });
 
+/* ── the gauge's own window line ─────────────────────────────────────────── */
+
+describe("the gauge's window line", () => {
+  /** Every window this page publishes, by name, in document order. */
+  function windowNames(markup: string): string[] {
+    const $ = cheerio.load(markup);
+    return $("[data-window]")
+      .toArray()
+      .map((element) => $(element).attr("data-window") ?? "");
+  }
+
+  /** The gauge section's own window line, read structurally. */
+  function gaugeWindow(markup: string) {
+    const $ = cheerio.load(markup);
+    const line = $('[data-surface="gauge"]').find("[data-window]");
+    return {
+      count: line.length,
+      name: line.attr("data-window"),
+      since: line.attr("data-window-since"),
+      until: line.attr("data-window-until"),
+      truncated: line.attr("data-window-truncated"),
+    };
+  }
+
+  it("publishes the window it read, on both tabs, where an oracle can read it", async () => {
+    // This page published the SENTENCE and none of the attributes until
+    // admin-window/DEBT-0003 folded the three hand-copied window lines into
+    // one primitive: its gauge window was the one window in the app no live
+    // oracle could read structurally (ARCHITECTURE.md §4.3, §10).
+    for (const tab of ["buckets", "standing"]) {
+      const line = gaugeWindow(await renderClaims(healthyScript(), { tab }));
+      expect(line.count, tab).toBe(1);
+      expect(line.since, tab).toBeDefined();
+      expect(line.until, tab).toBeDefined();
+      // Real bounds, in order: a window is an interval the read actually used.
+      expect(Date.parse(line.since ?? ""), tab).not.toBeNaN();
+      expect(Date.parse(line.until ?? ""), tab).not.toBeNaN();
+      expect(Date.parse(line.since ?? "") < Date.parse(line.until ?? ""), tab).toBe(true);
+      // A confident boolean, never an absent attribute.
+      expect(line.truncated, tab).toBe("false");
+    }
+  });
+
+  it("is its own window, never the list's, and the two tabs' are not one", async () => {
+    // The list window (`claims`) and the gauge window are different reads over
+    // different bounds; one name for both would let an oracle grade one while
+    // reading the other (common violation 7).
+    const buckets = windowNames(await renderClaims(healthyScript()));
+    const standing = windowNames(await renderClaims(healthyScript(), { tab: "standing" }));
+    expect(new Set(buckets).size).toBe(buckets.length);
+    expect(new Set(standing).size).toBe(standing.length);
+    expect(buckets).toContain("claims");
+    expect(standing).toContain("claims");
+    expect(buckets.filter((name) => name !== "claims")).not.toEqual(
+      standing.filter((name) => name !== "claims"),
+    );
+  });
+
+  it("states no window at all where the read never happened", async () => {
+    // The other half of the rule: the line follows the READ. A refused gauge
+    // renders its refusal card and publishes nothing an oracle could mistake
+    // for a window it looked in (admin-window/BUG-0063, BUG-0067, BUG-0070).
+    for (const tab of ["buckets", "standing"]) {
+      const markup = await renderClaims(
+        {
+          [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
+          [T.observations]: { error: tableNotInSchemaCache(T.observations) },
+          [T.sources]: { data: [] },
+        },
+        { tab },
+      );
+      expect(windowNames(markup), tab).toEqual([]);
+      // …and the refusal it renders instead names the object, structurally.
+      expect(
+        cheerio.load(markup)('[data-surface="gauge"]').find("[data-not-provisioned]").length,
+        tab,
+      ).toBe(1);
+    }
+  });
+});
+
 /* ── the four states ─────────────────────────────────────────────────────── */
 
 describe("absence and failure", () => {

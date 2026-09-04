@@ -406,8 +406,11 @@ function windowHooks(markup: string): string[] {
 
 /**
  * Every surface that publishes a window on a healthy read, and the hooks it
- * publishes — measured on this tree 2026-09-04 (admin-window/BUG-0070): three
- * routes, seven hooks.
+ * publishes — measured on this tree 2026-09-04 (admin-window/BUG-0070, and
+ * again after admin-window/DEBT-0003 folded the three hand-copied window lines
+ * into one primitive): three routes, eight hooks. The eighth is `/claims`'s
+ * gauge window, which stated its sentence and published no hook at all until
+ * the fold gave every page the same line.
  *
  * A FLOOR, not a pin, in the sense the matrix's `COVERED_PAIRS` is one: a
  * surface may GROW a window line and that is not a failure — the legs below
@@ -417,7 +420,7 @@ function windowHooks(markup: string): string[] {
  * nothing in any state.
  */
 const WINDOWED: ReadonlyArray<readonly [string, readonly string[]]> = [
-  ["/claims", ["claims"]],
+  ["/claims", ["claims", "pending"]],
   ["/sources", ["awaiting_row", "rejections"]],
   ["/cycles", ["cycle_health", "cycles", "resolution_latency", "runs"]],
 ];
