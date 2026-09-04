@@ -183,6 +183,63 @@ function headers(markup: string, label: string): string[] {
     .map((element) => $(element).text().replace(/\s+/g, " ").trim());
 }
 
+/**
+ * The header sitting above one counter's own cells, found through the cell's
+ * machine hook — so this reads the table's real column ORDER rather than a
+ * second copy of it kept in the test.
+ */
+function headerAbove(markup: string, table: string, counter: string): string {
+  const $ = cheerio.load(markup);
+  const cell = $(`table[aria-label="${table}"] [data-cycle-count="${counter}"]`)
+    .first()
+    .closest("td");
+  const siblings = cell.parent().children("td").toArray();
+  const index = siblings.findIndex((element) => element === cell[0]);
+  return index === -1 ? "" : (headers(markup, table)[index] ?? "");
+}
+
+/**
+ * Every label the page puts above a FIGURE, read structurally — a leaf span
+ * whose next sibling is the figure itself (`ui/StatCard`'s anatomy: `micro`
+ * label, then the number, optionally prefixed "at least" when the window was
+ * truncated).
+ *
+ * Structural and not by class name on purpose: this exists so a table header
+ * and a gauge label can be compared as two INDEPENDENTLY read strings
+ * (admin-window/BUG-0044 — the table said `FACTS_EXAMINED` while the gauge a
+ * few thousand pixels below said `FACTS EXAMINED`).
+ */
+function figureLabels(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  const found: string[] = [];
+  $("span").each((_, element) => {
+    const node = $(element);
+    if (node.children().length > 0) return;
+    const text = node.text().replace(/\s+/g, " ").trim();
+    if (text === "") return;
+    const beside = node.next().text().replace(/\s+/g, " ").trim();
+    if (/^(at least)?\s*\d[\d,]*$/.test(beside)) found.push(text);
+  });
+  return found;
+}
+
+/**
+ * What is wrong with a header of the CYCLES table, or `null` when nothing is.
+ *
+ * A predicate rather than an inline regex so the test can prove it
+ * DISCRIMINATES: it is handed a spelling it must flag as well as the headers
+ * it must clear (LESSONS 3). Both faults are admin-window/BUG-0044's: a raw
+ * database column name uppercased into a sans `micro` eyebrow, and the
+ * cycle's own identifier headed with the adapter's noun (LOOK_AND_FEEL's
+ * glossary pins `cycle` (resolver) and `run` (adapter) as two nouns of two
+ * producers, and this page shows both tables).
+ */
+function headerFault(header: string): string | null {
+  if (/_/.test(header)) return "raw column name";
+  if (/\brun\b/i.test(header)) return "calls a cycle a run";
+  return null;
+}
+
 /** The objects a not-provisioned card names. */
 function notProvisioned(markup: string): string[] {
   const $ = cheerio.load(markup);
@@ -321,9 +378,11 @@ describe("the cycles the resolver filed", () => {
   it("renders all eight counts, thousand-separated, as their own columns", async () => {
     const markup = await renderCycles(healthyScript());
 
-    // The header carries the contract's eight column names, in its order.
+    // Each of the contract's eight counters has a column of its own, found by
+    // the cell's machine hook and not by what the header calls it — the words
+    // above them are asserted separately, below.
     for (const counter of CYCLE_COUNTERS) {
-      expect(headers(markup, CYCLES_TABLE), counter).toContain(counter);
+      expect(headerAbove(markup, CYCLES_TABLE, counter), counter).not.toBe("");
     }
 
     const row = cycleRow(markup, SUCCEEDED.run_id);
@@ -335,6 +394,42 @@ describe("the cycles the resolver filed", () => {
     expect(row.counts.applied).toBe("1,204");
     // A zero is a real count and renders as one, never as the absence dash.
     expect(row.counts.errors).toBe("0");
+  });
+
+  it("heads every column in one vocabulary, and never calls a cycle a run", async () => {
+    const markup = await renderCycles(healthyScript());
+    const set = headers(markup, CYCLES_TABLE);
+
+    // Non-vacuous: one header per cell the table actually rendered, and more
+    // headers than there are counters — so the loop below faces the whole row.
+    expect(set.length).toBe(cycleRow(markup, SUCCEEDED.run_id).cells.length);
+    expect(set.length).toBeGreaterThan(CYCLE_COUNTERS.length);
+
+    // The predicate discriminates: the two spellings this table used to render
+    // are exactly the two it flags.
+    expect(headerFault("facts_examined")).toBe("raw column name");
+    expect(headerFault("run id")).toBe("calls a cycle a run");
+
+    for (const header of set) {
+      expect(headerFault(header), header).toBeNull();
+    }
+
+    // The machine names did not go anywhere — they are on the CELLS, which is
+    // what every offline and live reader of this table selects by.
+    expect(Object.keys(cycleRow(markup, SUCCEEDED.run_id).counts).sort()).toEqual(
+      [...CYCLE_COUNTERS].sort(),
+    );
+  });
+
+  it("heads the facts column with the words the gauge puts above the same figure", async () => {
+    const markup = await renderCycles(healthyScript());
+    const header = headerAbove(markup, CYCLES_TABLE, "facts_examined");
+    expect(header).not.toBe("");
+    // The same words on both surfaces. Case belongs to the stylesheet — a
+    // `micro` label is uppercased there — so the comparison is of the words.
+    expect(figureLabels(markup).map((label) => label.toUpperCase())).toContain(
+      header.toUpperCase(),
+    );
   });
 
   it("renders error_summary inline and verbatim", async () => {

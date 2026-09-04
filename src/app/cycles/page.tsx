@@ -22,6 +22,7 @@ import {
   CYCLE_WINDOW,
   cycleState,
   readCycles,
+  type CycleCounter,
   type CycleState,
   type ResolutionRunRow,
 } from "@/lib/db/cycles";
@@ -302,6 +303,41 @@ function stateCell(state: CycleState): ReactNode {
 }
 
 /**
+ * What this table calls each counter — the app's own words, one naming system
+ * for the whole header row (campaign admin-window/BUG-0044).
+ *
+ * The header of a table is a LABEL, and a label is the app speaking: `micro`
+ * is a SANS eyebrow (LOOK_AND_FEEL, Type), while §11's "verbatim in mono"
+ * governs machine identifiers rendered as VALUES. `facts_examined` uppercased
+ * into a sans eyebrow was neither, and it made this one row speak two
+ * vocabularies — seven of the app's words beside six database column names.
+ * The words below are the ones the app already uses for these same numbers:
+ * the Dashboard's cycle table (`src/app/page.tsx`), this page's own
+ * cycle-health gauge ("Facts examined"), and the rejection gauge's
+ * "re-rejected".
+ *
+ * The machine names have not gone anywhere — every counter cell still carries
+ * its own column name on `data-cycle-count`, which is what the offline and
+ * live tests read. The row's identity is the operator's; the hooks are the
+ * machine's.
+ *
+ * A `Record` over `CycleCounter` rather than a lookup with a fallback: a
+ * counter renamed in the scraper's migration stops COMPILING here, instead of
+ * quietly falling back to its raw name in the header — the exact regression
+ * this ticket exists to prevent.
+ */
+const CYCLE_COUNTER_LABELS: Record<CycleCounter, string> = {
+  facts_examined: "facts examined",
+  applied: "applied",
+  held: "held",
+  escalated: "escalated",
+  entities_created: "entities created",
+  claims_linked: "claims linked",
+  claims_rerejected: "claims re-rejected",
+  errors: "errors",
+};
+
+/**
  * The row's own columns: identity, when, how it ended, how long it took, the
  * eight counters, and the failure line the producer wrote.
  *
@@ -316,7 +352,12 @@ function cycleColumns(
   return [
     {
       key: "run_id",
-      label: "run_id",
+      // A cycle's id, and the glossary keeps `cycle` (resolver) and `run`
+      // (adapter) apart as two nouns of two producers — on the one page that
+      // shows both tables, heading this column `run_id` called a cycle a run
+      // (admin-window/BUG-0044). The KEY stays the row's own column name; the
+      // header is what the operator reads.
+      label: "cycle id",
       cell: (row) => {
         const state = cycleState(row, {
           now,
@@ -372,9 +413,7 @@ function cycleColumns(
     },
     ...CYCLE_COUNTERS.map((counter) => ({
       key: counter,
-      // The column's own name, verbatim — a machine identifier, and the word
-      // `contracts/resolver.md` §6 defines. Nothing is prettified into prose.
-      label: counter,
+      label: CYCLE_COUNTER_LABELS[counter],
       align: "right" as const,
       cell: (row: ResolutionRunRow) => (
         <span data-cycle-count={counter}>{count(row[counter])}</span>
@@ -382,7 +421,9 @@ function cycleColumns(
     })),
     {
       key: "error_summary",
-      label: "error_summary",
+      // What the Dashboard already heads the same column (`src/app/page.tsx`).
+      // The VALUE below is still the producer's line, verbatim.
+      label: "error",
       // The producer's first failure, inline and VERBATIM — not trimmed, not
       // summarised, not replaced with a friendlier sentence (LOOK_AND_FEEL:
       // the app shows what the database said). Red, because a cycle that
