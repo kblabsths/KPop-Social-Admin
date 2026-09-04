@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 import { describe, expect, it } from "vitest";
 import BrowsePage from "@/app/browse/page";
 import { recordHref } from "@/lib/records/routes";
-import { RECENT_EVENTS } from "@/lib/browse/views";
+import { COLUMNS_PARAM, RECENT_EVENTS } from "@/lib/browse/views";
 import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
 import {
@@ -10,7 +10,9 @@ import {
   exactCount,
   gradeSurface,
   independentClient,
+  oneEach,
   renderPage,
+  surfaceHooks,
 } from "./parity";
 
 /**
@@ -43,12 +45,27 @@ import {
 const view = RECENT_EVENTS;
 
 /**
- * The events surface: the last child of the page's one section, which is the
- * body in each of its four states — the table, the `Empty` card, the
- * `NotProvisioned` card, or the table carrying the error line
- * (`src/app/browse/page.tsx`). Structural; no heading or copy is read.
+ * The events surface, by the `data-surface` name `src/app/browse/page.tsx`
+ * gives its body: the events body in each of its four states — the table, the
+ * `Empty` card, the `NotProvisioned` card, or the table carrying the error
+ * line. Structural; no heading or copy is read.
+ *
+ * A NAME, never a position. This was `section:nth-of-type(1) > :last-child`
+ * until admin-window/DEBT-0002, which compounded two fragilities: the page's
+ * section ORDER, and the body's position among its section's own children.
+ * `stateOf` (`tests/live/parity.ts`) demands the selector match EXACTLY ONE
+ * element, so one added section, or one more leg note rendered below the
+ * table, either duplicated the match or repointed it at a leg note — silently,
+ * because a leg note is a perfectly readable state card. On `/cycles` the same
+ * class threw `MarkupReadError` in four live tests (admin-window/BUG-0040,
+ * admin-window/BUG-0056).
+ *
+ * It names the BODY and not the `<Section>` around it, deliberately: the
+ * section also carries the column selector and the venues / provenance leg
+ * notes, which are separate reads with separate states. Grading them as one
+ * surface makes an unreadable venue join look like unreadable events.
  */
-const EVENTS = "section:nth-of-type(1) > :last-child";
+const EVENTS = '[data-surface="events"]';
 
 /** Grade the events surface against this test's own count of the window. */
 async function gradeEvents(markup: string) {
@@ -111,6 +128,36 @@ async function windowFromDatabase(): Promise<
   if (error) throw new Error(`the window query failed: ${error.message}`);
   return (data ?? []) as { event_id: string; title: string; created_at: string }[];
 }
+
+describe("Browse's surface hook against staging", () => {
+  it("names the events surface once, whatever state it rendered in", async () => {
+    // The oracle's addressing itself, asserted before it is used: the hook has
+    // to reach exactly one element, which is the precondition `stateOf`
+    // enforces per call. Read bare AND with a column narrowing, because the
+    // `?columns=` branch redraws the table the hook wraps
+    // (admin-window/DEBT-0002).
+    const renders: [string, string][] = [
+      ["bare", await browseMarkup()],
+      [
+        "one column",
+        await renderPage(BrowsePage, {
+          searchParams: Promise.resolve({ [COLUMNS_PARAM]: "event_id" }),
+        }),
+      ],
+    ];
+    for (const [name, markup] of renders) {
+      expect(surfaceHooks(markup, [EVENTS]), name).toEqual({
+        counts: oneEach([EVENTS]),
+        nested: [],
+      });
+      // The leg notes stay OUTSIDE it: their states are their own reads', and
+      // a surface that swallowed them would grade an unreadable venue join as
+      // unreadable events. The body holds at most its own one state card.
+      expect(cheerio.load(markup)(EVENTS).find("[data-state]").length, name)
+        .toBeLessThanOrEqual(1);
+    }
+  });
+});
 
 describe("Browse against staging", () => {
   it("renders the window newest-first by arrival, exactly as the database orders it", async () => {

@@ -182,6 +182,32 @@ const GAUGE_LABEL: Record<ClaimsTab, string> = {
   standing: "Standing disagreements",
 };
 
+/**
+ * The name each of this page's surfaces answers to — `data-surface`, rendered
+ * by `Section` and read by the live parity oracle
+ * (`tests/live/claims.live.test.ts`), pinned offline by
+ * `tests/offline/claims/page.test.ts`.
+ *
+ * A NAME, never a position. The oracle addressed these as
+ * `section:nth-of-type(n)` until admin-window/DEBT-0002 — and on THIS page the
+ * position was already tab-dependent, because the standing tab renders no
+ * bucket table at all and its list is therefore the first section. That is the
+ * bug class that cost `/cycles` four live tests when admin-window/BUG-0040
+ * added a section and a `<div>` wrapper (admin-window/BUG-0056): `stateOf`
+ * demands exactly one match, so a selector that moves with the page silently
+ * repoints at the wrong surface. `[data-surface="claims"]` is the list on
+ * BOTH tabs.
+ *
+ * A name is the surface's IDENTITY, not its heading: the list and the gauge
+ * both retitle themselves per tab (`LIST_TITLE`, `GAUGE_TITLE`) and keep the
+ * same name. `buckets` is the one surface that does not always render — the
+ * standing tab omits it — which is a count of 0 or 1, never 2. All three are
+ * unique within this page; it writes no hand-written `data-surface` anywhere.
+ */
+const BUCKETS_SURFACE = "buckets";
+const LIST_SURFACE = "claims";
+const GAUGE_SURFACE = "gauge";
+
 /** One retry sentence, in the app's voice, for every failed read on this page. */
 const RETRY = "Reload to try the read again.";
 
@@ -516,7 +542,7 @@ export default async function ClaimsPage({
       <FilterBar facets={filterBar(CLAIMS_PATH, filter, tab, options, labelOf)} />
 
       {tab === "standing" ? null : (
-        <Section title="Buckets">
+        <Section title="Buckets" surface={BUCKETS_SURFACE}>
           {claims.kind === "not_provisioned" ? (
             // A card replaces the surface; nothing above it describes a table
             // that is not there (LOOK_AND_FEEL state 3).
@@ -544,7 +570,7 @@ export default async function ClaimsPage({
         </Section>
       )}
 
-      <Section title={LIST_TITLE[tab]}>
+      <Section title={LIST_TITLE[tab]} surface={LIST_SURFACE}>
         {claims.kind === "not_provisioned" ? (
           <StateOf result={claims} />
         ) : claims.kind === "ok" && shown.length === 0 ? (
@@ -589,7 +615,7 @@ export default async function ClaimsPage({
         )}
       </Section>
 
-      <Section title={GAUGE_TITLE[tab]}>
+      <Section title={GAUGE_TITLE[tab]} surface={GAUGE_SURFACE}>
         {pending !== null ? (
           pending.kind === "ok" ? (
             <PendingClaimsGauge gauge={pending.data} />

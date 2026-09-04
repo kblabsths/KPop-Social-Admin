@@ -102,6 +102,32 @@ const RETRY = "Reload to try the read again.";
 const CLAIMS_PATH = "/claims";
 
 /**
+ * The name each of this page's graded surfaces answers to — `data-surface`,
+ * read by the live parity oracle (`tests/live/review-item.live.test.ts`) and
+ * pinned offline by `tests/offline/review-item/page.test.ts`.
+ *
+ * A NAME, never a position. The header was `section:nth-of-type(1)` and the
+ * evidence body `section:nth-of-type(2) > :nth-child(2)` until
+ * admin-window/DEBT-0002 — the second compounding this file's section ORDER
+ * with the body's position among its section's own children, so that the
+ * parked recommendation slot filling in, or one more leg note, repoints it
+ * silently. `stateOf` refuses any selector not matching exactly one element,
+ * which is how the same class cost `/cycles` four live tests
+ * (admin-window/BUG-0040, admin-window/BUG-0056).
+ *
+ * `evidence` names the BODY — the shape's evidence view, or the state card
+ * that replaced it — and not the `<Section>` around it, because that section
+ * also carries the legs this page reports beside the evidence (the bucket read
+ * and the source registry) and the accounting line. Each leg is its own read
+ * with its own object: grading them as one surface makes an unreadable bucket
+ * look like unreadable evidence. So the Evidence `<Section>` deliberately
+ * takes no `surface` of its own — two elements answering to one name is the
+ * failure this attribute exists to prevent.
+ */
+const HEADER_SURFACE = "what_happened";
+const EVIDENCE_SURFACE = "evidence";
+
+/**
  * The dial's display window, in days.
  *
  * A choice of THIS PAGE's, stated on screen beside the figures, and not the
@@ -444,7 +470,7 @@ export default async function ReviewItemPage({
     <Page title="Review item">
       {identity}
 
-      <Section title="What happened">
+      <Section title="What happened" surface={HEADER_SURFACE}>
         <ItemHeader
           item={row}
           kind={kind}
@@ -459,22 +485,28 @@ export default async function ReviewItemPage({
 
       <Section title="Evidence">
         {evidence.kind !== "ok" ? (
-          <StateOf result={evidence} />
+          <div data-surface={EVIDENCE_SURFACE}>
+            <StateOf result={evidence} />
+          </div>
         ) : (
           <>
-            <EvidenceView
-              rows={evidence.data.claims.map((claim) =>
-                evidenceRow(claim, bucketById),
-              )}
-              unresolved={evidence.data.unresolved}
-              empty={emptyWords(evidence.data)}
-              canonical={canonicalCard(evidence.data.canonical)}
-              dial={
-                dialSource === null || trend === null
-                  ? null
-                  : dialProps(dialSource, sourceLabel(names, dialSource), trend)
-              }
-            />
+            {/* The graded surface, named in both branches: the evidence view
+                or the card that replaced it, and never the legs below. */}
+            <div data-surface={EVIDENCE_SURFACE}>
+              <EvidenceView
+                rows={evidence.data.claims.map((claim) =>
+                  evidenceRow(claim, bucketById),
+                )}
+                unresolved={evidence.data.unresolved}
+                empty={emptyWords(evidence.data)}
+                canonical={canonicalCard(evidence.data.canonical)}
+                dial={
+                  dialSource === null || trend === null
+                    ? null
+                    : dialProps(dialSource, sourceLabel(names, dialSource), trend)
+                }
+              />
+            </div>
             {buckets.kind === "ok" || claimIds.length === 0 ? null : (
               // The claims rendered fine; only what is HOLDING them could not
               // be read. Reported separately, naming its own object, rather

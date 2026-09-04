@@ -6,8 +6,10 @@ import {
   assertState,
   gradeSurface,
   independentClient,
+  oneEach,
   pageStates,
   renderPage,
+  surfaceHooks,
 } from "./parity";
 
 /**
@@ -59,20 +61,37 @@ type Item = {
 const NO_SUCH_ID = "00000000-0000-7000-8000-000000000000";
 
 /**
- * The evidence surface: the body of the second section, which is the
- * `Section`'s first child after its heading — the shape's evidence view, or
- * the state card that replaced it
- * (`src/app/queues/[reviewItemId]/page.tsx`). Structural; no heading text is
- * read.
+ * The page's two graded surfaces, each named by the `data-surface` hook
+ * `src/app/queues/[reviewItemId]/page.tsx` gives it: the item header, and the
+ * evidence body — the shape's evidence view, or the state card that replaced
+ * it. Structural; no heading text is read.
  *
- * Deliberately NOT the whole section: the section also carries the separate
- * legs this page reports beside the evidence — the bucket read and the source
- * registry — each of which has its own state and its own object. Grading them
- * as one surface makes an unreadable bucket look like unreadable evidence, and
- * on staging today it does exactly that (`pending_claims` times out —
- * admin-window/TASK-0031 — while the claims themselves render fine).
+ * NAMES, not positions. These were `section:nth-of-type(1)` and
+ * `section:nth-of-type(2) > :nth-child(2)` until admin-window/DEBT-0002, the
+ * second compounding the page's section ORDER with the body's position among
+ * its section's own children — so the parked recommendation slot filling in,
+ * or one more leg note, repoints it at something that is not the evidence.
+ * `stateOf` (`tests/live/parity.ts`) demands the selector match EXACTLY ONE
+ * element; on `/cycles` this class threw `MarkupReadError` in four live tests
+ * (admin-window/BUG-0040, admin-window/BUG-0056).
+ *
+ * `EVIDENCE` is deliberately NOT the whole section: the section also carries
+ * the separate legs this page reports beside the evidence — the bucket read
+ * and the source registry — each of which has its own state and its own
+ * object. Grading them as one surface makes an unreadable bucket look like
+ * unreadable evidence, and on staging today it does exactly that
+ * (`pending_claims` times out — admin-window/TASK-0031 — while the claims
+ * themselves render fine).
  */
-const EVIDENCE = "section:nth-of-type(2) > :nth-child(2)";
+const HEADER = '[data-surface="what_happened"]';
+const EVIDENCE = '[data-surface="evidence"]';
+
+/**
+ * Both hooks, asserted present and UNIQUE before either is graded — so the
+ * next rearrangement of this page fails as one legible assertion here rather
+ * than as a `MarkupReadError` from whichever case happened to run first.
+ */
+const SURFACES = [HEADER, EVIDENCE];
 
 /**
  * The dial embedded in a source-pattern evidence view is its OWN read of
@@ -191,6 +210,34 @@ const EXTRA_HOOK_OF_SHAPE: Record<Shape, string> = {
   entity_link_fact: "data-held",
   entity_link_source_pattern: "data-fact",
 };
+
+describe("the review item's surface hooks against staging", () => {
+  it("names each graded surface once on an item that rendered", async () => {
+    const item = await anyItem();
+    if (item === "absent" || item === null) return;
+
+    // The oracle's addressing itself, asserted before it is used: each hook
+    // has to reach exactly one element, which is the precondition `stateOf`
+    // enforces per call (admin-window/DEBT-0002).
+    // `nested` empty is the disjointness: grading the evidence never reads the
+    // header's state, and neither swallows the other.
+    expect(surfaceHooks(await itemMarkup(item.review_item_id), SURFACES)).toEqual({
+      counts: oneEach(SURFACES),
+      nested: [],
+    });
+  });
+
+  it("renders no surface at all for an id no row carries", async () => {
+    // The two whole-page refusals return before any `<Section>`, so the hooks
+    // are absent rather than duplicated — stated as a number, because "the
+    // selector matched nothing" is exactly what `stateOf` throws on, and a
+    // future ticket must not resurrect them here by accident.
+    expect(surfaceHooks(await itemMarkup(NO_SUCH_ID), SURFACES)).toEqual({
+      counts: { [HEADER]: 0, [EVIDENCE]: 0 },
+      nested: [],
+    });
+  });
+});
 
 describe("a real review item, rendered", () => {
   it("resolves exactly the evidence ids the row carries, in its fold order", async () => {
@@ -359,7 +406,7 @@ describe("a real review item, rendered", () => {
     const markup = await itemMarkup(item.review_item_id);
     // "What happened" is its own read of the same row: it renders the header
     // or it renders a state card, and this case is about the header.
-    assertState(markup, "section:nth-of-type(1)", "ok");
+    assertState(markup, HEADER, "ok");
     const $ = cheerio.load(markup);
 
     expect(textOf(markup)).toContain(item.summary);
@@ -421,7 +468,7 @@ describe("the header names its source, against staging", () => {
     const registered = ((data ?? []) as { source: string }[])[0]?.source ?? null;
 
     const markup = await itemMarkup(item.review_item_id);
-    assertState(markup, "section:nth-of-type(1)", "ok");
+    assertState(markup, HEADER, "ok");
     const $ = cheerio.load(markup);
 
     const toSource = `/sources?source_id=${sourceId}`;

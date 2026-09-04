@@ -123,6 +123,30 @@ const NOTHING_MATCHED: EmptyWords = {
 const AWAITING_LABEL = "Awaiting-row claims";
 const REJECTION_LABEL = "Re-rejected values";
 
+/**
+ * The name each of this page's surfaces answers to — `data-surface`, rendered
+ * by `Section` and read by the live parity oracle
+ * (`tests/live/sources.live.test.ts`), pinned offline by
+ * `tests/offline/sources/page.test.ts`.
+ *
+ * A NAME, never a position. These three were `section:nth-of-type(n)` until
+ * admin-window/DEBT-0002, which made the oracle hostage to this file's element
+ * order and to any wrapper a later ticket adds — the failure that cost
+ * `/cycles` four live tests when admin-window/BUG-0040 added a section and a
+ * `<div>` and `:nth-of-type(1)` began matching two surfaces
+ * (admin-window/BUG-0056). `stateOf` demands exactly one match, so a name that
+ * does not move is the only addressing that survives a rearrangement.
+ *
+ * Each trend surface takes the name its window line already answers to
+ * (`data-window="awaiting_row"`, `data-window="rejections"`), so the surface
+ * and the figure inside it are called the same thing. The name is the
+ * surface's identity, not its heading, and is unique within this page — this
+ * page writes no `data-surface` of its own anywhere else.
+ */
+const REGISTRY_SURFACE = "registry";
+const AWAITING_SURFACE = "awaiting_row";
+const REJECTION_SURFACE = "rejections";
+
 /* ── the URL, which is the whole of this page's state ────────────────────── */
 
 /** A `searchParams` value, in every shape Next can hand one over. */
@@ -737,7 +761,7 @@ export default async function SourcesPage({
         <SourceChips sources={held} filter={filter} />
       ) : null}
 
-      <Section title="Registry">
+      <Section title="Registry" surface={REGISTRY_SURFACE}>
         {sources.kind === "not_provisioned" ? (
           // A card replaces the surface; nothing above it describes a table
           // that is not there (LOOK_AND_FEEL state 3).
@@ -773,7 +797,7 @@ export default async function SourcesPage({
         )}
       </Section>
 
-      <Section title="Awaiting-row trend">
+      <Section title="Awaiting-row trend" surface={AWAITING_SURFACE}>
         {trend.kind === "ok" ? (
           <AwaitingRowTrendSection trend={trend.data} filter={filter} nameOf={nameOf} />
         ) : (
@@ -781,7 +805,7 @@ export default async function SourcesPage({
         )}
       </Section>
 
-      <Section title="Settled values">
+      <Section title="Settled values" surface={REJECTION_SURFACE}>
         {rejections.kind === "ok" ? (
           <RejectionSection gauge={rejections.data} filter={filter} />
         ) : (

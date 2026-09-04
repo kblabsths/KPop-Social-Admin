@@ -49,6 +49,29 @@ const BROWSE_PATH = "/browse";
 /** What creates the ecosystem objects this page reads. */
 const ARRIVES_WITH = "the scraper repo's migrations";
 
+/**
+ * The name the events BODY answers to — `data-surface`, read by the live
+ * parity oracle (`tests/live/browse.live.test.ts`) and pinned offline by
+ * `tests/offline/browse/page.test.ts`.
+ *
+ * A NAME, never a position. That oracle addressed this surface as
+ * `section:nth-of-type(1) > :last-child` until admin-window/DEBT-0002, which
+ * compounded two fragilities: the page's section ORDER, and the body's
+ * position among its section's own children. Either an added section or one
+ * more leg note above the table repoints it, and `stateOf` refuses any
+ * selector that does not match exactly one element — the failure that cost
+ * `/cycles` four live tests (admin-window/BUG-0040, admin-window/BUG-0056).
+ *
+ * It is the BODY that carries the name and not the `<Section>` around it,
+ * because the section also holds the column selector and the two leg notes
+ * (venues, provenance): those are separate reads with separate states, and
+ * grading them as one surface makes an unreadable venue join look like
+ * unreadable events. The `<Section>` therefore takes no `surface` of its own —
+ * one page, one element answering to a name, the same rule that leaves
+ * `/cycles`'s runs `<Section>` unnamed beside its hand-written wrapper.
+ */
+const EVENTS_SURFACE = "events";
+
 /** A leg that could not fill its column, rendered as its own honest state. */
 function LegNote({ note }: { note: DbUnavailable }) {
   return note.kind === "not_provisioned" ? (
@@ -129,7 +152,7 @@ export default async function BrowsePage({
         />
         {listing.venues ? <LegNote note={listing.venues} /> : null}
         {listing.provenance ? <LegNote note={listing.provenance} /> : null}
-        {body}
+        <div data-surface={EVENTS_SURFACE}>{body}</div>
       </Section>
     </Page>
   );

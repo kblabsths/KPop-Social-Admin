@@ -10,7 +10,9 @@ import {
   exactCount,
   gradeSurface,
   independentClient,
+  oneEach,
   renderPage,
+  surfaceHooks,
   whileStill,
 } from "./parity";
 
@@ -50,12 +52,30 @@ async function dashboardMarkup(): Promise<string> {
 }
 
 /**
- * The page's three surfaces, in the order `src/app/page.tsx` renders them.
- * Structural — no heading text is read, because copy is the designer's.
+ * The page's three surfaces, each named by the `data-surface` hook
+ * `src/app/page.tsx` gives it. Structural — no heading text is read, because
+ * copy is the designer's.
+ *
+ * NAMES, not positions. These three were `section:nth-of-type(1|2|3)` until
+ * admin-window/DEBT-0002, which made every assertion below hostage to this
+ * page's element ORDER: `stateOf` (`tests/live/parity.ts`) demands the
+ * selector match EXACTLY ONE element, so one added section — or one `<div>`
+ * wrapping an existing one — either duplicates a match or silently repoints
+ * the selector at the neighbouring surface. That is not hypothetical: on
+ * `/cycles` admin-window/BUG-0040 did exactly that and four live tests threw
+ * `MarkupReadError` (admin-window/BUG-0056). A hook does not move when the
+ * page is rearranged.
  */
-const ATTENTION = "section:nth-of-type(1)";
-const CYCLES = "section:nth-of-type(2)";
-const RUNS = "section:nth-of-type(3)";
+const ATTENTION = '[data-surface="attention"]';
+const CYCLES = '[data-surface="cycles"]';
+const RUNS = '[data-surface="runs"]';
+
+/**
+ * Every surface hook this page is expected to carry, asserted present and
+ * UNIQUE before any of them is graded — so the next reorder fails as one
+ * legible assertion here rather than as scattered `MarkupReadError`s.
+ */
+const SURFACES = [ATTENTION, CYCLES, RUNS];
 
 /**
  * Grade the attention summary against this test's own count of the table
@@ -106,6 +126,21 @@ function lineIds(markup: string, parameter: string): string[] {
     .map((href) => new URL(href, "https://x.invalid").searchParams.get(parameter) ?? "")
     .filter((id, index, all) => all.indexOf(id) === index);
 }
+
+describe("the Dashboard's surface hooks against staging", () => {
+  it("names every surface on the page once, whatever order they are in", async () => {
+    // The oracle's addressing itself, asserted before it is used: each hook
+    // has to reach exactly one element, which is the precondition `stateOf`
+    // enforces per call. Read from a real staging render, so a surface that
+    // only a live state can produce is covered too (admin-window/DEBT-0002).
+    // `nested` empty says no surface sits inside another, so grading one never
+    // reads a card that belongs to its neighbour.
+    expect(surfaceHooks(await dashboardMarkup(), SURFACES)).toEqual({
+      counts: oneEach(SURFACES),
+      nested: [],
+    });
+  });
+});
 
 describe("the attention summary against staging", () => {
   it("renders the open decision count the database holds", async () => {

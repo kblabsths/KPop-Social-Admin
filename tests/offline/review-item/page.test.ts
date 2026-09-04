@@ -19,7 +19,7 @@ import {
   tableNotInSchemaCache,
   type Script,
 } from "../../fixtures/stub-client";
-import { stateOf } from "../../live/parity";
+import { oneEach, stateOf, surfaceHooks } from "../../live/parity";
 
 /**
  * The review-item detail page, rendered (campaign admin-window/TASK-0011).
@@ -154,6 +154,17 @@ function patternScript(overrides: Script = {}): Script {
     ...overrides,
   };
 }
+
+/* ── the addressing the live oracle depends on ───────────────────────────── */
+
+/**
+ * The name each graded surface answers to (`data-surface`,
+ * `src/app/queues/[reviewItemId]/page.tsx`), as
+ * `tests/live/review-item.live.test.ts` addresses them.
+ */
+const HEADER_HOOK = '[data-surface="what_happened"]';
+const EVIDENCE_HOOK = '[data-surface="evidence"]';
+const HOOKS = [HEADER_HOOK, EVIDENCE_HOOK];
 
 /* ── reading the markup, structurally ────────────────────────────────────── */
 
@@ -1036,17 +1047,22 @@ describe("the four data-surface states", () => {
     expect(cheerio.load(markup)("[data-dial]").text()).toContain(T.observations);
 
     // The live oracle's ONE `excluding` caller, graded against the markup this
-    // page really renders (review-item.live.test.ts's `gradeEvidence`:
-    // within `[data-evidence-view]`, excluding `[data-dial]`). The dial is a
-    // PROPER DESCENDANT of the view, which is what makes the exclusion legal
-    // at all under admin-window/BUG-0036 — assert that from the DOM rather
-    // than from the JSX, so a refactor that lifts the dial out of the view (or
+    // page really renders (review-item.live.test.ts's `gradeEvidence`: within
+    // the evidence surface, excluding `[data-dial]`). The dial is a PROPER
+    // DESCENDANT of that surface, which is what makes the exclusion legal at
+    // all under admin-window/BUG-0036 — assert that from the DOM rather than
+    // from the JSX, so a refactor that lifts the dial out of the view (or
     // wraps the view in it) reddens here instead of silently un-excluding.
+    //
+    // Graded through the SURFACE HOOK the oracle really passes, not through
+    // the view's own hook: since admin-window/DEBT-0002 that `within` is
+    // `[data-surface="evidence"]`, and the view sits inside it.
     const $ = cheerio.load(markup);
-    expect($("[data-evidence-view]")).toHaveLength(1);
-    expect($("[data-evidence-view]").find("[data-dial]")).toHaveLength(1);
-    expect(stateOf(markup, "[data-evidence-view]")).not.toBe("ok");
-    expect(stateOf(markup, "[data-evidence-view]", "[data-dial]")).toBe("ok");
+    expect($(EVIDENCE_HOOK)).toHaveLength(1);
+    expect($(EVIDENCE_HOOK).find("[data-evidence-view]")).toHaveLength(1);
+    expect($(EVIDENCE_HOOK).find("[data-dial]")).toHaveLength(1);
+    expect(stateOf(markup, EVIDENCE_HOOK)).not.toBe("ok");
+    expect(stateOf(markup, EVIDENCE_HOOK, "[data-dial]")).toBe("ok");
   });
 });
 
@@ -1146,5 +1162,141 @@ describe("a table wider than its column", () => {
         expect(layoutOf(node).has("min-w-0")).toBe(true);
       }
     }
+  });
+});
+
+/* ── the addressing the live oracle depends on ───────────────────────────── */
+
+describe("the surface hooks the live parity oracle addresses", () => {
+  /**
+   * The live oracle grades ONE surface at a time and `stateOf`
+   * (`tests/live/parity.ts`) refuses any selector matching other than exactly
+   * one element. Until admin-window/DEBT-0002 it addressed the header as
+   * `section:nth-of-type(1)` and the evidence body as
+   * `section:nth-of-type(2) > :nth-child(2)` — the second compounding this
+   * page's section ORDER with the body's position among its section's own
+   * children, so the parked recommendation slot filling in, or one more leg
+   * note, repoints it at something that is not the evidence. On `/cycles` the
+   * same class made one selector match two surfaces and four live tests threw
+   * (admin-window/BUG-0040, admin-window/BUG-0056).
+   *
+   * Nothing offline could see any of that — `npm test` runs the offline and
+   * isolated projects only — so the live oracle's addressing had no pin in CI.
+   * These cases are that pin, in the file that owns this page's markup.
+   */
+  it("gives each surface exactly one element, in every shape and every state", async () => {
+    const conflict = reviewItemDataConflict();
+    const stuck = reviewItemEntityLink();
+    const pattern = reviewItemSourcePattern();
+
+    const states: [string, string][] = [
+      ["conflict", await renderItem(conflictScript(), conflict.review_item_id)],
+      ["stuck fact", await renderItem(stuckScript(), stuck.review_item_id)],
+      ["source pattern", await renderItem(patternScript(), pattern.review_item_id)],
+      // No evidence at all: the view is replaced by its empty rendering.
+      [
+        "no evidence",
+        await renderItem(
+          conflictScript({ [T.observations]: { data: [] } }),
+          conflict.review_item_id,
+        ),
+      ],
+      // The states that swap the body for a card are exactly where a wrapper
+      // is most likely to appear or vanish.
+      [
+        "evidence absent",
+        await renderItem(
+          conflictScript({ [T.observations]: { error: tableNotInSchemaCache(T.observations) } }),
+          conflict.review_item_id,
+        ),
+      ],
+      [
+        "evidence refused",
+        await renderItem(
+          conflictScript({ [T.observations]: { error: permissionDenied(T.observations) } }),
+          conflict.review_item_id,
+        ),
+      ],
+      // One leg failing while the evidence reads fine: the bucket read and the
+      // source registry render their own cards BESIDE the evidence, and
+      // neither may land inside its surface.
+      [
+        "buckets refused",
+        await renderItem(
+          stuckScript({ [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) } }),
+          stuck.review_item_id,
+        ),
+      ],
+      [
+        "registry refused",
+        await renderItem(
+          conflictScript({ [T.sources]: { error: permissionDenied(T.sources) } }),
+          conflict.review_item_id,
+        ),
+      ],
+    ];
+
+    for (const [name, markup] of states) {
+      // `nested` empty is the second half: a hook can be unique and still
+      // swallow its neighbour's state cards.
+      expect(surfaceHooks(markup, HOOKS), name).toEqual({
+        counts: oneEach(HOOKS),
+        nested: [],
+      });
+    }
+  });
+
+  it("renders no surface at all for the two whole-page refusals", async () => {
+    // Both return before any `<Section>`, so the hooks are absent rather than
+    // duplicated — stated as a number, because "the selector matched nothing"
+    // is exactly what `stateOf` throws on, and a future ticket must not
+    // resurrect them here by accident.
+    const missingRow = await renderItem(
+      { ...conflictScript(), [T.reviewItems]: { data: null } },
+      "01920000-0000-7000-8000-0000000005ff",
+    );
+    const refusedRead = await renderItem(
+      { ...conflictScript(), [T.reviewItems]: { error: permissionDenied(T.reviewItems) } },
+      reviewItemDataConflict().review_item_id,
+    );
+
+    for (const [name, markup] of [
+      ["no such row", missingRow],
+      ["review table refused", refusedRead],
+    ] as [string, string][]) {
+      expect(surfaceHooks(markup, HOOKS), name).toEqual({
+        counts: { [HEADER_HOOK]: 0, [EVIDENCE_HOOK]: 0 },
+        nested: [],
+      });
+    }
+  });
+
+  it("keeps each surface's own content inside its own hook", async () => {
+    // A hook that is unique but points at the wrong surface is the same bug
+    // wearing a different hat, so each name is checked against what that
+    // surface actually reads — including the legs, which belong to NEITHER.
+    const item = reviewItemEntityLink();
+    const $ = cheerio.load(
+      await renderItem(
+        stuckScript({ [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) } }),
+        item.review_item_id,
+      ),
+    );
+
+    expect($(HEADER_HOOK).find("[data-severity]").length).toBe(1);
+    expect($(EVIDENCE_HOOK).find("[data-evidence-view]").length).toBe(1);
+    expect($(EVIDENCE_HOOK).find("[data-evidence]").length).toBeGreaterThan(0);
+
+    // The header holds no evidence, and the evidence holds no header.
+    expect($(HEADER_HOOK).find("[data-evidence], [data-evidence-view]").length).toBe(0);
+    expect($(EVIDENCE_HOOK).find("[data-severity]").length).toBe(0);
+
+    // The bucket leg refused: its card renders on the page and OUTSIDE the
+    // evidence surface, so grading the evidence never reads it as the
+    // evidence's own failure (the exact confusion admin-window/TASK-0031
+    // produces on staging).
+    const refusals = $('[data-state="error"]');
+    expect(refusals.length).toBeGreaterThan(0);
+    expect($(EVIDENCE_HOOK).find('[data-state="error"]').length).toBe(0);
   });
 });

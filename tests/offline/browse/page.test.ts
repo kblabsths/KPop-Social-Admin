@@ -13,6 +13,7 @@ import {
 import { recordHref } from "@/lib/records/routes";
 import { BrowseTable } from "@/components/browse/browse-table";
 import { h, render, textOf } from "../ui/markup";
+import { oneEach, surfaceHooks } from "../../live/parity";
 import { ID, eventListingRow, eventRow, fieldProvenanceRow, sourceRow } from "../../fixtures/rows";
 import {
   permissionDenied,
@@ -565,5 +566,88 @@ describe("every state renders without throwing", () => {
       const markup = await renderBrowse(script);
       expect([...markup.matchAll(/<h1[\s>]/g)]).toHaveLength(1);
     }
+  });
+});
+
+/* ── the addressing the live oracle depends on ───────────────────────────── */
+
+/**
+ * The name the events BODY answers to (`data-surface`,
+ * `src/app/browse/page.tsx`), as `tests/live/browse.live.test.ts` addresses
+ * it.
+ */
+const EVENTS_HOOK = '[data-surface="events"]';
+
+describe("the surface hooks the live parity oracle addresses", () => {
+  /**
+   * The live oracle grades ONE surface and `stateOf` (`tests/live/parity.ts`)
+   * refuses any selector matching other than exactly one element. Until
+   * admin-window/DEBT-0002 it addressed this body as
+   * `section:nth-of-type(1) > :last-child`, compounding the page's section
+   * ORDER with the body's position among its section's own children: one added
+   * section, or one more leg note rendered below the table, either duplicates
+   * the match or repoints it at a leg note — silently, because a leg note is a
+   * perfectly readable state card. On `/cycles` the same class threw
+   * `MarkupReadError` in four live tests (admin-window/BUG-0040,
+   * admin-window/BUG-0056).
+   *
+   * Nothing offline could see any of that — `npm test` runs the offline and
+   * isolated projects only — so the live oracle's addressing had no pin in CI.
+   * These cases are that pin, in the file that owns this page's markup.
+   */
+  it("gives the events surface exactly one element, in every state", async () => {
+    const states: [string, string][] = [
+      ["populated", await renderBrowse(healthyScript())],
+      [
+        "one column",
+        await renderBrowse(healthyScript(), { [COLUMNS_PARAM]: "event_id" }),
+      ],
+      ["empty", await renderBrowse(healthyScript({ [T.eventListings]: { data: [], count: 0 } }))],
+      // The states that swap the body for a card are exactly where a wrapper
+      // is most likely to appear or vanish.
+      ["absent", await renderBrowse(healthyScript({ [T.eventListings]: { error: tableNotInSchemaCache(T.eventListings) } }))],
+      ["refused", await renderBrowse(healthyScript({ [T.eventListings]: { error: permissionDenied(T.eventListings) } }))],
+      // Both leg notes rendering above the body: the branch where the old
+      // `> :last-child` addressing was one element away from reading a leg.
+      [
+        "both legs unavailable",
+        await renderBrowse(
+          healthyScript({
+            [T.fieldProvenance]: { error: tableNotInSchemaCache(T.fieldProvenance) },
+            [T.sources]: { error: permissionDenied(T.sources) },
+          }),
+        ),
+      ],
+    ];
+    for (const [name, markup] of states) {
+      expect(surfaceHooks(markup, [EVENTS_HOOK]), name).toEqual({
+        counts: oneEach([EVENTS_HOOK]),
+        nested: [],
+      });
+    }
+  });
+
+  it("holds the events body and nothing else — the leg notes stay outside it", async () => {
+    // A hook that is unique but points at the wrong surface is the same bug
+    // wearing a different hat. The venues and provenance legs are separate
+    // reads with separate states: a surface that swallowed them would grade an
+    // unreadable venue join as unreadable events.
+    const populated = cheerio.load(await renderBrowse(healthyScript()));
+    expect(populated(EVENTS_HOOK).find("tbody tr").length).toBeGreaterThan(0);
+    expect(populated(EVENTS_HOOK).find("[data-state]").length).toBe(0);
+
+    const legsBroken = cheerio.load(
+      await renderBrowse(
+        healthyScript({
+          [T.fieldProvenance]: { error: tableNotInSchemaCache(T.fieldProvenance) },
+          [T.sources]: { error: permissionDenied(T.sources) },
+        }),
+      ),
+    );
+    // The legs' own cards render on the page, and none of them is inside the
+    // events surface — which still holds the table it read fine.
+    expect(legsBroken("[data-state]").length).toBeGreaterThan(0);
+    expect(legsBroken(EVENTS_HOOK).find("[data-state]").length).toBe(0);
+    expect(legsBroken(EVENTS_HOOK).find("tbody tr").length).toBeGreaterThan(0);
   });
 });

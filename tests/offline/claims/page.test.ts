@@ -17,6 +17,7 @@ import {
   SOURCE_NAME,
   nameOf,
 } from "./population";
+import { oneEach, surfaceHooks } from "../../live/parity";
 import {
   observationRow,
   pendingClaimRow,
@@ -1631,5 +1632,127 @@ describe("the copy the operator actually reads", () => {
     ).toEqual(['1: <span className=\"type-data text-ink\">stuck_pattern</span> dial is a']);
     // ...and the page as it stands must be clean of it.
     expect(implicitInterElementSpaces("src/app/claims/page.tsx")).toEqual([]);
+  });
+});
+
+/* ── the addressing the live oracle depends on ───────────────────────────── */
+
+/**
+ * The name each surface answers to (`data-surface`, `src/app/claims/page.tsx`),
+ * as `tests/live/claims.live.test.ts` addresses them.
+ */
+const SURFACE_HOOKS = {
+  buckets: '[data-surface="buckets"]',
+  claims: '[data-surface="claims"]',
+  gauge: '[data-surface="gauge"]',
+} as const;
+
+const HOOKS = Object.values(SURFACE_HOOKS);
+
+/**
+ * How many elements each hook reaches, per tab. `buckets` is the one surface
+ * that does not always render — the standing tab draws no bucket table — which
+ * is a count of 0 or 1 and never 2, the only value `stateOf` cannot read.
+ */
+const EXPECTED: Record<string, Record<string, number>> = {
+  buckets: oneEach(HOOKS),
+  standing: { ...oneEach(HOOKS), [SURFACE_HOOKS.buckets]: 0 },
+};
+
+describe("the surface hooks the live parity oracle addresses", () => {
+  /**
+   * The live oracle grades ONE surface at a time and `stateOf`
+   * (`tests/live/parity.ts`) refuses any selector matching other than exactly
+   * one element. Until admin-window/DEBT-0002 it addressed these
+   * POSITIONALLY — `section:nth-of-type(n)` — and on THIS page the position
+   * was already tab-dependent, so the oracle carried a `listOf(tab)` function
+   * whose only job was to guess a number. One added section, or one `<div>`
+   * around an existing one, either duplicates a match or silently repoints the
+   * selector at the neighbouring surface; on `/cycles` exactly that made
+   * `:nth-of-type(1)` match two surfaces and four live tests threw
+   * (admin-window/BUG-0040, admin-window/BUG-0056).
+   *
+   * Nothing offline could see any of that — `npm test` runs the offline and
+   * isolated projects only — so the live oracle's addressing had no pin in CI.
+   * These cases are that pin, in the file that owns this page's markup.
+   */
+  it("gives each surface its own one element, on both tabs and in every state", async () => {
+    for (const [tab, counts] of Object.entries(EXPECTED)) {
+      const states: [string, string][] = [
+        ["populated", await renderClaims(healthyScript(), { tab })],
+        // The narrowing that matched nothing, and the view that holds nothing:
+        // both swap the list's table for a card.
+        [
+          "narrowed to nothing",
+          await renderClaims(healthyScript(), { tab, source_id: SOURCE.third }),
+        ],
+        [
+          "empty",
+          await renderClaims(
+            healthyScript({ [T.pendingClaims]: { data: [], count: 0 } }),
+            { tab },
+          ),
+        ],
+        // The states that swap a surface's table for a card are exactly where
+        // a wrapper is most likely to appear or vanish.
+        [
+          "absent",
+          await renderClaims(
+            {
+              [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
+              [T.observations]: { error: tableNotInSchemaCache(T.observations) },
+              [T.sources]: { error: tableNotInSchemaCache(T.sources) },
+            },
+            { tab },
+          ),
+        ],
+        [
+          "refused",
+          await renderClaims(
+            {
+              [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
+              [T.observations]: { error: permissionDenied(T.observations) },
+              [T.sources]: { error: permissionDenied(T.sources) },
+            },
+            { tab },
+          ),
+        ],
+        // One read failing while its neighbours succeed: only the registry
+        // refused, so the claims render and an extra state line appears inside
+        // the list surface.
+        [
+          "registry refused",
+          await renderClaims(
+            healthyScript({ [T.sources]: { error: permissionDenied(T.sources) } }),
+            { tab },
+          ),
+        ],
+      ];
+      for (const [name, markup] of states) {
+        // `nested` empty is the second half: a hook can be unique and still
+        // swallow its neighbour's state cards.
+        expect(surfaceHooks(markup, HOOKS), `${tab}: ${name}`).toEqual({
+          counts,
+          nested: [],
+        });
+      }
+    }
+  });
+
+  it("keeps each surface's own rows and window line inside its own hook", async () => {
+    // A hook that is unique but points at the wrong surface is the same bug
+    // wearing a different hat, so each name is checked against what that
+    // surface actually reads.
+    const $ = cheerio.load(await renderClaims(healthyScript()));
+
+    expect($(SURFACE_HOOKS.buckets).find("[data-bucket]").length).toBeGreaterThan(0);
+    expect($(SURFACE_HOOKS.claims).find("[data-claim]").length).toBeGreaterThan(0);
+    expect($(SURFACE_HOOKS.claims).find('[data-window="claims"]').length).toBe(1);
+
+    // The bucket table and the claim list never bleed into each other, and the
+    // gauge holds neither.
+    expect($(SURFACE_HOOKS.buckets).find("[data-claim], [data-window]").length).toBe(0);
+    expect($(SURFACE_HOOKS.claims).find("[data-bucket]").length).toBe(0);
+    expect($(SURFACE_HOOKS.gauge).find("[data-claim], [data-bucket]").length).toBe(0);
   });
 });
