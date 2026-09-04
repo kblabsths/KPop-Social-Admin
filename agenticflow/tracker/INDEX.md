@@ -1,7 +1,6 @@
-# Tracker index (regenerated 2026-09-04T04:32:50Z — do not edit)
+# Tracker index (regenerated 2026-09-04T04:40:37Z — do not edit)
 
 ## open
-- BUG-0072 [P2][bug][-] STACK 5's interim walk-write branch names no runnable residue sweep, and points at groups/idols columns that sweep cannot see  (scope:agenticflow/docs/vision/STACK.md from:BUG-0071)
 - BUG-0050 [P3][bug][M1] Phone (390px): the fixed 192px sidebar takes half the viewport and the content column collapses  (scope:src/components/shell/shell.tsx,tests/offline/shell/shell.test.ts from:M1-endgame-designer-walk)
 - BUG-0055 [P3][bug][M1] Cycles & runs names one state two ways on one screen: the rows say 'died', the health panel says 'unfinished'  (scope:src/app/cycles/page.tsx,src/lib/gauges/cycle-health.ts,tests/offline/cycles/page.test.ts,tests/offline/gauges/cycle-health.test.ts from:M1-endgame-user-sim)
 - BUG-0066 [P3][bug][M1] Edit cell: while the write is in flight the cell shows the new value and states no work, so 'being written' and 'written' differ only by 50% opacity  (scope:src/components/EditableCell.tsx,tests/offline/ui/editable-cell.test.ts from:qa:BUG-0060)
@@ -13,6 +12,9 @@
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:1) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
 ## built
+- BUG-0072 [P2][bug][-] STACK 5's interim walk-write branch names no runnable residue sweep, and points at groups/idols columns that sweep cannot see  (scope:agenticflow/docs/vision/STACK.md @builder-101 from:BUG-0071)
+
+## qa
 - BUG-0049 [P3][bug][M1] Micro labels uppercase machine identifiers: DATA_CONFLICT OPEN, ENTITY_LINK FOLDED, TICKETMASTER STUCK RECORDS  (scope:src/app/queues/page.tsx,src/app/sources/page.tsx,tests/offline/queues/page.test.ts,tests/offline/sources/page.test.ts @builder-100 from:M1-endgame-designer-walk)
 
-Totals — built:1, done:112, open:10. Archived: 0.
+Totals — built:1, done:112, open:9, qa:1. Archived: 0.
