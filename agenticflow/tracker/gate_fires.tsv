@@ -84,3 +84,6 @@
 2026-09-04T06:17:01Z	artifact_gate	blocked write outside repo: /g,
 2026-09-04T06:25:44Z	artifact_gate	blocked write outside repo: /tmp/x
 2026-09-04T06:40:34Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-04T07:06:18Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-04T07:06:57Z	artifact_gate	blocked write outside repo: ../../tracker/evidence/DEBT-0005
+2026-09-04T07:08:49Z	artifact_gate	blocked write outside repo: ../next.log
