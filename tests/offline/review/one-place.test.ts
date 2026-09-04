@@ -107,17 +107,25 @@ describe("nothing is scaffolded toward the M2 close", () => {
     expect(sourceFiles().filter((file) => SETTLE_PATH.test(file))).toEqual([]);
   });
 
-  it("mentions verdicts under src only as the table name in tables.ts", () => {
+  it("mentions verdicts under src only as registry entries in tables.ts", () => {
     // admin-window/TASK-0002 named `verdicts` in `T` on purpose: it does not
     // exist until M2's handoff migration, so reading it classifies as
-    // not_provisioned against today's database (ARCHITECTURE.md §4.1). That
-    // one entry is the whole footprint; this pins it so a verdict code path
+    // not_provisioned against today's database (ARCHITECTURE.md §4.1). Those
+    // entries are the whole footprint; this pins them so a verdict code path
     // cannot arrive unnoticed before M2 designs it.
+    //
+    // The list is exactly as tight as it was when it held one line: still an
+    // exact match, still `tables.ts` alone. The second line arrived with
+    // admin-window/BUG-0077, which made the registry say table-or-view for
+    // every name it spells — so `verdicts` must be classified there or the map
+    // does not compile. It is the same kind of entry as the first, a NAME and
+    // its metadata; neither is a read, a write, a route or a component, which
+    // is what this guard is about.
     expect(filesWhereCodeMatches(/verdicts/)).toEqual(["src/lib/db/tables.ts"]);
     const entries = codeLines("src/lib/db/tables.ts").filter((line) =>
       /verdicts/.test(line),
     );
-    expect(entries).toEqual(['  verdicts: "verdicts",']);
+    expect(entries).toEqual(['  verdicts: "verdicts",', '  [T.verdicts]: "table",']);
   });
 });
 
