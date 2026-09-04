@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-04T02:22:52Z — do not edit)
+# Tracker index (regenerated 2026-09-04T02:30:41Z — do not edit)
 
 ## open
 - TASK-0035 [P2][task][patch] The walk sandbox in the one map: an EDIT_CONFIG entry that renders not-provisioned wherever the table is absent  (deps:TASK-0034 scope:src/lib/edit/config.ts,src/lib/db/tables.ts,tests/offline/edit/config.test.ts,tests/offline/records/page.test.ts,tests/offline/absence,tests/live/residue.live.test.ts,tests/http/auth.http.test.ts from:inbox:2026-09-03-walker-sandbox-table.md)
@@ -14,7 +14,7 @@
 - DEBT-0004 [P3][debt][M1] /cycles and /sources carry their own presentation: 1,291- and 793-line pages, no components module, while every other page has one  (deps:DEBT-0003(unmet:1) scope:src/components/cycles,src/components/sources,src/app/cycles/page.tsx,src/app/sources/page.tsx,tests/offline/cycles/page.test.ts,tests/offline/sources/page.test.ts from:M1-endgame-structure-walk)
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:1) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
-## claimed
+## built
 - DEBT-0002 [P2][debt][M1] Five live parity oracles still address their surfaces by POSITION (section:nth-of-type) — the class BUG-0056 fixed on one page only  (scope:tests/live/dashboard.live.test.ts,tests/live/sources.live.test.ts,tests/live/claims.live.test.ts,tests/live/browse.live.test.ts,tests/live/review-item.live.test.ts,src/app/page.tsx,src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/browse/page.tsx,src/app/queues/[reviewItemId]/page.tsx @builder-92 from:BUG-0056)
 
-Totals — claimed:1, done:105, open:12. Archived: 0.
+Totals — built:1, done:105, open:12. Archived: 0.
