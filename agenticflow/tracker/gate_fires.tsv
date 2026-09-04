@@ -71,3 +71,4 @@
 2026-09-04T00:30:21Z	artifact_gate	blocked write outside repo: /tmp/x
 2026-09-04T00:57:37Z	artifact_gate	blocked write outside repo: /_next/static/[^"]*\.css[^"]*
 2026-09-04T02:17:48Z	evidence_budget	qa_evidence_overbudget: BUG-0065 4243/4000 chars
+2026-09-04T02:18:52Z	artifact_gate	blocked write outside repo: /records/groups/[0-9a-f-]\{36\}
