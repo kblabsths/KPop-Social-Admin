@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-04T06:12:14Z — do not edit)
+# Tracker index (regenerated 2026-09-04T06:21:19Z — do not edit)
 
 ## open
 - BUG-0073 [P3][bug][M1] The record page h1 uppercases the table identifier: WALK_SANDBOX RECORD, GROUPS RECORD  (scope:src/app/records/[table]/[id]/page.tsx,src/components/ui/page.tsx,tests/offline/records/page.test.ts from:BUG-0049)
@@ -9,7 +9,4 @@
 ## claimed
 - BUG-0070 [P3][bug][M1] /claims drops its window line on a read that happened and found nothing, where every other windowed surface keeps it  (scope:src/app/claims/page.tsx,tests/offline/claims/page.test.ts,tests/offline/absence/pages.test.ts,tests/live/claims.live.test.ts @builder-110 from:BUG-0067)
 
-## qa
-- BUG-0076 [P2][bug][M1] Queues item page: an address that is not a review-item id is reported as a failed database read, not as no such item  (scope:src/app/queues/[reviewItemId]/page.tsx,tests/offline/review-item/page.test.ts @builder-109 from:BUG-0068)
-
-Totals — claimed:1, done:121, open:4, qa:1. Archived: 0.
+Totals — claimed:1, done:122, open:4. Archived: 0.
