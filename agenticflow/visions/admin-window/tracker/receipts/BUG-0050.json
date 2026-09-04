@@ -1,0 +1,29 @@
+{
+ "id": "BUG-0050",
+ "created": "2026-09-04T04:56:54Z",
+ "green": true,
+ "git_head": "8d479858f8cd097b2b02a38b89afdbbee9498f66",
+ "scope": [
+  "agenticflow/docs/vision/LOOK_AND_FEEL.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "84e788caa6f6bc2d60d3126cee980272204ca554415e96832cc0a0656af62103",
+ "commands": [
+  {
+   "cmd": "grep -q '^- \\*\\*Viewport:' agenticflow/docs/vision/LOOK_AND_FEEL.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF '1280px' agenticflow/docs/vision/LOOK_AND_FEEL.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test -z \"$(git diff --name-only run/admin-window...HEAD -- src tests)\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

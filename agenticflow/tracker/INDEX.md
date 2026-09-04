@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-04T04:48:17Z — do not edit)
+# Tracker index (regenerated 2026-09-04T04:57:59Z — do not edit)
 
 ## open
 - BUG-0066 [P3][bug][M1] Edit cell: while the write is in flight the cell shows the new value and states no work, so 'being written' and 'written' differ only by 50% opacity  (scope:src/components/EditableCell.tsx,tests/offline/ui/editable-cell.test.ts from:qa:BUG-0060)
@@ -10,10 +10,7 @@
 - DEBT-0004 [P3][debt][M1] /cycles and /sources carry their own presentation: 1,291- and 793-line pages, no components module, while every other page has one  (deps:DEBT-0003(unmet:1) scope:src/components/cycles,src/components/sources,src/app/cycles/page.tsx,src/app/sources/page.tsx,tests/offline/cycles/page.test.ts,tests/offline/sources/page.test.ts from:M1-endgame-structure-walk)
 - DEBT-0005 [P3][debt][M1] The /cycles lead renders error_summary unclamped, so a long producer string can push the newest cycle back below the fold  (deps:BUG-0044,BUG-0045,BUG-0054,BUG-0055(unmet:1) scope:src/lib/format.ts,src/app/cycles/page.tsx,tests/offline/format.test.ts,tests/offline/cycles/page.test.ts from:BUG-0040)
 
-## claimed
+## built
 - BUG-0055 [P3][bug][M1] Cycles & runs names one state two ways on one screen: the rows say 'died', the health panel says 'unfinished'  (scope:src/app/cycles/page.tsx,src/lib/gauges/cycle-health.ts,tests/offline/cycles/page.test.ts,tests/offline/gauges/cycle-health.test.ts @builder-103 from:M1-endgame-user-sim)
 
-## qa
-- BUG-0050 [P3][bug][M1] Phone (390px): the fixed 192px sidebar takes half the viewport and the content column collapses  (scope:agenticflow/docs/vision/LOOK_AND_FEEL.md @designer from:M1-endgame-designer-walk)
-
-Totals — claimed:1, done:114, open:8, qa:1. Archived: 0.
+Totals — built:1, done:115, open:8. Archived: 0.

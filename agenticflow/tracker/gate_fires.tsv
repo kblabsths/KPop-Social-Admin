@@ -77,3 +77,4 @@
 2026-09-04T03:43:22Z	artifact_gate	blocked write outside repo: /tmp/lint.out
 2026-09-04T03:58:36Z	evidence_budget	qa_evidence_overbudget: TASK-0036 4373/4000 chars
 2026-09-04T04:11:23Z	artifact_gate	blocked write outside repo: /tmp/dev/null
+2026-09-04T04:53:47Z	artifact_gate	blocked write outside repo: /tmp/x
