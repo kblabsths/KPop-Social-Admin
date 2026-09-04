@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { orDash } from "@/lib/format";
 import { cx } from "@/components/ui/cx";
 
@@ -31,6 +31,93 @@ type Status =
   | { kind: "saved" }
   | { kind: "failed"; message: string };
 
+/**
+ * What the operator is told, in edit mode, about how this edit ends —
+ * campaign admin-window/BUG-0060.
+ *
+ * The cell used to be one bare input and nothing else: no control, no hint,
+ * no `aria-describedby`, and entering edit mode added ZERO text to the page
+ * (measured by the verifier 2026-09-03 and again on this branch). Every key
+ * that ends an edit was undocumented, so the only commit path M1 ships was
+ * discoverable by guessing.
+ *
+ * It is a HINT rather than a Save button on purpose. The Look pins this
+ * widget's mechanism — "click a value, it becomes an input with a 1px accent
+ * border; Enter or blur saves, Escape reverts" — and a Save button inside the
+ * cell would be a control you cannot click without first blurring the input,
+ * i.e. a second commit path racing the one that already fired. Naming the
+ * three keys costs no new mechanism and no new failure mode.
+ *
+ * **It states what LEAVING the field does, which is the half an operator
+ * cannot guess.** Blur commits (measured on this branch: PATCH 200, value
+ * survives a reload), so clicking away is a save and not a discard — and a
+ * surface that saves on blur without saying so is exactly as surprising as one
+ * that discards on blur without saying so.
+ *
+ * The multiline wording is not decoration: in a textarea Enter inserts a line
+ * (`onKeyDown` below), so a single sentence claiming "Enter saves" would be
+ * false on half this component's renderings.
+ */
+export function editHint(multiline: boolean): string {
+  return multiline
+    ? "Leaving the field saves. Enter adds a line. Escape cancels the edit."
+    : "Enter or leaving the field saves. Escape cancels the edit.";
+}
+
+const FIELD_CLASS =
+  "type-data w-full rounded-control border border-accent bg-surface px-1 py-0.5 text-ink";
+
+/**
+ * The cell in edit mode: the field, and the line that says how the edit ends.
+ *
+ * Pure over its props and exported so the offline suite can render edit mode
+ * at all — `EditableCell` reaches this state only from a click, which
+ * `renderToStaticMarkup` cannot produce, so the state that carries the hint
+ * would otherwise be provable only in a browser.
+ *
+ * The hint is wired with `aria-describedby`, not merely placed nearby: a
+ * screen-reader operator lands on the input and must hear how to commit
+ * without hunting for a sibling span.
+ */
+export function EditField({
+  value,
+  label,
+  hintId,
+  multiline = false,
+  onChange,
+  onBlur,
+  onKeyDown,
+}: {
+  value: string;
+  /** The field's accessible name: "short_name of groups". */
+  label: string;
+  /** The id of the hint this field is described by. Unique per cell. */
+  hintId: string;
+  multiline?: boolean;
+  onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+  onBlur: () => void;
+  onKeyDown: (event: React.KeyboardEvent) => void;
+}) {
+  const shared = {
+    autoFocus: true,
+    "aria-label": label,
+    "aria-describedby": hintId,
+    value,
+    onChange,
+    onBlur,
+    onKeyDown,
+    className: FIELD_CLASS,
+  };
+  return (
+    <>
+      {multiline ? <textarea rows={4} {...shared} /> : <input {...shared} />}
+      <span id={hintId} className="type-data text-ink-secondary">
+        {editHint(multiline)}
+      </span>
+    </>
+  );
+}
+
 export function EditableCell({
   value,
   onSave,
@@ -50,6 +137,7 @@ export function EditableCell({
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const reverting = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hintId = useId();
 
   useEffect(
     () => () => {
@@ -110,34 +198,18 @@ export function EditableCell({
     }
   }
 
-  const fieldClass =
-    "type-data w-full rounded-control border border-accent bg-surface px-1 py-0.5 text-ink";
-
   return (
     <span className="inline-flex flex-wrap items-baseline gap-2">
       {editing ? (
-        multiline ? (
-          <textarea
-            autoFocus
-            rows={4}
-            aria-label={label}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onBlur={() => void commit()}
-            onKeyDown={onKeyDown}
-            className={fieldClass}
-          />
-        ) : (
-          <input
-            autoFocus
-            aria-label={label}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onBlur={() => void commit()}
-            onKeyDown={onKeyDown}
-            className={fieldClass}
-          />
-        )
+        <EditField
+          value={draft}
+          label={label}
+          hintId={hintId}
+          multiline={multiline}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => void commit()}
+          onKeyDown={onKeyDown}
+        />
       ) : (
         <button
           type="button"
