@@ -36,6 +36,15 @@ const row = { id: "a", source: "ticketmaster", failures: 1234 };
 
 const SAMPLES: Sample[] = [
   { name: "Page", html: render(h(Page, { title: "Queues", actions: h(Button, {}, "Close") }, "body")) },
+  {
+    // A title that carries a machine identifier is a SECOND rendering of this
+    // primitive — two spans and no type step on the h1 — and the rules below
+    // only ever saw the first (admin-window/BUG-0073; same reason
+    // `DataTable/marked` is here). A rendering no sample reaches is a
+    // rendering no rule binds.
+    name: "Page/identifier-title",
+    html: render(h(Page, { title: { identifier: "walk_sandbox", words: "record" } }, "body")),
+  },
   { name: "Section", html: render(h(Section, { title: "Runs" }, "body")) },
   {
     name: "DataTable",

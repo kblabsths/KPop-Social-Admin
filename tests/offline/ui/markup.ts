@@ -16,18 +16,31 @@ export { createElement as h } from "react";
 export { renderToStaticMarkup as render } from "react-dom/server";
 
 /**
- * Every `micro` label in the rendered markup that has swallowed a machine
- * identifier (campaign admin-window/BUG-0049).
+ * The two type steps that carry `text-transform: uppercase` in `globals.css` —
+ * `micro` (the eyebrow) and `title` (page h1 and section h2). Whatever text
+ * lands inside one of these elements is rewritten on screen, so these are the
+ * only two the guard below has to look at, and both are named here rather than
+ * in the filter so that adding a sixth step later is one edit.
+ */
+const UPPERCASING_STEPS = ["type-micro", "type-title"];
+
+/**
+ * Every uppercasing label in the rendered markup that has swallowed a machine
+ * identifier (campaign admin-window/BUG-0049; widened from `micro` alone to
+ * every uppercasing step by admin-window/BUG-0073, which found the same defect
+ * in a page h1 the `micro`-only version could not see).
  *
  * The `micro` step is uppercase sans (`--text-micro` + `text-transform:
- * uppercase` in `globals.css`), and Voice bar 5 says machine identifiers
+ * uppercase` in `globals.css`) and so is `title` (`--text-title`), and Voice
+ * bar 5 says machine identifiers
  * "render verbatim in mono and are never prettified". Put one inside a `micro`
  * element and the browser rewrites its case: `data_conflict` reaches the
  * screen as `DATA_CONFLICT`, under a heading rendering the same value
  * correctly. So the check is STRUCTURAL — not "is this string uppercase" but
  * "did an identifier end up inside the element that uppercases" — which is
- * also what the fix does: the identifier renders as a sibling of the `micro`
- * span, never inside it (`src/components/ui/micro-label.tsx`).
+ * also what the fix does: the identifier renders as a sibling of the sans
+ * span, never inside it (`src/components/ui/micro-label.tsx` for the eyebrow,
+ * `src/components/ui/page.tsx` for the h1).
  *
  * An underscore is the marker, for the same reason `tests/offline/cycles`
  * already uses it on table headers (admin-window/BUG-0044): the app's own
@@ -44,9 +57,10 @@ export function uppercasedIdentifiers(html: string): string[] {
   const $ = cheerio.load(html);
   return $("[class]")
     .toArray()
-    .filter((element) =>
-      ($(element).attr("class") ?? "").split(/\s+/).includes("type-micro"),
-    )
+    .filter((element) => {
+      const classes = ($(element).attr("class") ?? "").split(/\s+/);
+      return UPPERCASING_STEPS.some((step) => classes.includes(step));
+    })
     .map((element) => $(element).text().replace(/\s+/g, " ").trim())
     .filter((text) => text.includes("_"));
 }

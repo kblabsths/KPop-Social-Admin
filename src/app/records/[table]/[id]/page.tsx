@@ -272,8 +272,13 @@ function RecordFrame({
   id: string;
   children: ReactNode;
 }) {
+  // The table name is a machine identifier, so it is handed to `Page` as one —
+  // `{identifier, words}`, never `` `${config.table} record` ``. The primitive
+  // keeps it out of the uppercasing `type-title` element and renders it
+  // verbatim in mono, the way this page's own row id below and `/queues`'s
+  // `data_conflict` already read (admin-window/BUG-0073).
   return (
-    <Page title={`${config.table} record`}>
+    <Page title={{ identifier: config.table, words: "record" }}>
       {/* The record's identity, rendered whatever the read did: an operator
           looking at a failed read still needs to know which row they asked
           for. Mono, because it is a value the database produced. */}
