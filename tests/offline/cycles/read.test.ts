@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { cycleState } from "@/lib/cycles/state";
 import {
   CYCLE_COUNTERS,
   CYCLE_WINDOW,
-  cycleState,
   newestFirst,
   readCycles,
   type ResolutionRunRow,
@@ -29,8 +29,9 @@ import {
 } from "../../fixtures/stub-client";
 
 /**
- * `src/lib/db/cycles.ts` — the `resolution_runs` window read and the state one
- * cycle row is in (campaign admin-window/TASK-0014).
+ * `src/lib/db/cycles.ts` — the `resolution_runs` window read — and the state
+ * function the leaf `src/lib/cycles/state.ts` exports, which decides which of
+ * the four states a cycle row is in (campaign admin-window/TASK-0014).
  *
  * The read is exercised through the scripted stub client, so the assertions
  * are about the QUERY this module builds and what it does with the answer —

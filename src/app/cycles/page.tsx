@@ -17,13 +17,12 @@ import {
   StatCard,
   type Column,
 } from "@/components/ui";
+import { STATE_WORD, cycleState, type CycleState } from "@/lib/cycles/state";
 import {
   CYCLE_COUNTERS,
   CYCLE_WINDOW,
-  cycleState,
   readCycles,
   type CycleCounter,
-  type CycleState,
   type ResolutionRunRow,
 } from "@/lib/db/cycles";
 import type { DbResult, DbUnavailable } from "@/lib/db/result";
@@ -79,8 +78,8 @@ import {
  *    until completion by design, so a row with neither an `ended_at` nor an
  *    outcome is either a cycle still going or one that died — and migration
  *    `20260901000001` says which: "a null older than one cadence is how a
- *    crash stays visible". `cycleState` in `lib/db/cycles.ts` is the one place
- *    that is decided; nothing here re-derives it.
+ *    crash stays visible". `cycleState` in `lib/cycles/state.ts` is the one
+ *    place that is decided; nothing here re-derives it.
  *  - **Every latency figure is the AGGREGATE's.** `readResolutionLatency`
  *    returns counts (`applies`, `verdictUnsets`, `unmatchedApplies`) already
  *    separated from the raw window it read, and this page renders those. A
@@ -298,24 +297,20 @@ const OUTCOME_TONE: Record<string, "healthy" | "broken" | "neutral"> = {
   failed: "broken",
 };
 
-/**
- * The ONE word this page gives each no-outcome cycle state — read by the table
- * row below AND by the cycle-health panel's outcome list, so the two cannot
- * name one state two ways (Voice glossary: "one name per concept, everywhere").
+/*
+ * The word for each no-outcome state is `STATE_WORD`, imported from the leaf
+ * `lib/cycles/state.ts` — read by the table row below, by the cycle-health
+ * panel's outcome list, AND by the Dashboard's cycle table, so no two of them
+ * can name one state two ways (Voice glossary: "one name per concept,
+ * everywhere").
  *
- * admin-window/BUG-0055 is what it is for: the rows said `died` where the panel
- * said `unfinished`, over the same four cycles on the same screen, and a reader
- * had to satisfy himself the two sets were one before trusting either count.
- *
- * `unrecorded` has no word on purpose. It ended and the producer wrote no
- * outcome, so neither surface invents one: both render the shared absence dash
- * through `orDash`, which is the same string in both places too.
+ * admin-window/BUG-0055 is what it is for: the rows said `died` where the
+ * panel said `unfinished`, over the same four cycles on the same screen, and a
+ * reader had to satisfy himself the two sets were one before trusting either
+ * count. admin-window/BUG-0074 is why it left this file: the Dashboard, which
+ * cannot import a page, had grown its own copy of the words and its own idea
+ * of what a no-outcome row is.
  */
-const STATE_WORD: Record<Exclude<CycleState["kind"], "outcome">, string | null> = {
-  running: "still running",
-  died: "died",
-  unrecorded: null,
-};
 
 /**
  * A cycle's state, as the operator reads it.
@@ -423,7 +418,7 @@ function cycleColumns(
             className={asked ? "text-accent" : undefined}
             data-cycle={row.run_id}
             // What this row IS, in one attribute: the four states of a cycle
-            // row, decided once in `lib/db/cycles.ts`.
+            // row, decided once in `lib/cycles/state.ts`.
             data-cycle-state={state.kind}
             // The producer's own word, where it wrote one — never narrowed to
             // the check constraint's three spellings.
