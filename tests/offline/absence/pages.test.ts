@@ -500,3 +500,55 @@ describe("a window line describes a window the page read", () => {
     coversTheFloor(publishes);
   });
 });
+
+/**
+ * One read, one sentence — graded across the pages that share it.
+ *
+ * `/claims`'s pending-claims gauge and `/sources`'s awaiting-row gauge render
+ * the SAME `WindowInfo`: both call `fetchPendingClaims`
+ * (`lib/gauges/pending-claims.ts`), whose window is `windowOf(bounds,
+ * observations.data.length)` over `observations` — one object, one set of
+ * bounds, one cap. Two surfaces describing one read must therefore describe it
+ * identically; where they do not, a reader comparing the two pages is told the
+ * app looked in two different places, which is the drift DEBT-0003 set out to
+ * end and did not (the `over` word was parameterised, not settled).
+ *
+ * Copy-independent by construction: both lines come from the ONE `WindowLine`
+ * primitive, so a copy edit moves both together and this stays green. It can
+ * only redden when the two CALL SITES disagree about the read they share.
+ */
+describe("two surfaces over one read describe it the same way", () => {
+  const lineText = (markup: string, gauge: string): string =>
+    cheerio.load(markup)(`[data-window="${gauge}"]`).text().replace(/\s+/g, " ").trim();
+
+  // STRICT xfail while admin-window/BUG-0077 stands: the modifier below passes
+  // only while the two call sites disagree, so the day the divergence is fixed
+  // this turns RED and sends the reader to the ticket, which is where the
+  // modifier comes off. Campaign-qualified on purpose — ids restart per
+  // campaign, and a pin outlives one.
+  it.fails("states the pending-claims window the same on /claims and /sources", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-04T12:00:00.000Z"));
+    try {
+      const claims = SURFACES.find((surface) => surface.route === "/claims");
+      const sources = SURFACES.find((surface) => surface.route === "/sources");
+      if (claims === undefined || sources === undefined) {
+        throw new Error("the two surfaces sharing the pending-claims read are not both here");
+      }
+
+      scriptDatabase(populatedScript(claims));
+      const onClaims = lineText(await renderSurface(claims), "pending");
+      scriptDatabase(populatedScript(sources));
+      const onSources = lineText(await renderSurface(sources), "awaiting_row");
+
+      expect(onClaims, "/claims published no gauge window line").not.toBe("");
+      expect(onSources, "/sources published no gauge window line").not.toBe("");
+      expect(
+        onClaims,
+        "the same pending-claims window is described differently on the two pages that read it",
+      ).toBe(onSources);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
