@@ -583,6 +583,10 @@ describe("the cycles the resolver filed", () => {
       "0192ffff-dead",
     );
     expect($absent("[data-cycle][aria-current]").length).toBe(0);
+    // The DRAWN mark is absent too (admin-window/BUG-0054, QA probe): the page
+    // must not paint a row for an id it just said is not in the window.
+    expect($absent("[data-row-marked]").length).toBe(0);
+    expect($marked("[data-row-marked]").length).toBe(1);
     // The id is named verbatim, so the operator can see which cycle was meant.
     expect(absent).toContain("0192ffff-dead");
   });
@@ -666,6 +670,34 @@ describe("the cycles the resolver filed", () => {
     });
     expect(cycleRow(markup, FAILED.run_id).current).toBe("true");
     expect(cycleRow(markup, SUCCEEDED.run_id).current).toBeUndefined();
+    // The drawn mark takes the same first value, and lands on one row only —
+    // an ambiguous URL must never paint two (admin-window/BUG-0054, QA probe).
+    expect(cheerio.load(markup)("[data-row-marked]").length).toBe(1);
+    expect(cycleRow(markup, FAILED.run_id).marked).toBe("true");
+    expect(cycleRow(markup, SUCCEEDED.run_id).marked).toBeUndefined();
+  });
+
+  it("marks nothing for a ?cycle= carrying no id at all [admin-window/BUG-0054]", async () => {
+    // Half a hand-typed URL. It is a facet the page HAS been handed, so the
+    // predicate exists and runs against all 69 rows; none may answer to it.
+    const markup = await renderCycles(healthyScript(), { cycle: "" });
+    const $ = cheerio.load(markup);
+    expect($("[data-row-marked]").length).toBe(0);
+    expect($("[data-cycle][aria-current]").length).toBe(0);
+    expect(renderedCycles(markup)).toEqual(renderedCycles(await renderCycles(healthyScript())));
+  });
+
+  it("marks nothing for a ?cycle= that is not a run id at all [admin-window/BUG-0054]", async () => {
+    // A malformed id reaches `anchorFor` and the row predicate alike; the page
+    // answers with a sentence and zero painted rows, never a crash.
+    for (const nonsense of ["../../etc/passwd", "%%%", "a b c", "<script>x</script>"]) {
+      const markup = await renderCycles(healthyScript(), { cycle: nonsense });
+      const $ = cheerio.load(markup);
+      expect($("[data-row-marked]").length, nonsense).toBe(0);
+      expect($("[data-cycle][aria-current]").length, nonsense).toBe(0);
+      expect(renderedCycles(markup).length, nonsense).toBe(CYCLES.length);
+      expect(markup, nonsense).not.toContain("<script>x");
+    }
   });
 
   it("keeps the window's own limits on screen beside a cycle it could not find", async () => {
@@ -694,6 +726,7 @@ describe("the cycles the resolver filed", () => {
     );
     expect($('[data-window="cycles"]').attr("data-window-truncated")).toBe("true");
     expect($("[data-cycle][aria-current]").length).toBe(0);
+    expect($("[data-row-marked]").length).toBe(0);
   });
 
   it("answers a ?cycle= link off an empty read, which is evidence and not a refusal", async () => {

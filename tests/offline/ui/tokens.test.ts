@@ -51,6 +51,25 @@ const SAMPLES: Sample[] = [
       }),
     ),
   },
+  {
+    // The MARKED row is a second rendering of this primitive, and the rules
+    // below only ever saw the first (admin-window/BUG-0054, QA probe): no
+    // shadow, no animation, no arbitrary value, palette jobs only, 1px
+    // borders. A rendering no sample reaches is a rendering no rule binds.
+    name: "DataTable/marked",
+    html: render(
+      h(DataTable<typeof row>, {
+        columns: [
+          { key: "source", label: "source", cell: (r) => r.source },
+          { key: "failures", label: "failures", align: "right", cell: (r) => r.failures },
+        ],
+        rows: [row],
+        rowKey: (r) => r.id,
+        marked: () => true,
+        label: "runs",
+      }),
+    ),
+  },
   { name: "StatCard", html: render(h(StatCard, { label: "decisions", value: 1234, sub: "oldest 3d", href: "/queues" })) },
   { name: "StatCard/null", html: render(h(StatCard, { label: "decisions", value: null })) },
   // every tone and variant renders here: a rule that only sees the default is

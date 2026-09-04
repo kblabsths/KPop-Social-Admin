@@ -145,6 +145,53 @@ describe("DataTable", () => {
     expect(html).toContain('aria-sort="descending"');
   });
 
+  /* ── the marked row (admin-window/BUG-0054, QA probe) ─────────────────── */
+
+  /** Every body row the markup emitted, each as its own whole element. */
+  function bodyRows(html: string): string[] {
+    const $ = cheerio.load(html);
+    return $("tbody tr").toArray().map((element) => $.html(element));
+  }
+
+  it("leaves a row it was not asked about byte-identical, mark or no mark", () => {
+    // Thirteen other surfaces render this table and not one of them passes
+    // `marked`. The mark is only safe if the rows a caller did NOT name come
+    // out of the renderer unchanged — hover fill included, since that is the
+    // one thing this table already says with a fill.
+    const plain = bodyRows(table());
+    const withMark = bodyRows(table({ marked: (row: Row) => row.id === "a" }));
+    expect(plain).toHaveLength(ROWS.length);
+    expect(withMark).toHaveLength(ROWS.length);
+    expect(withMark[1]).toBe(plain[1]);
+    // ...and the row that WAS named really did change, so the check above is
+    // not passing because nothing happened at all.
+    expect(withMark[0]).not.toBe(plain[0]);
+  });
+
+  it("renders exactly the unmarked table when the predicate names no row", () => {
+    // What `/cycles?cycle=<unknown or malformed>` hands the table: a predicate
+    // that is present and answers false everywhere. Nothing may be marked, and
+    // nothing about the table may move.
+    expect(table({ marked: () => false })).toBe(table());
+    const $ = cheerio.load(table({ marked: () => false }));
+    expect($("[data-row-marked]").length).toBe(0);
+  });
+
+  it("marks the row without moving one cell, so no column and no row height shifts", () => {
+    const cells = (html: string) => {
+      const $ = cheerio.load(html);
+      return $("tbody tr").first().find("td").toArray().map((element) => $.html(element));
+    };
+    const marked = table({ marked: (row: Row) => row.id === "a" });
+    expect(cells(marked)).toEqual(cells(table()));
+    expect(cells(marked).length).toBeGreaterThan(0);
+    // The mark is one row attribute and one class list — never a wrapper, a
+    // glyph, or an extra cell.
+    const $ = cheerio.load(marked);
+    expect($("tbody tr[data-row-marked]").length).toBe(1);
+    expect($("tbody tr").first().find("td").length).toBe(COLUMNS.length);
+  });
+
   it("keeps its header and spans the state line it is handed when there are no rows", () => {
     const html = table({ rows: [], placeholder: h(Loading, { what: "runs" }) });
     expect(html).toContain("runs");
