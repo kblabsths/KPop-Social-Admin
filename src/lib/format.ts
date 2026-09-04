@@ -254,3 +254,62 @@ export function isAbsent(value: ReactNode): boolean {
 export function orDash(value: ReactNode): ReactNode {
   return isAbsent(value) ? nullDash() : value;
 }
+
+/** The one character that stands for "there is more of this", everywhere. */
+export const ELLIPSIS = "…";
+
+/**
+ * How many characters of a producer's string a lead surface renders before it
+ * clamps — the app's one bound, so two surfaces cannot clamp differently.
+ *
+ * The number is the fold arithmetic of `/cycles`, which is where the bound is
+ * needed (campaign admin-window/DEBT-0005). The newest-run lead's error cell
+ * measures 151px wide, which is 135px of content at `data` (11/16 mono,
+ * ~20 characters to the line), so 200 characters wrap to at most ten lines —
+ * about 160px. The QA walk of admin-window/BUG-0040 measured the lead row at
+ * y=108-140 and the first cycle row at y=281-306 against a 900px fold, so
+ * there are 594px between that row and the fold and ten lines spend under a
+ * third of them. Beyond roughly 700 characters an unclamped cell spends all
+ * of it and pushes the newest cycle under the fold, which is half of the
+ * criterion the lead exists to satisfy (LOOK_AND_FEEL bar 1).
+ *
+ * Nothing on staging is clamped by it: the longest `error_summary` there is 58
+ * characters, and the producer's own column comment promises "never the whole
+ * trace". The bound exists so that the page's fold property stops depending on
+ * another repo keeping that promise.
+ */
+export const CLAMP_LIMIT = 200;
+
+/**
+ * A producer's string at a bounded length, with the whole of it for a `title`.
+ *
+ * Two rules, both from LOOK_AND_FEEL: a clamped string is VISIBLY clamped (it
+ * ends in the ellipsis, so nothing is silently truncated), and the full text
+ * stays reachable — here on the element's own `title`, and on `/cycles` also
+ * in the row's own cell in the window below the lead. Producer text is never
+ * re-worded, re-wrapped or summarised; it is only ever cut short.
+ *
+ * A string within the bound is returned BYTE-IDENTICAL with an empty title, so
+ * a surface that clamps renders exactly what an unclamped one does for every
+ * value short enough to fit — which is every value this database has. The
+ * empty title is `relativeAge`'s convention: nothing to add, nothing added.
+ *
+ * The bound counts CODE POINTS, not UTF-16 units, so a cut never lands in the
+ * middle of an astral character and leaves a lone surrogate on screen; the
+ * ellipsis replaces the last one, so the result is never longer than the
+ * bound. Trailing whitespace is dropped before the ellipsis so a clamp reads
+ * `…` and not ` …`.
+ *
+ * An absence is the em dash `absoluteUtc` and `count` return, so a caller can
+ * hand this a nullable column and let `orDash` colour the result.
+ */
+export function clamped(
+  value: string | null | undefined,
+  limit: number = CLAMP_LIMIT,
+): { text: string; title: string } {
+  if (value === null || value === undefined) return { text: EM_DASH, title: "" };
+  const points = Array.from(value);
+  if (points.length <= limit) return { text: value, title: "" };
+  const kept = points.slice(0, Math.max(limit - 1, 0)).join("").trimEnd();
+  return { text: `${kept}${ELLIPSIS}`, title: value };
+}

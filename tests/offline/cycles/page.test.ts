@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { CYCLE_COUNTERS, CYCLE_WINDOW } from "@/lib/db/cycles";
 import { T } from "@/lib/db/tables";
-import { EM_DASH } from "@/lib/format";
+import { CLAMP_LIMIT, ELLIPSIS, EM_DASH } from "@/lib/format";
 import { readNumber } from "../../live/parity";
 import {
   implicitInterElementSpaces,
@@ -303,6 +303,8 @@ function leadRun(markup: string) {
     outcome: row.find("[data-run-outcome]").attr("data-run-outcome"),
     inFlight: row.find("[data-run-inflight]").length > 0,
     error: row.find("[data-run-error]").text().trim(),
+    /** The whole of an error the lead had to clamp (admin-window/DEBT-0005). */
+    errorTitle: row.find("[data-run-error]").attr("title"),
     cells: row
       .find("td")
       .toArray()
@@ -314,6 +316,23 @@ function leadRun(markup: string) {
       .first()
       .attr("href"),
   };
+}
+
+/**
+ * One WINDOW row's error, verbatim.
+ *
+ * The lead's bound is the lead's (admin-window/DEBT-0005): a row inside a
+ * 200-row window pushes nothing under the fold, so its cell still carries the
+ * producer's whole string — which is one of the two ways LOOK_AND_FEEL keeps
+ * a clamped value reachable.
+ */
+function windowRunError(markup: string, runId: string): string {
+  const $ = cheerio.load(markup);
+  return $(`[data-run="${runId}"]`)
+    .closest("tr")
+    .find("[data-run-error]")
+    .text()
+    .trim();
 }
 
 /** One window row's cells, as their texts — for comparing the lead against it. */
@@ -1286,6 +1305,57 @@ describe("the newest adapter run, above the cycles window", () => {
     expect(lead.outcome).toBe(RUN_FAILED.outcome);
     // The producer's own failure line, not trimmed and not summarised.
     expect(lead.error).toBe(RUN_FAILED.error_summary);
+  });
+
+  it("bounds an over-long error on the lead, keeps the whole of it reachable, and holds the fold", async () => {
+    // The lead is the only row ABOVE the cycles window, so its height is the
+    // one height on this page that can push the newest cycle back under the
+    // fold — which the walk measured happening past roughly 700 characters of
+    // `error_summary` (admin-window/DEBT-0005, from BUG-0040). This is that
+    // string at 2,000, against the cycles window at its 200-row cap.
+    const HUGE = `${"upstream 503 on page 7 of 12; ".repeat(66)}and it never came back`;
+    expect(HUGE.length).toBeGreaterThanOrEqual(2_000);
+    const failed = { ...RUN_FAILED, error_summary: HUGE };
+
+    const markup = await renderCycles({
+      [T.resolutionRuns]: [{ data: fullCycleWindow() }, { data: [...CYCLES] }],
+      [T.fieldProvenance]: { data: [...APPLIES] },
+      [T.observations]: { data: [...OBSERVED] },
+      [T.runs]: { data: [failed] },
+    });
+
+    const lead = leadRun(markup);
+    // Bounded, and VISIBLY bounded — nothing is cut in silence.
+    expect(Array.from(lead.error).length).toBeLessThanOrEqual(CLAMP_LIMIT);
+    expect(lead.error.endsWith(ELLIPSIS)).toBe(true);
+    // Producer text is never re-worded: what is on screen is its own opening.
+    expect(HUGE.startsWith(lead.error.slice(0, -ELLIPSIS.length))).toBe(true);
+    // And the whole of it stays reachable, both ways the Look rules allow: on
+    // the lead's own element, and verbatim in the row's own cell below.
+    expect(lead.errorTitle).toBe(HUGE);
+    expect(windowRunError(markup, failed.run_id)).toBe(HUGE);
+
+    // The property the bound exists for: one lead, and it is still ahead of
+    // all 200 cycle rows rather than having wrapped them off the screen.
+    expect(lead.markers).toBe(1);
+    expect(renderedCycles(markup)).toHaveLength(CYCLE_WINDOW);
+    const order = rowOrder(markup);
+    expect(order).toContain("cycle");
+    expect(order.lastIndexOf("run")).toBeLessThan(order.indexOf("cycle"));
+  });
+
+  it("leaves an error the bound does not reach byte-identical, title and all", async () => {
+    // Every `error_summary` this database has ever held is short (staging's
+    // longest is 58 characters), so the ordinary lead is still the window's
+    // row cell for cell — the clamp adds no title and changes no text.
+    const markup = await renderCycles(
+      healthyScript({ [T.runs]: { data: [RUN_FAILED] } }),
+    );
+    const lead = leadRun(markup);
+    expect(RUN_FAILED.error_summary?.length).toBeLessThan(CLAMP_LIMIT);
+    expect(lead.error).toBe(RUN_FAILED.error_summary);
+    expect(lead.error).not.toContain(ELLIPSIS);
+    expect(lead.errorTitle).toBeUndefined();
   });
 
   it("renders the lead as the very row the window renders below, cell for cell", async () => {
