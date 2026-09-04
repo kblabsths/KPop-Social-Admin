@@ -485,10 +485,10 @@ function AskedCycle({
         data-cycle-unchecked={state.reading}
         className="type-body text-ink-secondary"
       >
-        Whether cycle <span className="type-data text-ink">{askedFor}</span> is
-        in this window is not something this page can say: the read of{" "}
-        <span className="type-data text-ink">{state.reading}</span> returned no
-        window to look in. What is below says why.
+        Whether cycle <span className="type-data text-ink">{askedFor}</span>{" "}
+        is in this window is not something this page can say: the read of{" "}
+        <span className="type-data text-ink">{state.reading}</span>{" "}
+        returned no window to look in. What is below says why.
       </p>
     );
   }
@@ -502,8 +502,9 @@ function AskedCycle({
     </p>
   ) : (
     <p data-cycle-asked={askedFor} data-cycle-found="false" className="type-body text-ink-secondary">
-      Cycle <span className="type-data text-ink">{askedFor}</span> is not among the{" "}
-      {count(CYCLE_WINDOW)} newest cycles, so it is not in this window — it ran
+      Cycle <span className="type-data text-ink">{askedFor}</span>{" "}
+      is not among the {count(CYCLE_WINDOW)} newest cycles, so it is not in this
+      window — it ran
       earlier, or no cycle carries that id.
     </p>
   );
@@ -775,8 +776,9 @@ function LatencySection({ latency }: { latency: ResolutionLatency }) {
       />
       <p className="type-body text-ink-secondary">
         The wait is from the claim&rsquo;s{" "}
-        <span className="type-data text-ink">observed_at</span> to the instant it
-        became canonical. A decision a human made rather than a claim names no
+        <span className="type-data text-ink">observed_at</span>{" "}
+        to the instant it became canonical. A decision a human made rather than
+        a claim names no
         claim, so it carries no wait: those are counted on their own and are in
         neither the applies nor the waits — a domain showing no applies beside a
         count of them is that, and not a broken resolver.
@@ -1064,11 +1066,11 @@ function AdapterRuns({
         <p className="type-body text-ink-secondary">
           A run with no end is still going: the row is written when the adapter
           wakes and nothing rewrites it, so no completion is guessed.{" "}
-          <span className="type-data text-ink">failure_class</span> says whose
-          problem a failure is, and{" "}
-          <span className="type-data text-ink">source</span> is the run&rsquo;s
-          own text — a run filed under a name the registry does not carry still
-          appears here.
+          <span className="type-data text-ink">failure_class</span>{" "}
+          says whose problem a failure is, and{" "}
+          <span className="type-data text-ink">source</span>{" "}
+          is the run&rsquo;s own text — a run filed under a name the registry
+          does not carry still appears here.
         </p>
       ) : null}
     </Section>
@@ -1147,8 +1149,8 @@ function LatestRun({
           ) : runs.kind === "error" ? (
             <>
               No newest run to show: the read of{" "}
-              <span className="type-data text-ink">{runs.reading}</span> failed
-              —{" "}
+              <span className="type-data text-ink">{runs.reading}</span>{" "}
+              failed —{" "}
               <a href={`#${RUNS_ANCHOR}`} className={LEAD_LINK}>
                 what the database said is below
               </a>
@@ -1299,8 +1301,9 @@ export default async function CyclesPage({
           older than the resolver&rsquo;s{" "}
           {duration(RESOLVER_CADENCE_SECONDS)} cadence, at which point it is a
           cycle that died: nothing rewrites its row and no completion is
-          guessed. <span className="type-data text-ink">skipped</span> means the
-          cycle found the advisory lock held and did nothing, which is a healthy
+          guessed. <span className="type-data text-ink">skipped</span>{" "}
+          means the cycle found the advisory lock held and did nothing, which is
+          a healthy
           outcome, not a failure.
         </p>
       </Section>

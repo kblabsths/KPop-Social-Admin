@@ -2,7 +2,11 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { CLAIM_WINDOW } from "@/components/claims";
 import { T } from "@/lib/db/tables";
-import { render } from "../ui/markup";
+import {
+  implicitInterElementSpaces,
+  implicitInterElementSpacesIn,
+} from "../source-tree";
+import { factoryTicketIds, render, runTogetherWords } from "../ui/markup";
 import {
   CLAIMS,
   ENTITY,
@@ -1509,5 +1513,59 @@ describe("QA: the clauses of the criterion, driven over QA's own population", ()
     for (const source of standing) expect(QA_SOURCE_VOCAB).toContain(source);
     // The buckets tab carries the other gauge; this one is not read there.
     expect(await splitsOn("buckets")).toEqual([]);
+  });
+});
+
+/**
+ * The prose the page ships, checked against the RENDERED markup rather than
+ * the source (campaign admin-window/BUG-0045).
+ *
+ * Both tabs, because the paragraph under a gauge belongs to whichever gauge
+ * the tab selected, and only one of them was ever looked at.
+ */
+describe("the copy the operator actually reads", () => {
+  for (const tab of ["buckets", "standing"] as const) {
+    it(`names no factory ticket on the ${tab} tab`, async () => {
+      // The guard proves itself before it clears the page.
+      expect(factoryTicketIds("<p>an open question (admin-window/TASK-0024)</p>")).toEqual([
+        "admin-window/TASK-0024",
+      ]);
+      const markup = await renderClaims(healthyScript(), { tab });
+      expect(factoryTicketIds(markup)).toEqual([]);
+    });
+
+    it(`puts a space between a mono identifier and the word after it on the ${tab} tab`, async () => {
+      expect(runTogetherWords('<span class="type-data">stuck_pattern</span>dial is a')).toEqual([
+        "</span>dial",
+      ]);
+      expect(runTogetherWords(await renderClaims(healthyScript(), { tab }))).toEqual([]);
+    });
+  }
+
+  it("spells the dial the way Sources spells it — the identifier, verbatim, in mono", async () => {
+    // Voice bar 5: a machine identifier renders verbatim. The registry key is
+    // `stuck_pattern`, so neither page may re-spell it as prose.
+    const markup = await renderClaims(healthyScript());
+    const $ = cheerio.load(markup);
+    const mono = $("span.type-data")
+      .toArray()
+      .map((element) => $(element).text());
+    expect(mono).toContain("stuck_pattern");
+    // ...and nowhere is it re-spelled as prose, which is what made the two
+    // pages disagree with each other.
+    expect(markup).not.toContain("stuck-pattern");
+  });
+  it("writes every inter-element space as an explicit expression, which no transform may drop", () => {
+    // The rendered assertions above CANNOT fail on this defect: vitest's JSX
+    // transform keeps the space that `next build`'s transform drops (measured
+    // on the delivered HTML of :8781, 2026-09-03). The source rule is what
+    // actually guards it, so it stands beside them.
+    //
+    // Two fixtures: the pre-fix spelling of this page must trip the scanner...
+    expect(
+      implicitInterElementSpacesIn('          <span className=\"type-data text-ink\">stuck_pattern</span> dial is a'),
+    ).toEqual(['1: <span className=\"type-data text-ink\">stuck_pattern</span> dial is a']);
+    // ...and the page as it stands must be clean of it.
+    expect(implicitInterElementSpaces("src/app/claims/page.tsx")).toEqual([]);
   });
 });

@@ -4,7 +4,11 @@ import { CYCLE_COUNTERS, CYCLE_WINDOW } from "@/lib/db/cycles";
 import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
 import { readNumber } from "../../live/parity";
-import { render } from "../ui/markup";
+import {
+  implicitInterElementSpaces,
+  implicitInterElementSpacesIn,
+} from "../source-tree";
+import { factoryTicketIds, render, runTogetherWords } from "../ui/markup";
 import {
   APPLIES,
   APPLY_COUNT,
@@ -1281,5 +1285,55 @@ describe("the surface hooks the live parity oracle addresses", () => {
         }
       }
     }
+  });
+});
+
+/**
+ * The prose the page ships, checked against the RENDERED markup rather than
+ * the source (campaign admin-window/BUG-0045).
+ *
+ * The footnote under the runs table reads `<span>source</span> is the run's`
+ * in the file — a space is plainly there — and a walker read `sourceis` off
+ * the screen. JSX drops a whitespace run that contains a newline, so the file
+ * is not evidence and this assertion runs on the markup.
+ */
+describe("the copy the operator actually reads", () => {
+  it("names no factory ticket, with runs present and with none", async () => {
+    for (const [state, script] of Object.entries({
+      "runs present": healthyScript({ [T.runs]: { data: [...RUNS] } }),
+      "no runs": healthyScript(),
+      refused: healthyScript({
+        [T.runs]: { error: permissionDenied(T.runs) },
+      }),
+    })) {
+      // The guard proves itself before it clears the page.
+      expect(factoryTicketIds("<p>the lead section (admin-window/BUG-0040)</p>")).toEqual([
+        "admin-window/BUG-0040",
+      ]);
+      expect(factoryTicketIds(await renderCycles(script)), state).toEqual([]);
+    }
+  });
+
+  it("puts a space between a mono identifier and the word after it", async () => {
+    // Two fixtures, same guard: the run-together spelling the walk read off
+    // the screen must trip it, and this page must not.
+    expect(runTogetherWords('<span class="type-data">source</span>is the run')).toEqual([
+      "</span>is",
+    ]);
+    const markup = await renderCycles(healthyScript({ [T.runs]: { data: [...RUNS] } }));
+    expect(runTogetherWords(markup)).toEqual([]);
+  });
+  it("writes every inter-element space as an explicit expression, which no transform may drop", () => {
+    // The rendered assertions above CANNOT fail on this defect: vitest's JSX
+    // transform keeps the space that `next build`'s transform drops (measured
+    // on the delivered HTML of :8781, 2026-09-03). The source rule is what
+    // actually guards it, so it stands beside them.
+    //
+    // Two fixtures: the pre-fix spelling of this page must trip the scanner...
+    expect(
+      implicitInterElementSpacesIn('          <span className=\"type-data text-ink\">source</span> is the run&rsquo;s'),
+    ).toEqual(['1: <span className=\"type-data text-ink\">source</span> is the run&rsquo;s']);
+    // ...and the page as it stands must be clean of it.
+    expect(implicitInterElementSpaces("src/app/cycles/page.tsx")).toEqual([]);
   });
 });

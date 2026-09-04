@@ -358,10 +358,10 @@ function PendingClaimsGauge({ gauge }: { gauge: PendingClaims }) {
       />
       <p className="type-body text-ink-secondary">
         The per-source <span className="type-data text-ink">awaiting_row</span>{" "}
-        trend lives on Sources, and it is drawn without its threshold line: the
-        stuck-pattern dial is a source-registry value only the scraper repo
-        holds, and where Admin may read it is an open question
-        (admin-window/TASK-0024). No default is substituted here.
+        trend lives on Sources, and it is drawn without its threshold line: the{" "}
+        <span className="type-data text-ink">stuck_pattern</span>{" "}
+        dial is a source-registry value only the scraper repo holds, and where
+        Admin may read it is an open question. No default is substituted here.
       </p>
     </>
   );
