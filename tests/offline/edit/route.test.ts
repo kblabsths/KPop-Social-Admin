@@ -25,9 +25,17 @@ vi.mock("@/lib/admin", () => ({
   requireAdmin: vi.fn(async () => ({ user: { email: "qa@example.invalid" } })),
 }));
 
-vi.mock("@/lib/db/records", () => ({
-  updateRecordField: (...args: unknown[]) => updateRecordField(...args),
-}));
+// The writer alone is replaced by the spy; every other export stays REAL —
+// `isRecordId` above all, because the route must ask the record page's own id
+// question and not a copy of it (admin-window/BUG-0068). A stubbed
+// `isRecordId` would prove the route calls *something*, which is not the claim.
+vi.mock("@/lib/db/records", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db/records")>();
+  return {
+    ...actual,
+    updateRecordField: (...args: unknown[]) => updateRecordField(...args),
+  };
+});
 
 const { PATCH } = await import("@/app/api/admin/records/[table]/[id]/route");
 
@@ -333,6 +341,152 @@ describe("the handler refuses a forged edit and attempts no write", () => {
       updateRecordField.mockReset();
       updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
     }
+  });
+});
+
+/* ── the id is a question about the REQUEST ───────────────────────────────── */
+
+/**
+ * A URL segment that is not a record id — campaign admin-window/BUG-0068,
+ * the write half of admin-window/BUG-0065.
+ *
+ * Every table in the map is keyed by a uuid, so a segment that is not one can
+ * match no row anywhere: "no record at this address" is knowable without a
+ * database, which is exactly what the record PAGE decides before it reads. The
+ * route used to hand the segment to PostgREST instead, and Postgres's own
+ * `22P02 invalid input syntax for type uuid` came back to the caller as an
+ * HTTP 500 — the app claiming it broke over a request that was malformed, in
+ * the database's words, to the caller who supplied the bad input.
+ *
+ * Both halves are asserted everywhere below: the answer the caller gets, and
+ * that the writer was never invoked — the spy is what makes "no database call
+ * was attempted" observable at this tier.
+ *
+ * Watched RED before the fix (the route reached the spied writer and answered
+ * 200): "AssertionError: walk-1: expected 200 to be 404".
+ */
+const NOT_RECORD_IDS: readonly string[] = [
+  "walk-1",
+  "1",
+  "groups",
+  "not-a-uuid",
+  // A uuid with one character too few, one too many, and one out of alphabet.
+  "2f0bc11e-0000-4000-8000-00000000000",
+  "2f0bc11e-0000-4000-8000-0000000000011",
+  "2f0bc11e-0000-4000-8000-00000000000g",
+  // Padding and punctuation around an otherwise well-formed id.
+  " 2f0bc11e-0000-4000-8000-000000000001",
+  "2f0bc11e-0000-4000-8000-000000000001'",
+  "2f0bc11e-0000-4000-8000-000000000001; drop table groups",
+  "%00",
+  "",
+];
+
+describe("a segment that is not a record id", () => {
+  it("is refused 404 and no database call is attempted", async () => {
+    for (const id of NOT_RECORD_IDS) {
+      const { status } = await patch("groups", { field: "bio", value: "x" }, id);
+      expect(status, JSON.stringify(id)).toBe(404);
+      expect(updateRecordField, JSON.stringify(id)).not.toHaveBeenCalled();
+      updateRecordField.mockReset();
+    }
+  });
+
+  it("answers it in the words this route already uses for a record that is not there", async () => {
+    // One sentence, one status, two ways to reach it: a well-formed id that
+    // matches no row (the writer read and found nothing) and a segment that
+    // could match none. The caller cannot tell them apart, and should not.
+    updateRecordField.mockResolvedValue({ kind: "ok", data: null });
+    const wellFormedMiss = await patch("groups", { field: "bio", value: "x" });
+    expect(wellFormedMiss.status).toBe(404);
+    updateRecordField.mockReset();
+
+    const malformed = await patch("groups", { field: "bio", value: "x" }, "walk-1");
+    expect(malformed.status).toBe(404);
+    expect(JSON.parse(malformed.text)).toEqual(JSON.parse(wellFormedMiss.text));
+    expect(updateRecordField).not.toHaveBeenCalled();
+  });
+
+  it("says nothing the database said — no error code, no syntax text, no type name", async () => {
+    for (const id of NOT_RECORD_IDS) {
+      const { text } = await patch("groups", { field: "bio", value: "x" }, id);
+      expect(text, JSON.stringify(id)).not.toMatch(/22P02|invalid input syntax|uuid|postgres|pgrst/i);
+      updateRecordField.mockReset();
+    }
+  });
+
+  it("still writes a well-formed id, whatever case it is spelled in", async () => {
+    // The guard refuses non-ids, not ids — over-refusal would break the one
+    // path the surface actually uses.
+    for (const id of [RECORD_ID, RECORD_ID.toUpperCase()]) {
+      const { status } = await patch("groups", { field: "bio", value: "x" }, id);
+      expect(status, id).toBe(200);
+      expect(updateRecordField.mock.calls[0][1], id).toBe(id);
+      updateRecordField.mockReset();
+      updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+    }
+  });
+
+  it("does not take an answer the map owns: the id is asked after decideEdit", async () => {
+    // Each of these carries a malformed id AND a refusal the map or the body
+    // parser owns. The status must stay the one that refusal has today —
+    // adding this gate adds exactly one new answer, it does not relabel four.
+    const bad = "walk-1";
+    const cases: readonly [string, unknown, number, RegExp][] = [
+      ["nosuchtable", { field: "name", value: "x" }, 404, /not an editable table/],
+      ["events", { field: "title", value: "x" }, 403, /resolver-owned/],
+      ["groups", { field: "spotify_id", value: "x" }, 403, /spotify_id/],
+      ["groups", { field: "bio" }, 400, /value/i],
+    ];
+    for (const [table, body, status, message] of cases) {
+      const answer = await patch(table, body, bad);
+      expect(answer.status, `${table} ${JSON.stringify(body)}`).toBe(status);
+      expect(JSON.parse(answer.text).error, table).toMatch(message);
+      expect(updateRecordField, table).not.toHaveBeenCalled();
+      updateRecordField.mockReset();
+    }
+  });
+});
+
+/* ── what the route makes of each writer outcome ──────────────────────────── */
+
+describe("a write that really happened", () => {
+  it("answers 500 with the database's own words when it failed", async () => {
+    // The 500 branch is untouched by the id gate: a read or write that really
+    // was made and really failed still reports what the database said
+    // (LOOK_AND_FEEL), and only that branch may.
+    updateRecordField.mockResolvedValue({
+      kind: "error",
+      message: 'column groups.bio is of type text but expression is of type integer',
+    });
+    const { status, text } = await patch("groups", { field: "bio", value: "x" });
+    expect(status).toBe(500);
+    expect(JSON.parse(text).error).toMatch(/expression is of type integer/);
+    expect(updateRecordField).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers 503 naming what is not provisioned", async () => {
+    updateRecordField.mockResolvedValue({ kind: "not_provisioned", missing: "groups" });
+    const { status, text } = await patch("groups", { field: "bio", value: "x" });
+    expect(status).toBe(503);
+    expect(JSON.parse(text).error).toMatch(/groups/);
+  });
+
+  it("answers 404 for a well-formed id that matches no row", async () => {
+    updateRecordField.mockResolvedValue({ kind: "ok", data: null });
+    const { status, text } = await patch("groups", { field: "bio", value: "x" });
+    expect(status).toBe(404);
+    expect(JSON.parse(text).error).toMatch(/no groups record/);
+    expect(updateRecordField).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers 200 with the record it wrote", async () => {
+    const { status, text } = await patch("groups", { field: "bio", value: "hello" });
+    expect(status).toBe(200);
+    expect(JSON.parse(text)).toEqual({
+      ok: true,
+      record: { id: RECORD_ID, bio: "written" },
+    });
   });
 });
 
