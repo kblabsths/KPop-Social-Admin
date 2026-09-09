@@ -21835,3 +21835,11 @@
 2026-09-09T22:08:02Z	agent	-	-	-	-
 # STRANDED	2026-09-09T22:08:11Z	agent	7 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-BUG-0148-pre/, .worktrees/_receipt-qa-BUG-0148/, .worktrees/_receipt-qa-DEBT-0011-r2/, agenticflow/visions/admin-window/tracker/receipts/BUG-0148.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0148.md
 2026-09-09T22:08:11Z	agent	-	-	-	-
+# STRANDED	2026-09-09T22:08:26Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-DEBT-0011-r2/
+2026-09-09T22:08:26Z	agent	-	-	-	-
+# STRANDED	2026-09-09T22:08:33Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-DEBT-0011-r2/
+2026-09-09T22:08:33Z	agent	-	-	-	-
+# STRANDED	2026-09-09T22:08:36Z	qa-adversary	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-DEBT-0011-r2/
+2026-09-09T22:08:36Z	qa-adversary	BUG-0148	14127	510	94076
+# STRANDED	2026-09-09T22:08:42Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-DEBT-0011-r2/
+2026-09-09T22:08:42Z	agent	-	-	-	-
