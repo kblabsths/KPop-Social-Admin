@@ -355,3 +355,98 @@ describe("a decision with several problems at once", () => {
     ]);
   });
 });
+
+/*
+ * The malformed body — what `decisionRefusals` is handed by the one seam that
+ * calls it with data it did not build (TASK-0049: "the body is parsed into a
+ * `VerdictDecision`; then `decisionRefusals` — a refused decision is a 400
+ * naming the refusal and never reaches the database").
+ *
+ * `request.json()` produces an ABSENT key, never an explicit `null`: a client
+ * that omits `value` on a settle-only action, or omits `review_item_id` on the
+ * item-less `override`, sends the ordinary JSON for that decision. The guard
+ * must GRADE those bodies, because grading them is the whole reason it runs
+ * before the database rather than after (admin-window/TASK-0042, QA).
+ */
+
+/** A body as it arrives from `request.json()` — untyped, keys possibly absent. */
+function bodyAsDecision(body: Record<string, unknown>): VerdictDecision {
+  return body as unknown as VerdictDecision;
+}
+
+/*
+ * The three `it.fails` below are STRICT xfails on admin-window/BUG-0079: they
+ * record the divergence without reddening the branch, and the day the guard is
+ * fixed they XPASS — vitest turns an `it.fails` that passes into a FAILURE,
+ * which sends the next reader to the ticket. The fix removes `.fails`.
+ */
+describe("a body whose optional keys are absent, not null", () => {
+  const ITEM = "22222222-2222-4222-8222-222222222222";
+
+  it.fails("grades a supply_value body that omits `value` as value_required [admin-window/BUG-0079]", () => {
+    // Currently throws `TypeError: Cannot read properties of undefined`
+    // instead of refusing — a crash where the campaign's one pre-database
+    // guard owes a named refusal.
+    const body = bodyAsDecision({
+      action: "supply_value",
+      review_item_id: ITEM,
+      actor: "admin@example.test",
+      note: null,
+    });
+    expect(decisionRefusals(body)).toEqual(["value_required"]);
+  });
+
+  it.fails("refuses nothing for a settle body that omits `value` [admin-window/BUG-0079]", () => {
+    // `settle` carries no value at all; omitting the key is the ordinary
+    // JSON for it, and it is currently refused as `value_forbidden`.
+    const body = bodyAsDecision({
+      action: "settle",
+      review_item_id: ITEM,
+      actor: "admin@example.test",
+      note: null,
+    });
+    expect(decisionRefusals(body)).toEqual([]);
+  });
+
+  it.fails("refuses nothing for an override body that omits `review_item_id` [admin-window/BUG-0079]", () => {
+    // The one item-less action: a client that leaves the key out is saying
+    // exactly what an explicit null says, and is currently refused as
+    // `review_item_forbidden` — the refusal for carrying an item.
+    const body = bodyAsDecision({
+      action: "override",
+      actor: "admin@example.test",
+      note: null,
+      value: {
+        domain: "events",
+        entity_id: "11111111-1111-4111-8111-111111111111",
+        field: "title",
+        observation_id: null,
+        value: "Seoul Olympic Stadium",
+        ref: null,
+      },
+    });
+    expect(decisionRefusals(body)).toEqual([]);
+  });
+
+  it("grades a __proto__ key in a parsed body as ordinary data", () => {
+    // A JSON payload naming `__proto__` must neither pollute nor divert the
+    // payload-slot reading: the own keys are what is graded.
+    const value = JSON.parse(
+      '{"__proto__":{"observation_id":"injected"},"domain":"events",' +
+        '"entity_id":"11111111-1111-4111-8111-111111111111","field":"title",' +
+        '"observation_id":null,"value":"a supplied name","ref":null}',
+    ) as VerdictValue;
+    const decision = decisionOf({ action: "supply_value", value });
+    expect(decisionRefusals(decision)).toEqual([]);
+    expect(({} as Record<string, unknown>).observation_id).toBeUndefined();
+  });
+
+  it("grades an absurdly long actor and value without throwing", () => {
+    const decision = decisionOf({
+      action: "supply_value",
+      actor: "a".repeat(100_000),
+      value: valueOf({ value: "z".repeat(500_000) }),
+    });
+    expect(decisionRefusals(decision)).toEqual([]);
+  });
+});
