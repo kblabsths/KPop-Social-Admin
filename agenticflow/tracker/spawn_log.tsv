@@ -22517,3 +22517,83 @@
 2026-09-09T23:40:56Z	agent	-	-	-	-
 # STRANDED	2026-09-09T23:41:04Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0153.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0154.md
 2026-09-09T23:41:04Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:41:28Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:41:28Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:41:36Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:41:36Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:42:01Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:42:01Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:42:08Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:42:08Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:42:33Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:42:33Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:43:05Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:43:05Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:43:09Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:43:09Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:43:38Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:43:38Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:43:41Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:43:41Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:44:12Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:44:12Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:44:13Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:44:13Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:44:44Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:44:44Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:44:44Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:44:44Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:45:16Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:45:16Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:45:17Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:45:17Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:45:48Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:45:48Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:45:49Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:45:49Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:46:20Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:46:20Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:46:21Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:46:21Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:46:51Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:46:51Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:46:54Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:46:54Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:47:54Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:47:54Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:47:57Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:47:57Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:48:26Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:48:26Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:48:29Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:48:29Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:48:58Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:48:58Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:49:06Z	agent	2 uncommitted in primary checkout: .env.example, tests/offline/cycles/page.test.ts
+2026-09-09T23:49:06Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:49:30Z	agent	2 uncommitted in primary checkout: .env.example, tests/offline/cycles/page.test.ts
+2026-09-09T23:49:30Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:49:38Z	agent	2 uncommitted in primary checkout: .env.example, tests/offline/cycles/page.test.ts
+2026-09-09T23:49:38Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:50:02Z	agent	2 uncommitted in primary checkout: .env.example, tests/offline/cycles/page.test.ts
+2026-09-09T23:50:02Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:50:11Z	agent	2 uncommitted in primary checkout: .env.example, tests/offline/cycles/page.test.ts
+2026-09-09T23:50:11Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:50:34Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:50:34Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:50:43Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T23:50:43Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:51:06Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0155.md
+2026-09-09T23:51:06Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:51:15Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0155.md
+2026-09-09T23:51:15Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:51:38Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0155.md
+2026-09-09T23:51:38Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:51:47Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0155.md
+2026-09-09T23:51:47Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:52:09Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0155.md
+2026-09-09T23:52:09Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:52:50Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0153.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0155.md
+2026-09-09T23:52:50Z	agent	-	-	-	-
+# STRANDED	2026-09-09T23:52:50Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0153.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0155.md
+2026-09-09T23:52:50Z	agent	-	-	-	-
