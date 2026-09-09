@@ -543,7 +543,13 @@ describe("the route's own guard on the same won’t-fix", () => {
   const [, wontFix] = signalActions();
 
   it("refuses a blank note that skipped the form, and reaches no database", async () => {
-    for (const note of [null, "", "   "]) {
+    // The contract guard, driven at the wire the form is only courtesy for:
+    // a client that skips `closeRefusal` entirely meets `decisionRefusals`
+    // here. Both spellings of blank are posted — the ones `trim()` sees, and
+    // the invisible ones it does not (admin-window/BUG-0089, QA re-check) —
+    // because the claim is that the ROUTE, not the form, is what keeps an
+    // unreadable reason out of `verdicts.note`.
+    for (const note of [null, "", "   ", ...INVISIBLE_ONLY]) {
       const stub = scriptDatabase(functionInstalled("wont_fix"));
       const { status, payload } = await post({ action: "wont_fix", note, value: null });
 

@@ -663,6 +663,62 @@ describe("the handler refuses a forged edit and attempts no write", () => {
       updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
     }
   });
+
+  /**
+   * A value with nothing VISIBLE in it is stored as content, while every
+   * surface draws it as an absence (QA, admin-window/BUG-0089's re-check).
+   *
+   * The app has ONE definition of blank since admin-window/BUG-0089
+   * (`hasVisibleContent` / `visibleContent`, `lib/verdict/decision.ts`), and
+   * `isAbsent` reads it: a cell holding U+200B is rendered as the em dash,
+   * i.e. as NO VALUE. This route never asks that question — it clears on
+   * `null` and `""` alone (`readEdit`) — and `EditableCell.commit` decides
+   * blank with `draft.trim()`, which leaves the Cf characters a paste out of a
+   * web page or a PDF carries. So the operator pastes an invisible string into
+   * a cell, the column is written with content nobody can read, and the record
+   * page then answers with a confident dash: the surface says "no value", the
+   * database says "one character". On a `not null` column (`walk_sandbox.label`)
+   * it also fakes the clear the database is supposed to refuse (23502).
+   *
+   * The assertion is deliberately either/or — refuse it, or clear the column —
+   * because which of the two the app should do is the fix's choice, not this
+   * test's. What may not stand is storing as content what the app renders as
+   * absence.
+   *
+   * **Strict pin for admin-window/BUG-0095**, watched RED as a plain `it()` on
+   * the landed tree: `"\u200b": status 200, wrote "\u200b"`. `it.fails` is
+   * strict in Vitest — the day the route stops storing it, this turns red and
+   * sends the reader to the ticket; flip it back to `it()` with the fix.
+   */
+  it.fails("does not store as content a value every surface draws as an absence", async () => {
+    const { isAbsent } = await import("@/lib/format");
+    for (const value of ["\u200b", "\u2060", "\u00ad", "\ufeff", "\u3164", "  \u200b  "]) {
+      const seen = JSON.stringify(value);
+      // The app's own answer about this string, on the surface it renders on.
+      expect(isAbsent(value), seen).toBe(true);
+      const { status } = await patch("walk_sandbox", { field: "label", value });
+      const wrote = updateRecordField.mock.calls[0]?.[2];
+      expect(
+        { [seen]: status >= 400 || wrote === null },
+        `${seen}: status ${status}, wrote ${JSON.stringify(wrote)}`,
+      ).toEqual({ [seen]: true });
+      updateRecordField.mockReset();
+      updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
+    }
+  });
+
+  it("still stores a value that has anything visible in it, however it is padded", async () => {
+    // The fixture the guard above must NOT flag, or it is vacuous (LESSONS 3):
+    // the invisible characters are an absence only when they are ALL there is,
+    // and U+2800 is an assigned printable character the leaf rules as content.
+    for (const value of ["\u200bBLACKPINK\u200b", "\u2800", "0"]) {
+      const { status } = await patch("walk_sandbox", { field: "label", value });
+      expect(status, JSON.stringify(value)).toBe(200);
+      expect(updateRecordField.mock.calls[0][2], JSON.stringify(value)).toBe(value);
+      updateRecordField.mockReset();
+      updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
+    }
+  });
 });
 
 /* ── the id is a question about the REQUEST ───────────────────────────────── */
