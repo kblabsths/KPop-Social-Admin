@@ -140,6 +140,8 @@ export interface Binding {
   readonly local: string;
   /** `import type` / `{ type X }` / `export type` — erased, never a runtime binding. */
   readonly typeOnly: boolean;
+  /** `await import("…")`: the whole module, named by an expression, not a clause. */
+  readonly dynamic: boolean;
 }
 
 const SPACE = String.raw`[\s]`;
@@ -188,6 +190,7 @@ export function bindingsOf(text: string): Binding[] {
         imported: "*",
         local: star[1] ?? "*",
         typeOnly: statementTypeOnly,
+        dynamic: false,
       });
     } else if (beforeBrace.length > 0) {
       bindings.push({
@@ -195,6 +198,7 @@ export function bindingsOf(text: string): Binding[] {
         imported: "default",
         local: beforeBrace,
         typeOnly: statementTypeOnly,
+        dynamic: false,
       });
     }
 
@@ -210,8 +214,19 @@ export function bindingsOf(text: string): Binding[] {
         imported: renamed === null ? named : renamed[1],
         local: renamed === null ? named : renamed[2],
         typeOnly: statementTypeOnly || inlineType,
+        dynamic: false,
       });
     }
+  }
+
+  // A DYNAMIC import matches no statement shape at all — `const { hintSide } =
+  // await import("@/components/EditableCell")` is an expression, and the old
+  // scan saw nothing (QA, admin-window/BUG-0094). It hands the whole module
+  // over, so it is read like a namespace import; a `typeof import("…")` type
+  // position is erased and is not one.
+  const dynamic = /(?<!\w)(?<!typeof\s)import\s*\(\s*(['"])([^'"]+)\1/g;
+  for (const match of withoutComments(text).matchAll(dynamic)) {
+    bindings.push({ source: match[2], imported: "*", local: "*", typeOnly: false, dynamic: true });
   }
   return bindings;
 }
@@ -219,6 +234,23 @@ export function bindingsOf(text: string): Binding[] {
 /* ── resolving a specifier to a file of this repo ─────────────────────────── */
 
 const EXTENSIONS = ["", ".ts", ".tsx", ".mts", "/index.ts", "/index.tsx"];
+
+/**
+ * A lookup from a candidate path to the file of this tree it names, matching
+ * the FILESYSTEM the app is built on rather than the string.
+ *
+ * macOS is case-insensitive, so `import { Cell } from "./Cell"` really does
+ * load `cell.tsx` here and really does cross the boundary; an exact-match
+ * lookup answered `null` and skipped it silently (QA, admin-window/BUG-0094).
+ * Exact matches win; a case-fold match is the fallback.
+ */
+export function fileFinder(files: readonly string[]): (candidate: string) => string | null {
+  const exact = new Set(files);
+  const folded = new Map<string, string>();
+  for (const file of files) folded.set(file.toLowerCase(), file);
+  return (candidate) =>
+    exact.has(candidate) ? candidate : (folded.get(candidate.toLowerCase()) ?? null);
+}
 
 /**
  * The repo-relative file a specifier names, or `null` for a package.
@@ -230,7 +262,7 @@ const EXTENSIONS = ["", ".ts", ".tsx", ".mts", "/index.ts", "/index.tsx"];
 export function resolveSpecifier(
   source: string,
   fromFile: string,
-  exists: (file: string) => boolean,
+  find: (candidate: string) => string | null,
 ): string | null {
   let base: string;
   if (source.startsWith("@/")) base = `src/${source.slice(2)}`;
@@ -248,7 +280,8 @@ export function resolveSpecifier(
   const candidates = base.endsWith(".js") ? [base, base.slice(0, -3)] : [base];
   for (const candidate of candidates) {
     for (const extension of EXTENSIONS) {
-      if (exists(candidate + extension)) return candidate + extension;
+      const found = find(candidate + extension);
+      if (found !== null) return found;
     }
   }
   return null;
@@ -266,33 +299,277 @@ export function isComponentName(name: string): boolean {
   return /^[A-Z][A-Za-z0-9]*$/.test(name) && /[a-z]/.test(name);
 }
 
+const OPENERS: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
+const CLOSERS = new Set([")", "]", "}"]);
+
 /**
- * Does the client module DECLARE `name` as a function?
+ * The index of the bracket that closes the one at `open`, or `-1`.
  *
- * The name test alone is a one-rename bypass — `export const HintSide = …`
- * would read as a component while behaving exactly like `hintSide` did — so
- * the export's own declaration is read as well. A `const` whose right-hand
- * side is not a function, and an export whose declaration this scan cannot
- * find at all, both count as NOT a component: an export that cannot be shown
- * to be a component is precisely what may not cross the boundary.
+ * Comments are already gone by the time this runs but string literals are not
+ * (`withoutComments` keeps them, because specifiers live in them), so a `}`
+ * inside a string must close nothing. Template interpolation is followed in
+ * and back out again: `` `${ a ? "}" : "" }` `` is one literal.
+ */
+export function balancedEnd(text: string, open: number): number {
+  const stack: { closer: string; template: boolean }[] = [];
+  let quote: string | null = null;
+  for (let index = open; index < text.length; index += 1) {
+    const char = text[index];
+    if (quote !== null) {
+      if (char === "\\") {
+        index += 1;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+        continue;
+      }
+      if (quote === "`" && char === "$" && text[index + 1] === "{") {
+        stack.push({ closer: "}", template: true });
+        quote = null;
+        index += 1;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+      continue;
+    }
+    const closer = OPENERS[char];
+    if (closer !== undefined) {
+      stack.push({ closer, template: false });
+      continue;
+    }
+    if (CLOSERS.has(char)) {
+      const top = stack.pop();
+      if (top === undefined || top.closer !== char) return -1;
+      if (stack.length === 0) return index;
+      if (top.template) quote = "`";
+    }
+  }
+  return -1;
+}
+
+/** The first index at or after `from` that is not whitespace. */
+function nextCode(text: string, from: number): number {
+  let index = from;
+  while (index < text.length && /\s/.test(text[index])) index += 1;
+  return index;
+}
+
+/**
+ * Markup — JSX — anywhere in a piece of code.
+ *
+ * The discriminator against TYPE ARGUMENTS is what the `<` sits against: JSX
+ * opens after `return`, `=>`, `(`, `{` or a line start, never against a name,
+ * so `useState<string>(v)`, `Map<K, V>` and `Array<T>` are excluded by the
+ * lookbehind. What follows the tag name has to be `>`, `/>`, `{` (a spread) or
+ * WHITESPACE then an attribute name — the whitespace matters, or `index <
+ * text.length` reads as `<tex` + attribute `t`.
+ */
+const MARKUP = new RegExp(
+  String.raw`(?<![\w$)\]>])<\s*(?:>|[A-Za-z_$][\w.$:-]*\s*(?:\/?>|\{)|[A-Za-z_$][\w.$:-]*\s+[A-Za-z_$])`,
+);
+
+/** `createElement(…)` is JSX with the sugar removed, and counts the same. */
+const CREATE_ELEMENT = /\b(?:React\.)?createElement\s*\(/;
+
+/** A type annotation that says "component" out loud: `const Cell: FC<P> = …`. */
+const COMPONENT_TYPE =
+  /:\s*(?:React\.)?(?:FC|VFC|SFC|FunctionComponent|ComponentType|NamedExoticComponent|MemoExoticComponent|ForwardRefExoticComponent)\b/;
+
+/** Does this function BODY produce markup? That is what makes it a component. */
+function returnsMarkup(body: string): boolean {
+  return MARKUP.test(body) || CREATE_ELEMENT.test(body);
+}
+
+/**
+ * The `{ … }` block at or after `from`.
+ *
+ * A block immediately followed by another block was a return-TYPE annotation
+ * (`function f(): { a: string } { … }`), which is the one place a brace can
+ * stand between a signature and its body.
+ */
+function blockAfter(code: string, from: number): string | null {
+  let index = nextCode(code, from);
+  while (index < code.length) {
+    const char = code[index];
+    if (char === "{") {
+      const end = balancedEnd(code, index);
+      if (end === -1) return null;
+      const after = nextCode(code, end + 1);
+      if (code[after] === "{") {
+        index = after;
+        continue;
+      }
+      return code.slice(index, end + 1);
+    }
+    // `;` ends a declaration with no body at all (an overload signature).
+    if (char === ";" || CLOSERS.has(char)) return null;
+    index += 1;
+  }
+  return null;
+}
+
+/** The body of the `function` whose keyword starts at `from`. */
+function functionBody(code: string, from: number): string | null {
+  const open = code.indexOf("(", from);
+  if (open === -1) return null;
+  const close = balancedEnd(code, open);
+  if (close === -1) return null;
+  return blockAfter(code, close + 1);
+}
+
+/**
+ * Walk an expression from `from`, skipping bracketed groups and literals
+ * whole, and stop at the first character `stop` accepts at top level.
+ * Returns the index it stopped at, or the end of the text.
+ */
+function scanTopLevel(code: string, from: number, stop: (char: string, index: number) => boolean): number {
+  let index = from;
+  while (index < code.length) {
+    const char = code[index];
+    if (char === "'" || char === '"' || char === "`") {
+      // A literal is one unit: skip it by balancing an imaginary bracket.
+      let cursor = index + 1;
+      while (cursor < code.length) {
+        if (code[cursor] === "\\") cursor += 2;
+        else if (code[cursor] === char) break;
+        else cursor += 1;
+      }
+      index = cursor + 1;
+      continue;
+    }
+    if (OPENERS[char] !== undefined) {
+      const end = balancedEnd(code, index);
+      if (end === -1) return code.length;
+      index = end + 1;
+      continue;
+    }
+    if (CLOSERS.has(char)) return index;
+    if (stop(char, index)) return index;
+    index += 1;
+  }
+  return code.length;
+}
+
+/** The `=` that starts the right-hand side at or after `from`, or `-1`. */
+function assignmentAt(code: string, from: number): number {
+  const at = scanTopLevel(code, from, (char, index) => {
+    if (char === ";") return true;
+    if (char !== "=") return false;
+    // `=>`, `==`, `<=`, `!=` are not assignments.
+    return code[index + 1] !== "=" && code[index + 1] !== ">" && !"=!<>".includes(code[index - 1]);
+  });
+  return at < code.length && code[at] === "=" ? at : -1;
+}
+
+/** The line-start keywords that end a semicolonless expression (ASI). */
+const NEXT_STATEMENT = /^\s*(?:export|import|function|class|const|let|var|type|interface|declare|\})/;
+
+/**
+ * Everything after the top-level `=>` of the expression at `from`, or `null`
+ * when that expression is not an arrow function.
+ *
+ * This is the hole admin-window/BUG-0094 was reopened on: the old test asked
+ * only whether the right-hand side OPENED with `(`, which every arrow shares
+ * with every parenthesised expression and every helper's parameter list.
+ * Reading the body instead is what makes the answer about behaviour.
+ */
+function arrowBody(code: string, from: number): string | null {
+  const arrow = scanTopLevel(code, from, (char, index) =>
+    char === ";" || (char === "=" && code[index + 1] === ">"),
+  );
+  if (arrow >= code.length || code[arrow] !== "=") return null;
+  const start = nextCode(code, arrow + 2);
+  if (code[start] === "{") return blockAfter(code, start);
+  const end = scanTopLevel(code, start, (char, index) => {
+    if (char === ";") return true;
+    // No semicolon: the next line starting a statement ends this one.
+    return char === "\n" && NEXT_STATEMENT.test(code.slice(index + 1, index + 40));
+  });
+  return code.slice(start, end);
+}
+
+/**
+ * Is the expression at `from` a component — a function that produces markup?
+ *
+ * Arrow, function expression, `memo(…)`/`forwardRef(…)` wrapper and a plain
+ * alias of another declaration are the four shapes React components are
+ * written in. Anything else (a constant, a call, an object, `d.slice(0, 10)`)
+ * is not shown to be a component, and "not shown" is a violation by design.
+ */
+function expressionIsComponent(code: string, from: number, seen: Set<string>): boolean {
+  let index = nextCode(code, from);
+  if (/^async[\s(]/.test(code.slice(index, index + 6))) index = nextCode(code, index + 5);
+
+  const wrapper = /^(?:React\.)?(?:memo|forwardRef)\s*\(/.exec(code.slice(index, index + 32));
+  if (wrapper !== null) return expressionIsComponent(code, index + wrapper[0].length, seen);
+
+  if (/^function[\s*(<]/.test(code.slice(index, index + 9))) {
+    const body = functionBody(code, index);
+    return body !== null && returnsMarkup(body);
+  }
+
+  const body = arrowBody(code, index);
+  if (body !== null) return returnsMarkup(body);
+
+  // `export const Cell = InnerCell;` — one hop to the real declaration.
+  const alias = /^([A-Za-z_$][\w$]*)\s*[;,)]/.exec(`${code.slice(index, index + 64)};`);
+  if (alias !== null) return declaresComponentIn(code, alias[1], seen);
+  return false;
+}
+
+/**
+ * Does the client module declare `name` as a COMPONENT?
+ *
+ * A component is a declaration that returns markup, or one annotated with a
+ * component type — never a name shape. The name test alone is a one-rename
+ * bypass (`export const HintSide = "left"`), and so is "the right-hand side
+ * looks like a function": QA reopened admin-window/BUG-0094 on
+ * `export const HintSideFor = (row: number, rows: number): HintSide => …`,
+ * an ordinary helper wearing a component's name and an arrow's parentheses,
+ * which 500s the record page exactly like `hintSide` did. `export function
+ * FormatDate(d: string) { return d.slice(0, 10); }` is the same defect with
+ * the other keyword. Both are answered here by reading the BODY.
+ *
+ * An export whose declaration this scan cannot find, or cannot show to
+ * produce markup, counts as NOT a component: unverifiable is a violation for
+ * the same reason it is in `db/layering.test.ts` — the rule exists to be
+ * readable off the source.
+ *
+ * The residual, stated so it is not mistaken for coverage: a genuine
+ * markup-returning component that a server module IMPORTS legally and then
+ * CALLS as a function (`{Cell(props)}` instead of `<Cell />`) also throws on
+ * the server. That is caught by the call-site half of the rule below, not
+ * here.
  */
 export function declaresComponent(text: string, name: string): boolean {
-  const code = withoutComments(text);
+  return declaresComponentIn(withoutComments(text), name, new Set());
+}
+
+function declaresComponentIn(code: string, name: string, seen: Set<string>): boolean {
+  if (seen.has(name)) return false; // a rename that points back at itself
+  seen.add(name);
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-  const asFunction = new RegExp(
+  const declared = new RegExp(
     String.raw`\b(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s+${escaped}\s*[(<]`,
-  );
-  if (asFunction.test(code)) return true;
+  ).exec(code);
+  if (declared !== null) {
+    const body = functionBody(code, declared.index);
+    return body !== null && returnsMarkup(body);
+  }
 
-  const asBinding = new RegExp(
-    String.raw`\b(?:export\s+)?(?:const|let|var)\s+${escaped}\b[^=;]*=\s*([\s\S]{0,40})`,
-  );
-  const bound = asBinding.exec(code);
+  const bound = new RegExp(
+    String.raw`\b(?:export\s+)?(?:const|let|var)\s+${escaped}\s*(?=[:=])`,
+  ).exec(code);
   if (bound !== null) {
-    return /^(?:\(|<|function\b|async\b|(?:React\.)?(?:memo|forwardRef)\s*\()/.test(
-      bound[1].trim(),
-    );
+    const after = bound.index + bound[0].length;
+    const assign = assignmentAt(code, after);
+    if (assign === -1) return false; // declared, never assigned a component
+    if (COMPONENT_TYPE.test(code.slice(after, assign))) return true;
+    return expressionIsComponent(code, assign + 1, seen);
   }
 
   // One hop through a local rename: `export { hintSide as HintSide }`. The
@@ -300,7 +577,7 @@ export function declaresComponent(text: string, name: string): boolean {
   // laundering this hop exists to see through.
   const renamed = new RegExp(String.raw`export\s*\{[^}]*?(\w+)\s+as\s+${escaped}\b`).exec(code);
   if (renamed !== null && renamed[1] !== name) {
-    return isComponentName(renamed[1]) && declaresComponent(code, renamed[1]);
+    return isComponentName(renamed[1]) && declaresComponentIn(code, renamed[1], seen);
   }
 
   return false;
@@ -333,7 +610,7 @@ export function clientBoundaryViolations(
   files: readonly string[],
   read: (file: string) => string,
 ): Violation[] {
-  const known = new Set(files);
+  const find = fileFinder(files);
   const client = new Map<string, boolean>();
   const isClient = (file: string): boolean => {
     let answer = client.get(file);
@@ -345,24 +622,57 @@ export function clientBoundaryViolations(
   };
 
   const violations: Violation[] = [];
+  const seen = new Set<string>();
+  const report = (violation: Violation): void => {
+    // One finding per crossing: a helper that is both imported and called is
+    // one defect with one fix, not two lines of noise.
+    const key = `${violation.file} ${violation.clientModule} ${violation.symbol}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    violations.push(violation);
+  };
+
   for (const file of files) {
     if (isClient(file)) continue;
+    const code = withoutComments(read(file));
     for (const binding of bindingsOf(read(file))) {
       if (binding.typeOnly) continue;
-      const target = resolveSpecifier(binding.source, file, (candidate) =>
-        known.has(candidate),
-      );
+      const target = resolveSpecifier(binding.source, file, find);
       if (target === null || !isClient(target)) continue;
 
       const name = binding.imported === "default" ? binding.local : binding.imported;
-      if (binding.imported !== "*" && isComponentName(name) && declaresComponent(read(target), name)) {
+      const isComponent =
+        binding.imported !== "*" &&
+        isComponentName(name) &&
+        declaresComponent(read(target), name);
+
+      if (isComponent) {
+        // A component may cross — to be RENDERED. Calling one on the server is
+        // the same 500 with the same message (`Attempted to call X() from the
+        // server`), so the call site is read too.
+        const called = new RegExp(String.raw`(?<![\w$.])${binding.local}\s*\(`).test(code);
+        if (!called) continue;
+        report({
+          file,
+          clientModule: target,
+          symbol: name,
+          message:
+            `${file} is a server module and CALLS \`${binding.local}\`, imported from ` +
+            `the "use client" module ${target}. A client export is a client ` +
+            `reference on the server: rendering it as \`<${binding.local} />\` is the ` +
+            `boundary working, calling it answers 500 ` +
+            `(\`Attempted to call ${binding.local}() from the server\`, ` +
+            `admin-window/BUG-0094).`,
+        });
         continue;
       }
-      const what =
-        binding.imported === "*"
+
+      const what = binding.dynamic
+        ? `the whole module (\`import("${binding.source}")\`)`
+        : binding.imported === "*"
           ? `the whole namespace (\`* as ${binding.local}\`)`
           : `\`${name}\``;
-      violations.push({
+      report({
         file,
         clientModule: target,
         symbol: name,
@@ -408,7 +718,7 @@ describe("the client boundary under src/", () => {
     // These two imports ARE the boundary this app is built on, so the analyzer
     // must see them and must call them legal.
     const files = sourceFiles();
-    const known = new Set(files);
+    const find = fileFinder(files);
     const crossings = files.flatMap((file) => {
       if (isClientModule(sourceText(file))) return [];
       return bindingsOf(sourceText(file))
@@ -416,9 +726,7 @@ describe("the client boundary under src/", () => {
         .map((binding) => ({
           file,
           binding,
-          target: resolveSpecifier(binding.source, file, (candidate) =>
-            known.has(candidate),
-          ),
+          target: resolveSpecifier(binding.source, file, find),
         }))
         .filter(({ target }) => target !== null && isClientModule(sourceText(target)));
     });
@@ -563,32 +871,152 @@ describe("the client-boundary guard itself", () => {
     expect(violations('import { HintSide } from "./cell";\n', laundered)).toHaveLength(1);
   });
 
-  // PIN, admin-window/BUG-0094 (reopened): `it.fails` while the hole is open —
-  // the day the guard closes it this XPASSes and goes red, which is the
-  // signal to delete `.fails` here rather than to re-file the bug.
-  it.fails("a capitalised ARROW helper does not launder past the guard either", () => {
-    // admin-window/BUG-0094, reopened by QA 2026-09-08. `declaresComponent`
-    // accepts any right-hand side that opens with `(`, so an ordinary helper
-    // written as an arrow function and given a component's name is read as a
-    // component and waved through — the very bypass the test above claims to
-    // close, one spelling further on. MEASURED on this tree, production build
-    // on 127.0.0.1:8823 against staging: adding
+  it("is not fooled by a capitalised ARROW helper either", () => {
+    // admin-window/BUG-0094, reopened by QA 2026-09-08 and closed here. The
+    // old test asked whether the right-hand side OPENED with `(` — which every
+    // arrow shares with every helper's parameter list — so an ordinary helper
+    // wearing a component's name walked through. MEASURED by QA on the landed
+    // tree, production build on 127.0.0.1:8823 against staging: adding
     // `export const HintSideFor = (row: number, rows: number): HintSide => …`
-    // to src/components/EditableCell.tsx and calling it from
-    // `RecordFields` (src/components/records/record-fields.tsx, a server
-    // component) left this file at 13 passed, the whole offline suite at 2589
-    // passed, `npm run lint` at 0 and `tsc --noEmit` clean — while
+    // to src/components/EditableCell.tsx and calling it from `RecordFields`
+    // (a server component) left this file at 13 passed, the whole offline
+    // suite at 2589, lint at 0 and tsc clean — while
     // GET /records/walk_sandbox/00000000-0000-4000-8000-000000000001 answered
     // **500** (`Attempted to call HintSideFor() from the server`, digest
-    // 2955157816). Reverting the two files and rebuilding answered 200.
+    // 2955157816). The body decides now, so it is flagged.
     const client =
       '"use client";\n' +
-      "export const HintSide = (row: number, rows: number) =>\n" +
+      "export const HintSideFor = (row: number, rows: number): HintSide =>\n" +
       '  rows > 1 && row === rows - 1 ? "above" : "below";\n' +
       "export function Cell() {\n  return <span />;\n}\n";
-    const found = violations('import { HintSide } from "./cell";\n', client);
+    const found = violations('import { HintSideFor } from "./cell";\n', client);
     expect(found).toHaveLength(1);
-    expect(found[0].symbol).toBe("HintSide");
+    expect(found[0].symbol).toBe("HintSideFor");
+  });
+
+  it("flags a helper with a component's name in every declaration shape", () => {
+    // The CLASS, not the spelling: what these have in common is that no body
+    // here produces markup. `FormatDate` is QA's second sample; the `function`
+    // keyword is the same defect the arrow above is, and the comparison in
+    // `NarrowerThan` is there because a `<` between two names must not read as
+    // a tag (`index < text.length` is not JSX).
+    for (const declaration of [
+      "export const FormatDate = (d: string) => d.slice(0, 10);\n",
+      "export function FormatDate(d: string) {\n  return d.slice(0, 10);\n}\n",
+      "export const FormatDate = function (d: string) {\n  return d.slice(0, 10);\n};\n",
+      "export const FormatDate = async (d: string) => d.slice(0, 10);\n",
+      "export const FormatDate = (d: string) => {\n  const parts = d.split(\"-\");\n  return parts[0];\n};\n",
+      "export const FormatDate = (d: string) => new Map<string, string>().get(d) ?? d;\n",
+      "export const FormatDate = (a: string[], b: string) =>\n  a.length < b.length ? a[0] : b;\n",
+      "export const FormatDate = { of: (d: string) => d.slice(0, 10) };\n",
+      "export const FormatDate = DATE_FORMATS.iso;\n",
+      "export const FormatDate = useCallback((d: string) => d.slice(0, 10), []);\n",
+    ]) {
+      const client = `"use client";\n${declaration}export function Cell() {\n  return <span />;\n}\n`;
+      const found = violations('import { FormatDate } from "./cell";\n', client);
+      expect(found.length, declaration).toBe(1);
+      expect(found[0].symbol, declaration).toBe("FormatDate");
+    }
+  });
+
+  it("does not flag a genuine component, in every declaration shape", () => {
+    // The other half of the same rule, and the half that decides whether this
+    // guard is usable: a component written as an arrow, a `memo`, a
+    // `forwardRef`, an alias or an `FC`-typed binding must all cross freely.
+    for (const declaration of [
+      "export const Cell = (props: P) => <td/>;\n",
+      "export const Cell = (props: P) => <td>{props.value}</td>;\n",
+      "export const Cell = ({ value }: P) => (\n  <td className=\"px-2\">{value}</td>\n);\n",
+      "export const Cell = (props: P) => {\n  const v = props.value;\n  return <td>{v}</td>;\n};\n",
+      "export function Cell(props: P) {\n  return <td>{props.value}</td>;\n}\n",
+      "export function Cell(props: P): ReactElement {\n  return <td />;\n}\n",
+      "export const Cell = memo(function CellInner(props: P) {\n  return <td />;\n});\n",
+      "export const Cell = React.memo((props: P) => <td />);\n",
+      "export const Cell = forwardRef((props: P, ref) => <td ref={ref} />);\n",
+      "function CellInner(props: P) {\n  return <td />;\n}\nexport const Cell = CellInner;\n",
+      "export const Cell: FC<P> = (props) => renderRow(props);\n",
+      "export const Cell: React.ComponentType<P> = wrap(inner);\n",
+      "export const Cell = (props: P) => createElement(\"td\", null, props.value);\n",
+      "export const Cell = (props: P) => <>{props.value}</>;\n",
+      "export const Cell = (props: P) => (props.hidden ? null : <td />);\n",
+    ]) {
+      const client = `"use client";\n${declaration}`;
+      expect(violations('import { Cell } from "./cell";\n', client), declaration).toEqual([]);
+    }
+  });
+
+  it("flags a component that a server module CALLS instead of rendering", () => {
+    // A client reference may be handed to the renderer; it may not be invoked.
+    // `Attempted to call Cell() from the server` is the same 500 the ticket
+    // exists for, and the import alone is legal, so the call site is read.
+    const client = '"use client";\nexport const Cell = (props: P) => <td>{props.value}</td>;\n';
+    const found = violations(
+      'import { Cell } from "./cell";\n' +
+        "export function RecordFields() {\n" +
+        "  return <tr>{Cell({ value: \"x\" })}</tr>;\n" +
+        "}\n",
+      client,
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0].symbol).toBe("Cell");
+    expect(found[0].message).toContain("CALLS");
+    // Rendering the very same component, and naming it in prose, is not a call.
+    expect(
+      violations(
+        'import { Cell } from "./cell";\n' +
+          "export function RecordFields() {\n" +
+          "  return <tr><Cell value=\"x\" /></tr>;\n" +
+          "}\n",
+        client,
+      ),
+    ).toEqual([]);
+  });
+
+  it("sees a dynamic import of a client module", () => {
+    // `await import("./cell")` matches no import STATEMENT, so the scan saw
+    // nothing at all (QA's first residual, admin-window/BUG-0094). It hands
+    // over the whole module, so it is read like a namespace import.
+    const found = violations(
+      "export async function RecordFields() {\n" +
+        '  const { hintSideFromClientModule } = await import("./cell");\n' +
+        "  return <span>{hintSideFromClientModule(true)}</span>;\n" +
+        "}\n",
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0].clientModule).toBe(CLIENT);
+    expect(found[0].message).toContain("./cell");
+    // A type-position `typeof import(…)` is erased like any other type.
+    expect(
+      violations('export type Cell = typeof import("./cell");\n'),
+    ).toEqual([]);
+    // …and a dynamic import of a module that is not a client module is fine.
+    expect(
+      violations('const m = await import("./nowhere");\n'),
+    ).toEqual([]);
+  });
+
+  it("resolves a specifier whose case differs from the file's", () => {
+    // macOS is case-insensitive, so `./Cell` really does load `cell.tsx` and
+    // really does cross the boundary; exact-match resolution answered null and
+    // skipped it (QA's second residual, admin-window/BUG-0094).
+    const found = violations('import { hintSideFromClientModule } from "./Cell";\n');
+    expect(found).toHaveLength(1);
+    expect(found[0].clientModule).toBe(CLIENT);
+    // The canonical path is what is reported, not the specifier's spelling.
+    expect(fileFinder([CLIENT])("src/fixture/CELL.tsx")).toBe(CLIENT);
+    expect(fileFinder([CLIENT])("src/fixture/other.tsx")).toBeNull();
+  });
+
+  it("reports one violation per crossing, not one per way of seeing it", () => {
+    // The import rule and the call-site rule can both fire on one line. One
+    // defect, one fix, one message.
+    const found = violations(
+      'import { hintSideFromClientModule } from "./cell";\n' +
+        "export function RecordFields() {\n" +
+        "  return <span>{hintSideFromClientModule(true)}</span>;\n" +
+        "}\n",
+    );
+    expect(found).toHaveLength(1);
   });
 
   it("judges a default import by the name it is given", () => {
