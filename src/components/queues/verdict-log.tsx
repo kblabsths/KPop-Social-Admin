@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
-import { type Column, DataTable } from "@/components/ui";
+import { type Column, DataTable, Identifier } from "@/components/ui";
 import { EM_DASH, clamped, isAbsent, relativeAge } from "@/lib/format";
 
 /**
@@ -108,10 +108,22 @@ export function VerdictLog({
     {
       key: "action",
       label: "action",
-      // Verbatim, in the table's own mono cell (§11). No badge, no title case,
-      // no mapping to friendlier words: `data_conflict` uppercased is the
+      // Verbatim, through the app's ONE identifier primitive (§11,
+      // admin-window/DEBT-0011) — the same way `cycles/run-columns.tsx` renders
+      // `source` and `failure_class` in this same table. No badge, no title
+      // case, no mapping to friendlier words: `data_conflict` uppercased is the
       // defect admin-window/BUG-0049 was filed for.
-      cell: (row) => <span data-verdict-action={row.action}>{row.action}</span>,
+      //
+      // The FACE does not move: `Identifier` renders `type-data text-ink`, both
+      // of which this cell was already inheriting from `DataTable`'s own `td`
+      // (`ui/data-table.tsx`, `type-data px-2 py-1.5 text-ink`). What the swap
+      // buys is that the span now OWNS them instead of borrowing them from an
+      // ancestor, and with them the bidi isolation the primitive applies once
+      // (ARCHITECTURE.md §7): an action the database produced can no longer
+      // reorder anything outside its own box (admin-window/BUG-0150).
+      cell: (row) => (
+        <Identifier data-verdict-action={row.action}>{row.action}</Identifier>
+      ),
     },
     {
       key: "item",
@@ -139,8 +151,17 @@ export function VerdictLog({
         // The id is real whether or not this app can resolve where it leads,
         // so an unresolved one is rendered verbatim rather than dashed: a dash
         // there would claim the verdict observed nothing.
+        //
+        // The unlinked arm is an identifier like any other and goes through the
+        // primitive (admin-window/BUG-0150, the same call site BUG-0148 fixed
+        // in `review/close/slot.tsx`): same face — `type-data text-ink`, which
+        // the `td` was already supplying — plus the isolation of §7. The LINKED
+        // arm below stays an anchor: DEBT-0011's sanctioned exception, because
+        // a link owns its own affordance spelling (`cycles/links.ts`).
         return row.observationHref === null ? (
-          <span data-verdict-observation={row.observationId}>{row.observationId}</span>
+          <Identifier data-verdict-observation={row.observationId}>
+            {row.observationId}
+          </Identifier>
         ) : (
           <a
             href={row.observationHref}
