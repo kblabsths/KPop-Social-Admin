@@ -161,3 +161,4 @@
 2026-09-09T15:10:17Z	artifact_gate	blocked write outside repo: ../../agenticflow/tracker/evidence/BUG-0130/pre.txt
 2026-09-09T15:32:47Z	artifact_gate	blocked write outside repo: /queues/[0-9a-f-]\{36\}
 2026-09-09T15:35:43Z	evidence_budget	qa_evidence_overbudget: BUG-0131 4329/4000 chars
+2026-09-09T15:58:47Z	artifact_gate	blocked write outside repo: /tmp/x
