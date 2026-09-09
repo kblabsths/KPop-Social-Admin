@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T14:53:28Z — do not edit)
+# Tracker index (regenerated 2026-09-09T14:53:37Z — do not edit)
 
 ## open
 - BUG-0127 [P3][bug][M2] Claims' dropped-parameter line spells a hole when the URL's key is blank: 'The URL carries , which this page did not apply'  (scope:src/lib/claims/filters.ts,src/app/claims/page.tsx,tests/offline/claims/page.test.ts from:BUG-0123)
