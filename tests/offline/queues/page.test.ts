@@ -1211,6 +1211,53 @@ describe("a zero that a filter produced", () => {
     }
   });
 
+  // STRICT pin, landed red by QA (admin-window/BUG-0133). Drop `.fails` the day
+  // the block stops blaming a filter for a zero its own queue produced.
+  it.fails(
+    "does not blame a filter for a zero on a queue that holds nothing anyway (admin-window/BUG-0133)",
+    async () => {
+      // The trigger BUG-0131's structural rule does not reach, and the state
+      // staging is in today (0 decision items): when a block's OWN queue is
+      // empty, NO url facet can have removed a row from it — every facet
+      // leaves exactly the rows the unfiltered page shows, which is none. So
+      // the same rule applies as for a facet the kind implies: the block may
+      // not name the filter as the reason for its zero, and may not tell the
+      // reader to widen a filter that is hiding nothing.
+      //
+      // Held against the SAME script rendered with no filter at all, so no
+      // wording is pinned — only the presence of a scope claim that the read
+      // does not support.
+      const signals = matching({ kind: "signal" });
+      const SIGNALS_ONLY: Script = {
+        [T.reviewItems]: { data: signals, count: signals.length },
+      };
+      expect(signals.length).toBeGreaterThan(0);
+      expect(matching({ kind: "decision" }).length).toBeGreaterThan(0); // fixture holds some
+      const plain = await renderQueues(SIGNALS_ONLY);
+      expect(idsIn(plain, "decision")).toEqual([]); // ...but this script holds none
+
+      for (const query of [
+        "shape=data_conflict_fact",
+        "queue=data_conflict",
+        "shape=entity_link_fact",
+        "status=open",
+        "kind=signal",
+      ]) {
+        const filtered = await renderQueues(SIGNALS_ONLY, paramsOf(query));
+        // the facet removed not one decision row: there were none to remove
+        expect(idsIn(filtered, "decision"), query).toEqual(idsIn(plain, "decision"));
+        expect(stateOf(filtered, "decision"), query).toBe("empty");
+        // so the zero and the card read exactly as they do unfiltered
+        expect(openSub(filtered, "decision"), `${query} sub-line`).toBe(
+          openSub(plain, "decision"),
+        );
+        expect(rowsRegion(filtered, "decision"), `${query} card`).toBe(
+          rowsRegion(plain, "decision"),
+        );
+      }
+    },
+  );
+
   it("scopes the zero of a queue that has rows but nothing open, too", async () => {
     // `?status=settled` leaves rows on screen and a real zero above them.
     const markup = await renderQueues(healthyScript(), { status: "settled" });
