@@ -27,12 +27,26 @@
  * several fields of one record is this surface's whole job, so it failed at
  * the second field.
  *
- * The rule: **an open cell puts nothing into the row's flow that a resting one
- * does not, and takes nothing out of it.** The resting value stays in the flow
- * while the cell is open — hidden, but still holding exactly the box it held —
- * and everything edit mode adds is drawn OUT of the flow, over the top of it.
- * A row whose size cannot change cannot move another row's control out from
- * under a pointer, and that is the entire fix.
+ * The rule: **the cell's in-flow content is the resting value, in EVERY state
+ * it is ever in.** The resting value stays in the flow while the cell is open
+ * — hidden, but still holding exactly the box it held — and everything else
+ * the cell ever draws (the field, its hint, and the line stating what the
+ * write is doing) is drawn OUT of the flow, over the top of it. A row whose
+ * size cannot change cannot move another row's control out from under a
+ * pointer, and that is the entire fix.
+ *
+ * **Reopened 2026-09-09, and the rule is why: it was applied to two of the
+ * three things the cell draws.** The first cut floated the field and the hint
+ * and left `EditStatus` — `saving…`, measured 46x16 at `position: static`,
+ * plus the container's 8px gap — in the row's flow. So the reflow simply moved
+ * to the commit window: QA opened `label`, typed, and clicked `tally`'s
+ * resting centre 120ms later; the cell's in-flow content grew ~54px as the
+ * statement appeared, crossed the Value column's max-content, the auto table
+ * layout re-apportioned, every value in the column moved 12.09px LEFT
+ * (48.76px in dark theme), `elementFromPoint` at the press point became a
+ * `<td>` of another row, and nothing opened — the same defect, one state
+ * later. A part is either in the flow or it is not; there is no third state
+ * for a part that is "only transient".
  *
  * Pure and exported for the reason `focusVerdict` and `selectOnOpen` are: a
  * bounding box is a browser fact and `tests/offline` is environment node with
@@ -60,7 +74,7 @@ export type PartPlacement =
    */
   | "float-inert";
 
-/** The three parts of a cell, and where each one goes. */
+/** The parts of a cell, and where each one goes. */
 export interface CellLayout {
   /** The resting value — the button an operator clicks to open the cell. */
   readonly value: PartPlacement;
@@ -68,6 +82,25 @@ export interface CellLayout {
   readonly field: PartPlacement;
   /** The line saying how the edit ends (`editHint`). */
   readonly hint: PartPlacement;
+  /**
+   * The line saying what the write is doing or did (`EditStatus`): `saving…`,
+   * `saved`, or the refusal. It appears and disappears on its own while the
+   * cell is CLOSED — during the commit window, which is exactly when an
+   * operator's next click is in the air — so it is the part that must least of
+   * all be allowed to take space (campaign admin-window/BUG-0086, reopened).
+   */
+  readonly status: PartPlacement;
+}
+
+/** What the cell is doing, as far as its layout is concerned. */
+export interface CellState {
+  /** Is the cell open — a field on screen instead of the resting value? */
+  readonly editing: boolean;
+  /**
+   * Is a status on screen at all? True for `saving`, `saved` and `failed`;
+   * false for `idle`, which renders nothing (`EditStatus`).
+   */
+  readonly statusShown: boolean;
 }
 
 /**
@@ -78,11 +111,22 @@ export function occupiesFlow(placement: PartPlacement): boolean {
   return placement === "flow" || placement === "flow-hidden";
 }
 
-/** Where the cell's three parts go, in the state it is in. */
-export function cellLayout(editing: boolean): CellLayout {
-  return editing
-    ? { value: "flow-hidden", field: "float", hint: "float-inert" }
-    : { value: "flow", field: "absent", hint: "absent" };
+/**
+ * Where the cell's parts go, in the state it is in.
+ *
+ * Every branch answers the same in-flow set — `value`, and nothing else — so
+ * no state this cell can be in changes the width its row asks the table for.
+ */
+export function cellLayout({ editing, statusShown }: CellState): CellLayout {
+  return {
+    value: editing ? "flow-hidden" : "flow",
+    field: editing ? "float" : "absent",
+    hint: editing ? "float-inert" : "absent",
+    // Inert like the hint, and for the same reason: it hangs over whatever is
+    // beside the value — on this surface another line's control — and a click
+    // aimed at that control has to reach it.
+    status: statusShown ? "float-inert" : "absent",
+  };
 }
 
 /** Which side of the field the hint hangs on. */

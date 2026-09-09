@@ -6,6 +6,7 @@ import { RecordFields } from "@/components/records/record-fields";
 import type { RecordField } from "@/components/records/fields";
 import {
   type CellLayout,
+  type CellState,
   type HintSide,
   cellLayout,
   hintSide,
@@ -1094,7 +1095,7 @@ describe("a cell opens with its value selected, so a retype replaces", () => {
 });
 
 
-/* ── an open cell moves nothing ────────────────────────────────────────────
+/* ── a cell moves nothing, in any state ────────────────────────────
  *
  * campaign admin-window/BUG-0086. Measured by QA on the TASK-0053 attack
  * (2026-09-08, production build against staging, viewport 1400x950): with
@@ -1104,57 +1105,139 @@ describe("a cell opens with its value selected, so a retype replaces", () => {
  * at mousedown and a `<td>` of a different row at mouseup: nothing opened, and
  * the operator had to click twice to correct a second field.
  *
+ * REOPENED 2026-09-09 on the same criterion, one state later. The first cut
+ * floated the field and the hint and left `EditStatus` in the flow, so the
+ * reflow moved to the COMMIT window: QA opened `label`, typed, and clicked
+ * `tally`'s resting centre 120ms later; as `saving…` (46x16, plus the
+ * container's 8px gap) appeared, the cell's in-flow content crossed the Value
+ * column's max-content, every value in the column moved 12.09px left (48.76px
+ * in dark theme), and nothing opened. Hence the states below: the rule is
+ * asserted over EVERY (editing, statusShown) pair, not over the open one.
+ *
  * A bounding box is a browser fact and this tier is environment node with
  * `renderToStaticMarkup` and no jsdom (STACK.md §4), so what is pinned here is
  * `cellLayout` — the rule the rendering obeys — exactly as `focusVerdict` and
  * `selectOnOpen` pin theirs. The boxes themselves are measured in the walk.
  */
 
+const PARTS = ["value", "field", "hint", "status"] as const;
+
 /** The parts of a cell that take space in the row, in a given layout. */
 function flowing(layout: CellLayout): string[] {
-  return (["value", "field", "hint"] as const).filter((part) =>
-    occupiesFlow(layout[part]),
-  );
+  return PARTS.filter((part) => occupiesFlow(layout[part]));
 }
 
-describe("opening a cell moves no other row", () => {
-  it("puts nothing into the row's flow that a resting cell does not, and takes nothing out", () => {
+/**
+ * Every state this cell's layout can be asked about. The second one is the
+ * commit window — closed, `saving…` on screen — which is where the operator's
+ * next click lands and where the reopened defect lived.
+ */
+const STATES: CellState[] = [
+  { editing: false, statusShown: false },
+  { editing: false, statusShown: true },
+  { editing: true, statusShown: false },
+  { editing: true, statusShown: true },
+];
+
+describe("a cell moves no other row, in any state it can be in", () => {
+  it("asks its row for the same box in every state: the resting value, and nothing else", () => {
     // The whole fix in one line: only a part that takes space in the row can
-    // move another row's control out from under a pointer.
-    expect(flowing(cellLayout(true))).toEqual(flowing(cellLayout(false)));
+    // move another row's control out from under a pointer. If any state adds
+    // a part to this set, that state can re-apportion the table's columns.
+    for (const state of STATES) {
+      expect(flowing(cellLayout(state)), JSON.stringify(state)).toEqual(["value"]);
+    }
   });
 
   it("keeps the value holding the box it held, and shows it to nobody", () => {
     // Something has to hold the row's height while the field is open, and the
     // only box that is certainly the right one is the one that was there.
-    expect(occupiesFlow(cellLayout(true).value)).toBe(true);
-    expect(cellLayout(true).value).toEqual("flow-hidden");
-    expect(cellLayout(false).value).toEqual("flow");
+    expect(occupiesFlow(cellLayout({ editing: true, statusShown: false }).value)).toBe(true);
+    expect(cellLayout({ editing: true, statusShown: false }).value).toEqual("flow-hidden");
+    expect(cellLayout({ editing: false, statusShown: false }).value).toEqual("flow");
   });
 
-  it("draws everything edit mode adds outside the flow, in every state it is drawn at all", () => {
-    for (const editing of [false, true]) {
-      const layout = cellLayout(editing);
-      for (const part of ["field", "hint"] as const) {
+  it("draws every part that is not the value outside the flow, wherever it is drawn at all", () => {
+    for (const state of STATES) {
+      const layout = cellLayout(state);
+      for (const part of ["field", "hint", "status"] as const) {
         if (layout[part] === "absent") continue;
-        expect(occupiesFlow(layout[part]), `${part}, editing=${editing}`).toBe(false);
+        expect(occupiesFlow(layout[part]), `${part}, ${JSON.stringify(state)}`).toBe(false);
       }
     }
   });
 
-  it("lets a click pass through the hint, which hangs over another row's control", () => {
-    // A float that swallowed the click would be the same defect wearing the
-    // fix's clothes: the operator would still have to click twice.
-    expect(cellLayout(true).hint).toEqual("float-inert");
-    // The field is not inert — it is the thing being typed into.
-    expect(cellLayout(true).field).toEqual("float");
+  it("takes the line stating the write out of the flow too, in the window the next click lands in", () => {
+    // The reopening, pinned: `saving…` / `saved` / the refusal appear while
+    // the cell is CLOSED and on their own clock, so a status that took space
+    // would move another row's control between mousedown and mouseup — which
+    // is measured, not hypothetical (12.09px left, click swallowed).
+    expect(cellLayout({ editing: false, statusShown: true }).status).toEqual("float-inert");
+    expect(cellLayout({ editing: true, statusShown: true }).status).toEqual("float-inert");
+    // ...and the negative fixture that keeps it honest: no status, nothing drawn.
+    expect(cellLayout({ editing: false, statusShown: false }).status).toEqual("absent");
+    expect(cellLayout({ editing: true, statusShown: false }).status).toEqual("absent");
   });
 
-  it("is not vacuously true: the two states really do differ", () => {
+  it("lets a click pass through the two parts that hang over another row's control", () => {
+    // A float that swallowed the click would be the same defect wearing the
+    // fix's clothes: the operator would still have to click twice.
+    expect(cellLayout({ editing: true, statusShown: false }).hint).toEqual("float-inert");
+    expect(cellLayout({ editing: false, statusShown: true }).status).toEqual("float-inert");
+    // The field is not inert — it is the thing being typed into.
+    expect(cellLayout({ editing: true, statusShown: false }).field).toEqual("float");
+  });
+
+  it("is not vacuously true: the states really do differ from each other", () => {
     // A rule both sides of which are the same object proves nothing (LESSONS 3).
-    expect(cellLayout(true)).not.toEqual(cellLayout(false));
+    const seen = new Set(STATES.map((state) => JSON.stringify(cellLayout(state))));
+    expect(seen.size).toBe(STATES.length);
     expect(occupiesFlow("float")).toBe(false);
+    expect(occupiesFlow("float-inert")).toBe(false);
     expect(occupiesFlow("flow")).toBe(true);
+  });
+});
+
+describe("the status line the row cannot feel", () => {
+  it("is drawn out of the flow and inert to the pointer, in every kind it renders", () => {
+    // The markup half of `cellLayout(...).status`: the model says float-inert
+    // and this is where the rendering says the same thing. `idle` renders
+    // nothing at all, which is `absent`.
+    for (const status of KINDS) {
+      const classes = classesOf(statusMarkup(status));
+      if (status.kind === "idle") {
+        expect(classes, "idle").toEqual([]);
+        continue;
+      }
+      expect(classes, status.kind).toContain("absolute");
+      expect(classes, status.kind).toContain("pointer-events-none");
+    }
+  });
+
+  it("stays readable over whatever it hangs over, and still says what it always said", () => {
+    // Out of the flow means over something, and on this surface that something
+    // is another line of the record: an unfilled box would print two texts on
+    // top of each other. The words and the live regions are unchanged
+    // (BUG-0066) — those are asserted above.
+    for (const status of KINDS.filter((kind) => kind.kind !== "idle")) {
+      expect(classesOf(statusMarkup(status)), status.kind).toContain("bg-surface");
+    }
+    // Still announced, and still two different statements — the words
+    // themselves are nobody's to pin here (see the block above).
+    expect(announced(statusMarkup({ kind: "saving" }), "status")).toMatch(/\S/);
+    expect(announced(statusMarkup({ kind: "failed", message: REFUSAL }), "alert")).toContain(
+      REFUSAL,
+    );
+  });
+
+  it("adds nothing to the resting cell, which has no status to state", () => {
+    const resting = render(
+      h(EditableCell, { value: "Tuzi", onSave: noop, label: "label of walk_sandbox" }),
+    );
+    const $ = cheerio.load(resting);
+    expect($("[role=\"status\"]").length).toBe(0);
+    expect($("[role=\"alert\"]").length).toBe(0);
+    expect(classesOf(resting)).not.toContain("absolute");
   });
 });
 

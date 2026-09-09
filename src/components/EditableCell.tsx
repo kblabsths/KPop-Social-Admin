@@ -21,11 +21,13 @@ import { type HintSide, cellLayout } from "@/components/edit-cell-layout";
  * (`selectOnOpen`). Both are the control's, so every regime with a write path
  * gets them from one place.
  *
- * **An open cell changes no other row's layout** (campaign
+ * **The cell changes no other row's layout, in any state** (campaign
  * admin-window/BUG-0086): the resting value keeps its box while the cell is
- * open and the field and its hint are drawn over the top of it, out of the
- * flow (`cellLayout`). Before, opening one cell moved every other editable
- * value on the record, and the next single click on one of them was swallowed.
+ * open, and the field, its hint AND the line stating the write (`EditStatus`)
+ * are all drawn over the top of it, out of the flow (`cellLayout`). Before,
+ * opening one cell moved every other editable value on the record; after the
+ * first cut, the 46x16 `saving…` line still did it during the commit window,
+ * which is precisely when the operator's next click is in the air.
  *
  * It knows nothing about routes or tables: `onSave` is the caller's, and
  * returns what happened rather than throwing. The display is a real button, so
@@ -299,24 +301,37 @@ function focusIsAdrift(button: HTMLButtonElement | null): boolean {
  * already did); a refusal interrupts (`role="alert"`). The word never lands on
  * the button itself — the Look's button rule says a disabled control's label
  * does not change, so the statement of work stands beside the field.
+ *
+ * **It stands beside the value without taking space beside it** (`STATUS_BOX`,
+ * campaign admin-window/BUG-0086): it is drawn where it always appeared, one
+ * step to the right of the resting value, but out of the row's flow, because
+ * it appears and vanishes on its own clock while the cell is closed — 46x16
+ * plus the container's 8px gap was enough to re-apportion the table's columns
+ * inside a single mousedown→mouseup and swallow the operator's next click.
+ * Being out of the flow, it hangs over whatever is beside it, so it is opaque
+ * (`bg-surface`) to stay readable and inert to the pointer so a click aimed at
+ * what it covers reaches that thing.
+ *
+ * It is positioned against the cell's own `relative` box, so it renders inside
+ * `EditableCell` and nowhere else.
  */
 export function EditStatus({ status }: { status: Status }) {
   switch (status.kind) {
     case "saving":
       return (
-        <span className="type-data text-ink-secondary" role="status">
+        <span className={cx(STATUS_BOX, "text-ink-secondary")} role="status">
           saving…
         </span>
       );
     case "saved":
       return (
-        <span className="type-data text-healthy" role="status">
+        <span className={cx(STATUS_BOX, "text-healthy")} role="status">
           saved
         </span>
       );
     case "failed":
       return (
-        <span className="type-data text-broken" role="alert">
+        <span className={cx(STATUS_BOX, "text-broken")} role="alert">
           {status.message}
         </span>
       );
@@ -389,6 +404,23 @@ const HINT_BOX =
 
 const FIELD_CLASS =
   "type-data pointer-events-auto block w-full rounded-control border border-accent bg-surface px-1 py-0.5 text-ink";
+
+/**
+ * The status line's own box: exactly where it has always been drawn — one
+ * `gap-2` step to the right of the resting value, on its top edge — and out of
+ * the row's flow (`cellLayout(...).status`, campaign admin-window/BUG-0086).
+ *
+ * `left-full ml-2` reproduces the flex gap it used to sit after, so nothing an
+ * operator sees moves; `absolute` is what takes it out of the flow, which is
+ * the whole fix. `w-max` keeps `saving…` on one line and `max-w-xs` wraps a
+ * long refusal into a panel instead of a line running off the table — a
+ * refusal is the database's own sentence and can be a hundred characters.
+ * `bg-surface` because it now hangs over whatever is beside the value, and
+ * `pointer-events-none` because that thing may be another editable value and
+ * this line is not a control.
+ */
+const STATUS_BOX =
+  "type-data pointer-events-none absolute top-0 left-full z-10 ml-2 w-max max-w-xs rounded-control bg-surface px-1 py-0.5";
 
 /**
  * The field opens with its value SELECTED, so a straight retype replaces it —
@@ -623,13 +655,14 @@ export function EditableCell({
     }
   }
 
-  const layout = cellLayout(editing);
+  const layout = cellLayout({ editing, statusShown: status.kind !== "idle" });
 
   return (
-    // `relative`: the open cell's field and hint are drawn against this box
-    // (`FLOAT_BOX`), out of the row's flow, so opening the cell moves nothing
-    // (campaign admin-window/BUG-0086).
-    <span className="relative inline-flex flex-wrap items-baseline gap-2">
+    // `relative`: the field, its hint and the status line are all drawn
+    // against this box (`FLOAT_BOX`, `STATUS_BOX`), out of the row's flow, so
+    // nothing this cell ever does moves another row (campaign
+    // admin-window/BUG-0086). The box the row sees is the button's, always.
+    <span className="relative inline-flex flex-wrap items-baseline">
       <button
         ref={button}
         type="button"
@@ -671,7 +704,7 @@ export function EditableCell({
           onKeyDown={onKeyDown}
         />
       )}
-      <EditStatus status={status} />
+      {layout.status === "absent" ? null : <EditStatus status={status} />}
     </span>
   );
 }
