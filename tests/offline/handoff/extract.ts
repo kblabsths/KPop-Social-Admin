@@ -311,3 +311,162 @@ export function alterTableTargets(scan: string): string[] {
   }
   return targets;
 }
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * The ACL an artifact INSTALLS — not the grant lines it happens to carry.
+ *
+ * admin-window/BUG-0082. The `verdicts` artifact said "service_role holds
+ * SELECT and nothing else" and wrote `grant select … to service_role;` — and
+ * that GRANT installs a fully writable table, because on this project a new
+ * `public` table is BORN holding everything:
+ *
+ *   `kspace Scraper/supabase/migrations/20260818000000_the_schema_arrives_as_one_snapshot.sql`
+ *     ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+ *       GRANT ALL ON TABLES TO "anon" / "authenticated" / "service_role"
+ *
+ * measured by the sibling as `service_role=arwdDxtm/postgres`
+ * (`20260821000001_the_gate_becomes_the_only_write_path.sql`, which fixed the
+ * identical design with an explicit revoke). A grant can only widen; only a
+ * revoke narrows. So a grader that reads GRANT statements grades the opposite
+ * of what gets installed, and the only honest question is the ACL: replay the
+ * artifact's grants and revokes, in order, onto what the table is born with,
+ * and ask what each role is left holding.
+ *
+ * Lives here rather than in one test so the `settle_review_item` artifact —
+ * whose own note is graded by a sibling of `verdicts.test.ts` — asks the same
+ * question of its own object instead of re-deriving it.
+ */
+
+/** The eight table privileges Postgres tracks, in `psql`'s own order. */
+export const TABLE_PRIVILEGES = [
+  "select",
+  "insert",
+  "update",
+  "delete",
+  "truncate",
+  "references",
+  "trigger",
+  "maintain",
+] as const;
+
+export type TablePrivilege = (typeof TABLE_PRIVILEGES)[number];
+
+/**
+ * The roles a new `public` table in this project is born having granted
+ * everything to, per the snapshot's `ALTER DEFAULT PRIVILEGES` block. `postgres`
+ * is deliberately absent: it OWNS the tables, and an owner's rights over its own
+ * table do not come from a grant (20260821000001's header says exactly this,
+ * which is why revoking service_role's DML leaves the definer functions writing).
+ */
+export const ROLES_BORN_HOLDING_ALL: readonly string[] = ["anon", "authenticated", "service_role"];
+
+/** What an artifact leaves each role holding on one table. */
+export interface InstalledAcl {
+  /** Role → the privileges it still holds after the artifact applies. */
+  readonly held: ReadonlyMap<string, ReadonlySet<TablePrivilege>>;
+  /**
+   * Statements this reader refused to interpret while they may still change the
+   * table's ACL — a column-level grant, an unknown privilege word, `grant option
+   * for`, `on all tables in schema`, or an `alter default privileges`. NEVER
+   * ignore these: silently skipping the statement you cannot parse is how a
+   * grader certifies an ACL it never read (BUG-0082 again, one level down).
+   */
+  readonly unreadable: readonly string[];
+}
+
+/** The privileges one GRANT/REVOKE names, or null when they are not all known. */
+function parsePrivileges(text: string): TablePrivilege[] | null {
+  const flat = text.trim().toLowerCase();
+  if (flat.includes("(")) return null; // a column-level grant narrows differently
+  if (/^all(\s+privileges)?$/.test(flat)) return [...TABLE_PRIVILEGES];
+  const named = flat.split(",").map((word) => word.trim());
+  const known = TABLE_PRIVILEGES as readonly string[];
+  if (named.some((word) => !known.includes(word))) return null;
+  return named as TablePrivilege[];
+}
+
+/** The role names one GRANT/REVOKE tail names, `public` included as itself. */
+function parseRoles(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/\s+(?:with\s+grant\s+option|cascade|restrict)\s*$/, "")
+    .split(",")
+    .map((role) => role.replace(/"/g, "").trim())
+    .filter((role) => role.length > 0);
+}
+
+/** The objects one GRANT/REVOKE names, unquoted and lowercased. */
+function parseObjects(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(",")
+    .map((object) => object.replace(/"/g, "").trim())
+    .filter((object) => object.length > 0);
+}
+
+const PRIVILEGE_STATEMENT =
+  /^(grant|revoke)\s+(.+?)\s+on\s+(?:table\s+)?(.+?)\s+(?:to|from)\s+(.+)$/;
+
+/**
+ * Replay every privilege statement of `artifact` onto the birth ACL of
+ * `qualifiedTable` and report what each role is left holding.
+ *
+ * Statements naming other objects are ignored; statements naming this one that
+ * cannot be modelled are reported in `unreadable` rather than skipped.
+ */
+export function tableAclAfter(
+  artifact: SqlArtifact,
+  qualifiedTable: string,
+  bornHoldingAll: readonly string[] = ROLES_BORN_HOLDING_ALL,
+): InstalledAcl {
+  const table = qualifiedTable.toLowerCase();
+  const held = new Map<string, Set<TablePrivilege>>();
+  for (const role of bornHoldingAll) held.set(role, new Set(TABLE_PRIVILEGES));
+  const unreadable: string[] = [];
+
+  for (const raw of artifact.statements) {
+    const statement = raw.replace(/\s+/g, " ").trim();
+    const flat = statement.toLowerCase();
+
+    if (flat.startsWith("alter default privileges")) {
+      unreadable.push(statement);
+      continue;
+    }
+    const parsed = PRIVILEGE_STATEMENT.exec(flat);
+    if (parsed === null) continue;
+    const [, verb, privilegeText, objectText, roleText] = parsed;
+
+    if (/\ball\s+tables\s+in\s+schema\b/.test(objectText)) {
+      unreadable.push(statement);
+      continue;
+    }
+    if (!parseObjects(objectText).includes(table)) continue;
+    if (/^grant\s+option\s+for\b/.test(privilegeText)) {
+      unreadable.push(statement);
+      continue;
+    }
+
+    const privileges = parsePrivileges(privilegeText);
+    if (privileges === null) {
+      unreadable.push(statement);
+      continue;
+    }
+    for (const role of parseRoles(roleText)) {
+      const current = held.get(role) ?? new Set<TablePrivilege>();
+      for (const privilege of privileges) {
+        if (verb === "grant") current.add(privilege);
+        else current.delete(privilege);
+      }
+      held.set(role, current);
+    }
+  }
+
+  return { held, unreadable };
+}
+
+/** What one role is left holding, in `TABLE_PRIVILEGES` order. */
+export function privilegesHeld(acl: InstalledAcl, role: string): TablePrivilege[] {
+  const held = acl.held.get(role) ?? new Set<TablePrivilege>();
+  return TABLE_PRIVILEGES.filter((privilege) => held.has(privilege));
+}

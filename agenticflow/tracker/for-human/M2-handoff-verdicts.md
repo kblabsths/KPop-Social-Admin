@@ -21,7 +21,7 @@ nothing retries, and no value is written another way.
 | create it by | pasting §2 below into that new file, verbatim |
 | apply command | `supabase db push`, run **from the `kspace Scraper` repo root** — the only repo that pushes migrations (root `CLAUDE.md`) |
 | order | this file first, `settle_review_item` second (its file name must sort after this one; the function references this table) |
-| rollback | `drop table public.verdicts;` — safe while the function is not yet installed, and it takes nothing else with it: no other object references this table |
+| rollback | `drop table public.verdicts;` and then `notify pgrst, 'reload schema';` — safe while the function is not yet installed, and it takes nothing else with it: no other object references this table. The reload is not optional on the way out either: PostgREST caches the schema, so until it reloads it goes on advertising a table that is gone, and the dashboard's reads answer from that stale cache instead of drawing the ordinary `not_provisioned` card |
 
 Paste-ready, from the scraper repo root (`/Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper`):
 
@@ -63,13 +63,17 @@ makes a re-run loud rather than silent.
 --
 -- Internal table: RLS on with zero policies and no client grant, per
 -- 20260901000002 section 4. One deliberate departure from that file's grant
--- line, and it is the point of the table: service_role holds SELECT and nothing
--- else. settle_review_item is the ONLY writer (section 7's "one entry point,
--- one transaction"), and like apply_resolution (20260901000005) it is security
+-- line, and it is the point of the table: service_role ends holding SELECT and
+-- nothing else. That posture is written as a REVOKE (section 4 below) and not
+-- as the grant beside it, because this project's ALTER DEFAULT PRIVILEGES hands
+-- every new public table ALL to service_role (20260818000000) - the table is
+-- BORN writable, and a grant can only widen what it was born with.
+-- settle_review_item is the ONLY writer (section 7's "one entry point, one
+-- transaction"), and like apply_resolution (20260901000005) it is security
 -- definer, so it inserts as its owner and needs no table grant of its own.
--- Handing service_role INSERT would leave a second write path open to every
--- holder of that key, including the Admin dashboard, which is exactly the door
--- this design closes.
+-- Leaving service_role's inherited INSERT in place would leave a second write
+-- path open to every holder of that key, including the Admin dashboard, which
+-- is exactly the door this design closes.
 --
 -- Zero json columns: this schema admits one, observations.value (ECOSYSTEM
 -- section 10). No alter table on any canonical table, and no data.
@@ -127,19 +131,33 @@ comment on column public.verdicts.note is 'The admin''s why, at their discretion
 comment on column public.verdicts.created_at is 'When the verdict was decided. It is also the settlement''s timestamp: one transaction means the apply, the rejection stamps and this row share it, which is what the resolver''s strictly-newer guard assumes (contracts/resolver.md section 7, step 0b)';
 
 -- ── 4. Who may touch it ──────────────────────────────────────────────────────
--- Client roles hold nothing, at both the grant and the RLS layer: RLS on with
--- zero policies, and the grants this project's ALTER DEFAULT PRIVILEGES hands
--- every new public table revoked outright. TRUNCATE is why the revoke is
+-- WHAT A NEW TABLE IS BORN WITH, which is why every line here but one is a
+-- revoke. 20260818000000 ends with ALTER DEFAULT PRIVILEGES FOR ROLE postgres
+-- IN SCHEMA public GRANT ALL ON TABLES TO anon, to authenticated AND to
+-- service_role, so the create table above has already handed all three every
+-- privilege - arwdDxtm, as 20260821000001 measured it on staging for the three
+-- tables it locked. A GRANT cannot narrow that; only a REVOKE can. What this
+-- file INSTALLS, not what it grants, is where "one entry point" is enforced.
+--
+-- Client roles end holding nothing, at both the grant and the RLS layer: RLS on
+-- with zero policies, and the grants this project's ALTER DEFAULT PRIVILEGES
+-- hands every new public table revoked outright. TRUNCATE is why the revoke is
 -- necessary rather than decorative - RLS does not govern it (20260825000007).
 --
--- service_role gets SELECT only, and that is the whole enforcement of "one
--- entry point": the Admin dashboard holds that key and reads this table to know
--- whether the verdict path is installed at all, but it cannot write a verdict
--- except through settle_review_item, which runs security definer as the owner.
+-- service_role ends holding SELECT alone - service_role=r/postgres - and that
+-- is the whole enforcement of "one entry point": the Admin dashboard holds that
+-- key and reads this table to know whether the verdict path is installed at
+-- all, but it cannot write a verdict except through settle_review_item, which
+-- runs security definer as the owner. The second revoke is what makes that
+-- true, and it is 20260821000001's own line privilege for privilege - the three
+-- write privileges plus the four Supabase defaults that no migration ever
+-- narrowed. The grant after it names the one privilege that stays, so a reader
+-- sees the intent stated rather than inferred from an absence.
 
 alter table public.verdicts enable row level security;
 
 revoke all on table public.verdicts from anon, authenticated;
+revoke insert, update, delete, truncate, references, trigger, maintain on table public.verdicts from service_role;
 grant select on table public.verdicts to service_role;
 
 -- PostgREST caches the schema; the Admin dashboard reads this table over it and
@@ -160,20 +178,30 @@ than a line in this block.
 | `public.review_items` | the resolver's queue table; `review_items_pkey` is on `review_item_id`, which is what `verdicts_review_item_id_fkey` references | `20260901000002_the_review_item_opens_once_per_subject.sql` |
 | `public.observations` | every claim by every source; `observations_pkey` is on `observation_id`, which is what `verdicts_observation_id_fkey` references | `20260818000000_the_schema_arrives_as_one_snapshot.sql` |
 | `observations.rejected_at`, `observations.rejected_by` | the rejection stamps a verdict writes instead of copying rejected values here (comment only — this file does not touch them) | `20260901000003_an_adjudicated_claim_carries_its_stamp.sql` |
-| `public.apply_resolution(p_decisions jsonb)` | the canonical write path a value-carrying verdict applies through, and the `security definer` precedent this table's grant line assumes (comment only) | `20260901000005_canonical_gets_its_one_write_path.sql` |
-| `anon`, `authenticated`, `service_role` | Supabase's managed roles. The revoke line copies `20260901000002` §4; the TRUNCATE reasoning is the project-wide sweep's | `20260901000002_the_review_item_opens_once_per_subject.sql` §4; `20260825000007_revoke_client_truncate_across_public.sql` |
-| `public` schema, `now()`, `timestamp with time zone` | Postgres and Supabase built-ins; `public` is the REST-exposed schema, which is why the grants above are the whole story | — |
+| `public.apply_resolution(p_decisions jsonb)` | the canonical write path a value-carrying verdict applies through, and the `security definer` precedent this table's revoke/grant pair assumes (comment only) | `20260901000005_canonical_gets_its_one_write_path.sql` |
+| `anon`, `authenticated`, `service_role` | Supabase's managed roles — each of the three is handed `all` on every new `public` table by this project's `alter default privileges` (the snapshot's last block, near line 6850), which is why §2's posture is written as revokes and not as grants. The client revoke copies `20260901000002` §4; the `service_role` revoke copies `20260821000001` §1 privilege for privilege, where the identical design ("the gate is the only write path") took `observations`, `field_provenance` and `sources` from a measured `service_role=arwdDxtm/postgres` to `service_role=r/postgres`; the TRUNCATE reasoning is the project-wide sweep's | `20260818000000_the_schema_arrives_as_one_snapshot.sql`; `20260901000002_the_review_item_opens_once_per_subject.sql` §4; `20260821000001_the_gate_becomes_the_only_write_path.sql` §1; `20260825000007_revoke_client_truncate_across_public.sql` |
+| `public` schema, `now()`, `timestamp with time zone` | Postgres and Supabase built-ins; `public` is the REST-exposed schema, which is why the revokes and the grant above are the whole story | — |
 
 ## 4. The three things worth a second look before you paste
 
-1. **`grant select` and not `grant select, insert, update, delete`.** Every
-   other internal table in that repo (`review_items`, `resolution_runs`,
-   `confirmed_matches`) hands `service_role` all four. This one does not, on
-   purpose: `settle_review_item` is the only writer, it is `security definer`,
-   and the deferred proof run's "grant introspection proving `verdicts` is
-   written by `settle_review_item` alone" only passes if `service_role` holds no
-   write here. **This couples the two files**: if you ever make the function
-   `security invoker`, this grant line has to widen with it.
+1. **The `service_role` REVOKE, which is the line that actually does it.**
+   Every other internal table in that repo (`review_items`, `resolution_runs`,
+   `confirmed_matches`) hands `service_role` all four DML privileges. This one
+   ends up with SELECT alone, on purpose: `settle_review_item` is the only
+   writer and it is `security definer`. But that had to be *taken away*, not
+   merely withheld — `alter default privileges … grant all on tables to
+   service_role` in `20260818000000` means the table is born holding all eight,
+   so `grant select` on its own would have installed a fully writable table
+   while reading as if it did not. The narrowing line is therefore
+   `revoke insert, update, delete, truncate, references, trigger, maintain …
+   from service_role`, copied privilege for privilege from `20260821000001`.
+   **Check the result as an ACL, never as a grant list** — after the push,
+   `select relacl from pg_class where relname = 'verdicts';` must show
+   `service_role=r/postgres` and no `anon`/`authenticated` entry at all. The
+   deferred proof run's "grant introspection proving `verdicts` is written by
+   `settle_review_item` alone" only passes if `service_role` holds no write
+   here. **This couples the two files**: if you ever make the function
+   `security invoker`, this revoke/grant pair has to widen with it.
 2. **Two indexes, neither required by the contract.** `created_at desc` for the
    verdict-log tab, `review_item_id` for an item's own history. Drop either line
    if you would rather add them when a read is slow; nothing in Admin depends on
