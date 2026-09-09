@@ -76,6 +76,19 @@ export function CycleHealthSection({
 }) {
   const { window: info, writes, duration: spread } = health;
   const cadence = duration(health.cadenceSeconds);
+  // The over-cadence figure is computed over the cycles that HAVE a measured
+  // duration, and `spread.unmeasurable` is the set it therefore leaves out —
+  // the same field the duration note below renders, so the two cannot report
+  // one set as two numbers (admin-window/BUG-0110).
+  //
+  // LOOK_AND_FEEL, Zeroes: a figure states what it excludes whenever the
+  // excluded set is not empty, and says nothing about whether the figure is
+  // good news. When nothing is excluded there is nothing to name, so the line
+  // stays the one figure rather than gaining a clause that counts to zero.
+  const overCadence =
+    spread.unmeasurable > 0
+      ? `${count(health.overCadence)} of ${counted(spread.count, "finished cycle")} ran longer than the ${cadence} cadence; ${count(spread.unmeasurable)} never finished`
+      : `${count(health.overCadence)} ran longer than the ${cadence} cadence`;
   // A window with no cycles at all is the state a reviewer sees first against
   // a database whose resolver has not run. It is an emptiness with a reason,
   // so it is said in the page's own words rather than left to a table of zeros.
@@ -99,7 +112,7 @@ export function CycleHealthSection({
           label="Cycles in this window"
           value={health.cycles}
           floor={info.truncated}
-          sub={`${count(health.overCadence)} ran longer than the ${cadence} cadence`}
+          sub={overCadence}
         />
         <GaugeCard
           label="Facts examined"

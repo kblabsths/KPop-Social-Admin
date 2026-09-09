@@ -2,7 +2,8 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { CYCLE_COUNTERS, CYCLE_WINDOW, type ResolutionRunRow } from "@/lib/db/cycles";
 import { T } from "@/lib/db/tables";
-import { CLAMP_LIMIT, ELLIPSIS, EM_DASH, absoluteUtc } from "@/lib/format";
+import { CLAMP_LIMIT, ELLIPSIS, EM_DASH, absoluteUtc, duration } from "@/lib/format";
+import { RESOLVER_CADENCE_SECONDS } from "@/lib/gauges/gauge";
 import { readNumber } from "../../live/parity";
 import {
   codeText,
@@ -26,6 +27,8 @@ import {
   UNMATCHED_COUNT,
   UNRECORDED,
   UNSET_COUNT,
+  daysAgo,
+  minutesAgo,
 } from "./population";
 import {
   permissionDenied,
@@ -436,6 +439,91 @@ function plainValueRestSpellings(markup: string): string[] {
 }
 
 const CYCLES_TABLE = "Cycles";
+/**
+ * The ONE `data` sub-line of the stat card standing under `label`, read
+ * structurally: `ui/StatCard`'s anatomy is the eyebrow, then the figure, then
+ * at most one line of sub-detail, so the sub-line is the first following
+ * sibling that is not wholly a number. No class name and no copy is addressed.
+ */
+function cardSubLine(markup: string, label: string): string {
+  const $ = cheerio.load(markup);
+  const flat = (text: string) => text.replace(/\s+/g, " ").trim();
+  const eyebrows = $("span")
+    .toArray()
+    .filter(
+      (element) =>
+        $(element).children().length === 0 && flat($(element).text()) === label,
+    );
+  if (eyebrows.length !== 1) {
+    throw new Error(`"${label}" labels ${eyebrows.length} cards in this markup.`);
+  }
+  const following = $(eyebrows[0])
+    .nextAll()
+    .toArray()
+    .map((element) => flat($(element).text()));
+  return following.find((text) => text !== "" && !/^-?[\d,]+$/.test(text)) ?? "";
+}
+
+/** The cadence the health card judges against, spelled as the card spells it. */
+const CADENCE = duration(RESOLVER_CADENCE_SECONDS);
+
+/**
+ * Every number a line of copy COUNTS — the cadence excluded, because it is a
+ * rendered duration and not a count of anything.
+ *
+ * Counts rather than the sentence: what the line must state is which sets it
+ * measures over, so the words stay free to change and only the arithmetic is
+ * the contract (admin-window/BUG-0110).
+ */
+function countsIn(text: string): number[] {
+  return [...text.split(CADENCE).join(" ").matchAll(/\d[\d,]*/g)].map((match) =>
+    Number(match[0].replace(/,/g, "")),
+  );
+}
+
+/**
+ * A cycle with every counter at zero, for the fixtures a test builds itself.
+ * Shaped like `./population`'s rows; the run id, the instants and the outcome
+ * are what each caller varies.
+ */
+const BARE_CYCLE: ResolutionRunRow = {
+  run_id: "",
+  started_at: "",
+  ended_at: null,
+  outcome: null,
+  facts_examined: 0,
+  applied: 0,
+  held: 0,
+  escalated: 0,
+  entities_created: 0,
+  claims_linked: 0,
+  claims_rerejected: 0,
+  errors: 0,
+  error_summary: null,
+};
+
+/**
+ * Words that would make a figure's sub-line the app's verdict rather than the
+ * operator's — "whether the figure is good news stays the operator's call"
+ * (LOOK_AND_FEEL, Zeroes).
+ */
+const REASSURANCE =
+  /\b(all clear|healthy|no problems?|nothing to worry|nothing is wrong|looking good|good news|on track|as expected)\b/i;
+
+/**
+ * The run ids of every rendered cycle whose duration cell holds no duration —
+ * the rows the over-cadence figure cannot be computed over, as the TABLE
+ * shows them.
+ */
+function cyclesWithoutDuration(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return renderedCycles(markup).filter(
+    (runId) =>
+      $(`[data-cycle="${runId}"]`).closest("tr").find("[data-cycle-duration]")
+        .length === 0,
+  );
+}
+
 const OUTCOMES = "Cycle outcomes";
 const DURATIONS = "Cycle duration";
 const WAITS = "Wait from claim to apply";
@@ -1107,6 +1195,102 @@ describe("the cycle-health gauge", () => {
     // The two cycles with no end contribute no duration of zero: the shortest
     // measured duration is the skipped cycle's sub-second one.
     expect(rows[0][1]).toBe("0.4s");
+  });
+
+  /*
+   * admin-window/BUG-0110. "0 ran longer than the 15m cadence" stood bare on
+   * the card beside four cycles that never finished — a zero computed over 65
+   * of 69 rows, reading as "nothing ran long" (LOOK_AND_FEEL, Zeroes).
+   *
+   * Both fixtures below hold cycles that all ran WELL under the cadence, so
+   * the over-cadence figure is a real 0 either way and only the excluded set
+   * differs. Every expectation is the fixture's own arithmetic; the copy is
+   * never pinned.
+   */
+
+  /** A cycle that started `minutes` ago and finished `seconds` later. */
+  function ranFor(suffix: string, minutes: number, seconds: number): ResolutionRunRow {
+    const started = minutesAgo(minutes);
+    return {
+      ...BARE_CYCLE,
+      run_id: `0192f0c1-0000-7000-8000-1000000000${suffix}`,
+      started_at: started,
+      ended_at: new Date(Date.parse(started) + seconds * 1000).toISOString(),
+      outcome: "succeeded",
+    };
+  }
+
+  /** A cycle with no end, older than a cadence: it never finished. */
+  function neverFinished(suffix: string, days: number): ResolutionRunRow {
+    return {
+      ...BARE_CYCLE,
+      run_id: `0192f0c1-0000-7000-8000-2000000000${suffix}`,
+      started_at: daysAgo(days),
+      ended_at: null,
+      outcome: null,
+    };
+  }
+
+  const scriptOf = (rows: ResolutionRunRow[]) =>
+    healthyScript({ [T.resolutionRuns]: [{ data: rows }, { data: rows }] });
+
+  const FINISHED = [ranFor("01", 5, 45), ranFor("02", 20, 60), ranFor("03", 35, 120)];
+  const UNFINISHED = [neverFinished("01", 3), neverFinished("02", 4)];
+
+  it("states what the over-cadence zero counts, and how many cycles it leaves out", async () => {
+    const rows = [...FINISHED, ...UNFINISHED];
+    const markup = await renderCycles(scriptOf(rows));
+
+    // The figure is untouched: the card still counts the whole window.
+    expect(readNumber(markup, "Cycles in this window")).toBe(rows.length);
+
+    // The zero beside it names both sets it was computed over: none of the
+    // three that finished ran long, and two never finished at all.
+    expect(countsIn(cardSubLine(markup, "Cycles in this window"))).toEqual([
+      0,
+      FINISHED.length,
+      UNFINISHED.length,
+    ]);
+  });
+
+  it("counts the cycles it excludes the same way every other surface on the page does", async () => {
+    const markup = await renderCycles(scriptOf([...FINISHED, ...UNFINISHED]));
+    const excluded = countsIn(cardSubLine(markup, "Cycles in this window"))[2];
+
+    // The rows themselves: a cycle with no end renders no duration, and there
+    // are exactly as many of those as the line says it left out.
+    expect(cyclesWithoutDuration(markup)).toHaveLength(excluded);
+    // ...and the outcome panel, which counts the same set under its own word,
+    // reads the same number. One read, one count of one set — the page cannot
+    // show three (admin-window/BUG-0055 is the same property from the rows'
+    // side).
+    const outcomes = new Map(
+      tableRows(markup, OUTCOMES).map((cells) => [cells[0], cells[1]]),
+    );
+    expect(outcomes.get(cycleRow(markup, UNFINISHED[0].run_id).cells[2])).toBe(
+      String(excluded),
+    );
+  });
+
+  it("leaves the zero bare when every cycle in the window finished", async () => {
+    const markup = await renderCycles(scriptOf(FINISHED));
+    // Nothing is excluded, so there is no excluded set to name: the line
+    // states the one figure and adds no clause that says nothing.
+    expect(cyclesWithoutDuration(markup)).toEqual([]);
+    expect(countsIn(cardSubLine(markup, "Cycles in this window"))).toEqual([0]);
+  });
+
+  it("does not tell the operator whether the zero is good news", async () => {
+    // The guard proves it discriminates before it clears the page: the
+    // reassuring sentence the bar was written against must trip it.
+    expect(REASSURANCE.test("0 ran longer than the 15m cadence — all clear")).toBe(true);
+    for (const [state, rows] of [
+      ["with cycles that never finished", [...FINISHED, ...UNFINISHED]],
+      ["with none", FINISHED],
+    ] as const) {
+      const sub = cardSubLine(await renderCycles(scriptOf([...rows])), "Cycles in this window");
+      expect(REASSURANCE.test(sub), `${state}: ${sub}`).toBe(false);
+    }
   });
 
   it("names the newest cycle carrying errors, and links to its row", async () => {
