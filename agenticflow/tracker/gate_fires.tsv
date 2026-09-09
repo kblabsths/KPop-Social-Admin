@@ -146,3 +146,4 @@
 2026-09-09T10:02:19Z	evidence_budget	qa_evidence_overbudget: BUG-0107 4184/4000 chars
 2026-09-09T10:32:17Z	evidence_budget	qa_evidence_overbudget: BUG-0113 4601/4000 chars
 2026-09-09T10:58:00Z	evidence_budget	qa_evidence_overbudget: BUG-0109 4629/4000 chars
+2026-09-09T11:30:27Z	artifact_gate	blocked write outside repo: ../../tracker/evidence/BUG-0118/prefix-sentences.txt
