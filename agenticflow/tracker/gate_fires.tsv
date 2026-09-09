@@ -126,3 +126,5 @@
 2026-09-09T04:23:11Z	artifact_gate	blocked write outside repo: /tmp/x
 2026-09-09T04:26:43Z	evidence_budget	qa_evidence_overbudget: BUG-0087 4582/4000 chars
 2026-09-09T04:27:35Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T04:30:04Z	artifact_gate	blocked write outside repo: /
+2026-09-09T04:36:48Z	evidence_budget	qa_evidence_overbudget: TASK-0059 5154/4000 chars
