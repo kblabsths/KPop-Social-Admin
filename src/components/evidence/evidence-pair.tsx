@@ -23,7 +23,13 @@ export type EvidenceClaim = {
   id: string;
   value: string | null;
   source: string;
-  tier: string;
+  /**
+   * The source's tier. **Null when the app could not read it** — the card
+   * draws that absence with `orDash`, exactly as it draws an absent value, so
+   * the caller never substitutes a character of its own
+   * (admin-window/BUG-0134).
+   */
+  tier: string | null;
   /** When the claim was observed; rendered as a relative age. */
   observedAt: Timestamp;
   /** The one control that chooses this value, rendered inside this card. */
@@ -65,7 +71,7 @@ export function EvidencePair({
             <span className="type-micro text-ink-secondary">contender</span>
             <CardValue value={claim.value} />
             <span className="type-data text-ink-secondary">
-              {claim.source} · {claim.tier} ·{" "}
+              {claim.source} · {orDash(claim.tier)} ·{" "}
               <span title={age.title || undefined}>{orDash(age.text)}</span>
             </span>
             {claim.action ? <div className="flex gap-2 pt-1">{claim.action}</div> : null}

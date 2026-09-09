@@ -16,7 +16,7 @@ import {
   type ReadWindow,
   WindowLine,
 } from "@/components/ui";
-import { EM_DASH, count, counted, pluralise } from "@/lib/format";
+import { count, counted, pluralise } from "@/lib/format";
 import type { Shape } from "@/lib/review/shapes";
 import {
   DASH_MEANS,
@@ -253,13 +253,21 @@ function ClaimRows({
  * A tier this app could not read is the app's own dash, not a blank and not a
  * guessed tier: `sources.tier` is the only place a claim's current tier comes
  * from (§6 trap 5).
+ *
+ * The **null travels** to the card rather than being spent here
+ * (admin-window/BUG-0134). This block used to write `row.tier ?? EM_DASH`, so
+ * the pair received a bare character and rendered it as ordinary secondary
+ * text while the table cell for the same claim drew `nullDash()` — one page
+ * saying one absent tier two ways, and only one of them announced to a reader
+ * who cannot see the ink. Absence is the component's to render, never the
+ * caller's to type.
  */
 function contenders(rows: readonly EvidenceRow[]) {
   return rows.map((row) => ({
     id: row.observationId,
     value: row.value,
     source: row.source,
-    tier: row.tier ?? EM_DASH,
+    tier: row.tier,
     observedAt: row.observedAt,
   }));
 }
