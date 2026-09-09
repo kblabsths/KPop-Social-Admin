@@ -583,19 +583,28 @@ export function focusVerdict({
  * Is focus on nothing in particular — so that returning it takes it from
  * nobody? The browser half of `focusVerdict`, kept to one expression.
  *
- * The button itself counts as adrift: focusing what is already focused is a
- * no-op, and it keeps the resting state of a re-entered cell from reading as
+ * `settled` is the control focus rests on when nothing has moved — this cell's
+ * own button. It counts as adrift itself: focusing what is already focused is
+ * a no-op, and it keeps the resting state of a re-entered cell from reading as
  * "the operator moved".
+ *
+ * Exported and widened to any `Element` for the reason `armConfirmationClock`
+ * (admin-window/BUG-0111) and `domRetireHost` (admin-window/BUG-0119) were:
+ * the entity picker manages focus too (admin-window/DEBT-0013) and reads the
+ * same question, so this app has ONE reading of "focus is on nothing" rather
+ * than a copy per widget. A caller with no resting control of its own passes
+ * its root box — a `div` no browser will ever make `activeElement`, so the
+ * last clause is inert for it and the answer is the plain page-level one.
  */
-function focusIsAdrift(button: HTMLButtonElement | null): boolean {
-  const owner = button?.ownerDocument;
+export function focusIsAdrift(settled: Element | null): boolean {
+  const owner = settled?.ownerDocument;
   if (!owner) return false;
   const active = owner.activeElement;
   return (
     active === null ||
     active === owner.body ||
     active === owner.documentElement ||
-    active === button
+    active === settled
   );
 }
 

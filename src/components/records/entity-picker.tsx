@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useId, useReducer, useRef, useState } from "react";
+import { useEffect, useId, useReducer, useRef, useState, type Ref } from "react";
 import {
   EditStatus,
   IDLE_EDIT_STATE,
   armConfirmationClock,
   armRetire,
   domRetireHost,
+  focusIsAdrift,
   reduceEdit,
   takeRefusalSlot,
   type EditState,
@@ -277,6 +278,118 @@ export function reducePick(state: PickState, event: PickEvent): PickState {
   }
 }
 
+/**
+ * Does this move CLOSE the panel? — campaign admin-window/DEBT-0013.
+ *
+ * Escape, and nothing else. The picker's Escape handler used to be the open
+ * panel's `onKeyDown`, so the key worked only while focus was still inside the
+ * panel — while `PICKER_HINT` promises "Escape cancels" without qualification,
+ * and while the page-wide rule armed by admin-window/BUG-0119 heard the SAME
+ * key from anywhere and retired the refusal with it. One sentence, one key, two
+ * outcomes depending on where focus happened to be. Escape now reaches the
+ * panel through the same page-wide listeners the refusal rule uses, so it means
+ * the one thing wherever focus is.
+ *
+ * The other moves are `false` on purpose, and that is BUG-0119's ruling
+ * restated as code rather than as a comment: **a retirement does not close the
+ * panel on its own.** An unrelated cell's refusal taking the page's one slot
+ * (`superseded`), a press somewhere else, or focus landing elsewhere retires
+ * the SENTENCE beside the field; shutting the list the operator is reading —
+ * and losing their search — is not what any of those means.
+ *
+ * Pure and exported for the reason `retiresRefusal` is: a press, a Tab and a
+ * keystroke are browser facts, and `tests/offline` is environment node with no
+ * jsdom (STACK.md §4). It takes `RetireMove` rather than a key string because
+ * the moves reaching it are `armRetire`'s — the picker adds no listener of its
+ * own (admin-window/BUG-0119) and no second vocabulary of moves.
+ */
+export function closesPanel(move: RetireMove): boolean {
+  return move.kind === "escape";
+}
+
+/**
+ * What to do about focus right now — the picker's half of `focusVerdict`
+ * (campaign admin-window/DEBT-0013).
+ */
+export type PickerFocus =
+  /** Not yet: the control this would aim at is disabled and cannot take it. */
+  | "wait"
+  /** Put it in the panel's search field — where the operator acts. */
+  | "search"
+  /** Put it back on the Choose button, the control the panel opened from. */
+  | "toggle"
+  /** Nothing to do: it is where it belongs, or where the operator put it. */
+  | "leave";
+
+/**
+ * Where focus belongs as the picker opens, saves and closes — campaign
+ * admin-window/DEBT-0013.
+ *
+ * **The measurement**: `grep -c '\.focus()'` was 2 in `EditableCell.tsx` and
+ * **0** here. The picker opened a panel without focusing it (so a keyboard
+ * operator reached the search box only by tabbing through the whole reference
+ * line), disabled the option they had just activated while the write ran (so
+ * the browser dropped focus to `<body>` mid-edit), and closed the panel
+ * without giving focus back (so the next Tab restarted at the top of the
+ * document). LOOK_AND_FEEL bar 9 and the cell's own contract at `focusVerdict`
+ * — "an edit the operator ends with Enter or Escape puts focus back on that
+ * button" — are one rule, and this is the picker keeping it.
+ *
+ * Three orderings are the whole of it:
+ *
+ *  - **Opening focuses the panel, unconditionally.** The only way `open` turns
+ *    true is the Choose button, so focus is on that button and moving it into
+ *    the search field is following the operator, never stealing from them.
+ *    Acting on the TRANSITION rather than on `open` is what keeps this from
+ *    being a focus trap: an operator who deliberately shift-tabs back to the
+ *    Choose button with the panel open is not bounced forward again.
+ *  - **`saving` waits, exactly as the cell's rule does.** Both the options and
+ *    the Choose button are `disabled` while a write is in flight
+ *    (admin-window/BUG-0097), and a disabled control cannot hold focus —
+ *    aiming at one is a no-op that leaves focus on `<body>` anyway. So a panel
+ *    closed mid-flight (Escape does not cancel a PATCH) takes its verdict
+ *    again when the answer arrives and the button is real; and while the panel
+ *    is OPEN and saving, the search field is the widget's one control still
+ *    able to hold focus, which is where the activated option's focus goes.
+ *    That keeps focus inside the widget's own box, so the move cannot read as
+ *    the operator walking away from a refusal (`retiresRefusal`).
+ *  - **Anything the operator has since focused is left alone.** `adrift` is
+ *    the caller's reading of `document.activeElement` (`focusIsAdrift`, the
+ *    cell's own), true only when focus is on nothing at all — so a seconds-long
+ *    write the operator walks away from mid-flight never has its focus yanked
+ *    back when the answer lands.
+ *
+ * Pure and exported because focus is a browser fact the offline tier cannot
+ * see (`tests/offline` is environment node with no jsdom, STACK.md §4): the
+ * decision is pinned here and the `.focus()` itself is measured in a walk,
+ * exactly as `focusVerdict`'s is.
+ */
+export function pickerFocus({
+  open,
+  was,
+  status,
+  adrift,
+}: {
+  /** Is the panel drawn now? */
+  open: boolean;
+  /** Was it drawn when focus was last settled — so is this a transition? */
+  was: boolean;
+  /** What this field's choice is doing, or did. */
+  status: Status;
+  /** Is focus on nothing the operator chose? Read from `document`. */
+  adrift: boolean;
+}): PickerFocus {
+  if (open !== was) {
+    if (open) return "search";
+    if (status.kind === "saving") return "wait";
+    return adrift ? "toggle" : "leave";
+  }
+  // No transition, so the only thing that moves focus is a control going away
+  // under the operator's hands: the option they activated, going `disabled`.
+  if (open && status.kind === "saving") return adrift ? "search" : "leave";
+  return "leave";
+}
+
 const SEARCH_CLASS =
   "type-data block w-full rounded-control border border-accent bg-surface px-1 py-0.5 text-ink";
 
@@ -355,6 +468,7 @@ export function PickerPanel({
   query,
   current,
   status,
+  searchRef,
   onQuery,
   onChoose,
 }: {
@@ -362,6 +476,14 @@ export function PickerPanel({
   query: string;
   current: string | null;
   status: Status;
+  /**
+   * The search field, handed back to the shell so `pickerFocus` can aim at it
+   * — the panel opens focused here, and this is also the one control of the
+   * widget still able to hold focus while a write is in flight
+   * (admin-window/DEBT-0013). Optional, so every state of this panel still
+   * renders from plain props with no browser at all.
+   */
+  searchRef?: Ref<HTMLInputElement>;
   onQuery: (next: string) => void;
   onChoose: (id: string) => void;
 }) {
@@ -370,6 +492,7 @@ export function PickerPanel({
   return (
     <div className="mt-1 flex w-max min-w-full flex-col gap-2 rounded-control border border-hairline bg-surface p-2">
       <input
+        ref={searchRef}
         type="search"
         value={query}
         onChange={(event) => onQuery(event.target.value)}
@@ -490,6 +613,18 @@ export function EntityPicker({
   const [query, setQuery] = useState("");
   /** The whole widget's box: what "inside" means to the retire rule below. */
   const root = useRef<HTMLDivElement | null>(null);
+  /** The control the panel opens from, and the one focus comes back to. */
+  const toggle = useRef<HTMLButtonElement | null>(null);
+  /** The panel's search field: where focus goes in, and where it waits out a
+   * write that disabled every option (campaign admin-window/DEBT-0013). */
+  const search = useRef<HTMLInputElement | null>(null);
+  /**
+   * Whether the panel was open when focus was last settled, so `pickerFocus`
+   * can act on the TRANSITION rather than on the flag — see its third
+   * ordering. A ref rather than state: it records what this widget has already
+   * DONE about focus, and nothing renders from it.
+   */
+  const focusedFor = useRef(false);
   const [pick, dispatch] = useReducer(reducePick, undefined, () => ({
     ...IDLE_PICK_STATE,
     chosen:
@@ -533,13 +668,16 @@ export function EntityPicker({
    * reaching this widget (campaign admin-window/BUG-0119).
    *
    * The clock came over with admin-window/BUG-0111; BUG-0107's other half did
-   * not. The panel's `onKeyDown` below is bound to the OPEN panel, so it hears
-   * an Escape only while focus is still inside it — and a refusal leaves the
-   * panel open with focus wherever the operator put it. Every other move they
-   * make (a press anywhere else, a Tab, an Escape from outside) reached no
-   * handler of this widget's at all, so the red line stood until this same
-   * picker was toggled open again; and because the widget never took the
-   * page's one refusal slot, its refusal could stand stacked with a cell's.
+   * not. The picker's only Escape handler was the OPEN panel's `onKeyDown`, so
+   * it heard the key only while focus was still inside the panel — and a
+   * refusal left the panel open with focus wherever the operator put it. Every
+   * other move they make (a press anywhere else, a Tab, an Escape from
+   * outside) reached no handler of this widget's at all, so the red line stood
+   * until this same picker was toggled open again; and because the widget
+   * never took the page's one refusal slot, its refusal could stand stacked
+   * with a cell's. (That `onKeyDown` is gone: admin-window/DEBT-0013 put the
+   * panel's own Escape on these same page-wide listeners, so the key now
+   * means one thing wherever focus is — `closesPanel`.)
    *
    * So the arming is `armRetire`'s over `domRetireHost` — the cell's own three
    * page-wide listeners and its one DOM adapter, not a second copy — and
@@ -551,14 +689,16 @@ export function EntityPicker({
    * that had to remember not to fire.
    *
    * **A retirement does not close the panel** — the decision this ticket
-   * carried, stated plainly. The panel is where the operator is working: it
-   * opens on the Choose button, closes on that button, on a choice that lands,
-   * and on the Escape they press inside it (`PICKER_HINT` says so), and this
-   * rule retires a SENTENCE rather than ending the widget. Closing it here
-   * would mean an unrelated cell's refusal (`superseded`) or a press on some
-   * other part of the page could shut a list the operator is reading and lose
-   * their search — while leaving it open costs nothing, since the panel is
-   * drawn in the row's flow and covers nothing.
+   * carried, stated plainly, and now `closesPanel`'s answer rather than a
+   * sentence here. The panel is where the operator is working: it opens on the
+   * Choose button, closes on that button, on a choice that lands, and on
+   * Escape (`PICKER_HINT` says so, and since admin-window/DEBT-0013 that is
+   * true from wherever focus is), and this rule retires a SENTENCE rather than
+   * ending the widget. Closing it here would mean an unrelated cell's refusal
+   * (`superseded`) or a press on some other part of the page could shut a list
+   * the operator is reading and lose their search — while leaving it open
+   * costs nothing, since the panel is drawn in the row's flow and covers
+   * nothing.
    */
   useEffect(() => {
     if (pick.status.kind !== "failed") return;
@@ -573,6 +713,65 @@ export function EntityPicker({
       disarm();
     };
   }, [pick]);
+
+  /**
+   * Escape closes the panel from wherever focus is — campaign
+   * admin-window/DEBT-0013.
+   *
+   * It used to be the open panel's own `onKeyDown`, which hears a key only
+   * while focus is inside the panel — and nothing puts focus there
+   * (`pickerFocus`, the effect below, is this ticket's other half) and nothing
+   * kept it there once a choice went in flight. So `PICKER_HINT`'s "Escape
+   * cancels" was true from inside the list and false from anywhere else, while
+   * the same key, heard page-wide by the refusal rule above, retired the red
+   * line from anywhere at all: one promise, two outcomes.
+   *
+   * Armed over the SAME `armRetire` and the same `domRetireHost` the refusal
+   * rule uses — the app's one set of retire listeners and its one DOM adapter
+   * (admin-window/BUG-0119), not a keydown handler of this widget's — and what
+   * a move MEANS for the panel is `closesPanel`'s single answer. The other two
+   * moves `armRetire` carries reach it and are refused there, which is where
+   * BUG-0119's ruling belongs: a retirement does not close the panel.
+   *
+   * Armed only while the panel is open, so a picker at rest adds no listener.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const box = root.current;
+    if (box === null) return;
+    return armRetire(domRetireHost(box), (move) => {
+      if (!closesPanel(move)) return;
+      setOpen(false);
+      setQuery("");
+    });
+  }, [open]);
+
+  /**
+   * Focus, kept on this widget's own controls — campaign
+   * admin-window/DEBT-0013.
+   *
+   * The rule is `pickerFocus`; this is the two lines of browser it decides
+   * for. Sequenced against the open flag and the settled status rather than
+   * fired from a handler, for the reason the cell's is
+   * (admin-window/BUG-0069): the controls it aims at are `disabled` for the
+   * whole of a write, so the verdict has to be taken again the moment they are
+   * real. `focusIsAdrift` is the cell's own reading of `document`, imported
+   * rather than restated.
+   */
+  useEffect(() => {
+    const verdict = pickerFocus({
+      open,
+      was: focusedFor.current,
+      status,
+      adrift: focusIsAdrift(root.current),
+    });
+    if (verdict === "wait") return;
+    // Decided: this transition is spent either way, so a later status change
+    // cannot re-fire it at whatever the operator has focused by then.
+    focusedFor.current = open;
+    if (verdict === "search") search.current?.focus();
+    else if (verdict === "toggle") toggle.current?.focus();
+  }, [open, status]);
 
   async function choose(optionId: string) {
     // Only a row the read returned may be sent, whatever produced the id.
@@ -624,6 +823,7 @@ export function EntityPicker({
         />
         <button
           type="button"
+          ref={toggle}
           onClick={() => {
             dispatch({ kind: "cleared" });
             setOpen((was) => !was);
@@ -640,30 +840,21 @@ export function EntityPicker({
         {open ? null : <EditStatus status={status} />}
       </div>
       {open ? (
-        <div
-          onKeyDown={(event) => {
-            if (event.key !== "Escape") return;
-            event.preventDefault();
-            // Escape CLOSES the panel, and that is all this handler does now:
-            // what Escape means for the statement on screen is the page-wide
-            // rule armed above, which hears it from wherever focus is and
-            // hands it to the one `retiresRefusal` (campaign
-            // admin-window/BUG-0119). Dispatching here too would be a second
-            // path to the same decision, which is the shape of the defect
-            // BUG-0107 was bounced for.
-            setOpen(false);
-            setQuery("");
-          }}
-        >
-          <PickerPanel
-            window={info}
-            query={query}
-            current={chosen?.id ?? null}
-            status={status}
-            onQuery={setQuery}
-            onChoose={(optionId) => void choose(optionId)}
-          />
-        </div>
+        // No `onKeyDown` here, and that is the fix: a handler bound to the
+        // panel hears Escape only while focus is inside it, and Escape is a
+        // page-wide move for this widget exactly as it is for the statement
+        // beside it (`closesPanel`, armed above). One key, one path, one
+        // meaning — a second path to the same decision is the shape of the
+        // defect admin-window/BUG-0107 was bounced for.
+        <PickerPanel
+          window={info}
+          query={query}
+          current={chosen?.id ?? null}
+          status={status}
+          searchRef={search}
+          onQuery={setQuery}
+          onChoose={(optionId) => void choose(optionId)}
+        />
       ) : null}
     </div>
   );

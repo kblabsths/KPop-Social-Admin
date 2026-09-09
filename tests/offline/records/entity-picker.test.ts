@@ -24,9 +24,11 @@ import {
   PickerOptions,
   PickerPanel,
   PickerValue,
+  closesPanel,
   matchOptions,
   noMatchWords,
   optionFor,
+  pickerFocus,
   pickerWindowName,
   reducePick,
   type PickEvent,
@@ -886,6 +888,8 @@ describe("the picker's confirmation, on the click-to-edit cell's own clock", () 
  * it is graded as structure, in the test that closes the block.
  */
 const CHOICE: PickerOption = { id: VENUE, name: "Olympic Hall" };
+/** A second row, for a choice made after one was refused. */
+const SECOND: PickerOption = { id: DOME, name: "Gocheok Sky Dome" };
 
 function refusalPage(widgets: readonly { name: string; kind: "picker" | "cell" }[]) {
   const names = widgets.map((widget) => widget.name);
@@ -1192,6 +1196,466 @@ describe("a refused choice ends on the moves that end a refused edit", () => {
       sourceText("src/components/EditableCell.tsx"),
       "extracted from the cell's effect, not copied out of it",
     ).toContain("export function domRetireHost");
+  });
+});
+
+/* ── focus, and the one meaning of Escape ─────────────────────────────────── */
+
+/**
+ * Where focus is, as this widget's own controls see it — campaign
+ * admin-window/DEBT-0013.
+ *
+ * `tests/offline` is environment node with no jsdom (STACK.md §4), so
+ * `document.activeElement` is modelled rather than read: five places focus can
+ * be, one of which is nowhere at all. The moves below are the browser's own
+ * rules about it, written once — a disabled control loses focus, an unmounted
+ * one loses focus, a press on a button focuses it — and everything the PICKER
+ * decides comes from the shipped `pickerFocus`, `closesPanel`, `armRetire` and
+ * `reducePick`. Nothing about the decision is restated here.
+ */
+type Where = "nowhere" | "toggle" | "search" | "option" | "elsewhere";
+
+/**
+ * The picker's shell, composed the way the component composes it: the reducer,
+ * the two `armRetire` arms (the panel's Escape and the refusal's retirement),
+ * and the focus effect, each run after every move exactly as React runs an
+ * effect after a render.
+ *
+ * It is the cheapest thing that can answer "where is focus after the operator
+ * does this", which is the whole of admin-window/DEBT-0013 — `grep -c
+ * '\.focus()'` was 2 in `EditableCell.tsx` and 0 here, and the three moments
+ * below are what that zero cost the operator.
+ */
+function pickerShell() {
+  /** Stand-ins for the widget's own box and something else on the page. */
+  const box = {} as EventTarget;
+  const away = {} as EventTarget;
+
+  let open = false;
+  /** What the focus effect last settled for — `pickerFocus`'s `was`. */
+  let was = false;
+  let pick: PickState = IDLE_PICK_STATE;
+  let picks = 0;
+  /** The operator arrived on this page and is somewhere on it, not here. */
+  let where: Where = "elsewhere";
+  /** Every place focus has been left after a settled move, in order. */
+  const trail: Where[] = [];
+
+  const listeners = new Map<string, Set<(signal: RetireSignal) => void>>();
+  const host: RetireHost = {
+    contains: (target) => target === box,
+    listen: (type, handler) => {
+      const set = listeners.get(type) ?? new Set();
+      listeners.set(type, set);
+      set.add(handler);
+      return () => set.delete(handler);
+    },
+  };
+
+  let panelArm: (() => void) | null = null;
+  let refusalArm: { disarm: () => void; release: () => void } | null = null;
+
+  /** The panel going away takes whatever focus it was holding with it. */
+  function panelUnmounted() {
+    if (where === "search" || where === "option") where = "nowhere";
+  }
+
+  function closePanel() {
+    if (!open) return;
+    open = false;
+    panelUnmounted();
+  }
+
+  /** The two effects' arming, kept in step with the state they are keyed on. */
+  function syncArming() {
+    if (open && panelArm === null) {
+      panelArm = armRetire(host, (move) => {
+        if (!closesPanel(move)) return;
+        closePanel();
+      });
+    } else if (!open && panelArm !== null) {
+      panelArm();
+      panelArm = null;
+    }
+
+    const refusing = pick.status.kind === "failed";
+    if (refusing && refusalArm === null) {
+      const edit = pick.edit;
+      const retire = (move: RetireMove) => {
+        pick = reducePick(pick, { kind: "abandoned", edit, move });
+        syncArming();
+      };
+      const disarm = armRetire(host, retire);
+      refusalArm = { disarm, release: () => {} };
+      const release = takeRefusalSlot(() => retire({ kind: "superseded" }));
+      if (refusalArm !== null) refusalArm.release = release;
+    } else if (!refusing && refusalArm !== null) {
+      const arm = refusalArm;
+      refusalArm = null;
+      arm.release();
+      arm.disarm();
+    }
+  }
+
+  /** The focus effect: the shipped rule, and the one line of browser it buys. */
+  function runFocus() {
+    const verdict = pickerFocus({
+      open,
+      was,
+      status: pick.status,
+      // `focusIsAdrift(root.current)` reads exactly this: the widget's root is
+      // a `div` no browser makes `activeElement`, so the answer is the plain
+      // page-level one — focus is on nothing at all.
+      adrift: where === "nowhere",
+    });
+    if (verdict === "wait") return;
+    was = open;
+    if (verdict === "search") where = "search";
+    else if (verdict === "toggle") where = "toggle";
+  }
+
+  /** React, after a render: the effects, then what the operator can see. */
+  function settle() {
+    syncArming();
+    runFocus();
+    trail.push(where);
+  }
+
+  function broadcast(type: string, signal: RetireSignal) {
+    for (const handler of [...(listeners.get(type) ?? [])]) handler(signal);
+  }
+
+  const shell = {
+    /** The operator presses — or Enters on — the Choose button. */
+    chooseButton() {
+      where = "toggle";
+      if (open) closePanel();
+      else open = true;
+      settle();
+      return shell;
+    },
+    /** They activate a row of the list: Enter on the option they tabbed to. */
+    pickRow(option: PickerOption = CHOICE) {
+      where = "option";
+      picks += 1;
+      pick = reducePick(pick, { kind: "choosing", edit: picks, option });
+      // Every option goes `disabled` while the write runs
+      // (admin-window/BUG-0097), and a browser drops focus off a control it
+      // disables — the measured way this widget lost it.
+      if (pick.status.kind === "saving" && where === "option") where = "nowhere";
+      settle();
+      return shell;
+    },
+    /** That write answered. A landed choice closes the panel. */
+    answer(outcome: SaveOutcome, option: PickerOption = CHOICE) {
+      if (outcome.ok) closePanel();
+      pick = reducePick(pick, { kind: "settled", edit: picks, option, outcome });
+      settle();
+      return shell;
+    },
+    /** Escape, from wherever focus happens to be — the page hears it. */
+    escape() {
+      broadcast("keydown", { target: null, key: "Escape" });
+      settle();
+      return shell;
+    },
+    /** A pointer press on a part of the page that is not this widget. */
+    pressAway() {
+      broadcast("pointerdown", { target: away });
+      settle();
+      return shell;
+    },
+    /** A Tab landing somewhere else on the page. */
+    tabAway() {
+      where = "elsewhere";
+      broadcast("focusin", { target: away });
+      settle();
+      return shell;
+    },
+    /** A Tab landing back inside this widget. */
+    tabBackIn() {
+      where = "search";
+      broadcast("focusin", { target: box });
+      settle();
+      return shell;
+    },
+    /** Another widget on the page states a refusal and takes the page's slot. */
+    otherWidgetRefuses() {
+      const release = takeRefusalSlot(() => {});
+      settle();
+      return { ...shell, release };
+    },
+    isOpen: () => open,
+    focus: () => where,
+    trail: () => [...trail],
+    status: () => pick.status,
+    chosen: () => pick.chosen,
+    /** The page navigating away: everything this shell still holds, released. */
+    close() {
+      panelArm?.();
+      panelArm = null;
+      const arm = refusalArm;
+      refusalArm = null;
+      arm?.release();
+      arm?.disarm();
+    },
+  };
+  return shell;
+}
+
+describe("Escape means one thing wherever focus is", () => {
+  /**
+   * `PICKER_HINT` says "Escape cancels" where the operator is about to choose,
+   * with no qualification. The handler was the OPEN PANEL's `onKeyDown`, so it
+   * fired only while focus was still inside the panel — and after a refusal
+   * the same key, heard page-wide by admin-window/BUG-0119's rule, retired the
+   * red line and left the panel standing. One sentence, two outcomes.
+   */
+  it("closes the panel from outside it, exactly as it does from inside", () => {
+    const inside = pickerShell().chooseButton();
+    expect(inside.focus(), "the panel opens focused").toEqual("search");
+    inside.escape();
+    expect(inside.isOpen(), "Escape with focus in the panel").toBe(false);
+    inside.close();
+
+    const outside = pickerShell().chooseButton();
+    outside.tabAway();
+    expect(outside.focus(), "the operator has tabbed out of the widget").toEqual(
+      "elsewhere",
+    );
+    outside.escape();
+    expect(outside.isOpen(), "Escape with focus anywhere else on the page").toBe(false);
+    outside.close();
+  });
+
+  it("gives a refused choice the same two outcomes from inside and from outside", () => {
+    const ends: Record<string, ReturnType<typeof pickerShell>> = {};
+    for (const from of ["inside the panel", "outside the widget"]) {
+      const shell = pickerShell().chooseButton().pickRow().answer(VENUE_REFUSED);
+      expect(shell.status().kind, `${from}: the refusal is on screen`).toEqual("failed");
+      expect(shell.isOpen(), `${from}: and the panel is still open`).toBe(true);
+      if (from === "outside the widget") shell.tabAway();
+      shell.escape();
+      ends[from] = shell;
+    }
+    // The same key, the same two things: the red line retired and the panel
+    // closed — whichever side of the widget focus was on.
+    expect(ends["inside the panel"].status()).toEqual(ends["outside the widget"].status());
+    expect(ends["inside the panel"].status().kind).toEqual("idle");
+    for (const [from, shell] of Object.entries(ends)) {
+      expect(shell.isOpen(), from).toBe(false);
+      shell.close();
+    }
+  });
+
+  it("closes on Escape and on no other move the page-wide listeners carry", () => {
+    // admin-window/BUG-0119's ruling, not reopened: a retirement retires the
+    // SENTENCE beside the field and never shuts the list the operator is
+    // reading. The negative fixtures this rule is bought on (LESSONS 8).
+    const moves: Record<string, (shell: ReturnType<typeof pickerShell>) => unknown> = {
+      "a press elsewhere on the page": (shell) => shell.pressAway(),
+      "a Tab landing outside the widget": (shell) => shell.tabAway(),
+      "a Tab landing back inside it": (shell) => shell.tabBackIn(),
+    };
+    for (const [move, make] of Object.entries(moves)) {
+      const shell = pickerShell().chooseButton().pickRow().answer(VENUE_REFUSED);
+      make(shell);
+      expect(shell.isOpen(), `${move}: the panel is still the operator's`).toBe(true);
+      shell.close();
+    }
+
+    // ...including the page's one refusal slot changing hands under it.
+    const shell = pickerShell().chooseButton().pickRow().answer(VENUE_REFUSED);
+    const other = shell.otherWidgetRefuses();
+    expect(shell.status().kind, "the older refusal yielded the page's slot").toEqual(
+      "idle",
+    );
+    expect(shell.isOpen(), "and the panel the operator is reading stayed open").toBe(true);
+    other.release();
+    shell.close();
+  });
+
+  it("answers Escape and refuses every other move, as one decision", () => {
+    expect(closesPanel({ kind: "escape" })).toBe(true);
+    for (const move of [
+      { kind: "press", inside: true },
+      { kind: "press", inside: false },
+      { kind: "focus", inside: true },
+      { kind: "focus", inside: false },
+      { kind: "superseded" },
+    ] as const) {
+      expect(closesPanel(move), `${move.kind}`).toBe(false);
+    }
+  });
+
+  it("hears the key through the page-wide listeners, not a handler of its own", () => {
+    // The structural half: a key handler bound to the panel is exactly the
+    // defect — it hears Escape only while focus is inside the panel. One path,
+    // through the shared adapter, or the two meanings come back.
+    const picker = sourceText("src/components/records/entity-picker.tsx");
+    expect(codeLinesIn(picker).filter((line) => /onKeyDown/.test(line))).toEqual([]);
+    expect(picker, "the shared arming rule").toContain("armRetire(domRetireHost(box)");
+    expect(picker, "and the one answer about what a move means").toContain(
+      "closesPanel(move)",
+    );
+  });
+});
+
+describe("where the picker leaves focus", () => {
+  it("moves focus into the panel when the picker opens", () => {
+    // LOOK_AND_FEEL bar 9: a panel that opens without receiving focus is
+    // reachable only by tabbing forward through however many rows the search
+    // returned. It opens at the place the operator acts — the search field.
+    const shell = pickerShell();
+    expect(shell.focus(), "before: wherever the operator was").toEqual("elsewhere");
+    shell.chooseButton();
+    expect(shell.focus()).toEqual("search");
+    shell.close();
+  });
+
+  it("returns focus to the Choose button on every way the panel closes", () => {
+    const landed = pickerShell().chooseButton().pickRow().answer({ ok: true });
+    expect(landed.isOpen(), "a choice that lands closes the panel").toBe(false);
+    expect(landed.focus(), "a choice that lands").toEqual("toggle");
+    expect(landed.chosen(), "and the row it chose is linked").toEqual(CHOICE);
+    landed.close();
+
+    const escaped = pickerShell().chooseButton().escape();
+    expect(escaped.focus(), "Escape").toEqual("toggle");
+    escaped.close();
+
+    const toggled = pickerShell().chooseButton().chooseButton();
+    expect(toggled.isOpen(), "the Choose button closes it again").toBe(false);
+    expect(toggled.focus(), "the Choose button, which already holds it").toEqual("toggle");
+    toggled.close();
+  });
+
+  it("keeps focus on a live control while the write disables every option", () => {
+    // The measured drop: the activated option goes `disabled`
+    // (admin-window/BUG-0097) and the browser blurs it to `document.body`, so
+    // the operator's next Tab restarts at the top of the document. The Choose
+    // button is disabled for the same write, so the search field — the one
+    // control of this widget still able to hold focus — is where it goes.
+    const shell = pickerShell().chooseButton().pickRow();
+    expect(shell.status().kind).toEqual("saving");
+    expect(shell.focus()).toEqual("search");
+    shell.close();
+  });
+
+  it("never leaves focus on the document, on any path a choice can take", () => {
+    const paths: Record<string, () => ReturnType<typeof pickerShell>> = {
+      "a choice that lands": () =>
+        pickerShell().chooseButton().pickRow().answer({ ok: true }),
+      "a choice that is refused": () =>
+        pickerShell().chooseButton().pickRow().answer(VENUE_REFUSED),
+      "a refusal the operator then escapes": () =>
+        pickerShell().chooseButton().pickRow().answer(VENUE_REFUSED).escape(),
+      "a refusal another widget supersedes": () => {
+        const shell = pickerShell().chooseButton().pickRow().answer(VENUE_REFUSED);
+        shell.otherWidgetRefuses().release();
+        return shell;
+      },
+      "a second choice made after the first was refused": () =>
+        pickerShell()
+          .chooseButton()
+          .pickRow()
+          .answer(VENUE_REFUSED)
+          .pickRow(SECOND)
+          .answer({ ok: true }, SECOND),
+    };
+    for (const [path, walk] of Object.entries(paths)) {
+      const shell = walk();
+      expect(shell.trail(), path).not.toContain("nowhere");
+      expect(shell.focus(), `${path}, at rest`).not.toEqual("nowhere");
+      shell.close();
+    }
+  });
+
+  it("waits for the Choose button to be real before handing focus back", () => {
+    // The ordering that makes this a rule rather than a `.focus()` at the end
+    // of `choose()` (admin-window/BUG-0069): Escape does not cancel a PATCH,
+    // and the button it would aim at is `disabled` for the whole of that
+    // write — focusing a disabled control is a no-op that leaves focus on the
+    // body anyway.
+    expect(
+      pickerFocus({
+        open: false,
+        was: true,
+        status: { kind: "saving" },
+        adrift: true,
+      }),
+    ).toEqual("wait");
+    const shell = pickerShell().chooseButton().pickRow().escape();
+    expect(shell.isOpen(), "Escape closed the panel mid-write").toBe(false);
+    expect(shell.status().kind, "and the write is still running").toEqual("saving");
+    // The ONE window in which this widget holds no focus, and it is the cell's
+    // own: the operator dismissed the panel while the write was in flight, so
+    // the search field is gone and the Choose button is disabled until the
+    // answer arrives — there is no control of this widget left to hold focus,
+    // and aiming at the disabled one would leave it on the body regardless.
+    expect(shell.focus(), "nothing of this widget can hold it yet").toEqual("nowhere");
+    shell.answer(VENUE_REFUSED);
+    expect(shell.focus(), "and it lands the moment the button is real").toEqual("toggle");
+    shell.close();
+  });
+
+  it("leaves focus where the operator has since put it, on every leg", () => {
+    // The negative fixture the rule is bought on: a picker that focused
+    // unconditionally would pass every test above and yank focus out of
+    // whatever the operator walked to during a seconds-long write.
+    for (const status of [{ kind: "saved" }, { kind: "failed", message: "no" }] as const) {
+      expect(
+        pickerFocus({ open: false, was: true, status, adrift: false }),
+        `${status.kind}: the panel closed while they were elsewhere`,
+      ).toEqual("leave");
+    }
+    expect(
+      pickerFocus({ open: true, was: true, status: { kind: "saving" }, adrift: false }),
+      "the write disabled the options while they were elsewhere",
+    ).toEqual("leave");
+
+    const shell = pickerShell().chooseButton().pickRow();
+    shell.tabAway();
+    expect(shell.focus(), "they walked off mid-write, on purpose").toEqual("elsewhere");
+    shell.answer({ ok: true });
+    expect(shell.focus(), "and its answer does not yank focus back").toEqual("elsewhere");
+    expect(shell.isOpen(), "the panel still closed on the choice that landed").toBe(false);
+    shell.close();
+  });
+
+  it("steals no focus from a page that has merely drawn a picker", () => {
+    // Acting on the TRANSITION, not on the flag: a record page draws one of
+    // these at rest, and a widget that focused itself on mount would fight
+    // every other one on the page.
+    for (const adrift of [true, false]) {
+      expect(
+        pickerFocus({ open: false, was: false, status: { kind: "idle" }, adrift }),
+        `adrift=${adrift}`,
+      ).toEqual("leave");
+    }
+    // ...and an operator who deliberately shift-tabs back to the Choose button
+    // with the panel open is not bounced forward into the list again.
+    expect(
+      pickerFocus({ open: true, was: true, status: { kind: "idle" }, adrift: true }),
+      "no transition, no write: focus is the operator's",
+    ).toEqual("leave");
+  });
+
+  it("offers the whole path to a keyboard, with nothing taken out of the order", () => {
+    // LOOK_AND_FEEL bar 9 and criterion 4's offline half: choose, search, pick
+    // — every control the panel draws is a natively focusable element in
+    // document order, and none is taken out of the tab order. The ring itself
+    // is one rule in `globals.css` and is graded at the walk.
+    const $ = cheerio.load(panel(""));
+    expect($("[tabindex]"), "nothing is taken out of the tab order").toHaveLength(0);
+    const search = $("input");
+    expect(search.attr("type"), "the search field is a real input").toEqual("search");
+    expect(search.attr("disabled")).toBeUndefined();
+    expect($("li button"), "and every choice is a real button").toHaveLength(
+      OPTIONS.length,
+    );
+    // Nothing that acts is a div wearing a click handler.
+    expect($("[onclick]")).toHaveLength(0);
   });
 });
 
