@@ -184,6 +184,23 @@ function Unresolved({ ids }: { ids: readonly string[] }) {
 }
 
 /**
+ * Whether the evidence block renders its claims table at all.
+ *
+ * **One predicate, two readers.** `ClaimRows` asks it when it chooses between
+ * `DataTable` and `Empty`, and each shape's lede asks it when it chooses its
+ * words — so a lede cannot send the operator to a table the block did not
+ * render (admin-window/BUG-0130). It is ARCHITECTURE.md §4.3's rule one
+ * surface over, the same reason `Dial`'s window line is absent on exactly the
+ * states where its read did not happen: what the page says about a block
+ * follows what that block actually holds. Two independent `rows.length === 0`
+ * spellings is how the sentence and the markup drifted apart in the first
+ * place.
+ */
+function rendersClaimsTable(rows: readonly EvidenceRow[]): boolean {
+  return rows.length > 0;
+}
+
+/**
  * The claims, as rows. The columns are the SHAPE's; the emptiness is this
  * component's to time and the caller's to word (the rule `TrendTable` and
  * `Distribution` already carry — admin-window/TASK-0030).
@@ -203,15 +220,15 @@ function ClaimRows({
 }) {
   return (
     <>
-      {rows.length === 0 ? (
-        <Empty holds={empty.holds} filledBy={empty.filledBy} />
-      ) : (
+      {rendersClaimsTable(rows) ? (
         <DataTable<EvidenceRow>
           columns={columns}
           rows={[...rows]}
           rowKey={(row) => row.observationId}
           label={label}
         />
+      ) : (
+        <Empty holds={empty.holds} filledBy={empty.filledBy} />
       )}
       <Unresolved ids={unresolved} />
     </>
@@ -291,6 +308,14 @@ function ConflictEvidence({
  * What the block is, is the claims behind this item's evidence ids — the same
  * population the accounting sentence accounts for — each with what it is
  * waiting for, which is this shape's whole subject.
+ *
+ * **And the sentence follows the read** (admin-window/BUG-0130). Naming the
+ * table below is only true while there IS one: with no evidence id resolved
+ * the block renders the empty card instead, which says in the app's own words
+ * that it holds no claim — so the lede reads its own block through
+ * `rendersClaimsTable` and stops naming a table the page did not render. The
+ * item's condition is stated in either state; what the block holds is stated
+ * once, by whichever of the two is standing there.
  */
 function StuckFactEvidence({
   rows,
@@ -301,8 +326,18 @@ function StuckFactEvidence({
   return (
     <div data-evidence-view="stuck-fact" className="flex flex-col gap-3">
       <Lede>
-        This record cannot link or be created. The table below holds the claims
-        behind this item&rsquo;s evidence ids, with what each one is waiting for.
+        {rendersClaimsTable(rows) ? (
+          <>
+            This record cannot link or be created. The table below holds the
+            claims behind this item&rsquo;s evidence ids, with what each one is
+            waiting for.
+          </>
+        ) : (
+          <>
+            This record cannot link or be created. Below is what this
+            item&rsquo;s evidence ids resolved to.
+          </>
+        )}
       </Lede>
       {canonical === null ? null : (
         // The signature block, hooked so its cards can be read structurally:
@@ -411,6 +446,15 @@ function Dial({ label, series, window: read, empty, state }: DialProps) {
  * evidence ids — which is exactly the population the accounting sentence under
  * it accounts for, and exactly the count the header states beside the folds.
  *
+ * **And the sentence follows the read** (admin-window/BUG-0130). "The table
+ * holds the claims" is true only while the block rendered a table: with no
+ * evidence id resolved it renders the empty card instead, so the lede asks
+ * `rendersClaimsTable` and names the population without pointing at an element
+ * the page did not draw. The dial clause stays in both states — the dial is
+ * rendered beside this column either way — and so does the sentence about
+ * there being no canonical value, which is a fact about the SHAPE and not
+ * about what resolved.
+ *
  * Both columns of the pattern view are `min-w-0`, and that is load-bearing
  * rather than decorative: a grid item's `min-width` is `auto`, which is its
  * CONTENT's minimum — so the records table (91 rows of unbreakable
@@ -436,10 +480,21 @@ function PatternEvidence({
     >
       <div className="flex min-w-0 flex-col gap-3">
         <Lede>
-          One source, many records stuck the same way. The table holds the
-          claims behind this item&rsquo;s evidence ids; the source&rsquo;s own dial is
-          beside it. There is no canonical value to stand them against — the
-          subject is the source, not a fact.
+          {rendersClaimsTable(rows) ? (
+            <>
+              One source, many records stuck the same way. The table holds the
+              claims behind this item&rsquo;s evidence ids; the source&rsquo;s own dial is
+              beside it. There is no canonical value to stand them against — the
+              subject is the source, not a fact.
+            </>
+          ) : (
+            <>
+              One source, many records stuck the same way. Below is what this
+              item&rsquo;s evidence ids resolved to; the source&rsquo;s own dial is beside
+              it. There is no canonical value to stand a claim against — the
+              subject is the source, not a fact.
+            </>
+          )}
         </Lede>
         <ClaimRows
           rows={rows}
