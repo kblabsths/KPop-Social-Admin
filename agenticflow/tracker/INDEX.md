@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T06:20:49Z — do not edit)
+# Tracker index (regenerated 2026-09-09T06:21:13Z — do not edit)
 
 ## claimed
 - BUG-0098 [P2][bug][M2] A failed inline save shows the database's refusal and nothing else — no fix in the app's voice, unlike every read error  (scope:src/components/EditableCell.tsx,tests/offline/ui/editable-cell.test.ts @builder-170 from:designer:early-walk)

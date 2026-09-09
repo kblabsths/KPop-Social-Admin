@@ -15949,3 +15949,6 @@
 2026-09-09T06:20:42Z	qa-adversary	BUG-0102	17608	569	96821
 # STRANDED	2026-09-09T06:20:43Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0102.json
 2026-09-09T06:20:43Z	agent	-	-	-	-
+# STRANDED	2026-09-09T06:21:04Z	qa-adversary	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T06:21:04Z	qa-adversary	BUG-0086	34480	1465	134568
+2026-09-09T06:21:06Z	qa-adversary	BUG-0101	spawned
