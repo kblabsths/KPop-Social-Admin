@@ -2,11 +2,18 @@
  * The app's ONE uuid grammar — campaign admin-window/DEBT-0009.
  *
  * A PURE DOMAIN LEAF, the sibling of `provenance.ts` and `routes.ts`
- * (ARCHITECTURE.md §4 rule 7): it imports NOTHING — not `lib/db/**`, not
- * `@supabase/supabase-js`, not `process.env` — and nothing imports back into
- * it, so no cycle can be written through it and every layer above may reach
- * it. `tests/offline/db/layering.test.ts` names it in the leaf set and pins
- * that, on the same two fixtures every guard here owes.
+ * (ARCHITECTURE.md §4 rule 7): it reaches nothing that can reach a database —
+ * not `lib/db/**`, not `@supabase/supabase-js`, not `process.env`, not React —
+ * and nothing imports back into it, so no cycle can be written through it and
+ * every layer above may reach it. `tests/offline/db/layering.test.ts` names it
+ * in the leaf set and pins that, on the same two fixtures every guard here
+ * owes.
+ *
+ * Its ONE import is another leaf, which rule 7 ¶2 permits and this file is a
+ * reason for: `visibleContent` in `lib/verdict/decision.ts` is the app's one
+ * definition of "is there anything here a person could read", and
+ * `canonicalRecordId` below asks it rather than answering the question a
+ * fourth time (admin-window/BUG-0146).
  *
  * **It moved here from `lib/db/records.ts`, where these two functions had
  * always been pure and had always been out of reach** (the M2 structure walk,
@@ -24,6 +31,8 @@
  * the value VERBATIM to a query (`isRecordId`), or DERIVE an id from a
  * request value (`canonicalRecordId`).
  */
+
+import { hasVisibleContent } from "@/lib/verdict/decision";
 
 /**
  * Postgres's own uuid syntax, as `uuid_in` accepts it — the grammar this
@@ -83,6 +92,30 @@ export function isRecordId(id: string): boolean {
 }
 
 /**
+ * `text` with its leading and trailing INK-LESS code points removed — the
+ * padding a paste carries, by the app's one definition of blank rather than by
+ * `trim()`'s narrower one (admin-window/BUG-0146).
+ *
+ * Read by CODE POINT (`Array.from`), not by UTF-16 unit, so an astral
+ * character at either end is weighed whole rather than as two halves — none of
+ * the ink-less class is astral today, and a guard that splits a surrogate pair
+ * would be wrong the moment one is.
+ *
+ * It asks `hasVisibleContent` of each end character instead of holding a
+ * character class of its own: the class lives in ONE file
+ * (`lib/verdict/decision.ts`), and this is a caller of it, not a second copy.
+ * Bounded to the ends on purpose — see `canonicalRecordId`'s note below.
+ */
+function trimPad(text: string): string {
+  const points = Array.from(text);
+  let start = 0;
+  let end = points.length;
+  while (start < end && !hasVisibleContent(points[start])) start += 1;
+  while (end > start && !hasVisibleContent(points[end - 1])) end -= 1;
+  return points.slice(start, end).join("");
+}
+
+/**
  * The id a REQUEST VALUE names, in the ONE spelling Postgres itself prints —
  * lowercase, hyphenated, 8-4-4-4-12 — or `null` when the value names no record
  * id at all (campaign admin-window/BUG-0140).
@@ -97,21 +130,40 @@ export function isRecordId(id: string): boolean {
  * asked of a value the caller then carries to the query VERBATIM (a dynamic
  * segment, a PATCH body's `ref`), which is why it is exactly as strict as
  * `uuid_in` and refuses padding, as Postgres does. This one asks what id a
- * value DERIVED FROM A REQUEST names, so it first strips the whitespace the
- * paste brought — a copy off a log line or a psql column carries a leading
- * space or a trailing newline, and a `?cycle=%20<id>` reaches a page as a real
- * space — and then applies that same grammar to what is left. Until
+ * value DERIVED FROM A REQUEST names, so it first strips the PADDING the paste
+ * brought — a copy off a log line or a psql column carries a leading space or
+ * a trailing newline, and a `?cycle=%20<id>` reaches a page as a real space —
+ * and then applies that same grammar to what is left. Until
  * admin-window/BUG-0145 it did not, and `/cycles` printed "is not among the
  * 200 newest cycles" about a cycle whose row it was rendering three elements
  * below: HTML collapses the padding, so the denied id read character for
  * character like the drawn one and the operator had nothing to see.
  *
+ * **Padding is decided by INK, not by whitespace** (admin-window/BUG-0146).
+ * BUG-0145 spelled that step `String.prototype.trim()`, which strips the
+ * Unicode `White_Space` set and nothing else, so the identical harm survived
+ * for every ink-less character outside it — U+200B ZERO WIDTH SPACE, U+00AD
+ * SOFT HYPHEN, U+2060 WORD JOINER, NUL, DEL, the bidi controls, a HANGUL
+ * FILLER. All eight lay out at 0px (measured in Chromium for
+ * admin-window/BUG-0136), so the denial again read character-for-character
+ * like the drawn row. The class is not re-enumerated here — that would be the
+ * fourth list, and a list is what BUG-0089/BUG-0136 ruled against. `trimPad`
+ * above asks `hasVisibleContent`, the app's ONE definition of blank
+ * (`lib/verdict/decision.ts`), of one code point at a time.
+ *
+ * The strip is bounded to the ENDS, and that bound is the invariant's: the app's
+ * ink test removes ink-less characters ANYWHERE, so a whole-string
+ * `visibleContent` would give `<half-an-id><U+200B><rest>` a canonical form
+ * that Postgres itself would refuse from a verbatim segment. Trimming only the
+ * ends keeps what this returns something `isRecordId` accepts, with no such
+ * question (the ticket's own note on arm (a)).
+ *
  * Trimming HERE, and not at a page's edge, is what makes every facet that
  * canonicalises answer a padded paste the same way — `?cycle=` and `?run=` on
- * `/cycles`, `?source_id=` on `/queues`, `?source=` on `/sources` (LESSONS 5:
- * a shared spelling is imported, never retyped). Whitespace INSIDE the value
- * is not padding and is no id, and a value that is only whitespace names none
- * either.
+ * `/cycles`, `?source_id=` on `/queues`, `?source=` on `/sources`, and the
+ * claims filters (LESSONS 5: a shared spelling is imported, never retyped).
+ * Padding INSIDE the value is not padding and is no id, and a value that is
+ * only padding names none either.
  *
  * What this RETURNS is always a string `isRecordId` accepts, which is the
  * invariant every call site rests on: the canonical form — never the input —
@@ -134,7 +186,7 @@ export function isRecordId(id: string): boolean {
  * from a row is already canonical and passing it through changes nothing.
  */
 export function canonicalRecordId(id: string): string | null {
-  const value = id.trim();
+  const value = trimPad(id);
   if (!isRecordId(value)) return null;
   const hex = value.replace(/-/g, "").toLowerCase();
   return [

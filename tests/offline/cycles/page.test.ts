@@ -1053,33 +1053,41 @@ describe("the cycles the resolver filed", () => {
 
   /**
    * The same invariant, for the padding `String.prototype.trim()` does not
-   * know about — QA's strict pin for admin-window/BUG-0146.
+   * know about — was QA's strict `it.fails` pin for admin-window/BUG-0146,
+   * flipped to a plain `it.each(` by that ticket. QA's own assertions are kept
+   * verbatim at the bottom and the answer the page now gives is pinned above
+   * them, so the invariant and the behaviour that satisfies it grade together.
    *
    * admin-window/BUG-0145 answered the paste that brought a SPACE along, and
    * the four spellings its criteria enumerate are green above. Its bar,
    * though, is the sentence: the page may never print "not in this window"
-   * naming an id whose row the same document is drawing. It still does, for
+   * naming an id whose row the same document is drawing. It still did, for
    * every ink-less character that is not in the Unicode `White_Space` set —
    * ZERO WIDTH SPACE, SOFT HYPHEN, WORD JOINER, NUL, DEL, the bidi controls,
    * a HANGUL FILLER. Each lays out at 0px (this campaign measured exactly
    * these codepoints in Chromium for admin-window/BUG-0136), so the denied id
-   * reads character-for-character like the drawn one and the operator has
-   * nothing to see — BUG-0145's own harm, from a family its fix does not
+   * read character-for-character like the drawn one and the operator had
+   * nothing to see — BUG-0145's own harm, from a family its fix did not
    * reach.
    *
    * They arrive: `?cycle=%E2%80%8B<id>` reaches the page as a real U+200B
    * (measured over HTTP on this tree, a dev server on the QA lane's own port
    * 8796 with the http suite's database sentinel).
    *
-   * The app already HAS one definition of blank for exactly this family —
-   * `hasVisibleContent` / `visibleContent`, admin-window/BUG-0089 and
-   * BUG-0136, whose note is that three guards all tested blankness with
-   * `trim()` and all three were wrong the same way. Which arm the page takes
-   * is deliberately not pinned here: the row (as the whitespace family now
-   * gets) and no verdict at all (as `?run=` gives) are both honest. Only the
-   * denial-of-a-drawn-row is refused.
+   * **The arm taken is the ROW** — the one the whitespace family already gets,
+   * so one page answers one paste one way whichever ink-less character the
+   * clipboard brought. It is arm (a) of the ticket: `canonicalRecordId` decides
+   * the padding by the app's ONE definition of blank (`hasVisibleContent`,
+   * `lib/verdict/decision.ts` — admin-window/BUG-0089, BUG-0136, whose note is
+   * that three guards all tested blankness with `trim()` and all three were
+   * wrong the same way) rather than by a fourth enumeration, bounded to the
+   * ENDS so that what it returns is still something `isRecordId` accepts. The
+   * write side does NOT move with it and must not: the settle route's `ref`
+   * and every dynamic segment are carried to Postgres verbatim, and Postgres
+   * refuses a padded uuid (`tests/offline/records/page.test.ts` grades the two
+   * apart, both ways, on this very family).
    */
-  it.fails.each([
+  it.each([
     ["ZERO WIDTH SPACE", 0x200b],
     ["SOFT HYPHEN", 0x00ad],
     ["WORD JOINER", 0x2060],
@@ -1096,17 +1104,62 @@ describe("the cycles the resolver filed", () => {
         cycle: `${pad}${FAILED.run_id}${pad}`,
       });
       const $ = cheerio.load(markup);
-      // The window really is drawing that row — without this the rest proves
-      // nothing.
+
+      // The answer is the row: found, marked once, and one accessible marking
+      // on the whole page — BUG-0143's criterion, for an ink-less-padded paste.
+      expect($("[data-cycle-found]").attr("data-cycle-found")).toBe("true");
+      expect(cycleRow(markup, FAILED.run_id).marked).toBe("true");
+      expect(cycleRow(markup, FAILED.run_id).current).toBe("true");
+      expect($("tr[data-row-marked]").length).toBe(1);
+      expect($("[data-cycle][aria-current]").length).toBe(1);
+      // Named in the DATABASE's own spelling, with no padding left in the
+      // attribute the sentence carries: the operator reads back the id they
+      // meant, and the in-page link lands on that very row.
+      expect($("[data-cycle-asked]").attr("data-cycle-asked")).toBe(FAILED.run_id);
+      expect($('[data-cycle-found="true"] a').attr("href")).toBe(
+        `#${cycleRow(markup, FAILED.run_id).anchor}`,
+      );
+      // The pad itself reaches no ink at all — including U+202E, whose scope
+      // would be the paragraph the app wrote (admin-window/BUG-0137).
+      expect(markup.includes(pad)).toBe(false);
+      // A facet the page APPLIED is not one it dropped.
+      expect($("[data-dropped-params]").length).toBe(0);
+
+      // QA's invariant, the criterion's own may-not clause, verbatim: whatever
+      // the paste carried, no verdict may deny an id whose row is in the
+      // window just drawn.
       const drawn = renderedCycles(markup);
       expect(drawn).toContain(FAILED.run_id);
-      // QA's invariant, the criterion's own may-not clause: whatever the paste
-      // carried, no verdict may deny an id whose row is in the window just
-      // drawn.
       const denial = $('[data-cycle-found="false"]');
       for (const id of drawn) {
         expect(denial.text().replace(/\s+/g, " "), id).not.toContain(id);
       }
+    },
+  );
+
+  /**
+   * The second fixture the arm above owes (LESSONS 8), and the seam the
+   * ticket named: the strip is bounded to the ENDS, so an ink-less character
+   * INSIDE the value is not padding and names no id — the page keeps the
+   * answer a `?cycle=` with no canonical form has always had, and no id is
+   * invented that Postgres would refuse from a verbatim segment.
+   */
+  it.each([
+    ["ZERO WIDTH SPACE", 0x200b],
+    ["RIGHT-TO-LEFT OVERRIDE", 0x202e],
+  ] as const)(
+    "still finds no cycle when %s sits INSIDE the id [admin-window/BUG-0146]",
+    async (_name, codePoint) => {
+      const pad = String.fromCodePoint(codePoint);
+      const inner = `${FAILED.run_id.slice(0, 8)}${pad}${FAILED.run_id.slice(8)}`;
+      const markup = await renderCycles(healthyScript(), { cycle: inner });
+      const $ = cheerio.load(markup);
+      // Nothing is marked, because no row's id is that string.
+      expect($("[data-row-marked]").length).toBe(0);
+      expect($("[data-cycle][aria-current]").length).toBe(0);
+      // The whole window is still drawn: a facet that matches nothing narrows
+      // nothing here.
+      expect(renderedCycles(markup).length).toBe(CYCLES.length);
     },
   );
 
