@@ -533,6 +533,23 @@ function percentEncoded(table: string): string {
 }
 
 /**
+ * The same maximal spelling with UPPERCASE hex digits — `%6E` where
+ * `percentEncoded` writes `%6e`.
+ *
+ * A percent-encoding's hex digits are case-INSENSITIVE (RFC 3986 §6.2.2.1)
+ * even though the name they spell is not, and since admin-window/BUG-0083 the
+ * rewrite's matcher no longer folds case for anything: that one equivalence is
+ * now carried by two-case classes written into the pattern by hand, so it is
+ * the half of the fix that could silently rot. `%6E` and `%6e` are the same
+ * URI, so both must reach the record surface. Uppercasing is safe to do over
+ * the whole string precisely because every character of the name is encoded
+ * here: the only letters left in it are hex digits.
+ */
+function percentEncodedUpper(table: string): string {
+  return percentEncoded(table).toUpperCase();
+}
+
+/**
  * A record URL for a table the edit map does not carry must reach the operator
  * as the SAME served page an unmatched URL does (campaign
  * admin-window/BUG-0017).
@@ -582,14 +599,14 @@ describe("a record URL for a table the edit map does not carry", () => {
         expectOurNotFound(route, await res.text());
       }
 
-      // 1b. A spelling Next's own matcher reads as a configured table — it is
-      //     case-insensitive where the map is exact — is not claimed by the
-      //     rewrite, so it reaches the page and is refused there. What must
-      //     hold either way, and is the reason this is asserted rather than
-      //     left to the reader: it is a 404 and it is NOT a record surface.
-      //     The document it gets is the framework's, which is the residue
-      //     admin-window/BUG-0017 could not remove; asserting the shape of
-      //     that document would pin a defect in place, so this does not.
+      // 1b. A CASE variant of a configured table. Case is not an encoding
+      //     equivalence — a URI path is case-sensitive (RFC 3986 §6.2.2.1) —
+      //     so `EVENTS` must stay a miss, and since admin-window/BUG-0083 the
+      //     rewrite decides that miss itself (its matcher is case-sensitive,
+      //     the same exactness `editConfigFor` has). This line pins the half
+      //     that must hold whatever the routing layer does: it is a 404, and
+      //     it is NOT a record surface. The DOCUMENT it is refused with is
+      //     pinned by the BUG-0083 block below.
       const caseVariant = await fetch(`${base}/records/EVENTS/2f0bc11e`, {
         headers: { cookie },
         redirect: "manual",
@@ -704,14 +721,21 @@ describe("a record URL for a table the edit map does not carry", () => {
    * admin-window/BUG-0083 — the CASE-VARIANT twin of admin-window/BUG-0081,
    * on the class admin-window/BUG-0017 exists to close.
    *
-   * A rewrite `source` is compiled case-insensitively (path-to-regexp, as Next
-   * 16.2.2 configures it) while `editConfigFor` is exact, so the matcher reads
-   * `/records/EVENTS/<id>` as a CONFIGURED table, does not claim it, and the
-   * URL reaches `src/app/records/[table]/[id]/page.tsx` — where the map does
-   * not carry `EVENTS` and `notFound()` throws inside the render shell. The
-   * operator gets the client-rendered `id="__next_error__"` document instead
-   * of the app's framed 404, which is the exact divergence BUG-0081 removed
-   * for encoded spellings.
+   * A rewrite `source` was compiled case-insensitively (path-to-regexp, as
+   * Next 16.2.2 configures it by default) while `editConfigFor` is exact, so
+   * the matcher read `/records/EVENTS/<id>` as a CONFIGURED table, did not
+   * claim it, and the URL reached `src/app/records/[table]/[id]/page.tsx` —
+   * where the map does not carry `EVENTS` and `notFound()` throws inside the
+   * render shell. The operator got the client-rendered `id="__next_error__"`
+   * document instead of the app's framed 404, which is the exact divergence
+   * BUG-0081 removed for encoded spellings.
+   *
+   * Closed by making the matcher case-sensitive
+   * (`experimental.caseSensitiveRoutes`, and the move of the rule to
+   * `afterFiles` that is what lets the flag reach it — `next.config.ts` has
+   * the measurement). This was QA's `it.fails` pin; it is a plain `it` now,
+   * and it goes red the day the rewrite's notion of "a configured table" stops
+   * agreeing with the map's — an upgrade that drops the flag included.
    *
    * The two spellings are the same URI only under encoding, never under case,
    * so this is not "the same bug": a URI's path is case-SENSITIVE (RFC 3986
@@ -727,13 +751,13 @@ describe("a record URL for a table the edit map does not carry", () => {
    *   /records/WALK_SANDBOX/<id> -> 404, len 8016, id="__next_error__"
    *   /records/EV%65NTS/<id>   -> 404, len 8006, id="__next_error__"
    *
-   * `it.fails` while the divergence stands — the day the rewrite decides the
-   * miss for a case variant too, this goes red and sends the reader to the
-   * ticket. Block 1b above pins the STATUS of the same URL and deliberately
-   * pins no document shape; this is the shape half, and only this one is
-   * allowed to be red.
+   * After the fix, on a production build of this tree: all four answer 404 at
+   * len 9728 — byte-for-byte the length of the `/analytics` routed-miss
+   * control in the same sweep — framed, with `<h1>` and a way back, and no
+   * `id="__next_error__"`. Block 1b above pins the STATUS of the same URL and
+   * that it is not a record surface; this is the document half.
    */
-  it.fails(
+  it(
     "BUG-0083: serves the framed 404 for a case variant of a configured table",
     async () => {
       const { child } = await startServer();
@@ -752,6 +776,25 @@ describe("a record URL for a table the edit map does not carry", () => {
           expect(res.status, route).toBe(404);
           expectOurNotFound(route, await res.text());
         }
+
+        // The fixture this guard must NOT flag, and the one only a
+        // case-sensitive matcher can get wrong: uppercase hex digits. `%6E` is
+        // `%6e` is `n` (RFC 3986 §6.2.2.1), so every mapped table spelled that
+        // way is still its record surface — the exclusion carries that
+        // equivalence in the pattern now that nothing folds case for it.
+        for (const table of EDITABLE_TABLES) {
+          const route = `/records/${percentEncodedUpper(table)}/2f0bc11e`;
+          const res = await fetch(`${base}${route}`, {
+            headers: { cookie },
+            redirect: "manual",
+          });
+          expect(res.status, route).toBe(200);
+          const body = await res.text();
+          expect(body, route).toMatch(/<h1[\s>]/);
+          expect(body, `${route} served the client-render error shell`).not.toContain(
+            'id="__next_error__"',
+          );
+        }
       } finally {
         await stopServer(child);
       }
@@ -769,10 +812,16 @@ describe("a record URL for a table the edit map does not carry", () => {
     try {
       for (const route of [
         "/records/no-such-table/2f0bc11e",
+        // The case variant the rewrite started claiming in
+        // admin-window/BUG-0083, for the same reason the encoded one below is
+        // here: what the rewrite claims must never answer a stranger.
+        "/records/EVENTS/2f0bc11e",
         // The encoded spelling the rewrite started claiming in
-        // admin-window/BUG-0081: widening what a `beforeFiles` rewrite claims
-        // must not reach past the gate, which runs before it. A 404 here would
-        // tell a stranger which record surfaces exist.
+        // admin-window/BUG-0081: widening what the rewrite claims must not
+        // reach past the gate, which runs before every rewrite (proxy is step
+        // 3 of Next's routing order; the rule moved to `afterFiles`, step 6,
+        // in admin-window/BUG-0083). A 404 here would tell a stranger which
+        // record surfaces exist.
         "/records/gro%75ps/2f0bc11e",
         "/__no-record-surface__",
       ]) {
