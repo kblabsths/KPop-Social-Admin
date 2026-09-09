@@ -1,7 +1,7 @@
 "use client";
 
 import { EditableCell } from "@/components/EditableCell";
-import type { HintSide } from "@/components/edit-cell-layout";
+import type { HintSide, StatusGrowth } from "@/components/edit-cell-layout";
 import { submitFieldEdit } from "./submit";
 
 /**
@@ -25,6 +25,7 @@ export function FieldEditor({
   value,
   multiline = false,
   hintSide,
+  statusGrowth,
 }: {
   table: string;
   id: string;
@@ -38,12 +39,19 @@ export function FieldEditor({
    * other prop here.
    */
   hintSide?: HintSide;
+  /**
+   * Which way this line's status grows, for the same reason and from the same
+   * knowledge (campaign admin-window/BUG-0101, `statusGrowth`). Carried
+   * through unchanged, like every other prop here.
+   */
+  statusGrowth?: StatusGrowth;
 }) {
   return (
     <EditableCell
       value={value}
       multiline={multiline}
       hintSide={hintSide}
+      statusGrowth={statusGrowth}
       label={`${field} of ${table}`}
       onSave={(next) => submitFieldEdit(table, id, field, next, fetch)}
     />

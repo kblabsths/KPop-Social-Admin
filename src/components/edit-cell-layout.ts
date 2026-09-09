@@ -147,5 +147,63 @@ export type HintSide = "below" | "above";
  * form's supplied-value cell) passes nothing and gets `below`.
  */
 export function hintSide(row: number, rows: number): HintSide {
-  return rows > 1 && row === rows - 1 ? "above" : "below";
+  return lastOfSeveral(row, rows) ? "above" : "below";
+}
+
+/**
+ * Is this the LAST of several lines — the one whose neighbour on the far side
+ * is not another line but the table's own clipping container?
+ *
+ * One predicate, because two rules turn on it (`hintSide`, `statusGrowth`) and
+ * a copy of it would be free to drift from the other. A single line (`rows`
+ * 1) is not "last": it has no neighbour on either side, so neither rule has a
+ * row to hang over and both take their ordinary direction.
+ */
+function lastOfSeveral(row: number, rows: number): boolean {
+  return rows > 1 && row === rows - 1;
+}
+
+/** Which way the status line grows away from the row it belongs to. */
+export type StatusGrowth =
+  /** Pinned to the row's top edge; the box extends downward, over the lines below. */
+  | "down"
+  /** Pinned to the row's bottom edge; the box extends upward, over the lines above. */
+  | "up";
+
+/**
+ * Which way the status line grows for the `row`-th cell of `rows` — campaign
+ * admin-window/BUG-0101.
+ *
+ * `hintSide`'s problem, one part later. The status is out of the row's flow
+ * too (`cellLayout(...).status`, campaign admin-window/BUG-0086) and was
+ * anchored to the row's TOP edge with no side at all, so it always grew
+ * downward — and on the last line there is nothing below but `DataTable`'s
+ * `overflow-x-auto` container, which clips.
+ *
+ * Measured by QA on a production build against staging, 2026-09-08, 1440x900,
+ * both themes, `walk_sandbox` row `…0001`: refusing `observed_on` (the
+ * record's last field) drew the refusal box from y 337 to y 393 against a
+ * container whose bottom edge is y 363. The mono half was cut 8px mid-word and
+ * the app-voice half — 373 to 391, the whole of what BUG-0098 shipped — was
+ * painted nowhere at all, 28px outside the container, readable only by
+ * scrolling the container itself.
+ *
+ * It gets worse with the refusal's own words, not better: the box is
+ * `max-w-xs`, so its height is a function of the database's sentence, and the
+ * 23502 DETAIL this surface already renders measures 120px.
+ *
+ * So the last line's status grows UP from its bottom edge, where the rows are,
+ * exactly as its hint hangs above. Every other line grows down, which is what
+ * it has always done and what an operator reading top to bottom expects.
+ *
+ * Pure and exported for `hintSide`'s reason: a bounding box is a browser fact
+ * and `tests/offline` is environment node with `renderToStaticMarkup` and no
+ * jsdom (STACK.md §4). The decision is pinned offline; the boxes themselves
+ * are measured in a walk.
+ *
+ * A caller that knows nothing about its neighbours (the review-item close
+ * form's supplied-value cell) passes nothing and gets `down`.
+ */
+export function statusGrowth(row: number, rows: number): StatusGrowth {
+  return lastOfSeveral(row, rows) ? "up" : "down";
 }

@@ -1,6 +1,6 @@
 import { DataTable, type Column } from "@/components/ui";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
-import { hintSide } from "@/components/edit-cell-layout";
+import { hintSide, statusGrowth } from "@/components/edit-cell-layout";
 import { relativeAge } from "@/lib/format";
 import type { FieldProvenance } from "@/lib/records/provenance";
 import { EntityPicker, type PickerWindow } from "./entity-picker";
@@ -119,17 +119,24 @@ export function RecordFields({
   choices?: PickerWindow | null;
 }) {
   /**
-   * Which side each line's open-cell hint hangs on, by field name — campaign
-   * admin-window/BUG-0086.
+   * Where each line's out-of-flow parts hang, by field name — campaign
+   * admin-window/BUG-0086 (the hint) and admin-window/BUG-0101 (the status).
    *
-   * The hint is drawn out of the row's flow (so that opening a cell moves no
-   * other row), which means it hangs OVER a neighbouring line. The last line
-   * has no line below it, only the table's own clipping container, so its hint
-   * hangs above instead. This component is the one that knows the order; the
-   * cell only knows which side it was told.
+   * Both are drawn out of the row's flow, so that opening or committing a cell
+   * moves no other row — which means both hang OVER a neighbouring line. The
+   * last line has no line below it, only the table's own clipping container:
+   * its hint hangs above, and its status grows up from the row's bottom edge
+   * instead of down past that container. This component is the one that knows
+   * the order; the cell only knows what it was told.
    */
-  const sides = new Map(
-    fields.map((field, index) => [field.name, hintSide(index, fields.length)]),
+  const placements = new Map(
+    fields.map((field, index) => [
+      field.name,
+      {
+        hint: hintSide(index, fields.length),
+        status: statusGrowth(index, fields.length),
+      },
+    ]),
   );
 
   const columns: Column<RecordField>[] = [
@@ -149,7 +156,8 @@ export function RecordFields({
             field={field.name}
             value={field.value}
             multiline={field.multiline}
-            hintSide={sides.get(field.name)}
+            hintSide={placements.get(field.name)?.hint}
+            statusGrowth={placements.get(field.name)?.status}
           />
         ) : field.widget === "picker" && choices !== null ? (
           // A reference edits by LINKING a row, never by typing one: the

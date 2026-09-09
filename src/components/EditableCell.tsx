@@ -5,7 +5,7 @@ import { orDash } from "@/lib/format";
 import { hasVisibleContent } from "@/lib/verdict/decision";
 import { cx } from "@/components/ui/cx";
 import { refusalFix } from "@/components/edit-refusal";
-import { type HintSide, cellLayout } from "@/components/edit-cell-layout";
+import { type HintSide, type StatusGrowth, cellLayout } from "@/components/edit-cell-layout";
 
 /**
  * The click-to-edit cell, brought onto the tokens (campaign admin-window,
@@ -330,20 +330,44 @@ function focusIsAdrift(button: HTMLButtonElement | null): boolean {
  * (`bg-surface`) to stay readable and inert to the pointer so a click aimed at
  * what it covers reaches that thing.
  *
+ * **And it grows towards the rows rather than past the table's edge**
+ * (`statusGrowth`, campaign admin-window/BUG-0101): out of the flow means the
+ * box hangs over a NEIGHBOUR, and the last line of a record has no neighbour
+ * below it — only `DataTable`'s clipping container. Told `up`, the box hangs
+ * from the row's bottom edge and extends over the lines above instead. The
+ * caller decides, because the caller is what knows the order.
+ *
  * It is positioned against the cell's own `relative` box, so it renders inside
  * `EditableCell` and nowhere else.
  */
-export function EditStatus({ status }: { status: Status }) {
+export function EditStatus({
+  status,
+  growth = "down",
+}: {
+  status: Status;
+  /**
+   * Which edge of the row the box hangs from, from `statusGrowth` — the
+   * surface knows where this line sits among its neighbours and the cell does
+   * not (campaign admin-window/BUG-0101). Omitted, it grows down, which is
+   * what every line but a record's last one does.
+   */
+  growth?: StatusGrowth;
+}) {
+  // `top-0`: the box's top edge on the row's, extending downward over the
+  // lines below. `bottom-0`: its bottom edge on the row's, extending upward
+  // over the lines above — the last line's answer, because what is below it is
+  // not a line but the table's own clipping container.
+  const box = cx(STATUS_BOX, growth === "up" ? "bottom-0" : "top-0");
   switch (status.kind) {
     case "saving":
       return (
-        <span className={cx(STATUS_BOX, "type-data text-ink-secondary")} role="status">
+        <span className={cx(box, "type-data text-ink-secondary")} role="status">
           saving…
         </span>
       );
     case "saved":
       return (
-        <span className={cx(STATUS_BOX, "type-data text-healthy")} role="status">
+        <span className={cx(box, "type-data text-healthy")} role="status">
           saved
         </span>
       );
@@ -357,7 +381,7 @@ export function EditStatus({ status }: { status: Status }) {
         // utilities of equal specificity, so which one won would be decided by
         // the order Tailwind emitted them in (`app/globals.css`).
         <span
-          className={cx(STATUS_BOX, "flex flex-col gap-0.5 text-broken")}
+          className={cx(box, "flex flex-col gap-0.5 text-broken")}
           role="alert"
         >
           <span className="type-data">{status.message}</span>
@@ -435,18 +459,25 @@ const FIELD_CLASS =
   "type-data pointer-events-auto block w-full rounded-control border border-accent bg-surface px-1 py-0.5 text-ink";
 
 /**
- * The status line's own box: exactly where it has always been drawn — one
- * `gap-2` step to the right of the resting value, on its top edge — and out of
- * the row's flow (`cellLayout(...).status`, campaign admin-window/BUG-0086).
+ * The status line's own box: one `gap-2` step to the right of the resting
+ * value, and out of the row's flow (`cellLayout(...).status`, campaign
+ * admin-window/BUG-0086).
  *
  * `left-full ml-2` reproduces the flex gap it used to sit after, so nothing an
  * operator sees moves; `absolute` is what takes it out of the flow, which is
- * the whole fix. `w-max` keeps `saving…` on one line and `max-w-xs` wraps a
- * long refusal into a panel instead of a line running off the table — a
- * refusal is the database's own sentence and can be a hundred characters.
- * `bg-surface` because it now hangs over whatever is beside the value, and
- * `pointer-events-none` because that thing may be another editable value and
- * this line is not a control.
+ * the whole of BUG-0086's fix here. `w-max` keeps `saving…` on one line and
+ * `max-w-xs` wraps a long refusal into a panel instead of a line running off
+ * the table — a refusal is the database's own sentence and can be a hundred
+ * characters. `bg-surface` because it now hangs over whatever is beside the
+ * value, and `pointer-events-none` because that thing may be another editable
+ * value and this line is not a control.
+ *
+ * **It carries no VERTICAL anchor** (campaign admin-window/BUG-0101). It used
+ * to hold `top-0` and therefore always grew downward, past the fields table's
+ * `overflow-x-auto` container on the last line of a record — QA measured the
+ * app-voice half of a refusal painted nowhere at all, 28px below the
+ * container's edge. Which edge the box hangs from is `statusGrowth`'s answer,
+ * added by `EditStatus` below, exactly as the hint's side is `hintSide`'s.
  *
  * It carries no TYPE utility, and that is deliberate since the refusal grew
  * its second half (admin-window/BUG-0098): `type-data` and `type-body` are
@@ -456,7 +487,7 @@ const FIELD_CLASS =
  * `EditStatus` puts the face on the element whose words it describes.
  */
 const STATUS_BOX =
-  "pointer-events-none absolute top-0 left-full z-10 ml-2 w-max max-w-xs rounded-control bg-surface px-1 py-0.5";
+  "pointer-events-none absolute left-full z-10 ml-2 w-max max-w-xs rounded-control bg-surface px-1 py-0.5";
 
 /**
  * The field opens with its value SELECTED, so a straight retype replaces it —
@@ -685,6 +716,7 @@ export function EditableCell({
   label,
   multiline = false,
   hintSide: side = "below",
+  statusGrowth: growth = "down",
 }: {
   value: string | null;
   /** Persist the new value. Returns the outcome; an empty field saves null. */
@@ -698,6 +730,12 @@ export function EditableCell({
    * (campaign admin-window/BUG-0086). Omitted, it hangs below.
    */
   hintSide?: HintSide;
+  /**
+   * Which way the status line grows, from `statusGrowth` — the same knowledge
+   * and the same reason, for the part that appears while the cell is CLOSED
+   * (campaign admin-window/BUG-0101). Omitted, it grows down.
+   */
+  statusGrowth?: StatusGrowth;
 }) {
   const [shown, setShown] = useState<string | null>(value);
   const [draft, setDraft] = useState(value ?? "");
@@ -904,7 +942,7 @@ export function EditableCell({
           onKeyDown={onKeyDown}
         />
       )}
-      {layout.status === "absent" ? null : <EditStatus status={status} />}
+      {layout.status === "absent" ? null : <EditStatus status={status} growth={growth} />}
     </span>
   );
 }

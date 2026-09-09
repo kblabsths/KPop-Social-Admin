@@ -3,14 +3,17 @@ import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 
 import { RecordFields } from "@/components/records/record-fields";
+import { FieldEditor } from "@/components/records/field-editor";
 import type { RecordField } from "@/components/records/fields";
 import {
   type CellLayout,
   type CellState,
   type HintSide,
+  type StatusGrowth,
   cellLayout,
   hintSide,
   occupiesFlow,
+  statusGrowth,
 } from "@/components/edit-cell-layout";
 import {
   type EditEnding,
@@ -207,8 +210,8 @@ const KINDS: Status[] = [
   { kind: "failed", message: "short_name is not editable on groups" },
 ];
 
-function statusMarkup(status: Status): string {
-  return render(h(EditStatus, { status }));
+function statusMarkup(status: Status, growth?: StatusGrowth): string {
+  return render(h(EditStatus, growth === undefined ? { status } : { status, growth }));
 }
 
 /** The text of the one element carrying `role`, or `null` if there is none. */
@@ -1405,6 +1408,162 @@ describe("the hint hangs over a line that is there", () => {
     expect(classesOf(resting)).not.toContain("absolute");
     expect(classesOf(resting)).not.toContain("invisible");
     expect(classesOf(resting)).not.toContain("pointer-events-none");
+  });
+});
+
+
+/* ── the status grows towards the rows, never past the table's edge ──────
+ *
+ * campaign admin-window/BUG-0101, and `hintSide`'s problem one part later. The
+ * status is out of the row's flow (BUG-0086) and was anchored to the row's TOP
+ * edge with no side at all, so it always grew downward — and below the last
+ * line there is no line, only `DataTable`'s `overflow-x-auto` container, which
+ * clips. QA measured a refusal on the last field drawn from y 337 to y 393
+ * against a container ending at y 363: the mono half cut 8px mid-word and the
+ * app-voice half BUG-0098 shipped painted nowhere at all.
+ *
+ * The rule is pinned here and the boxes are measured in a walk, exactly as
+ * `hintSide`'s are: `tests/offline` is environment node with no jsdom
+ * (STACK.md §4), so a bounding box is unobservable in this tier and the
+ * DECISION is the part that must not be.
+ */
+
+/**
+ * What the surface tells each of its lines, read off the elements
+ * `RecordFields` builds rather than off markup.
+ *
+ * The status only exists while a write is in flight or has been refused, and
+ * neither state is reachable through `renderToStaticMarkup` — the same wall
+ * `EditField` and `EditStatus` were extracted for. So this walks the tree the
+ * component returns, the way `fieldOf` does for the selection ref: the Value
+ * column's cell function is what the surface hands each field, and its props
+ * are what that field's cell is told about where it sits.
+ */
+function cellPropsByField(names: readonly string[]): Map<string, Record<string, unknown>> {
+  const fields: RecordField[] = names.map((name) => ({
+    name,
+    value: `a value of ${name}`,
+    widget: "cell",
+    multiline: false,
+    isKey: false,
+    provenance: null,
+    reference: null,
+  }));
+  const table = RecordFields({
+    table: "walk_sandbox",
+    id: "00000000-0000-4000-8000-000000000001",
+    fields,
+  }) as ReactElement<{
+    columns: readonly { key: string; cell: (field: RecordField) => ReactNode }[];
+  }>;
+  const value = table.props.columns.find((column) => column.key === "value");
+  if (value === undefined) throw new Error("the record's fields table has no Value column");
+  const told = new Map<string, Record<string, unknown>>();
+  for (const field of fields) {
+    const cell = value.cell(field);
+    expect(isValidElement(cell), field.name).toBe(true);
+    told.set(field.name, (cell as ReactElement<Record<string, unknown>>).props);
+  }
+  return told;
+}
+
+describe("the status hangs over a line that is there", () => {
+  it("grows down from a line that has one below it", () => {
+    expect(statusGrowth(0, 6)).toEqual("down");
+    expect(statusGrowth(4, 6)).toEqual("down");
+  });
+
+  it("grows up from the last line, whose only neighbour below is the table's own clip", () => {
+    expect(statusGrowth(5, 6)).toEqual("up");
+    expect(statusGrowth(1, 2)).toEqual("up");
+  });
+
+  it("grows down when there is no neighbour on either side", () => {
+    // One line: growing up would leave over the table's header instead, and
+    // there is no row up there to hang over. `hintSide` answers the same.
+    expect(statusGrowth(0, 1)).toEqual("down");
+  });
+
+  it("anchors the box to the edge it was told, both ways and in every kind it renders", () => {
+    // Two fixtures per kind: a rule that only ever saw one direction passes
+    // vacuously (LESSONS 3). `top-0` pins the box's top to the row's top and
+    // it extends downward; `bottom-0` pins its bottom to the row's bottom and
+    // it extends upward, over the lines above.
+    for (const status of KINDS.filter((kind) => kind.kind !== "idle")) {
+      const down = classesOf(statusMarkup(status, "down"));
+      expect(down, status.kind).toContain("top-0");
+      expect(down, status.kind).not.toContain("bottom-0");
+      const up = classesOf(statusMarkup(status, "up"));
+      expect(up, status.kind).toContain("bottom-0");
+      expect(up, status.kind).not.toContain("top-0");
+    }
+  });
+
+  it("grows down for a caller that says nothing about its neighbours", () => {
+    // The review-item close form's supplied-value cell passes no growth, and
+    // every line but the last one of a record gets this too: what the box has
+    // always done.
+    for (const status of KINDS.filter((kind) => kind.kind !== "idle")) {
+      expect(classesOf(statusMarkup(status)), status.kind).toContain("top-0");
+    }
+  });
+
+  it("stays out of the flow and inert to the pointer whichever way it grows", () => {
+    // BUG-0086 is not paid for by BUG-0101: a box that grows upward is still
+    // a box the row cannot feel and a click cannot land on.
+    for (const growth of ["down", "up"] satisfies StatusGrowth[]) {
+      for (const status of KINDS.filter((kind) => kind.kind !== "idle")) {
+        const classes = classesOf(statusMarkup(status, growth));
+        expect(classes, `${status.kind}/${growth}`).toContain("absolute");
+        expect(classes, `${status.kind}/${growth}`).toContain("pointer-events-none");
+        expect(classes, `${status.kind}/${growth}`).toContain("bg-surface");
+      }
+    }
+  });
+
+  it("keeps both halves of a refusal inside the one region, whichever way it grows", () => {
+    // BUG-0098's anatomy is what this ticket exists to make readable, so it
+    // is asserted on the side that moved.
+    for (const growth of ["down", "up"] satisfies StatusGrowth[]) {
+      const markup = statusMarkup({ kind: "failed", message: REFUSAL }, growth);
+      const announcement = announced(markup, "alert");
+      expect(announcement, growth).toContain(REFUSAL);
+      expect(announcement, growth).toContain(refusalFix(REFUSAL));
+    }
+  });
+
+  it("tells the record's LAST line to grow up, and every other line to grow down", () => {
+    // The surface is the one that knows the order; the cell only knows what it
+    // was told (the split `hintSide` already draws).
+    const told = cellPropsByField(["label", "note", "tally", "is_flagged", "observed_on"]);
+    expect(told.get("label")?.statusGrowth).toEqual("down");
+    expect(told.get("is_flagged")?.statusGrowth).toEqual("down");
+    expect(told.get("observed_on")?.statusGrowth).toEqual("up");
+    // ...and the hint's own side is still decided beside it, unchanged.
+    expect(told.get("label")?.hintSide).toEqual("below");
+    expect(told.get("observed_on")?.hintSide).toEqual("above");
+  });
+
+  it("tells a one-line record's only line to grow down", () => {
+    const told = cellPropsByField(["label"]);
+    expect(told.get("label")?.statusGrowth).toEqual("down");
+    expect(told.get("label")?.hintSide).toEqual("below");
+  });
+
+  it("carries what it was told through to the cell, unchanged", () => {
+    // `FieldEditor` adds route knowledge and nothing else: a placement it
+    // dropped on the way would be invisible in markup, since a resting cell
+    // draws no status at all.
+    const editor = FieldEditor({
+      table: "walk_sandbox",
+      id: "00000000-0000-4000-8000-000000000001",
+      field: "observed_on",
+      value: "2026-09-08",
+      statusGrowth: "up",
+      hintSide: "above",
+    }) as ReactElement<Record<string, unknown>>;
+    expect(editor.props.statusGrowth).toEqual("up");
+    expect(editor.props.hintSide).toEqual("above");
   });
 });
 
