@@ -18167,3 +18167,16 @@
 2026-09-09T12:47:03Z	agent	-	-	-	-
 # STRANDED	2026-09-09T12:47:18Z	qa-adversary	1 uncommitted in primary checkout: .env.example
 2026-09-09T12:47:18Z	qa-adversary	BUG-0120	20147	715	107725
+2026-09-09T12:47:49Z	builder	BUG-0121	spawned
+2026-09-09T12:48:04Z	user-sim	-	spawned
+2026-09-09T12:48:16Z	user-sim	-	spawned
+# STRANDED	2026-09-09T12:48:21Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0121.md
+2026-09-09T12:48:21Z	agent	-	-	-	-
+# STRANDED	2026-09-09T12:48:35Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0121.md
+2026-09-09T12:48:35Z	agent	-	-	-	-
+# STRANDED	2026-09-09T12:48:47Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0121.md
+2026-09-09T12:48:47Z	agent	-	-	-	-
+# STRANDED	2026-09-09T12:48:52Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0121.md
+2026-09-09T12:48:52Z	agent	-	-	-	-
+# STRANDED	2026-09-09T12:49:07Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0121.md
+2026-09-09T12:49:07Z	agent	-	-	-	-
