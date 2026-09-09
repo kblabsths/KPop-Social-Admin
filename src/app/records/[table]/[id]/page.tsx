@@ -4,7 +4,6 @@ import { recordFields, type WriteAccess } from "@/components/records/fields";
 import { RecordFields } from "@/components/records/record-fields";
 import { Empty, Page, Section, StateOf } from "@/components/ui";
 import {
-  isRecordId,
   readRecord,
   readReferenceChoices,
   readRecordProvenance,
@@ -17,6 +16,7 @@ import {
   type TableEditConfig,
 } from "@/lib/edit/config";
 import { EM_DASH, counted } from "@/lib/format";
+import { isRecordId } from "@/lib/records/id";
 
 /**
  * The edit surface for one canonical record — campaign admin-window/TASK-0018.
@@ -332,7 +332,7 @@ function foundBy(config: TableEditConfig): ReactNode {
  * map, and TWICE on the resolver-owned pair, once per read leg.
  *
  * It is the EMPTY state and not a fifth one, chosen among the four the Look
- * mandates (`isRecordId`, `lib/db/records.ts`, carries why the page can decide
+ * mandates (`isRecordId`, `lib/records/id.ts`, carries why the page can decide
  * this without reading):
  *
  *  - not the failed read: nothing failed. No query was issued, and the

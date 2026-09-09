@@ -399,6 +399,22 @@ function importLines(file: string): string[] {
     .filter((line) => IMPORT_LINE.test(line));
 }
 
+const LEAF_MODULES = [
+  "src/lib/edit/config.ts",
+  // The verdict decision envelope: the one shape `settle_review_item` reads,
+  // built by every M2 surface (ARCHITECTURE §9.2, admin-window/TASK-0042).
+  "src/lib/verdict/decision.ts",
+  // The app's ONE uuid grammar (admin-window/DEBT-0009). `isRecordId` and
+  // `canonicalRecordId` were declared in `src/lib/db/records.ts` — pure
+  // functions over a string, in a module no leaf may import — so no leaf
+  // could ask the app's own id question and `/claims` compared a URL's raw
+  // `source_id` to the ids its view holds. Moving them buys nothing unless
+  // the new home STAYS a leaf: an import of `lib/db/**` here would put the
+  // grammar back out of reach of `lib/claims/filters.ts`, which now imports
+  // it, and would write the directory cycle rule 7 forbids.
+  "src/lib/records/id.ts",
+];
+
 /**
  * ARCHITECTURE §4 rule 7 — **the pure domain leaves import NOTHING**, asserted
  * over the LEAF SET rather than one file at a time (campaign
@@ -418,13 +434,6 @@ function importLines(file: string): string[] {
  * which is what a new leaf joins.
  */
 describe("the pure domain leaves", () => {
-  const LEAF_MODULES = [
-    "src/lib/edit/config.ts",
-    // The verdict decision envelope: the one shape `settle_review_item` reads,
-    // built by every M2 surface (ARCHITECTURE §9.2, admin-window/TASK-0042).
-    "src/lib/verdict/decision.ts",
-  ];
-
   it("still contains every file the leaf set names", () => {
     // The same ratchet the exemptions take, for the opposite reason: a leaf
     // that has been renamed or deleted has no import lines either, so without
@@ -501,7 +510,10 @@ describe("the leaf-import guard itself", () => {
   it("reads the leaf set through the same scanner, on the real files", () => {
     // Non-vacuous the other way: the scanner reaches the actual leaves rather
     // than only a probe, and a file it cannot read would report [] forever.
-    expect(codeText("src/lib/edit/config.ts").length).toBeGreaterThan(0);
-    expect(codeText("src/lib/verdict/decision.ts").length).toBeGreaterThan(0);
+    // Read from the leaf SET, so a leaf added above is covered here too rather
+    // than leaving the rule that names it resting on an unread file.
+    for (const leaf of LEAF_MODULES) {
+      expect(codeText(leaf).length, leaf).toBeGreaterThan(0);
+    }
   });
 });

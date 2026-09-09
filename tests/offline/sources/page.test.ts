@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
-import { isRecordId } from "@/lib/db/records";
+import { isRecordId } from "@/lib/records/id";
 import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
 import {
@@ -595,7 +595,7 @@ describe("a source's links", () => {
   /**
    * Every spelling of one uuid Postgres itself accepts and a URL can carry:
    * canonical, uppercased, hyphen-less, and mixed — each names the SAME row
-   * (`isRecordId`, `src/lib/db/records.ts`; the rule
+   * (`isRecordId`, `src/lib/records/id.ts`; the rule
    * `tests/offline/records/page.test.ts` states for `/records`).
    *
    * The guard proves itself on both inputs (LESSONS 3): every spelling but the

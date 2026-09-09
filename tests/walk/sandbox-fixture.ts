@@ -28,7 +28,7 @@
  *
  * ## Why the keys look like that
  *
- * `sandbox_id` is a `uuid` because `isRecordId` (`src/lib/db/records.ts`)
+ * `sandbox_id` is a `uuid` because `isRecordId` (`src/lib/records/id.ts`)
  * refuses a record-page segment that is not one BEFORE any read: a text key
  * made both of the sandbox's states unreachable at its own address (§9.1
  * item 9). They are zeros to the last digit so that nothing generates a value

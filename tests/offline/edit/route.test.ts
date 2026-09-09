@@ -40,10 +40,13 @@ vi.mock("@/lib/db/verdict", async (importOriginal) => {
   };
 });
 
-// The writer alone is replaced by the spy; every other export stays REAL —
-// `isRecordId` above all, because the route must ask the record page's own id
-// question and not a copy of it (admin-window/BUG-0068). A stubbed
-// `isRecordId` would prove the route calls *something*, which is not the claim.
+// The writer alone is replaced by the spy; every other export stays REAL, and
+// `isRecordId` is not even an export of this module to stub: since
+// admin-window/DEBT-0009 the route imports the app's one uuid grammar from the
+// leaf `@/lib/records/id`, which nothing here mocks. That is the point —
+// the route must ask the record page's own id question and not a copy of it
+// (admin-window/BUG-0068), and a stubbed `isRecordId` would prove the route
+// calls *something*, which is not the claim.
 vi.mock("@/lib/db/records", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db/records")>();
   return {

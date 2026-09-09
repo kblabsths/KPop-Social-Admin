@@ -6,11 +6,7 @@ import {
   type AllowedReference,
   type EditRefusal,
 } from "@/lib/edit/config";
-import {
-  isRecordId,
-  updateRecordField,
-  type EditableValue,
-} from "@/lib/db/records";
+import { updateRecordField, type EditableValue } from "@/lib/db/records";
 import { settleReviewItem } from "@/lib/db/verdict";
 import {
   decisionRefusals,
@@ -19,6 +15,7 @@ import {
   type VerdictValue,
 } from "@/lib/verdict/decision";
 import type { DbResult } from "@/lib/db/result";
+import { isRecordId } from "@/lib/records/id";
 
 /**
  * The ONE write path of the edit surface — campaign admin-window/TASK-0017.
@@ -30,7 +27,7 @@ import type { DbResult } from "@/lib/db/result";
  *    (STACK §3). Nothing below runs for a visitor who is not an allowlisted
  *    admin, and `src/middleware.ts` has already turned away anyone without a
  *    session before the handler is reached at all.
- *  - **Then the id**: `isRecordId()` (`src/lib/db/records.ts`), the record
+ *  - **Then the id**: `isRecordId()` (`src/lib/records/id.ts`), the record
  *    PAGE's own question, asked AFTER the map so every refusal the map owns
  *    keeps the status it has (campaign admin-window/BUG-0068). See
  *    `noSuchRecord` below for why a segment that is not an id is an answer and

@@ -1,5 +1,5 @@
 import { requireAdmin } from "@/lib/admin";
-import { isRecordId } from "@/lib/db/records";
+import { isRecordId } from "@/lib/records/id";
 import { settleReviewItem } from "@/lib/db/verdict";
 import { decisionRefusals, type VerdictDecision } from "@/lib/verdict/decision";
 

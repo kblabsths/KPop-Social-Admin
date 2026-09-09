@@ -20,7 +20,7 @@ import {
 import { ARRIVES_WITH, Empty, Page, RETRY, Section, StateOf } from "@/components/ui";
 import { claimsHref, sourceHref } from "@/lib/claims/filters";
 import { readPendingClaims, type PendingClaimRow } from "@/lib/db/claims";
-import { isRecordId, readLinkChoices } from "@/lib/db/records";
+import { readLinkChoices } from "@/lib/db/records";
 import type { DbResult, DbUnavailable } from "@/lib/db/result";
 import {
   readItemEvidence,
@@ -36,6 +36,7 @@ import {
   type ItemVerdict,
 } from "@/lib/db/verdict";
 import { count, counted, relativeAge } from "@/lib/format";
+import { isRecordId } from "@/lib/records/id";
 import {
   readAwaitingRowTrend,
   stuckPatternThreshold,
@@ -187,7 +188,7 @@ function ReviewItems() {
  * can never work — a reload re-sends the same segment forever.
  *
  * It is the EMPTY state and not a fifth one, for the reasons `isRecordId`
- * (`src/lib/db/records.ts`) and the record page's own answer already carry:
+ * (`src/lib/records/id.ts`) and the record page's own answer already carry:
  * nothing failed, no query was issued, the table is there, and a segment that
  * is not a uuid can equal no uuid key — so "no such item" is true here with
  * certainty rather than on a read's say-so.
@@ -600,7 +601,7 @@ export default async function ReviewItemPage({
   );
 
   // The segment is not an id at all, which is a question about the REQUEST and
-  // is settled here, BEFORE any read (`isRecordId`, `src/lib/db/records.ts`,
+  // is settled here, BEFORE any read (`isRecordId`, `src/lib/records/id.ts`,
   // carries the grammar and why it is Postgres's own; `NOT_AN_ID` carries what
   // this state says). Asking it first is the fix and not an optimisation: it
   // is what keeps one bad address to ONE answer, where the item read, the

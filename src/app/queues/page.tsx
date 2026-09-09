@@ -24,7 +24,7 @@ import {
   WindowLine,
   oldestIn,
 } from "@/components/ui";
-import { canonicalRecordId } from "@/lib/db/records";
+import { canonicalRecordId } from "@/lib/records/id";
 import { readReviewQueues, type ReviewQueues } from "@/lib/db/review-items";
 import type { DbResult } from "@/lib/db/result";
 import {

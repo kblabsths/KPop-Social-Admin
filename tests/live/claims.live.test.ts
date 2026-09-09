@@ -429,6 +429,90 @@ describe("the classification buckets against staging", () => {
     }
   });
 
+  /**
+   * **One id, one narrowing, against the real database** — admin-window/
+   * BUG-0140's property on `/claims` (admin-window/DEBT-0009).
+   *
+   * `source_id` is a uuid column: PostgREST's `.eq` matches every spelling of
+   * one id, and this page also compares in JavaScript, where only one matches.
+   * Compared RAW — which is what it did — a real source's id with its hyphens
+   * left out, or wearing the whitespace a paste brings, narrowed NOTHING here
+   * and the page served every claim under a filter bar reading "all". The two
+   * comparisons only agree on a canonicalised value, and this is the case that
+   * says so against the database that makes the first of them.
+   *
+   * Graded against the CANONICAL render, not a literal: the claim is that the
+   * two are the same page. It reads and writes nothing of its own beyond the
+   * source list the case above already reads.
+   */
+  it("narrows the same way for every spelling of one source id", async () => {
+    const markup = await claimsMarkup();
+    const state = await gradeSurface({
+      markup,
+      within: BUCKETS,
+      object: T.pendingClaims,
+      counted: () => countRows(() => claimCount()),
+    });
+    if (state !== "ok") return;
+
+    const { data, error } = await independentClient()
+      .from(T.pendingClaims)
+      .select("source_id")
+      .neq("bucket", PARKED_BUCKET)
+      .limit(1);
+    if (error) throw new Error(`the source query failed: ${JSON.stringify(error)}`);
+    const source = ((data ?? []) as { source_id: string }[])[0]?.source_id;
+    // No claims at all is not this case's question; the case above grades that.
+    if (source === undefined) return;
+
+    const canonical = await claimsMarkup({ source_id: source });
+    // Non-vacuous: this source really is a narrowing of the whole view.
+    const whole = await countRows(() => claimCount());
+    const held = await countRows(() => claimCount().eq("source_id", source));
+    expect(held, "the source read for this case carries no claim").toBeGreaterThan(0);
+
+    for (const spelling of [
+      source.toUpperCase(),
+      source.replace(/-/g, ""),
+      ` ${source}\n`,
+    ]) {
+      if (spelling === source) continue;
+      const asked = await claimsMarkup({ source_id: spelling });
+      for (const bucket of RENDERED_BUCKETS) {
+        expect(renderedCount(asked, bucket), `${JSON.stringify(spelling)} / ${bucket}`).toBe(
+          renderedCount(canonical, bucket),
+        );
+      }
+      expect(claimIds(asked), JSON.stringify(spelling)).toEqual(claimIds(canonical));
+
+      // The rows alone cannot discriminate on a database whose view carries
+      // ONE source — every claim matches, so the unnarrowed page and the
+      // narrowed one draw the same rows and the equalities above pass under
+      // the very defect this case is about (measured on staging 2026-09-09:
+      // the case was VACUOUS against the pre-fix filter until these two
+      // assertions were added). These two say the page UNDERSTOOD the
+      // parameter, whatever the view's population: it may not report a
+      // narrowing it performed as a dropped parameter, and the chip that is
+      // on must be this source's rather than "all".
+      const $ = cheerio.load(asked);
+      expect(
+        $("[data-dropped-params]").length,
+        `${JSON.stringify(spelling)} was reported as a parameter the page dropped`,
+      ).toBe(0);
+      const active = $('[data-facet="source_id"] a[aria-current="true"]')
+        .toArray()
+        .map((element) => $(element).attr("href") ?? "");
+      expect(active, JSON.stringify(spelling)).toHaveLength(1);
+      expect(active[0], JSON.stringify(spelling)).toContain(encodeURIComponent(source));
+      if (held < whole) {
+        expect(
+          RENDERED_BUCKETS.reduce((total, bucket) => total + renderedCount(asked, bucket), 0),
+          JSON.stringify(spelling),
+        ).toBeLessThan(whole);
+      }
+    }
+  });
+
   it("draws the view's longest-waiting window, and states the whole it came from", async () => {
     const markup = await claimsMarkup();
     const state = await gradeSurface({
