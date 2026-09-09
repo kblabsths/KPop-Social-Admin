@@ -596,6 +596,42 @@ const FIELD_CLASS =
  * container's edge. Which edge the box hangs from is `statusGrowth`'s answer,
  * added by `EditStatus` below, exactly as the hint's side is `hintSide`'s.
  *
+ * **And the cap is made to BIND on the words** (campaign
+ * admin-window/BUG-0105). `max-w-xs` caps the box; it says nothing about text
+ * that cannot fit a line, and a refusal quotes the value the operator typed,
+ * so its longest token is the database's business rather than this app's. With
+ * no break rule the words were simply painted out of the box: QA measured the
+ * mono half of a 22007 refusal quoting a 300-character unbroken token at
+ * `scrollWidth` 1987 inside its own 312px box — painted to x ~2540 against a
+ * container ending at 1423, across the next column with no fill behind it,
+ * taking the fields table's `scrollWidth` from 1214 to 2331 (2026-09-09,
+ * production build against staging, 1440x900, `walk_sandbox` row …0001).
+ *
+ * `wrap-break-word` (`overflow-wrap: break-word`) rather than a rule that
+ * breaks every word or one that breaks anywhere, and on the BOX rather than on
+ * a half:
+ *
+ *  - It breaks only a word that cannot fit a line ON ITS OWN, so every refusal
+ *    made of ordinary words wraps exactly where it already wrapped — which is
+ *    what keeps the boxes QA measured inside the container at the pixels they
+ *    were measured at. A `word-break: break-all` would rebreak all of them.
+ *  - It changes neither intrinsic size, min-content or max-content, so `w-max`
+ *    resolves to the width it always did and no box moves. `overflow-wrap:
+ *    anywhere` lowers min-content, which is a width this box does not use
+ *    today and a coupling not worth taking for the same visible result.
+ *  - `overflow-wrap` inherits, and the cap being made to bind is the box's, so
+ *    the half BUG-0098 added and any half added after it are covered by
+ *    construction rather than by remembering. Nothing here touches the words:
+ *    the mono half is still the database's sentence verbatim, wrapped rather
+ *    than hidden — clipping it (`truncate`, `overflow-hidden`) would stop the
+ *    same painting by swallowing the refusal's tail, which is the one thing
+ *    this line may not do.
+ *
+ * Wrapping makes a tall box taller, which is `statusShift`'s business and not
+ * this rule's: the correction is measured in a layout effect after the browser
+ * has laid the wrapped box out, so what it fits inside the container is the
+ * final height.
+ *
  * It carries no TYPE utility, and that is deliberate since the refusal grew
  * its second half (admin-window/BUG-0098): `type-data` and `type-body` are
  * `@utility` rules of equal specificity (`app/globals.css`), so an element
@@ -604,7 +640,8 @@ const FIELD_CLASS =
  * `EditStatus` puts the face on the element whose words it describes.
  */
 const STATUS_BOX =
-  "pointer-events-none absolute left-full z-10 ml-2 w-max max-w-xs rounded-control bg-surface px-1 py-0.5";
+  "pointer-events-none absolute left-full z-10 ml-2 w-max max-w-xs wrap-break-word " +
+  "rounded-control bg-surface px-1 py-0.5";
 
 /**
  * The field opens with its value SELECTED, so a straight retype replaces it —

@@ -1670,6 +1670,102 @@ describe("the status is measured against the container, not only anchored", () =
 });
 
 
+/* ── ...and its width cap binds on the database's own words ────────
+ *
+ * campaign admin-window/BUG-0105. The box is `w-max max-w-xs`, so the BOX is
+ * at most 20rem wide — but a width cap caps a box, not the text in it, and the
+ * text had no rule saying it may break inside a word. A refusal quotes the
+ * value the operator typed, so its longest token is the database's business
+ * and not this app's.
+ *
+ * Measured by QA on a production build against staging (2026-09-09, 1440x900,
+ * `walk_sandbox` row …0001, `observed_on` typed `nope-` + 300 `x`): the alert
+ * box itself sat inside the container at x 549.3 → 869.3, and the mono half
+ * inside it reported `scrollWidth` 1987 against its own 312px box — the
+ * database's words were painted to x ~2540, 1117px past the container's right
+ * edge at 1423, across the Provenance column with no background behind them,
+ * and the fields table's `scrollWidth` went from 1214 to 2331. It starts at
+ * ~60 characters (97px outside the box) and leaves the container at ~180.
+ *
+ * **The fix carries no new pure rule** — there is nothing to put beside
+ * `statusGrowth` and `statusShift` here, only the wrapping the cap always
+ * implied — so what is pinned is what this tier can observe. Two things, and
+ * the second is the one with a decision in it: the box carries a break rule
+ * beside its cap in every kind it draws, and it never CLIPS. Hiding the
+ * overflow would stop the painting too, and would stop it by swallowing the
+ * database's own words, which this surface may never do (LOOK_AND_FEEL: "the
+ * function's own refusal in mono"; admin-window/BUG-0098).
+ *
+ * On the BOX rather than on the mono half: `overflow-wrap` inherits, the cap
+ * being made to bind is the box's own, and a half added later — the app-voice
+ * sentence was itself added to this box by BUG-0098 — is then covered by
+ * construction instead of by remembering. The painted extents are a browser
+ * fact this tier cannot see (no jsdom, STACK.md §4) and are measured in the walk.
+ */
+
+/** The classes on the status BOX itself, not on the halves inside it. */
+function boxClasses(status: Status, growth?: StatusGrowth): string[] {
+  const $ = cheerio.load(statusMarkup(status, growth));
+  const box = $("[role='status'], [role='alert']");
+  expect(box.length, status.kind).toBe(1);
+  return (box.attr("class") ?? "").split(/\s+/).filter(Boolean);
+}
+
+/**
+ * Ways of making text stop at a box's edge by not showing it. Any one of these
+ * on the status box would hide the tail of a refusal instead of wrapping it.
+ */
+const CLIPPING = ["truncate", "overflow-hidden", "text-ellipsis", "text-clip", "whitespace-nowrap"];
+
+describe("the status box's width cap binds on the words inside it", () => {
+  it("carries a break rule beside its cap, in every kind it draws a box for", () => {
+    // `max-w-xs` alone is a promise about the box that the text is free to
+    // ignore, and did: 1117px of it, past the container and unbacked.
+    for (const status of KINDS.filter((kind) => kind.kind !== "idle")) {
+      for (const growth of ["down", "up"] satisfies StatusGrowth[]) {
+        const classes = boxClasses(status, growth);
+        expect(classes, `${status.kind}/${growth}`).toContain("max-w-xs");
+        expect(classes, `${status.kind}/${growth}`).toContain("wrap-break-word");
+      }
+    }
+    // ...and the negative fixture that keeps that honest (LESSONS 3): the
+    // resting cell draws no box at all, so "contains" really does discriminate.
+    const resting = render(
+      h(EditableCell, { value: "Tuzi", onSave: noop, label: "label of walk_sandbox" }),
+    );
+    expect(classesOf(resting)).not.toContain("wrap-break-word");
+    expect(classesOf(statusMarkup({ kind: "idle" }))).toEqual([]);
+  });
+
+  it("wraps the overflow rather than hiding it, so no refusal is ever cut short", () => {
+    // The decision in the fix: a clipped box would also stop the painting QA
+    // measured, by swallowing the end of the database's sentence — the half
+    // this surface exists to show verbatim.
+    for (const status of KINDS.filter((kind) => kind.kind !== "idle")) {
+      for (const clip of CLIPPING) {
+        expect(boxClasses(status), `${status.kind}/${clip}`).not.toContain(clip);
+      }
+      expect(
+        boxClasses(status).filter((name) => name.startsWith("line-clamp-")),
+        status.kind,
+      ).toEqual([]);
+    }
+  });
+
+  it("leaves the database's words exactly as they arrived, however long the token", () => {
+    // A break rule is a rendering instruction, never an edit: no hyphen is
+    // inserted into the text, nothing is elided, and both halves are still
+    // inside the one region a screen reader is interrupted with.
+    const token = `nope-${"x".repeat(300)}`;
+    const message = `invalid input syntax for type date: "${token}" (22007)`;
+    const { failed, fix } = halves(message);
+    expect(failed).toEqual(message);
+    expect(fix).toEqual(refusalFix(message));
+    expect(announced(statusMarkup({ kind: "failed", message }), "alert")).toContain(token);
+  });
+});
+
+
 /* ── a refused write says what to do about it ──────────────────────
  *
  * campaign admin-window/BUG-0098. Measured by the designer on the M2 early
