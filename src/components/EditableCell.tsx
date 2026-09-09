@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useId, useReducer, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { orDash } from "@/lib/format";
 import { hasVisibleContent } from "@/lib/verdict/decision";
 import { cx } from "@/components/ui/cx";
 import { refusalFix } from "@/components/edit-refusal";
-import { type HintSide, type StatusGrowth, cellLayout } from "@/components/edit-cell-layout";
+import {
+  type HintSide,
+  type StatusGrowth,
+  cellLayout,
+  statusShift,
+} from "@/components/edit-cell-layout";
 
 /**
  * The click-to-edit cell, brought onto the tokens (campaign admin-window,
@@ -287,6 +292,80 @@ function focusIsAdrift(button: HTMLButtonElement | null): boolean {
 }
 
 /**
+ * `useLayoutEffect` in the browser, `useEffect` on the server.
+ *
+ * The status box is measured and corrected BEFORE the frame it appears in is
+ * painted (`fitStatusInsideClip`), which is what `useLayoutEffect` is for — but
+ * this is a `"use client"` module that Next still renders on the server, and
+ * React warns there that a layout effect does nothing. Neither effect runs
+ * during `renderToStaticMarkup` at all, so the choice is made once per
+ * environment at module scope, never per render: the hook React actually calls
+ * is the same one on every render of a given process, and the rules of hooks
+ * hold.
+ */
+const useIsomorphicLayoutEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+/**
+ * The content edges of the nearest ancestor that CLIPS `el` vertically, or
+ * `null` if nothing between it and the document does.
+ *
+ * Found by asking the boxes themselves rather than by naming a component:
+ * `DataTable`'s wrapper is the one that clips the record surface
+ * (`overflow-x-auto`, whose other axis computes to `auto`), but the cell is
+ * shared and a caller may put it inside any scroller — including one added
+ * later by a ticket that never reads this file.
+ *
+ * The edges are the PADDING box, not the border box: that is the edge overflow
+ * clips at, and `clientHeight` already excludes a horizontal scrollbar, so a
+ * table wide enough to show one (admin-window/BUG-0042) reports the room a
+ * reader actually has.
+ */
+function clippingBounds(el: HTMLElement): { top: number; bottom: number } | null {
+  for (let node = el.parentElement; node !== null; node = node.parentElement) {
+    // Anything but `visible` clips: `auto`, `scroll`, `hidden`, `clip`.
+    if (getComputedStyle(node).overflowY === "visible") continue;
+    const rect = node.getBoundingClientRect();
+    const top = rect.top + node.clientTop;
+    return { top, bottom: top + node.clientHeight };
+  }
+  return null;
+}
+
+/**
+ * Move the status box, if it needs it, so that all of it is inside the
+ * container that clips it — campaign admin-window/BUG-0104.
+ *
+ * The decision is `statusShift`'s and is pinned offline; this is the browser
+ * half, which is not observable in a tier with no jsdom (STACK.md §4). Three
+ * things about how it applies the answer are load-bearing:
+ *
+ *  - **It measures the box UNCORRECTED.** The transform is cleared before the
+ *    rect is read, so a second run answers about where the box really wants to
+ *    be rather than about where the first run put it.
+ *  - **It corrects with a transform.** Nothing in the flow moves, so the whole
+ *    of BUG-0086 — no part of this cell may move another row's control — is
+ *    untouched by the fix, and the box stays as inert to the pointer as it was.
+ *  - **A box that already fits is not touched at all** (`statusShift` answers
+ *    `0`), so every refusal QA measured inside the container is drawn at the
+ *    pixel it was measured at.
+ */
+function fitStatusInsideClip(el: HTMLElement | null): void {
+  if (el === null) return;
+  el.style.transform = "";
+  const clip = clippingBounds(el);
+  if (clip === null) return;
+  const rect = el.getBoundingClientRect();
+  const shift = statusShift({
+    boxTop: rect.top,
+    boxBottom: rect.bottom,
+    clipTop: clip.top,
+    clipBottom: clip.bottom,
+  });
+  if (shift !== 0) el.style.transform = `translateY(${shift}px)`;
+}
+
+/**
  * The line beside the field: what this edit is doing, or what it did —
  * campaign admin-window/BUG-0066.
  *
@@ -337,6 +416,16 @@ function focusIsAdrift(button: HTMLButtonElement | null): boolean {
  * from the row's bottom edge and extends over the lines above instead. The
  * caller decides, because the caller is what knows the order.
  *
+ * **And then it is MEASURED against the container, because no ordinal rule can
+ * be** (`statusShift`, campaign admin-window/BUG-0104). A box overflows because
+ * it is taller than the room below its own row, and its height is the
+ * database's sentence: QA measured the same refusal drawn 61px outside the
+ * container on the SECOND-to-last field, which `statusGrowth` correctly tells
+ * `down`. So the anchor decides the direction and a measured correction — `0`
+ * for every box that already fits — decides how far the box must move to be
+ * read in full. It is applied as a transform, so nothing in any row's flow
+ * moves and BUG-0086 is paid nothing for it.
+ *
  * It is positioned against the cell's own `relative` box, so it renders inside
  * `EditableCell` and nowhere else.
  */
@@ -353,6 +442,33 @@ export function EditStatus({
    */
   growth?: StatusGrowth;
 }) {
+  const boxRef = useRef<HTMLSpanElement>(null);
+  const message = status.kind === "failed" ? status.message : null;
+
+  /**
+   * ...and then it is moved, if it must be, to where all of it is readable —
+   * campaign admin-window/BUG-0104.
+   *
+   * The anchor above is ordinal and the box's height is the database's
+   * sentence, so an anchor alone cannot know whether this box clears the
+   * container: on the second-to-last of six fields the 23502 refusal is 120px
+   * tall with 62px of room below its own row, and it was drawn 61px outside.
+   * The correction is measured, not derived (`fitStatusInsideClip`), and it is
+   * `0` for every box that already fits.
+   *
+   * The dependencies are the three things that change the box's geometry: what
+   * kind of status it is, the words a refusal carries (the height IS those
+   * words), and which edge it hangs from. A window resize moves the container
+   * under a refusal that is already on screen — a refusal stands until the
+   * operator reopens the cell, so that is a real state and not a transient one.
+   */
+  useIsomorphicLayoutEffect(() => {
+    const refit = () => fitStatusInsideClip(boxRef.current);
+    refit();
+    window.addEventListener("resize", refit);
+    return () => window.removeEventListener("resize", refit);
+  }, [status.kind, message, growth]);
+
   // `top-0`: the box's top edge on the row's, extending downward over the
   // lines below. `bottom-0`: its bottom edge on the row's, extending upward
   // over the lines above — the last line's answer, because what is below it is
@@ -361,13 +477,13 @@ export function EditStatus({
   switch (status.kind) {
     case "saving":
       return (
-        <span className={cx(box, "type-data text-ink-secondary")} role="status">
+        <span ref={boxRef} className={cx(box, "type-data text-ink-secondary")} role="status">
           saving…
         </span>
       );
     case "saved":
       return (
-        <span className={cx(box, "type-data text-healthy")} role="status">
+        <span ref={boxRef} className={cx(box, "type-data text-healthy")} role="status">
           saved
         </span>
       );
@@ -381,6 +497,7 @@ export function EditStatus({
         // utilities of equal specificity, so which one won would be decided by
         // the order Tailwind emitted them in (`app/globals.css`).
         <span
+          ref={boxRef}
           className={cx(box, "flex flex-col gap-0.5 text-broken")}
           role="alert"
         >

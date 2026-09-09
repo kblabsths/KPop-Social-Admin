@@ -13,7 +13,9 @@ import {
   cellLayout,
   hintSide,
   occupiesFlow,
+  type StatusBounds,
   statusGrowth,
+  statusShift,
 } from "@/components/edit-cell-layout";
 import {
   type EditEnding,
@@ -1564,6 +1566,106 @@ describe("the status hangs over a line that is there", () => {
     }) as ReactElement<Record<string, unknown>>;
     expect(editor.props.statusGrowth).toEqual("up");
     expect(editor.props.hintSide).toEqual("above");
+  });
+});
+
+
+/* ── ...and is then MEASURED against the container it must stay inside ──
+ *
+ * campaign admin-window/BUG-0104. `statusGrowth` above is ordinal — it asks
+ * which line this is — but a box overflows because it is taller than the room
+ * below its OWN row, and its height is the database's sentence. QA measured
+ * the same defect one line up from the one BUG-0101 fixed (2026-09-08,
+ * production build against staging, 1440x900, both themes, `walk_sandbox` row
+ * …0001): clearing `is_flagged`, the second-to-last of six fields and
+ * correctly told `down`, drew the 23502 refusal from y 304 to y 424 against a
+ * container of y 143 → 363 — the mono half cut 39px mid-word, the app-voice
+ * half (404 → 422) painted nowhere at all.
+ *
+ * The DECISION the fix introduces is `statusShift`: given where the box would
+ * be drawn and where the container's edges are, how far must it move. It is
+ * pinned here on QA's own numbers, both ways — the three boxes measured INSIDE
+ * must not move by a pixel, and the one measured outside must move by exactly
+ * the overflow. The boxes themselves are a browser fact this tier cannot see
+ * (no jsdom, STACK.md §4), so the walk measures them and this pins the rule.
+ */
+
+/** The container QA measured every one of these boxes against. */
+const CLIP = { clipTop: 143, clipBottom: 363 } as const;
+
+/** Where a box ends up once `statusShift` has answered about it. */
+function corrected(box: StatusBounds): { top: number; bottom: number; shift: number } {
+  const shift = statusShift(box);
+  return { top: box.boxTop + shift, bottom: box.boxBottom + shift, shift };
+}
+
+describe("the status is measured against the container, not only anchored", () => {
+  it("moves a box that already fits by nothing at all", () => {
+    // The three refusals QA measured INSIDE the container, at the pixels it
+    // measured them at: `label` (23502, row 2), `tally` (22P02, row 4) and
+    // `observed_on` (22007, the last row, anchored `bottom-0` by
+    // `statusGrowth`). A correction that touched these would be a regression
+    // of what already works.
+    for (const [field, box] of [
+      ["label", { boxTop: 205, boxBottom: 325, ...CLIP }],
+      ["tally", { boxTop: 271, boxBottom: 327, ...CLIP }],
+      ["observed_on", { boxTop: 301, boxBottom: 357, ...CLIP }],
+    ] satisfies [string, StatusBounds][]) {
+      expect(statusShift(box), field).toEqual(0);
+    }
+  });
+
+  it("lifts a box that runs past the container's floor by exactly the overflow", () => {
+    // The defect, in QA's numbers: 424 against a floor of 363 is 61px outside,
+    // so the box moves 61px and lands ON the floor — not a pixel further, so
+    // the app-voice half is the last thing inside rather than the first thing
+    // out.
+    const flagged: StatusBounds = { boxTop: 304, boxBottom: 424, ...CLIP };
+    expect(statusShift(flagged)).toEqual(-61);
+    expect(corrected(flagged)).toEqual({ top: 243, bottom: 363, shift: -61 });
+  });
+
+  it("drops a box that runs past the container's ceiling by exactly the overflow", () => {
+    // The mirror case, which `statusGrowth`'s `up` can produce on a short
+    // record: a box hanging from the first line's bottom edge reaches over the
+    // table's own header. Same rule, other sign — a fix that only ever looked
+    // down would pass this ticket and leave the other half open.
+    const box: StatusBounds = { boxTop: 100, boxBottom: 200, ...CLIP };
+    expect(statusShift(box)).toEqual(43);
+    expect(corrected(box)).toEqual({ top: 143, bottom: 243, shift: 43 });
+  });
+
+  it("aligns a box taller than the whole container with its top edge", () => {
+    // Nothing can put 300px inside 220px. The refusal then reads from its
+    // FIRST word — the database's own sentence, which is the half that names
+    // what happened — and the container's scroll reaches the rest.
+    const box: StatusBounds = { boxTop: 304, boxBottom: 604, ...CLIP };
+    expect(corrected(box).top).toEqual(143);
+  });
+
+  it("leaves a box flush with either edge exactly where it is", () => {
+    // The boundary is inside, not outside: a box whose bottom is the floor is
+    // painted whole, and moving it would be motion for nothing.
+    expect(statusShift({ boxTop: 243, boxBottom: 363, ...CLIP })).toEqual(0);
+    expect(statusShift({ boxTop: 143, boxBottom: 263, ...CLIP })).toEqual(0);
+  });
+
+  it("ships no correction in the markup: the box is measured, never guessed", () => {
+    // The rule needs the box's real height, which is the refusal's words in
+    // the operator's own browser — so the correction is applied after
+    // measuring, and nothing here carries a baked-in offset that would be
+    // wrong for the next refusal. Every kind, both anchors.
+    for (const growth of ["down", "up"] satisfies StatusGrowth[]) {
+      for (const status of KINDS.filter((kind) => kind.kind !== "idle")) {
+        const $ = cheerio.load(statusMarkup(status, growth));
+        const rendered = $("[role='status'], [role='alert']");
+        expect(rendered.length, `${status.kind}/${growth}`).toBe(1);
+        expect(rendered.attr("style"), `${status.kind}/${growth}`).toBeUndefined();
+        expect(classesOf(statusMarkup(status, growth)), `${status.kind}/${growth}`).not.toContain(
+          "translate-y-0",
+        );
+      }
+    }
   });
 });
 
