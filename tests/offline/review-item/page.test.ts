@@ -2612,6 +2612,71 @@ describe("an evidence cell with nothing in it", () => {
     expect(cell.find('[aria-label="no value"]')).toHaveLength(1);
   });
 
+  /**
+   * STRICT PIN — admin-window/BUG-0134. The other half of BUG-0132's
+   * criterion 2, and it is not met (QA, attacking that ticket's landed fix on
+   * run/admin-window). `it.fails` is strict: the day the pair draws the app's
+   * absence element this test reddens with "Expect test to fail", and the
+   * reader comes here and drops the `.fails`.
+   *
+   * `contenders()` (src/components/review/shape-views.tsx:262) writes
+   * `tier: row.tier ?? EM_DASH` and `EvidenceClaim.tier` is `string`, so an
+   * unreadable registry reaches the pair as a BARE CHARACTER the caller typed,
+   * while the table cell for the same claim now draws `lib/format.ts`'s
+   * `nullDash()`. One page, one absent tier, two renderings again — the
+   * difference an operator who cannot see the ink actually gets is the
+   * accessible name: the table cell announces `no value`, the pair announces
+   * nothing at all, and `Column.cell`'s rule ("the cell never decides that
+   * itself") is broken one block above the cells that now obey it.
+   *
+   * Graded on the accessible name, never on ink: the app's absence element is
+   * the thing under test, and it is the same element `CardValue` in
+   * `src/components/evidence/evidence-pair.tsx` already draws for an absent
+   * VALUE — so the pair is inconsistent with itself inside one card.
+   *
+   * Second fixture (LESSONS 3): a fix that labelled every tier would redden
+   * the healthy leg below.
+   */
+  it.fails("says the pair's absent tier with the app's absence element too", async () => {
+    /** The pair's contender cards — where a claim's own tier is written. */
+    function contenderCards(markup: string) {
+      const $ = cheerio.load(markup);
+      return $("[data-pair]")
+        .find("div")
+        .toArray()
+        .map((node) => $(node))
+        .filter((card) => card.children("span").first().text().trim() === "contender");
+    }
+
+    // The registry refused, so this claim has no tier on either side.
+    const starved = await renderItem(
+      stuckScript({ [T.sources]: { error: tableNotInSchemaCache(T.sources) } }),
+      reviewItemEntityLink().review_item_id,
+    );
+    const starvedCards = contenderCards(starved);
+    expect(starvedCards, "the pair renders the claim").toHaveLength(1);
+    // What the table cell for the SAME claim does with the SAME absence.
+    expect(
+      cellOf(starved, "[data-tier-now]").find('[aria-label="no value"]'),
+      "the table cell",
+    ).toHaveLength(1);
+    expect(
+      starvedCards[0].find('[aria-label="no value"]'),
+      "the pair's absent tier",
+    ).toHaveLength(1);
+
+    // The other fixture: the registry answers, so nothing in that card is
+    // absent and the tier is the source's own word, verbatim.
+    const filled = await renderItem(stuckScript(), reviewItemEntityLink().review_item_id);
+    const filledCards = contenderCards(filled);
+    expect(filledCards).toHaveLength(1);
+    expect(filledCards[0].text()).toContain(BANDSINTOWN.tier);
+    expect(
+      filledCards[0].find('[aria-label="no value"]'),
+      "a card with nothing absent in it",
+    ).toHaveLength(0);
+  });
+
   it("leaves a cell whose value the app does hold exactly as it is", async () => {
     // The other fixture (LESSONS 3): a fix that dashed everything would pass
     // every assertion above.
