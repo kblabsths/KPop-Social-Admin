@@ -1,0 +1,32 @@
+{
+ "id": "BUG-0124",
+ "created": "2026-09-09T14:19:03Z",
+ "green": true,
+ "git_head": "fe245855f45288bc8580acfa09383e1870aac578",
+ "scope": [
+  "src/components/review/item-header.tsx",
+  "src/components/review/shape-views.tsx",
+  "src/app/queues/[reviewItemId]/page.tsx",
+  "tests/offline/review-item/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "b8f1e3ffc21ebb90a415b8befde109bc1656c82f3451cbbe1b01f9bc58a3141d",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "\n/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-8114/tests/offline/review-item/page.test.ts\n  1960:11  warning  '$' is assigned a value but never used  @typescript-eslint/no-unused-vars\n\n\u2716 1 problem (0 errors, 1 warning)\n\nnpm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review-item/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-8114\n\n \u2713 |offline| tests/offline/review-item/page.test.ts (101 tests) 570ms\n\n Test Files  1 passed (1)\n      Tests  101 passed (101)\n   Start at  07:19:01\n   Duration  1.62s (transform 334ms, setup 0ms, collect 598ms, tests 570ms, environment 0ms, prepare 150ms)\n\n(node:8158) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c '! grep -q \"Every record folded into\" src/components/review/shape-views.tsx'",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
