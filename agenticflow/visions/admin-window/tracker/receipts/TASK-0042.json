@@ -1,0 +1,31 @@
+{
+ "id": "TASK-0042",
+ "created": "2026-09-09T01:57:05Z",
+ "green": true,
+ "git_head": "4f9a69d9bae51643d3a3c8b380268286586b655a",
+ "scope": [
+  "src/lib/verdict/decision.ts",
+  "tests/offline/verdict/decision.test.ts",
+  "tests/offline/db/layering.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "ec70fa944d87b4307e7d24378b42cf570f9a5dc013024f72b75ca0fd99718787",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/verdict/decision.test.ts tests/offline/db/layering.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-42442\n\n \u2713 |offline| tests/offline/verdict/decision.test.ts (44 tests) 16ms\n \u2713 |offline| tests/offline/db/layering.test.ts (26 tests) 781ms\n\n Test Files  2 passed (2)\n      Tests  70 passed (70)\n   Start at  18:57:03\n   Duration  1.42s (transform 128ms, setup 0ms, collect 180ms, tests 798ms, environment 0ms, prepare 405ms)\n\n(node:42978) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c 'test \"$(grep -E \"^import \" src/lib/verdict/decision.ts | wc -l)\" -eq 0'",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
