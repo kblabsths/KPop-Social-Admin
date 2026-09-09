@@ -749,7 +749,7 @@ describe("the observation leg", () => {
    * reader to the ticket. No class literal and no attribute value is typed
    * here: the isolation marker is read off the primitive's own render.
    */
-  it.fails(
+  it(
     "renders the log's machine values through the one identifier primitive, like the run table's cells",
     async () => {
       const markup = await renderQueues(scriptOf([SETTLEMENT], []));
@@ -776,6 +776,83 @@ describe("the observation leg", () => {
       ).toBe(primitive.attr("dir"));
     },
   );
+
+  /**
+   * ...and the isolation that swap bought is graded on the input it exists for
+   * (admin-window/BUG-0150; the same grading BUG-0148 got one tab over, in
+   * `tests/offline/review-item/verdict-inline.test.ts`).
+   *
+   * `verdicts.observation_id` is text this app did not author, and ARCHITECTURE
+   * §7 (Common violations row 15) says such text reaches the app's surfaces
+   * inside its own bidi-isolated box, never by scrubbing. So an unterminated
+   * RIGHT-TO-LEFT OVERRIDE arrives on the id and:
+   *
+   *  - the id still reaches the screen and its hook VERBATIM — isolation
+   *    reorders nothing and removes nothing, so an operator can still paste it
+   *    into a query;
+   *  - the override reaches no OTHER cell of its own row: every sibling cell
+   *    renders byte-identical to the same row carrying a clean id, and the
+   *    override character itself is inside exactly one `td`; and
+   *  - the isolated boxes in the whole log are exactly the row's two machine
+   *    values. The table's own column labels and the dash-meaning line sit
+   *    outside them, which is the half a component that isolated everything
+   *    would also pass.
+   *
+   * Both machine values are read off the fixture and the isolation marker off
+   * the primitive's own render: no literal is typed here.
+   */
+  it("holds a bidi-override observation id inside its own cell, verbatim, and isolates none of the table's own words", async () => {
+    const RLO = "\u202E";
+    const hostile = `01920000-0000-7000-8000${RLO}-000000000501`;
+    // Observations empty, so the leg resolves nothing: this is the UNLINKED
+    // arm, the one the fix changed.
+    const markup = await renderQueues(
+      scriptOf([{ ...SETTLEMENT, observation_id: hostile }], []),
+    );
+    const clean = await renderQueues(scriptOf([SETTLEMENT], []));
+    const $ = cheerio.load(markup);
+    const primitive = cheerio.load(render(h(Identifier, { children: hostile })))("span");
+
+    const shown = $(`${LOG} [data-verdict-observation]`);
+    expect(shown, "the hostile id is on screen at all").toHaveLength(1);
+    expect(shown.is("a"), "and unlinked, which is the arm under test").toBe(false);
+    // Verbatim, on screen and on the hook an oracle addresses it by.
+    expect(shown.text()).toBe(hostile);
+    expect(shown.attr("data-verdict-observation")).toBe(hostile);
+    // Isolated — non-vacuously: the primitive really does mark its own box.
+    expect(primitive.attr("dir"), "the primitive isolates its own box").toBeDefined();
+    expect(shown.attr("dir"), "so the id the database produced is isolated").toBe(
+      primitive.attr("dir"),
+    );
+
+    // The box it is isolated in is its OWN CELL: the override is inside exactly
+    // one `td` of the row, and every other cell renders what it renders when
+    // the id is clean.
+    const row = shown.closest("tr");
+    const cells = row.find("td");
+    const carrying = cells
+      .toArray()
+      .map((td, index) => ($(td).html()?.includes(RLO) === true ? index : -1))
+      .filter((index) => index !== -1);
+    expect(carrying, "the override sits in the observation cell and nowhere else").toEqual([
+      OBSERVATION,
+    ]);
+    const before = cellsOf(clean, SETTLEMENT.action).cells;
+    const after = cellsOf(markup, SETTLEMENT.action).cells;
+    expect(after.length).toBe(before.length);
+    for (const [index, text] of before.entries()) {
+      if (index === OBSERVATION) continue;
+      expect(after[index], `cell ${index} is untouched by the override`).toBe(text);
+    }
+
+    // ...and nothing the TABLE wrote is inside an isolated box: the isolated
+    // set is exactly the row's two machine values.
+    const isolated = $(LOG)
+      .find("[dir]")
+      .toArray()
+      .map((element) => $(element).text());
+    expect(isolated.slice().sort()).toEqual([SETTLEMENT.action, hostile].sort());
+  });
 
   it("keeps every verdict, and names its own object, when observations refuses", async () => {
     const markup = await renderQueues({
