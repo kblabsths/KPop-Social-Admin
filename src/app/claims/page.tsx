@@ -20,6 +20,7 @@ import { IN_PAGE_LINK } from "@/components/cycles/links";
 import {
   DroppedParamsLine,
   Empty,
+  Identifier,
   NARROWED_BY_FILTERS,
   Page,
   Section,
@@ -447,9 +448,9 @@ function PendingClaimsGauge({ gauge }: { gauge: PendingClaims }) {
         }}
       />
       <p className="type-body text-ink-secondary">
-        The per-source <span className="type-data text-ink">awaiting_row</span>{" "}
+        The per-source <Identifier>awaiting_row</Identifier>{" "}
         trend lives on Sources, and it is drawn without its threshold line: the{" "}
-        <span className="type-data text-ink">stuck_pattern</span>{" "}
+        <Identifier>stuck_pattern</Identifier>{" "}
         dial is a source-registry value only the scraper repo holds, and where
         Admin may read it is an open question. No default is substituted here.
       </p>

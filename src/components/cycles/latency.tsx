@@ -1,5 +1,5 @@
 import { Distribution, GaugeCard, TrendTable, spreadRows, type EmptyWords } from "@/components/gauges";
-import { WindowLine } from "@/components/ui";
+import { Identifier, WindowLine } from "@/components/ui";
 import { counted, duration } from "@/lib/format";
 import type { DomainLatency, ResolutionLatency } from "@/lib/gauges/resolution-latency";
 
@@ -115,7 +115,7 @@ export function LatencySection({ latency }: { latency: ResolutionLatency }) {
       />
       <p className="type-body text-ink-secondary">
         The wait is from the claim&rsquo;s{" "}
-        <span className="type-data text-ink">observed_at</span>{" "}
+        <Identifier>observed_at</Identifier>{" "}
         to the instant it became canonical. A decision a human made rather than
         a claim names no
         claim, so it carries no wait: those are counted on their own and are in

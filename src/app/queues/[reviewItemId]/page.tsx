@@ -17,7 +17,15 @@ import {
   NOTICE_BY_SHAPE,
   type CloseVerdict,
 } from "@/components/review/close/slot";
-import { ARRIVES_WITH, Empty, Page, RETRY, Section, StateOf } from "@/components/ui";
+import {
+  ARRIVES_WITH,
+  Empty,
+  Identifier,
+  Page,
+  RETRY,
+  Section,
+  StateOf,
+} from "@/components/ui";
 import { claimsHref, sourceHref } from "@/lib/claims/filters";
 import { readPendingClaims, type PendingClaimRow } from "@/lib/db/claims";
 import { readLinkChoices } from "@/lib/db/records";
@@ -152,31 +160,6 @@ const FOUND_BY =
   "Queues lists the items this database holds; check the id in the address bar.";
 
 /**
- * The table's name, in the face the machine's own words get on this page —
- * campaign admin-window/BUG-0121.
- *
- * `review_items` is an identifier the database produced, so wherever this
- * page's prose says it, it is drawn at the data step in mono, verbatim, case
- * and underscore intact — the same face the id echoed above the card is
- * already drawn in, and the same span `NotProvisioned`
- * (`src/components/ui/not-provisioned.tsx`) and the record page's own
- * `TableName` emit (LOOK_AND_FEEL Voice bar 5). Before this, both empty cards
- * said it in the app's own prose face, one line under that id.
- *
- * File-local on purpose, exactly as `TableName` is on the record page: the
- * `type-data text-ink` identifier-in-prose span is hand-spelled in ~20 places
- * across `src/`, and lifting it into a shared primitive is a ticket of its
- * own, not a change made in passing here (admin-window/BUG-0120's handoff).
- *
- * Only the IDENTIFIER is wrapped. "review item" — two words, the app's own
- * noun for the thing — is prose and stays sans, which is why the cards' first
- * line ("No review item at this address") is untouched.
- */
-function ReviewItems() {
-  return <span className="type-data text-ink">{T.reviewItems}</span>;
-}
-
-/**
  * What answers a queues URL whose segment is not a review-item id at all —
  * campaign admin-window/BUG-0076.
  *
@@ -208,7 +191,7 @@ function ReviewItems() {
 const NOT_AN_ID = (
   <>
     {`The address bar does not hold an id: `}
-    <ReviewItems />
+    <Identifier>{T.reviewItems}</Identifier>
     {` ids are uuids, 32 ` +
       `hexadecimal digits usually written in five hyphenated groups. `}
     {FOUND_BY}
@@ -595,9 +578,9 @@ export default async function ReviewItemPage({
   // whether or not a read happened at all: an operator looking at a refusal
   // still needs to know which item they opened.
   const identity = (
-    <p data-review-item={reviewItemId} className="type-data text-ink-secondary">
+    <Identifier muted data-review-item={reviewItemId}>
       {reviewItemId}
-    </p>
+    </Identifier>
   );
 
   // The segment is not an id at all, which is a question about the REQUEST and
@@ -642,7 +625,7 @@ export default async function ReviewItemPage({
           holds={
             <>
               {`row with that id in `}
-              <ReviewItems />
+              <Identifier>{T.reviewItems}</Identifier>
             </>
           }
           filledBy={FOUND_BY}

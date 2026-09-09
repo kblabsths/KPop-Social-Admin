@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { orDash, relativeAge, type Timestamp } from "@/lib/format";
 import { cx } from "@/components/ui/cx";
+import { DATA_MUTED, Identifier } from "@/components/ui/identifier";
 
 /**
  * The evidence pair — this app's signature block.
@@ -45,7 +46,7 @@ export type EvidenceCanonical = {
 
 function CardValue({ value }: { value: string | null }) {
   return (
-    <span className="type-data text-ink">{orDash(value)}</span>
+    <Identifier>{orDash(value)}</Identifier>
   );
 }
 
@@ -70,7 +71,7 @@ export function EvidencePair({
           >
             <span className="type-micro text-ink-secondary">contender</span>
             <CardValue value={claim.value} />
-            <span className="type-data text-ink-secondary">
+            <span className={DATA_MUTED}>
               {claim.source} · {orDash(claim.tier)} ·{" "}
               <span title={age.title || undefined}>{orDash(age.text)}</span>
             </span>
@@ -86,7 +87,7 @@ export function EvidencePair({
       >
         <span className="type-micro text-ink">current</span>
         <CardValue value={canonical.value} />
-        <span className="type-data text-ink-secondary">{canonical.provenance}</span>
+        <span className={DATA_MUTED}>{canonical.provenance}</span>
         {canonical.action ? <div className="flex gap-2 pt-1">{canonical.action}</div> : null}
       </div>
     </div>

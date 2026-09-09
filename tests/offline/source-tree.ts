@@ -186,6 +186,13 @@ export function codeText(file: string, base: string = repoRoot): string {
  * are correct typography, and a space before punctuation would be a defect of
  * its own.
  *
+ * **`</Identifier>` is one of the closing tags this reads** (campaign
+ * admin-window/DEBT-0011). The identifier-in-prose span is the element this
+ * defect keeps happening around — every hit BUG-0045 found was one — and the
+ * sweep that gave it a primitive renamed 48 of those closing tags. A tag list
+ * that knew only the intrinsic elements would have gone quietly blind on the
+ * exact sites the rule was earned on.
+ *
  * Each hit is returned as `line: text` so a failure names the site.
  */
 export function implicitInterElementSpaces(
@@ -211,7 +218,7 @@ export function implicitInterElementSpacesIn(text: string): string[] {
       if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
         return false;
       }
-      return /<\/(?:span|a|b|em|strong|code)> +[A-Za-z0-9]/.test(line);
+      return /<\/(?:span|a|b|em|strong|code|Identifier)> +[A-Za-z0-9]/.test(line);
     })
     .map(({ line, number }) => `${number}: ${line.trim()}`);
 }

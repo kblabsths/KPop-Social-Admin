@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { StateOf } from "@/components/ui";
+import { Identifier, StateOf } from "@/components/ui";
 import type { ReviewItemRow } from "@/lib/review/shapes";
 import { factKey, isReferenceField, type VerdictValue } from "@/lib/verdict/decision";
 import type { ActionSpec, ShapeActionsInput } from "./actions";
@@ -207,7 +207,7 @@ export function linkNotice({ item, choices = null }: ShapeActionsInput): ReactNo
       <p className="type-body text-ink-secondary" data-close-notice={hook}>
         {named === null ? null : (
           <>
-            <span className="type-data text-ink">{named}</span>{" "}
+            <Identifier>{named}</Identifier>{" "}
           </>
         )}
         names no record this app can link: an entity_link item is opened before
@@ -224,7 +224,7 @@ export function linkNotice({ item, choices = null }: ShapeActionsInput): ReactNo
   // not a refusal either, so it is neither of those two renderings.
   return (
     <p className="type-body text-ink-secondary" data-close-notice={hook}>
-      <span className="type-data text-ink">{factKey(fact.domain, fact.field)}</span>{" "}
+      <Identifier>{factKey(fact.domain, fact.field)}</Identifier>{" "}
       points at another record, and this app has no search for the rows behind
       it, so the picker is not offered here. Settling leaves the item held.
     </p>

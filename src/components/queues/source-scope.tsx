@@ -1,4 +1,5 @@
 import { IN_PAGE_LINK } from "@/components/cycles/links";
+import { Identifier } from "@/components/ui";
 
 /**
  * The scope this page is under when a SOURCE narrows it, and the way back out
@@ -45,9 +46,9 @@ export function SourceScope({
   return (
     <p data-scope={facet} className="type-body text-ink-secondary">
       Showing only the review items of source{" "}
-      <span data-scope-value={sourceId} className="type-data text-ink">
+      <Identifier data-scope-value={sourceId}>
         {sourceId}
-      </span>
+      </Identifier>
       .{" "}
       <a href={clearHref} className={IN_PAGE_LINK}>
         Show every source

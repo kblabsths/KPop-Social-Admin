@@ -87,11 +87,19 @@ describe("inter-element spaces in every file the app ships", () => {
     expect(
       implicitInterElementSpacesIn('  <span className="type-data">source</span> is the run'),
     ).toEqual(['1: <span className="type-data">source</span> is the run']);
+    // ...and the same spelling around the identifier PRIMITIVE, which is what
+    // 48 of those spans became (admin-window/DEBT-0011). A tag list that knew
+    // only the intrinsic elements would pass this file while seeing nothing.
+    expect(implicitInterElementSpacesIn("  <Identifier>source</Identifier> is the run")).toEqual([
+      "1: <Identifier>source</Identifier> is the run",
+    ]);
     // Must NOT flag — or the assertion over the tree below is a formality:
     // an explicit expression, correct typography, and a comment that quotes
     // the defect while documenting it.
     for (const clean of [
       '<span className="type-data">source</span>{" "}',
+      '<Identifier>source</Identifier>{" "}',
+      "<Identifier>source</Identifier>, and the run",
       "<span>source</span>, and the run",
       "<span>source</span>.",
       "<span>source</span> — the run",

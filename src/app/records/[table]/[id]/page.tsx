@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { recordFields, type WriteAccess } from "@/components/records/fields";
 import { RecordFields } from "@/components/records/record-fields";
-import { Empty, Page, Section, StateOf } from "@/components/ui";
+import { Empty, Identifier, Page, Section, StateOf } from "@/components/ui";
 import {
   readRecord,
   readReferenceChoices,
@@ -249,33 +249,11 @@ function DrawnColumns({
   return (
     <p data-note="drawn-columns" className="type-body text-ink-secondary">
       {`These ${counted(drawn, "column")} are the ones Admin works with for `}
-      <TableName config={config} />
+      <Identifier>{config.table}</Identifier>
       {`: a column with no line here is one this page does not draw, and its ` +
         `absence says nothing about what the database holds.`}
     </p>
   );
-}
-
-/**
- * The table's name, drawn as the machine's word — campaign
- * admin-window/BUG-0120.
- *
- * One spelling, in one place, for every sentence on this route that says the
- * name: the heading gets it from `Page`, and the regime note and both empty
- * cards get it from here. It is the app's EXISTING identifier-in-prose span
- * (`NotProvisioned`, `src/components/ui/not-provisioned.tsx`) and not a new
- * one — mono at the data step, primary ink, verbatim, case and underscore
- * intact — so a name reads the same whichever of the four data-surface states
- * happens to be drawing it (LOOK_AND_FEEL Voice bar 5). Before this, the
- * heading and the note wrapped it and the two empty cards said it in the
- * app's own prose face, four times on one screen.
- *
- * Only the IDENTIFIER is wrapped. "Browse lists recent events, and an event's
- * record links to its venue" says `events` as the app's own plural noun —
- * prose, not a machine word — and stays sans.
- */
-function TableName({ config }: { config: TableEditConfig }) {
-  return <span className="type-data text-ink">{config.table}</span>;
 }
 
 /**
@@ -308,7 +286,7 @@ function foundBy(config: TableEditConfig): ReactNode {
   return writePathFor(config.regime) === "direct" ? (
     <>
       {`Admin has no `}
-      <TableName config={config} />
+      <Identifier>{config.table}</Identifier>
       {` listing: such a record is reached by its ` +
         `id alone. Check the id in the address bar, or take one from the ` +
         `database.`}
@@ -363,7 +341,7 @@ function notAnId(config: TableEditConfig): ReactNode {
   return (
     <>
       {`The address bar does not hold an id: `}
-      <TableName config={config} />
+      <Identifier>{config.table}</Identifier>
       {` ids are uuids, 32 ` +
         `hexadecimal digits usually written in five hyphenated groups. `}
       {foundBy(config)}
@@ -403,7 +381,7 @@ function RecordFrame({
       {/* The record's identity, rendered whatever the read did: an operator
           looking at a failed read still needs to know which row they asked
           for. Mono, because it is a value the database produced. */}
-      <p className="type-data text-ink-secondary">{id}</p>
+      <Identifier muted>{id}</Identifier>
       {/* The one surface on this route, named so a live oracle can address it
           by NAME rather than by position (ARCHITECTURE §10: "every surface a
           live test grades carries `data-surface`, unique on the page"). Every
@@ -418,10 +396,11 @@ function RecordFrame({
             everything the app wrote about it stays body sans in secondary ink.
             Every name of that kind on this screen — this one, the heading's,
             the not-provisioned card's and, since admin-window/BUG-0120, both
-            empty cards' — now reads alike, from `TableName`
-            (LOOK_AND_FEEL Voice bar 5; admin-window/BUG-0112). */}
+            empty cards' — now reads alike, from the shared `Identifier`
+            primitive (LOOK_AND_FEEL Voice bar 5; admin-window/BUG-0112,
+            admin-window/DEBT-0011). */}
         <p data-note="regime" className="type-body text-ink-secondary">
-          <TableName config={config} /> {regimeNote(config)}
+          <Identifier>{config.table}</Identifier> {regimeNote(config)}
         </p>
         {children}
       </Section>
@@ -458,7 +437,7 @@ export default async function RecordPage({
         <Empty
           holds={
             <>
-              <TableName config={config} />
+              <Identifier>{config.table}</Identifier>
               {` record at this address`}
             </>
           }
@@ -525,7 +504,7 @@ export default async function RecordPage({
       <Empty
         holds={
           <>
-            <TableName config={config} />
+            <Identifier>{config.table}</Identifier>
             {` record with that id`}
           </>
         }

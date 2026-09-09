@@ -11,7 +11,7 @@ import {
   SourceChips,
   sourceColumns,
 } from "@/components/sources";
-import { DataTable, Empty, Page, Section, StateOf } from "@/components/ui";
+import { DataTable, Empty, Identifier, Page, Section, StateOf } from "@/components/ui";
 import { canonicalRecordId } from "@/lib/records/id";
 import {
   listSources,
@@ -238,7 +238,7 @@ export default async function SourcesPage({
               its description, the domains it feeds, its dials and its legal
               status — lives in the scraper repo and is not read here. Tier is
               the source&rsquo;s current tier, which drifts. Last run is the
-              newest run whose <span className="type-data text-ink">source</span>{" "}
+              newest run whose <Identifier>source</Identifier>{" "}
               name matches this row; a source that has never run shows no run.
             </p>
           </>

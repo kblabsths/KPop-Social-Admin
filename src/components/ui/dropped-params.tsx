@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { counted } from "@/lib/format";
 import type { DroppedParams } from "@/lib/url/dropped-params";
+import { Identifier } from "./identifier";
 
 /**
  * The one line beside a filter bar that says what the URL asked for and the
@@ -48,13 +49,15 @@ export function DroppedParamsLine({ dropped }: { dropped: DroppedParams }) {
   const total = dropped.named.length + dropped.withheld;
   if (total === 0) return null;
   const items: ReactNode[] = dropped.named.map((name) => (
-    // `dir` is a belt, not the fix: HTML's own UA rule isolates a `dir`-bearing
-    // inline box, so anything it held could reorder only itself. What keeps
-    // the sentence in the order this page wrote it is the allowlist upstream
-    // — by the time a name is here it is ASCII with no bidi semantics at all.
-    <span key={name} dir="ltr" data-dropped-param={name} className="type-data text-ink">
+    // The isolation is a belt, not the fix, and it now comes from the primitive
+    // rather than from a `dir` spelled here (admin-window/DEBT-0011): HTML's own
+    // UA rule isolates a `dir`-bearing inline box, so anything the name held
+    // could reorder only itself. What keeps the sentence in the order this page
+    // wrote it is the allowlist upstream — by the time a name is here it is
+    // ASCII with no bidi semantics at all.
+    <Identifier key={name} data-dropped-param={name}>
       {name}
-    </span>
+    </Identifier>
   ));
   if (dropped.withheld > 0) {
     // Counted, not named: the word itself is one the app may not put on

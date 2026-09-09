@@ -12,6 +12,7 @@ import {
 import {
   DataTable,
   Empty,
+  Identifier,
   type MicroLabel,
   type ReadWindow,
   WindowLine,
@@ -177,9 +178,9 @@ function Unresolved({ ids }: { ids: readonly string[] }) {
       {count(ids.length)} of this item&rsquo;s evidence ids{" "}
       {pluralise(ids.length, "names", "name")} no claim this database holds:{" "}
       {ids.map((id) => (
-        <span key={id} data-unresolved={id} className="type-data text-ink">
+        <Identifier key={id} data-unresolved={id}>
           {id}{" "}
-        </span>
+        </Identifier>
       ))}
     </p>
   );

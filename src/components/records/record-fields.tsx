@@ -1,4 +1,4 @@
-import { DataTable, type Column } from "@/components/ui";
+import { DataTable, type Column, Identifier } from "@/components/ui";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { hintSide, statusGrowth } from "@/components/edit-cell-layout";
 import { relativeAge } from "@/lib/format";
@@ -56,7 +56,7 @@ function ProvenanceLine({ fact }: { fact: FieldProvenance }) {
         : fact.source;
   return (
     <span className="type-body text-ink-secondary">
-      <span className="type-data text-ink">{authority}</span>, applied{" "}
+      <Identifier>{authority}</Identifier>, applied{" "}
       <span title={age.title || undefined}>{age.text}</span>
     </span>
   );
@@ -89,7 +89,7 @@ function ReferenceValue({ reference }: { reference: FieldReference }) {
         {reference.name ?? reference.id}
       </a>
       {reference.name === null ? null : (
-        <span className="type-data text-ink-secondary">{reference.id}</span>
+        <Identifier muted>{reference.id}</Identifier>
       )}
     </span>
   );
