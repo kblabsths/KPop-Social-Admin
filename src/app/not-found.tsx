@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { Empty, Page } from "@/components/ui";
 
 /**
@@ -30,7 +31,11 @@ import { Empty, Page } from "@/components/ui";
  * the set has none that is a link with a label: `Chip` is a filter and
  * `StatCard` is a number. It is `next/link` (the shell's idiom, and what
  * `@next/next/no-html-link-for-pages` requires of a literal internal href),
- * carrying palette and type tokens like everything else.
+ * carrying palette and type tokens like everything else — and it wears the
+ * app's one link spelling by IMPORTING it (`components/cycles/links.ts`)
+ * rather than retyping the two classes, which is a second answer to "does this
+ * text go somewhere" waiting for the first one to change
+ * (admin-window/BUG-0117).
  */
 export default function NotFound() {
   return (
@@ -40,7 +45,7 @@ export default function NotFound() {
         filledBy="Analytics, Database and Data management were retired with the old dashboard, and nothing replaced their URLs. The window is the six pages in the sidebar."
       />
       <p className="type-body text-ink">
-        <Link href="/" className="text-accent underline">
+        <Link href="/" className={IN_PAGE_LINK}>
           Open the Dashboard
         </Link>
       </p>

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { Empty, Eyebrow, StateOf, type UnavailableRead } from "@/components/ui";
 import { EM_DASH, clamped, isAbsent, orDash, relativeAge } from "@/lib/format";
 import type { ReviewItemRow, Shape } from "@/lib/review/shapes";
@@ -313,7 +314,7 @@ function ItemVerdictBlock({ verdict }: { verdict: InlineVerdict }) {
           <a
             href={verdict.observationHref}
             data-verdict-observation={observation}
-            className="type-data text-accent underline"
+            className={`type-data ${IN_PAGE_LINK}`}
           >
             {observation}
           </a>

@@ -1,3 +1,4 @@
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { Badge } from "@/components/ui";
 import { count, relativeAge } from "@/lib/format";
 import type { Kind, ReviewItemRow, Shape } from "@/lib/review/shapes";
@@ -22,6 +23,14 @@ import type { Kind, ReviewItemRow, Shape } from "@/lib/review/shapes";
  *
  * A pure component: plain props, no fetching (ARCHITECTURE.md §4 rule 1).
  * Every control in this markup is a link — nothing here settles anything.
+ *
+ * Those links carry the app's ONE link spelling, imported from
+ * `components/cycles/links.ts` rather than retyped here, and the whole of each
+ * link's words are drawn in it: `value` keeps its mono FACE and takes the
+ * link's INK, because a descendant's `text-*` outranks the ink the anchor
+ * inherits down to it, so `text-ink-secondary` on the value drew half of every
+ * out-link in the ink of a value that goes nowhere (admin-window/BUG-0117 —
+ * the mechanism of BUG-0113 without the chip's fill over the underline).
  */
 
 /** One way out of this item: where it goes, and what it opens. */
@@ -95,11 +104,11 @@ export function ItemHeader({
               key={link.href}
               href={link.href}
               data-out={link.href}
-              className="text-accent underline"
+              className={IN_PAGE_LINK}
             >
               {link.label}
               {link.value === undefined ? null : (
-                <span className="type-data text-ink-secondary"> {link.value}</span>
+                <span className="type-data"> {link.value}</span>
               )}
             </a>
           ))}
