@@ -6,6 +6,7 @@ import {
   VerdictLog,
   type VerdictLine,
 } from "@/components/queues";
+import { NOTHING_IN_QUEUE } from "@/components/queues/surfaces";
 import {
   Distribution,
   GaugeCard,
@@ -168,19 +169,13 @@ const OPEN_LABEL: Record<Kind, string> = {
   signal: "Open signals",
 };
 
-/** What an empty queue holds and what fills it — never a bare "No data". */
-const NOTHING_HERE: Record<Kind, EmptyWords> = {
-  decision: {
-    holds: "decisions waiting",
-    filledBy:
-      "The resolver files one when sources disagree about a fact, or when a record cannot link.",
-  },
-  signal: {
-    holds: "signals",
-    filledBy:
-      "The resolver files one when a source crosses its stuck-record threshold.",
-  },
-};
+/*
+ * What an empty queue holds and what fills it lives in
+ * `components/queues/surfaces.ts` now, because the Dashboard's zero attention
+ * card says the same sentence about what fills a queue and may not keep a
+ * second copy of it (campaign admin-window/BUG-0125). This page's use of it is
+ * unchanged: `NOTHING_IN_QUEUE[kind]` is the old `NOTHING_HERE[kind]`.
+ */
 
 /** The emptiness that has a REASON: the filters, not the database. */
 const NOTHING_MATCHED: EmptyWords = {
@@ -297,7 +292,7 @@ function Queue({
   // disappears at zero cannot be scanned in the same place every morning
   // (admin-window/BUG-0027; LOOK_AND_FEEL bar 1 and "counts sit in fixed
   // positions"). The `Empty` card is untouched and stays where rows go.
-  const words = narrowed ? NOTHING_MATCHED : NOTHING_HERE[kind];
+  const words = narrowed ? NOTHING_MATCHED : NOTHING_IN_QUEUE[kind];
   return (
     <QueueList
       {...shared}

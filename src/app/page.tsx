@@ -14,6 +14,7 @@ import {
   type Column,
 } from "@/components/ui";
 import { OUTCOME_BADGE_TONE, outcomeTone } from "@/components/cycles";
+import { NOTHING_IN_QUEUE } from "@/components/queues/surfaces";
 import { IN_PAGE_LINK, LINK_DECORATION } from "@/components/cycles/links";
 import { STATE_WORD, cycleState, type CycleState } from "@/lib/cycles/state";
 import {
@@ -160,11 +161,53 @@ const OPEN_LABEL: Record<Kind, string> = {
   signal: "Open signals",
 };
 
-/** How each kind's empty count reads, and what fills it. */
+/**
+ * What a ZERO on each card holds — the scope of the count above it, said in
+ * the app's words, and nothing wider than the read that produced it.
+ *
+ * The read behind these cards is one table's OPEN rows (`review_items`, the
+ * kind derived in code), so the sentence is about this queue and this scope
+ * and stops there. It used to read "nothing open — no question is waiting on a
+ * verdict" / "nothing open — nothing is reporting a breakage": both restated
+ * the emptiness twice and the first restated it as a claim about the whole
+ * pipeline, which a stranger reasonably read as "nothing needs a human" on a
+ * morning when 877 claims had been held for six days and 108 performers were
+ * waiting on a link nobody can make (admin-window/BUG-0125, the user-sim walk
+ * of 2026-09-09). The Dashboard reads no claim, no cycle and no fact here, so
+ * it may say nothing about them.
+ *
+ * `open` is in the sentence because it is in the count: the card labelled
+ * "Open decisions" counts open items alone — settled ones are browsable on
+ * `/queues` — and a bare "No decisions" would be a claim about a set this read
+ * never saw. That is why the scope word is this page's and not
+ * `NOTHING_IN_QUEUE[kind].holds`, which stands for the queue page's own
+ * rendered set (open and settled, after its filters).
+ */
 const NOTHING_OPEN: Record<Kind, string> = {
-  decision: "nothing open — no question is waiting on a verdict",
-  signal: "nothing open — nothing is reporting a breakage",
+  decision: "No open decisions",
+  signal: "No open signals",
 };
+
+/**
+ * A zero's whole sub-line: what this card holds, then the ONE thing that puts
+ * a row in it (LOOK_AND_FEEL Voice bar 4 — "every empty state names what the
+ * surface holds and what fills it", whose worked example is this card).
+ *
+ * The filler clause is imported, never written here: it is the sentence
+ * `/queues`' own empty card says about the same queue
+ * (`components/queues/surfaces.ts`), so the two surfaces cannot come to
+ * disagree about what files a decision — one concept, one spelling, the way
+ * `TONE_INK` is one answer about severity ink. A reader who learns here that
+ * the RESOLVER files these learns for free that an empty queue means the
+ * resolver has not filed one, not that nothing is wrong.
+ *
+ * Two sentences rather than bar 4's em dash: the imported clause is a sentence
+ * of its own on `/queues`, and joining it with a dash would either capitalise
+ * mid-sentence or fork the copy into a second spelling to avoid it.
+ */
+function nothingOpenLine(kind: Kind): string {
+  return `${NOTHING_OPEN[kind]}. ${NOTHING_IN_QUEUE[kind].filledBy}`;
+}
 
 /** `/queues` showing one kind alone. */
 function queueHref(kind: Kind): string {
@@ -181,8 +224,9 @@ function lineHref(parameter: string, id: string): string {
  * oldest open item's age.
  *
  * Relative age with the absolute in the title attribute (Voice bar 6). With
- * nothing open there is no severity and no age to show, and the line says so
- * rather than showing a dash pair that reads like missing data.
+ * nothing open there is no severity and no age to show, and the line says what
+ * this card holds and what fills it (`nothingOpenLine`) rather than showing a
+ * dash pair that reads like missing data.
  *
  * **The severity is the word alone, with no chip around it** (ARCHITECTURE.md
  * §7, admin-window/BUG-0115). This card's whole body is an anchor
@@ -202,7 +246,7 @@ function lineHref(parameter: string, id: string): string {
  */
 function AttentionDetail({ summary, now }: { summary: KindSummary; now: string }) {
   if (summary.open === 0 || summary.maxSeverity === null) {
-    return <span>{NOTHING_OPEN[summary.kind]}</span>;
+    return <span>{nothingOpenLine(summary.kind)}</span>;
   }
   const age = relativeAge(summary.oldestOpenedAt, now);
   return (

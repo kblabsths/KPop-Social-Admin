@@ -6,6 +6,7 @@ import { RESOLVER_CADENCE_SECONDS } from "@/lib/gauges/gauge";
 import { T } from "@/lib/db/tables";
 import { absoluteUtc } from "@/lib/format";
 import { TONE_INK } from "@/components/ui/badge";
+import { NOTHING_IN_QUEUE } from "@/components/queues/surfaces";
 import { render } from "../ui/markup";
 import {
   BROKEN_INK,
@@ -581,6 +582,112 @@ describe("the attention summary", () => {
         .toArray()
         .map((element) => $(element).attr("title"));
       expect(titles, kind).toContain(absoluteUtc(oldest.opened_at));
+    }
+  });
+});
+
+/*
+ * The zero, in both states of the page — campaign admin-window/BUG-0125, filed
+ * from the user-sim walk of 2026-09-09.
+ *
+ * `OPEN DECISIONS 0` read "nothing open — no question is waiting on a verdict":
+ * a claim about the whole pipeline, drawn from one table's open rows, on a
+ * morning when 108 performers were visibly waiting on a link nobody could
+ * make. LOOK_AND_FEEL Voice bar 4 — whose worked example is literally this
+ * card — asks an empty state to name what the surface holds and WHAT FILLS IT.
+ *
+ * What is pinned here is behaviour, not copy: the filler sentence is read from
+ * the module both surfaces import (`components/queues/surfaces.ts`), so the
+ * designer may rewrite every word of it and these stay green, while a
+ * Dashboard that stops naming a filler — or that starts naming the wrong
+ * queue's — goes red. The same technique the severity ink is asserted with
+ * (`TONE_INK`), for the same reason.
+ */
+describe("a zero attention count", () => {
+  /**
+   * The eyebrow each count is addressed by, as every other test in this file
+   * addresses it (`readNumber(markup, "Open decisions")`) — the label is this
+   * suite's ADDRESS for a figure, not a copy assertion.
+   */
+  const OPEN_LABEL_TEXT: Record<"decision" | "signal", string> = {
+    decision: "Open decisions",
+    signal: "Open signals",
+  };
+
+  /** Every open item, of one kind alone: that card reads zero, the other does not. */
+  function onlyKind(kind: "decision" | "signal"): Script {
+    const open = kind === "decision" ? openDecisions(reviewItems()) : openSignals(reviewItems());
+    return healthyScript({ [T.reviewItems]: { data: open, count: open.length } });
+  }
+
+  /** Neither kind has anything open — both cards are zeroes. */
+  const neitherKind: Script = healthyScript({ [T.reviewItems]: { data: [], count: 0 } });
+
+  /** One attention card's whole text, whitespace collapsed. */
+  function cardText(markup: string, kind: string): string {
+    const $ = cheerio.load(markup);
+    const card = $(`a[href*="kind=${kind}"]`);
+    expect(card.length, `${kind} card`).toBe(1);
+    return card.text().replace(/\s+/g, " ").trim();
+  }
+
+  it("names what fills that queue, in the words the queue's own empty state uses", async () => {
+    const markup = await renderDashboard(neitherKind);
+
+    for (const kind of ["decision", "signal"] as const) {
+      // The count is still a real figure in its fixed position (DECISIONS
+      // 2026-09-02) — the sentence is what the card gained.
+      expect(readNumber(markup, OPEN_LABEL_TEXT[kind])).toBe(0);
+      expect(cardText(markup, kind), `${kind} card`).toContain(
+        NOTHING_IN_QUEUE[kind].filledBy,
+      );
+    }
+  });
+
+  it("names its own queue's filler and never the other card's", async () => {
+    const markup = await renderDashboard(neitherKind);
+
+    // Two cards, two fillers: a decision is filed for a reason a signal is
+    // not, and one sentence copied onto both cards would say otherwise.
+    expect(NOTHING_IN_QUEUE.decision.filledBy).not.toBe(NOTHING_IN_QUEUE.signal.filledBy);
+    // Both halves, so this cannot pass on a page that names no filler at all
+    // (LESSONS 3: a guard proves itself on the input it must flag too).
+    expect(cardText(markup, "decision")).toContain(NOTHING_IN_QUEUE.decision.filledBy);
+    expect(cardText(markup, "decision")).not.toContain(NOTHING_IN_QUEUE.signal.filledBy);
+    expect(cardText(markup, "signal")).toContain(NOTHING_IN_QUEUE.signal.filledBy);
+    expect(cardText(markup, "signal")).not.toContain(NOTHING_IN_QUEUE.decision.filledBy);
+  });
+
+  it("speaks for its own read alone — the same zero beside a full card and an empty one", async () => {
+    // Criterion 2's property, made observable: the sentence under a zero is a
+    // function of THAT card's read and of nothing else on the page. A card
+    // that spoke for the pipeline would have to change when the rest of the
+    // page did.
+    const bothEmpty = await renderDashboard(neitherKind);
+
+    for (const [kind, other] of [
+      ["decision", "signal"],
+      ["signal", "decision"],
+    ] as const) {
+      const otherIsFull = await renderDashboard(onlyKind(other));
+      expect(readNumber(otherIsFull, OPEN_LABEL_TEXT[kind]), `${kind} count`).toBe(0);
+      expect(readNumber(otherIsFull, OPEN_LABEL_TEXT[other]), `${other} count`).toBeGreaterThan(0);
+      expect(cardText(otherIsFull, kind), `${kind} card`).toBe(cardText(bothEmpty, kind));
+    }
+  });
+
+  it("is not said on a card that has something open", async () => {
+    // The non-zero rendering is untouched: severity word and oldest age, and
+    // no sentence about what would fill a queue that is not empty.
+    const markup = await renderDashboard(healthyScript());
+    const $ = cheerio.load(markup);
+
+    for (const kind of ["decision", "signal"] as const) {
+      expect(readNumber(markup, OPEN_LABEL_TEXT[kind]), `${kind} count`).toBeGreaterThan(0);
+      expect($(`a[href*="kind=${kind}"] [data-severity]`).length, `${kind} severity`).toBe(1);
+      for (const words of Object.values(NOTHING_IN_QUEUE)) {
+        expect(cardText(markup, kind), `${kind} card`).not.toContain(words.filledBy);
+      }
     }
   });
 });
