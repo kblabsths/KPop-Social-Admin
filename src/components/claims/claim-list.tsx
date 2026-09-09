@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { Badge, type Column, DataTable } from "@/components/ui";
 import { relativeAge } from "@/lib/format";
 import { factKey } from "@/lib/verdict/decision";
@@ -157,7 +158,7 @@ export function ClaimList({
           <a
             href={row.provenanceHref}
             data-claim-provenance={row.observationId}
-            className="transition-colors hover:text-accent"
+            className={IN_PAGE_LINK}
           >
             {row.entityId}
           </a>
@@ -170,7 +171,7 @@ export function ClaimList({
         <a
           href={row.sourceHref}
           data-claim-source={row.sourceId}
-          className="transition-colors hover:text-accent"
+          className={IN_PAGE_LINK}
         >
           {row.source}
         </a>

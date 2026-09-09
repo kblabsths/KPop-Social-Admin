@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { type Column, DataTable } from "@/components/ui";
 import { EM_DASH, clamped, isAbsent, relativeAge } from "@/lib/format";
 
@@ -124,7 +125,7 @@ export function VerdictLog({
           <a
             href={row.itemHref}
             data-verdict-item={row.reviewItemId}
-            className="transition-colors hover:text-accent"
+            className={IN_PAGE_LINK}
           >
             {row.reviewItemId}
           </a>
@@ -144,7 +145,7 @@ export function VerdictLog({
           <a
             href={row.observationHref}
             data-verdict-observation={row.observationId}
-            className="transition-colors hover:text-accent"
+            className={IN_PAGE_LINK}
           >
             {row.observationId}
           </a>

@@ -4,6 +4,11 @@ import { T } from "@/lib/db/tables";
 import { CLAMP_LIMIT, ELLIPSIS, EM_DASH } from "@/lib/format";
 import { VERDICT_ACTIONS } from "@/lib/verdict/decision";
 import { render } from "../ui/markup";
+import {
+  classesOf,
+  expectDrawnAsLinkAtRest,
+  expectNotDrawnAsLink,
+} from "../../fixtures/link-spelling";
 import { stateOf as surfaceStateOf } from "../../live/parity";
 import {
   ID,
@@ -38,8 +43,10 @@ import {
  * Assertions are STRUCTURE and BEHAVIOUR — which rows render in which order,
  * which hooks they carry, which state the surface declares — plus the
  * machine's own strings where rendering them VERBATIM is the requirement (the
- * eight actions, the missing table's name). No class name and no copy of the
- * app's own words is pinned.
+ * eight actions, the missing table's name). No class LITERAL and no copy of
+ * the app's own words is pinned — the one rendering rule asserted below reads
+ * the app's own link constant rather than repeating it
+ * (`tests/fixtures/link-spelling.ts`, admin-window/BUG-0108).
  */
 
 const readWith = vi.hoisted(() => ({ client: undefined as unknown }));
@@ -330,6 +337,35 @@ describe("the rows the log renders", () => {
     expect(row.text).toContain(SETTLEMENT.note);
     // The instant is relative, with the absolute value on a title (Voice 6).
     expect(row.text).not.toContain(SETTLEMENT.created_at);
+  });
+
+  /**
+   * The log is the first screen an operator sees after the `verdicts`
+   * migration lands, and both of its routes — the item a verdict settled and
+   * the observation it acted on — shipped the spelling admin-window/BUG-0108
+   * swept out of the other four surfaces: ink parked behind `hover:`, so a row
+   * of ids reads as a row of ids.
+   */
+  it("draws the item and observation it links to as links at rest", async () => {
+    const markup = await renderQueues(scriptOf(POPULATION, OBSERVATIONS));
+    const $ = cheerio.load(markup);
+    for (const hook of ["[data-verdict-item]", "[data-verdict-observation]"]) {
+      const anchors = $(`${LOG} ${hook}[href]`).toArray();
+      expect(anchors.length, `${hook} rendered no links at all`).toBeGreaterThan(0);
+      for (const anchor of anchors) {
+        expectDrawnAsLinkAtRest(classesOf($(anchor)), hook);
+      }
+    }
+    // An observation this app cannot resolve is rendered verbatim and goes
+    // nowhere (the leg's own case below): it must not wear the ink of the ones
+    // that do, or the log would promise a route it has none of.
+    const unlinked = cheerio.load(await renderQueues(scriptOf([SETTLEMENT], [])));
+    const unresolved = unlinked(`${LOG} [data-verdict-observation]`).toArray();
+    expect(unresolved.length, "no unresolved observation to compare against").toBe(1);
+    for (const cell of unresolved) {
+      expect(unlinked(cell).attr("href")).toBeUndefined();
+      expectNotDrawnAsLink(classesOf(unlinked(cell)), "an unresolved observation id");
+    }
   });
 
   it("orders two verdicts on one instant by id, whichever way the transport spells it", async () => {

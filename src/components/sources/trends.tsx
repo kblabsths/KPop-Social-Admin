@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { GaugeCard, TrendTable, type TrendMeasure } from "@/components/gauges";
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { WindowLine } from "@/components/ui";
 import { count, counted, pluralise } from "@/lib/format";
 import { sourcesHref, type SourceNarrowing } from "@/lib/sources/routes";
@@ -40,7 +41,7 @@ function sourceTrendLink(sourceId: string, name: string | null): ReactNode {
     <a
       href={sourcesHref({ source_id: sourceId })}
       data-trend-source={sourceId}
-      className="transition-colors hover:text-accent"
+      className={IN_PAGE_LINK}
     >
       {name ?? sourceId}
     </a>

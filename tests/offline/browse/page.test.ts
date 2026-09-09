@@ -13,6 +13,11 @@ import {
 import { recordHref } from "@/lib/records/routes";
 import { BrowseTable } from "@/components/browse/browse-table";
 import { h, render, textOf } from "../ui/markup";
+import {
+  classesOf,
+  expectDrawnAsLinkAtRest,
+  expectNotDrawnAsLink,
+} from "../../fixtures/link-spelling";
 import { oneEach, surfaceHooks } from "../../live/parity";
 import { ID, eventListingRow, eventRow, fieldProvenanceRow, sourceRow } from "../../fixtures/rows";
 import {
@@ -35,7 +40,10 @@ import {
  *
  * These assert STRUCTURE and BEHAVIOUR — which columns are drawn, in what row
  * order, which links the selector offers, which state renders — never a
- * rendered word or a class name. Copy and styling belong to the walk.
+ * rendered word or a class LITERAL. Copy and styling belong to the walk; the
+ * one rendering rule asserted here is whether a title that navigates says so
+ * before the pointer reaches it, read from the app's own link constant
+ * (`tests/fixtures/link-spelling.ts`, admin-window/BUG-0108).
  */
 
 const view = RECENT_EVENTS;
@@ -346,6 +354,35 @@ describe("the page's rows", () => {
     const links = hrefs(markup);
     expect(links).toContain(recordHref("events", EVENT_NEW));
     expect(links).toContain(recordHref("events", EVENT_OLD));
+  });
+
+  /**
+   * Bar 10 costs most here: every one of the 50 titles goes to its own record
+   * surface, and until admin-window/BUG-0108 not one of them said so at rest,
+   * so the page read as a static list of event names. The other columns stay
+   * out of the link's ink — that is what makes the title column legible as the
+   * one way in.
+   */
+  it("draws every linked title as a link at rest, and nothing else", async () => {
+    const markup = await renderBrowse(healthyScript());
+    const $ = cheerio.load(markup);
+    const anchors = $("tbody a[href]").toArray();
+    expect(anchors.length, "no row linked anywhere").toBe(bodyRows(markup).length);
+    for (const anchor of anchors) {
+      expectDrawnAsLinkAtRest(classesOf($(anchor)), `the title ${$(anchor).text().trim()}`);
+    }
+
+    const titleColumn = headers(markup).indexOf(labelOf("title"));
+    const others = $("tbody tr")
+      .toArray()
+      .flatMap((tr) =>
+        $(tr)
+          .find("td")
+          .toArray()
+          .filter((_, at) => at !== titleColumn),
+      );
+    expect(others.length, "no other columns to compare against").toBeGreaterThan(0);
+    for (const cell of others) expectNotDrawnAsLink(classesOf($(cell)), "a non-title cell");
   });
 
   it("draws a row with no record to lead to unlinked, not dead", () => {

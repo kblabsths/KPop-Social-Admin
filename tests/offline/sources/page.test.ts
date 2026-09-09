@@ -16,6 +16,11 @@ import {
   uppercasedIdentifiers,
 } from "../ui/markup";
 import {
+  classesOf,
+  expectDrawnAsLinkAtRest,
+  expectNotDrawnAsLink,
+} from "../../fixtures/link-spelling";
+import {
   PENDING_CLAIMS,
   PENDING_OBSERVATIONS,
   REJECTIONS,
@@ -403,6 +408,30 @@ describe("a source's links", () => {
     ]);
   });
 
+  /**
+   * Bar 10: the registry's ten routes — each source's own narrowing, its
+   * review items and its runs — were drawn in plain ink with no decoration
+   * until admin-window/BUG-0108, so the "links" column read as two words and
+   * the source name read as a label.
+   */
+  it("draws its three kinds of link as links at rest", async () => {
+    const markup = await renderSources(healthyScript());
+    const $ = cheerio.load(markup);
+    for (const hook of ["[data-source]", "[data-source-items]", "[data-source-runs]"]) {
+      const anchors = $(`${hook}[href]`).toArray();
+      expect(anchors.length, `${hook} rendered no links at all`).toBeGreaterThan(0);
+      for (const anchor of anchors) {
+        expectDrawnAsLinkAtRest(classesOf($(anchor)), hook);
+      }
+    }
+    // The registry's other cells are readings, not routes.
+    for (const inert of ["[data-source-kind]", "[data-source-outcome]"]) {
+      const cells = $(inert).toArray();
+      expect(cells.length, `no ${inert} to compare against`).toBeGreaterThan(0);
+      for (const cell of cells) expectNotDrawnAsLink(classesOf($(cell)), inert);
+    }
+  });
+
   it("narrows nothing when the URL names a source the registry does not hold", async () => {
     // A hand-typed id lands on the whole registry, not on a blank page that
     // reads like an empty database.
@@ -642,6 +671,18 @@ describe("the awaiting-row trend", () => {
     // The registry itself is unaffected — one absent object does not blank the
     // page.
     expect(sourceIds(markup)).toEqual(SOURCES.map((source) => source.source_id));
+  });
+});
+
+describe("the trend tables' own links", () => {
+  it("draws each per-source trend row as a link at rest", async () => {
+    const markup = await renderSources(healthyScript());
+    const $ = cheerio.load(markup);
+    const anchors = $("[data-trend-source][href]").toArray();
+    expect(anchors.length, "no trend rows linked anywhere").toBeGreaterThan(0);
+    for (const anchor of anchors) {
+      expectDrawnAsLinkAtRest(classesOf($(anchor)), "a trend row's source");
+    }
   });
 });
 
