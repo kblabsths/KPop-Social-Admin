@@ -466,6 +466,33 @@ describe("the grader proves itself on doctored blocks", () => {
     expect(gradeVerdicts(shipped).some((finding) => finding.startsWith("unreadable_privilege:"))).toBe(false);
   });
 
+  /**
+   * admin-window/BUG-0084 — TWO statement forms change who may write this table
+   * and the replay neither models nor reports either, so `gradeVerdicts` returns
+   * `[]` on both. Same class as BUG-0082, one level down: a grader certifying an
+   * ACL it never read. `it.fails` until BUG-0084 lands — then delete the
+   * `.fails`, and the day the grader starts flagging these the pin goes red and
+   * sends the reader here.
+   */
+  it.fails("does not certify a block that hands the write to the PUBLIC pseudo-role", () => {
+    const doctored = doctoredNote(
+      "grant select on table public.verdicts to service_role;",
+      "grant select on table public.verdicts to service_role;\ngrant insert, update, delete on table public.verdicts to public;",
+    );
+    // Every role is a member of PUBLIC, so all three hold the write this grants.
+    expect(gradeVerdicts(doctored)).not.toEqual([]);
+  });
+
+  it.fails("does not certify a block that hands the table's ownership to service_role", () => {
+    const doctored = doctoredNote(
+      "alter table public.verdicts owner to postgres;",
+      "alter table public.verdicts owner to service_role;",
+    );
+    // An owner holds everything on its table and may re-grant it, so the revoke
+    // below this line narrows nothing.
+    expect(gradeVerdicts(doctored)).not.toEqual([]);
+  });
+
   it("reads a banned word in a comment or a string as prose, not as a construct", () => {
     // The other half of LESSONS 3: the grader must not fire on text that only
     // TALKS about the thing. Both of these are legal SQL and must grade clean.
