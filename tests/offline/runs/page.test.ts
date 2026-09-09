@@ -468,6 +468,39 @@ describe("a ?source= link arriving from the Sources page", () => {
     expect(cheerio.load(plain)("[data-source-facet]").length).toBe(0);
   });
 
+  it.fails(
+    "does not offer its bottom row as the table's floor when a facet narrowed the read",
+    async () => {
+      // A window that did not fill returned everything ITS READ matched — and
+      // a `?source=` read matched one source only, so its bottom row is that
+      // source's oldest run and never the table's. The same population,
+      // rendered without the facet on the same page, holds a run an hour older
+      // than the faceted window's bottom; a line that names the faceted bottom
+      // as the point before which nothing is retained states as a fact of the
+      // object something that is false of it (admin-window/BUG-0109 seam).
+      const faceted = runsFrom(SOURCE.ticketmaster);
+      const markup = await renderCycles(
+        healthyScript({ [T.runs]: { data: faceted } }),
+        { source: SOURCE.ticketmaster },
+      );
+
+      const line = cheerio.load(markup)('[data-window="runs"]');
+      expect(line.attr("data-window-truncated")).toBe("false");
+      expect(line.attr("data-window-held")).toBe(String(faceted.length));
+
+      // Two paths to the same fact, computed here: the table's own oldest run
+      // is older than the facet's, so the facet's bottom is not a floor of the
+      // table.
+      const facetOldest = faceted[faceted.length - 1].started_at;
+      const tableOldest = NEWEST_FIRST[NEWEST_FIRST.length - 1].started_at;
+      expect(Date.parse(tableOldest)).toBeLessThan(Date.parse(facetOldest));
+
+      // So the sentence may not put that instant forward as the object's
+      // floor. It may state no floor at all; it may not state a wrong one.
+      expect(line.text().replace(/\s+/g, " ")).not.toContain(absoluteUtc(facetOldest));
+    },
+  );
+
   it("renders the empty state with a stated 0 when the name matches nothing", async () => {
     // Not the error state: a facet that matched nothing is an answer, and a
     // window read that came back with no rows had no matching rows at all
