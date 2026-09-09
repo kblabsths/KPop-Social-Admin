@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T09:37:30Z — do not edit)
+# Tracker index (regenerated 2026-09-09T09:40:03Z — do not edit)
 
 ## open
 - BUG-0109 [P2][bug][M2] Bar 13's other half is unbuilt: no windowed list says whether it filled, so five adapter runs that are the whole history read like the top of a long one  (scope:src/components/ui/window-line.tsx,src/app/page.tsx,src/components/cycles/adapter-runs.tsx,src/components/browse/browse-table.tsx,tests/offline/ui/primitives.test.ts,tests/offline/cycles/page.test.ts,tests/offline/browse/page.test.ts,tests/offline/dashboard/page.test.ts from:designer:endgame-walk)
