@@ -1848,6 +1848,25 @@ describe("a parameter the page did not apply", () => {
     expect(line.names).toEqual([]);
     expect(markup).not.toContain(PARKED);
     expect(line.text.length).toBeGreaterThan(20);
+
+    // admin-window/BUG-0137, criterion 3: nor when an ink-less mark rides
+    // along inside or beside the parked word. `/claims?in_window%EF%B8%8F=1`
+    // and `/claims?in_win%CD%8Fdow=1` each drew `in_window` legibly into the
+    // mono span (59.41px in Chromium, the `record_id` control's exact width,
+    // 2026-09-09); the allowlist rules all three unspellable, so each is
+    // counted exactly as the exact spelling above is and the word is in the
+    // body nowhere.
+    for (const key of [PARKED + "\uFE0F", "in_win\u034Fdow", PARKED + "\u2800"]) {
+      const where = [...key]
+        .map((c) => "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"))
+        .join(" ");
+      const rendered = await renderClaims(healthyScript(), { [key]: "1" });
+      const dropped = droppedLine(rendered);
+      expect(dropped.present, where).toBe(true);
+      expect(dropped.total, where).toBe(1);
+      expect(dropped.names, where).toEqual([]);
+      expect(rendered, where).not.toContain(PARKED);
+    }
   });
 
   it("names every dropped parameter in one line, and only the ones it dropped", async () => {
@@ -2086,10 +2105,14 @@ describe("a parameter the page did not apply", () => {
    * reversal travels with the sentence when it is copied out of the page into
    * a plain-text field, where no isolation rule follows it.
    *
-   * STRICT PIN — `it.fails`, so the day it is fixed this turns RED and sends
-   * the reader to admin-window/BUG-0137 (flip it to `it` there).
+   * FIXED by admin-window/BUG-0137: the line spells a key only if its raw
+   * characters match the renderable allowlist `^[A-Za-z0-9_.-]{1,64}$`
+   * (`droppedParams`, `src/lib/claims/filters.ts`; ARCHITECTURE.md §7). A
+   * bidi control is outside that class, so a key carrying one is COUNTED and
+   * never spelled, and no control from a URL reaches the markup at all —
+   * which is why the copied-out text reads in the order the page wrote it.
    */
-  it.fails("cannot let a URL reverse the sentence its name is written into", async () => {
+  it("cannot let a URL reverse the sentence its name is written into", async () => {
     for (const key of ["ab\u202Ecd", "\u202Eabc", "x\u202Dy"]) {
       const where = [...key]
         .map((c) => "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"))

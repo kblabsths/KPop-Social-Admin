@@ -300,28 +300,35 @@ describe("what the URL asked for and the page did not do", () => {
 
   it("names a key that puts any ink on the page, however little", () => {
     // The other direction, so the rule above cannot pass by dropping every
-    // dropped parameter. One printable character is a name an operator can
-    // read back, in any script.
-    //
-    // U+2800 BRAILLE PATTERN BLANK is in this list deliberately:
-    // `visibleContent` (`lib/verdict/decision.ts`) rules an assigned printable
-    // character CONTENT even when it looks unhelpful — "renders nothing", not
-    // "says nothing worth saying" — and this file does not hold a second
-    // opinion about blankness.
-    for (const key of [".", "-", "_", "0", "\u8A18\u9332", "\u2800"]) {
+    // dropped parameter. One printable character on the renderable allowlist
+    // is a name an operator can read back.
+    for (const key of [".", "-", "_", "0", "record_id", "bucket", "in_windows"]) {
       expect(droppedParams({ [key]: "1" }, {}), JSON.stringify(key)).toEqual({
         named: [key],
         withheld: 0,
       });
     }
 
-    // A key carrying ink AND ink-less codepoints keeps both: it is named, and
-    // it is named VERBATIM (spec §11), never scrubbed on the way to the page.
-    // `visibleContent` is only ever asked a question of.
-    expect(droppedParams({ "record_id\u200B": "1" }, {})).toEqual({
-      named: ["record_id\u200B"],
-      withheld: 0,
-    });
+    // MOVED by admin-window/BUG-0137 (criterion 6), from `named` to counted.
+    // These three carry ink — `hasVisibleContent` still says so, and
+    // `decision.ts` is untouched — but ink is no longer what decides SPELLING.
+    // The line spells a key only from the renderable allowlist
+    // `^[A-Za-z0-9_.-]{1,64}$` (ARCHITECTURE.md §7), because "does this render
+    // ink" and "does this read as the word bar 3 bans" are not decidable by
+    // codepoint class: `in_win<U+034F>dow` reads as the parked word, and so
+    // would a homoglyph nobody has typed yet. Each is still COUNTED — a
+    // parameter was carried and dropped, and the page says so without
+    // spelling it.
+    for (const key of [
+      "\u8A18\u9332", // CJK: ink, and outside the class the page can promise
+      "\u2800", // BRAILLE PATTERN BLANK: content to `decision.ts`, unspellable here
+      "record_id\u200B", // ASCII plus a ZWSP — no longer byte-identical to a name
+    ]) {
+      expect(droppedParams({ [key]: "1" }, {}), JSON.stringify(key)).toEqual({
+        named: [],
+        withheld: 1,
+      });
+    }
   });
 
   it("still counts, and still refuses to spell, a name the app may not render", () => {
@@ -357,6 +364,53 @@ describe("what the URL asked for and the page did not do", () => {
   });
 
   /**
+   * The rule itself, both ways (admin-window/BUG-0137, criteria 1, 3 and 7).
+   *
+   * ARCHITECTURE.md §7: "text this app did not author never sits inside a
+   * sentence this app wrote" — foreign text reaches prose through an
+   * allowlist or inside its own box, never by scrubbing. This line takes the
+   * allowlist arm, so what it spells is byte-identical to what the URL
+   * carried (spec §11), and everything else is counted through the `withheld`
+   * arm that already existed for the parked word.
+   */
+  it("spells a key only from the renderable allowlist, and counts every other", () => {
+    // NAMED: the class every facet this page could ever offer satisfies, and
+    // the class in which a key renders as itself.
+    const parked = "in_" + "window";
+    for (const key of ["record_id", "bucket", "a.b-c_9", "A0", "a".repeat(64)]) {
+      expect(droppedParams({ [key]: "1" }, {}, [parked]), JSON.stringify(key)).toEqual({
+        named: [key],
+        withheld: 0,
+      });
+    }
+
+    // COUNTED: outside the class by character, or longer than 64. Length is
+    // bounded because a name spelled verbatim is a line the operator reads,
+    // and no facet this page offers is longer than 12 characters.
+    for (const key of [
+      "\u8A18\u9332", // CJK — ink, but not a name this page can promise
+      "\uFE0F", // VARIATION SELECTOR-16 — 0px in Chromium
+      "\u202Eabc", // RIGHT-TO-LEFT OVERRIDE — reversed the app's own sentence
+      "a b", // a space, so the name would not read as one token
+      "a".repeat(65), // one character past the bound
+    ]) {
+      const where = [...key]
+        .map((c) => "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"))
+        .join(" ");
+      expect(droppedParams({ [key]: "1" }, {}, [parked]), where).toEqual({
+        named: [],
+        withheld: 1,
+      });
+    }
+
+    // The allowlist decides SPELLING, never whether a parameter was dropped:
+    // a key that carries no name at all is still ignored before it, and a
+    // key that carries no value still asked for nothing.
+    expect(droppedParams({ "\u200B": "1" }, {})).toEqual({ named: [], withheld: 0 });
+    expect(droppedParams({ record_id: "" }, {})).toEqual({ named: [], withheld: 0 });
+  });
+
+  /**
    * The half the CATEGORY the one definition names cannot see
    * (admin-window/BUG-0137, QA).
    *
@@ -370,12 +424,22 @@ describe("what the URL asked for and the page did not do", () => {
    * staging, 2026-09-09), identical in light and dark; the `record_id`
    * control measures 59.41px, visible.
    *
-   * STRICT PIN — `it.fails`, so the day the divergence is fixed this turns
-   * RED and sends the reader to admin-window/BUG-0137 (flip it to `it`
-   * there). Either arm satisfies it, as BUG-0127's and BUG-0136's did:
-   * ignore such a key, or spell something an operator can read back.
+   * FIXED by admin-window/BUG-0137, the arm this pin's own text offers
+   * second — "spell something an operator can read back" — taken as a rule
+   * rather than as a fourth codepoint family: a key is spelled only if its
+   * RAW characters match the renderable allowlist `^[A-Za-z0-9_.-]{1,64}$`
+   * (`droppedParams`, `src/lib/claims/filters.ts`; ARCHITECTURE.md §7,
+   * "text this app did not author never sits inside a sentence this app
+   * wrote"). None of these three keys does, so none is spelled — and each
+   * is COUNTED rather than ignored, which is the ONE field of this pin that
+   * moved (`withheld: 1`, not `0`): a parameter really was carried and
+   * dropped, the key has visible content by the app's one definition of
+   * blank, and bar 13 has the page say so without naming it. The other arm
+   * — ignoring them — would need a second opinion about blankness in this
+   * file, which is the fourth blocklist admin-window/BUG-0137 exists to
+   * refuse (measured: `agenticflow/tracker/evidence/BUG-0137/rule-dryrun.mjs`).
    */
-  it.fails("ignores a key that is nothing but marks a reader cannot see", () => {
+  it("ignores a key that is nothing but marks a reader cannot see", () => {
     // Each measured at width 0px in Chromium, both colour schemes:
     // U+FE0F VARIATION SELECTOR-16, U+034F COMBINING GRAPHEME JOINER,
     // U+0301 COMBINING ACUTE ACCENT.
@@ -384,7 +448,7 @@ describe("what the URL asked for and the page did not do", () => {
         "U+" + key.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0");
       expect(droppedParams({ [key]: "1" }, {}), where).toEqual({
         named: [],
-        withheld: 0,
+        withheld: 1,
       });
     }
   });
@@ -403,9 +467,12 @@ describe("what the URL asked for and the page did not do", () => {
    * `in_window` at **59.41px, visible — the `record_id` control's exact
    * width**, because U+FE0F adds no ink; `/claims?in_win%CD%8Fdow=1` the
    * same; `/claims?in_window%E2%A0%80=1` at 66.92px (the word plus a blank
-   * braille cell). STRICT PIN — see the pin above.
+   * braille cell). FIXED by admin-window/BUG-0137 — see the pin above: none
+   * of the three keys matches the renderable allowlist, so none reaches the
+   * mono span, and each is counted through the `withheld` arm exactly as an
+   * exact `in_window` already was.
    */
-  it.fails("still refuses to spell the parked word when an inkless mark rides along", () => {
+  it("still refuses to spell the parked word when an inkless mark rides along", () => {
     const parked = "in_" + "window";
     for (const key of [parked + "\uFE0F", "in_win\u034Fdow", parked + "\u2800"]) {
       const where = [...key]

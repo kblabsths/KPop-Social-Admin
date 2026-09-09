@@ -375,6 +375,18 @@ function claimLines(
  * word this app may not render is counted rather than spelled
  * (`droppedParams`' `neverNamed`).
  *
+ * **Verbatim is safe here because of what reaches it, not because of what
+ * this component does to it.** `droppedParams` spells a key only when its raw
+ * characters match its renderable allowlist `^[A-Za-z0-9_.-]{1,64}$`, and
+ * counts every other one through the same `withheld` arm as the parked word
+ * (admin-window/BUG-0137; ARCHITECTURE.md §7, "text this app did not author
+ * never sits inside a sentence this app wrote"). So the only foreign text
+ * this sentence can ever contain is that class — no 0px name leaving a hole
+ * where a name should be, and no bidi control from a URL reordering the words
+ * around it, in the rendered page or in the text copied out of it. This
+ * component scrubs nothing and must not start: a name it renders is the
+ * URL's own bytes.
+ *
  * It stands beside the filter bar rather than inside the sections, because it
  * is a fact of the URL and not of any read: it renders the same over an `ok`
  * read, a refusal and a table that is not there.
@@ -383,7 +395,11 @@ function DroppedParamsLine({ dropped }: { dropped: DroppedParams }) {
   const total = dropped.named.length + dropped.withheld;
   if (total === 0) return null;
   const items: ReactNode[] = dropped.named.map((name) => (
-    <span key={name} data-dropped-param={name} className="type-data text-ink">
+    // `dir` is a belt, not the fix: HTML's own UA rule isolates a `dir`-bearing
+    // inline box, so anything it held could reorder only itself. What keeps
+    // the sentence in the order this page wrote it is the allowlist upstream
+    // — by the time a name is here it is ASCII with no bidi semantics at all.
+    <span key={name} dir="ltr" data-dropped-param={name} className="type-data text-ink">
       {name}
     </span>
   ));

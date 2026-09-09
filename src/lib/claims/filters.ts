@@ -21,14 +21,16 @@
  * predicate over claims, and this module only says what the URL asked for.
  *
  * **Its one import** is `lib/verdict/decision.ts`, for the app's single
- * definition of blank (admin-window/BUG-0136, below). That module imports
+ * definition of blank (admin-window/BUG-0136, below) — asked only whether a
+ * key names anything at all, never whether a name may be spelled
+ * (admin-window/BUG-0137). That module imports
  * NOTHING — it is the leaf every other leaf's blankness question already ends
  * at, `lib/format.ts` included — so the arrow reaches nothing that can reach a
  * database and no cycle can be written through it. The alternative was a
  * second definition of "renders nothing" in this file, which is the exact
  * defect admin-window/BUG-0089 consolidated away.
  */
-import { hasVisibleContent, visibleContent } from "@/lib/verdict/decision";
+import { hasVisibleContent } from "@/lib/verdict/decision";
 
 /* ── the parameter names ─────────────────────────────────────────────────── */
 
@@ -180,13 +182,43 @@ function isFacet(key: string): key is ClaimFacet {
  *    `?%7F=1` all survived it and were spelled into the mono span, where a
  *    browser laid every one of them out at 0px and the sentence read with the
  *    same hole (measured in Chromium, both colour schemes, 2026-09-09). The
- *    test is now the app's ONE definition of blank — `hasVisibleContent`
+ *    test is the app's ONE definition of blank — `hasVisibleContent`
  *    (`lib/verdict/decision.ts`, admin-window/BUG-0089) — so a key a reader
  *    would see nothing of names nothing, whichever family its codepoints come
  *    from, and this file holds no second opinion about what renders. Where
- *    that definition draws the line is its ruling, not this module's: an
- *    assigned printable character is content even when it looks unhelpful, so
- *    a U+2800 BRAILLE PATTERN BLANK key is still named.
+ *    that definition draws the line is its ruling, not this module's; this
+ *    gate decides only whether a parameter was DROPPED, never whether its
+ *    name may be spelled, which is the next rule's question.
+ *
+ *  - **A surviving key is SPELLED only if it is on the renderable allowlist**
+ *    `RENDERABLE_KEY` below, and every other one is COUNTED
+ *    (admin-window/BUG-0137; ARCHITECTURE.md §7, "text this app did not
+ *    author never sits inside a sentence this app wrote"). Two consequences,
+ *    both intended:
+ *
+ *    **No character outside `[A-Za-z0-9_.-]` reaches this sentence by any
+ *    path.** Not a nonspacing mark that lays out at 0px and leaves a hole
+ *    where a name should be; not U+2800, which draws a blank cell; not
+ *    U+202E, whose scope is the paragraph and not the span, so a key
+ *    carrying one reversed the rest of the app's own sentence — in the
+ *    rendered page and in the text copied out of it. And no key can READ as
+ *    the parked word without BEING it: `in_win<U+034F>dow` drew `in_window`
+ *    at the width of `record_id`, past LOOK_AND_FEEL bar 3, and a homoglyph
+ *    spelling would do the same. Both questions ("does this render ink",
+ *    "does this read as that word") are undecidable by codepoint class —
+ *    three blocklist widenings on this one line proved it — and an exact
+ *    ASCII compare answers them together, totally.
+ *
+ *    **`decision.ts` keeps its own ruling and is not consulted about
+ *    spelling.** `hasVisibleContent` answers the EDIT surface's question —
+ *    "did the operator type anything?", where U+FE0F and U+2800 are content
+ *    and a draft of them commits (`tests/offline/ui/editable-cell.test.ts`) —
+ *    and widening it for a rendering question would change what that surface
+ *    saves. Two questions, two answers, one owner each.
+ *
+ *    The test is on the key's RAW characters, never on `visibleContent(key)`:
+ *    what the line spells is then byte-identical to what the URL carried
+ *    (spec §11), because the two are the same string.
  *
  * `neverNamed` is the small set of words this app may not put on screen at all
  * — the parked bucket (`UNRENDERABLE_BUCKET`, `lib/db/claims.ts`; LOOK_AND_FEEL
@@ -194,11 +226,27 @@ function isFacet(key: string): key is ClaimFacet {
  * than imported because this module is a pure domain leaf and may not reach
  * `lib/db/**` (ARCHITECTURE.md §4 rule 7). Such a parameter is still COUNTED:
  * the page says it dropped one without spelling it, which is bar 3 and bar 13
- * both kept. **The comparison is against what a reader would SEE of the key**
- * (`visibleContent`, admin-window/BUG-0136): `?in_window%E2%80%8B=1` reads as
- * `in_window` on screen, ink for ink, so a byte comparison would put the
- * parked bucket in front of an operator while agreeing it had not.
+ * both kept. The comparison is a plain string compare, because a key that
+ * reaches it is pure ASCII: anything that could only READ as the parked word
+ * — `in_window\u200B`, `in_win\u034Fdow` — has already been counted by the
+ * allowlist, so there is nothing left for a reader-side comparison to catch
+ * (admin-window/BUG-0137, which is why `visibleContent` is gone from here).
  */
+/**
+ * The keys this line may SPELL: the class every name this page could offer
+ * satisfies (`bucket`, `source_id`, `domain`, `record_id`, `tab`), and the
+ * class in which a key renders as itself, carries no bidi semantics and cannot
+ * read as a word it is not. Declared ONCE, here — it is this sentence's rule
+ * and no other surface's (admin-window/BUG-0137; ARCHITECTURE.md §7).
+ *
+ * Bounded at 64 because a name spelled verbatim is a line an operator reads:
+ * no facet this page will ever offer is longer than 12 characters, and an
+ * unbounded name is the next patch on this sentence. No `g` flag — `test` on
+ * a global regex carries `lastIndex` between calls and would answer a key
+ * differently depending on which key came before it.
+ */
+const RENDERABLE_KEY = /^[A-Za-z0-9_.-]{1,64}$/;
+
 export interface DroppedParams {
   /** The names, in the order the URL carried them, safe to render verbatim. */
   named: string[];
@@ -223,9 +271,11 @@ export function droppedParams(
     const asked = firstValue(params[key]);
     if (asked === undefined || asked === "") continue;
     if (isFacet(key) && applied[key] !== undefined) continue;
-    // What the app may not render is a word on the SCREEN, so the key is
-    // compared as it would be read, not as it was typed.
-    if (neverNamed.includes(visibleContent(key))) withheld += 1;
+    // A parameter WAS dropped; the only question left is whether this page
+    // may spell its name. It may, for a key on the renderable allowlist that
+    // is not a word the app may never render — and for nothing else. Both
+    // arms report the same fact; one names it and one counts it.
+    if (!RENDERABLE_KEY.test(key) || neverNamed.includes(key)) withheld += 1;
     else named.push(key);
   }
   return { named, withheld };
