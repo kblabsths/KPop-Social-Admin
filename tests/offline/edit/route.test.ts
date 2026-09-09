@@ -59,6 +59,63 @@ const RECORD_ID = "2f0bc11e-0000-4000-8000-000000000001";
 /** The signed-in admin the stubbed gate hands the handler. */
 const ADMIN_EMAIL = "qa@example.invalid";
 
+/**
+ * Values with NOTHING a reader can see, as an operator's paste delivers them —
+ * campaign admin-window/BUG-0095, widened by QA on the re-check.
+ *
+ * The fix's whole claim is that `parseBody` asks the app's ONE definition of
+ * blank (`hasVisibleContent`, `lib/verdict/decision.ts`) rather than `=== ""`,
+ * so the fixture has to be the definition's whole class and not the four
+ * characters the bug arrived as. `INK_LESS`'s docstring names four HANGUL
+ * FILLERS and two C classes; before this list, exactly ONE filler (U+3164) and
+ * one C0 control were exercised anywhere in the suite, so narrowing the class
+ * back to them would have reddened nothing.
+ *
+ * Every entry was measured at the wire, 2026-09-09, by PATCHing the running
+ * app against staging's `walk_sandbox` row `…0001`: each answered 200 on the
+ * nullable `note` with the column read back NULL by an independent client, and
+ * 500 carrying Postgres `23502` on the `not null` `label` with the standing
+ * value untouched.
+ */
+const INK_LESS_ONLY: readonly string[] = [
+  "\u200b", // zero-width space — the paste the bug arrived as
+  "\u2060", // word joiner
+  "\u00ad", // soft hyphen — a paste out of a PDF
+  "\ufeff", // byte-order mark
+  "\u3164", // hangul filler
+  "\u115f", // hangul choseong filler — named by INK_LESS, never exercised
+  "\u1160", // hangul jungseong filler — likewise
+  "\uffa0", // halfwidth hangul filler — likewise
+  "\u180e", // mongolian vowel separator
+  "\u0001", // a C0 control `trim()` leaves alone
+  "\u007f", // DELETE
+  "\u009c", // a C1 control
+  "\u2028", // line separator
+  "\u202e", // right-to-left override: ink-less, and a display-spoofing one
+  "\u200d", // zero-width joiner
+  "\u2062", // invisible times
+  "\u{e0021}", // a TAG character — Cf, and outside the BMP
+  "  \u200b  ", // the mixture an operator actually produces
+  "\u200b\u3164\u00a0\t", // several classes at once
+];
+
+/**
+ * The fixtures the same guard must NOT flag, or it says nothing (LESSONS 3):
+ * anything with a visible character in it is stored BYTE-IDENTICAL, padding
+ * included, because this is a blankness test and never a sanitiser. The last
+ * three are the leaf's own drawn line — an assigned printable character, a
+ * variation selector and a lone combining mark are content even when they look
+ * unhelpful — so widening the class to swallow them would redden here.
+ */
+const VISIBLE_CONTENT: readonly string[] = [
+  "\u200bBLACKPINK\u200b",
+  "0",
+  "\u202eBLACKPINK",
+  "\u2800", // braille pattern blank
+  "\ufe0f", // variation selector-16
+  "\u0301", // combining acute accent
+];
+
 /** A receipt shaped like the one the settlement function returns. */
 const RECEIPT = {
   verdict_id: "01920000-0000-7000-8000-000000000901",
@@ -291,7 +348,7 @@ describe("a mapped column of a resolver-owned table", () => {
    * pipeline's canonical store.
    */
   it("refuses an invisible-only value as the clear it is, not as an override", async () => {
-    for (const value of ["\u200b", "\u2060", "\u00ad", "\ufeff", "\u3164", "  \u200b  ", "   "]) {
+    for (const value of [...INK_LESS_ONLY, "   "]) {
       const seen = JSON.stringify(value);
       const { status, text } = await patch("events", { field: "title", value });
       expect(status, seen).toBe(400);
@@ -477,7 +534,28 @@ describe("the picker's choice", () => {
   it("refuses a ref that is not a record id, rather than sending it", async () => {
     // A ref is the chosen row's own id; anything else can link to no row and
     // would become an external_ref nothing ever resolves.
-    for (const ref of ["Olympic Hall", "", "  ", 12, null, { id: VENUE }]) {
+    //
+    // The INK-LESS entries are the seam between this arm and the blankness
+    // test below it (QA, admin-window/BUG-0095 x TASK-0055): the ref arm
+    // returns before `parseBody` ever asks `hasVisibleContent`, so whatever
+    // this grammar admits is what the picker's submission is judged by, and
+    // nothing downstream will strip an invisible character out of it. An
+    // id padded with one is a DIFFERENT string from the id, so it must be
+    // refused here or it becomes an external_ref nothing resolves. Measured
+    // at the wire against the running app, 2026-09-09: each of the four
+    // answered 400 "ref must be the id of an existing record".
+    for (const ref of [
+      "Olympic Hall",
+      "",
+      "  ",
+      12,
+      null,
+      { id: VENUE },
+      "\u200b",
+      `\u200b${VENUE}`,
+      `${VENUE}\u200b`,
+      `${VENUE}\n`,
+    ]) {
       const { status } = await patch("events", { field: "venue_id", ref });
       expect(status, JSON.stringify(ref)).toBe(400);
       expect(settleReviewItem, JSON.stringify(ref)).not.toHaveBeenCalled();
@@ -918,7 +996,7 @@ describe("the handler refuses a forged edit and attempts no write", () => {
    */
   it("does not store as content a value every surface draws as an absence", async () => {
     const { isAbsent } = await import("@/lib/format");
-    for (const value of ["\u200b", "\u2060", "\u00ad", "\ufeff", "\u3164", "  \u200b  "]) {
+    for (const value of INK_LESS_ONLY) {
       const seen = JSON.stringify(value);
       // The app's own answer about this string, on the surface it renders on.
       expect(isAbsent(value), seen).toBe(true);
@@ -958,7 +1036,7 @@ describe("the handler refuses a forged edit and attempts no write", () => {
     // The fixture the guard above must NOT flag, or it is vacuous (LESSONS 3):
     // the invisible characters are an absence only when they are ALL there is,
     // and U+2800 is an assigned printable character the leaf rules as content.
-    for (const value of ["\u200bBLACKPINK\u200b", "\u2800", "0"]) {
+    for (const value of VISIBLE_CONTENT) {
       const { status } = await patch("walk_sandbox", { field: "label", value });
       expect(status, JSON.stringify(value)).toBe(200);
       expect(updateRecordField.mock.calls[0][2], JSON.stringify(value)).toBe(value);
