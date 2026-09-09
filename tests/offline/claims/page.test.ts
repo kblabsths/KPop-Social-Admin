@@ -1486,6 +1486,73 @@ describe("absence and failure", () => {
     expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
     expect(markup).toContain("permission denied");
   });
+
+  /**
+   * A sentence about counts stands only where the counts do — the bucket
+   * table's caption, over a read that refused (admin-window/BUG-0144, QA on
+   * admin-window/DEBT-0008).
+   *
+   * The list one Section down already has this rule: its window line follows
+   * the READ and not the rows, so a refused read publishes no line at all
+   * ("drops the whole window line, not just its count, on a read it never
+   * made", above; ARCHITECTURE.md §4.3, admin-window/BUG-0063,
+   * admin-window/BUG-0070). The caption below the bucket table makes the same
+   * kind of claim — what the figures in that table are figures OF — and it is
+   * rendered for every `kind` but `not_provisioned`, so it stands over an
+   * error card with no bucket row and no count hook beneath it, telling the
+   * operator the table lists every bucket with every claim in it.
+   *
+   * Copy-independent: both arms are read off the app itself, from a healthy
+   * render of each, rather than typed here — this file pins no sentence of the
+   * page, and a rewording of either arm moves this test with it.
+   *
+   * Non-vacuous in three directions: the refused render really is in its error
+   * state (it names the object), it really drew no counts, and the page really
+   * applied the facet in the second URL (no dropped-parameters line), so the
+   * sentence is not being denied a parameter the page threw away.
+   *
+   * `it.fails` is the pin: it passes while the defect stands and turns red the
+   * day BUG-0144 is fixed, which is the day it should be flipped back to a
+   * plain `it(`.
+   */
+  it.fails(
+    "says nothing about bucket counts a refused read never produced [admin-window/BUG-0144]",
+    async () => {
+      const refused: Script = {
+        [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
+        [T.observations]: { data: [] },
+        [T.sources]: { data: [...REGISTRY] },
+      };
+      // The two sentences the page owns, read off the app rather than typed
+      // here: the arm it renders when nothing narrows the counts, and the arm it
+      // renders when something does.
+      const whole = bucketCaption(await renderClaims(healthyScript()));
+      const narrowed = bucketCaption(
+        await renderClaims(healthyScript(), { source_id: SOURCE.first }),
+      );
+      expect(whole).not.toBe("");
+      expect(narrowed).not.toBe(whole);
+
+      for (const params of [{}, { bucket: "escalated" }] as Record<string, string>[]) {
+        const markup = await renderClaims(refused, params);
+        const label = JSON.stringify(params);
+        // Non-vacuous: the surface really is in its refused state, and it drew
+        // no bucket row and no count hook for either sentence to be about.
+        expect(markup, label).toContain(T.pendingClaims);
+        expect(bucketRows(markup), label).toEqual([]);
+        expect(
+          cheerio.load(markup)("[data-bucket-claims]").length,
+          label,
+        ).toBe(0);
+        // ...and the page applied every parameter the URL carried, so the
+        // sentence below is not being denied a facet the page dropped.
+        expect(droppedLine(markup).lines, label).toBe(0);
+        const said = bucketCaption(markup);
+        expect(said, label).not.toBe(whole);
+        expect(said, label).not.toBe(narrowed);
+      }
+    },
+  );
 });
 
 /* ── an empty surface is explained from TWO facts (DEBT-0008) ────────────── */
