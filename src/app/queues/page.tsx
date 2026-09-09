@@ -1,5 +1,11 @@
 import type { ReactNode } from "react";
-import { FilterBar, QueueList } from "@/components/queues";
+import {
+  FilterBar,
+  QueueList,
+  QueueTabs,
+  VerdictLog,
+  type VerdictLine,
+} from "@/components/queues";
 import {
   Distribution,
   GaugeCard,
@@ -10,16 +16,25 @@ import {
 import { Empty, Page, Section, StateOf, WindowLine } from "@/components/ui";
 import { listReviewItems } from "@/lib/db/review-items";
 import type { DbResult } from "@/lib/db/result";
+import {
+  VERDICTS_OBJECT,
+  readVerdictLog,
+  type VerdictLogWindow,
+} from "@/lib/db/verdict";
 import { count, counted, duration, relativeAge } from "@/lib/format";
 import {
   readQueueHealth,
   type QueueHealth,
   type QueueStats,
 } from "@/lib/gauges/queue-health";
+import { recordHref } from "@/lib/records/routes";
 import {
   filterBar,
   filterFrom,
   isNarrowed,
+  tabFrom,
+  tabLinks,
+  type QueuesTab,
   type SearchParams,
 } from "@/lib/review/queue-filters";
 import {
@@ -106,6 +121,41 @@ const SORT_STATEMENT =
  */
 const HEALTH_WINDOW = "queue_health";
 
+/**
+ * The name the VERDICT LOG's window answers to — `data-window`, the hook the
+ * absence sweep and the live oracle read the window back by.
+ *
+ * Named for the object the read ran over, the way `cycle_health` is named for
+ * its gauge: there is one window on this tab and it is `verdicts`.
+ */
+const VERDICT_LOG_WINDOW = "verdict_log";
+
+/**
+ * The names this page's two graded surfaces answer to — `data-surface`, unique
+ * within the page (ARCHITECTURE.md §10, common violation 8).
+ *
+ * `verdict_log` is the log itself; `verdict_provenance` is the sub-surface
+ * carrying the observation leg's own refusal, which is not the log's to answer
+ * for — a registry the app could not read costs the log a LINK, never a
+ * verdict, so an oracle grading the log excludes it exactly as
+ * `queues.live.test.ts` excludes the gauge's per-queue slices.
+ */
+const VERDICT_SURFACE = "verdict_log";
+const VERDICT_PROVENANCE_SURFACE = "verdict_provenance";
+
+/** The h2 above the log, and the accessible name of its table. */
+const VERDICT_TITLE = "Verdict log";
+
+/** The lede its window line opens with — this page's words about its subject. */
+const VERDICT_LEDE = "Every admin data action, newest first";
+
+/** What an empty verdict log holds and what fills it — never a bare "No data". */
+const NO_VERDICTS: EmptyWords = {
+  holds: "verdict rows",
+  filledBy:
+    "An admin settles a review item or overrides a value, and the settlement lands here as one row.",
+};
+
 /** The h2 above each queue. Both are sections of the page, at one level. */
 const QUEUE_TITLE: Record<Kind, string> = {
   decision: "Decision queue",
@@ -138,9 +188,18 @@ const NOTHING_MATCHED: EmptyWords = {
   filledBy: "Widen a filter above; the 'all' chip on any row shows everything again.",
 };
 
+/**
+ * Where a review item opens, from its id alone — the one spelling of that URL
+ * on this page, so a queue row and a verdict row cannot come to disagree about
+ * where the same item lives.
+ */
+function itemPath(reviewItemId: string): string {
+  return `${QUEUES_PATH}/${encodeURIComponent(reviewItemId)}`;
+}
+
 /** Where a row opens (its detail view is admin-window/TASK-0011). */
 function itemHref(item: ReviewItemRow): string {
-  return `${QUEUES_PATH}/${encodeURIComponent(item.review_item_id)}`;
+  return itemPath(item.review_item_id);
 }
 
 /**
@@ -351,6 +410,94 @@ function QueueGauge({
   );
 }
 
+/**
+ * The verdict log, as the tab renders it (spec F13,
+ * `contracts/admin-observability.md` §7).
+ *
+ * One row per verdict, and the two structural nulls are rendered by the
+ * component as this app's one dash, with one line above the table saying what
+ * a dash means there (LESSONS 1, admin-window/BUG-0053).
+ *
+ * The observation's link is the RECORD surface of the fact it is about — the
+ * one place a rendered observation already leads in this app
+ * (`components/claims/claim-list.tsx`'s `record` column). There is no
+ * observation-addressable URL, so an id the resolving leg could not place
+ * renders verbatim rather than linking somewhere invented.
+ */
+function verdictLines(log: VerdictLogWindow): VerdictLine[] {
+  return log.rows.map((row) => {
+    const fact =
+      row.observation_id === null ? undefined : log.facts.get(row.observation_id);
+    return {
+      verdictId: row.verdict_id,
+      actor: row.actor,
+      action: row.action,
+      reviewItemId: row.review_item_id,
+      itemHref: row.review_item_id === null ? null : itemPath(row.review_item_id),
+      observationId: row.observation_id,
+      observationHref:
+        fact === undefined ? null : recordHref(fact.domain, fact.entity_id),
+      note: row.note,
+      createdAt: row.created_at,
+    };
+  });
+}
+
+/** The verdict tab's one section: the window line, the log, and its states. */
+function VerdictSection({ log }: { log: DbResult<VerdictLogWindow> }): ReactNode {
+  return (
+    <Section title={VERDICT_TITLE} surface={VERDICT_SURFACE}>
+      {/* The window line follows the READ, not the rows (ARCHITECTURE.md
+          §4.3): it stands on an `ok` result — with rows or with none — and on
+          no other state, so the absence of the line means "this read did not
+          happen" here exactly as it does on every other surface. The rule is
+          graded for every surface at once in
+          `tests/offline/absence/pages.test.ts`. */}
+      {log.kind === "ok" ? (
+        <WindowLine
+          gauge={VERDICT_LOG_WINDOW}
+          window={{
+            limit: log.data.limit,
+            held: log.data.rows.length,
+            truncated: log.data.truncated,
+            over: VERDICTS_OBJECT,
+          }}
+          shows={{ of: "newest", lede: VERDICT_LEDE, rows: "verdict rows" }}
+        />
+      ) : null}
+
+      <VerdictLog
+        label={VERDICT_TITLE}
+        lines={log.kind === "ok" ? verdictLines(log.data) : []}
+        card={
+          log.kind === "not_provisioned" ? (
+            // The graded normal case for the whole of M2: `verdicts` arrives
+            // with the handoff migration and is on neither staging nor
+            // production, so the tab draws the card naming it and states no
+            // number at all (LOOK_AND_FEEL state 3).
+            <StateOf result={log} />
+          ) : log.kind === "ok" && log.data.rows.length === 0 ? (
+            <Empty holds={NO_VERDICTS.holds} filledBy={NO_VERDICTS.filledBy} />
+          ) : undefined
+        }
+        line={log.kind === "error" ? <StateOf result={log} /> : undefined}
+      />
+
+      {log.kind === "ok" && log.data.factsUnavailable !== null ? (
+        // The observation leg alone refused: every verdict is here and only
+        // the link to where its observation landed is missing, so the refusal
+        // is reported as its OWN sub-surface, naming its own object
+        // (admin-window/BUG-0021). It is excluded from the log's state for the
+        // same reason the gauge's per-queue slices are excluded from the
+        // gauge's: a leg that only labels is not the surface's to answer for.
+        <div data-surface={VERDICT_PROVENANCE_SURFACE}>
+          <StateOf result={log.data.factsUnavailable} />
+        </div>
+      ) : null}
+    </Section>
+  );
+}
+
 export default async function QueuesPage({
   searchParams,
 }: {
@@ -362,7 +509,27 @@ export default async function QueuesPage({
    */
   searchParams?: Promise<SearchParams>;
 } = {}) {
-  const filter = filterFrom((await searchParams) ?? {});
+  const params = (await searchParams) ?? {};
+  const filter = filterFrom(params);
+  const tab: QueuesTab = tabFrom(params);
+  // The strip renders on both tabs and carries the filter across, so the queue
+  // you were looking at is the queue you come back to.
+  const tabs = <QueueTabs tabs={tabLinks(QUEUES_PATH, filter, tab)} />;
+
+  // Each tab makes ITS OWN reads and no others. A read the rendered tab never
+  // needs is a read that never happened, which is exactly what the absence of
+  // a window line means on every surface of this app (ARCHITECTURE.md §4.3):
+  // the verdict tab asks `review_items` nothing, and the queues tab asks
+  // `verdicts` nothing.
+  if (tab === "verdict_log") {
+    return (
+      <Page title="Queues">
+        {tabs}
+        <VerdictSection log={await readVerdictLog()} />
+      </Page>
+    );
+  }
+
   // One complete read for both queues, and the gauge's own bounded window.
   // Reported separately: with the gauge's window unreadable the lists still
   // render, and each surface names the read that refused.
@@ -373,6 +540,7 @@ export default async function QueuesPage({
 
   return (
     <Page title="Queues">
+      {tabs}
       <FilterBar facets={filterBar(QUEUES_PATH, filter)} />
 
       <div className="flex flex-col gap-4">

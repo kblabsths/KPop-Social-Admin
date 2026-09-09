@@ -73,14 +73,16 @@ export interface DrawnWindow extends WindowFacts {
  * four sentences a reader can see side by side (admin-window/DEBT-0006).
  *
  * The arm names the READ, not the page: `newest` is "the newest N rows of an
- * object, newest first", `matched` is "the first N of a complete matching set,
- * longest-waiting first", `catalog` is "the N newest arrivals in a catalog".
+ * object, newest first" — whatever the object, so `/cycles`'s cycles and runs
+ * and `/queues`'s verdict log all take it — `matched` is "the first N of a
+ * complete matching set, longest-waiting first", `catalog` is "the N newest
+ * arrivals in a catalog".
  * Only the page's own words about its own subject (`lede`, `rows`) come from
  * the call site — every fact of the read comes from the window, which is the
  * line admin-window/BUG-0077 drew and this file keeps.
  */
 export type DrawnSentence =
-  /** `/cycles`'s cycles and runs tables. */
+  /** `/cycles`'s cycles and runs tables, and `/queues`'s verdict log. */
   | { of: "newest"; lede: string; rows: string }
   /** `/claims`'s list: a complete read, drawn a window at a time. */
   | { of: "matched"; lede: string; rows: string }
@@ -185,7 +187,12 @@ export function WindowLine(
         {shows.lede} — a window of at most {count(info.limit)}, not a count of
         the {shows.rows} that exist.
         {info.truncated
-          ? ` The window filled its cap, so older ${shows.rows} ran than the ones below.`
+          ? // Arm-generic, because the arm is: `newest` is "the newest N rows
+            // of an object, newest first", and the object may be cycles, runs
+            // or verdicts. The clause said "older X ran than the ones below",
+            // which is true of a resolver cycle and false of every other
+            // newest-first window the arm serves (admin-window/TASK-0058).
+            ` The window filled its cap, so ${shows.rows} older than the ones below are not shown.`
           : ""}
       </WindowParagraph>
     );

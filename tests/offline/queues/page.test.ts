@@ -61,6 +61,21 @@ vi.mock("@/lib/gauges/queue-health", async (importActual) => {
   };
 });
 
+/**
+ * The verdict tab's read, stubbed at the same boundary as the other two
+ * (campaign admin-window/TASK-0058). What the log RENDERS is
+ * `tests/offline/queues/verdict-log.test.ts`; this file needs the seam only so
+ * the two tabs' reads can be told apart on one stub.
+ */
+vi.mock("@/lib/db/verdict", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/db/verdict")>();
+  return {
+    ...actual,
+    readVerdictLog: (limit?: unknown) =>
+      actual.readVerdictLog(limit as never, readWith.client as never),
+  };
+});
+
 const queuesModule = await import("@/app/queues/page");
 const QueuesPage = queuesModule.default;
 
@@ -1236,5 +1251,119 @@ describe("the queue-health section's state, as the live oracle reads it", () => 
     });
 
     expect(surfaceStateOf(markup, HEALTH_SURFACE, HEALTH_SLICES)).toBe("error");
+  });
+});
+
+/* ── the two tabs of this one route ──────────────────────────────────────── */
+
+/**
+ * The verdict log is a TAB of `/queues`, not a seventh page (campaign
+ * admin-window/TASK-0058, spec F13, DECISIONS 2026-09-04).
+ *
+ * What belongs here is the ROUTE's half of that claim — the strip, where each
+ * tab goes, and which reads each tab makes. What the log itself renders is
+ * `tests/offline/queues/verdict-log.test.ts`, and the six-link sidebar is the
+ * shell suite's, which already asserts it.
+ */
+describe("the tab strip", () => {
+  const tabsIn = (markup: string) => {
+    const $ = cheerio.load(markup);
+    return $("[data-tab]")
+      .toArray()
+      .map((element) => ({
+        tab: $(element).attr("data-tab") ?? "",
+        active: $(element).attr("data-active") === "true",
+        href: $(element).find("a").attr("href") ?? "",
+      }));
+  };
+
+  it("offers both tabs on both tabs, exactly one of them current", async () => {
+    const cases: [Record<string, string>, string][] = [
+      [{}, "queues"],
+      [{ tab: "verdict_log" }, "verdict_log"],
+    ];
+    for (const [params, current] of cases) {
+      const markup = await renderQueues(healthyScript(), params);
+      const tabs = tabsIn(markup);
+
+      expect(tabs.map((tab) => tab.tab), current).toEqual(["queues", "verdict_log"]);
+      expect(tabs.filter((tab) => tab.active).map((tab) => tab.tab)).toEqual([current]);
+    }
+  });
+
+  it("spells the default tab by OMITTING it, so one state has one URL", async () => {
+    const tabs = tabsIn(await renderQueues(healthyScript(), { tab: "verdict_log" }));
+
+    expect(tabs.find((tab) => tab.tab === "queues")?.href).toBe("/queues");
+    expect(tabs.find((tab) => tab.tab === "verdict_log")?.href).toBe(
+      "/queues?tab=verdict_log",
+    );
+  });
+
+  it("carries the filter across, so the queue you were in is the one you return to", async () => {
+    const tabs = tabsIn(
+      await renderQueues(healthyScript(), { kind: "signal", status: "open" }),
+    );
+
+    for (const tab of tabs) {
+      expect(tab.href, tab.tab).toContain("kind=signal");
+      expect(tab.href, tab.tab).toContain("status=open");
+    }
+  });
+
+  it("lands an unusable tab value on the queues, never on an error page", async () => {
+    for (const value of ["Verdict_log", "verdicts", "", "queues"]) {
+      const markup = await renderQueues(healthyScript(), { tab: value });
+
+      expect(tabsIn(markup).filter((tab) => tab.active).map((tab) => tab.tab), value).toEqual(
+        ["queues"],
+      );
+      expect(new Set(idsIn(markup)), value).toEqual(new Set(idsOf(POPULATION)));
+    }
+  });
+});
+
+describe("each tab reads only what it renders", () => {
+  it("asks verdicts nothing on the queues tab", async () => {
+    const stub = stubClient(healthyScript());
+    readWith.client = stub.asSupabaseClient();
+    render(await QueuesPage({ searchParams: Promise.resolve({}) }));
+
+    expect(stub.tablesRead()).toContain(T.reviewItems);
+    expect(stub.tablesRead()).not.toContain(T.verdicts);
+  });
+
+  it("asks review_items nothing on the verdict tab, and renders no queue block", async () => {
+    const stub = stubClient({
+      ...healthyScript(),
+      [T.verdicts]: { data: [], count: 0 },
+    });
+    readWith.client = stub.asSupabaseClient();
+    const markup = render(
+      await QueuesPage({ searchParams: Promise.resolve({ tab: "verdict_log" }) }),
+    );
+
+    expect(stub.tablesRead()).toContain(T.verdicts);
+    expect(stub.tablesRead()).not.toContain(T.reviewItems);
+    // The queue blocks, their filter chips and the health gauge belong to the
+    // other tab: a page showing both would be two pages in one.
+    const $ = cheerio.load(markup);
+    expect($("[data-queue]")).toHaveLength(0);
+    expect($("[data-facet]")).toHaveLength(0);
+    expect($('[data-window="queue_health"]')).toHaveLength(0);
+  });
+
+  it("keeps every data-surface name on this route unique", async () => {
+    // The name is how a live oracle addresses one surface and exactly one
+    // (ARCHITECTURE.md §10, common violation 8); two surfaces answering to one
+    // name is `matches 2 surfaces` at the next live run.
+    const urls: Record<string, string>[] = [{}, { tab: "verdict_log" }];
+    for (const params of urls) {
+      const $ = cheerio.load(await renderQueues(healthyScript(), params));
+      const names = $("[data-surface]")
+        .toArray()
+        .map((element) => $(element).attr("data-surface") ?? "");
+      expect(new Set(names).size, JSON.stringify(params)).toBe(names.length);
+    }
   });
 });
