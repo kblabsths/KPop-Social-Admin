@@ -260,4 +260,65 @@ describe("the ?source= facet", () => {
     expect(steps(stub.calls[0], "eq")).toEqual([]);
     expect(result.data.source).toBeNull();
   });
+
+  /**
+   * The other half of what this facet may be: a name this app could not SPELL
+   * narrows nothing either (admin-window/BUG-0153; ARCHITECTURE.md §7, common
+   * violations row 15).
+   *
+   * For `?source=` the allowlist question and the narrowing question are ONE
+   * question, which is why the gate is here and not at a page: the value is
+   * not merely spelled, it is SENT — and what comes back on `RunWindow.source`
+   * is what the runs window line interpolates into four clauses of the app's
+   * own paragraph as bare text, where an unterminated U+202E reversed 87
+   * characters of it. Refused HERE, no caller can narrow a runs read by a name
+   * the app cannot put on screen, so the field that sentence is built from is
+   * spellable by construction.
+   *
+   * Graded on both fixtures (LESSONS 8), because a guard that never saw a
+   * passing spelling passes vacuously — and the pair either side of the bound
+   * differs by one character.
+   */
+  it.each([
+    ["RIGHT-TO-LEFT OVERRIDE, leading", `${String.fromCodePoint(0x202e)}bandsintown`],
+    ["LEFT-TO-RIGHT ISOLATE, inside", `ab${String.fromCodePoint(0x2066)}cd`],
+    ["ZERO WIDTH SPACE, inside", `ab${String.fromCodePoint(0x200b)}cd`],
+    ["BRAILLE PATTERN BLANK", `ab${String.fromCodePoint(0x2800)}cd`],
+    ["one character over the bound", "a".repeat(129)],
+    ["C1 control, inside", `ab${String.fromCodePoint(0x0085)}cd`],
+    ["astral character, inside", `ab${String.fromCodePoint(0x1f600)}cd`],
+  ] as const)(
+    "narrows by no name this app could not spell: %s [admin-window/BUG-0153]",
+    async (_name, asked) => {
+      expect(sourceNarrowing(asked)).toBeNull();
+      // …and the read really is the unnarrowed read: no `.eq` reached
+      // PostgREST, and the window says it was narrowed by nothing, so no
+      // sentence built from it can claim a scope the read did not have.
+      const stub = stubClient({ [T.runs]: { data: [SUCCEEDED] } });
+      const result = await readRuns({ source: asked }, stub.asSupabaseClient());
+      if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+      expect(steps(stub.calls[0], "eq")).toEqual([]);
+      expect(result.data.source).toBeNull();
+      expect(result.data.rows).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    ["a registered source", SOURCE.ticketmaster],
+    ["a name the registry never heard of", SOURCE.unregistered],
+    ["a value the URL invented", '"><img src=x onerror=alert(1)>'],
+    ["blanks around ink", " a "],
+    ["punctuation only", "%%%"],
+    ["a value the length of the bound", "a".repeat(128)],
+  ] as const)(
+    "still narrows by a name this app can spell: %s [admin-window/BUG-0153]",
+    async (_name, asked) => {
+      expect(sourceNarrowing(asked)).toBe(asked);
+      const stub = stubClient({ [T.runs]: { data: [] } });
+      const result = await readRuns({ source: asked }, stub.asSupabaseClient());
+      if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+      expect(steps(stub.calls[0], "eq")).toEqual([["source", asked]]);
+      expect(result.data.source).toBe(asked);
+    },
+  );
 });

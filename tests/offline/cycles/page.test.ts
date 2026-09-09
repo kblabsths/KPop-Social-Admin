@@ -2216,6 +2216,17 @@ describe("the ?cycle= link against a window the page could not read", () => {
 /* ── the facet that belongs to the half this page does not render ────────── */
 
 describe("a ?source= link arriving from the Sources page", () => {
+  /**
+   * The runs the window drew, in rendered order — the OTHER half's rows, read
+   * here so a facet's effect on the read can be compared against the same page
+   * with no facet at all (`tests/offline/runs/` owns what those rows contain).
+   */
+  const drawnRuns = (markup: string): string[] =>
+    cheerio
+      .load(markup)("[data-run]")
+      .toArray()
+      .map((element) => cheerio.load(markup)(element).attr("data-run") ?? "");
+
   it("says which half the facet narrows, and narrows none of the cycles itself", async () => {
     // `resolution_runs` carries no source, so the cycles are the same cycles
     // with the facet as without it — but the arriving link is answered rather
@@ -2232,7 +2243,9 @@ describe("a ?source= link arriving from the Sources page", () => {
   });
 
   /**
-   * QA's strict pin, watched RED on this tree (campaign admin-window).
+   * Was QA's strict `it.fails` pin, watched RED on the tree it was filed
+   * against and flipped to a plain `it(...)` by admin-window/BUG-0153 — the
+   * assertions below are QA's, unchanged.
    *
    * ARCHITECTURE.md §7 as `?cycle=` now satisfies it (admin-window/BUG-0147):
    * foreign text reaches an app-authored sentence through an ALLOWLIST or in
@@ -2250,8 +2263,19 @@ describe("a ?source= link arriving from the Sources page", () => {
    *
    * `/runs` renders the same component from the same props, so it carries the
    * same defect.
+   *
+   * **How it was answered**: the allowlist arm, at ONE edge. `sourceNarrowing`
+   * (`src/lib/db/runs.ts`) asks the app's one predicate for a URL value inside
+   * app-authored prose — `canSpellUrlValue`, `src/lib/url/spellable.ts`, the
+   * printable-ASCII-with-ink allowlist BUG-0147 wrote for `?cycle=` and this
+   * ticket moved to a leaf both callers import — so a name outside it narrows
+   * nothing, is spelled nowhere, and is reported on the shared
+   * dropped-parameter line (the arm graded on its own below). The boxed arm
+   * was declined for BUG-0137's and BUG-0147's reason: `WindowLine.scope` is a
+   * sentence fragment `besides`/`narrows` split back apart, so no element can
+   * travel through it, and the box leaves the copied-out text reversed anyway.
    */
-  it.fails(
+  it(
     "never lets a ?source= bidi control into the sentences the page wrote [admin-window/BUG-0153]",
     async () => {
     const CONTROLS = /[\u202A-\u202E\u2066-\u2069]/u;
@@ -2288,6 +2312,117 @@ describe("a ?source= link arriving from the Sources page", () => {
       "bandsintown",
     );
   });
+
+  /**
+   * The ARM the pin above was answered with, graded on its own — the
+   * "counted, not spelled" half of ARCHITECTURE.md §7
+   * (admin-window/BUG-0153), and the same table `?cycle=` is graded on
+   * (admin-window/BUG-0147), because one predicate now answers both facets.
+   *
+   * A `?source=` this app may not SPELL is answered exactly as a `?cycle=`
+   * outside the allowlist and as a `?run=` that is not a run id: no sentence
+   * anywhere on the page names it, the value reaches the document nowhere at
+   * all — not the runs window line, not the facet paragraph, not the lead,
+   * not the empty card, not a `data-` attribute an operator copies out — and
+   * `source` is named on the shared dropped-parameter line.
+   *
+   * It also pins the half `?cycle=` never had to answer: the facet is not
+   * merely spelled, it is SENT, so a value the page may not name must leave
+   * the READ alone too. The window line and the drawn rows are therefore
+   * compared against the SAME page with no `?source=` at all — identical is
+   * the assertion, so the page cannot answer such a URL by going quiet or by
+   * narrowing behind a sentence that does not say so (that comparison is
+   * `tests/offline/runs/page.test.ts`' business for the `.eq` itself).
+   */
+  it.each([
+    ["RIGHT-TO-LEFT OVERRIDE, leading", `${String.fromCodePoint(0x202e)}bandsintown`],
+    ["RIGHT-TO-LEFT OVERRIDE, inside", `ab${String.fromCodePoint(0x202e)}cd`],
+    ["LEFT-TO-RIGHT ISOLATE", `x${String.fromCodePoint(0x2066)}y`],
+    ["ZERO WIDTH SPACE, inside", `ab${String.fromCodePoint(0x200b)}cd`],
+    ["BRAILLE PATTERN BLANK", `ab${String.fromCodePoint(0x2800)}cd`],
+    ["only blanks", "   "],
+    // The allowlist's OTHER edge, and the families its two regexes rule on
+    // that no case above reaches: the bound (128) by one character, a C1
+    // control, and an astral character.
+    ["one character over the bound", "a".repeat(129)],
+    ["C1 control, inside", `ab${String.fromCodePoint(0x0085)}cd`],
+    ["astral character, inside", `ab${String.fromCodePoint(0x1f600)}cd`],
+  ] as const)(
+    "spells nothing and reports the facet for a ?source= it may not print: %s [admin-window/BUG-0153]",
+    async (_name, asked) => {
+      const script = () => healthyScript({ [T.runs]: { data: [...RUNS] } });
+      const markup = await renderCycles(script(), { source: asked });
+      const $ = cheerio.load(markup);
+
+      // Nothing on the page names the facet — neither of the two sentences the
+      // criteria name, nor the lead's row-less arm, nor the empty card.
+      expect($("[data-source-facet]").length).toBe(0);
+      expect($('[data-empty="runs"]').length).toBe(0);
+      // The value never reaches the document as itself, no character outside
+      // printable ASCII reaches it at all, and no bidi control is anywhere in
+      // the markup — the half an isolation box cannot give, because that is
+      // the text an operator copies out.
+      if (/[\x21-\x7E]/.test(asked)) expect(markup.includes(asked)).toBe(false);
+      for (const character of new Set(asked)) {
+        if (character >= "\x20" && character <= "\x7E") continue;
+        expect(markup.includes(character), character).toBe(false);
+      }
+      expect(/[\u202A-\u202E\u2066-\u2069]/u.test(markup)).toBe(false);
+
+      // Not silently: the URL asked for a narrowing this page did not do, and
+      // the one owner of that sentence says so, naming the facet's key.
+      expect($("[data-dropped-params]").attr("data-dropped-params")).toBe("1");
+      expect(
+        $("[data-dropped-param]")
+          .toArray()
+          .map((element) => $(element).attr("data-dropped-param")),
+      ).toEqual(["source"]);
+
+      // And the read is the unnarrowed read, stated as one: the same rows and
+      // the same window sentence as the very same page with no facet at all.
+      const plain = await renderCycles(script());
+      const $plain = cheerio.load(plain);
+      expect(drawnRuns(markup)).toEqual(drawnRuns(plain));
+      expect($('[data-window="runs"]').text()).toBe(
+        $plain('[data-window="runs"]').text(),
+      );
+      // The other half is untouched too, as it is with any `?source=`.
+      expect(renderedCycles(markup)).toEqual(renderedCycles(plain));
+    },
+  );
+
+  /**
+   * The second fixture that arm owes (LESSONS 8): a name the allowlist ADMITS
+   * is spelled IN FULL in BOTH sentences the criteria name and is NOT reported
+   * as dropped — the page answers a half-typed URL instead of going quiet,
+   * which is admin-window/BUG-0153's own may-not clause. The pair either side
+   * of the bound differs by one character.
+   */
+  it.each([
+    ["a registered source", "bandsintown"],
+    ["a name the registry never heard of", "a-source-the-registry-never-heard-of"],
+    ["a value the URL invented", '"><img src=x onerror=alert(1)>'],
+    ["punctuation only", "%%%"],
+    ["a value the length of the bound", "a".repeat(128)],
+  ] as const)(
+    "still spells a ?source= it may print, in both sentences: %s [admin-window/BUG-0153]",
+    async (_name, asked) => {
+      const markup = await renderCycles(
+        healthyScript({ [T.runs]: { data: [...RUNS] } }),
+        { source: asked },
+      );
+      const $ = cheerio.load(markup);
+      // The facet paragraph, in the attribute and in the words.
+      expect($("[data-source-facet]").attr("data-source-facet")).toBe(asked);
+      expect($("[data-source-facet]").text()).toContain(asked);
+      // …and the runs window line, whose every clause carries the narrowing.
+      expect($('[data-window="runs"]').text()).toContain(asked);
+      // A parameter the page answered is not a parameter it dropped.
+      expect($("[data-dropped-params]").length).toBe(0);
+      // Nothing the URL carried reaches the document as markup.
+      expect($("img").length).toBe(0);
+    },
+  );
 });
 
 /* ── the run a Dashboard link asked for (admin-window/BUG-0142) ──────────── */
@@ -2959,6 +3094,51 @@ describe("the newest adapter run, above the cycles window", () => {
     expect(cheerio.load(markup)("[data-latest-run-state]").text()).toContain(
       NO_SUCH_SOURCE,
     );
+  });
+
+  /**
+   * The THIRD sentence the `?source=` facet reaches, swept with the two the
+   * criteria name (admin-window/BUG-0153): the lead's row-less arm spells the
+   * name inside the app's own paragraph too (`LatestRun`,
+   * `src/components/cycles/latest-run.tsx`), and so does the empty card's
+   * `holds` ("runs from <name>", `noRunsFrom`).
+   *
+   * Neither is gated where it renders, and neither needs to be: `/cycles`
+   * derives the facet through `sourceNarrowing`, so a name the app may not
+   * spell never becomes a narrowing and never reaches either. What that must
+   * mean on screen is that both sentences are the ones the page renders with
+   * NO facet at all — byte for byte — rather than a faceted sentence with a
+   * hole in it. Both directions: the case above names a spellable source in
+   * the lead, and `tests/offline/runs/page.test.ts` names it in the card.
+   */
+  it("leaves the lead and the empty card unfaceted for a ?source= it may not spell [admin-window/BUG-0153]", async () => {
+    const CONTROLS = /[\u202A-\u202E\u2066-\u2069]/u;
+    const script = () => healthyScript({ [T.runs]: { data: [] } });
+    const plain = await renderCycles(script());
+    const $plain = cheerio.load(plain);
+
+    for (const asked of [
+      `${String.fromCodePoint(0x202e)}${NO_SUCH_SOURCE}`,
+      `ab${String.fromCodePoint(0x2066)}cd`,
+      `ab${String.fromCodePoint(0x200b)}cd`,
+    ]) {
+      const where = [...asked]
+        .map((c) => "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"))
+        .join(" ");
+      const markup = await renderCycles(script(), { source: asked });
+      const $ = cheerio.load(markup);
+      // The lead says the unfaceted absence, and says it without a control.
+      expect($("[data-latest-run-state]").text(), where).toBe(
+        $plain("[data-latest-run-state]").text(),
+      );
+      expect(CONTROLS.test($("[data-latest-run-state]").text()), where).toBe(false);
+      // So does the empty card, which is the same card the page draws with no
+      // facet: "runs recorded", never "runs from <a name it may not print>".
+      expect($('[data-empty="runs"]').text(), where).toBe(
+        $plain('[data-empty="runs"]').text(),
+      );
+      expect(CONTROLS.test($('[data-empty="runs"]').text()), where).toBe(false);
+    }
   });
 });
 

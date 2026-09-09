@@ -413,6 +413,13 @@ const LEAF_MODULES = [
   // grammar back out of reach of `lib/claims/filters.ts`, which now imports
   // it, and would write the directory cycle rule 7 forbids.
   "src/lib/records/id.ts",
+  // The app's ONE allowlist for a URL value inside a sentence it wrote itself
+  // (admin-window/BUG-0153; ARCHITECTURE §7, common violations row 15). It was
+  // `canSpellAskedCycle` in `src/components/cycles/asked-cycle.tsx` until a
+  // second facet needed the same answer; both callers now import it, and one
+  // of them is `sourceNarrowing` in `src/lib/db/runs.ts`, so it must STAY a
+  // leaf or that edge becomes the directory cycle rule 7 forbids.
+  "src/lib/url/spellable.ts",
 ];
 
 /**
