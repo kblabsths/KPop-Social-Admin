@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T01:38:01Z — do not edit)
+# Tracker index (regenerated 2026-09-09T01:38:57Z — do not edit)
 
 ## open
 - BUG-0079 [P1][bug][M2] decisionRefusals throws on an absent `value` key and mis-refuses two ordinary bodies (undefined vs null)  (scope:src/lib/verdict/decision.ts,tests/offline/verdict/decision.test.ts from:TASK-0042)
@@ -28,6 +28,8 @@
 
 ## built
 - TASK-0047 [P1][task][M2] not_provisioned learns the absent FUNCTION: PGRST202 and 42883 join the classifier  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts,tests/offline/absence/pages.test.ts,tests/offline/absence/surfaces.ts,tests/live/harness.live.test.ts @builder-122)
+
+## qa
 - TASK-0037 [P2][task][patch] Prove the walk sandbox on staging once Ben pastes it, and retire the interim walk-write exception  (scope:tests/walk,tests/live,agenticflow/docs/vision/STACK.md,agenticflow/docs/DECISIONS.md @builder-121 from:inbox:2026-09-03-walker-sandbox-table.md)
 
 ## blocked
@@ -37,4 +39,4 @@
 ## reopened
 - TASK-0042 [P1][task][M2] The verdict decision envelope: one typed decision, a pure leaf, the shape the SQL reads  (scope:src/lib/verdict/decision.ts,tests/offline/verdict/decision.test.ts,tests/offline/db/layering.test.ts)
 
-Totals — blocked:2, built:2, claimed:3, done:7, open:19, reopened:1, wont_fix:1. Archived: 124.
+Totals — blocked:2, built:1, claimed:3, done:7, open:19, qa:1, reopened:1, wont_fix:1. Archived: 124.
