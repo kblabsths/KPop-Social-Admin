@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T01:47:42Z — do not edit)
+# Tracker index (regenerated 2026-09-09T01:50:25Z — do not edit)
 
 ## open
 - FEAT-0009 [P1][feat][M2] The two schema handoff artifacts, authored complete for Ben to install  (scope:agenticflow/tracker/for-human,agenticflow/docs/vision/SPEC.md)
@@ -13,6 +13,7 @@
 - TASK-0052 [P1][task][M2] The live edit round trip moves to walk_sandbox: five coercions, the NOT NULL refusal, and the sweep  (deps:TASK-0040(unmet:1) scope:tests/live/edit.live.test.ts,tests/live/sweep.ts,tests/live/residue.live.test.ts)
 - TASK-0054 [P1][task][M2] The override write path: events and venues edit only as recorded admin-tier observations  (deps:TASK-0044,TASK-0048,TASK-0052,TASK-0040(unmet:4) scope:src/lib/edit/config.ts,src/app/api/admin/records/[table]/[id]/route.ts,src/app/records/[table]/[id]/page.tsx,src/components/records/record-fields.tsx,src/components/records/field-editor.tsx,tests/offline/edit/config.test.ts,tests/offline/edit/route.test.ts,tests/offline/records/page.test.ts,tests/http/edit.http.test.ts)
 - TASK-0056 [P1][task][M2] The entity_link fact item's two actions: link to an existing entity, or settle  (deps:TASK-0049,TASK-0055(unmet:2) scope:src/components/review/close/link-actions.tsx,tests/offline/review-item/link-actions.test.ts)
+- BUG-0080 [P2][bug][M2] a non-operator 42883 from a TABLE read renders a provisioned table as not_provisioned  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts,tests/fixtures/stub-client.ts from:TASK-0047)
 - FEAT-0012 [P2][feat][M2] The reference field: a picker that links rows, and a reference that renders as a link  (deps:FEAT-0011(unmet:1) scope:src/lib/edit,src/app/records,src/components,src/lib/db,src/lib/records,tests/offline,tests/live)
 - FEAT-0013 [P2][feat][M2] The verdict log made visible: a tab on Queues, and each settled item's verdict inline  (deps:FEAT-0010(unmet:1) scope:src/app/queues,src/components,src/lib/db,src/lib/review,tests/offline,tests/live)
 - TASK-0053 [P2][task][M2] The shared edit cell's two affordances: visible before it is touched, and open with the value selected  (deps:TASK-0052,TASK-0040(unmet:2) scope:src/components/EditableCell.tsx,src/components/records/field-editor.tsx,tests/offline/ui/editable-cell.test.ts)
@@ -22,19 +23,19 @@
 
 ## claimed
 - TASK-0040 [P1][task][patch] Strike the direct-edit path: groups/idols leave EDIT_CONFIG, and every surface that assumed it is reconciled  (scope:src/lib/edit,src/app/records,src/app/api/admin,src/components,src/lib/db,tests/offline,tests/live,tests/http @builder-118 from:inbox:2026-09-09-vision-amendment.md)
-- TASK-0042 [P1][task][M2] The verdict decision envelope: one typed decision, a pure leaf, the shape the SQL reads  (scope:src/lib/verdict/decision.ts,tests/offline/verdict/decision.test.ts,tests/offline/db/layering.test.ts @builder-126)
 
 ## built
-- BUG-0078 [P2][bug][patch] Walk docs and Ben's note still say staging has no walk_sandbox; the reset tool succeeds there today  (scope:agenticflow/docs/vision/STACK.md,agenticflow/tracker/for-human/TASK-0034.md @builder-124 from:TASK-0041)
-- TASK-0039 [P3][task][patch] Dashboard: one line saying when the resolver last actually applied something  (scope:src/app/page.tsx,src/components,src/lib/db,src/lib/gauges,tests/offline,tests/live/dashboard.live.test.ts @builder-123 from:M1-endgame-user-sim)
+- TASK-0042 [P1][task][M2] The verdict decision envelope: one typed decision, a pure leaf, the shape the SQL reads  (scope:src/lib/verdict/decision.ts,tests/offline/verdict/decision.test.ts,tests/offline/db/layering.test.ts @builder-126)
 
 ## qa
 - BUG-0079 [P1][bug][M2] decisionRefusals throws on an absent `value` key and mis-refuses two ordinary bodies (undefined vs null)  (scope:src/lib/verdict/decision.ts,tests/offline/verdict/decision.test.ts @builder-125 from:TASK-0042)
 - TASK-0047 [P1][task][M2] not_provisioned learns the absent FUNCTION: PGRST202 and 42883 join the classifier  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts,tests/offline/absence/pages.test.ts,tests/offline/absence/surfaces.ts,tests/live/harness.live.test.ts @builder-122)
+- BUG-0078 [P2][bug][patch] Walk docs and Ben's note still say staging has no walk_sandbox; the reset tool succeeds there today  (scope:agenticflow/docs/vision/STACK.md,agenticflow/tracker/for-human/TASK-0034.md @builder-124 from:TASK-0041)
 - TASK-0037 [P2][task][patch] Prove the walk sandbox on staging once Ben pastes it, and retire the interim walk-write exception  (scope:tests/walk,tests/live,agenticflow/docs/vision/STACK.md,agenticflow/docs/DECISIONS.md @builder-121 from:inbox:2026-09-03-walker-sandbox-table.md)
+- TASK-0039 [P3][task][patch] Dashboard: one line saying when the resolver last actually applied something  (scope:src/app/page.tsx,src/components,src/lib/db,src/lib/gauges,tests/offline,tests/live/dashboard.live.test.ts @builder-123 from:M1-endgame-user-sim)
 
 ## blocked
 - TASK-0043 [P1][task][M2] ASK Ben: which registered sources row is the admin voice, and does it exist on staging  (scope:agenticflow/tracker/for-human)
 - TASK-0044 [P1][task][M2] ASK Ben: which columns of events and venues are editable at all  (scope:agenticflow/tracker/for-human)
 
-Totals — blocked:2, built:2, claimed:2, done:7, open:18, qa:3, wont_fix:1. Archived: 124.
+Totals — blocked:2, built:1, claimed:1, done:7, open:19, qa:5, wont_fix:1. Archived: 124.
