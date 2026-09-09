@@ -1,8 +1,18 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
+import type { SaveOutcome } from "@/components/EditableCell";
+import { submitFieldEdit, type FetchLike } from "@/components/records/submit";
 import { EDITABLE_TABLES, EDIT_CONFIG } from "@/lib/edit/config";
 import { EM_DASH } from "@/lib/format";
-import { codeOf, independentClient, renderPage } from "./parity";
+import {
+  ABSENCE_CODES,
+  assertState,
+  codeOf,
+  independentClient,
+  renderPage,
+  StateMismatchError,
+  stateOf,
+} from "./parity";
 import { resetSandbox } from "../walk/reset-sandbox.mjs";
 import {
   SANDBOX_COLUMNS,
@@ -52,9 +62,13 @@ import {
  * refusal is the correct state until staging is named, and is not a failure of
  * this file.
  *
- * There is no residue to sweep: this file issues no write of any kind, so no
- * row is created, deleted or changed by it — not even an `updated_at` trigger
- * fires on its account.
+ * **What it writes, and the only thing it writes** (admin-window/TASK-0052).
+ * Every write below sets a mapped column of `walk_sandbox` on the fixture row,
+ * through the app. No other table is written on any path, and nothing is
+ * inserted or deleted anywhere. Each write's undo is `resetSandbox` in a
+ * `finally` — the sandbox's own undo, which puts every row back rather than
+ * the one column that was touched — and `residue.live.test.ts` is the
+ * independent check that it ran.
  */
 
 vi.mock("@/lib/admin", () => ({
@@ -471,7 +485,76 @@ describe("the walk sandbox", () => {
       .map((row) => projected(row as unknown as Row));
   }
 
-  it("edits a mapped column through the surface, and a reset restores the fixture", async () => {
+  /* ── is the table there at all? ─────────────────────────────────────────── */
+
+  /**
+   * The note a sandbox write SKIPS with, or `null` when this error says
+   * nothing about whether the table exists (acceptance criterion 4 of
+   * admin-window/TASK-0052).
+   *
+   * Absence is the DATABASE's own word for it and nothing else counts: the two
+   * absence codes, read through the suite's one idiom (`codeOf` /
+   * `ABSENCE_CODES` in `tests/live/parity.ts`, which `objectIsAbsent` is built
+   * from). A permission denial, a malformed request, a broken connection — any
+   * of those is a refusal about the RUN, and reading one as "the table is not
+   * here" would turn a real failure into a green skip (STACK.md §5 step 3: a
+   * refused tool is not an absent table).
+   *
+   * Pure, so both of its answers are provable without a database — which is
+   * what keeps the skip branch from being code nobody has ever executed. The
+   * fixtures it must flag and the fixtures it must not are in "the absence
+   * branch" at the foot of this block.
+   */
+  function absenceNote(error: unknown): string | null {
+    const code = codeOf(error);
+    if (!ABSENCE_CODES.includes(code)) return null;
+    return (
+      `${SANDBOX_TABLE} is not on this staging project — the database answered ` +
+      `${code} — so the edit surface has no write surface at all and this ` +
+      `write cannot be exercised. The table is created BY HAND, once, from the ` +
+      `SQL in agenticflow/tracker/for-human/TASK-0034.md; its absence is a ` +
+      `state of the project, not a failure of this suite.`
+    );
+  }
+
+  /** One read answers for every test in this block; `undefined` until it runs. */
+  let absence: string | null | undefined;
+
+  /**
+   * The skip note for this run, or `null` when the sandbox is there.
+   *
+   * A read that failed for any OTHER reason throws, naming the database's code:
+   * that is neither a pass nor a skip.
+   */
+  async function sandboxSkip(): Promise<string | null> {
+    if (absence !== undefined) return absence;
+    const { error } = await independentClient()
+      .from(SANDBOX_TABLE)
+      .select(SANDBOX_PK)
+      .limit(1);
+    if (error === null || error === undefined) {
+      absence = null;
+      return absence;
+    }
+    const note = absenceNote(error);
+    if (note === null) {
+      throw new Error(
+        `reading ${SANDBOX_TABLE} failed (${codeOf(error)}): ` +
+          `${String((error as { message?: unknown }).message ?? error)}. That is ` +
+          `a refusal about this run, not an absent table, so it is a failure ` +
+          `and not a skip.`,
+      );
+    }
+    absence = note;
+    return absence;
+  }
+
+  it("edits a mapped column through the surface, and a reset restores the fixture", async (ctx) => {
+    // The write half skips, with the reason stated, when the table is not on
+    // this project — see `sandboxSkip` above (admin-window/TASK-0052).
+    const skip = await sandboxSkip();
+    if (skip !== null) ctx.skip(skip);
+
     const config = EDIT_CONFIG[SANDBOX_TABLE];
     const id = SANDBOX_WALK_KEY;
     // `note` is nullable text: the column the walk recipe's absence-then-fill
@@ -514,7 +597,10 @@ describe("the walk sandbox", () => {
     expect(await sandboxRows()).toEqual(fixtureRows());
   });
 
-  it("refuses a column the map does not carry, and changes nothing", async () => {
+  it("refuses a column the map does not carry, and changes nothing", async (ctx) => {
+    const skip = await sandboxSkip();
+    if (skip !== null) ctx.skip(skip);
+
     const config = EDIT_CONFIG[SANDBOX_TABLE];
     const id = SANDBOX_WALK_KEY;
     const before = await wholeRow(config, id);
@@ -528,5 +614,310 @@ describe("the walk sandbox", () => {
     }
 
     expect(await wholeRow(config, id)).toEqual(before);
+  });
+
+  /* ── the five coercions, their absent cases, and the refusal ────────────── */
+
+  /** This block's own stamp, so residue here names the ticket that wrote it. */
+  const COERCION_PROBE = "admin-window/TASK-0052 probe";
+
+  /**
+   * One mapped column, the way the SURFACE writes it, and what must be true
+   * afterwards.
+   *
+   * `sent` is a string on every line, and that is not an oversight: the edit
+   * cell is a text input, so `submitFieldEdit` sends `string | null` for every
+   * column whatever its declared type (`src/components/records/submit.ts`).
+   * The coercion this table is about is therefore the real one an operator
+   * provokes — typed text becoming an `integer`, a `boolean`, a `date` — and it
+   * happens in the database, which is why only a live test can prove it.
+   *
+   * `stored` is what this file's own read must find, with its JavaScript TYPE:
+   * a `4242` that comes back as `"4242"` is a column that never coerced.
+   * `shown` is what the cell must draw, written out here rather than derived
+   * with the app's own `scalarText`, so the surface and the expectation are two
+   * paths to one value (ARCHITECTURE §10) — and a stored value reaches the
+   * screen verbatim, never prettified (LESSONS 5).
+   *
+   * Only the two text columns can carry the campaign stamp; a date, an integer
+   * and a boolean have nowhere to put one. They are restored by the same reset
+   * as everything else, and `residue.live.test.ts` scans the text columns.
+   */
+  interface Coercion {
+    readonly field: string;
+    readonly sent: string;
+    readonly stored: string | number | boolean;
+    readonly shown: string;
+  }
+
+  /** The three `not null` columns: clearing one is refused by the database. */
+  const REQUIRED: readonly Coercion[] = [
+    {
+      field: "label",
+      sent: `${COERCION_PROBE} label`,
+      stored: `${COERCION_PROBE} label`,
+      shown: `${COERCION_PROBE} label`,
+    },
+    { field: "tally", sent: "4242", stored: 4242, shown: "4242" },
+    { field: "is_flagged", sent: "true", stored: true, shown: "true" },
+  ];
+
+  /** The two nullable columns: the em-dash absence, and filling it in. */
+  const NULLABLE: readonly Coercion[] = [
+    {
+      field: "note",
+      sent: `${COERCION_PROBE} note`,
+      stored: `${COERCION_PROBE} note`,
+      shown: `${COERCION_PROBE} note`,
+    },
+    {
+      field: "observed_on",
+      sent: "2026-03-04",
+      stored: "2026-03-04",
+      shown: "2026-03-04",
+    },
+  ];
+
+  const COERCIONS: readonly Coercion[] = [...REQUIRED, ...NULLABLE];
+
+  /**
+   * Postgres's SQLSTATE for a not-null violation. A machine identifier, which
+   * the route passes through verbatim in the database's own words
+   * (`errorMessage`, `src/lib/db/result.ts`) — so an operator meeting this
+   * refusal can look it up, and this test can pin the refusal to its CAUSE
+   * rather than to a status code three other failures also produce.
+   */
+  const NOT_NULL_VIOLATION = "23502";
+
+  /**
+   * Save one field the way the CELL does: `submitFieldEdit` — the module
+   * `FieldEditor` calls — over a `fetch` that hands the request to the route
+   * handler.
+   *
+   * This is what makes "the surface never claims the save landed" assertable
+   * rather than inferred from a status: a `SaveOutcome` IS the claim the cell
+   * renders (`{ ok: true }` becomes the green confirmation, `{ ok: false }` the
+   * red line carrying the route's words unchanged).
+   *
+   * The value is `string | null` because that is all a text input can produce.
+   */
+  async function save(
+    id: string,
+    field: string,
+    value: string | null,
+  ): Promise<SaveOutcome> {
+    const toTheRoute: FetchLike = (input, init) => {
+      const url = new URL(input, "http://127.0.0.1");
+      // `/api/admin/records/<table>/<id>` — the one mutating URL this app has
+      // (`recordFieldApiPath`), unpacked the way Next unpacks the two dynamic
+      // segments before it calls the handler.
+      const [, , , , table, key] = url.pathname.split("/");
+      return PATCH(new Request(url, init), {
+        params: Promise.resolve({
+          table: decodeURIComponent(table ?? ""),
+          id: decodeURIComponent(key ?? ""),
+        }),
+      });
+    };
+    return submitFieldEdit(SANDBOX_TABLE, id, field, value, toTheRoute);
+  }
+
+  /**
+   * The record page's one surface, addressed by NAME (ARCHITECTURE §10: never
+   * by position). `src/app/records/[table]/[id]/page.tsx` renders every state
+   * card it can draw inside this section, so the name addresses the whole read.
+   */
+  const RECORD_SURFACE = '[data-surface="fields"]';
+
+  /**
+   * The rendered record page, with its STATE KIND named before anything on it
+   * is compared (ARCHITECTURE §10 rule 6, and the same rule's item 4: an
+   * `error` is a FAIL). A not-provisioned card or a leg's error line would
+   * otherwise read as "the value is not there".
+   */
+  async function sandboxMarkup(id: string): Promise<string> {
+    const markup = await renderPage(RecordPage, {
+      params: Promise.resolve({ table: SANDBOX_TABLE, id }),
+    });
+    assertState(markup, RECORD_SURFACE, "ok");
+    return markup;
+  }
+
+  /** The text of one field's cell, read off the rendered page. */
+  function cellText(markup: string, field: string): string {
+    const cell = cheerio.load(markup)(
+      `[aria-label="${field} of ${SANDBOX_TABLE}"]`,
+    );
+    if (cell.length !== 1) {
+      throw new Error(
+        `the rendered ${SANDBOX_TABLE} record draws ${cell.length} cell(s) ` +
+          `for ${field}; a value is read off exactly one.`,
+      );
+    }
+    // `&nbsp;` survives server rendering; a value read off the page must
+    // not care, exactly as `parity.ts` does not.
+    return cell.text().replace(/\u00a0/g, " ").trim();
+  }
+
+  /**
+   * The state oracle every assertion below leans on, proved on TWO fixtures
+   * (LESSONS 3): a guard that has only ever seen the input it passes is a
+   * guard that passes vacuously.
+   *
+   * The id is a well-formed uuid the fixture does not seed, so the page's
+   * value read answers and holds no such row — the EMPTY state, which
+   * `sandboxMarkup` must refuse. `error` and `not_provisioned` are the other
+   * two kinds, and neither can be reached here without breaking staging on
+   * purpose.
+   */
+  it("grades this page's ok state apart from its emptiness", async (ctx) => {
+    const skip = await sandboxSkip();
+    if (skip !== null) ctx.skip(skip);
+
+    // Seeded: the fixture's own row renders OK, and `sandboxMarkup` says so.
+    await sandboxMarkup(SANDBOX_WALK_KEY);
+
+    // Not seeded: the same surface, a different kind, and a refusal that names
+    // both. No write of any sort is involved in either half.
+    const missing = "00000000-0000-4000-8000-00000000f052";
+    expect(SANDBOX_FIXTURE.map((row) => row.sandbox_id)).not.toContain(missing);
+    const markup = await renderPage(RecordPage, {
+      params: Promise.resolve({ table: SANDBOX_TABLE, id: missing }),
+    });
+    expect(stateOf(markup, RECORD_SURFACE)).toBe("empty");
+    await expect(sandboxMarkup(missing)).rejects.toThrow(StateMismatchError);
+  });
+
+  for (const { field, sent, stored, shown } of COERCIONS) {
+    it(`writes ${field}, and the database keeps it as ${field}'s own type`, async (ctx) => {
+      const skip = await sandboxSkip();
+      if (skip !== null) ctx.skip(skip);
+
+      const config = EDIT_CONFIG[SANDBOX_TABLE];
+      const id = SANDBOX_WALK_KEY;
+      expect(config.editable).toContain(field);
+
+      try {
+        // The cell's own claim: it saved, and the value it now shows is the
+        // one the DATABASE kept, not the text that was typed.
+        expect(await save(id, field, sent), field).toEqual({
+          ok: true,
+          value: shown,
+        });
+
+        // Path two: this file's own read. The TYPE first — the coercion is the
+        // point, and an integer column holding the string "4242" would satisfy
+        // an equality check on its own.
+        const kept = (await wholeRow(config, id))[field];
+        expect(typeof kept, `${field} came back as ${typeof kept}`).toBe(
+          typeof stored,
+        );
+        expect(kept, field).toEqual(stored);
+
+        // ...and the surface an operator comes back to shows it verbatim.
+        expect(cellText(await sandboxMarkup(id), field), field).toBe(shown);
+      } finally {
+        await resetSandbox(independentClient());
+      }
+    });
+  }
+
+  for (const { field, sent, stored, shown } of NULLABLE) {
+    it(`clears ${field} to the app's own absence, then fills it in again`, async (ctx) => {
+      const skip = await sandboxSkip();
+      if (skip !== null) ctx.skip(skip);
+
+      const config = EDIT_CONFIG[SANDBOX_TABLE];
+      const id = SANDBOX_WALK_KEY;
+
+      try {
+        expect(await save(id, field, null), field).toEqual({
+          ok: true,
+          value: null,
+        });
+        expect((await wholeRow(config, id))[field], field).toBeNull();
+
+        // The app's ONE absence marker and nothing else: no qualifier, because
+        // nothing was measured (LESSONS 1).
+        expect(cellText(await sandboxMarkup(id), field), field).toBe(EM_DASH);
+
+        // ...and an emptied column is still editable, which is how it is ever
+        // filled in again.
+        expect(await save(id, field, sent), field).toEqual({
+          ok: true,
+          value: shown,
+        });
+        expect((await wholeRow(config, id))[field], field).toEqual(stored);
+        expect(cellText(await sandboxMarkup(id), field), field).toBe(shown);
+      } finally {
+        await resetSandbox(independentClient());
+      }
+    });
+  }
+
+  for (const { field } of REQUIRED) {
+    it(`reports the database's refusal when ${field} is cleared, and ${field} still stands`, async (ctx) => {
+      const skip = await sandboxSkip();
+      if (skip !== null) ctx.skip(skip);
+
+      const config = EDIT_CONFIG[SANDBOX_TABLE];
+      const id = SANDBOX_WALK_KEY;
+      const before = await wholeRow(config, id);
+
+      try {
+        // Clearing a `not null` column is a walkable error path put there on
+        // purpose (STACK.md §5). The refusal is the DATABASE's, and it is a
+        // pass: what would be a failure is the surface claiming otherwise.
+        const outcome = await save(id, field, null);
+        expect(outcome.ok, `clearing ${field}: ${JSON.stringify(outcome)}`).toBe(
+          false,
+        );
+        const said = outcome.ok ? "" : outcome.message;
+        expect(said, field).toContain(NOT_NULL_VIOLATION);
+        expect(said, field).toContain(field);
+
+        // The point of the criterion: not "it said no" but "the value is
+        // unchanged" — every column, against the read taken before the clear.
+        expect(await wholeRow(config, id), field).toEqual(before);
+        // ...and the surface still draws the value that stands, not an absence.
+        expect(cellText(await sandboxMarkup(id), field), field).toBe(
+          String(before[field]),
+        );
+      } finally {
+        await resetSandbox(independentClient());
+      }
+    });
+  }
+
+  describe("the absence branch", () => {
+    /**
+     * The skip is not dead code (criterion 4): it is exercised here on a
+     * STUBBED absence, both codes, and on four errors it must refuse to call
+     * an absence. A guard that has only ever seen the input it flags passes
+     * vacuously (LESSONS 3).
+     */
+    it("skips on the database's own absence code, and on nothing else", () => {
+      for (const code of ABSENCE_CODES) {
+        const note = absenceNote({
+          code,
+          message: `Could not find the table 'public.${SANDBOX_TABLE}'`,
+        });
+        expect(note, code).not.toBeNull();
+        expect(note, code).toContain(SANDBOX_TABLE);
+        expect(note, code).toContain(code);
+      }
+
+      // Refusals about the RUN. None of them says the table is missing, so
+      // none of them may buy a green skip.
+      const refusals: readonly unknown[] = [
+        { code: "42501", message: "permission denied for table walk_sandbox" },
+        { code: "22P02", message: "invalid input syntax for type uuid" },
+        { message: "TypeError: fetch failed" },
+        null,
+      ];
+      for (const refusal of refusals) {
+        expect(absenceNote(refusal), JSON.stringify(refusal)).toBeNull();
+      }
+    });
   });
 });
