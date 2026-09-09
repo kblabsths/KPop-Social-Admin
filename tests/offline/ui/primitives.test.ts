@@ -15,7 +15,9 @@ import { Section } from "@/components/ui/section";
 import { StatCard } from "@/components/ui/stat-card";
 import { ARRIVES_WITH, RETRY, StateOf } from "@/components/ui/state-of";
 import {
+  NARROWED_BY_FILTERS,
   WindowLine,
+  narrowedTo,
   type DrawnSentence,
   type DrawnWindow,
   type ReadWindow,
@@ -962,19 +964,19 @@ describe("WindowLine", () => {
   });
 
   /**
-   * The one arm whose FILLED clause already names its own narrowing — "N
-   * claims match these filters" — so the window's `scope` is not threaded
-   * through it a second time and the sentence does not say it twice. Its
-   * did-not-fill and empty clauses take the scope like every other arm's,
-   * which is where admin-window/BUG-0114's claim lived.
+   * The `matched` arm names ONE narrowing in its own words — "N claims match
+   * these filters", which is `NARROWED_BY_FILTERS` and nothing else. Every
+   * other narrowing its window carries goes through the same population phrase
+   * as every other clause here; it used to take no scope at all, which is how
+   * `/claims?tab=standing` came to state one bucket's count over filters
+   * nobody had set, naming no bucket (admin-window/BUG-0118). Both halves are
+   * graded below, in the loop and after it.
    */
-  const NAMES_ITS_OWN_NARROWING = (shows: DrawnSentence) => shows.of === "matched";
-
   it("carries the narrowing into a FILLED window's sentence too", () => {
     // A narrowed window that hit its cap says nothing false, but it must still
     // say which population it is a window of: the reader who cannot see the
     // facet cannot check the cap either.
-    for (const shows of EVERY_KIND.filter((kind) => !NAMES_ITS_OWN_NARROWING(kind))) {
+    for (const shows of EVERY_KIND) {
       const open = textOf(drawn(shows, { ...DRAWN, held: 5, truncated: false, scope: NARROWED }));
       const narrowed = textOf(drawn(shows, { ...DRAWN, truncated: true, scope: NARROWED }));
       expect(narrowed, shows.of).toContain(NARROWED);
@@ -985,11 +987,28 @@ describe("WindowLine", () => {
       const clause = narrowed.slice(sharedPrefix(open, narrowed).length);
       expect(clause, shows.of).toContain(NARROWED);
     }
-    // …and the exempt arm names a narrowing in its own words instead of none.
-    const matched = textOf(
-      drawn({ of: "matched", lede: "Oldest first.", rows: "claims" }, { ...DRAWN, truncated: true }),
-    );
-    expect(matched).toContain("filters");
+    // …and the arm that names a narrowing in its own words says THAT one once,
+    // never twice, when the window carries it too (admin-window/BUG-0118).
+    const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
+    const bare = textOf(drawn(matched, { ...DRAWN, truncated: true }));
+    expect(bare).toContain("filters");
+    for (const scope of [
+      NARROWED_BY_FILTERS,
+      narrowedTo([NARROWED, NARROWED_BY_FILTERS]),
+    ]) {
+      const text = textOf(drawn(matched, { ...DRAWN, truncated: true, scope }));
+      expect(text.split(NARROWED_BY_FILTERS).length - 1, String(scope)).toBe(0);
+      expect(text.split("match these filters").length - 1, String(scope)).toBe(1);
+    }
+    // Carrying both, the sentence is the bare one with the OTHER narrowing
+    // added beside the count, and nothing else about it moved.
+    expect(
+      textOf(drawn(matched, {
+        ...DRAWN,
+        truncated: true,
+        scope: narrowedTo([NARROWED, NARROWED_BY_FILTERS]),
+      })),
+    ).toBe(bare.replace(`${matched.rows} match`, `${matched.rows} ${NARROWED} match`));
   });
 
   it("renders an unnarrowed window exactly as it did before facets existed", () => {
@@ -1008,9 +1027,11 @@ describe("WindowLine", () => {
         // Nothing of the facet leaks into the unnarrowed rendering…
         expect(text, `${shows.of} ${state}`).not.toContain(NARROWED);
         // …and the narrowing really did change what this state says, so the
-        // comparison above is not passing over two identical strings. The
-        // exempt arm's FILLED clause is the one pair that is equal by design.
-        if (state === "filled" && NAMES_ITS_OWN_NARROWING(shows)) continue;
+        // comparison above is not passing over two identical strings. Every
+        // arm, in every direction: the `matched` arm's FILLED clause was the
+        // one pair equal by design until admin-window/BUG-0118, which is
+        // exactly how it came to state one bucket's count over "these
+        // filters".
         expect(narrowed, `${shows.of} ${state}`).not.toBe(text);
       }
     }

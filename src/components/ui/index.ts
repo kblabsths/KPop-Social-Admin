@@ -22,9 +22,11 @@ export {
 export { StatCard, type StatTone } from "./stat-card";
 export {
   type DrawnWindow,
+  NARROWED_BY_FILTERS,
   type ReadWindow,
   WindowLine,
   drawnWindow,
+  narrowedTo,
   oldestIn,
 } from "./window-line";
 export { cx } from "./cx";
