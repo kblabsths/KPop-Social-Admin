@@ -170,6 +170,19 @@ function wontFixGuard(artifact: SqlArtifact): string | null {
   return guard === null ? null : guard[1];
 }
 
+/**
+ * The WHERE clause of the read that ADOPTS a claimed value — the
+ * `choose_claimed_value` arm's `select claim.value into v_claim`. Read as CODE
+ * (literals intact), because the binding this asks about is a predicate.
+ */
+function adoptedClaimGuard(artifact: SqlArtifact): string | null {
+  const read =
+    /select\s+claim\.value\s+into\s+v_claim\s+from\s+public\.observations\s+as\s+claim\s+where([\s\S]*?);/.exec(
+      artifact.code,
+    );
+  return read === null ? null : read[1];
+}
+
 /** How many times the artifact's code matches `pattern`. */
 function occurrences(artifact: SqlArtifact, pattern: RegExp): number {
   return (artifact.scan.match(pattern) ?? []).length;
@@ -541,6 +554,35 @@ describe("the settle_review_item migration", () => {
     expect(guard).not.toBeNull();
     expect(guard).toMatch(/\bis\s+null\b/);
     expect(guard).toMatch(/\[\[:space:\]\]/);
+  });
+
+  /**
+   * QA attack on TASK-0046 — admin-window/BUG-0088.
+   *
+   * `contracts/admin-observability.md` §7 states the `data_conflict` answer as
+   * "**choose a claimed value** (one tap per evidence card)", and the artifact's
+   * own comment on this arm says the value "is read off the claim rather than
+   * re-sent by the dashboard, so the two cannot differ". Both sentences describe
+   * a claim BOUND to the item and to the fact being settled.
+   *
+   * The arm reads the observation by primary key alone. Any `observation_id` in
+   * the ledger is adopted: its value is re-ingested under the admin source for
+   * the DECISION's `domain`/`entity_id`/`field` and applied with
+   * `tier_at_apply = 'admin'` and `admin_locked = true`, which the resolver can
+   * never correct. `v_item.evidence` — the exact binding the contract names — is
+   * already in hand three statements later, where the rejection set uses it.
+   *
+   * Either binding satisfies this: membership in the item's own `evidence`, or
+   * the adopted claim's own fact triple matching the decision's.
+   * Landed as `it.fails` (strict xfail): it goes RED the day the arm is
+   * bound, which is the signal to flip it back to `it`. Watched red as a
+   * plain `it` on c9b8133 before pinning — the WHERE clause it reported is
+   * `claim.observation_id = (v_value ->> 'observation_id')::uuid`, entire.
+   */
+  it.fails("adopts a claimed value only from a claim bound to the fact being settled", () => {
+    const guard = adoptedClaimGuard(shipped);
+    expect(guard).not.toBeNull();
+    expect(guard).toMatch(/v_item\.evidence|claim\.domain|claim\.entity_id|claim\.field/);
   });
 
   it("is one transaction: no commit, no dblink, no autonomous transaction", () => {
