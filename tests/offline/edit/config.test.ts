@@ -5,13 +5,17 @@ import { describe, expect, it } from "vitest";
 import {
   EDITABLE_TABLES,
   EDIT_CONFIG,
+  columnOfRegistryField,
   decideEdit,
   editConfigFor,
   isEditable,
   mappedColumns,
+  mappedRegistryFields,
+  registryFieldOf,
   writePathFor,
   type TableEditConfig,
 } from "@/lib/edit/config";
+import { isReferenceField } from "@/lib/verdict/decision";
 import { TABLE_NAMES } from "@/lib/db/tables";
 import { codeLines, repoRoot, sourceFiles, sourceText } from "../source-tree";
 
@@ -493,9 +497,77 @@ describe("the map", () => {
     expect(EDIT_CONFIG.events.reference).toEqual({
       field: "venue_id",
       domain: "venues",
+      registryField: "venue",
     });
     for (const table of ["venues", "walk_sandbox"]) {
       expect(EDIT_CONFIG[table].reference, table).toBeNull();
+    }
+  });
+
+  it("names each reference the fact the decision log spells, not the column", () => {
+    // admin-window/BUG-0090. `field_provenance.field` holds the REGISTRY field
+    // name; the map's `field` is the CANONICAL COLUMN. They are the same
+    // string everywhere but here, which is why the pairing lives on the entry
+    // that already knows this column links rather than holds.
+    //
+    // The two spellings are pinned to each other across the two leaves that
+    // each mirror the scraper's registry: `isReferenceField` answers for
+    // `events.venue` (`REFERENCE_FIELDS`) and must not answer for the column
+    // name, so a `registryField` edited to the column would redden here rather
+    // than silently return the em dash BUG-0090 measured.
+    for (const config of Object.values(EDIT_CONFIG)) {
+      const reference = config.reference;
+      if (reference === null) continue;
+      expect(
+        isReferenceField(config.table, reference.registryField),
+        config.table,
+      ).toBe(true);
+      // ...and the column's own name is NOT the registry's field name, which
+      // is the whole reason the pairing exists.
+      expect(
+        isReferenceField(config.table, reference.field),
+        config.table,
+      ).toBe(false);
+      expect(reference.registryField, config.table).not.toBe(reference.field);
+    }
+  });
+
+  it("maps column to logged field and back, and leaves every scalar alone", () => {
+    // admin-window/BUG-0090, both directions and the identity case. The read
+    // asks in the log's vocabulary and the surface draws in the schema's, so
+    // the round trip has to be exact or a decision lands on a line that does
+    // not exist.
+    const events = EDIT_CONFIG.events;
+    expect(registryFieldOf(events, "venue_id")).toBe("venue");
+    expect(columnOfRegistryField(events, "venue")).toBe("venue_id");
+    expect([...mappedRegistryFields(events)]).toContain("venue");
+    expect([...mappedRegistryFields(events)]).not.toContain("venue_id");
+
+    for (const config of Object.values(EDIT_CONFIG)) {
+      const fields = mappedRegistryFields(config);
+      const columns = mappedColumns(config);
+      // One name per column, in the columns' own order: a translation, never
+      // a filter and never a re-ordering.
+      expect(fields.length, config.table).toBe(columns.length);
+      expect(new Set(fields).size, config.table).toBe(fields.length);
+      for (const [index, column] of columns.entries()) {
+        const field = fields[index];
+        expect(field, `${config.table}.${column}`).toBe(
+          registryFieldOf(config, column),
+        );
+        // Round trip: whatever the name, it comes back to its own column.
+        expect(columnOfRegistryField(config, field), `${config.table}.${column}`)
+          .toBe(column);
+        // The reference is the ONLY column whose two names differ; every
+        // scalar is queried by its own name exactly as it always was.
+        const isReference = config.reference?.field === column;
+        expect(field === column, `${config.table}.${column}`).toBe(!isReference);
+      }
+      // A logged field the map does not know is its own answer, so an
+      // unexpected row keys on itself rather than on the reference's column.
+      expect(columnOfRegistryField(config, "not_a_mapped_field")).toBe(
+        "not_a_mapped_field",
+      );
     }
   });
 
@@ -754,7 +826,7 @@ describe("decideEdit", () => {
       regime: "resolver_owned",
       editable: ["a"],
       display: ["b"],
-      reference: { field: "b", domain: "venues" },
+      reference: { field: "b", domain: "venues", registryField: "b" },
     };
     const other: TableEditConfig = {
       table: "another_table",

@@ -100,6 +100,35 @@ export interface ReferenceColumn {
    * has.
    */
   readonly domain: string;
+  /**
+   * The REGISTRY FIELD NAME the same fact is logged under — `venue` for the
+   * `venue_id` column (admin-window/BUG-0090).
+   *
+   * The two names are the same string for every other column this app deals
+   * in, which is exactly why a reference needs this one: the registry's field
+   * names ARE the canonical columns' names, and `events.venue` -> `venue_id`
+   * is the one exception, which is what makes the column a reference rather
+   * than a cell (`lib/verdict/decision.ts`, ARCHITECTURE §9.2). The scraper's
+   * resolver stamps the FIELD into `field_provenance.field` and writes the
+   * COLUMN separately (`v_column := coalesce(p_decision ->> 'column',
+   * v_field)`, scraper migration `20260901000005`), so a decision log filtered
+   * by column name can never match the venue fact — the em dash
+   * admin-window/BUG-0090 measured on staging, where 11 rows spell `venue`
+   * and none spells `venue_id`.
+   *
+   * **The pairing lives HERE and nowhere else**: `reference` is already the
+   * one place that says this column links rather than holds, so it is the one
+   * place that says what the fact behind it is called. `registryFieldOf` and
+   * `columnOfRegistryField` below are the only two readers, and no caller
+   * re-derives either direction.
+   *
+   * A mirrored literal, like `REFERENCE_FIELDS` in `lib/verdict/decision.ts`
+   * and for the same reason: `kind: reference` lives only in the scraper's
+   * `registry/domains/events.yaml`, no read this app can make answers it, and
+   * this leaf may import nothing. `tests/offline/edit/config.test.ts` pins the
+   * two spellings to each other so the mirror cannot drift silently.
+   */
+  readonly registryField: string;
 }
 
 export interface TableEditConfig {
@@ -219,7 +248,10 @@ const ENTRIES: readonly TableEditConfig[] = [
     // told the operator less than the Browse row they clicked
     // (admin-window/BUG-0034). It is a LINK, so it stays read-only: a
     // reference is F12's picker, never a cell (AGENTS.md).
-    reference: { field: "venue_id", domain: "venues" },
+    // `registryField` is the name the DECISION LOG spells the same fact with
+    // (`events.venue`), which is not the column's own name and is the only
+    // place in this map where the two differ (admin-window/BUG-0090).
+    reference: { field: "venue_id", domain: "venues", registryField: "venue" },
   },
   {
     table: "venues",
@@ -298,6 +330,64 @@ export function mappedColumns(config: TableEditConfig): readonly string[] {
     if (!columns.includes(column)) columns.push(column);
   }
   return columns;
+}
+
+/**
+ * The name the DECISION LOG spells this column's fact with — the registry
+ * field name (admin-window/BUG-0090).
+ *
+ * Identity for every column but a reference: `title` is `title`, and only
+ * `events.venue_id` answers something else (`venue`). So a scalar is queried
+ * by its own name, exactly as it always was, and the one column whose fact has
+ * a different name gets that name from the entry that already pairs them.
+ *
+ * Total, and deliberately not a lookup table: a table with no `reference`, or
+ * a column that is not the reference, is its own answer.
+ */
+export function registryFieldOf(
+  config: TableEditConfig,
+  column: string,
+): string {
+  const reference = config.reference;
+  return reference !== null && reference.field === column
+    ? reference.registryField
+    : column;
+}
+
+/**
+ * The INVERSE: the column a logged registry field is drawn as, so a decision
+ * on `events.venue` lands on the `venue_id` line an operator reads.
+ *
+ * The surface keys provenance by column name (`recordFields` in
+ * `components/records/fields.ts`), so a decision that arrives under the
+ * registry name has to be re-keyed once, at the read boundary, or it lands on
+ * a line that does not exist and the page renders the absence for a fact the
+ * log holds.
+ */
+export function columnOfRegistryField(
+  config: TableEditConfig,
+  field: string,
+): string {
+  const reference = config.reference;
+  return reference !== null && reference.registryField === field
+    ? reference.field
+    : field;
+}
+
+/**
+ * `mappedColumns` as the DECISION LOG spells them — what a `field_provenance`
+ * read filters on (admin-window/BUG-0090).
+ *
+ * Same columns, same order, one name translated: the surface's own question
+ * ("which facts does this record page draw?") asked in the log's vocabulary
+ * rather than the schema's. `mappedColumns` stays the answer for everything
+ * that addresses real COLUMNS — the value select and the drawn order — and
+ * this is the answer for the one read that addresses FACTS.
+ */
+export function mappedRegistryFields(
+  config: TableEditConfig,
+): readonly string[] {
+  return mappedColumns(config).map((column) => registryFieldOf(config, column));
 }
 
 /** The config for a table, or `null` when the map does not carry it. */

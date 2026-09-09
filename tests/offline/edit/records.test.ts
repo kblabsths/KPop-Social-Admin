@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { EDIT_CONFIG, decideEdit, mappedColumns } from "@/lib/edit/config";
+import {
+  EDIT_CONFIG,
+  decideEdit,
+  mappedColumns,
+  mappedRegistryFields,
+} from "@/lib/edit/config";
 import {
   readRecord,
   readRecordProvenance,
@@ -516,11 +521,25 @@ describe("readRecordProvenance", () => {
     // The MAP's columns, not `display` alone: the columns an operator
     // overrides are the ones an admin decision stamps, and a filter on
     // `display` would drop every one of them (FEAT-0011 criterion 6).
+    //
+    // ...asked for by the name the LOG spells each fact with, which is the
+    // column's own name for every one of them but the reference
+    // (admin-window/BUG-0090): `field_provenance.field` holds the registry
+    // field, so a filter built from `mappedColumns` asks for `venue_id`, a
+    // name that table has never held.
     expect(step(log, "in")?.args).toEqual([
       "field",
-      [...mappedColumns(EDIT_CONFIG.events)],
+      [...mappedRegistryFields(EDIT_CONFIG.events)],
     ]);
     expect(step(log, "in")?.args[1]).toContain("title");
+    expect(step(log, "in")?.args[1]).toContain("venue");
+    expect(step(log, "in")?.args[1]).not.toContain("venue_id");
+    // Every scalar is still asked for by its own column name — the one
+    // translation is the reference's, and nothing else moved.
+    for (const column of mappedColumns(EDIT_CONFIG.events)) {
+      if (column === EDIT_CONFIG.events.reference?.field) continue;
+      expect(step(log, "in")?.args[1], column).toContain(column);
+    }
   });
 
   it("is a complete read: exact count, total order, capped range", async () => {
@@ -664,7 +683,7 @@ describe("readRecordProvenance", () => {
   // STRICT XFAIL — admin-window/BUG-0090. `it.fails` reddens the day the
   // behaviour is fixed and this marker is left behind, which sends the reader
   // to the ticket instead of letting the pin rot silently.
-  it.fails("carries the venue fact onto the reference column that displays it", async () => {
+  it("carries the venue fact onto the reference column that displays it", async () => {
     // QA, admin-window/TASK-0054 criterion 6; filed as admin-window/BUG-0090.
     //
     // `field_provenance.field` holds the REGISTRY field name, and
@@ -709,6 +728,55 @@ describe("readRecordProvenance", () => {
     const venue = result.fields.get("venue_id");
     expect(venue?.authority).toBe("source");
     expect(venue && "source" in venue ? venue.source : null).toBe("ticketmaster");
+  });
+
+  it("reduces the venue fact's own history, and shows its lock", async () => {
+    // admin-window/BUG-0090's second consequence, in the ticket's own words:
+    // "the same mismatch will hide `admin_locked` on the venue fact the day
+    // `settle_review_item` lands, so an admin-locked venue would read as
+    // unprovenanced" — the one column spec §8 asks this surface to show
+    // stickiness for.
+    //
+    // The re-keying happens at the READ BOUNDARY, before the latest-per-fact
+    // reduction, so the venue's history reduces like any other fact's: two
+    // decisions on `venue`, one line, the later one. Re-keying afterwards
+    // would work here too, and this is what pins which of the two the data
+    // layer does.
+    const db = stubClient({
+      field_provenance: complete([
+        fieldProvenanceRow({
+          provenance_id: "01920000-0000-7000-8000-000000000411",
+          entity_id: EVENT_ID,
+          field: "venue",
+          applied_at: "2026-08-01T00:00:00Z",
+          source_id: TICKETMASTER,
+        }),
+        fieldProvenanceRow({
+          provenance_id: "01920000-0000-7000-8000-000000000412",
+          entity_id: EVENT_ID,
+          field: "venue",
+          applied_at: "2026-09-01T00:00:00Z",
+          source_id: TICKETMASTER,
+          admin_locked: true,
+        }),
+      ]),
+      sources: complete([{ source_id: TICKETMASTER, source: "ticketmaster" }]),
+    });
+    const result = await readRecordProvenance(
+      EDIT_CONFIG.events,
+      EVENT_ID,
+      db.asSupabaseClient(),
+    );
+
+    // One line for the fact, on the column the operator reads, and nothing
+    // left keyed by the log's own spelling.
+    expect(result.fields.size).toBe(1);
+    expect(result.fields.has("venue")).toBe(false);
+    const venue = result.fields.get("venue_id");
+    expect(venue?.authority).toBe("admin");
+    expect(venue?.appliedAt).toBe("2026-09-01T00:00:00Z");
+    // The line names the column it is drawn on, not the fact it was logged as.
+    expect(venue?.field).toBe("venue_id");
   });
 
   it("writes nothing, whatever the log says", async () => {

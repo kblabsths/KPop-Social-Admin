@@ -17,8 +17,10 @@ import {
   type SourceNameRow,
 } from "../records/provenance";
 import {
+  columnOfRegistryField,
   decideEdit,
   mappedColumns,
+  mappedRegistryFields,
   writePathFor,
   type AllowedEdit,
   type TableEditConfig,
@@ -388,13 +390,22 @@ const SOURCE_COLUMNS = "source_id, source";
  * this record uses. The order is the decision order and ends in the primary
  * key, which is what lets `readComplete` tell a whole set from a truncated one.
  *
- * The FIELDS are `mappedColumns` — the same one helper the value read and the
- * drawn order use — and not `display` alone. Since the override path landed,
- * the columns an operator edits are the ones an admin override stamps
+ * The FIELDS are the map's columns — the same set the value read and the drawn
+ * order use — and not `display` alone. Since the override path landed, the
+ * columns an operator edits are the ones an admin override stamps
  * `admin_locked`, so a filter on `display` would drop the provenance of every
  * field that has any (FEAT-0011 criterion 6). Asking for the primary key too
  * costs one name in an `in` list and keeps this a question about the map's
  * columns rather than a second list of them.
+ *
+ * **Spelled the way the LOG spells them, which is not always the way the
+ * SCHEMA does** (`mappedRegistryFields`, admin-window/BUG-0090).
+ * `field_provenance.field` holds the REGISTRY FIELD name, and `events.venue`
+ * -> `venue_id` is the one place the two differ — so a filter built from
+ * `mappedColumns` asks for `venue_id`, a name the log has never held, and the
+ * venue fact's decision can never match. The pairing lives on the map entry's
+ * `reference`; this read just asks in the log's vocabulary and
+ * `readRecordProvenance` puts the answer back in the surface's.
  */
 function provenanceFor(
   db: SupabaseClient,
@@ -407,7 +418,7 @@ function provenanceFor(
     .select(PROVENANCE_COLUMNS, { count: "exact" })
     .eq("entity_type", config.table)
     .eq("entity_id", id)
-    .in("field", [...mappedColumns(config)])
+    .in("field", [...mappedRegistryFields(config)])
     .order("field", { ascending: true })
     .order("applied_at", { ascending: true })
     .order("provenance_id", { ascending: true })
@@ -467,11 +478,23 @@ export async function readRecordProvenance(
   );
   if (log.kind !== "ok") return { fields: new Map(), note: log };
 
+  // Back into the surface's vocabulary, once, at the read boundary
+  // (admin-window/BUG-0090). The log names a fact by its REGISTRY field and
+  // the page draws a COLUMN, and `events.venue` -> `venue_id` is the one place
+  // the two differ; re-keying here is what puts the venue decision on the
+  // venue line, and leaves `FieldProvenance.field` the column it says it is.
+  // Everything below this line deals in columns, so neither the
+  // latest-per-fact reduction nor the surface has to know the log's spelling.
+  const asDisplayed = log.data.map((row) => {
+    const column = columnOfRegistryField(config, row.field);
+    return column === row.field ? row : { ...row, field: column };
+  });
+
   // The current decision per fact, over the COMPLETE log: a superseded
   // decision is that fact's history and is behind nothing now
   // (contracts/data-model.md, Per-field provenance). ONE implementation of
   // that rule exists in this repo and this is it — never a second.
-  const current = currentDecisions(log.data);
+  const current = currentDecisions(asDisplayed);
 
   const sourceIds = namedSourceIds(current);
   let sources: DbResult<SourceNameRow[]> = { kind: "ok", data: [] };

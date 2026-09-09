@@ -2,7 +2,13 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import type { SaveOutcome } from "@/components/EditableCell";
 import { submitFieldEdit, type FetchLike } from "@/components/records/submit";
-import { EDITABLE_TABLES, EDIT_CONFIG, mappedColumns } from "@/lib/edit/config";
+import {
+  columnOfRegistryField,
+  EDITABLE_TABLES,
+  EDIT_CONFIG,
+  mappedColumns,
+  mappedRegistryFields,
+} from "@/lib/edit/config";
 import { FN } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
 import {
@@ -430,16 +436,19 @@ describe("a resolver-owned record page", () => {
       .select("field, source_id, applied_at, admin_locked, provenance_id")
       .eq("entity_type", config.table)
       .eq("entity_id", id)
-      .in("field", [...mappedColumns(config)])
+      .in("field", [...mappedRegistryFields(config)])
       .order("applied_at", { ascending: true })
       .order("provenance_id", { ascending: true });
     if (error) throw new Error(`reading field_provenance failed: ${error.message}`);
 
     // The latest decision per field, by this test's own reckoning — the read
-    // above is ordered ascending, so the last row wins.
+    // above is ordered ascending, so the last row wins. Keyed by the COLUMN
+    // the surface draws, because the log names a fact by its REGISTRY field
+    // and `events.venue` -> `venue_id` is the one place the two differ
+    // (admin-window/BUG-0090).
     const latest = new Map<string, Record<string, unknown>>();
     for (const decision of (data ?? []) as Record<string, unknown>[]) {
-      latest.set(String(decision.field), decision);
+      latest.set(columnOfRegistryField(config, String(decision.field)), decision);
     }
 
     const names = new Map<string, string>();
@@ -474,6 +483,101 @@ describe("a resolver-owned record page", () => {
           names.get(decision.source_id) ?? decision.source_id,
         );
       }
+    }
+  });
+
+  /**
+   * admin-window/BUG-0090, against the real log: the venue reference column
+   * shows the source behind it.
+   *
+   * The test above walks whatever row `subject` picks and is honest either
+   * way, which is exactly how the defect survived — an event with no venue
+   * decision expects the dash, and the dash is what the bug produced. This one
+   * SEEKS an event whose venue fact the resolver has applied, so the assertion
+   * has something to be wrong about.
+   *
+   * It also measures the premise in place: `field_provenance` holds no row
+   * spelling `venue_id` at all, so the filter this bug fixed could only ever
+   * have returned nothing for that line.
+   */
+  it("names the source behind the venue reference, on an event that has one", async () => {
+    const config = EDIT_CONFIG.events;
+    const reference = config.reference;
+    if (reference === null) throw new Error("events lost its reference column");
+
+    const client = independentClient();
+
+    // The premise: the log spells this fact with the REGISTRY field name, and
+    // never with the column's.
+    const byColumnName = await client
+      .from("field_provenance")
+      .select("provenance_id", { count: "exact", head: true })
+      .eq("entity_type", config.table)
+      .eq("field", reference.field);
+    if (byColumnName.error) {
+      throw new Error(`reading field_provenance failed: ${byColumnName.error.message}`);
+    }
+    expect(byColumnName.count, `field_provenance rows spelling ${reference.field}`)
+      .toBe(0);
+
+    // An event whose venue fact the resolver HAS applied.
+    const recent = await client
+      .from("field_provenance")
+      .select("entity_id")
+      .eq("entity_type", config.table)
+      .eq("field", reference.registryField)
+      .order("applied_at", { ascending: false })
+      .limit(1);
+    if (recent.error) {
+      throw new Error(`reading field_provenance failed: ${recent.error.message}`);
+    }
+    const entityId = (recent.data ?? [])[0]?.entity_id as string | undefined;
+    if (entityId === undefined) {
+      throw new Error(
+        `staging holds no applied ${config.table}.${reference.registryField} ` +
+          `decision, so the fact this page must show a source for does not ` +
+          `exist there.`,
+      );
+    }
+
+    // That fact's CURRENT decision, by this test's own reckoning.
+    const history = await client
+      .from("field_provenance")
+      .select("source_id, applied_at, admin_locked, provenance_id")
+      .eq("entity_type", config.table)
+      .eq("entity_id", entityId)
+      .eq("field", reference.registryField)
+      .order("applied_at", { ascending: true })
+      .order("provenance_id", { ascending: true });
+    if (history.error) {
+      throw new Error(`reading field_provenance failed: ${history.error.message}`);
+    }
+    const rows = (history.data ?? []) as Record<string, unknown>[];
+    const current = rows[rows.length - 1];
+    expect(current, `the venue decision on ${entityId}`).toBeDefined();
+
+    const markup = await renderPage(RecordPage, {
+      params: Promise.resolve({ table: config.table, id: entityId }),
+    });
+    const line = provenanceOf(markup, reference.field);
+
+    // The line exists, and it is NOT the app's absence marker: the page said
+    // "no source behind this value" for a fact the database holds a decision
+    // on, which is the defect in one assertion.
+    expect(line, reference.field).not.toBeNull();
+    expect(line, reference.field).not.toBe(EM_DASH);
+
+    if (current.admin_locked !== true && typeof current.source_id === "string") {
+      const named = await client
+        .from("sources")
+        .select("source")
+        .eq("source_id", current.source_id)
+        .maybeSingle();
+      if (named.error) throw new Error(`reading sources failed: ${named.error.message}`);
+      const sourceName = (named.data as Record<string, unknown> | null)?.source;
+      expect(line, reference.field).toContain(
+        typeof sourceName === "string" ? sourceName : current.source_id,
+      );
     }
   });
 });
