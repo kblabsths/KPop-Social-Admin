@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { ClaimList, type ClaimLine } from "@/components/claims/claim-list";
 import { isRecordId } from "@/lib/db/records";
+import { SHAPES, shapeOf } from "@/lib/review/shapes";
 import { EM_DASH, counted } from "@/lib/format";
 import { T } from "@/lib/db/tables";
 import { h, render, uppercasedIdentifiers } from "../ui/markup";
@@ -1316,6 +1317,27 @@ const SHAPED = [
   ["pattern", patternScript, reviewItemSourcePattern().review_item_id],
 ] as const;
 
+/**
+ * The sweeps above and below iterate `SHAPED`, and `SHAPED` is HAND-LISTED —
+ * the compiler's `Record<Shape, …>` in `shape-views.tsx` forces a fourth VIEW
+ * to exist, but nothing forces a fourth ENTRY here, so every per-shape rule in
+ * this file would silently keep grading three (QA, admin-window/BUG-0128).
+ * This is the forcing function: the day `Shape` gains a member, the sweep list
+ * is red until it grows, and the fixtures are checked to be the shapes they
+ * are named for rather than three spellings of one.
+ */
+describe("the per-shape sweeps grade every Shape the app declares", () => {
+  it("has one entry per Shape, and one fixture per shape", () => {
+    expect(SHAPED).toHaveLength(SHAPES.length);
+    const graded = [
+      reviewItemDataConflict(),
+      reviewItemEntityLink(),
+      reviewItemSourcePattern(),
+    ].map(shapeOf);
+    expect([...graded].sort()).toEqual([...SHAPES].sort());
+  });
+});
+
 describe("the close, with the verdict log absent", () => {
   it("renders no control at all, on any shape", async () => {
     // The graded-first state and the one `main` deploys against: the function
@@ -1978,6 +2000,71 @@ describe("no shape's lede claims a completeness its read cannot support", () => 
     // Nothing in it is a figure: neither the 2 ids, the 1 claim nor the 700
     // folds is the lede's to state.
     expect(text).not.toMatch(/\d/);
+  });
+});
+
+/**
+ * **admin-window/BUG-0130** — a lede may not send the operator to a table this
+ * page did not render.
+ *
+ * The rule is structural, not a word ban: it reads the view's own markup and
+ * fires only when the lede says "table" while `[data-evidence-view]` carries
+ * none — which happens exactly when no evidence id resolved and `ClaimRows`
+ * rendered `Empty` instead of `DataTable`. In the healthy state the same read
+ * finds the table and the rule passes, which the first test holds so the pin
+ * below can never go vacuous.
+ */
+describe("no lede sends the operator to a table the page did not render", () => {
+  /** One view's lede, and what the view really rendered under it. */
+  async function viewOf(script: Script, id: string) {
+    const view = cheerio.load(await renderItem(script, id))("[data-evidence-view]");
+    return {
+      lede: view.find("[data-lede]").text().replace(/\s+/g, " ").trim(),
+      tables: view.find("table").length,
+      empties: view.find("[data-state='empty']").length,
+    };
+  }
+
+  /** The same item, with every evidence read answering with no claim. */
+  function nothingResolves(
+    script: Script,
+    item: ReturnType<typeof reviewItemEntityLink>,
+  ): Script {
+    return {
+      ...script,
+      [T.reviewItems]: { data: item },
+      [T.observations]: [{ data: [] }, { data: [] }],
+      [T.pendingClaims]: { data: [] },
+    };
+  }
+
+  it("renders the table its lede names, on every shape, when claims resolve", async () => {
+    // Non-vacuity: healthy, the word and the element agree — so a red below is
+    // the empty state's doing and not this rule banning a noun.
+    for (const [name, script, id] of SHAPED) {
+      const view = await viewOf(script(), id);
+      expect(view.lede.length, name).toBeGreaterThan(0);
+      expect(view.tables, name).toBeGreaterThan(0);
+    }
+  });
+
+  it.fails("holds when no evidence id resolves (admin-window/BUG-0130)", async () => {
+    const orphan = "01920000-0000-7000-8000-000000000999";
+    const cases = [
+      ["stuck", stuckScript, reviewItemEntityLink({ evidence: [orphan], folded_count: 12 })],
+      ["pattern", patternScript, reviewItemSourcePattern({ evidence: [], folded_count: 700 })],
+    ] as const;
+    for (const [name, script, item] of cases) {
+      const view = await viewOf(
+        nothingResolves(script(), item),
+        item.review_item_id,
+      );
+      // The state this rule is about: the empty card stands where the table
+      // would be, saying in the app's own words that there are no claims.
+      expect(view.empties, name).toBeGreaterThan(0);
+      expect(view.tables, name).toBe(0);
+      expect(view.lede, name).not.toMatch(/\btable\b/i);
+    }
   });
 });
 
