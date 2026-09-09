@@ -1,0 +1,21 @@
+{
+ "id": "BUG-0081",
+ "created": "2026-09-09T02:34:44Z",
+ "green": false,
+ "git_head": "ef32209b106040819c43dccacf5350d006472fd5",
+ "scope": [
+  "next.config.ts",
+  "tests/http/auth.http.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "c172adcd75e3001596948e6f83034f44e592f8565c9c5e7da475de938bd68d01",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=http tests/http/auth.http.test.ts",
+   "exit": 1,
+   "output_tail": "s a stranger to the sign-in page\nError: next start exited before becoming ready (code=1, signal=null)\n\u25b2 Next.js 16.2.2\n- Local:         http://127.0.0.1:8772\n- Network:       http://127.0.0.1:8772\n\u2713 Ready in 104ms\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-80957/package-lock.json\n\nError: Could not find a production build in the '.next' directory. Try building your app with 'next build' before starting the production server. https://nextjs.org/docs/messages/production-start-no-build-id\n    at ignore-listed frames\n\n \u276f waitForReady tests/http/server-harness.ts:222:13\n    220|   while (Date.now() < deadline) {\n    221|     if (child.exitCode !== null || child.signalCode !== null) {\n    222|       throw new Error(\n       |             ^\n    223|         `next start exited before becoming ready (code=${child.exitCod\u2026\n    224|       );\n \u276f startServer tests/http/server-harness.ts:256:5\n \u276f tests/http/auth.http.test.ts:768:23\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[5/6]\u23af\n\n FAIL  |http| tests/http/auth.http.test.ts > the client bundle > ships no service-role name and no key-shaped material\nAssertionError: expected 0 to be greater than 5\n \u276f tests/http/auth.http.test.ts:906:32\n    904| \n    905|     // A scan that found nothing because it looked at nothing is not a\u2026\n    906|     expect(clientFiles.length).toBeGreaterThan(5);\n       |                                ^\n    907| \n    908|     for (const file of clientFiles) {\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[6/6]\u23af\n\n"
+  }
+ ],
+ "failure_sig": "4514e8593ca8"
+}

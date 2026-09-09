@@ -1,11 +1,10 @@
-# Tracker index (regenerated 2026-09-09T02:32:57Z — do not edit)
+# Tracker index (regenerated 2026-09-09T02:34:51Z — do not edit)
 
 ## open
 - FEAT-0009 [P1][feat][M2] The two schema handoff artifacts, authored complete for Ben to install  (scope:agenticflow/tracker/for-human,agenticflow/docs/vision/SPEC.md)
 - FEAT-0010 [P1][feat][M2] The verdict UI: every spec 7 action as one typed decision, one call, one transaction  (deps:FEAT-0009(unmet:1) scope:src/app/queues,src/components,src/lib/db,src/lib/review,tests/offline,tests/live)
 - FEAT-0011 [P1][feat][M2] The edit surface's override half: events and venues write only as recorded overrides  (deps:FEAT-0009(unmet:1) scope:src/lib/edit,src/app/records,src/app/api/admin,src/components,src/lib/db,tests/offline,tests/live,tests/http)
 - TASK-0046 [P1][task][M2] settle_review_item, authored complete against the installed apply_resolution and gate  (deps:TASK-0042,TASK-0043,TASK-0045(unmet:2) scope:agenticflow/tracker/for-human/M2-handoff-settle-review-item.md,tests/offline/handoff/settle-review-item.test.ts)
-- TASK-0049 [P1][task][M2] The close slot: the settle route, the shared frame, the absent-function state and the note field  (deps:TASK-0048 scope:src/app/api/admin/review-items/[reviewItemId]/settle/route.ts,src/components/review/close/slot.tsx,src/components/review/close/actions.ts,src/components/review/close/conflict-actions.tsx,src/components/review/close/link-actions.tsx,src/components/review/close/signal-actions.tsx,src/app/queues/[reviewItemId]/page.tsx,tests/offline/review-item/close-slot.test.ts,tests/offline/review-item/page.test.ts,tests/offline/absence/pages.test.ts)
 - TASK-0050 [P1][task][M2] The data_conflict item's three verdict actions, one typed decision each  (deps:TASK-0049(unmet:1) scope:src/components/review/close/conflict-actions.tsx,tests/offline/review-item/conflict-actions.test.ts)
 - TASK-0051 [P1][task][M2] The signal item's two dispositions: fixed, and wont_fix with its required note  (deps:TASK-0049(unmet:1) scope:src/components/review/close/signal-actions.tsx,tests/offline/review-item/signal-actions.test.ts)
 - TASK-0054 [P1][task][M2] The override write path: events and venues edit only as recorded admin-tier observations  (deps:TASK-0044,TASK-0048,TASK-0052,TASK-0040(unmet:2) scope:src/lib/edit/config.ts,src/app/api/admin/records/[table]/[id]/route.ts,src/app/records/[table]/[id]/page.tsx,src/components/records/record-fields.tsx,src/components/records/field-editor.tsx,tests/offline/edit/config.test.ts,tests/offline/edit/route.test.ts,tests/offline/records/page.test.ts,tests/http/edit.http.test.ts)
@@ -20,6 +19,9 @@
 
 ## claimed
 - BUG-0082 [P1][bug][M2] the verdicts handoff grants service_role SELECT but never revokes the ALL it inherits, so the table installs writable by the Admin key  (scope:agenticflow/tracker/for-human/M2-handoff-verdicts.md,tests/offline/handoff/verdicts.test.ts @builder-132 from:TASK-0045)
+- TASK-0049 [P1][task][M2] The close slot: the settle route, the shared frame, the absent-function state and the note field  (deps:TASK-0048 scope:src/app/api/admin/review-items/[reviewItemId]/settle/route.ts,src/components/review/close/slot.tsx,src/components/review/close/actions.ts,src/components/review/close/conflict-actions.tsx,src/components/review/close/link-actions.tsx,src/components/review/close/signal-actions.tsx,src/app/queues/[reviewItemId]/page.tsx,tests/offline/review-item/close-slot.test.ts,tests/offline/review-item/page.test.ts,tests/offline/absence/pages.test.ts @builder-133)
+
+## built
 - TASK-0052 [P1][task][M2] The live edit round trip moves to walk_sandbox: five coercions, the NOT NULL refusal, and the sweep  (deps:TASK-0040 scope:tests/live/edit.live.test.ts,tests/live/sweep.ts,tests/live/residue.live.test.ts @builder-130)
 
 ## qa
@@ -32,4 +34,4 @@
 ## reopened
 - TASK-0045 [P1][task][M2] The verdicts table, authored complete as a handoff artifact Ben installs by hand  (deps:TASK-0042 scope:agenticflow/tracker/for-human/M2-handoff-verdicts.md,tests/offline/handoff/extract.ts,tests/offline/handoff/verdicts.test.ts)
 
-Totals — blocked:2, claimed:2, done:16, open:16, qa:1, reopened:1, wont_fix:1. Archived: 124.
+Totals — blocked:2, built:1, claimed:2, done:16, open:15, qa:1, reopened:1, wont_fix:1. Archived: 124.
