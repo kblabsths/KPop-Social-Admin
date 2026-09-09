@@ -1,8 +1,8 @@
 {
  "id": "BUG-0081",
- "created": "2026-09-09T02:34:44Z",
- "green": false,
- "git_head": "ef32209b106040819c43dccacf5350d006472fd5",
+ "created": "2026-09-09T02:38:11Z",
+ "green": true,
+ "git_head": "dc0afc4e03168052e1df71b416ea2f1a1aa8ef1d",
  "scope": [
   "next.config.ts",
   "tests/http/auth.http.test.ts"
@@ -13,9 +13,8 @@
  "commands": [
   {
    "cmd": "./node_modules/.bin/vitest run --project=http tests/http/auth.http.test.ts",
-   "exit": 1,
-   "output_tail": "s a stranger to the sign-in page\nError: next start exited before becoming ready (code=1, signal=null)\n\u25b2 Next.js 16.2.2\n- Local:         http://127.0.0.1:8772\n- Network:       http://127.0.0.1:8772\n\u2713 Ready in 104ms\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-80957/package-lock.json\n\nError: Could not find a production build in the '.next' directory. Try building your app with 'next build' before starting the production server. https://nextjs.org/docs/messages/production-start-no-build-id\n    at ignore-listed frames\n\n \u276f waitForReady tests/http/server-harness.ts:222:13\n    220|   while (Date.now() < deadline) {\n    221|     if (child.exitCode !== null || child.signalCode !== null) {\n    222|       throw new Error(\n       |             ^\n    223|         `next start exited before becoming ready (code=${child.exitCod\u2026\n    224|       );\n \u276f startServer tests/http/server-harness.ts:256:5\n \u276f tests/http/auth.http.test.ts:768:23\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[5/6]\u23af\n\n FAIL  |http| tests/http/auth.http.test.ts > the client bundle > ships no service-role name and no key-shaped material\nAssertionError: expected 0 to be greater than 5\n \u276f tests/http/auth.http.test.ts:906:32\n    904| \n    905|     // A scan that found nothing because it looked at nothing is not a\u2026\n    906|     expect(clientFiles.length).toBeGreaterThan(5);\n       |                                ^\n    907| \n    908|     for (const file of clientFiles) {\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[6/6]\u23af\n\n"
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-84374\n\n \u2713 |http| tests/http/auth.http.test.ts (13 tests) 14211ms\n   \u2713 the built app over http > serves health and sends an unauthenticated visitor to the login page  10138ms\n   \u2713 the gate over the whole window > sends a stranger to /login and answers a signed-in visitor honestly  1020ms\n   \u2713 a record URL for a table the edit map does not carry > answers with the app's own 404, server-rendered, without weakening the gate  764ms\n   \u2713 a record URL for a table the edit map does not carry > BUG-0081: serves the framed 404 for a percent-encoded spelling of a struck table  588ms\n   \u2713 a record URL for a table the edit map does not carry > BUG-0083: serves the framed 404 for a case variant of a configured table  656ms\n   \u2713 a record URL for a table the edit map does not carry > still sends a stranger to the sign-in page  963ms\n\n Test Files  1 passed (1)\n      Tests  13 passed (13)\n   Start at  19:37:55\n   Duration  14.76s (transform 74ms, setup 0ms, collect 117ms, tests 14.21s, environment 0ms, prepare 174ms)\n\n(node:84382) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
   }
- ],
- "failure_sig": "4514e8593ca8"
+ ]
 }
