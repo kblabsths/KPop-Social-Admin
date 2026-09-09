@@ -195,3 +195,4 @@
 2026-09-09T23:10:56Z	artifact_gate	blocked write outside repo: /tmp/x
 2026-09-09T23:14:00Z	supply_gate	blocked npx of prettier
 2026-09-09T23:17:51Z	evidence_budget	qa_evidence_overbudget: BUG-0147 4930/4000 chars
+2026-09-09T23:19:09Z	evidence_budget	qa_evidence_overbudget: BUG-0150 4133/4000 chars
