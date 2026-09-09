@@ -1,0 +1,30 @@
+{
+ "id": "BUG-0096",
+ "created": "2026-09-09T05:48:07Z",
+ "green": true,
+ "git_head": "617640f46b27c923868fef4e9b5271d504fa5470",
+ "scope": [
+  "src/app/queues/[reviewItemId]/page.tsx",
+  "tests/offline/review-item/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "a3c13cbc23a1529a8872aae0f886f30a59e14010a060e2884ba7fc9ff77cf232",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review-item/page.test.ts tests/offline/review-item/close-slot.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-86156\n\n \u2713 |offline| tests/offline/review-item/close-slot.test.ts (34 tests) 50ms\n \u2713 |offline| tests/offline/review-item/page.test.ts (74 tests) 2191ms\n   \u2713 the close is reachable without exhausting the evidence > places it the same way when the signal folds a hundred records  331ms\n\n Test Files  2 passed (2)\n      Tests  108 passed (108)\n   Start at  22:47:36\n   Duration  3.45s (transform 737ms, setup 0ms, collect 1.56s, tests 2.24s, environment 0ms, prepare 233ms)\n\n(node:86294) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/review-item.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-86156\n\n \u2713 |live| tests/live/review-item.live.test.ts (12 tests) 23208ms\n   \u2713 the review item's surface hooks against staging > names each graded surface once on an item that rendered  2454ms\n   \u2713 a real review item, rendered > resolves exactly the evidence ids the row carries, in its fold order  2321ms\n   \u2713 a real review item, rendered > renders each claim's own instant, source tier and its shape's own column  2444ms\n   \u2713 a real review item, rendered > puts the fact's current canonical value beside them, from the latest decision  2086ms\n   \u2713 a real review item, rendered > carries the header the anatomy requires, and no control at all  2193ms\n   \u2713 the close against staging > offers no control while the verdict log is absent, and names it  2121ms\n   \u2713 the close against staging > grades the signal item's page: not_provisioned in the close, the rest of it not  2153ms\n   \u2713 the close against staging > never settles anything by rendering the page  2271ms\n   \u2713 the header names its source, against staging > says the name the registry holds, in both links and in the cells below  2684ms\n   \u2713 a settled item's verdict, against staging > renders no verdict block on an item this database has not settled  2321ms\n\n Test Files  1 passed (1)\n      Tests  12 passed (12)\n   Start at  22:47:41\n   Duration  25.08s (transform 658ms, setup 58ms, collect 834ms, tests 23.21s, environment 0ms, prepare 523ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/review-item.live.test.ts\n(node:86438) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
