@@ -1,0 +1,27 @@
+{
+ "id": "BUG-0146",
+ "created": "2026-09-09T21:32:43Z",
+ "green": true,
+ "git_head": "7d545838379fe689e8f7500fb87ca7e97e3b70a5",
+ "scope": [
+  "src/app/cycles/page.tsx",
+  "src/lib/db/records.ts",
+  "src/components/cycles/asked-cycle.tsx",
+  "tests/offline/cycles/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "55dfdb9cdf13fc98106d6c51a9f504f3e2fb9a1625e48a8e3769ba40b7186a70",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/cycles tests/offline/records",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-3341\n\n \u2713 |offline| tests/offline/records/submit.test.ts (15 tests) 9ms\n \u2713 |offline| tests/offline/records/provenance.test.ts (13 tests) 27ms\n \u2713 |offline| tests/offline/cycles/read.test.ts (21 tests) 7ms\n \u2713 |offline| tests/offline/records/routes.test.ts (10 tests) 48ms\n \u2713 |offline| tests/offline/records/entity-picker.test.ts (54 tests) 98ms\n \u2713 |offline| tests/offline/records/page.test.ts (139 tests) 503ms\n \u2713 |offline| tests/offline/cycles/page.test.ts (108 tests) 2095ms\n\n Test Files  7 passed (7)\n      Tests  360 passed (360)\n   Start at  14:32:24\n   Duration  2.98s (transform 1.11s, setup 0ms, collect 2.39s, tests 2.79s, environment 1ms, prepare 778ms)\n\n(node:3349) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
