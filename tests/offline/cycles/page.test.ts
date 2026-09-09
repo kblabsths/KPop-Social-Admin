@@ -908,6 +908,99 @@ describe("the cycles the resolver filed", () => {
     },
   );
 
+  it("names the cycle in the database's spelling when no window was read at all", async () => {
+    // The canonicalisation is at the REQUEST edge, so it holds on the arm that
+    // has no window to compare against either: an operator who pasted an
+    // uppercased id into an outage must read back the id they meant, and the
+    // page must still refuse to say whether it is here (admin-window/BUG-0023
+    // + BUG-0143 — the two rules meet on this arm and nothing graded it).
+    for (const [state, error] of Object.entries({
+      not_provisioned: tableNotInSchemaCache(T.resolutionRuns),
+      refused: permissionDenied(T.resolutionRuns),
+      transport: transportFailure(),
+    })) {
+      for (const spelling of [
+        FAILED.run_id.toUpperCase(),
+        FAILED.run_id.replace(/-/g, "").toUpperCase(),
+      ]) {
+        const markup = await renderCycles(
+          healthyScript({ [T.resolutionRuns]: { error } }),
+          { cycle: spelling },
+        );
+        const $ = cheerio.load(markup);
+        const line = $("[data-cycle-unchecked]");
+        expect(line.attr("data-cycle-asked"), `${state} ${spelling}`).toBe(FAILED.run_id);
+        expect(line.text(), `${state} ${spelling}`).toContain(FAILED.run_id);
+        expect(markup, `${state} ${spelling}`).not.toContain(spelling);
+        // No verdict either way, and nothing marked in a table that is not there.
+        expect($("[data-cycle-found]").length, `${state} ${spelling}`).toBe(0);
+        expect($("[data-row-marked]").length, `${state} ${spelling}`).toBe(0);
+        // A parameter the page answered is not one it dropped.
+        expect($("[data-dropped-param]").length, `${state} ${spelling}`).toBe(0);
+      }
+    }
+  });
+
+  it("answers a non-canonical spelling with the very page the canonical one gets", async () => {
+    // The strongest statement of admin-window/BUG-0143: not merely that the
+    // row is marked, but that the whole document an uppercased or unhyphenated
+    // paste produces is the document the database's own spelling produces —
+    // one derived value feeding the predicate, the ink, the anchor and all
+    // three arms, with no second path for the paste to leak down. Compared
+    // with the render clock normalised away (the gauges stamp `now` into their
+    // window lines); everything else is the fixtures', and identical or not.
+    const clockless = (markup: string) =>
+      markup.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, "<instant>");
+    const canonical = clockless(await renderCycles(healthyScript(), { cycle: FAILED.run_id }));
+    for (const spelling of [
+      FAILED.run_id.toUpperCase(),
+      FAILED.run_id.replace(/-/g, ""),
+      FAILED.run_id.replace(/-/g, "").toUpperCase(),
+    ]) {
+      expect(clockless(await renderCycles(healthyScript(), { cycle: spelling })), spelling).toBe(
+        canonical,
+      );
+    }
+    // And it discriminates: the same comparison against a DIFFERENT cycle's
+    // page is not equal, so the equality above is a real property and not an
+    // artefact of the normalisation (LESSONS 8).
+    expect(clockless(await renderCycles(healthyScript(), { cycle: SUCCEEDED.run_id }))).not.toBe(
+      canonical,
+    );
+  });
+
+  /**
+   * STRICT PIN for admin-window/BUG-0145, open at the time of writing: it is
+   * `it.fails`, so it PASSES while the divergence stands and reddens the day it
+   * is fixed, sending the reader to the ticket. Whoever takes BUG-0145 flips
+   * this back to a plain `it(...)` and watches it red first.
+   */
+  it.fails("never denies a row it is rendering, whatever the paste carried [admin-window/BUG-0145]", async () => {
+    // The harm admin-window/BUG-0143 named, stated as the invariant rather than
+    // as one spelling: whatever the URL carried, the page may not print "this
+    // cycle is not in this window" naming an id whose row is in the window it
+    // just drew. A paste that brought its surrounding whitespace along still
+    // does exactly that, and HTML collapses the whitespace, so the id in the
+    // denial reads character-for-character like the row three elements below.
+    for (const spelling of [
+      ` ${FAILED.run_id}`,
+      `${FAILED.run_id} `,
+      `${FAILED.run_id}\n`,
+      ` ${FAILED.run_id.toUpperCase()} `,
+    ]) {
+      const markup = await renderCycles(healthyScript(), { cycle: spelling });
+      const $ = cheerio.load(markup);
+      const denial = $('[data-cycle-found="false"]');
+      const drawn = renderedCycles(markup);
+      expect(drawn, spelling).toContain(FAILED.run_id);
+      for (const id of drawn) {
+        expect(denial.text().replace(/\s+/g, " "), `${JSON.stringify(spelling)} vs ${id}`).not.toContain(
+          id,
+        );
+      }
+    }
+  });
+
   it("keeps the window's own limits on screen beside a cycle it could not find", async () => {
     // A full window is the one case where "not here" and "does not exist" come
     // apart: the cap filled, so the asked-for cycle may be older than the
@@ -2125,14 +2218,34 @@ describe("a ?run= link arriving from the Dashboard", () => {
   it("answers the two facets independently when the URL carries both", async () => {
     // `?cycle=` marks a cycle and `?run=` marks a run: two halves, two
     // sentences, two marks — and neither is the other's.
-    const markup = await renderCycles(withRuns(), {
-      cycle: FAILED.run_id,
-      run: RUN_FAILED.run_id,
-    });
-    expect(markedRowTables(markup).sort()).toEqual([RUNS_TABLE, CYCLES_TABLE].sort());
-    expect(cycleRow(markup, FAILED.run_id).marked).toBe("true");
-    expect(runRow(markup, RUN_FAILED.run_id).marked).toBe("true");
-    expect(droppedNames(markup)).toEqual([]);
+    //
+    // Driven in the canonical spelling AND in non-canonical ones, because the
+    // two halves were canonicalised by two tickets a day apart
+    // (admin-window/BUG-0142 for `?run=`, BUG-0143 for `?cycle=`) and each was
+    // graded alone: one URL carrying both is the seam neither ticket saw, and
+    // a canonicalisation that fed the wrong half's predicate would mark one
+    // row and deny the other.
+    for (const [cycle, run] of [
+      [FAILED.run_id, RUN_FAILED.run_id],
+      [FAILED.run_id.toUpperCase(), RUN_FAILED.run_id.replace(/-/g, "")],
+      [FAILED.run_id.replace(/-/g, "").toUpperCase(), RUN_FAILED.run_id.toUpperCase()],
+    ]) {
+      const markup = await renderCycles(withRuns(), { cycle, run });
+      const $ = cheerio.load(markup);
+      const where = `${cycle} + ${run}`;
+      expect(markedRowTables(markup).sort(), where).toEqual(
+        [RUNS_TABLE, CYCLES_TABLE].sort(),
+      );
+      expect(cycleRow(markup, FAILED.run_id).marked, where).toBe("true");
+      expect(runRow(markup, RUN_FAILED.run_id).marked, where).toBe("true");
+      // One mark per half — never the other half's row, and never two in one.
+      expect($("[data-cycle][aria-current]").length, where).toBe(1);
+      expect($("[data-run][aria-current]").length, where).toBe(1);
+      // Each sentence names its own id in the database's own spelling.
+      expect($("[data-cycle-asked]").attr("data-cycle-asked"), where).toBe(FAILED.run_id);
+      expect($runAsked(markup), where).toBe(RUN_FAILED.run_id);
+      expect(droppedNames(markup), where).toEqual([]);
+    }
   });
 });
 
