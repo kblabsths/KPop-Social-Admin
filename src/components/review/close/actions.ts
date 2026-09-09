@@ -55,8 +55,30 @@ export interface ActionSpec {
    * How the control is drawn. A settlement that writes canonical is
    * `destructive` (red border, never a red fill); everything else is
    * secondary. Presentation only — it decides nothing about the write.
+   *
+   * A control the operator TYPES into is not a button and takes none: see
+   * `supplies` below.
    */
   readonly variant?: ButtonVariant;
+  /**
+   * The fact this control's value is typed for, as `domain.field`
+   * (`events.title`) — present ONLY on a control whose payload the operator
+   * supplies, absent on every other (campaign admin-window/TASK-0050, spec
+   * §7's "supply a different value").
+   *
+   * Its presence is the whole discriminator, and it carries a NAME rather
+   * than a widget because an `ActionSpec` is DATA that crosses the
+   * server/client boundary: the server knows which fact is being decided, the
+   * browser knows how to take a value for it, and neither carries the other's
+   * half. The value itself is NOT in `spec.value` — it does not exist until
+   * the operator types it, which is why `decisionValue` below merges the two
+   * rather than a builder guessing one.
+   *
+   * The string is the field's accessible name, spelled the way the evidence
+   * cells already spell a fact (`EvidenceRow.fact`), so an operator hears the
+   * same words the page shows.
+   */
+  readonly supplies?: string;
 }
 
 /**
@@ -103,13 +125,41 @@ export interface SettleRequestBody {
   readonly value: VerdictValue | null;
 }
 
+/**
+ * The payload this control settles with, once the operator's own value — if
+ * this control takes one — is in hand.
+ *
+ * A control that `supplies` a fact declares every part of its `VerdictValue`
+ * except the one part only the operator can give (`value`), so this is where
+ * the two halves meet, ONCE, for the browser and the tests alike. A control
+ * that supplies nothing hands its payload over untouched, so the ordinary
+ * button path is exactly what it was.
+ *
+ * `supplied` is `string | null` because that is what the edit cell hands back:
+ * an empty field is a null and not `""` (`EditableCell`'s `commit`). A null
+ * reaching here would be refused by `decisionRefusals` invariant 5 as
+ * `value_payload_missing`, which is why `closeRefusal` below catches it one
+ * round trip earlier.
+ */
+export function decisionValue(
+  spec: ActionSpec,
+  supplied: string | null,
+): VerdictValue | null {
+  if (spec.supplies === undefined || spec.value === null) return spec.value;
+  return { ...spec.value, value: supplied };
+}
+
 /** The body for this control and this note; a blank note is null, not `""`. */
-export function settleBody(spec: ActionSpec, note: string): SettleRequestBody {
+export function settleBody(
+  spec: ActionSpec,
+  note: string,
+  supplied: string | null = null,
+): SettleRequestBody {
   const trimmed = note.trim();
   return {
     action: spec.action,
     note: trimmed === "" ? null : trimmed,
-    value: spec.value,
+    value: decisionValue(spec, supplied),
   };
 }
 
@@ -126,8 +176,19 @@ export function settleBody(spec: ActionSpec, note: string): SettleRequestBody {
  * It returns an IDENTIFIER, never operator copy (LESSONS 5): the words a
  * person reads are `noteRefusalWords` below.
  */
-export function closeRefusal(spec: ActionSpec, note: string): string | null {
-  return noteRequired(spec.action) && note.trim() === "" ? "note_required" : null;
+export function closeRefusal(
+  spec: ActionSpec,
+  note: string,
+  supplied: string | null = null,
+): string | null {
+  if (noteRequired(spec.action) && note.trim() === "") return "note_required";
+  // A control that takes a value and was given none. `decisionRefusals`
+  // invariant 4 spells that same case `value_required`, and this borrows the
+  // identifier rather than inventing a second name for one fact.
+  if (spec.supplies !== undefined && (supplied === null || supplied.trim() === "")) {
+    return "value_required";
+  }
+  return null;
 }
 
 /**
@@ -137,11 +198,19 @@ export function closeRefusal(spec: ActionSpec, note: string): string | null {
 export const NOTE_REFUSAL_WORDS =
   "A won’t-fix needs a note — say why the condition stands, then close it again.";
 
-/** The refusal an identifier reads as. One identifier today; the map is total. */
+/** The words for a control that takes a value and was handed an empty field. */
+export const VALUE_REFUSAL_WORDS =
+  "This action settles the fact with a value — type the one canonical should hold, then save it.";
+
+/**
+ * The refusal an identifier reads as. The map is TOTAL over the identifiers
+ * this form produces, so no raw identifier reaches operator copy through the
+ * fallback (LESSONS 5).
+ */
 export function refusalWords(refusal: string): string {
-  return refusal === "note_required"
-    ? NOTE_REFUSAL_WORDS
-    : `The close was refused: ${refusal}.`;
+  if (refusal === "note_required") return NOTE_REFUSAL_WORDS;
+  if (refusal === "value_required") return VALUE_REFUSAL_WORDS;
+  return `The close was refused: ${refusal}.`;
 }
 
 /**
@@ -181,8 +250,9 @@ function messageOf(thrown: unknown): string {
  * Settle this item with this control, through the ONE route.
  *
  * The local refusal happens FIRST and sends nothing: a `wont_fix` with a blank
- * note never reaches the network, which is what makes "the form refuses it
- * too" a fact about behaviour rather than about a disabled attribute.
+ * note — and a value-supplying control with an empty field — never reaches the
+ * network, which is what makes "the form refuses it too" a fact about
+ * behaviour rather than about a disabled attribute.
  *
  * Pure over its `fetchImpl` parameter, so the offline suite drives every
  * branch with no network and no jsdom (STACK §4).
@@ -191,14 +261,21 @@ export async function submitSettlement({
   reviewItemId,
   spec,
   note,
+  supplied = null,
   fetchImpl,
 }: {
   reviewItemId: string;
   spec: ActionSpec;
   note: string;
+  /**
+   * The value the operator typed, on a control that `supplies` one; null
+   * everywhere else, and null from a control that supplies one and was left
+   * empty — which the local refusal below turns away without sending.
+   */
+  supplied?: string | null;
   fetchImpl: FetchLike;
 }): Promise<SettleOutcome> {
-  const refusal = closeRefusal(spec, note);
+  const refusal = closeRefusal(spec, note, supplied);
   if (refusal !== null) return { ok: false, message: refusalWords(refusal) };
 
   let response: Response;
@@ -206,7 +283,7 @@ export async function submitSettlement({
     response = await fetchImpl(settlePath(reviewItemId), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(settleBody(spec, note)),
+      body: JSON.stringify(settleBody(spec, note, supplied)),
     });
   } catch (thrown) {
     return { ok: false, message: messageOf(thrown) };
