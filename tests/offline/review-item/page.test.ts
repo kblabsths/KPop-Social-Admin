@@ -2016,11 +2016,13 @@ describe("a queues address that is not a review-item id", () => {
  *
  * The yardstick is the page's OWN machine word — the review-item id it draws
  * above the card — so nothing here pins a face literal and a restyle moves
- * both sides together.
+ * both sides together. Only the type STEP is compared (`faceOf` keeps `type-*`
+ * and drops ink): the identifier is `type-data text-ink`, the app's one
+ * identifier-in-prose spelling, exactly as `NotProvisioned` emits it inside a
+ * `text-ink-secondary` paragraph — and pinning ink here would pin a colour.
  *
- * STRICT XFAIL while the divergence stands — reason
- * `admin-window/BUG-0121`. The day this route wraps the name, `it.fails`
- * turns red on the XPASS and sends the reader to that ticket.
+ * Landed as `it.fails` while the divergence stood; the wrap arrived with
+ * admin-window/BUG-0121 and these are ordinary tests as of 2026-09-09.
  */
 describe("a table name in a queues empty state card", () => {
   /** The face this page gives a word the machine produced: the id it echoes. */
@@ -2070,6 +2072,16 @@ describe("a table name in a queues empty state card", () => {
     expect(drawnAsTheMachineWord($)).toEqual([machineFace($)]);
   });
 
+  /** The text of everything the card draws in the page's machine face, in order. */
+  function inTheMachinesFace($: cheerio.CheerioAPI): string[] {
+    const machine = machineFace($).join(" ");
+    return $('[data-state="empty"]')
+      .find("*")
+      .toArray()
+      .filter((element) => faceOf(classesOf($(element))).join(" ") === machine)
+      .map((element) => $(element).text());
+  }
+
   /**
    * The other half of the same rule, and the trap next door: "review item" —
    * two words — is the app's OWN noun for the thing, prose and not a machine
@@ -2077,22 +2089,27 @@ describe("a table name in a queues empty state card", () => {
    * address"). So the machine's face may reach the identifier and nothing
    * else: anything else the card draws at the data step is prose prettified
    * into the machine's voice, which is the same defect pointing the other way.
+   *
+   * Asked of BOTH cards — campaign admin-window/BUG-0121's QA pass. The guard
+   * arrived covering the not-an-id card alone, which left the no-such-row card
+   * pinned in one direction only: its two pins ask that the identifier IS in
+   * the machine's face and say nothing about what else may be, so a later hand
+   * wrapping "row with that id in" would have shipped green. The two cards are
+   * one rule and the rule is graded on both.
    */
-  it("draws nothing but the identifier in the machine's face", async () => {
-    const id = "not-a-uuid";
-    readWith.client = stubClient({
-      [T.reviewItems]: { error: invalidUuidSyntax(id) },
-    }).asSupabaseClient();
-    const $ = cheerio.load(
-      render(await ReviewItemPage({ params: Promise.resolve({ reviewItemId: id }) })),
-    );
-    const machine = faceOf(classesOf($("[data-review-item]")));
-    const inTheMachinesFace = $('[data-state="empty"]')
-      .find("*")
-      .toArray()
-      .filter((element) => faceOf(classesOf($(element))).join(" ") === machine.join(" "))
-      .map((element) => $(element).text());
+  it.each([
+    ["an address that is no id", async () => renderItem({}, "not-a-uuid")],
+    [
+      "an id no row has",
+      async () =>
+        renderItem(
+          { ...conflictScript(), [T.reviewItems]: { data: null } },
+          "00000000-0000-4000-8000-000000000099",
+        ),
+    ],
+  ] as const)("draws nothing but the identifier in the machine's face on %s", async (_what, markup) => {
+    const $ = cheerio.load(await markup());
     // Non-vacuous: the identifier IS drawn that way, and it is the only thing.
-    expect(inTheMachinesFace).toEqual([T.reviewItems]);
+    expect(inTheMachinesFace($)).toEqual([T.reviewItems]);
   });
 });
