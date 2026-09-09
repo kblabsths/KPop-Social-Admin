@@ -1,3 +1,10 @@
-# Tracker index (regenerated 2026-09-09T13:08:59Z — do not edit)
+# Tracker index (regenerated 2026-09-09T13:14:39Z — do not edit)
 
-Totals — done:77, wont_fix:1. Archived: 124.
+## open
+- BUG-0122 [P1][bug][M2] The signal's evidence table calls a fact a record, and no row says which record it is about  (scope:src/components/review/evidence-cells.tsx,src/components/review/shape-views.tsx,src/app/queues/[reviewItemId]/page.tsx,tests/offline/review-item/page.test.ts from:usersim:priya)
+- BUG-0123 [P2][bug][M2] Claims says '877 claims match these filters' over a read nothing narrowed, and drops a hand-typed parameter in silence  (scope:src/components/ui/window-line.tsx,src/app/claims/page.tsx,src/lib/claims/filters.ts,tests/offline/claims/page.test.ts,tests/offline/ui/primitives.test.ts from:usersim:priya)
+- BUG-0124 [P2][bug][M2] The review item's three counts state no relationship, and the lede claims a completeness the fold count contradicts  (scope:src/components/review/item-header.tsx,src/components/review/shape-views.tsx,src/app/queues/[reviewItemId]/page.tsx,tests/offline/review-item/page.test.ts from:usersim:devin)
+- BUG-0125 [P2][bug][M2] The Dashboard's attention zeros never say what fills the queue, and one of them speaks for the whole pipeline  (scope:src/app/page.tsx,tests/offline/dashboard/page.test.ts from:usersim:devin)
+- BUG-0126 [P3][bug][M2] The record page draws a subset of the row's columns and never says so — absent and not-drawn share one rendering  (scope:src/app/records/[table]/[id]/page.tsx,src/components/records/record-fields.tsx,tests/offline/records/page.test.ts from:usersim:priya)
+
+Totals — done:77, open:5, wont_fix:1. Archived: 124.
