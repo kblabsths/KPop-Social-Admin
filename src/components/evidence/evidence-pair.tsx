@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { isAbsent, orDash, relativeAge, type Timestamp } from "@/lib/format";
 import { cx } from "@/components/ui/cx";
 import { DATA_MUTED, Identifier } from "@/components/ui/identifier";
@@ -37,10 +37,48 @@ export type EvidenceClaim = {
   action?: ReactNode;
 };
 
+/**
+ * One segment of the canonical card's provenance line: **either** the app's own
+ * words **or** one machine value the app may qualify on either side of.
+ *
+ * The line reads `ticketmaster · official at apply · applied 3d ago`, and three of
+ * those words are not the app's: the winning source's own name, the tier frozen
+ * at the apply, and — when the applied claim is no longer live — the status that
+ * claim now carries. Handed over as one pre-joined sentence they were foreign
+ * text sitting bare in a sentence this app wrote, which is exactly what
+ * `src/components/ui/identifier.tsx` exists to stop (ARCHITECTURE.md §7,
+ * admin-window/BUG-0137; campaign admin-window/DEBT-0011 criteria 2 and 4).
+ *
+ * So the caller hands over the PARTS and this file renders them: every
+ * `identifier` goes through `<Identifier muted>`, which renders the very class
+ * pair `DATA_MUTED` spells — the face is unchanged and the added property is the
+ * isolation. The app's own words stay text, and the SEPARATOR between segments
+ * is this component's, never the caller's, for the reason `MicroLabel` splits an
+ * eyebrow the same way (`src/components/ui/micro-label.tsx`): a value the app
+ * concatenated into a string can no longer be treated as a value.
+ *
+ * A plain `string` segment is the app's own words — the two stateless lines
+ * ("nothing has been applied to this field yet") are exactly that and carry no
+ * machine value at all.
+ */
+export type ProvenanceSegment =
+  | string
+  | {
+      /** The app's own words BEFORE the value: "the claim it applied is now". */
+      before?: string;
+      /** The machine value itself — a source name, a tier, a claim status. Verbatim. */
+      identifier: string;
+      /** The app's own words AFTER it: "at apply". */
+      after?: string;
+    };
+
 export type EvidenceCanonical = {
   value: string | null;
-  /** "ticketmaster, applied 3d ago" / "admin-set Jun 12". */
-  provenance: string;
+  /**
+   * The provenance line, in segments: `[{identifier:"ticketmaster"}, …]` renders
+   * as `ticketmaster · official at apply · applied 3d ago`.
+   */
+  provenance: readonly ProvenanceSegment[];
   action?: ReactNode;
 };
 
@@ -73,6 +111,70 @@ function CardValue({ value }: { value: string | null }) {
 function ClaimValue({ value }: { value: string | null }) {
   if (isAbsent(value)) return <>{orDash(value)}</>;
   return <Identifier muted>{value}</Identifier>;
+}
+
+/**
+ * The separator the app writes between the parts of a secondary line — the
+ * claim line's `source · tier · age` and the canonical card's provenance line.
+ *
+ * It is the APP's own character, so it lives here, once, rather than at either
+ * caller: a caller that joined its parts around a separator of its own would be
+ * handing this component a sentence again, and the values inside it would stop
+ * being values (which is precisely how the provenance line ended up bare —
+ * campaign admin-window/DEBT-0011). The two lines are read together on one card,
+ * so one spelling is also what keeps them looking alike.
+ */
+const SEPARATOR = " · ";
+
+/**
+ * One provenance segment: the app's own words, or one machine value in the
+ * identifier primitive's isolated box with the app's words beside it.
+ *
+ * The words are real text nodes on either side of the box, never inside it —
+ * the same split `Eyebrow` makes for an eyebrow — so an unterminated bidi
+ * control in the value can reorder the value and nothing else, and the app's
+ * sentence reads in the order it was written.
+ */
+function ProvenancePart({ segment }: { segment: ProvenanceSegment }) {
+  if (typeof segment === "string") return <>{segment}</>;
+  return (
+    <>
+      {segment.before === undefined ? null : (
+        <>
+          {segment.before}
+          {" "}
+        </>
+      )}
+      <Identifier muted>{segment.identifier}</Identifier>
+      {segment.after === undefined ? null : (
+        <>
+          {" "}
+          {segment.after}
+        </>
+      )}
+    </>
+  );
+}
+
+/**
+ * The canonical card's provenance line, assembled from the caller's segments.
+ *
+ * The wrapper keeps `DATA_MUTED` for the reason the claim line's does: after the
+ * machine values move into their own isolated boxes it inks only the app's own
+ * words — the separators, "at apply", "applied 3d ago" — which is what the
+ * primitive's doc reserves the class for.
+ */
+function ProvenanceLine({ segments }: { segments: readonly ProvenanceSegment[] }) {
+  return (
+    <span className={DATA_MUTED}>
+      {segments.map((segment, index) => (
+        <Fragment key={index}>
+          {index === 0 ? null : SEPARATOR}
+          <ProvenancePart segment={segment} />
+        </Fragment>
+      ))}
+    </span>
+  );
 }
 
 export function EvidencePair({
@@ -109,9 +211,9 @@ export function EvidencePair({
               */}
             <span className={DATA_MUTED}>
               <ClaimValue value={claim.source} />
-              {" · "}
+              {SEPARATOR}
               <ClaimValue value={claim.tier} />
-              {" · "}
+              {SEPARATOR}
               <span title={age.title || undefined}>{orDash(age.text)}</span>
             </span>
             {claim.action ? <div className="flex gap-2 pt-1">{claim.action}</div> : null}
@@ -126,7 +228,7 @@ export function EvidencePair({
       >
         <span className="type-micro text-ink">current</span>
         <CardValue value={canonical.value} />
-        <span className={DATA_MUTED}>{canonical.provenance}</span>
+        <ProvenanceLine segments={canonical.provenance} />
         {canonical.action ? <div className="flex gap-2 pt-1">{canonical.action}</div> : null}
       </div>
     </div>

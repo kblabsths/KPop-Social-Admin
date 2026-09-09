@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import * as cheerio from "cheerio";
 
-import { EvidencePair, type EvidenceClaim } from "@/components/evidence/evidence-pair";
+import {
+  EvidencePair,
+  type EvidenceClaim,
+  type ProvenanceSegment,
+} from "@/components/evidence/evidence-pair";
 import { Button } from "@/components/ui/button";
 import { Identifier } from "@/components/ui/identifier";
 import { EM_DASH, absoluteUtc, relativeAge } from "@/lib/format";
@@ -32,7 +36,22 @@ const CLAIMS: EvidenceClaim[] = [
   },
 ];
 
-const CANONICAL = { value: "2026-09-14T19:00:00Z", provenance: "ticketmaster, applied 3d ago" };
+/**
+ * The canonical card as `/queues/[reviewItemId]` hands it over: the value, and
+ * the provenance line in PARTS — the winning source's own name, the tier frozen
+ * at the apply with the app's qualifier beside it, and the app's own applied-age
+ * sentence (`canonicalCard`, campaign admin-window/DEBT-0011).
+ */
+const PROVENANCE: ProvenanceSegment[] = [
+  // A source and a tier that appear on NO contender card, so the whole-pair
+  // oracles above ("exactly one element whose text is this value") keep saying
+  // what they were written to say about the claim line.
+  { identifier: "songkick" },
+  { identifier: "official", after: "at apply" },
+  "applied 3d ago",
+];
+
+const CANONICAL = { value: "2026-09-14T19:00:00Z", provenance: PROVENANCE };
 
 function pair(overrides: Partial<Parameters<typeof EvidencePair>[0]> = {}) {
   return render(h(EvidencePair, { claims: CLAIMS, canonical: CANONICAL, ...overrides }));
@@ -113,7 +132,11 @@ describe("EvidencePair", () => {
   });
 
   it("adds the provenance line to the canonical card", () => {
-    expect(textOf(pair())).toContain("ticketmaster, applied 3d ago");
+    const text = textOf(pair());
+    for (const segment of PROVENANCE) {
+      const words = typeof segment === "string" ? segment : segment.identifier;
+      expect(text.lastIndexOf(words)).toBeGreaterThan(text.lastIndexOf("current"));
+    }
   });
 
   it("puts the verdict control inside the card it acts on, never in a toolbar", () => {
@@ -294,6 +317,110 @@ describe("EvidencePair", () => {
     expect([separators[0], rest]).toEqual(["", ""]);
     expect(separators[2]).toBe(separators[1]);
     expect(separators[1].trim(), "the app writes a separator there").not.toBe("");
+  });
+
+  /**
+   * The CANONICAL card's provenance line is the same defect class as the claim
+   * line one card to its left (admin-window/BUG-0151), and criterion 2 of
+   * admin-window/DEBT-0011 reaches it: three of its words are machine values —
+   * the winning source's own name, the tier frozen at the apply, and the status
+   * the applied claim now carries. Handed over as one pre-joined sentence they
+   * sat bare inside a sentence this app wrote; handed over as PARTS, each takes
+   * the primitive's isolated box while the app's own words stay text.
+   *
+   * The expectation is READ OFF `<Identifier muted>` rather than typed here, so
+   * this pins the behaviour and not a literal.
+   */
+  it("gives every machine value in the provenance line the identifier's isolated box", () => {
+    const isolation = cheerio
+      .load(render(h(Identifier, { muted: true, children: "x" })))("span")
+      .attr("dir");
+
+    const $ = cheerio.load(pair());
+    const line = $("div").first().children("div").last().children("span").last();
+    const isolated = line.find("[dir]").toArray().map((node) => $(node).text());
+
+    // Exactly the segments' identifiers, in the caller's order — no app word
+    // has been swept into a box, and no value has been left out of one.
+    expect(isolated).toEqual(
+      PROVENANCE.flatMap((segment) =>
+        typeof segment === "string" ? [] : [segment.identifier],
+      ),
+    );
+    for (const node of line.find("[dir]").toArray()) {
+      expect($(node).attr("dir")).toBe(isolation);
+    }
+  });
+
+  /**
+   * Second fixture, the one that decides whether the isolation is worth
+   * anything: a source name carrying an unterminated RIGHT-TO-LEFT OVERRIDE.
+   * The control must reach the screen verbatim (isolation reorders nothing and
+   * removes nothing) and stay inside the value's own box, so the app's own words
+   * on the line — the separators, "at apply", the applied-age sentence — are the
+   * words, in the order, the app wrote them beside a healthy source.
+   *
+   * And on the HEALTHY line the text must not change by one character: it is
+   * exactly the caller's parts, joined by the app's own separator — the SAME
+   * separator the claim line above it uses, which is where it is read from
+   * rather than typed here.
+   */
+  it("keeps a hostile source inside its own box and adds no text to the healthy provenance line", () => {
+    const RLO = "\u202e";
+
+    /** The provenance line of the canonical card: that card's last span child. */
+    function provenance(html: string) {
+      const $ = cheerio.load(html);
+      const element = $("div").first().children("div").last().children("span").last();
+      const appWords = element
+        .contents()
+        .toArray()
+        .filter((node) => !("attribs" in node && node.attribs?.dir !== undefined))
+        .map((node) => $(node).text())
+        .join("");
+      return {
+        text: element.text(),
+        isolated: element.find("[dir]").toArray().map((node) => $(node).text()),
+        appWords,
+      };
+    }
+
+    const hostileSource = `ticket${RLO}master`;
+    const healthy = provenance(pair());
+    const hostile = provenance(
+      pair({
+        canonical: {
+          ...CANONICAL,
+          provenance: [{ identifier: hostileSource }, ...PROVENANCE.slice(1)],
+        },
+      }),
+    );
+
+    // Fixture 1: verbatim, in its own box, and nowhere else on the line.
+    expect(hostile.isolated[0]).toBe(hostileSource);
+    expect(hostile.appWords).not.toContain(RLO);
+    expect(hostile.appWords).toBe(healthy.appWords);
+
+    // Fixture 2: the healthy line is the caller's parts and nothing else. The
+    // separator comes off the CLAIM line, whose own test already proves it is
+    // one app-authored string rendered identically between values — so the two
+    // lines on one card cannot drift apart, and no wording is pinned here.
+    const claimLine = cheerio.load(pair())("div").first().children("div").first().children("span").last();
+    const claimText = claimLine.text();
+    const separator = claimText.slice(
+      claimText.indexOf(CLAIMS[0].source) + CLAIMS[0].source.length,
+      claimText.indexOf(String(CLAIMS[0].tier)),
+    );
+    expect(separator.trim(), "the app writes a separator between parts").not.toBe("");
+
+    const assembled = PROVENANCE.map((segment) =>
+      typeof segment === "string"
+        ? segment
+        : [segment.before, segment.identifier, segment.after]
+            .filter((word) => word !== undefined)
+            .join(" "),
+    ).join(separator);
+    expect(healthy.text).toBe(assembled);
   });
 
   it("renders with no contenders at all and draws no dangling separator", () => {

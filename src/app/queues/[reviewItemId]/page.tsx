@@ -1,4 +1,7 @@
-import type { EvidenceCanonical } from "@/components/evidence/evidence-pair";
+import type {
+  EvidenceCanonical,
+  ProvenanceSegment,
+} from "@/components/evidence/evidence-pair";
 import type { EmptyWords, GaugeState } from "@/components/gauges";
 import {
   DIAL_BY_SHAPE,
@@ -322,30 +325,37 @@ function canonicalCard(side: CanonicalSide): EvidenceCanonical | null {
   if (side.kind === "no_row") {
     return {
       value: null,
-      provenance: "no canonical row yet — this record has not been created",
+      provenance: ["no canonical row yet — this record has not been created"],
     };
   }
   if (side.kind === "no_decision") {
-    return { value: null, provenance: "nothing has been applied to this field yet" };
+    return { value: null, provenance: ["nothing has been applied to this field yet"] };
   }
 
   const { decision, source, observation, live } = side.decided;
   const applied = relativeAge(decision.applied_at);
-  const parts = [
-    source ?? "no winning claim",
-    `${decision.tier_at_apply} at apply`,
+  // Three of this line's words are not the app's — the winning source's own
+  // name, the tier frozen at the apply, and the status the applied claim now
+  // carries — so each is handed over as a VALUE and the card renders it through
+  // the identifier primitive, instead of being concatenated into a sentence
+  // this app then has to trust (admin-window/DEBT-0011 criteria 2 and 4). An
+  // unset names no source and a dead claim that is simply gone name no status:
+  // those two are the app's own words, and travel as plain strings.
+  const parts: ProvenanceSegment[] = [
+    source === null ? "no winning claim" : { identifier: source },
+    { identifier: decision.tier_at_apply, after: "at apply" },
     `applied ${applied.text}`,
   ];
   if (!live) {
     parts.push(
       observation === null
         ? "the claim it applied is not in this database"
-        : `the claim it applied is now ${observation.status}`,
+        : { before: "the claim it applied is now", identifier: observation.status },
     );
   }
   return {
     value: live && observation !== null ? claimValueText(observation.value) : null,
-    provenance: parts.join(" · "),
+    provenance: parts,
   };
 }
 
