@@ -10,6 +10,7 @@ import {
   LatestRun,
   NOTHING_RECORDED,
   RUNS_ANCHOR,
+  canSpellAskedCycle,
   cycleColumns,
   type AskedCycleState,
 } from "@/components/cycles";
@@ -124,12 +125,24 @@ export const dynamic = "force-dynamic";
  * not among the 200 newest cycles" — by the page that was rendering its row
  * three elements below (LESSONS 2 and 4).
  *
- * Where the two facets deliberately DIVERGE is a value that is not a record id
- * at all. `?run=` routes such a value to the dropped-parameter line and says
- * nothing about a run; `?cycle=` keeps naming it in `AskedCycle`'s absent
- * sentence, which is this page's own walked behaviour and what its tests pin.
- * Converging them is a design question, out of scope for BUG-0143, which is
- * why the raw value — never the canonical one — is what survives that arm.
+ * Where the two facets still DIVERGE is a value that is not a record id at all
+ * but that this page may SPELL. `?run=` routes every non-id to the
+ * dropped-parameter line and says nothing about a run; `?cycle=` keeps naming
+ * a spellable one in `AskedCycle`'s absent sentence, which is this page's own
+ * walked behaviour and what its tests pin. Converging them entirely is a design
+ * question BUG-0143 declined and admin-window/BUG-0147's criteria kept
+ * declined — "an ordinary unmatched value (`?cycle=not-a-uuid`) is still
+ * spelled in full, so the page does not go quiet instead" — which is why the
+ * raw value, never the canonical one, is what survives that arm.
+ *
+ * They CONVERGE, since BUG-0147, on the value this page may not spell:
+ * `canSpellAskedCycle` (`src/components/cycles/asked-cycle.tsx`) is the
+ * sentence's own allowlist, and a `?cycle=` outside it is answered exactly as
+ * `?run=` answers a non-id — no sentence, no mark, and `cycle` named on the
+ * shared dropped-parameter line. ARCHITECTURE.md §7 (common violation 15):
+ * foreign text reaches an app-authored sentence through an allowlist or in its
+ * own box, and the box alone does not travel with the text an operator copies
+ * out.
  *
  * A real id wearing the PADDING a paste carried is NOT such a value, since
  * admin-window/BUG-0145: `canonicalRecordId` strips it where the value is
@@ -147,12 +160,11 @@ export const dynamic = "force-dynamic";
  * blank (`hasVisibleContent`, `lib/verdict/decision.ts`) and this page, again,
  * learned nothing.
  *
- * What did NOT move, and is a live hole this page still carries: a `?cycle=`
- * with no canonical form at all is spelled RAW into the sentence below, so
- * `?cycle=<U+202E>not-a-uuid` still reverses the app's own paragraph
- * (admin-window/BUG-0137 measured that harm on the dropped-parameter line and
- * answered it with a renderable allowlist). BUG-0146 names it explicitly as
- * out of its scope and removes only the PADDED route to it.
+ * The hole BUG-0146 named as outside its own scope — a `?cycle=` with no
+ * canonical form spelled RAW into the sentence below, so
+ * `?cycle=<U+202E>not-a-uuid` reversed the app's own paragraph and the text
+ * copied out of it — is closed by the allowlist above
+ * (admin-window/BUG-0147). BUG-0146 had removed only the PADDED route to it.
  */
 const CYCLE_FACET = "cycle";
 
@@ -242,7 +254,16 @@ export default async function CyclesPage({
   // sentence all read this, so the mark and the id on screen cannot disagree.
   const askedRaw = firstValue(params[CYCLE_FACET]);
   const markedCycle = askedRaw === undefined ? null : canonicalRecordId(askedRaw);
-  const askedFor = markedCycle ?? askedRaw;
+  // ...and only when this page may SPELL it (admin-window/BUG-0147): a value
+  // with no canonical form reaches the sentence below through the allowlist
+  // `canSpellAskedCycle` or not at all, because a `<span>` is not where a URL's
+  // bidi control stops — the isolation contains the reorder on screen and
+  // travels nowhere with the paragraph an operator copies out. Undefined here
+  // is the whole of that answer: no sentence, no mark, and `cycle` reported
+  // below as a parameter this page did not apply.
+  const askedFor =
+    markedCycle ??
+    (askedRaw !== undefined && canSpellAskedCycle(askedRaw) ? askedRaw : undefined);
   // A `?source=` carrying nothing narrows nothing and earns no sentence: it is
   // half a typed URL, not a request for the runs of the empty name.
   const askedSource = sourceNarrowing(firstValue(params[SOURCE_FACET])) ?? undefined;
@@ -302,15 +323,16 @@ export default async function CyclesPage({
         dropped={droppedParams(
           params,
           {
-            // Applied whenever the URL carried a value at all — id or not —
-            // because `AskedCycle` below answers it either way, unlike
-            // `?run=`, which reports a value with no canonical form HERE
-            // instead. So this entry is the RAW value, and canonicalisation
-            // (admin-window/BUG-0143) moved nothing on this line: a
-            // `markedCycle ?? undefined` here would make the page both answer
-            // a parameter and report it as dropped, which the non-id case in
-            // `tests/offline/cycles/page.test.ts` pins against.
-            [CYCLE_FACET]: askedRaw,
+            // Applied exactly when the page ANSWERS the facet — which is
+            // exactly when it has something to spell: the canonical id, or a
+            // raw value the sentence's allowlist admits. That is one derived
+            // value and not a second opinion, so the page can never both
+            // answer a parameter and report it as dropped (the non-id case in
+            // `tests/offline/cycles/page.test.ts` pins that direction) nor
+            // silently drop one it never named (admin-window/BUG-0147 pins
+            // this one). Before BUG-0147 this entry was the RAW value, because
+            // the sentence below answered every value it was handed.
+            [CYCLE_FACET]: askedFor,
             [SOURCE_FACET]: askedSource,
             [RUN_FACET]: markedRun ?? undefined,
           },

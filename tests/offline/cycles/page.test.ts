@@ -12,6 +12,7 @@ import {
   sourceFiles,
 } from "../source-tree";
 import { factoryTicketIds, h, render, runTogetherWords } from "../ui/markup";
+import { AskedCycle, type AskedCycleState } from "@/components/cycles";
 import { Badge } from "@/components/ui/badge";
 import {
   APPLIES,
@@ -1187,7 +1188,7 @@ describe("the cycles the resolver filed", () => {
    * and not on any styling, because the reversal travels with the sentence when
    * it is copied out of the page as plain text (BUG-0137's own reasoning).
    */
-  it.fails(
+  it(
     "never lets a URL's bidi control into the sentence the page wrote [admin-window/BUG-0147]",
     async () => {
       const CONTROLS = /[\u202A-\u202E\u2066-\u2069]/u;
@@ -1220,6 +1221,116 @@ describe("the cycles the resolver filed", () => {
       );
     },
   );
+
+  /**
+   * The ARM the pin above was answered with, graded on its own — the "counted,
+   * not spelled" half of ARCHITECTURE.md §7 (admin-window/BUG-0147).
+   *
+   * A `?cycle=` with neither a canonical form nor a spelling this page may
+   * print is answered exactly as `?run=` answers a non-id: no sentence, no
+   * mark, and `cycle` named on the shared dropped-parameter line. The value
+   * itself reaches the document nowhere at all — not the paragraph, not
+   * `data-cycle-asked` — which is what the isolation box alone could not do
+   * for the text an operator copies out.
+   */
+  it.each([
+    ["RIGHT-TO-LEFT OVERRIDE, leading", `${String.fromCodePoint(0x202e)}not-a-uuid`],
+    ["RIGHT-TO-LEFT OVERRIDE, inside", `ab${String.fromCodePoint(0x202e)}cd`],
+    ["LEFT-TO-RIGHT ISOLATE", `x${String.fromCodePoint(0x2066)}y`],
+    ["ZERO WIDTH SPACE, inside", `ab${String.fromCodePoint(0x200b)}cd`],
+    ["BRAILLE PATTERN BLANK", `ab${String.fromCodePoint(0x2800)}cd`],
+    ["only blanks", "   "],
+  ] as const)(
+    "spells nothing and reports the facet for a ?cycle= it may not print: %s [admin-window/BUG-0147]",
+    async (_name, asked) => {
+      const markup = await renderCycles(healthyScript(), { cycle: asked });
+      const $ = cheerio.load(markup);
+
+      // Nothing about the cycle is said at all — none of the three arms.
+      expect($("[data-cycle-asked]").length).toBe(0);
+      expect($("[data-cycle-found]").length).toBe(0);
+      expect($("[data-cycle-unchecked]").length).toBe(0);
+      // Not silently, though: the URL asked for something this page did not do,
+      // and the one owner of that sentence says so, naming the facet's key.
+      expect($("[data-dropped-params]").attr("data-dropped-params")).toBe("1");
+      expect(
+        $("[data-dropped-param]")
+          .toArray()
+          .map((element) => $(element).attr("data-dropped-param")),
+      ).toEqual(["cycle"]);
+      // The value never reaches the document as itself, no character outside
+      // printable ASCII reaches it at all, and — the criterion in its own
+      // words — no bidi control is anywhere in the markup. The last is the
+      // half an isolation box cannot give: it is the text an operator copies.
+      if (/[\x21-\x7E]/.test(asked)) expect(markup.includes(asked)).toBe(false);
+      for (const character of new Set(asked)) {
+        if (character >= "\x20" && character <= "\x7E") continue;
+        expect(markup.includes(character), character).toBe(false);
+      }
+      expect(/[\u202A-\u202E\u2066-\u2069]/u.test(markup)).toBe(false);
+      // And the page is otherwise the page: nothing marked, the whole window
+      // still drawn, so a value it may not spell narrows nothing either.
+      expect($("[data-row-marked]").length).toBe(0);
+      expect($("[data-cycle][aria-current]").length).toBe(0);
+      expect(renderedCycles(markup).length).toBe(CYCLES.length);
+    },
+  );
+
+  /**
+   * The second fixture that arm owes (LESSONS 8), on the seam that decides it:
+   * a value the allowlist ADMITS is spelled in full and is NOT reported as
+   * dropped — the page answers a half-typed URL rather than going quiet, which
+   * is admin-window/BUG-0147's own may-not clause. The pair either side of the
+   * boundary differs by one character.
+   */
+  it.each([
+    ["an ordinary unmatched value", "not-a-uuid"],
+    ["a path a URL invented", "../../etc/passwd"],
+    ["blanks around ink", " a "],
+    ["punctuation only", "%%%"],
+  ] as const)(
+    "still spells a ?cycle= it may print: %s [admin-window/BUG-0147]",
+    async (_name, asked) => {
+      const markup = await renderCycles(healthyScript(), { cycle: asked });
+      const $ = cheerio.load(markup);
+      expect($('[data-cycle-found="false"]').attr("data-cycle-asked")).toBe(asked);
+      expect($("[data-cycle-asked]").text()).toContain(asked);
+      // A parameter the page answered is not a parameter it dropped.
+      expect($("[data-dropped-params]").length).toBe(0);
+    },
+  );
+
+  /**
+   * The gate at the SEAM, not only at the page that owns the derivation: the
+   * component refuses a value `/cycles` would never hand it, in all three arms,
+   * so a second caller cannot reintroduce §7's defect
+   * (admin-window/BUG-0147). Graded both ways — the same three arms render
+   * their sentence for a value the allowlist admits.
+   */
+  it("refuses to spell a value the allowlist denies, in each of its three arms [admin-window/BUG-0147]", () => {
+    const states: AskedCycleState[] = [
+      { kind: "found" },
+      { kind: "absent" },
+      { kind: "unchecked", reading: T.resolutionRuns },
+    ];
+    for (const state of states) {
+      const denied = render(
+        h(AskedCycle, {
+          askedFor: `${String.fromCodePoint(0x202e)}not-a-uuid`,
+          state,
+          limit: CYCLE_WINDOW,
+        }),
+      );
+      expect(denied, state.kind).toBe("");
+      const allowed = render(
+        h(AskedCycle, { askedFor: "not-a-uuid", state, limit: CYCLE_WINDOW }),
+      );
+      expect(
+        cheerio.load(allowed)("[data-cycle-asked]").attr("data-cycle-asked"),
+        state.kind,
+      ).toBe("not-a-uuid");
+    }
+  });
 
   it("keeps the window's own limits on screen beside a cycle it could not find", async () => {
     // A full window is the one case where "not here" and "does not exist" come

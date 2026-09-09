@@ -10,7 +10,7 @@
  * components render.
  */
 export { AdapterRuns, RUNS_LABEL } from "./adapter-runs";
-export { AskedCycle, type AskedCycleState } from "./asked-cycle";
+export { AskedCycle, canSpellAskedCycle, type AskedCycleState } from "./asked-cycle";
 export { CycleHealthSection } from "./cycle-health";
 export { NOTHING_RECORDED, cycleColumns } from "./cycle-table";
 export { LatestRun } from "./latest-run";
