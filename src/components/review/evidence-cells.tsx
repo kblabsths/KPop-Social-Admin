@@ -55,6 +55,21 @@ export interface EvidenceRow {
   payloadRef: string | null;
   /** The fact this claim is about, as `domain.field`. */
   fact: string;
+  /**
+   * WHICH record the claim is about: `observations.entity_id`, the canonical
+   * row's id — the same value `/claims` draws in its own `record` column. Null
+   * while the record does not exist yet, which is what puts a claim in
+   * `awaiting_row`.
+   */
+  entityId: string | null;
+  /**
+   * The SOURCE's own name for that record — `observations.external_ref`, the
+   * id it keys the record by on its side. It is the only identity a claim with
+   * no canonical row has (the link stage resolves
+   * `(source, domain, external_ref)` into an `entity_id` later), so it is what
+   * the record column falls back to. Null when the source published none.
+   */
+  externalRef: string | null;
   /** The record surface for this claim's own entity; null while it has no row. */
   recordHref: string | null;
   /**
@@ -69,8 +84,9 @@ export interface EvidenceRow {
 /**
  * The value, carrying the row's hook.
  *
- * Every view puts this column first, so `[data-evidence="<id>"]` finds the row
- * one claim renders in, whichever shape rendered it.
+ * Every view draws this column, so `[data-evidence="<id>"]` finds the row one
+ * claim renders in, whichever shape rendered it and wherever in that shape's
+ * column order the value sits.
  */
 export const valueColumn: Column<EvidenceRow> = {
   key: "value",
@@ -138,16 +154,55 @@ export const heldColumn: Column<EvidenceRow> = {
   cell: (row) => <span data-held={row.held ?? ""}>{row.held}</span>,
 };
 
-/** The fact a folded record is about, linking to the record where it has one. */
+/**
+ * WHICH record this row is about (campaign admin-window/BUG-0122).
+ *
+ * A source-pattern item folds records that agree on everything but the record
+ * — one source, many records stuck the same way — so this is the only cell that
+ * can tell two of its rows apart, and the table read as 91 identical dead ends
+ * without it (user-sims Priya and Devin, 2026-09-09). Three states, in the
+ * order of what the app actually holds:
+ *
+ *  - a canonical row exists: its id, drawn as the link to `/records/<domain>/…`
+ *    in the app's one link spelling — the same value, destination and rendering
+ *    `/claims` gives its own `record` column (`components/claims/claim-list.tsx`);
+ *  - no canonical row yet: the SOURCE's reference for that record, verbatim in
+ *    the table's mono `data` cell and NOT a link. This app links nothing whose
+ *    address it does not hold, and a record with no row has no address;
+ *  - neither: `null`, so `DataTable`'s own `orDash` draws the app's one dash.
+ *    An absence is rendered, never blanked and never filled with a borrowed id.
+ */
+export const recordColumn: Column<EvidenceRow> = {
+  key: "record",
+  label: "record",
+  cell: (row) => {
+    if (row.entityId !== null && row.recordHref !== null) {
+      return (
+        <a href={row.recordHref} data-record={row.entityId} className={IN_PAGE_LINK}>
+          {row.entityId}
+        </a>
+      );
+    }
+    if (row.externalRef === null) return null;
+    return <span data-record={row.externalRef}>{row.externalRef}</span>;
+  },
+};
+
+/**
+ * The fact the row states about that record, as `domain.field`.
+ *
+ * Named `fact` because that is what `/claims` calls this exact value, and an
+ * anatomy does not change its glossary between screens (LOOK_AND_FEEL's
+ * consistency rule). It was labelled `record` until admin-window/BUG-0122,
+ * which made the word name two different things on two screens — and left the
+ * review item with no column for the record at all.
+ *
+ * It goes nowhere: `recordColumn` beside it is the row's one route to the
+ * record, so the row has one destination under one label (admin-window/BUG-0043)
+ * rather than two links to the same page saying different things.
+ */
 export const factColumn: Column<EvidenceRow> = {
   key: "fact",
-  label: "record",
-  cell: (row) =>
-    row.recordHref === null ? (
-      <span data-fact={row.fact}>{row.fact}</span>
-    ) : (
-      <a href={row.recordHref} data-fact={row.fact} className={IN_PAGE_LINK}>
-        {row.fact}
-      </a>
-    ),
+  label: "fact",
+  cell: (row) => <span data-fact={row.fact}>{row.fact}</span>,
 };

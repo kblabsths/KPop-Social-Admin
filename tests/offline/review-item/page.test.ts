@@ -1,8 +1,10 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
+import { ClaimList, type ClaimLine } from "@/components/claims/claim-list";
 import { isRecordId } from "@/lib/db/records";
+import { EM_DASH } from "@/lib/format";
 import { T } from "@/lib/db/tables";
-import { render, uppercasedIdentifiers } from "../ui/markup";
+import { h, render, uppercasedIdentifiers } from "../ui/markup";
 import {
   ID,
   fieldProvenanceRow,
@@ -247,6 +249,107 @@ function longPatternScript(overrides: Script = {}): Script {
   };
 }
 
+/* ── two folded records that differ only in WHICH record ─────────────────── */
+
+/**
+ * The pair that made this table unreadable — campaign admin-window/BUG-0122.
+ *
+ * On staging's one signal item (`01a06287-…`, 91 folded records) two rows were
+ * byte-identical across every column the view drew — same fact, same performer
+ * payload, same source, same tier, same age, same payload pointer — while being
+ * two DIFFERENT stuck events. The fold is by source and by symptom, so a
+ * source-pattern item is EXPECTED to hold rows that agree everywhere but in the
+ * record they are about; the record is therefore the only thing that can tell
+ * them apart, and it is what the view dropped.
+ *
+ * Four rows, because the record identity has four states worth pinning: two
+ * canonical rows that exist (a link each, to two different records), one claim
+ * whose row does not exist yet (the source's own `external_ref`, which is the
+ * only name anything holds for it), and one carrying neither (the table's
+ * dash — invented identity is worse than a named absence).
+ */
+const PERFORMERS = [
+  { ids: { spotify: "4Kxlr1PRlDKEB0ekOCyHgX" }, ref: "K8vZ917GQmV", name: "BIGBANG" },
+];
+
+/** The two stuck events the pair is about. Distinct, and nothing else is. */
+const STUCK_EVENT_A = "01920000-0000-7000-8000-000000000203";
+const STUCK_EVENT_B = "01920000-0000-7000-8000-000000000204";
+
+/** One folded `events.performers` claim, identical to its siblings but for `overrides`. */
+function foldedPerformer(overrides: Partial<ObservationRow>): ObservationRow {
+  return observationRow({
+    field: "performers",
+    domain: "events",
+    value: PERFORMERS,
+    source_id: ID.sourceBandsintown,
+    status: "pending",
+    observed_at: "2026-09-01T08:00:00Z",
+    payload_ref: "sha256/7b/7b50",
+    ...overrides,
+  });
+}
+
+const BIGBANG_A = foldedPerformer({
+  observation_id: "01920000-0000-7000-8000-000000000311",
+  entity_id: STUCK_EVENT_A,
+  external_ref: "1AvZZ_8GkDIyaGr",
+});
+const BIGBANG_B = foldedPerformer({
+  observation_id: "01920000-0000-7000-8000-000000000312",
+  entity_id: STUCK_EVENT_B,
+  external_ref: "vvG1IZ_eJSfUoL",
+});
+/** No canonical row yet — which is why this claim is stuck at all. */
+const BIGBANG_UNLINKED = foldedPerformer({
+  observation_id: "01920000-0000-7000-8000-000000000313",
+  entity_id: null,
+  external_ref: "k7vGF_oRKjGkH",
+});
+/** Neither identity: the row can only say that it has nothing to say. */
+const BIGBANG_ANONYMOUS = foldedPerformer({
+  observation_id: "01920000-0000-7000-8000-000000000314",
+  entity_id: null,
+  external_ref: null,
+});
+
+const FOLDED_PAIR = [BIGBANG_A, BIGBANG_B, BIGBANG_UNLINKED, BIGBANG_ANONYMOUS];
+
+/** The source-pattern item folding those four. */
+function foldedPairScript(overrides: Script = {}): Script {
+  const item = reviewItemSourcePattern({
+    evidence: FOLDED_PAIR.map((claim) => claim.observation_id),
+  });
+  return {
+    [T.reviewItems]: { data: item },
+    [T.observations]: [{ data: FOLDED_PAIR }, { data: [] }],
+    [T.sources]: { data: [BANDSINTOWN] },
+    [T.pendingClaims]: [{ data: [] }, { data: [] }],
+    ...SETTLEMENT_ABSENT,
+    ...overrides,
+  };
+}
+
+/**
+ * One claim as `/claims` renders it, so the two surfaces can be asked the same
+ * question about the same two values (the anatomy rule: one fact, one
+ * rendering, one name, on every screen). Only the two columns under test are
+ * read off it.
+ */
+const CLAIMS_PAGE_LINE: ClaimLine = {
+  observationId: ID.observationA,
+  bucket: "awaiting_row",
+  domain: "events",
+  field: "performers",
+  entityId: ID.eventEntity,
+  sourceId: ID.sourceTicketmaster,
+  source: TICKETMASTER.source,
+  observedAt: CLAIM_A.observed_at,
+  unmetRequirement: "at least one linked performer",
+  sourceHref: `/sources?source_id=${ID.sourceTicketmaster}`,
+  provenanceHref: `/records/events/${ID.eventEntity}`,
+};
+
 /* ── the addressing the live oracle depends on ───────────────────────────── */
 
 /**
@@ -287,7 +390,34 @@ function rowOf(markup: string, id: string) {
     payload: row.find("[data-payload]").attr("data-payload"),
     held: row.find("[data-held]").attr("data-held"),
     sourceHref: row.find("a[data-claim-source]").attr("href"),
+    /** WHICH record this row is about, however the view could name it. */
+    record: row.find("[data-record]").attr("data-record"),
+    /** The way to that record, when the app holds an address for it. */
+    recordHref: row.find("a[data-record]").attr("href"),
+    /** The fact it states about that record, as `domain.field`. */
+    fact: row.find("[data-fact]").attr("data-fact"),
   };
+}
+
+/**
+ * The header over the cell a hook sits in — what this surface CALLS that value.
+ *
+ * Read off the delivered markup on both sides, so the same question can be put
+ * to two different surfaces and their answers compared. It pins no word: what
+ * it asserts is that two screens agree, not what they agreed on.
+ */
+function headerOverCell(markup: string, hook: string): string {
+  const $ = cheerio.load(markup);
+  const cell = $(hook).first().closest("td");
+  expect(cell, `no table cell carries ${hook}`).toHaveLength(1);
+  const index = cell.prevAll("td").length;
+  return $(cell)
+    .closest("table")
+    .find("thead th")
+    .eq(index)
+    .text()
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** The evidence-pair cards, in rendered order — the canonical one is last. */
@@ -873,6 +1003,153 @@ describe("each shape gets its own view", () => {
     expect($("[data-dial]")).toHaveLength(1);
     // ...and there is no canonical card: the subject is a SOURCE, not a fact.
     expect($("[data-pair]")).toHaveLength(0);
+  });
+
+  /**
+   * **admin-window/BUG-0122** — the table's first two columns, and the reason
+   * a stranger closed the tab at this one (user-sims Priya and Devin,
+   * 2026-09-09). A source-pattern item folds many records that agree on
+   * everything but the record, so a row that cannot name its record is a dead
+   * end, and two such rows are the same dead end drawn twice.
+   */
+  it("tells two folded records apart by the record each one is about", async () => {
+    const item = reviewItemSourcePattern();
+    const markup = await renderItem(foldedPairScript(), item.review_item_id);
+    const a = rowOf(markup, BIGBANG_A.observation_id);
+    const b = rowOf(markup, BIGBANG_B.observation_id);
+
+    // These two claims agree on every OTHER cell the view draws — same fact,
+    // same value, same source, same tier, same age, same payload pointer.
+    expect([a.fact, a.tier, a.observedAt, a.payload, a.sourceHref]).toEqual([
+      b.fact,
+      b.tier,
+      b.observedAt,
+      b.payload,
+      b.sourceHref,
+    ]);
+
+    // ...so the row is told apart by the record it is about, or not at all.
+    expect(a.record).toBe(STUCK_EVENT_A);
+    expect(b.record).toBe(STUCK_EVENT_B);
+    expect(a.recordHref).toBe(`/records/events/${STUCK_EVENT_A}`);
+    expect(b.recordHref).toBe(`/records/events/${STUCK_EVENT_B}`);
+    expect(a.text).not.toBe(b.text);
+  });
+
+  it("gives no two folded records about different records the same row", async () => {
+    // The property, over the whole table rather than over the pinned pair: no
+    // two rows naming two different source records render the same text.
+    const item = reviewItemSourcePattern();
+    const markup = await renderItem(foldedPairScript(), item.review_item_id);
+    const identified = FOLDED_PAIR.filter(
+      (claim) => claim.entity_id !== null || claim.external_ref !== null,
+    );
+    expect(identified.length).toBeGreaterThan(1);
+
+    const texts = identified.map((claim) => rowOf(markup, claim.observation_id).text);
+    expect(new Set(texts).size).toBe(texts.length);
+  });
+
+  it("names a folded record with no canonical row by the source's own reference", async () => {
+    // The claim is stuck BECAUSE the row does not exist, so there is no
+    // address to link to and none is invented (LOOK_AND_FEEL bar 10's honest
+    // half). What the app does hold is the source's own reference for that
+    // record, verbatim.
+    const item = reviewItemSourcePattern();
+    const markup = await renderItem(foldedPairScript(), item.review_item_id);
+    const $ = cheerio.load(markup);
+    const row = $(`[data-evidence="${BIGBANG_UNLINKED.observation_id}"]`).closest("tr");
+    const cell = row.find("[data-record]");
+
+    expect(cell).toHaveLength(1);
+    expect(cell.text().trim()).toBe(BIGBANG_UNLINKED.external_ref);
+    expect(cell.attr("data-record")).toBe(BIGBANG_UNLINKED.external_ref);
+    // It goes nowhere, and it does not pretend to.
+    expect(cell.is("a")).toBe(false);
+    expect(cell.closest("td").find("a")).toHaveLength(0);
+    expectNotDrawnAsLink(classesOf(cell), "a record this app holds no address for");
+    // It is a machine identifier: rendered in the table's own mono cell.
+    expect(faceOf(classesOf(cell.closest("td")))).toEqual(["type-data"]);
+  });
+
+  it("renders the table's dash for a folded record it can name no way at all", async () => {
+    const item = reviewItemSourcePattern();
+    const markup = await renderItem(foldedPairScript(), item.review_item_id);
+    const $ = cheerio.load(markup);
+    const row = $(`[data-evidence="${BIGBANG_ANONYMOUS.observation_id}"]`).closest("tr");
+
+    expect(row.find("[data-record]")).toHaveLength(0);
+    // The first cell is the record cell, and absence there is the app's one
+    // dash — never a blank, never a borrowed id (LESSONS 1).
+    expect(row.find("td").first().text().trim()).toBe(EM_DASH);
+  });
+
+  it("draws only the record cell as the way to the record", async () => {
+    // One destination, one label (admin-window/BUG-0043): the fact cell states
+    // a fact and goes nowhere; the record cell is the single route out of the
+    // row to the record it is about.
+    const item = reviewItemSourcePattern();
+    const markup = await renderItem(foldedPairScript(), item.review_item_id);
+    const $ = cheerio.load(markup);
+    const row = $(`[data-evidence="${BIGBANG_A.observation_id}"]`).closest("tr");
+
+    const toRecord = row
+      .find("a")
+      .toArray()
+      .map((anchor) => $(anchor).attr("href") ?? "")
+      .filter((href) => href.startsWith("/records/"));
+    expect(toRecord).toEqual([`/records/events/${STUCK_EVENT_A}`]);
+
+    const factCell = row.find("[data-fact]");
+    expect(factCell.is("a")).toBe(false);
+    expectNotDrawnAsLink(classesOf(factCell), "the fact cell of a folded record");
+    expectDrawnAsLinkAtRest(
+      classesOf(row.find("a[data-record]")),
+      "the record cell of a folded record",
+    );
+  });
+
+  /**
+   * The anatomy rule, as a comparison rather than as a pinned word: the same
+   * fact renders the same way, and answers to the same name, on every screen
+   * that draws it (LOOK_AND_FEEL's consistency rule; the Voice's glossary is
+   * one name per concept). `/claims` has drawn `domain.field` and the record's
+   * id as two separate columns since admin-window/TASK-0012; the review item
+   * called the first of them `record` and drew the second nowhere.
+   */
+  it("names the fact and the record what /claims names them", async () => {
+    const item = reviewItemSourcePattern();
+    const evidence = await renderItem(foldedPairScript(), item.review_item_id);
+    const claims = render(h(ClaimList, { rows: [CLAIMS_PAGE_LINE], label: "Claims" }));
+
+    // The value spelled `domain.field` — one name for it, on both screens.
+    expect(headerOverCell(evidence, "[data-fact]")).toBe(
+      headerOverCell(claims, "[data-claim]"),
+    );
+    // The entity the claim is about — likewise.
+    expect(headerOverCell(evidence, "[data-record]")).toBe(
+      headerOverCell(claims, "a[data-claim-provenance]"),
+    );
+    // Non-vacuity: two different headers, neither of them empty.
+    expect(headerOverCell(evidence, "[data-fact]").length).toBeGreaterThan(0);
+    expect(headerOverCell(evidence, "[data-record]")).not.toBe(
+      headerOverCell(evidence, "[data-fact]"),
+    );
+  });
+
+  it("keeps the per-fact views out of it: they are about one record already", async () => {
+    // Criterion 5: `ConflictEvidence` and `StuckFactEvidence` are each about a
+    // single record, which the item header names — a record column there would
+    // repeat it on every row.
+    for (const [shape, script, id] of [
+      ["the conflict item", conflictScript(), reviewItemDataConflict().review_item_id],
+      ["the stuck fact item", stuckScript(), reviewItemEntityLink().review_item_id],
+    ] as const) {
+      const $ = cheerio.load(await renderItem(script, id));
+      expect($("[data-evidence]").length, `${shape} renders evidence`).toBeGreaterThan(0);
+      expect($("[data-record]"), `${shape} grew a record column`).toHaveLength(0);
+      expect($("[data-fact]"), `${shape} grew a fact column`).toHaveLength(0);
+    }
   });
 
   it("draws the dial's trend without a threshold line", async () => {

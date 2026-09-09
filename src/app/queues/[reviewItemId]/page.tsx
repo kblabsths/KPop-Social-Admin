@@ -297,6 +297,13 @@ function evidenceRow(
     status: observation.status,
     payloadRef: observation.payload_ref,
     fact: factKey(observation.domain, observation.field),
+    // WHICH record the claim is about (admin-window/BUG-0122). Both identities
+    // travel: the canonical id when the row exists, and the source's own
+    // reference — already in `OBSERVATION_COLUMNS`, and until this ticket read
+    // and dropped — for the claims whose row does not, which is most of a
+    // source-pattern item's evidence.
+    entityId: observation.entity_id,
+    externalRef: observation.external_ref,
     recordHref: recordHref(observation.domain, observation.entity_id),
     held:
       bucket === undefined

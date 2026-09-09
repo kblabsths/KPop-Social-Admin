@@ -24,6 +24,7 @@ import {
   heldColumn,
   observedColumn,
   payloadColumn,
+  recordColumn,
   sourceColumn,
   statusColumn,
   tierColumn,
@@ -52,6 +53,7 @@ import {
  *  - an `entity_link` fact item — the **stuck claims and the unmet
  *    requirement** the classification view names;
  *  - an `entity_link` source-pattern item — the **folded records as a list**,
+ *    each row naming the record it is about and the fact it states about it,
  *    with the per-source dial beside it.
  *
  * The two fact views lead with the evidence pair — this app's signature
@@ -408,6 +410,10 @@ function PatternEvidence({
         <ClaimRows
           rows={rows}
           columns={[
+            // Which record, then what is claimed about it — the reading order
+            // of the sentence a row is, and `/claims`'s own order for the same
+            // two values (admin-window/BUG-0122).
+            recordColumn,
             factColumn,
             valueColumn,
             sourceColumn,

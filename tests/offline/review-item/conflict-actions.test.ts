@@ -162,6 +162,10 @@ function evidenceRow(overrides: Partial<EvidenceRow> = {}): EvidenceRow {
     status: "pending",
     payloadRef: "ticketmaster/2026-08-31/G5vYZ9d1.json",
     fact: "events.title",
+    // Both halves of the record identity a row now carries
+    // (admin-window/BUG-0122): the canonical id, and the source's own ref.
+    entityId: ID.eventEntity,
+    externalRef: "tm-G5vYZ9d1",
     recordHref: `/records/events/${ID.eventEntity}`,
     held: null,
     ...overrides,
