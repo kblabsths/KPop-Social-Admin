@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { CLAIM_WINDOW } from "@/components/claims";
+import { STANDING_BUCKET } from "@/lib/gauges/standing-disagreements";
 import { T } from "@/lib/db/tables";
 import {
   implicitInterElementSpaces,
@@ -723,6 +724,75 @@ describe("the claim list's window", () => {
     expect(nothing.text).toContain("no claims matching these filters at all");
     expect(nothing.text).not.toContain("found no claims at all");
   });
+
+  /**
+   * A crowd of STANDING claims — the one bucket whose narrowing is the TAB and
+   * not a chip, and the only way to reach a standing window that filled its cap.
+   * `crowd()` above spells `awaiting_row`/`awaiting_link` only, so the tab-only
+   * narrowing has never met a truncated window.
+   */
+  function standingCrowd(size: number): Script {
+    const claims: PendingClaimRow[] = [];
+    const observations: ReturnType<typeof observationRow>[] = [];
+    for (let index = 0; index < size; index += 1) {
+      const id = `01920000-0000-7000-8000-0000000${(80000 + index).toString()}`;
+      const source = index % 3 === 0 ? SOURCE.first : SOURCE.second;
+      claims.push(
+        pendingClaimRow("standing_disagreement", {
+          observation_id: id,
+          domain: "events",
+          entity_id: ENTITY.otherEvent,
+          field: "title",
+          source_id: source,
+        }),
+      );
+      observations.push(
+        observationRow({
+          observation_id: id,
+          entity_id: ENTITY.otherEvent,
+          domain: "events",
+          field: "title",
+          source_id: source,
+          observed_at: new Date(Date.UTC(2026, 0, 1) + index * 3_600_000).toISOString(),
+          status: "pending",
+        }),
+      );
+    }
+    return {
+      [T.pendingClaims]: { data: claims, count: claims.length },
+      [T.observations]: { data: observations },
+      [T.sources]: { data: [] },
+    };
+  }
+
+  it.fails(
+    "states the count of a FILLED window over the narrowing it actually read (admin-window/BUG-0118)",
+    async () => {
+      // The sibling of admin-window/BUG-0114 on the one clause that does not
+      // take the window's `scope`: the `matched` arm's truncated sentence
+      // attributes its held count to "these filters", which is true only when
+      // the narrowing IS the chips. On the standing tab the narrowing is the
+      // TAB — one bucket's subset, with the chip bar showing nothing selected
+      // — so a count of that bucket is presented as a count under filters that
+      // are not set.
+      const size = CLAIM_WINDOW + 23;
+      const script = standingCrowd(size);
+
+      // Same window, same page, unfilled: the not-filled and zero arms DO name
+      // the bucket, so the two halves of one sentence disagree about what the
+      // window is a window of.
+      const unfilled = windowLine(await renderClaims(standingCrowd(4), { tab: "standing" }));
+      expect(unfilled.truncated).toBe(false);
+      expect(unfilled.text).toContain(STANDING_BUCKET);
+
+      const filled = windowLine(await renderClaims(script, { tab: "standing" }));
+      expect(filled.truncated).toBe(true);
+      // The number is right — it is the standing bucket's own count.
+      expect(filled.held).toBe(size);
+      // What it is a count OF is what the sentence does not say.
+      expect(filled.text).toContain(STANDING_BUCKET);
+    },
+  );
 
   it("counts held claims per narrowing, not per rendered page", async () => {
     // Big enough that EACH bucket alone overflows the cap, so a narrowing is
