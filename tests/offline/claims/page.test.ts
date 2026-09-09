@@ -849,10 +849,50 @@ describe("the claim list's window", () => {
     expect(chipped.truncated).toBe(true);
     expect(chipped.text).not.toContain("matching these filters");
     expect(occurrencesIn(chipped.text, "these filters")).toBe(1);
+    // The unnarrowed line and the chip-narrowed one differ in exactly two
+    // places — the count, and the phrase beside it. Everything else is one
+    // sentence spelled once. The unnarrowed side asserts no filter at all
+    // since admin-window/BUG-0123, which is why the substitution names both
+    // halves rather than only the number.
     const plain = windowLine(await renderClaims(crowdedScript(size)));
+    expect(plain.text).not.toContain("match these filters");
     expect(chipped.text).toBe(
-      plain.text.replace(count(size), count(chipped.held)),
+      plain.text.replace(
+        `${count(size)} claims in all;`,
+        `${count(chipped.held)} claims match these filters;`,
+      ),
     );
+  });
+
+  it("claims a filter over the list only when a chip is set (admin-window/BUG-0123)", async () => {
+    // Priya's sentence: `/claims` said "877 claims match these filters" over a
+    // read no filter had touched, and `/claims?record_id=<uuid>` said it again,
+    // byte for byte, with the parameter dropped in silence
+    // (`M2-usersim-priya.md` §6). The count and the window were right; the
+    // clause around them was the one thing on the page that was not.
+    const size = CLAIM_WINDOW * 2 + 7;
+    const bare = windowLine(await renderClaims(crowdedScript(size)));
+    expect(bare.truncated).toBe(true);
+    expect(bare.held).toBe(size);
+    // The number and the noun survive; the assertion about the filters does not.
+    expect(bare.text).toContain(`${count(size)} claims`);
+    expect(bare.text).not.toContain("match these filters");
+
+    // A parameter this page does not filter by leaves the window line alone —
+    // and leaves it saying nothing about filters either.
+    const typed = windowLine(
+      await renderClaims(crowdedScript(size), { record_id: ENTITY.event }),
+    );
+    expect(typed.text).toBe(bare.text);
+    expect(typed.held).toBe(size);
+
+    // The other way: a chip really set puts the phrase back, over its own count.
+    const chipped = windowLine(
+      await renderClaims(crowdedScript(size), { bucket: "awaiting_row" }),
+    );
+    expect(chipped.text).toContain("claims match these filters");
+    expect(chipped.held).toBeLessThan(size);
+    expect(chipped.held).toBeGreaterThan(CLAIM_WINDOW);
   });
 
   /**
@@ -1697,6 +1737,215 @@ describe("a hand-edited URL", () => {
       ),
     );
     expect(markup).not.toContain(PARKED);
+  });
+});
+
+/* ── what the URL asked for and the page did not do (admin-window/BUG-0123) ─ */
+
+/**
+ * The line beside the filter bar, read structurally: how many parameters the
+ * page says it dropped, and which of them it spelled.
+ *
+ * The count and the names are separate on purpose — a parameter whose own NAME
+ * is a word this app may not render (`?in_window=1`) is counted and not
+ * spelled, so the two can disagree and the test can say which.
+ */
+function droppedLine(markup: string) {
+  const $ = cheerio.load(markup);
+  const line = $("[data-dropped-params]");
+  return {
+    present: line.length === 1,
+    lines: line.length,
+    total: Number(line.attr("data-dropped-params")),
+    names: line
+      .find("[data-dropped-param]")
+      .toArray()
+      .map((element) => $(element).text()),
+    mono: line
+      .find("span.type-data")
+      .toArray()
+      .map((element) => $(element).text()),
+    text: line.text().replace(/\s+/g, " ").trim(),
+  };
+}
+
+/** What the bucket table's caption says, read out of the bucket surface itself. */
+function bucketCaption(markup: string): string {
+  return cheerio
+    .load(markup)('[data-surface="buckets"] p')
+    .last()
+    .text()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+describe("a parameter the page did not apply", () => {
+  /**
+   * The uuid Priya pasted, and deliberately NOT one this population carries:
+   * the value must be absent from the markup because the page refused to echo
+   * it, never because a row happened to spell it anyway.
+   */
+  const TYPED = "01a03f78-a122-7baf-acf7-6f997a030048";
+
+  it("says nothing when every parameter the URL carried was applied", async () => {
+    // Both directions of the guard live in this file, so the assertions below
+    // are not passing over a page that never renders the line at all.
+    for (const params of [
+      {},
+      { tab: "standing" },
+      { bucket: "escalated" },
+      { bucket: "escalated", domain: "events", source_id: SOURCE.first },
+      // A parameter carrying no value asked for nothing, so nothing was dropped.
+      { record_id: "" },
+      { bucket: "" },
+    ] as Record<string, string>[]) {
+      const line = droppedLine(await renderClaims(healthyScript(), params));
+      expect(line.lines, JSON.stringify(params)).toBe(0);
+    }
+  });
+
+  it("names a parameter it does not filter by, once, and never its value", async () => {
+    const markup = await renderClaims(healthyScript(), { record_id: TYPED });
+    const line = droppedLine(markup);
+    expect(line.present).toBe(true);
+    expect(line.total).toBe(1);
+    // The name, verbatim and in mono (Voice bar 5) — and nothing else in mono.
+    expect(line.names).toEqual(["record_id"]);
+    expect(line.mono).toEqual(["record_id"]);
+    // The VALUE is the operator's, and the page does not read it back to them:
+    // an echo is how a hand-typed URL gets a foothold in the markup.
+    expect(line.text).not.toContain(TYPED);
+    expect(markup).not.toContain(TYPED);
+  });
+
+  it("names a facet whose value no chip offers, without echoing the value", async () => {
+    // The parked bucket is the value this page may never render, so the line
+    // that reports it dropped is exactly where an echo would land
+    // (LOOK_AND_FEEL bar 3, ARCHITECTURE.md §6 trap 4).
+    const markup = await renderClaims(healthyScript(), { bucket: PARKED });
+    const line = droppedLine(markup);
+    expect(line.present).toBe(true);
+    expect(line.names).toEqual(["bucket"]);
+    expect(markup).not.toContain(PARKED);
+
+    // Any unusable value, not just that one: the rule is the offered
+    // vocabulary, and a case variant is outside it like anything else.
+    expect(droppedLine(await renderClaims(healthyScript(), { bucket: "Escalated" })).names)
+      .toEqual(["bucket"]);
+    expect(
+      droppedLine(await renderClaims(healthyScript(), { source_id: "not-a-source" })).names,
+    ).toEqual(["source_id"]);
+  });
+
+  it("counts a parameter whose own NAME this app may not render, and spells none of it", async () => {
+    // The URL may use the parked bucket as a KEY, and bar 3 is about the
+    // string on the screen, not about which half of a query pair it came from.
+    // The page still says it dropped one — silence is what the bug was.
+    const markup = await renderClaims(healthyScript(), { [PARKED]: "1" });
+    const line = droppedLine(markup);
+    expect(line.present).toBe(true);
+    expect(line.total).toBe(1);
+    expect(line.names).toEqual([]);
+    expect(markup).not.toContain(PARKED);
+    expect(line.text.length).toBeGreaterThan(20);
+  });
+
+  it("names every dropped parameter in one line, and only the ones it dropped", async () => {
+    const markup = await renderClaims(healthyScript(), {
+      record_id: TYPED,
+      bucket: PARKED,
+      // Applied, so it is not in the line — and the tab never is.
+      domain: "events",
+      tab: "buckets",
+    });
+    const line = droppedLine(markup);
+    expect(line.lines).toBe(1);
+    expect(line.total).toBe(2);
+    expect(line.names).toEqual(["record_id", "bucket"]);
+    expect(line.names).not.toContain("domain");
+    expect(line.names).not.toContain("tab");
+    expect(markup).not.toContain(PARKED);
+  });
+
+  it("names the bucket the STANDING tab took away, because that tab did not apply it", async () => {
+    // The standing tab is one bucket's subset and carries no bucket facet at
+    // all, so `?tab=standing&bucket=awaiting_row` really is a narrowing this
+    // page did not perform — the same silence, arrived at by another route.
+    const markup = await renderClaims(healthyScript(), {
+      tab: "standing",
+      bucket: "awaiting_row",
+    });
+    expect(droppedLine(markup).names).toEqual(["bucket"]);
+    // …and the rows below are the standing bucket's, exactly as they were.
+    expect(claimIds(markup)).toEqual(
+      oldestFirst(matching({ bucket: "standing_disagreement" })),
+    );
+  });
+
+  it("stands on a read that failed as well as one that answered", async () => {
+    // It is a fact of the URL, not of a read, so it does not disappear with
+    // the rows (LOOK_AND_FEEL states 3 and 4).
+    for (const script of [
+      healthyScript({ [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) } }),
+      healthyScript({ [T.pendingClaims]: { error: transportFailure() } }),
+    ]) {
+      const line = droppedLine(await renderClaims(script, { record_id: TYPED }));
+      expect(line.present).toBe(true);
+      expect(line.names).toEqual(["record_id"]);
+    }
+  });
+
+  it("changes nothing else about the page it reports on", async () => {
+    // Acceptance criterion 5: the parameter is reported, not applied. The rows,
+    // the bucket figures and every chip href are the unnarrowed page's.
+    const plain = await renderClaims(healthyScript());
+    const typed = await renderClaims(healthyScript(), { record_id: TYPED });
+    expect(claimIds(typed)).toEqual(claimIds(plain));
+    expect(bucketRows(typed)).toEqual(bucketRows(plain));
+    for (const facet of ["bucket", "source_id", "domain"]) {
+      expect(chipsOf(typed, facet), facet).toEqual(chipsOf(plain, facet));
+    }
+
+    /**
+     * What an operator READS, minus the gauge — whose window line is measured
+     * back from `Date.now()`, so two renders of the same page never carry the
+     * same instants and a raw markup comparison would be true for a reason
+     * that has nothing to do with this ticket.
+     */
+    const reads = (markup: string, withoutTheLine = false): string => {
+      const $ = cheerio.load(markup);
+      $('[data-surface="gauge"]').remove();
+      if (withoutTheLine) $("[data-dropped-params]").remove();
+      return $.root().text().replace(/\s+/g, " ").trim();
+    };
+
+    // Criterion 6: the walk fetched both URLs, diffed the rendered text and got
+    // nothing. They no longer read alike…
+    expect(reads(typed)).not.toBe(reads(plain));
+    // …and the difference is the one line and nothing else, which is the other
+    // half of criterion 5: take it away and the two pages are the same page.
+    expect(reads(typed, true)).toBe(reads(plain, true));
+    expect(droppedLine(plain).lines).toBe(0);
+  });
+
+  it("says what the bucket figures are figures of, and asserts no filter without one", async () => {
+    // The page's second sentence over an unnarrowed read: the caption claimed
+    // the bucket counts were "under the filters above" with an empty chip bar.
+    const whole = bucketCaption(await renderClaims(healthyScript()));
+    expect(whole).not.toContain("filters above");
+    expect(whole).toContain("real zero");
+
+    // A hand-typed parameter narrows nothing, so the caption does not move.
+    expect(bucketCaption(await renderClaims(healthyScript(), { record_id: TYPED }))).toBe(
+      whole,
+    );
+
+    // The other way: with a chip set the sentence is the one it has always been.
+    const narrowed = bucketCaption(
+      await renderClaims(healthyScript(), { source_id: SOURCE.first }),
+    );
+    expect(narrowed).toContain("under the filters above");
+    expect(narrowed).not.toBe(whole);
   });
 });
 

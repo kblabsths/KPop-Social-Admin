@@ -122,6 +122,71 @@ export function isNarrowed(filter: ClaimsFilter): boolean {
   return CLAIM_FACETS.some((facet) => filter[facet] !== undefined);
 }
 
+/** Is this key one of the page's facets? The narrowing vocabulary, as a guard. */
+function isFacet(key: string): key is ClaimFacet {
+  return (CLAIM_FACETS as readonly string[]).includes(key);
+}
+
+/**
+ * What the URL asked for that the page DID NOT DO — the parameters carried
+ * into this render that narrowed nothing (admin-window/BUG-0123).
+ *
+ * A parameter outside `CLAIM_FACETS`, and a facet value outside the offered
+ * vocabulary, both narrow nothing here by design (`chosen` above: a URL can
+ * only select from what the page offers, so a typo lands on a real state
+ * rather than an empty one that reads as an empty database). Dropping it was
+ * right; dropping it SILENTLY was not — a hand-typed `?record_id=<uuid>`
+ * returned 200 under a sentence asserting the rows were filtered, and the
+ * operator who did not know the count by heart had nothing to check
+ * (`M2-usersim-priya.md` §6).
+ *
+ * Three rules, and they are the whole definition:
+ *
+ *  - **The question is the APPLIED filter, not the vocabulary.** A facet that
+ *    reached `applied` is applied, whatever the URL spelled; one that did not
+ *    is dropped, whether its value was unusable or the TAB took the facet away
+ *    (the standing tab is one bucket's subset and carries no bucket facet, so
+ *    a `?tab=standing&bucket=…` really is a narrowing this page did not do).
+ *  - **`tab` is never here.** Every value of it lands on a real tab —
+ *    `tabFrom` falls back to `DEFAULT_TAB` — and the tab strip shows which,
+ *    so the page consumed it and no sentence is claiming otherwise.
+ *  - **A key carrying no value asked for nothing** and is not a dropped
+ *    narrowing; `?bucket=` is the URL saying nothing, not the page ignoring
+ *    something.
+ *
+ * `neverNamed` is the small set of words this app may not put on screen at all
+ * — the parked bucket (`UNRENDERABLE_BUCKET`, `lib/db/claims.ts`; LOOK_AND_FEEL
+ * bar 3) — which a URL may perfectly well use as a KEY. It is handed in rather
+ * than imported because this module is a pure domain leaf and may not reach
+ * `lib/db/**` (ARCHITECTURE.md §4 rule 7). Such a parameter is still COUNTED:
+ * the page says it dropped one without spelling it, which is bar 3 and bar 13
+ * both kept.
+ */
+export interface DroppedParams {
+  /** The names, in the order the URL carried them, safe to render verbatim. */
+  named: string[];
+  /** How many more were dropped whose NAME this app may not put on screen. */
+  withheld: number;
+}
+
+export function droppedParams(
+  params: SearchParams = {},
+  applied: ClaimsFilter = {},
+  neverNamed: readonly string[] = [],
+): DroppedParams {
+  const named: string[] = [];
+  let withheld = 0;
+  for (const key of Object.keys(params)) {
+    if (key === TAB_PARAM) continue;
+    const asked = firstValue(params[key]);
+    if (asked === undefined || asked === "") continue;
+    if (isFacet(key) && applied[key] !== undefined) continue;
+    if (neverNamed.includes(key)) withheld += 1;
+    else named.push(key);
+  }
+  return { named, withheld };
+}
+
 /* ── writing the URL ─────────────────────────────────────────────────────── */
 
 /**

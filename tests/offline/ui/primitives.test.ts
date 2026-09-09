@@ -1041,15 +1041,66 @@ describe("WindowLine", () => {
       expect(text.split(NARROWED_BY_FILTERS).length - 1, String(scope)).toBe(0);
       expect(text.split("match these filters").length - 1, String(scope)).toBe(1);
     }
-    // Carrying both, the sentence is the bare one with the OTHER narrowing
-    // added beside the count, and nothing else about it moved.
+    // Carrying both, the sentence is the FILTERED one with the OTHER narrowing
+    // added beside the count, and nothing else about it moved. The baseline is
+    // the filters-only rendering rather than the bare one, because a window no
+    // filter narrowed no longer says "match these filters" at all — that is
+    // admin-window/BUG-0123, pinned both ways in its own case below.
+    const filtersOnly = textOf(
+      drawn(matched, { ...DRAWN, truncated: true, scope: NARROWED_BY_FILTERS }),
+    );
     expect(
       textOf(drawn(matched, {
         ...DRAWN,
         truncated: true,
         scope: narrowedTo([NARROWED, NARROWED_BY_FILTERS]),
       })),
-    ).toBe(bare.replace(`${matched.rows} match`, `${matched.rows} ${NARROWED} match`));
+    ).toBe(
+      filtersOnly.replace(`${matched.rows} match`, `${matched.rows} ${NARROWED} match`),
+    );
+  });
+
+  it("asserts the filters only when the filters are what narrowed the read (admin-window/BUG-0123)", () => {
+    // The clause said "match these filters" unconditionally, so `/claims` over
+    // an empty chip bar read "877 claims match these filters" — byte-identical
+    // to the same page with a chip set, which is the one sentence bar 13
+    // forbids ("no screen claims a mark it did not draw"). The phrase is a
+    // statement about the READ, so it rides on the window's own `scope` like
+    // every other clause in this file.
+    const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
+    const filled = (scope: string | null) =>
+      textOf(drawn(matched, { ...DRAWN, truncated: true, scope }));
+
+    // Unnarrowed: the count stands over the population the window itself names,
+    // and no filter is claimed.
+    const unnarrowed = filled(null);
+    expect(unnarrowed).not.toContain("match these filters");
+    expect(unnarrowed).toContain(`${count(DRAWN.held)} ${matched.rows}`);
+
+    // Narrowed by something that is NOT the chips — the tab, on `/claims` — is
+    // the same read with the same empty chip bar: the sentence names the tab's
+    // population and still claims no filter (admin-window/BUG-0118's shape,
+    // with the assertion removed rather than moved).
+    const tabbed = filled(NARROWED);
+    expect(tabbed).not.toContain("match these filters");
+    expect(tabbed).toContain(`${matched.rows} ${NARROWED}`);
+
+    // …and the other way: the moment the filters really are a narrowing this
+    // read carried, the phrase is back, once, exactly as it always read.
+    for (const scope of [
+      NARROWED_BY_FILTERS,
+      narrowedTo([NARROWED, NARROWED_BY_FILTERS]),
+    ]) {
+      expect(filled(scope).split("match these filters").length - 1, String(scope)).toBe(1);
+    }
+
+    // Whichever arm renders, the rest of the line is one sentence: the cap, the
+    // rows below and the way to the rest do not move with the narrowing, so the
+    // only thing the filters change is the phrase beside the count.
+    const tail = (text: string) => text.slice(text.indexOf(";"));
+    expect(tail(unnarrowed).length).toBeGreaterThan(20);
+    expect(tail(unnarrowed)).toBe(tail(filled(NARROWED_BY_FILTERS)));
+    expect(tail(tabbed)).toBe(tail(filled(NARROWED_BY_FILTERS)));
   });
 
   it("renders an unnarrowed window exactly as it did before facets existed", () => {
