@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { DataTable, type Column } from "@/components/ui";
 import {
   absoluteUtcInZonedColumn,
@@ -50,7 +51,7 @@ const CELLS: Record<BrowseColumnKey, CellBody> = {
     return href === null ? (
       label
     ) : (
-      <a href={href} className="transition-colors hover:text-accent">
+      <a href={href} className={IN_PAGE_LINK}>
         {label}
       </a>
     );

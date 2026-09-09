@@ -137,17 +137,25 @@ export function sourceText(file: string, base: string = repoRoot): string {
  * defect.
  */
 export function codeLines(file: string, base: string = repoRoot): string[] {
-  return sourceText(file, base)
-    .split("\n")
-    .filter((line) => {
-      const trimmed = line.trim();
-      return (
-        trimmed.length > 0 &&
-        !trimmed.startsWith("//") &&
-        !trimmed.startsWith("*") &&
-        !trimmed.startsWith("/*")
-      );
-    });
+  return codeLinesIn(sourceText(file, base));
+}
+
+/**
+ * The same filter over TEXT rather than a path — so a rule asserted over the
+ * tree can be proved on a fixture string it must flag and one it must not,
+ * without writing a probe file into the tree other tree-walking tests are
+ * reading (admin-window/BUG-0029's hazard, above; admin-window/BUG-0108).
+ */
+export function codeLinesIn(text: string): string[] {
+  return text.split("\n").filter((line) => {
+    const trimmed = line.trim();
+    return (
+      trimmed.length > 0 &&
+      !trimmed.startsWith("//") &&
+      !trimmed.startsWith("*") &&
+      !trimmed.startsWith("/*")
+    );
+  });
 }
 
 /**

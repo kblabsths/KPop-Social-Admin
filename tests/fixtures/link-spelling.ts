@@ -47,12 +47,54 @@ export function faceOf(classes: readonly string[]): string[] {
   return classes.filter((className) => className.startsWith("type-"));
 }
 
+/** The ink half of the spelling — what separates a link from every other value. */
+const LINK_INK: readonly string[] = LINK_CLASSES.filter((className) =>
+  className.startsWith("text-"),
+);
+
+/**
+ * The decoration half — the part EVERY link carries, whatever ink its own job
+ * gives it. Only the Dashboard's error lines have a job of their own
+ * (admin-window/BUG-0108, acceptance criterion 3: red is the palette's word
+ * for a failed run), and they wear this half alone.
+ */
+const LINK_DECORATION: readonly string[] = LINK_CLASSES.filter(
+  (className) => !className.startsWith("text-"),
+);
+
+/**
+ * The spelling this app REJECTED, verbatim, as the eight surfaces of
+ * admin-window/BUG-0108 carried it — the fixture every guard over this rule
+ * must flag (LESSONS 3: a guard that never saw the defect passes vacuously).
+ * Nothing in `src` may spell a link this way; the assertions below and
+ * `tests/offline/ui/link-spelling.test.ts` both prove themselves against it.
+ */
+export const REJECTED_AT_REST_SPELLING = "transition-colors hover:text-accent";
+
 /**
  * Assert that an element carrying `classes` reads as a link with nothing
  * hovering, focusing or clicking it.
  */
 export function expectDrawnAsLinkAtRest(classes: readonly string[], what: string): void {
-  for (const link of LINK_CLASSES) {
+  expectDrawnAsLinkAtRestIn(classes, LINK_INK, what);
+}
+
+/**
+ * The same claim for a link whose INK is its own palette job — the Dashboard's
+ * `error_summary` anchors, which stay `text-broken` because a failed run is
+ * broken, and gain the underline so a red string that navigates is told apart
+ * from a red string that does not (admin-window/BUG-0108, criterion 3).
+ *
+ * The decoration half and the no-state-variant rule are identical; only the
+ * ink the caller demands changes, so there is one implementation of "drawn as
+ * a link at rest" and not two.
+ */
+export function expectDrawnAsLinkAtRestIn(
+  classes: readonly string[],
+  ink: readonly string[],
+  what: string,
+): void {
+  for (const link of [...ink, ...LINK_DECORATION]) {
     expect(classes, `${what} is missing the app's link spelling`).toContain(link);
   }
   // The defect itself: ink or decoration parked behind a state variant, so the
@@ -66,10 +108,8 @@ export function expectDrawnAsLinkAtRest(classes: readonly string[], what: string
   ).toEqual([]);
 }
 
-/** The ink half of the spelling — what separates a link from every other value. */
-const LINK_INK: readonly string[] = LINK_CLASSES.filter((className) =>
-  className.startsWith("text-"),
-);
+/** The ink an error line keeps while wearing the link's decoration (criterion 3). */
+export const BROKEN_INK: readonly string[] = ["text-broken"];
 
 /**
  * Assert the opposite for a value that goes nowhere — the second fixture every

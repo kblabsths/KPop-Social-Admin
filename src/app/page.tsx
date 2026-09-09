@@ -10,6 +10,7 @@ import {
   type Column,
 } from "@/components/ui";
 import { OUTCOME_BADGE_TONE, outcomeTone } from "@/components/cycles";
+import { IN_PAGE_LINK, LINK_DECORATION } from "@/components/cycles/links";
 import { STATE_WORD, cycleState, type CycleState } from "@/lib/cycles/state";
 import {
   DASHBOARD_WINDOW,
@@ -280,7 +281,7 @@ function runOutcomeCell(outcome: string | null, endedAt: string | null): ReactNo
 function startedCell(at: string, href: string, now: string): ReactNode {
   const age = relativeAge(at, now);
   return (
-    <a href={href} title={age.title} className="transition-colors hover:text-accent">
+    <a href={href} title={age.title} className={IN_PAGE_LINK}>
       {age.text}
     </a>
   );
@@ -299,11 +300,14 @@ function startedCell(at: string, href: string, now: string): ReactNode {
  */
 function errorCell(summary: string | null, href: string): ReactNode {
   if (isAbsent(summary)) return null;
+  // Red is the palette's job here and stays; the link's DECORATION is what
+  // tells a red string that navigates from a red string that does not
+  // (admin-window/BUG-0108).
   return (
     <a
       href={href}
       data-error-line=""
-      className="type-data whitespace-nowrap text-broken"
+      className={`type-data whitespace-nowrap text-broken ${LINK_DECORATION}`}
     >
       {summary}
     </a>

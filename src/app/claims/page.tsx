@@ -15,6 +15,7 @@ import {
   spreadRows,
   type EmptyWords,
 } from "@/components/gauges";
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { Empty, Page, Section, StateOf, WindowLine } from "@/components/ui";
 import {
   CLAIMS_OBJECT,
@@ -386,7 +387,7 @@ function StandingGauge({ gauge }: { gauge: StandingDisagreements }) {
           <a
             href={sourceHref(split.sourceId)}
             data-split-source={split.sourceId}
-            className="transition-colors hover:text-accent"
+            className={IN_PAGE_LINK}
           >
             {split.source ?? split.sourceId}
             {split.tier === null ? "" : ` · tier ${split.tier}`}

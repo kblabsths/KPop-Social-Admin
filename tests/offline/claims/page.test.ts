@@ -13,6 +13,11 @@ import {
   runTogetherWords,
 } from "../ui/markup";
 import {
+  classesOf,
+  expectDrawnAsLinkAtRest,
+  expectNotDrawnAsLink,
+} from "../../fixtures/link-spelling";
+import {
   CLAIMS,
   ENTITY,
   OBSERVATIONS,
@@ -54,8 +59,10 @@ import {
  * Assertions are STRUCTURE and BEHAVIOUR — which claims render, in which
  * order, under which count, in which state, linking where — plus the machine's
  * own strings where rendering them VERBATIM is the requirement (the bucket
- * names, the unmet requirement, the missing table). No class name and no copy
- * of the app's own words is pinned.
+ * names, the unmet requirement, the missing table). No class LITERAL and no
+ * copy of the app's own words is pinned — the one rendering rule asserted
+ * below reads the app's own link constant rather than repeating it
+ * (`tests/fixtures/link-spelling.ts`, admin-window/BUG-0108).
  */
 
 const readWith = vi.hoisted(() => ({ client: undefined as unknown }));
@@ -496,6 +503,48 @@ describe("the claim list", () => {
  * spelled: the number is the product's to choose, the BEHAVIOUR is what is
  * pinned.
  */
+/**
+ * Bar 10 on the page with the most routes off it: 61 of the 132 anchors
+ * admin-window/BUG-0108 counted are here — every bucket name and every claim
+ * row's source and record — and each of them was drawn in plain ink with no
+ * decoration, so the tab read as a list of names rather than a set of ways in.
+ */
+describe("what on this page says it goes somewhere", () => {
+  const HOOKS = ["[data-bucket]", "[data-claim-source]", "[data-claim-provenance]"];
+
+  it("draws the bucket names and the claim row's links as links at rest", async () => {
+    const markup = await renderClaims(healthyScript());
+    const $ = cheerio.load(markup);
+    for (const hook of HOOKS) {
+      const anchors = $(`${hook}[href]`).toArray();
+      expect(anchors.length, `${hook} rendered no links at all`).toBeGreaterThan(0);
+      for (const anchor of anchors) {
+        expectDrawnAsLinkAtRest(classesOf($(anchor)), `${hook} on the buckets tab`);
+      }
+    }
+  });
+
+  it("draws the standing tab's per-source rows as links at rest", async () => {
+    const markup = await renderClaims(healthyScript(), { tab: "standing" });
+    const $ = cheerio.load(markup);
+    const anchors = $("[data-split-source][href]").toArray();
+    expect(anchors.length, "the standing tab rendered no source links").toBeGreaterThan(0);
+    for (const anchor of anchors) {
+      expectDrawnAsLinkAtRest(classesOf($(anchor)), "a standing-disagreement source");
+    }
+  });
+
+  it("keeps the values that go nowhere out of the link's ink", async () => {
+    const markup = await renderClaims(healthyScript());
+    const $ = cheerio.load(markup);
+    for (const inert of ["[data-claim-bucket]", "[data-bucket-claims]"]) {
+      const cells = $(inert).toArray();
+      expect(cells.length, `no ${inert} to compare against`).toBeGreaterThan(0);
+      for (const cell of cells) expectNotDrawnAsLink(classesOf($(cell)), inert);
+    }
+  });
+});
+
 describe("the claim list's window", () => {
   /** A claim per index, oldest first by index, alternating bucket and source. */
   function crowd(size: number): {

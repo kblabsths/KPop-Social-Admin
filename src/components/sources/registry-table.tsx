@@ -1,3 +1,4 @@
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { Badge, type Column } from "@/components/ui";
 import { isAbsent, relativeAge } from "@/lib/format";
 import {
@@ -33,7 +34,7 @@ export function sourceColumns(filter: SourceNarrowing): Column<SourceStateRow>[]
           data-source={row.source_id}
           data-source-name={row.source}
           aria-current={filter.source_id === row.source_id ? "true" : undefined}
-          className="transition-colors hover:text-accent"
+          className={IN_PAGE_LINK}
         >
           {row.source}
         </a>
@@ -136,14 +137,14 @@ export function sourceColumns(filter: SourceNarrowing): Column<SourceStateRow>[]
           <a
             href={queueItemsHref(row.source_id)}
             data-source-items={row.source_id}
-            className="transition-colors hover:text-accent"
+            className={IN_PAGE_LINK}
           >
             review items
           </a>
           <a
             href={runsHref(row.source)}
             data-source-runs={row.source}
-            className="transition-colors hover:text-accent"
+            className={IN_PAGE_LINK}
           >
             runs
           </a>

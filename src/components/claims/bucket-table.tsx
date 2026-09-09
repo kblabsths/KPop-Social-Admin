@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { Badge, type Column, DataTable } from "@/components/ui";
 import { count, relativeAge } from "@/lib/format";
 
@@ -60,7 +61,7 @@ export function BucketTable({
           href={row.href}
           data-bucket={row.bucket}
           aria-current={row.active ? "true" : undefined}
-          className="transition-colors hover:text-accent"
+          className={IN_PAGE_LINK}
         >
           <Badge>{row.bucket}</Badge>
         </a>

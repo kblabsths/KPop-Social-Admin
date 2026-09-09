@@ -15,7 +15,7 @@ export { CycleHealthSection } from "./cycle-health";
 export { NOTHING_RECORDED, cycleColumns } from "./cycle-table";
 export { LatestRun } from "./latest-run";
 export { LatencySection } from "./latency";
-export { IN_PAGE_LINK, RUNS_ANCHOR, anchorFor } from "./links";
+export { IN_PAGE_LINK, LINK_DECORATION, RUNS_ANCHOR, anchorFor } from "./links";
 export {
   OUTCOME_BADGE_TONE,
   outcomeTone,

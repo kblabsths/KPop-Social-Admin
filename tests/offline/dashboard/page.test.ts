@@ -6,6 +6,13 @@ import { RESOLVER_CADENCE_SECONDS } from "@/lib/gauges/gauge";
 import { T } from "@/lib/db/tables";
 import { absoluteUtc } from "@/lib/format";
 import { render } from "../ui/markup";
+import {
+  BROKEN_INK,
+  classesOf,
+  expectDrawnAsLinkAtRest,
+  expectDrawnAsLinkAtRestIn,
+  expectNotDrawnAsLink,
+} from "../../fixtures/link-spelling";
 import { blankCells } from "../absence/surfaces";
 import { oneEach, readNumber, surfaceHooks } from "../../live/parity";
 import type { ResolutionRunRow as CycleRow } from "@/lib/db/cycles";
@@ -55,8 +62,12 @@ import {
  * label, which links they carry, which rows render in which order, which state
  * a surface falls into — and the machine's own strings where rendering them
  * VERBATIM is the requirement (`severity`, `outcome`, `error_summary`). No
- * copy of the app's own words and no class name is pinned: those belong to the
- * designer and the walk.
+ * copy of the app's own words and no class LITERAL is pinned: those belong to
+ * the designer and the walk. The one rule asserted about rendering is read
+ * from the app's own constant rather than written down here — whether a thing
+ * that navigates says so before the pointer reaches it
+ * (`tests/fixtures/link-spelling.ts`, admin-window/BUG-0099 and
+ * admin-window/BUG-0108).
  */
 
 const readWith = vi.hoisted(() => ({ client: undefined as unknown }));
@@ -537,6 +548,40 @@ describe("last night's cycles and runs", () => {
     expect(errorLinesOf(markup, "runs")).toEqual([
       { text: RUN_ERROR, href: `/cycles?run=${RUN_OLDEST}` },
     ]);
+  });
+
+  /**
+   * Bar 10: the routes off this page are the age cells and the error lines,
+   * and until admin-window/BUG-0108 all thirteen of them were drawn in plain
+   * ink with no decoration — found only by sweeping the pointer across the
+   * table. The error lines keep their own red (criterion 3): a failed run is
+   * broken by palette job, so what tells a red string that navigates from a
+   * red string that does not is the underline.
+   */
+  it("draws every link in the cycles and runs tables as a link at rest", async () => {
+    const markup = await renderDashboard(healthyScript());
+    const $ = cheerio.load(markup);
+
+    for (const table of ["cycles", "runs"]) {
+      const anchors = $(`table[aria-label="${table}"] tbody a`).toArray();
+      // Non-vacuity: every row of both tables carries its age link.
+      expect(anchors.length, `${table} rendered no links at all`).toBeGreaterThan(0);
+      for (const anchor of anchors) {
+        const node = $(anchor);
+        const classes = classesOf(node);
+        const what = `the ${table} table's ${node.text().trim()}`;
+        if (node.is("[data-error-line]")) expectDrawnAsLinkAtRestIn(classes, BROKEN_INK, what);
+        else expectDrawnAsLinkAtRest(classes, what);
+      }
+    }
+
+    // …and the cells that go nowhere stay out of the link's ink, so the
+    // distinction the underline draws is not "everything is a link".
+    for (const inert of ["[data-outcome]", "[data-outcome-tone]"]) {
+      const cells = $(`table[aria-label="cycles"] tbody ${inert}`).toArray();
+      expect(cells.length, `no ${inert} to compare against`).toBeGreaterThan(0);
+      for (const cell of cells) expectNotDrawnAsLink(classesOf($(cell)), inert);
+    }
   });
 
   it("reads a still-running cycle and a skipped cycle each as such", async () => {
