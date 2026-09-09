@@ -8,6 +8,8 @@ import {
   type VerdictReceipt,
 } from "@/lib/db/verdict";
 import { FN, T } from "@/lib/db/tables";
+import { decisionRefusals } from "@/lib/verdict/decision";
+import type { VerdictDecision } from "@/lib/verdict/decision";
 import { ID, verdictDecision, verdictLogEntry, verdictValue } from "../../fixtures/rows";
 import {
   functionNotInSchemaCache,
@@ -393,5 +395,134 @@ describe("the readiness read, against a database that has the table", () => {
       const { run } = readinessWith({ [T.verdicts]: { data } });
       await expect(run()).resolves.toEqual({ kind: "ok", data: "ready" });
     }
+  });
+});
+
+/* ── QA (admin-window/TASK-0048): the seam's own attack surface ──────────── */
+
+describe("the wire contract of the one call", () => {
+  it("names the argument `p_decision`, the literal PostgREST resolves the call by", () => {
+    // The seam's own docstring says why this matters and then pins nothing:
+    // PostgREST resolves an RPC by name AND by argument names, and answers
+    // PGRST202 for an INSTALLED function called with the wrong ones — the same
+    // code it answers for a function that is not there, which `classify` turns
+    // into `not_provisioned`. So a typo here does not fail: it renders a live
+    // function as permanently, silently absent, and tells an operator to
+    // install what is already installed (the shape of admin-window/BUG-0080).
+    //
+    // The existing pin (`the function is not installed` > `calls the function
+    // by name with the one argument name it takes`) asserts the call against
+    // SETTLE_ARGUMENT itself, so it is true for any spelling. Measured
+    // 2026-09-08: with `SETTLE_ARGUMENT` changed to "p_decisions", the whole
+    // offline suite stayed green — 61 files, 2189 tests, exit 0.
+    //
+    // The literal is the one half of the contract this repo owns. Its other
+    // half is the SQL in `agenticflow/tracker/for-human/M2-handoff-settle-review-item.md`
+    // (TASK-0046), which declares `public.settle_review_item(p_decision jsonb)`;
+    // when that artifact lands, its offline test should assert its parameter
+    // name against this constant and this case becomes the weaker of the two.
+    expect(SETTLE_ARGUMENT).toBe("p_decision");
+  });
+
+  it("sends the decision the caller built, with nothing added and nothing dropped", async () => {
+    // §9.2: no schema_version, no tier, no source name — the seam is a
+    // conduit. Asserted over a value-carrying decision, whose nested envelope
+    // is the part a "helpful" normalisation would rewrite.
+    const decision = verdictDecision({
+      action: "choose_claimed_value",
+      note: "the earlier observation reads right",
+      value: verdictValue({ observation_id: ID.observationA }),
+    });
+    const stub = stubClient({ [FN.settleReviewItem]: { data: verdictLogEntry() } });
+    await settleReviewItem(stub.asSupabaseClient(), decision);
+
+    expect(stub.calls).toHaveLength(1);
+    expect(stub.calls[0].steps[0].args).toEqual([{ [SETTLE_ARGUMENT]: decision }]);
+  });
+});
+
+describe("every refusal the leaf can name stops before the client", () => {
+  /**
+   * One decision per refusal identifier `decisionRefusals` can produce — the
+   * WHOLE vocabulary, not the five the case above samples. The seam's guard is
+   * generic (`refusals.length > 0`), so this is about the guard staying
+   * generic: a future normalisation that handled some refusals and forwarded
+   * the rest would pass the five-case table and fail here.
+   */
+  const EVERY_REFUSAL: ReadonlyArray<readonly [string, Parameters<typeof verdictDecision>[0]]> = [
+    ["unknown_action", { action: "settle_it" as never }],
+    ["review_item_required", { review_item_id: "   " }],
+    ["review_item_forbidden", { action: "override", review_item_id: ID.reviewItemDataConflict, value: verdictValue({ value: "x" }) }],
+    ["note_required", { action: "wont_fix", note: null }],
+    ["value_required", { action: "supply_value", value: null }],
+    ["value_forbidden", { action: "keep_current", value: verdictValue({ value: "x" }) }],
+    ["value_payload_missing", { action: "supply_value", value: verdictValue() }],
+    ["value_payload_ambiguous", { action: "override", review_item_id: null, value: verdictValue({ value: "x", ref: "r" }) }],
+    ["value_payload_not_allowed", { action: "supply_value", value: verdictValue({ ref: "r" }) }],
+    ["actor_required", { actor: "\t\n " }],
+  ];
+
+  it("covers the leaf's whole refusal vocabulary, so this table cannot quietly shrink", () => {
+    // Not a hand-copied list checked by eye: every identifier the table claims
+    // is one the leaf actually produced for that decision, and the ten are
+    // distinct. If an invariant is added to the leaf without a row here, the
+    // seam still refuses it — but nobody has proved it, and this is where that
+    // would be noticed.
+    const named = EVERY_REFUSAL.map(([refusal]) => refusal);
+    expect(new Set(named).size).toBe(named.length);
+    for (const [refusal, overrides] of EVERY_REFUSAL) {
+      expect(decisionRefusals(verdictDecision(overrides)), refusal).toContain(refusal);
+    }
+  });
+
+  it.each(EVERY_REFUSAL)("sends nothing at all: %s", async (refusal, overrides) => {
+    const stub = stubClient({ [FN.settleReviewItem]: { data: verdictLogEntry() } });
+    const result = await settleReviewItem(
+      stub.asSupabaseClient(),
+      verdictDecision(overrides),
+    );
+
+    expect(stub.calls).toEqual([]);
+    expect(stub.functionsCalled()).toEqual([]);
+    expect(stub.tablesRead()).toEqual([]);
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.reading).toBe(FN.settleReviewItem);
+    expect(result.message).toContain(REFUSED_BEFORE_SEND);
+    expect(result.message).toContain(refusal);
+  });
+});
+
+describe("a decision that is not a decision at all", () => {
+  /**
+   * The seam's parameter is typed, but the one route that will call it parses
+   * an arbitrary JSON body first: `request.json()` answers `null`, an array or
+   * a scalar for the bodies `null`, `[]` and `"x"`, and a client that omits a
+   * key sends `undefined` (admin-window/BUG-0079). §4.1 says the seam never
+   * throws — including here, where indexing a non-object is the obvious way to
+   * break that.
+   */
+  const NOT_A_DECISION: ReadonlyArray<readonly [string, unknown]> = [
+    ["undefined", undefined],
+    ["null", null],
+    ["a string", "keep_current"],
+    ["a number", 7],
+    ["an array", [{ action: "keep_current" }]],
+    ["an empty object", {}],
+    ["a prototype-poisoned body", JSON.parse('{"__proto__":{"action":"keep_current"},"actor":"a"}')],
+  ];
+
+  it.each(NOT_A_DECISION)("refuses %s without a throw and without a call", async (_label, body) => {
+    const stub = stubClient({ [FN.settleReviewItem]: { data: verdictLogEntry() } });
+    const result = await settleReviewItem(
+      stub.asSupabaseClient(),
+      body as VerdictDecision,
+    );
+
+    expect(stub.calls).toEqual([]);
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.message).toContain(REFUSED_BEFORE_SEND);
+    expect(result.message).toContain("unknown_action");
   });
 });
