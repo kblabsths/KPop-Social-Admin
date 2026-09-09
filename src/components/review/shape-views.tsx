@@ -279,6 +279,19 @@ function ConflictEvidence({
 
 /* ── shape 2: the entity_link fact item ──────────────────────────────────── */
 
+/**
+ * **The lede says what the block HOLDS, and claims no total**
+ * (campaign admin-window/BUG-0128, the same rule admin-window/BUG-0124 applied
+ * one shape over). It used to say that every claim the record holds was below
+ * — a population this page has never looked at: Admin reads the ids in
+ * `review_items.evidence` and resolves each one, and it reads a record's claims
+ * nowhere. The page contradicted the sentence out of its own mouth whenever an
+ * evidence id named no claim: the accounting under it says "1 of 2 evidence ids
+ * resolved" and the unresolved line prints the id that resolved to nothing.
+ * What the block is, is the claims behind this item's evidence ids — the same
+ * population the accounting sentence accounts for — each with what it is
+ * waiting for, which is this shape's whole subject.
+ */
 function StuckFactEvidence({
   rows,
   unresolved,
@@ -288,8 +301,8 @@ function StuckFactEvidence({
   return (
     <div data-evidence-view="stuck-fact" className="flex flex-col gap-3">
       <Lede>
-        This record cannot link or be created. Every claim held by it is below,
-        with what each one is waiting for.
+        This record cannot link or be created. The table below holds the claims
+        behind this item&rsquo;s evidence ids, with what each one is waiting for.
       </Lede>
       {canonical === null ? null : (
         // The signature block, hooked so its cards can be read structurally:
