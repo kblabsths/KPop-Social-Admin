@@ -1991,7 +1991,7 @@ describe("a refused write names what failed and what to do", () => {
     // decides is the one the database appended last, never one the operator
     // typed inside the quotes.
     const quotesACode = 'invalid input syntax for type integer: "(23502)" (22P02)';
-expect(refusalFix(quotesACode)).toEqual(refusalFix(REFUSALS.coercion));
+    expect(refusalFix(quotesACode)).toEqual(refusalFix(REFUSALS.coercion));
 
     // Two: a genuine 23502 whose failing-row DETAIL carries an earlier arm's
     // prose — a value in some OTHER column of the row Postgres dumps — is
@@ -2015,7 +2015,7 @@ expect(refusalFix(quotesACode)).toEqual(refusalFix(REFUSALS.coercion));
   });
 
   /*
-   * PIN — admin-window/BUG-0103, second cut. Measured live 2026-09-09 on a
+   * Was a PIN — admin-window/BUG-0103, second cut. Measured live 2026-09-09 on a
    * production build of the landed tree (127.0.0.1:8840, staging
    * ubfjjqlvnpnoborczbdb, walk_sandbox row …0001, bundled Chromium 1440x900),
    * through the cell.
@@ -2030,7 +2030,7 @@ expect(refusalFix(quotesACode)).toEqual(refusalFix(REFUSALS.coercion));
    * the row then chooses the sentence again, which is the defect this ticket
    * is about.
    */
-  it.fails("picks the arm from the database's words when the refusal states no code (admin-window/BUG-0103)", () => {
+  it("picks the arm from the database's words when the refusal states no code (admin-window/BUG-0103)", () => {
     // One shape, one class, one column emptied: a genuine 23502 about `label`,
     // varying only in a value the operator typed into ANOTHER cell — and in
     // every variant the row dump spells `23502`, so none of them carries the
@@ -2050,6 +2050,42 @@ expect(refusalFix(quotesACode)).toEqual(refusalFix(REFUSALS.coercion));
     ]) {
       expect(refusalFix(dumped(note)), note).toEqual(benign);
     }
+  });
+
+  it("reads the arm off the message's own opening, whatever the dump holds (admin-window/BUG-0103)", () => {
+    // The pin above varies one dumped column; this varies what the dump SPELLS
+    // — another arm's code, another arm's whole sentence, a quote, a newline —
+    // and asserts the same class still derives the same fix, still naming the
+    // column the message opened with. Relational: no copy is written here.
+    const dumped = (note: string) =>
+      'null value in column "label" of relation "walk_sandbox" violates ' +
+      "not-null constraint Failing row contains " +
+      `(00000000-0000-4000-8000-000000000001, null, ${note}, 7, f, ` +
+      "2026-01-15, 2026-09-09 07:14:27.7384+00).";
+    const benign = refusalFix(dumped("a note"));
+    expect(benign).not.toEqual(GENERAL_FIX);
+    expect(benign).toContain("label");
+    for (const note of [
+      'invalid input syntax for type integer: "seven" (22P02)',
+      "22P02",
+      "KS003 does not match",
+      'null value in column "note" of relation "walk_sandbox"',
+      "a note with a \" in it",
+      "a note\nwith a newline",
+    ]) {
+      expect(refusalFix(dumped(note)), note).toEqual(benign);
+    }
+
+    // The same for the coercion's own opening, and the two arms stay apart —
+    // so neither equality above is met by everything collapsing onto one
+    // sentence.
+    const coerced = (value: string) =>
+      `invalid input syntax for type integer: "${value}"`;
+    for (const value of ["seven", "Failing row contains (1, null, x)", "23502"]) {
+      expect(refusalFix(coerced(value)), value).toEqual(refusalFix(coerced("seven")));
+    }
+    expect(refusalFix(coerced("seven"))).not.toEqual(benign);
+    expect(refusalFix(coerced("seven"))).not.toEqual(GENERAL_FIX);
   });
 
   it("keeps red on the failure line and off the value the field reverted to", () => {
