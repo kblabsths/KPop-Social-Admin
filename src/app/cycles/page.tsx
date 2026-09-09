@@ -130,12 +130,28 @@ export const dynamic = "force-dynamic";
  * Converging them is a design question, out of scope for BUG-0143, which is
  * why the raw value — never the canonical one — is what survives that arm.
  *
- * A real id wearing the whitespace a PASTE carried is NOT such a value, since
- * admin-window/BUG-0145: `canonicalRecordId` strips the padding where the
- * value is derived from the request, so both facets answer ` <id>`, `<id> `,
- * `<id>\n` and a padded uppercase spelling with the row — the answer they
- * already gave the same id unpadded. It is the ONE canonicaliser that moved,
- * so nothing on this page had to learn about whitespace.
+ * A real id wearing the PADDING a paste carried is NOT such a value, since
+ * admin-window/BUG-0145: `canonicalRecordId` strips it where the value is
+ * derived from the request, so both facets answer ` <id>`, `<id> `, `<id>\n`
+ * and a padded uppercase spelling with the row — the answer they already gave
+ * the same id unpadded. It is the ONE canonicaliser that moved, so nothing on
+ * this page had to learn about padding.
+ *
+ * Padding is decided by INK and not by whitespace since
+ * admin-window/BUG-0146: BUG-0145 spelled that step `trim()`, so the identical
+ * denial survived for the ink-less characters outside the Unicode
+ * `White_Space` set (U+200B, U+00AD, U+2060, NUL, DEL, the bidi controls, a
+ * HANGUL FILLER — all of which lay out at 0px, so the denied id read exactly
+ * like the drawn row). The canonicaliser now asks the app's ONE definition of
+ * blank (`hasVisibleContent`, `lib/verdict/decision.ts`) and this page, again,
+ * learned nothing.
+ *
+ * What did NOT move, and is a live hole this page still carries: a `?cycle=`
+ * with no canonical form at all is spelled RAW into the sentence below, so
+ * `?cycle=<U+202E>not-a-uuid` still reverses the app's own paragraph
+ * (admin-window/BUG-0137 measured that harm on the dropped-parameter line and
+ * answered it with a renderable allowlist). BUG-0146 names it explicitly as
+ * out of its scope and removes only the PADDED route to it.
  */
 const CYCLE_FACET = "cycle";
 

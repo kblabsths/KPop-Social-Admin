@@ -416,15 +416,71 @@ const LEAF_MODULES = [
 ];
 
 /**
- * ARCHITECTURE §4 rule 7 — **the pure domain leaves import NOTHING**, asserted
- * over the LEAF SET rather than one file at a time (campaign
- * admin-window/TASK-0042).
+ * The module specifier an import line names, or null when the line carries
+ * none — the first quoted string on it, which is where every one of the four
+ * spellings `IMPORT_LINE` recognises puts it.
+ */
+function specifierOf(line: string): string | null {
+  return line.match(/["']([^"']*)["']/)?.[1] ?? null;
+}
+
+/**
+ * The repo-relative `src/**` file an import line resolves to, or null when it
+ * names something outside the tree — a package (`@supabase/supabase-js`,
+ * `react`), a node builtin, or a line with no specifier at all.
+ *
+ * Only the two spellings this repo's `src/` actually uses are resolved: the
+ * `@/` alias (`tsconfig.json` maps it to `src/`) and a relative path. Anything
+ * else is deliberately NOT a leaf, which is what the rule below needs.
+ */
+function importTarget(file: string, line: string): string | null {
+  const specifier = specifierOf(line);
+  if (specifier === null) return null;
+  const relative = specifier.startsWith("@/")
+    ? path.join("src", specifier.slice(2))
+    : specifier.startsWith(".")
+      ? path.join(path.dirname(file), specifier)
+      : null;
+  if (relative === null) return null;
+  return `${relative.replace(/\.tsx?$/, "")}.ts`;
+}
+
+/**
+ * Everything a file imports that is NOT one of the leaves — reported as the
+ * resolved path where there is one and as the raw line where there is not, so
+ * a failure names what to look at.
+ *
+ * This is the whole of rule 7 for the leaf set, and it is a CLOSED allowlist:
+ * `lib/db/**`, `@supabase/supabase-js`, `process.env` by way of any module,
+ * React and every package are all outside `LEAF_MODULES` and so all reported,
+ * without this scanner holding a list of forbidden things to keep in step.
+ */
+function foreignImports(file: string): string[] {
+  return importLines(file)
+    .map((line) => importTarget(file, line) ?? line.trim())
+    .filter((target) => !LEAF_MODULES.includes(target));
+}
+
+/**
+ * ARCHITECTURE §4 rule 7 — **the pure domain leaves reach nothing that can
+ * reach a database**, asserted over the LEAF SET rather than one file at a
+ * time (campaign admin-window/TASK-0042).
  *
  * A leaf holds the vocabulary and pure functions over it, and `lib/db/**`
  * imports the leaf. The leaf importing back — even a type-only import, which
  * erases at runtime — writes a directory-level cycle into this contract, and
  * the day someone widens it to a value import the cycle is real with nothing
  * to catch it.
+ *
+ * **A leaf may import a LEAF**, and the leaf layer is a DAG (rule 7 ¶2, ruled
+ * at the M2 structure walk 2026-09-09). This block asserted `toEqual([])` on
+ * every import line until admin-window/BUG-0146, which read `trim()` out of
+ * `canonicalRecordId` and replaced it with the app's ONE definition of blank
+ * (`hasVisibleContent`, `lib/verdict/decision.ts`) — the edge ¶2 exists to
+ * permit, and the alternative to it was a fourth copy of a character class
+ * four M2 bugs are already made of. So the rule is now the one ¶2 states: an
+ * import of another LEAF is fine, an import of anything else is not, and the
+ * leaf edges may not form a cycle.
  *
  * `tests/offline/edit/config.test.ts` keeps its own copy of this assertion for
  * `lib/edit/config.ts` alone, and it stays: §4 rule 8 names that test by name
@@ -445,9 +501,35 @@ describe("the pure domain leaves", () => {
     }
   });
 
-  it("imports nothing, in any leaf", () => {
+  it("imports nothing but another leaf, in any leaf", () => {
     for (const leaf of LEAF_MODULES) {
-      expect(importLines(leaf), leaf).toEqual([]);
+      expect(foreignImports(leaf), leaf).toEqual([]);
+    }
+  });
+
+  it("keeps the leaf edges a DAG, so no cycle is written between leaves", () => {
+    // Rule 7 ¶2's other half. The reason ¶1 bans the `lib/db/**` back-edge
+    // applies unchanged between leaves, and the set is small enough to walk
+    // whole: for each leaf, follow its leaf imports and assert it never
+    // reaches itself.
+    const edges = new Map(
+      LEAF_MODULES.map((leaf) => [
+        leaf,
+        importLines(leaf)
+          .map((line) => importTarget(leaf, line))
+          .filter((target): target is string => target !== null && LEAF_MODULES.includes(target)),
+      ]),
+    );
+    for (const start of LEAF_MODULES) {
+      const seen = new Set<string>();
+      const queue = [...(edges.get(start) ?? [])];
+      while (queue.length > 0) {
+        const next = queue.shift() as string;
+        expect(next, `${start} reaches itself through the leaf edges`).not.toBe(start);
+        if (seen.has(next)) continue;
+        seen.add(next);
+        queue.push(...(edges.get(next) ?? []));
+      }
     }
   });
 });
@@ -470,13 +552,13 @@ describe("the leaf-import guard itself", () => {
     fs.mkdirSync(probeDir, { recursive: true });
     fs.writeFileSync(probePath, source, "utf8");
     try {
-      return importLines(PROBE);
+      return foreignImports(PROBE);
     } finally {
       fs.rmSync(probeDir, { force: true, recursive: true });
     }
   }
 
-  it("reddens the leaf assertion when an import is added, in every spelling", () => {
+  it("reddens the leaf assertion when a NON-leaf import is added, in every spelling", () => {
     for (const source of [
       'import { T } from "@/lib/db/tables";\nexport const x = T;\n',
       'import type { DbResult } from "@/lib/db/result";\nexport type R = DbResult<number>;\n',
@@ -485,9 +567,34 @@ describe("the leaf-import guard itself", () => {
       'const { T } = require("@/lib/db/tables");\n',
       'export { T } from "@/lib/db/tables";\n',
       'export const late = async () => await import("@/lib/db/client");\n',
+      // React and a node builtin are outside the leaf set too, so the closed
+      // allowlist reports them without naming them anywhere.
+      'import { useState } from "react";\n',
+      'import fs from "node:fs";\n',
+      // A relative reach OUT of the leaf layer resolves the same way an
+      // aliased one does, so neither spelling is a way around the rule.
+      'import { T } from "../lib/db/tables";\n',
     ]) {
       expect(scanLeafProbe(source), source).not.toEqual([]);
     }
+  });
+
+  it("says nothing about a leaf that imports another LEAF, in every spelling", () => {
+    // The fixture the widened rule MUST NOT flag (LESSONS 8's second one, and
+    // the whole of rule 7 ¶2): `src/lib/records/id.ts` really imports
+    // `src/lib/verdict/decision.ts` on this tree — the app's one definition of
+    // blank, asked rather than copied (admin-window/BUG-0146).
+    for (const source of [
+      'import { hasVisibleContent } from "@/lib/verdict/decision";\n',
+      'import { visibleContent } from "@/lib/verdict/decision.ts";\n',
+      'import type { VerdictAction } from "@/lib/verdict/decision";\n',
+      'export { factKey } from "@/lib/verdict/decision";\n',
+      // Relative, from the probe's own directory (`src/.probes/`).
+      'import { ADMIN_SOURCE } from "../lib/verdict/decision";\n',
+    ]) {
+      expect(scanLeafProbe(source), source).toEqual([]);
+    }
+    expect(fs.existsSync(probeDir)).toBe(false);
   });
 
   it("says nothing about a leaf that imports nothing, and leaves nothing behind", () => {

@@ -992,6 +992,104 @@ describe("the states", () => {
     expect(isRecordId(derived ?? "")).toBe(true);
   });
 
+  /**
+   * The same split, for the padding `String.prototype.trim()` does not know
+   * about — campaign admin-window/BUG-0146.
+   *
+   * BUG-0145 spelled the derivation step `trim()`, which strips the Unicode
+   * `White_Space` set and nothing else, so `/cycles` went on denying a row it
+   * was rendering for every ink-less character outside that set: ZERO WIDTH
+   * SPACE, SOFT HYPHEN, WORD JOINER, NUL, DEL, the bidi controls, a HANGUL
+   * FILLER. All eight lay out at 0px (measured in Chromium for
+   * admin-window/BUG-0136), which is the whole harm — the denied id read
+   * character-for-character like the drawn one.
+   *
+   * `canonicalRecordId` now decides the padding with the app's ONE definition
+   * of blank (`hasVisibleContent`, `lib/verdict/decision.ts`) instead of a
+   * fourth enumeration, so this list is a FIXTURE and not the implementation's
+   * character class: adding a ninth ink-less codepoint here needs no change in
+   * `lib/records/id.ts`.
+   *
+   * Both directions are graded, because the two questions did not converge
+   * (LESSONS 4, LESSONS 8's two fixtures):
+   *
+   *  - `canonicalRecordId` — the value DERIVED from a request — reads the
+   *    padding as the paste's and answers with the id;
+   *  - `isRecordId` — the value carried to the query VERBATIM (a dynamic
+   *    segment, the settle route's `ref`) — refuses every one of them, exactly
+   *    as `uuid_in` does. `tests/offline/edit/route.test.ts` drives the same
+   *    family at the wire and demands 400.
+   *
+   * And the seam the bound closes: the ink test removes ink-less characters
+   * ANYWHERE, so the strip is bounded to the ENDS — an ink-less character
+   * INSIDE names no id, and the canonicaliser's invariant (what it returns is
+   * always something `isRecordId` accepts) holds unchanged.
+   */
+  const INK_LESS_PADS = [
+    ["ZERO WIDTH SPACE", 0x200b],
+    ["SOFT HYPHEN", 0x00ad],
+    ["WORD JOINER", 0x2060],
+    ["NUL", 0x0000],
+    ["DEL", 0x007f],
+    ["RIGHT-TO-LEFT OVERRIDE", 0x202e],
+    ["LEFT-TO-RIGHT MARK", 0x200e],
+    ["HANGUL FILLER", 0x3164],
+  ] as const;
+
+  it.each(INK_LESS_PADS)(
+    "reads %s as a paste's padding on the derived side and as no id on the verbatim side [admin-window/BUG-0146]",
+    (_name, codePoint) => {
+      const pad = String.fromCodePoint(codePoint);
+      const canonical = WELL_FORMED_IDS[0];
+      for (const spelling of WELL_FORMED_IDS) {
+        for (const padded of [
+          `${pad}${spelling}`,
+          `${spelling}${pad}`,
+          `${pad}${pad}${spelling}${pad}`,
+          // Mixed with the whitespace BUG-0145 already stripped: one paste can
+          // carry both, and one definition of blank covers both.
+          ` ${pad}${spelling}${pad}\n`,
+        ]) {
+          // The write side does not move: Postgres refuses a padded uuid, so
+          // the guard asked of a verbatim value refuses it too.
+          expect(isRecordId(padded), JSON.stringify(padded)).toBe(false);
+          // The read side does: the padding is the paste's, not the id's.
+          expect(canonicalRecordId(padded), JSON.stringify(padded)).toBe(canonical);
+        }
+      }
+      // The second fixture (LESSONS 8): INSIDE is not padding, and a value of
+      // nothing but padding names no id either.
+      for (const inner of [
+        `${canonical.slice(0, 8)}${pad}${canonical.slice(8)}`,
+        `${canonical.slice(0, 20)}${pad}${canonical.slice(20)}`,
+        `${canonical.slice(0, 1)}${pad}${canonical.slice(2)}`,
+        pad,
+        `${pad} ${pad}`,
+      ]) {
+        expect(canonicalRecordId(inner), JSON.stringify(inner)).toBeNull();
+        expect(isRecordId(inner), JSON.stringify(inner)).toBe(false);
+      }
+      // The invariant every call site rests on, re-asserted for this family:
+      // what comes back is a value Postgres will parse.
+      const derived = canonicalRecordId(`${pad}${canonical.toUpperCase()}${pad}`);
+      expect(derived).toBe(canonical);
+      expect(isRecordId(derived ?? "")).toBe(true);
+    },
+  );
+
+  it("keeps a printable character that renders little as CONTENT, not as padding [admin-window/BUG-0146]", () => {
+    // Where the ink line is DRAWN, so the widening reads as a ruling rather
+    // than as "anything that looks unhelpful": an assigned printable character
+    // is content even when it renders nearly nothing. U+2800 BRAILLE PATTERN
+    // BLANK is a braille cell (`lib/verdict/decision.ts`'s own note), so a uuid
+    // wearing one is a DIFFERENT string and names no id — the guard is not a
+    // scrubber.
+    const canonical = WELL_FORMED_IDS[0];
+    expect(canonicalRecordId(`⠀${canonical}`)).toBeNull();
+    expect(canonicalRecordId(`${canonical}⠀`)).toBeNull();
+    expect(isRecordId(`⠀${canonical}`)).toBe(false);
+  });
+
   it("leaves the unknown-id state to a well-formed id that matches no row", async () => {
     for (const table of EDITABLE_TABLES) {
       const markup = await renderRecord(table, missingRowScript(table));

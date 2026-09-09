@@ -132,7 +132,8 @@ function chosen(allowed: readonly string[], raw: ParamValue): string | undefined
  *
  * So BOTH sides are canonicalised and canonical is compared to canonical
  * (LESSONS 4). The one grammar answers it — `canonicalRecordId`, which also
- * strips the whitespace a paste brings (admin-window/BUG-0145) — and a value
+ * strips the padding a paste brings, by INK rather than by whitespace
+ * (admin-window/BUG-0145, BUG-0146) — and a value
  * it says is no id at all compares as ITSELF, which is every value of the two
  * word facets and is byte for byte what this function did before. No second
  * uuid pattern is written here, and no facet needs naming: the values decide.
