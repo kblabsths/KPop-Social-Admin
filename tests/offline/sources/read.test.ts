@@ -1,15 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { ID_CHUNK, ROW_CAP } from "@/lib/db/result";
 import {
+  lastRunBySource,
   listSources,
-  readLastRun,
+  readLastRuns,
   readSourceNames,
   readSources,
   selectSources,
   type SourceState,
 } from "@/lib/db/sources";
 import { T } from "@/lib/db/tables";
-import { RUN, SOURCE, SOURCES, newestRunFor, runsResponseFor } from "./population";
+import {
+  RUN,
+  RUNS,
+  RUNS_AS_READ,
+  SOURCE,
+  SOURCES,
+  manySources,
+  newestRunFor,
+  runsResponse,
+} from "./population";
 import {
   permissionDenied,
   stubClient,
@@ -45,7 +55,9 @@ function stepsOf(client: StubClient, table: string, index = 0) {
 function healthyScript(overrides: Script = {}): Script {
   return {
     [T.sources]: { data: [...SOURCES], count: SOURCES.length },
-    [T.runs]: SOURCES.map((source) => ({ data: runsResponseFor(source.source) })),
+    // ONE response, because there is ONE request: the whole run log, in the
+    // order the server was asked for it.
+    [T.runs]: runsResponse(),
     ...overrides,
   };
 }
@@ -101,29 +113,47 @@ describe("the registry read", () => {
 });
 
 describe("the last-run read", () => {
-  it("asks for one row, newest first, for that source's NAME", async () => {
-    // One read, so the script answers with what a database filtered to that
-    // name would return.
-    const client = readsWith(
-      healthyScript({ [T.runs]: { data: runsResponseFor("ticketmaster") } }),
-    );
-    const result = await readLastRun("ticketmaster", client.asSupabaseClient());
-    expect(result).toEqual({ kind: "ok", data: newestRunFor("ticketmaster") });
+  it("asks the whole runs table for its rows, in one complete read", async () => {
+    const client = readsWith(healthyScript());
+    const result = await readLastRuns(client.asSupabaseClient());
+    expect(result).toEqual({ kind: "ok", data: RUNS_AS_READ });
 
     const steps = stepsOf(client, T.runs);
     const byMethod = new Map(steps.map((step) => [step.method, step.args]));
-    expect(byMethod.get("eq")).toEqual(["source", "ticketmaster"]);
+    // A COMPLETE read (§4.3 kind 1): the exact count, the total order, the cap.
+    expect(byMethod.get("select")?.[1]).toEqual({ count: "exact" });
     expect(steps.filter((step) => step.method === "order").map((step) => step.args)).toEqual([
+      ["source", { ascending: true }],
       ["started_at", { ascending: false }],
+      // uuid v7: the tie breaks in time's own direction, so the order is total.
       ["run_id", { ascending: false }],
     ]);
-    expect(byMethod.get("limit")).toEqual([1]);
+    expect(byMethod.get("range")).toEqual([0, ROW_CAP - 1]);
+    // Unnarrowed on purpose: it needs no name from the registry, which is what
+    // lets it run concurrently with it.
+    expect(byMethod.get("eq"), "the runs read narrowed by a name").toBeUndefined();
+    expect(byMethod.get("in"), "the runs read narrowed by a name set").toBeUndefined();
   });
 
-  it("answers null — never a row of somebody else's — when there is no run", async () => {
-    const client = readsWith(healthyScript({ [T.runs]: { data: [] } }));
-    const result = await readLastRun("bandsintown", client.asSupabaseClient());
-    expect(result).toEqual({ kind: "ok", data: null });
+  it("refuses, naming runs and the real number, rather than folding a partial log", async () => {
+    // The cost of one complete read of a table with no retention policy, made
+    // a tested state: past the cap the page says so instead of rendering a
+    // registry whose last-run column is quietly wrong.
+    const client = readsWith(
+      healthyScript({ [T.runs]: { data: [...RUNS_AS_READ], count: 1500 } }),
+    );
+    const result = await readLastRuns(client.asSupabaseClient());
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.reading).toBe(T.runs);
+    expect(result.message).toContain("1500");
+    expect(result.message).toContain(String(ROW_CAP));
+  });
+
+  it("refuses a runs read that came back with no count at all", async () => {
+    const client = readsWith(healthyScript({ [T.runs]: { data: [...RUNS_AS_READ] } }));
+    // A count nobody made is never a zero and never an "all of it" (§4.3).
+    expect((await readLastRuns(client.asSupabaseClient())).kind).toBe("error");
   });
 
   it("names the runs table when it is not in this database", async () => {
@@ -144,6 +174,52 @@ describe("the last-run read", () => {
     if (result.kind !== "error") return;
     expect(result.reading).toBe(T.runs);
     expect(result.message).toContain(`permission denied for table ${T.runs}`);
+  });
+
+  it("reports the registry's own refusal when both legs refuse", async () => {
+    // The first refusal wins and is returned as it stands, as it did when the
+    // legs ran in sequence: the card names `sources`, not the neighbour.
+    const client = readsWith({
+      [T.sources]: { error: permissionDenied(T.sources) },
+      [T.runs]: { error: permissionDenied(T.runs) },
+    });
+    const result = await listSources(client.asSupabaseClient());
+    expect(result.kind === "error" && result.reading).toBe(T.sources);
+  });
+});
+
+/**
+ * The fold — the newest run per NAME out of the complete set, with no read of
+ * its own (campaign admin-window/BUG-0139).
+ *
+ * Its input is the rows IN THE ORDER the read asks the server for, which the
+ * case above pins off the recorded chain; here the fixture states that order
+ * (`RUNS_AS_READ`) and this file's own `newestRunFor` states the answer.
+ */
+describe("the newest run per name", () => {
+  it("takes the newest run of a source that has several", async () => {
+    const newest = lastRunBySource(RUNS_AS_READ);
+    expect(newest.get("ticketmaster")).toEqual(newestRunFor("ticketmaster"));
+    expect(newest.get("ticketmaster")?.run_id).toBe(RUN.ticketmasterNew);
+  });
+
+  it("breaks a tie on started_at with the uuid v7 run id", async () => {
+    const tied = RUNS.filter((run) => run.source === "fandom");
+    expect(tied).toHaveLength(2);
+    expect(new Set(tied.map((run) => run.started_at)).size, "the fixture ties").toBe(1);
+    // Both start at the same instant, so only the id can decide it.
+    expect(lastRunBySource(RUNS_AS_READ).get("fandom")?.run_id).toBe(RUN.fandomInFlight);
+  });
+
+  it("takes the one run of a source that has exactly one", async () => {
+    expect(lastRunBySource(RUNS_AS_READ).get("eventbrite")?.run_id).toBe(RUN.orphan);
+  });
+
+  it("holds no entry at all for a name the set has no row for", async () => {
+    // Not a row of somebody else's, and not an invented one: the caller reads
+    // that absence as "has never run" and renders the dash.
+    expect(lastRunBySource(RUNS_AS_READ).has("bandsintown")).toBe(false);
+    expect(lastRunBySource([]).size).toBe(0);
   });
 });
 
@@ -167,12 +243,40 @@ describe("a source with its last run", () => {
     ).toBe(false);
   });
 
-  it("reads the runs table once per source, and no more", async () => {
-    const client = readsWith(healthyScript());
-    await listSources(client.asSupabaseClient());
-    expect(client.tablesRead().filter((table) => table === T.runs)).toHaveLength(
-      SOURCES.length,
+  it("makes exactly two requests, whatever the registry holds", async () => {
+    // The loop this replaced made one `runs` request per registered source:
+    // four round trips for three sources, thirty-one for thirty. Two fixtures,
+    // three sources and 300, so a per-source read cannot pass.
+    const three = readsWith(healthyScript());
+    await listSources(three.asSupabaseClient());
+    expect(three.tablesRead()).toEqual([T.sources, T.runs]);
+
+    const many = manySources(300);
+    const bulk = readsWith({
+      [T.sources]: { data: many.sources, count: many.sources.length },
+      [T.runs]: { data: many.runs, count: many.runs.length },
+    });
+    const result = await listSources(bulk.asSupabaseClient());
+    expect(bulk.tablesRead()).toEqual([T.sources, T.runs]);
+    // And it is still the right answer for all 300 of them.
+    expect(result.kind === "ok" && result.data).toHaveLength(300);
+    expect(
+      result.kind === "ok" &&
+        result.data.every((state, index) => state.lastRun?.run_id === many.runs[index].run_id),
+    ).toBe(true);
+  });
+
+  it("issues both legs together rather than one after the other", async () => {
+    // The runs read waited behind the registry's answer and was skipped
+    // whenever the registry refused. Concurrent, it is ISSUED whatever the
+    // registry does — which is the one thing sequential code cannot do, and it
+    // needs no clock to observe.
+    const client = readsWith(
+      healthyScript({ [T.sources]: { error: permissionDenied(T.sources) } }),
     );
+    const result = await listSources(client.asSupabaseClient());
+    expect(result.kind === "error" && result.reading).toBe(T.sources);
+    expect(client.tablesRead()).toEqual([T.sources, T.runs]);
   });
 });
 

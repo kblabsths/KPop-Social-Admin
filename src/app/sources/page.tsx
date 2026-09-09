@@ -12,6 +12,7 @@ import {
   sourceColumns,
 } from "@/components/sources";
 import { DataTable, Empty, Page, Section, StateOf } from "@/components/ui";
+import { isRecordId } from "@/lib/db/records";
 import {
   listSources,
   selectSources,
@@ -95,21 +96,33 @@ function firstValue(value: ParamValue): string | undefined {
 }
 
 /**
- * The narrowing the URL asked for, against the ids the registry actually
- * holds. A value outside that set narrows NOTHING rather than emptying the
- * page: the URL can only select from what this page offers, so a typo shows
- * the whole registry instead of a blank that reads like an empty database
- * (the rule `claims/filters.ts` and `browse/views.ts` already apply).
+ * The narrowing the URL asked for — **from the URL alone** (campaign
+ * admin-window/BUG-0139).
  *
- * This is the third page to want a chip row over one facet
- * (`components/claims/filter-bar.tsx` says as much of itself); the shared,
- * structurally-typed bar is noted on this ticket's handoff rather than built
- * here, where it would be a fourth page's worth of churn.
+ * It takes no read's rows, which is what lets the three reads below be issued
+ * TOGETHER: the awaiting-row gauge narrows at the query (`observations.source_id`
+ * is a real column on the side it scans), so a narrowing that waited for the
+ * registry's rows would put the sequential round trip straight back.
+ *
+ * The one thing it asks of a value is that it be a uuid AT ALL, and that is a
+ * question about the REQUEST rather than about the registry: `source_id` is a
+ * uuid column, so a value that is not one can equal no row anywhere and
+ * Postgres refuses the comparison before a row is considered (`22P02 invalid
+ * input syntax for type uuid`), which every surface then renders as "the read
+ * failed, reload" — advice that can never work, because reloading re-sends the
+ * same malformed URL. That is admin-window/BUG-0065's ruling on `/records`,
+ * and `isRecordId` is its one grammar; a second uuid pattern here would be a
+ * second answer to one question. So a hand-typed `?source_id=nobody` narrows
+ * NOTHING and the page renders the whole registry, exactly as it always has.
+ *
+ * A well-formed id the registry turns out not to hold DOES narrow: the page
+ * renders `data-empty="narrowing"` — "nothing matched", told apart from the
+ * registry that holds nothing — and the gauges answer the same narrowing the
+ * table renders, which is the property a figure on this page rests on.
  */
-function filterFrom(params: SearchParams, offered: readonly string[]): SourcesFilter {
+function filterFrom(params: SearchParams): SourcesFilter {
   const asked = firstValue(params[SOURCE_FACET]);
-  const found = asked === undefined ? undefined : offered.find((id) => id === asked);
-  return found === undefined ? {} : { source_id: found };
+  return asked !== undefined && isRecordId(asked) ? { source_id: asked } : {};
 }
 
 /* ── the page ────────────────────────────────────────────────────────────── */
@@ -127,22 +140,28 @@ export default async function SourcesPage({
 } = {}) {
   const params = (await searchParams) ?? {};
 
-  // The registry, whole — every narrowing below is `selectSources`'.
-  const sources = await listSources();
-  const held = sources.kind === "ok" ? sources.data : [];
-  const filter = filterFrom(
-    params,
-    held.map((source) => source.source_id),
-  );
-  const shown = selectSources(held, filter);
+  // The narrowing comes from the URL alone, so it is known BEFORE anything is
+  // read and no leg waits on another's rows.
+  const filter = filterFrom(params);
 
-  // The gauges are the other kind of read — bounded, ordered WINDOWS (§4.3
-  // kind 2), so each section names the window it is showing. The awaiting-row
-  // window narrows at the query, because `observations.source_id` is a real
-  // column on the side it scans; the rejection gauge takes no filter, so its
-  // narrowing happens over the rows it returned.
-  const trend = await readAwaitingRowTrend({ filter });
-  const rejections = await readRejectionStampGauge();
+  // Three independent reads, issued together (campaign admin-window/BUG-0139).
+  // None of them needs anything from the other two, and they were awaited one
+  // after the other: the registry, whole — every narrowing below is
+  // `selectSources`' — and the two gauges, which are the other kind of read,
+  // bounded ordered WINDOWS (§4.3 kind 2), each naming the window it shows.
+  // The awaiting-row window narrows at the query, because
+  // `observations.source_id` is a real column on the side it scans; the
+  // rejection gauge takes no filter, so its narrowing happens over the rows it
+  // returned. Each keeps its own `DbResult` and its own Section state, so no
+  // leg's refusal removes another leg's rows (§4.1, common violations row 14).
+  const [sources, trend, rejections] = await Promise.all([
+    listSources(),
+    readAwaitingRowTrend({ filter }),
+    readRejectionStampGauge(),
+  ]);
+
+  const held = sources.kind === "ok" ? sources.data : [];
+  const shown = selectSources(held, filter);
 
   const nameOf = (sourceId: string): string | null =>
     held.find((source) => source.source_id === sourceId)?.source ?? null;

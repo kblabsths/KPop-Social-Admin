@@ -31,12 +31,13 @@ import {
   adjudications,
   awaitingRowClaims,
   daysAgo,
+  manySources,
   newestRunFor,
   rerejects,
-  runsResponseFor,
+  runsResponse,
 } from "./population";
 import { oneEach, readNumber, surfaceHooks } from "../../live/parity";
-import { observationRow } from "../../fixtures/rows";
+import { observationRow, runRow } from "../../fixtures/rows";
 import {
   permissionDenied,
   stubClient,
@@ -77,9 +78,46 @@ const readWith = vi.hoisted(() => ({ client: undefined as unknown }));
  */
 const trendAnswer = vi.hoisted(() => ({ value: undefined as unknown }));
 
+/**
+ * The BARRIER that proves the three composed reads are ISSUED TOGETHER
+ * (campaign admin-window/BUG-0139).
+ *
+ * While it is armed, each of the page's three reads is started and then held
+ * until all three have started. A page that awaits them one after the other
+ * therefore never gets its first answer — the read after it is never issued —
+ * so the case fails on the timer instead of passing on a stopwatch nobody can
+ * trust. Disarmed (every other test in this file), each read is passed
+ * straight through.
+ */
+const together = vi.hoisted(() => {
+  const gate = {
+    armed: false,
+    issued: [] as string[],
+    waiting: [] as (() => void)[],
+    /** Issue this read now; answer once all three of them have been issued. */
+    async hold<T>(name: string, issue: () => Promise<T>): Promise<T> {
+      if (!gate.armed) return issue();
+      gate.issued.push(name);
+      const answer = issue();
+      if (gate.issued.length >= 3) gate.release();
+      else await new Promise<void>((resolve) => gate.waiting.push(resolve));
+      return answer;
+    },
+    /** Let every held read answer — also how the case cleans up after itself. */
+    release(): void {
+      for (const go of gate.waiting.splice(0)) go();
+    },
+  };
+  return gate;
+});
+
 vi.mock("@/lib/db/sources", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/db/sources")>();
-  return { ...actual, listSources: () => actual.listSources(readWith.client as never) };
+  return {
+    ...actual,
+    listSources: () =>
+      together.hold("registry", () => actual.listSources(readWith.client as never)),
+  };
 });
 
 vi.mock("@/lib/gauges/pending-claims", async (importActual) => {
@@ -87,8 +125,11 @@ vi.mock("@/lib/gauges/pending-claims", async (importActual) => {
   return {
     ...actual,
     readAwaitingRowTrend: (options?: unknown) =>
-      trendAnswer.value ??
-      actual.readAwaitingRowTrend((options ?? {}) as never, readWith.client as never),
+      together.hold("awaiting_row", async () =>
+        trendAnswer.value !== undefined
+          ? trendAnswer.value
+          : actual.readAwaitingRowTrend((options ?? {}) as never, readWith.client as never),
+      ),
   };
 });
 
@@ -97,7 +138,9 @@ vi.mock("@/lib/gauges/settled-values", async (importActual) => {
   return {
     ...actual,
     readRejectionStampGauge: (options?: unknown) =>
-      actual.readRejectionStampGauge((options ?? {}) as never, readWith.client as never),
+      together.hold("rejections", () =>
+        actual.readRejectionStampGauge((options ?? {}) as never, readWith.client as never),
+      ),
   };
 });
 
@@ -109,17 +152,18 @@ const SourcesPage = sourcesModule.default;
 /**
  * A database holding the whole population.
  *
- * The reads happen in a fixed order, which is what the queued responses
- * follow: the registry, then one `runs` read per source (in the registry's own
- * order), then the awaiting-row trend's two legs (`observations`, then
- * `pending_claims`), then the rejection gauge's two (`observations`, then the
- * `sources` lookup behind the per-source split).
+ * The queued responses follow the order each object is read in: the registry,
+ * then the rejection gauge's `sources` lookup behind the per-source split;
+ * `observations` is read by the awaiting-row trend first and the rejection
+ * gauge second. The three reads are ISSUED together (campaign
+ * admin-window/BUG-0139), which changes nothing here — a queue is consumed in
+ * the order the requests are made, and each of the three reads its own object.
  *
- * The `runs` queue is derived by THIS FILE from the run population, filtered
- * by name — the answer a database would give to the query the module issues.
- * That the module actually issues that query (the name, the order, the cap) is
- * asserted separately, off the recorded calls, so the pairing cannot be a
- * coincidence of ordering.
+ * The `runs` response is the whole table in the order the ONE request asks the
+ * SERVER for (`RUNS_AS_READ` in `./population`), which is the answer a
+ * database would give it. That the module actually issues that query — the
+ * count, the order, the cap — is asserted off the recorded calls in
+ * `read.test.ts`, so the pairing cannot be a coincidence of ordering.
  */
 function healthyScript(overrides: Script = {}): Script {
   return {
@@ -127,7 +171,9 @@ function healthyScript(overrides: Script = {}): Script {
       { data: [...SOURCES], count: SOURCES.length },
       { data: [...SOURCES] },
     ],
-    [T.runs]: SOURCES.map((source) => ({ data: runsResponseFor(source.source) })),
+    // ONE response for ONE request: the whole run log, in the order the read
+    // asks the server for it (campaign admin-window/BUG-0139).
+    [T.runs]: runsResponse(),
     [T.observations]: [{ data: [...PENDING_OBSERVATIONS] }, { data: [...REJECTIONS] }],
     [T.pendingClaims]: { data: [...PENDING_CLAIMS] },
     ...overrides,
@@ -304,27 +350,73 @@ describe("the registry, rendered", () => {
     }
   });
 
-  it("asks the runs table for each source's newest run, by name, one row", async () => {
-    // The pairing above must not be an accident of response ordering: the
-    // query itself carries the name, the newest-first order and the cap.
-    const client = stubClient(healthyScript());
-    readWith.client = client.asSupabaseClient();
-    await render(await SourcesPage({ searchParams: Promise.resolve({}) }));
+  it("one runs request, whatever the registry holds", async () => {
+    // The pairing above must not be an accident of response ordering, and the
+    // read that makes it must not grow with the registry: this page read
+    // `runs` once per registered source, in a loop, and that is most of the
+    // 2.0-2.3 s Ben measured on the walk instance (admin-window/BUG-0139).
+    //
+    // TWO fixtures, because a per-source loop passes the first one on its own:
+    // three sources, and 300. The registry's size may not change the number of
+    // requests the page makes.
+    const many = manySources(300);
+    const fixtures: [string, Script, number][] = [
+      ["3 sources", healthyScript(), SOURCES.length],
+      [
+        "300 sources",
+        {
+          ...healthyScript(),
+          [T.sources]: [
+            { data: many.sources, count: many.sources.length },
+            { data: many.sources },
+          ],
+          [T.runs]: { data: many.runs, count: many.runs.length },
+        },
+        many.sources.length,
+      ],
+    ];
 
-    const runCalls = client.calls.filter((call) => call.table === T.runs);
-    expect(runCalls).toHaveLength(SOURCES.length);
-    runCalls.forEach((call, index) => {
-      const steps = new Map(call.steps.map((step) => [step.method, step.args]));
-      expect(steps.get("eq"), `call ${index}`).toEqual([
-        "source",
-        SOURCES[index].source,
-      ]);
-      expect(call.steps.filter((step) => step.method === "order")[0].args).toEqual([
-        "started_at",
-        { ascending: false },
-      ]);
-      expect(steps.get("limit")).toEqual([1]);
-    });
+    const calls: number[] = [];
+    for (const [name, script, registrySize] of fixtures) {
+      const client = stubClient(script);
+      readWith.client = client.asSupabaseClient();
+      const markup = render(await SourcesPage({ searchParams: Promise.resolve({}) }));
+      // The page really did render that registry, so the counts below are over
+      // a page that did the work rather than one that refused early.
+      expect(sourceIds(markup), name).toHaveLength(registrySize);
+      expect(client.calls.filter((call) => call.table === T.runs), name).toHaveLength(1);
+      calls.push(client.calls.length);
+    }
+    // The same number of requests for 3 sources and for 300, and the whole
+    // page costs at most six of them: registry + runs, and two per gauge.
+    expect(calls[1], "300 sources cost more requests than 3").toBe(calls[0]);
+    expect(calls[0], "the page made more than six requests").toBeLessThanOrEqual(6);
+  });
+
+  it("renders the run log's own refusal instead of a registry that is quietly wrong", async () => {
+    // `runs` has no retention policy, so the complete read this page now makes
+    // will one day outgrow the cap. When it does the page says so with the
+    // real number — it must not render a registry whose last-run column is a
+    // fold over a truncated log (admin-window/BUG-0139, ARCHITECTURE §4.3).
+    const capped = Array.from({ length: 1000 }, (_, index) =>
+      runRow({
+        run_id: `01920000-0000-7000-8000-0000000d${String(index).padStart(4, "0")}`,
+        source: "ticketmaster",
+        started_at: "2026-09-01T03:00:00Z",
+      }),
+    );
+    const markup = await renderSources(
+      healthyScript({ [T.runs]: { data: capped, count: 1500 } }),
+    );
+    expect(readsFailed(markup)).toContain(T.runs);
+    expect(markup).toContain("1500");
+    expect(sourceIds(markup)).toEqual([]);
+    // The neighbours are untouched: one leg's refusal removes no other leg's
+    // rows (§4.1, common violations row 14).
+    expect(trendSources(markup, AWAITING_BY_SOURCE)).toEqual([
+      SOURCE.ticketmaster,
+      SOURCE.bandsintown,
+    ]);
   });
 
   it("renders a source that has never run as the dash — not a blank, not a zero", async () => {
@@ -432,11 +524,77 @@ describe("a source's links", () => {
     }
   });
 
-  it("narrows nothing when the URL names a source the registry does not hold", async () => {
-    // A hand-typed id lands on the whole registry, not on a blank page that
-    // reads like an empty database.
+  it("narrows nothing when the URL names something that is not an id at all", async () => {
+    // A hand-typed word lands on the whole registry, not on a blank page that
+    // reads like an empty database — and, since admin-window/BUG-0139 hands
+    // the URL's value to the gauge's QUERY, not on an error card either:
+    // `observations.source_id` is a uuid column, so comparing it to `nobody`
+    // is refused by Postgres itself (`22P02`) and every surface would then
+    // advise a reload that re-sends the same URL forever
+    // (admin-window/BUG-0065's ruling, whose `isRecordId` is the one grammar).
     const markup = await renderSources(healthyScript(), { source_id: "nobody" });
     expect(sourceIds(markup)).toEqual(SOURCES.map((source) => source.source_id));
+    expect(readsFailed(markup)).toEqual([]);
+    expect(notProvisioned(markup)).toEqual([]);
+    // The gauges are unnarrowed too, so the figures read the same set the
+    // table renders.
+    expect(trendSources(markup, AWAITING_BY_SOURCE)).toEqual([
+      SOURCE.ticketmaster,
+      SOURCE.bandsintown,
+    ]);
+  });
+
+  it("narrows to nothing, and says so, when the URL names a well-formed id the registry lacks", async () => {
+    // A `source_id` that IS an id but is nobody's: the narrowing is real, so
+    // the table renders "nothing matched" rather than the whole registry —
+    // told apart from the registry that holds nothing by the hook, never by
+    // its words — and the gauges answer the SAME narrowing the table renders.
+    const markup = await renderSources(healthyScript(), {
+      source_id: "01920000-0000-7000-8000-0000000000ff",
+    });
+    expect(sourceIds(markup)).toEqual([]);
+    expect(cheerio.load(markup)("[data-empty]").attr("data-empty")).toBe("narrowing");
+    expect(notProvisioned(markup)).toEqual([]);
+    expect(readsFailed(markup)).toEqual([]);
+    expect(trendSources(markup, AWAITING_BY_SOURCE)).toEqual([]);
+    expect(trendSources(markup, REJECTED_BY_SOURCE)).toEqual([]);
+  });
+
+  it("issues its three reads together, so neither gauge waits behind the registry", async () => {
+    // The registry, the awaiting-row trend and the settled-values gauge need
+    // nothing from each other, and this page awaited them one after the other
+    // (admin-window/BUG-0139). Each read is held until all three have been
+    // ISSUED: a page that reads them in sequence never gets past the first.
+    together.armed = true;
+    together.issued = [];
+    const timer = { at: undefined as ReturnType<typeof setTimeout> | undefined };
+    const givesUp = new Promise<never>((_, reject) => {
+      timer.at = setTimeout(
+        () =>
+          reject(
+            new Error(
+              `only ${together.issued.join(", ") || "none"} was issued: the reads are sequential`,
+            ),
+          ),
+        2000,
+      );
+    });
+    try {
+      const markup = await Promise.race([renderSources(healthyScript()), givesUp]);
+      expect(together.issued.slice().sort()).toEqual([
+        "awaiting_row",
+        "registry",
+        "rejections",
+      ]);
+      // And the page it rendered is still the whole page.
+      expect(sourceIds(markup)).toEqual(SOURCES.map((source) => source.source_id));
+      expect(trendSources(markup, AWAITING_BY_SOURCE).length).toBeGreaterThan(0);
+      expect(trendSources(markup, REJECTED_BY_SOURCE).length).toBeGreaterThan(0);
+    } finally {
+      if (timer.at !== undefined) clearTimeout(timer.at);
+      together.armed = false;
+      together.release();
+    }
   });
 
   it("takes the first value when the URL repeats the facet", async () => {
@@ -996,7 +1154,7 @@ describe("the copy the operator actually reads", () => {
         [T.sources]: [{ data: [], count: 0 }, { data: [] }],
         [T.observations]: [{ data: [] }, { data: [] }],
         [T.pendingClaims]: { data: [] },
-        [T.runs]: [],
+        [T.runs]: { data: [], count: 0 },
       }),
       refused: healthyScript({
         [T.observations]: [
@@ -1026,7 +1184,7 @@ describe("the copy the operator actually reads", () => {
         [T.sources]: [{ data: [], count: 0 }, { data: [] }],
         [T.observations]: [{ data: [] }, { data: [] }],
         [T.pendingClaims]: { data: [] },
-        [T.runs]: [],
+        [T.runs]: { data: [], count: 0 },
       }),
       absent: healthyScript({
         [T.sources]: [

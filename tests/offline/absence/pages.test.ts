@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import * as cheerio from "cheerio";
-import { TABLE_NAMES } from "@/lib/db/tables";
+import { T, TABLE_NAMES } from "@/lib/db/tables";
 import {
   stubClient,
   tableNotInSchemaCache,
@@ -223,6 +223,30 @@ describe.each(DATABASES)("against %s missing one object", (_label, base) => {
 
 /* ── the whole database missing ──────────────────────────────────────────── */
 
+/**
+ * Objects one surface reads as ONE COMPOSED read that returns ONE refusal —
+ * the first of them (campaign admin-window/BUG-0139).
+ *
+ * `/sources` matches the registry to the run log BY NAME (there is no key to
+ * join on, ARCHITECTURE.md §6 trap 6) and, since BUG-0139, issues both reads
+ * CONCURRENTLY — so with the whole database absent it asks for `runs` as well
+ * as `sources` and reports the first refusal, naming `sources`. Naming both
+ * would put two object names in one card's mono span, where §11 and
+ * LOOK_AND_FEEL's state 3 put exactly one.
+ *
+ * The exemption is only for the LATER members of a composition, only when an
+ * earlier member of the same composition is absent too, and it never excuses
+ * silence: the first member must still be named (asserted below), and each
+ * later member absent ON ITS OWN is named by the matrix above — which is what
+ * keeps `/sources` from passing this file while saying nothing about a missing
+ * `runs` table (the case a reader should check first is
+ * `tests/offline/sources/page.test.ts`, "names `runs` when the run table is
+ * not in this database").
+ */
+const COMPOSED_READS: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ["/sources", [T.sources, T.runs]],
+];
+
 describe("against a database that lacks every ecosystem object", () => {
   it.each(SURFACES.map((surface) => [surface.route, surface] as const))(
     "%s names every object it asked for and invents no number",
@@ -230,7 +254,20 @@ describe("against a database that lacks every ecosystem object", () => {
       const stub = scriptDatabase(nothingProvisioned());
       const markup = await renderSurface(surface);
 
-      for (const missing of tablesRead(stub)) {
+      const mustName = new Set(tablesRead(stub));
+      for (const [composedRoute, objects] of COMPOSED_READS) {
+        if (composedRoute !== route) continue;
+        const asked = objects.filter((object) => mustName.has(object));
+        if (asked.length < 2) continue;
+        // The refusal the composed read returned is the first one, and it is
+        // required by name; its companions are the same refusal's other half.
+        expect(namesExactly(markup, asked[0]), `${route} never names ${asked[0]}`).toBe(
+          true,
+        );
+        for (const later of asked.slice(1)) mustName.delete(later);
+      }
+
+      for (const missing of mustName) {
         expect(namesExactly(markup, missing), `${route} never names ${missing}`).toBe(
           true,
         );
