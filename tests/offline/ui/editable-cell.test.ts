@@ -972,42 +972,98 @@ describe("a refusal ends with the edit that produced it", () => {
  */
 
 /**
- * A record page's cells, composed the way the component composes them, so
- * "at most ONE refusal is on screen at any moment, on any record page"
- * (criterion 2) is a claim a test can make. Every operation is one thing an
- * operator does; each fans the resulting move out to every cell, exactly as a
- * document-level listener does, and each cell judges it through `reduceEdit`.
+ * A record page's cells, driven through the component's OWN units — campaign
+ * admin-window/BUG-0107, so that "at most ONE refusal is on screen at any
+ * moment, on any record page" (criterion 2) is a claim about the product and
+ * not about a model of it.
+ *
+ * Each cell is a `reduceEdit` state, and the harness stands in for the one
+ * effect `EditableCell` runs: while a cell's status is `failed` it holds
+ * `armRetire`'s three page-wide listeners and the page's one refusal slot
+ * (`takeRefusalSlot`), and it drops both the moment the refusal goes. Every
+ * operation below is one thing an operator does, dispatched to every armed
+ * cell exactly as a document-level listener would see it.
+ *
+ * What is left untested here is the two-line adapter from a span and its owner
+ * document to `RetireHost`, and React's own effect scheduling — both browser
+ * facts, and both walked.
  */
 function recordPage(names: string[]) {
   const cells = new Map(names.map((name) => [name, IDLE_EDIT_STATE]));
   const ordinals = new Map(names.map((name) => [name, 0]));
+  /** A stand-in for each cell's box, so `contains` has something to answer. */
+  const boxes = new Map(names.map((name) => [name, {} as EventTarget]));
+  const armed = new Map<
+    string,
+    { handlers: Map<string, (signal: RetireSignal) => void>; teardown: () => void }
+  >();
   const peak = { alerts: 0 };
 
   const stateOf = (name: string) => cells.get(name) ?? IDLE_EDIT_STATE;
+  const alerts = () => names.filter((name) => stateOf(name).status.kind === "failed").length;
+
   function send(name: string, event: EditEvent) {
     cells.set(name, reduceEdit(stateOf(name), event));
   }
-  /** One move, seen by every cell on the page — a document-level listener. */
-  function everyCell(move: (name: string) => RetireMove) {
+
+  /** The effect: armed while, and only while, this cell shows a refusal. */
+  function syncArming() {
     for (const name of names) {
-      send(name, { kind: "abandoned", edit: stateOf(name).edit, move: move(name) });
+      const refusing = stateOf(name).status.kind === "failed";
+      const running = armed.get(name);
+      if (refusing && running === undefined) {
+        const edit = stateOf(name).edit;
+        const handlers = new Map<string, (signal: RetireSignal) => void>();
+        const retire = (move: RetireMove) => {
+          send(name, { kind: "abandoned", edit, move });
+          syncArming();
+        };
+        const host: RetireHost = {
+          contains: (target) => target === boxes.get(name),
+          listen: (type, handler) => {
+            handlers.set(type, handler);
+            return () => handlers.delete(type);
+          },
+        };
+        const disarm = armRetire(host, retire);
+        // registered BEFORE the slot is taken, so a displaced holder that
+        // retires itself re-enters this function and finds its own entry.
+        armed.set(name, { handlers, teardown: () => disarm() });
+        const release = takeRefusalSlot(() => retire({ kind: "superseded" }));
+        const entry = armed.get(name);
+        if (entry !== undefined) {
+          entry.teardown = () => {
+            release();
+            disarm();
+          };
+        }
+      } else if (!refusing && running !== undefined) {
+        armed.delete(name);
+        running.teardown();
+      }
     }
-    peak.alerts = Math.max(peak.alerts, page.alerts());
+    peak.alerts = Math.max(peak.alerts, alerts());
+  }
+
+  /** One page-wide signal, seen by every cell that is listening for it. */
+  function broadcast(type: string, signal: RetireSignal) {
+    for (const entry of [...armed.values()]) entry.handlers.get(type)?.(signal);
+    syncArming();
   }
 
   const page = {
     /** Focus landed in `name` — a Tab, or the field an opening cell focuses. */
     focusOn(name: string) {
-      everyCell((cell) => ({ kind: "focus", inside: cell === name }));
+      broadcast("focusin", { target: boxes.get(name) ?? null });
       return page;
     },
     /** A pointer press landed in `name`, or on the page itself (`null`). */
     pressOn(name: string | null) {
-      everyCell((cell) => ({ kind: "press", inside: cell === name }));
+      broadcast("pointerdown", { target: name === null ? null : (boxes.get(name) ?? null) });
       return page;
     },
     escape() {
-      everyCell(() => ESCAPE);
+      broadcast("keydown", { target: null, key: "Escape" });
       return page;
     },
     /** Opening a cell moves focus into it and hands out the next ordinal. */
@@ -1016,35 +1072,33 @@ function recordPage(names: string[]) {
       const ordinal = (ordinals.get(name) ?? 0) + 1;
       ordinals.set(name, ordinal);
       send(name, { kind: "editing", edit: ordinal });
-      peak.alerts = Math.max(peak.alerts, page.alerts());
+      syncArming();
       return page;
     },
     commit(name: string) {
       send(name, { kind: "committed", edit: ordinals.get(name) ?? 0 });
-      peak.alerts = Math.max(peak.alerts, page.alerts());
+      syncArming();
       return page;
     },
-    /**
-     * The write answered. A refusal takes the page's one slot: every other
-     * refusal on screen belongs to an edit the operator has already left.
-     */
+    /** The write answered; a refusal then takes the page's one slot. */
     answer(name: string, outcome: SaveOutcome) {
       send(name, { kind: "settled", edit: ordinals.get(name) ?? 0, outcome });
-      if (stateOf(name).status.kind === "failed") {
-        for (const other of names) {
-          if (other === name) continue;
-          send(other, { kind: "abandoned", edit: stateOf(other).edit, move: SUPERSEDED });
-        }
-      }
-      peak.alerts = Math.max(peak.alerts, page.alerts());
+      syncArming();
       return page;
     },
     /** What `document.querySelectorAll('[role=alert]').length` would read. */
-    alerts: () => names.filter((name) => stateOf(name).status.kind === "failed").length,
+    alerts,
     refusing: () => names.filter((name) => stateOf(name).status.kind === "failed"),
     statusOf: (name: string) => stateOf(name).status,
     /** The most alerts that were ever on screen at one moment. */
     peakAlerts: () => peak.alerts,
+    /** Release everything this page still holds — the page navigating away. */
+    close() {
+      for (const [name, entry] of [...armed.entries()]) {
+        armed.delete(name);
+        entry.teardown();
+      }
+    },
   };
   return page;
 }
@@ -1061,6 +1115,7 @@ describe("a refusal is retired by the move that ends the operator's involvement"
     page.answer("label", NO);
     expect(page.statusOf("label")).toEqual({ kind: "failed", message: REFUSAL });
     expect(page.alerts(), "the refused write is reported, not swallowed").toEqual(1);
+    page.close();
   });
 
   it("and goes on the very next move, which on a keyboard is a focus landing elsewhere", () => {
@@ -1071,6 +1126,7 @@ describe("a refusal is retired by the move that ends the operator's involvement"
     page.focusOn("observed_on");
     expect(page.alerts(), "one Tab is enough").toEqual(0);
     expect(page.statusOf("label")).toEqual(IDLE_EDIT_STATE.status);
+    page.close();
   });
 
   it("gives QA's whole keyboard sequence at most one refusal, and never two", () => {
@@ -1087,6 +1143,7 @@ describe("a refusal is retired by the move that ends the operator's involvement"
       message: "second refusal (22007)",
     });
     expect(page.peakAlerts(), "at every moment of the sequence").toEqual(1);
+    page.close();
   });
 
   it("holds one refusal even when two writes are in flight at once", () => {
@@ -1103,6 +1160,7 @@ describe("a refusal is retired by the move that ends the operator's involvement"
     page.answer("observed_on", { ok: false, message: "second refusal (22007)" });
     expect(page.refusing()).toEqual(["observed_on"]);
     expect(page.peakAlerts()).toEqual(1);
+    page.close();
   });
 
   it("keeps a refusal while the operator is still in the cell it belongs to", () => {
@@ -1129,6 +1187,7 @@ describe("a refusal is retired by the move that ends the operator's involvement"
     expect(page.alerts(), "and a press inside it is not walking away").toEqual(1);
     page.pressOn("note");
     expect(page.alerts(), "a press on another cell is").toEqual(0);
+    page.close();
   });
 
   it("never retires a write in flight, whichever move reaches it", () => {
@@ -1150,6 +1209,7 @@ describe("a refusal is retired by the move that ends the operator's involvement"
     expect(page.statusOf("label").kind).toEqual("saving");
     page.answer("label", { ok: true });
     expect(page.statusOf("label").kind, "its own answer still lands").toEqual("saved");
+    page.close();
   });
 
   it("leaves the 1.5s confirmation alone, however the operator moves", () => {
@@ -1164,6 +1224,7 @@ describe("a refusal is retired by the move that ends the operator's involvement"
     page.open("note").commit("note").answer("note", NO);
     expect(page.statusOf("label").kind, "the receipt keeps its own clock").toEqual("saved");
     expect(page.alerts()).toEqual(1);
+    page.close();
   });
 
   it("cannot be retired by a move belonging to an edit that is no longer showing", () => {
