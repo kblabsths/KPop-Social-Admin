@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { type Column, DataTable } from "@/components/ui";
-import { EM_DASH, clamped, relativeAge } from "@/lib/format";
+import { EM_DASH, clamped, isAbsent, relativeAge } from "@/lib/format";
 
 /**
  * The verdict log — campaign admin-window/TASK-0058, spec F13.
@@ -93,7 +93,16 @@ export function VerdictLog({
     {
       key: "actor",
       label: "actor",
-      cell: (row) => <span data-verdict-actor={row.actor}>{row.actor}</span>,
+      // `verdicts.actor` is `not null` and its column comment says "never
+      // blank", but the settle route spells the fallback `gate.user?.email ??
+      // ""`, so an empty actor is reachable and would wrap an empty string in
+      // an element — invisible to `orDash` (admin-window/BUG-0085's shape).
+      // Absent goes over as `null` so the table dashes it: a row that cannot
+      // say whose action it was still says SOMETHING.
+      cell: (row) =>
+        isAbsent(row.actor) ? null : (
+          <span data-verdict-actor={row.actor}>{row.actor}</span>
+        ),
     },
     {
       key: "action",
@@ -146,10 +155,20 @@ export function VerdictLog({
       key: "note",
       label: "note",
       // Producer text, bounded and visibly clamped, with the whole of it on
-      // the element's own title (`clamped`, `lib/format.ts`). A null note goes
-      // to the cell as null so the table draws the dash.
+      // the element's own title (`clamped`, `lib/format.ts`).
+      //
+      // An ABSENT note goes to the cell as `null` itself, so the table's own
+      // `orDash` draws the one dash this app has. The test is `isAbsent`, the
+      // app's single definition of absence (`lib/format.ts`,
+      // admin-window/BUG-0004) — not `=== null` — because that definition
+      // TRIMS: a note that is present but empty, or nothing but whitespace, is
+      // an absence everywhere else here and must read as one here too
+      // (admin-window/BUG-0085). Asking before building the element is the
+      // whole fix: a cell body that is an ELEMENT is never absent to `orDash`,
+      // which is why a blank note drew an empty `td`. Same shape as
+      // `components/cycles/run-columns.tsx`'s error cell.
       cell: (row) => {
-        if (row.note === null) return null;
+        if (isAbsent(row.note)) return null;
         const shown = clamped(row.note);
         return <span title={shown.title}>{shown.text}</span>;
       },
