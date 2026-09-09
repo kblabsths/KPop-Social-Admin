@@ -540,6 +540,49 @@ describe("readReviewQueues", () => {
     }
   });
 
+  /**
+   * STRICT pin, landed red by QA (admin-window/BUG-0135). Drop `.fails` the day
+   * a population leg that could not be read stops deleting the rows the URL's
+   * own complete read DID return.
+   *
+   * The population leg is unconditionally the WHOLE table, so no URL facet
+   * narrows it: past `ROW_CAP` it refuses for every faceted URL, including the
+   * `?queue=`/`?status=` ones PostgREST narrowed by a real column and answered
+   * in full. It decides four words of a sub-line and which empty card shows,
+   * and it renders no row of its own — the refusal belongs BESIDE the rows, the
+   * way `/claims` reports a source registry that would not read while every
+   * claim still renders, not INSTEAD of them. Which shape carries it is the
+   * fix's choice; this asserts only that the rows reach the caller.
+   *
+   * Its sibling below is the other half and must stay green: when the FILTERED
+   * leg is the truncated one, those rows really are unknown and the read
+   * refuses.
+   */
+  it.fails(
+    "keeps the rows its own complete read returned when only the POPULATION leg is truncated (admin-window/BUG-0135)",
+    async () => {
+      const rows = population();
+      const conflicts = rows.filter((row) => row.queue === "data_conflict");
+      expect(conflicts.length).toBeGreaterThan(0);
+      const stub = stubClient({
+        [T.reviewItems]: [
+          // Leg 1 — the URL's own read, narrowed at the database by the
+          // `queue` COLUMN and complete: every matching row, counted.
+          { data: conflicts, count: conflicts.length },
+          // Leg 2 — the population: the whole table, past the cap.
+          { data: rows, count: ROW_CAP + 500 },
+        ],
+      });
+      const result = await readReviewQueues(
+        { queue: "data_conflict" },
+        stub.asSupabaseClient(),
+      );
+      expect(result.kind).toBe("ok");
+      if (result.kind !== "ok") return;
+      expect(ids(result.data.items)).toEqual(ids(queueOrder(conflicts)));
+    },
+  );
+
   it("refuses a truncated read rather than counting a population it did not see", async () => {
     const stub = stubClient({
       [T.reviewItems]: { data: reviewItemEdgePopulation(), count: ROW_CAP + 40 },
