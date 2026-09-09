@@ -31,6 +31,13 @@ import { type HintSide, cellLayout } from "@/components/edit-cell-layout";
  * first cut, the 46x16 `saving…` line still did it during the commit window,
  * which is precisely when the operator's next click is in the air.
  *
+ * **And a pointer opens it at the PRESS, not at the release** (`opensCell`,
+ * the same ticket's third cut): committing the open cell puts the operator's
+ * own longer value into the resting button, and an auto-layout table
+ * re-apportions on that alone — a reflow no layout rule of this cell's can
+ * remove. Opening at `pointerdown` makes the reflow harmless, because there is
+ * nothing left in the air to swallow.
+ *
  * It knows nothing about routes or tables: `onSave` is the caller's, and
  * returns what happened rather than throwing. The display is a real button, so
  * editing is reachable by Tab and never only on hover (quality bar 9) — and an
@@ -492,6 +499,88 @@ export function selectOnOpen(
 }
 
 /**
+ * A press that might open the cell, described in the three facts that decide
+ * it — campaign admin-window/BUG-0086.
+ */
+export type OpenPress = {
+  /**
+   * Which handler saw it. A pointer press arrives at `pointerdown`; a keyboard
+   * activation (Enter, Space) and an assistive-technology activation arrive
+   * only as `click`, with no pointer event before them.
+   */
+  source: "pointerdown" | "click";
+  /** `MouseEvent.button`: 0 is the primary press. A keyboard click reports 0. */
+  button: number;
+  /**
+   * `MouseEvent.detail` — the click count. **A click the browser synthesised
+   * from a key, or from `.click()`, reports 0**, and a click that came from a
+   * pointer reports 1 or more. That is the whole discriminator.
+   */
+  detail: number;
+  /** Is this cell already open? Then the press is not an opening one. */
+  editing: boolean;
+  /** Is the resting control disabled — a write of this cell in flight? */
+  disabled: boolean;
+};
+
+/**
+ * Does this press open the cell? — campaign admin-window/BUG-0086, the third
+ * cut and the one that kills the class rather than one of its causes.
+ *
+ * **The defect.** The cell used to open on `click`, which is dispatched at
+ * MOUSEUP. Between the operator's mousedown and their mouseup, the record
+ * table can re-apportion its columns and carry the button they pressed out
+ * from under the pointer — so no `click` is dispatched at that button at all
+ * and the press is swallowed. Two cuts removed two causes of that reflow (the
+ * open field and its hint, then the transient `saving…` line; both are still
+ * fixed, `cellLayout`), and QA found a third that no layout rule can reach:
+ * the value ITSELF. Blur commits, so pressing another value commits the open
+ * one, its resting button reappears carrying the NEW, longer value, and the
+ * auto table layout re-apportions on that. Measured by QA on a production
+ * build against staging, 2026-09-09, both themes: with an ordinary 56-character
+ * correction in `note` — "Checked against the venue listing; corrected
+ * 2026-09-08." — every other value in the column moved 59.48px LEFT inside a
+ * 120ms press (34 chars: 0px and the press opens; 71: 86.51px; 122: 138.59px),
+ * `elementFromPoint` at the press point became a `<td>` of another row, and
+ * nothing opened. The resting value IS the row's box and must be, or nothing
+ * holds the row's height, so the reflow is the surface working as designed.
+ *
+ * **The rule.** A press that lands on the value opens it AT POINTERDOWN, before
+ * anything can move. A reflow between down and up cannot swallow a cell that is
+ * already open, whatever the operator typed and however wide it made the value.
+ *
+ * Both halves of the discriminator are load-bearing:
+ *
+ *  - **`pointerdown` opens, and only for the primary button** (`button === 0`),
+ *    so the press that raises a context menu opens nothing.
+ *  - **`click` opens only when it came from no pointer at all** (`detail === 0`
+ *    — a key or `.click()`). That keeps Enter and Space working on a control
+ *    that is a real `<button>`, and it is also the second half of the fix: the
+ *    stray `click` that a reflowed press produces lands wherever the pointer
+ *    ended up, which may be ANOTHER value's button, and a cell opens with its
+ *    whole value selected (`selectOnOpen`), so the next keystroke would replace
+ *    the wrong field. QA raised that as the risk this defect carries. A
+ *    pointer-borne click never opens anything here, so the risk is closed
+ *    rather than made less likely.
+ *
+ * `editing` and `disabled` are refusals the caller would otherwise repeat at
+ * two call sites: a press on a cell already open re-arms its edit ordinal, and
+ * a press while this cell's own write is in flight is one the resting control
+ * has already refused as `disabled` (a disabled button dispatches no `click`,
+ * but pointer events reach it in some browsers).
+ *
+ * Pure and exported for the reason `focusVerdict` and `selectOnOpen` are:
+ * which event opened the cell is a browser fact and `tests/offline` is
+ * environment node with `renderToStaticMarkup` and no jsdom (STACK.md §4). The
+ * decision is pinned offline; the press itself is measured in a walk.
+ */
+export function opensCell(press: OpenPress): boolean {
+  if (press.editing || press.disabled) return false;
+  if (press.button !== 0) return false;
+  return press.source === "pointerdown" ? true : press.detail === 0;
+}
+
+/**
  * What an edit COMMITS: the draft, or `null` when there is nothing in it to
  * read — campaign admin-window/BUG-0095.
  *
@@ -715,6 +804,15 @@ export function EditableCell({
     }
   }
 
+  /** Enter edit mode, from whichever press `opensCell` accepted. */
+  function open() {
+    reverting.current = false;
+    edits.current += 1;
+    dispatch({ kind: "editing", edit: edits.current });
+    setEditing(true);
+  }
+
+  const disabled = status.kind === "saving";
   const layout = cellLayout({ editing, statusShown: status.kind !== "idle" });
 
   return (
@@ -727,12 +825,54 @@ export function EditableCell({
         ref={button}
         type="button"
         aria-label={label}
-        disabled={status.kind === "saving"}
-        onClick={() => {
-          reverting.current = false;
-          edits.current += 1;
-          dispatch({ kind: "editing", edit: edits.current });
-          setEditing(true);
+        disabled={disabled}
+        // The pointer opens the cell HERE, at the press, rather than at the
+        // release (campaign admin-window/BUG-0086, `opensCell`): committing
+        // the cell that is currently open re-apportions the table's columns,
+        // and a button that moves between mousedown and mouseup never sees a
+        // click at all.
+        onPointerDown={(event) => {
+          if (
+            !opensCell({
+              source: "pointerdown",
+              button: event.button,
+              detail: event.detail,
+              editing,
+              disabled,
+            })
+          ) {
+            return;
+          }
+          // The browser's own default for this press is to move focus to the
+          // nearest focusable element AT the press point — which is this
+          // button, which the very same press is about to hide
+          // (`layout.value === "flow-hidden"`). Chromium then finds nothing
+          // focusable there and clears focus to the body, blurring the field
+          // that just opened and closing it again. Focus is this control's own
+          // business in every other path already (`autoFocus`, `focusVerdict`),
+          // so it is here too.
+          event.preventDefault();
+          open();
+        }}
+        // A keyboard activation — Enter, Space, or an assistive technology's
+        // `.click()` — reaches the control only as a click, and carries no
+        // pointer. `opensCell` opens for exactly those, and never for the
+        // click a pointer press produces: that one may be dispatched at
+        // whatever the reflow put under the pointer, and opening THAT cell
+        // would arm a retype over the wrong field.
+        onClick={(event) => {
+          if (
+            !opensCell({
+              source: "click",
+              button: event.button,
+              detail: event.detail,
+              editing,
+              disabled,
+            })
+          ) {
+            return;
+          }
+          open();
         }}
         className={cx(
           "type-data cursor-text rounded-control px-1 py-0.5 text-left text-ink transition-colors hover:bg-chrome",

@@ -20,12 +20,14 @@ import {
   EditField,
   EditStatus,
   IDLE_EDIT_STATE,
+  type OpenPress,
   type SaveOutcome,
   type Status,
   confirmationDelayMs,
   editHint,
   committedValue,
   focusVerdict,
+  opensCell,
   reduceEdit,
   selectOnOpen,
 } from "@/components/EditableCell";
@@ -1614,5 +1616,132 @@ describe("a refused write names what failed and what to do", () => {
     const button = (cell("button").attr("class") ?? "").split(/\s+/);
     expect(button).toContain("text-ink");
     expect(button).not.toContain("text-broken");
+  });
+});
+
+/* ── the press opens the cell, not the release ─────────────────────
+ *
+ * campaign admin-window/BUG-0086, the third cut. The two before it took every
+ * part but the value out of the row's flow (`cellLayout` above) and the defect
+ * still came back, because the last thing left in the flow is the value the
+ * operator just corrected: blur commits, the resting button reappears carrying
+ * the longer value, and an auto-layout table re-apportions its columns on that
+ * alone.
+ *
+ * Measured by QA on a production build against staging, 2026-09-09, both
+ * themes, from the same fixture state: with an ordinary 56-character
+ * correction committed in `note`, every other value in the Value column moved
+ * 59.48px LEFT inside one 120ms press, `elementFromPoint` at the press point
+ * became a `<td>` of another row, and nothing opened. The ladder from that
+ * start, one click each: 34 chars -> 0.00px and the press opens; 56 ->
+ * -59.48px, swallowed; 71 -> -86.51px; 122 -> -138.59px. No cell chrome is
+ * involved, and no layout rule of this cell's can reach it — the resting value
+ * IS the row's box, and something has to be.
+ *
+ * So the fix is on the other side of the race: `opensCell` opens the cell at
+ * `pointerdown`, before anything can move, and refuses the `click` a pointer
+ * press produces — which is dispatched at whatever the reflow left under the
+ * pointer, and which QA named as the risk this defect carries (that may be
+ * another editable value's button, and a cell opens with its whole value
+ * selected). Keyboard activation arrives as a click carrying no pointer
+ * (`detail === 0`) and is the one click that still opens.
+ *
+ * Which event opened the cell is a browser fact and this tier is environment
+ * node with `renderToStaticMarkup` and no jsdom (STACK.md §4) — handlers do
+ * not survive into markup at all. What is pinned here is the rule, exactly as
+ * `focusVerdict` and `selectOnOpen` pin theirs; that the button is wired to it
+ * at `onPointerDown` is measured in the walk, as their focus and selection are.
+ */
+
+/** A press with everything ordinary, overridden a field at a time. */
+function press(overrides: Partial<OpenPress> = {}): OpenPress {
+  return {
+    source: "pointerdown",
+    button: 0,
+    detail: 1,
+    editing: false,
+    disabled: false,
+    ...overrides,
+  };
+}
+
+describe("a pointer opens the cell at the press, which no reflow can outrun", () => {
+  it("opens on pointerdown, and not on the click that same press ends with", () => {
+    // The whole fix in two lines. The click is the event that arrives after
+    // the table has re-apportioned, i.e. after the button it was aimed at has
+    // moved: it opens nothing, so nothing is swallowed and nothing is missed.
+    expect(opensCell(press({ source: "pointerdown" }))).toBe(true);
+    expect(opensCell(press({ source: "click", detail: 1 }))).toBe(false);
+  });
+
+  it("never opens from a pointer's click, at any click count", () => {
+    // The risk QA stated: at the measured deltas the release landed on a
+    // `<td>`, but a layout where it lands on ANOTHER value's button would open
+    // the wrong field — and a cell opens with its value selected, so the next
+    // keystroke would replace it. A pointer-borne click opens nothing here.
+    for (const detail of [1, 2, 3, 4]) {
+      expect(opensCell(press({ source: "click", detail })), `detail=${detail}`).toBe(false);
+    }
+  });
+
+  it("still opens from the keyboard, which sends a click and no pointer at all", () => {
+    // Enter and Space on the resting button, and an assistive technology's
+    // `.click()`, are all a click with no pointer behind it (`detail === 0`).
+    // Losing them would trade one operator's defect for another's.
+    expect(opensCell(press({ source: "click", detail: 0 }))).toBe(true);
+  });
+
+  it("opens for the primary press only, so a context-menu press opens nothing", () => {
+    expect(opensCell(press({ button: 0 }))).toBe(true);
+    for (const button of [1, 2, 3, 4]) {
+      expect(opensCell(press({ button })), `button=${button}`).toBe(false);
+      expect(opensCell(press({ source: "click", detail: 0, button })), `key button=${button}`)
+        .toBe(false);
+    }
+  });
+
+  it("refuses a press on a cell that is already open", () => {
+    // The open cell's own button is hidden under its field, but a press that
+    // reached it would hand out a second edit ordinal for one visit.
+    for (const source of ["pointerdown", "click"] as const) {
+      expect(opensCell(press({ source, detail: 0, editing: true })), source).toBe(false);
+    }
+  });
+
+  it("refuses a press while this cell's own write is in flight", () => {
+    // The resting control is `disabled` for the whole write (`focusVerdict`
+    // waits on the same fact), and a disabled button dispatches no click —
+    // but pointer events reach one in some browsers, so the rule says it.
+    for (const source of ["pointerdown", "click"] as const) {
+      expect(opensCell(press({ source, detail: 0, disabled: true })), source).toBe(false);
+    }
+  });
+
+  it("is not vacuously true: it says no to most of what it can be asked", () => {
+    // Over every press this control can see, exactly the two openings above
+    // are accepted (LESSONS 3: a rule that never refused proves nothing).
+    const opened: string[] = [];
+    for (const source of ["pointerdown", "click"] as const) {
+      for (const button of [0, 1, 2]) {
+        for (const detail of [0, 1, 2]) {
+          for (const editing of [false, true]) {
+            for (const disabled of [false, true]) {
+              const what = { source, button, detail, editing, disabled };
+              if (opensCell(what)) opened.push(JSON.stringify(what));
+            }
+          }
+        }
+      }
+    }
+    expect(opened.sort()).toEqual(
+      [
+        { source: "pointerdown", button: 0, detail: 0, editing: false, disabled: false },
+        { source: "pointerdown", button: 0, detail: 1, editing: false, disabled: false },
+        { source: "pointerdown", button: 0, detail: 2, editing: false, disabled: false },
+        { source: "click", button: 0, detail: 0, editing: false, disabled: false },
+      ]
+        .map((what) => JSON.stringify(what))
+        .sort(),
+    );
   });
 });
