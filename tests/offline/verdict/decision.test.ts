@@ -252,7 +252,7 @@ describe("invariant 3 — the note wont_fix cannot settle without", () => {
    * log then draws a blank cell with no dash, which is the very rendering
    * admin-window/BUG-0085 was filed to remove.
    *
-   * Strict `it.fails` for admin-window/BUG-0088 — the day the guard reads
+   * Strict `it.fails` for admin-window/BUG-0089 — the day the guard reads
    * blankness by visible content, this reddens and sends the reader to the
    * ticket.
    */

@@ -428,7 +428,7 @@ describe("a won’t-fix with no note", () => {
    * `decisionRefusals` passes it, and the item settles with an unreadable
    * reason that the verdict log draws as a blank cell with no dash.
    *
-   * Strict `it.fails` for admin-window/BUG-0088.
+   * Strict `it.fails` for admin-window/BUG-0089.
    */
   it.fails("refuses a note whose every character is invisible", () => {
     for (const invisible of ["\u200b", "\u2060", "\u00ad", "  \u200b  "]) {
