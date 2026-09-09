@@ -26,6 +26,18 @@ import { decisionRefusals, type VerdictDecision } from "../verdict/decision";
  * function is absent the surface degrades to what M1 already ships, with the
  * reason named. `apply_resolution` — which exists, and writes the catalog — is
  * not called from Admin at all, which is why `tables.ts` declines to spell it.
+ *
+ * **The client is OPTIONAL on both, as it is on every other read in this
+ * layer** (`readRows`, `callFunction`, `readOne`: `db?: SupabaseClient`) —
+ * widened by the close slot's ticket (campaign admin-window/TASK-0049), which
+ * is the first caller that is not a test. A required client would oblige the
+ * page and the route to call `getDbClient()` themselves, and that call THROWS
+ * when a credential name is unset (`lib/db/client.ts`) — outside the `try`
+ * that every classification happens inside, so the review-item page would 500
+ * where M1 renders a named refusal at 200. Passing none resolves the app's own
+ * client INSIDE that try, which is what keeps "neither throws, on every path"
+ * true of the callers as well as of these two functions. Every call that
+ * hands a client over — the offline seam suite, a live test — is unchanged.
  */
 
 /**
@@ -139,7 +151,7 @@ function receiptOf(data: unknown): VerdictReceipt | null {
  * function).
  */
 export async function settleReviewItem(
-  client: DbClient,
+  client: DbClient | undefined,
   decision: VerdictDecision,
 ): Promise<DbResult<VerdictReceipt>> {
   const refusals = decisionRefusals(decision);
@@ -204,7 +216,7 @@ export async function settleReviewItem(
  * may present its result as one.
  */
 export async function readSettlementReadiness(
-  client: DbClient,
+  client?: DbClient,
 ): Promise<DbResult<"ready">> {
   const result = await readRows<unknown>(
     T.verdicts,
