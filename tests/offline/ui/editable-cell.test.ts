@@ -2088,6 +2088,70 @@ describe("a refused write names what failed and what to do", () => {
     expect(refusalFix(coerced("seven"))).not.toEqual(GENERAL_FIX);
   });
 
+  it("never says stop about a refusal a retype fixes (admin-window/BUG-0103)", () => {
+    // The arm whose sentence says nothing you retype will land is the only one
+    // that is FALSE rather than merely vague when it fires on the wrong
+    // refusal, and BOTH live misfires this ticket recorded were it. The two
+    // pins above vary one dumped column and one quoted value; this states the
+    // invariant over the CLASS, so a fourth cut that re-widens any arm — a new
+    // marker, a looser anchor, a fallback that reads prose again — is caught by
+    // the property rather than by whichever string happened to be measured.
+    //
+    // Relational throughout: the stop sentence is obtained from the app's own
+    // composed refusal (`api/admin/records/[table]/[id]/route.ts` answers
+    // `<object> is not present in this database` on its 503) and never written
+    // here, and every refusal below is one a correct retype at that same cell
+    // makes land.
+    const stop = refusalFix("settle_review_item is not present in this database");
+    expect(stop, "the arm is reachable from the app's own sentence").not.toEqual(
+      GENERAL_FIX,
+    );
+
+    const dumped = (note: string) =>
+      'null value in column "label" of relation "walk_sandbox" violates ' +
+      "not-null constraint Failing row contains " +
+      `(00000000-0000-4000-8000-000000000001, null, ${note}, 7, f, ` +
+      "2026-01-15, 2026-09-09 07:48:44.71639+00).";
+    const coerced = (value: string) =>
+      `invalid input syntax for type integer: "${value}" (22P02)`;
+
+    // Every spelling of the stop arm's own prose an operator can put in a
+    // cell — measured live 2026-09-09 through the record page against staging.
+    const steers = [
+      "is not present in this database",
+      "is not present in this database 23502",
+      "settle_review_item is not present in this database",
+      "walk_sandbox.label is not present in this database",
+    ];
+    const retypeFixes = [
+      ...steers.flatMap((value) => [dumped(value), coerced(value)]),
+      // The same accounts with the Postgres head NOT at position 0: a wrapper
+      // this app does not add today, and the shape any future producer that
+      // prefixes its own words would arrive in. Position-0 anchoring must fail
+      // SAFE — to the value-struck prose or to the general fix, never to the
+      // one sentence that tells the operator to give up.
+      ...steers.map((value) => `the edit was refused: ${dumped(value)}`),
+      ...steers.map((value) => `   ${dumped(value)}`),
+      ...steers.map((value) => `PostgREST: ${coerced(value)}`),
+      // And the datetime sibling, whose value the same operator types.
+      ...steers.map(
+        (value) => `invalid input syntax for type date: "${value}" (22007)`,
+      ),
+    ];
+    for (const refusal of retypeFixes) {
+      expect(refusalFix(refusal), refusal).not.toEqual(stop);
+    }
+
+    // Not vacuous: the corpus really does carry the arm's own prose, and the
+    // arm really does still fire for the refusal it was built for.
+    for (const refusal of retypeFixes) {
+      expect(refusal, refusal).toContain("is not present in this database");
+    }
+    expect(refusalFix("walk_sandbox.label is not present in this database")).toEqual(
+      stop,
+    );
+  });
+
   it("keeps red on the failure line and off the value the field reverted to", () => {
     // LOOK_AND_FEEL: "Red means broken, never unavailable." The reverted value
     // is the button's, in primary ink, and the only thing carrying the broken
