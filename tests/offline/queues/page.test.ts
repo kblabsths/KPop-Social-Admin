@@ -228,6 +228,16 @@ const OPEN_LABEL: Record<string, string> = {
   signal: "Open signals",
 };
 
+/** One queue block's whole rendering — every child of its `[data-queue]` hook. */
+function blockHtml(markup: string, kind: string): string {
+  return cheerio.load(markup)(`[data-queue="${kind}"]`).html() ?? "";
+}
+
+/** The text of one block's rows region — its table, or the card standing in for it. */
+function rowsRegion(markup: string, kind: string): string {
+  return squash(cheerio.load(markup)(`[data-queue="${kind}"] [data-rows]`).text());
+}
+
 /** Which of the four states the named queue block says it is in. */
 function stateOf(markup: string, kind: string): string | undefined {
   return cheerio.load(markup)(`[data-queue="${kind}"]`).attr("data-state");
@@ -987,6 +997,120 @@ describe("a zero that a filter produced", () => {
       rowsOf(await renderQueues(EMPTY_TABLE, paramsOf("status=settled"))),
     );
   });
+
+  it("names its scope on EITHER block when the OTHER kind's facet empties it", async () => {
+    // The true half of the rule, both ways round. The sibling above drives
+    // only `?kind=signal` against the decision block, so a scope decision that
+    // discounted a HARD-CODED kind rather than the block's own would satisfy
+    // it while lying on the mirror URL: with `isNarrowed(filter, { kind:
+    // "decision" })` in place of the block's own narrowing, `?kind=decision`
+    // leaves the empty SIGNAL block claiming nothing filtered it. Measured on
+    // this tree: that mutation reddens this test and no other beside it.
+    for (const kind of KIND_NAMES) {
+      const other = kind === "decision" ? "signal" : "decision";
+      const filtered = await renderQueues(healthyScript(), { kind: other });
+      const unscoped = openSub(await renderQueues(EMPTY_TABLE), kind);
+
+      // the facet really did empty THIS block
+      expect(idsIn(filtered, kind), kind).toEqual([]);
+      expect(matching({ kind }).length, kind).toBeGreaterThan(0);
+      expect(readNumber(filtered, OPEN_LABEL[kind]), kind).toBe(0);
+      // so its zero says more than the unfiltered zero: it names the scope
+      const scoped = openSub(filtered, kind);
+      expect(scoped, kind).toContain(unscoped);
+      expect(scoped.length, kind).toBeGreaterThan(unscoped.length);
+    }
+  });
+
+  it("leaves a block's WHOLE rendering untouched under its own kind facet", async () => {
+    // Stronger than the ids-and-sub-line pin above, and the claim the fix
+    // actually makes: `/queues?kind=K` and `/queues` render the K block
+    // identically, so nothing anywhere inside it — figure, sub-line, card,
+    // rows — can come to disagree about whether that facet narrowed it.
+    for (const kind of KIND_NAMES) {
+      for (const [name, script] of [
+        ["populated", healthyScript()],
+        ["empty", EMPTY_TABLE],
+      ] as const) {
+        const own = await renderQueues(script, paramsOf(`kind=${kind}`));
+        const plain = await renderQueues(script);
+        expect(blockHtml(own, kind), `${kind}/${name}`).toBe(blockHtml(plain, kind));
+      }
+    }
+  });
+
+  it("decides the scope claim from the value the URL actually selected", async () => {
+    // The scope claim rides the SAME reading of the URL the rows do
+    // (`filterFrom`): a value outside the vocabulary selects nothing, so it
+    // may scope nothing either — a block that blamed `?kind=Decision` would
+    // be naming a filter the page refused. And a repeated key is the FIRST
+    // value for the claim exactly as it is for the rows.
+    for (const query of ["kind=bogus", "kind=", "kind=Decision", "kind=decision%20"]) {
+      for (const kind of KIND_NAMES) {
+        for (const script of [healthyScript(), EMPTY_TABLE]) {
+          const markup = await renderQueues(script, paramsOf(query));
+          expect(blockHtml(markup, kind), `?${query} ${kind}`).toBe(
+            blockHtml(await renderQueues(script), kind),
+          );
+        }
+      }
+    }
+
+    // `?kind=decision&kind=signal` reads as `kind=decision`: the decision
+    // block is untouched and the signal block — which that value really did
+    // empty — names its scope.
+    const both = paramsOf("kind=decision&kind=signal");
+    expect(blockHtml(await renderQueues(healthyScript(), both), "decision")).toBe(
+      blockHtml(await renderQueues(healthyScript()), "decision"),
+    );
+    const emptied = await renderQueues(healthyScript(), both);
+    expect(idsIn(emptied, "signal")).toEqual([]);
+    expect(openSub(emptied, "signal")).toContain(
+      openSub(await renderQueues(EMPTY_TABLE), "signal"),
+    );
+    expect(openSub(emptied, "signal").length).toBeGreaterThan(
+      openSub(await renderQueues(EMPTY_TABLE), "signal").length,
+    );
+  });
+
+  // Landed STRICT and red-watched: `it.fails` PASSES while the divergence is
+  // live and turns red the moment it disappears, which is the signal to drop
+  // `.fails` and keep the test as the passing rule — the same way
+  // admin-window/BUG-0129's own pin above worked.
+  it.fails(
+    "does not scope a block by a facet in ANOTHER NAME that cannot narrow it either (admin-window/BUG-0131)",
+    async () => {
+      // Same rule as the pin above, and the half the by-value exclusion does
+      // not reach: `within` is `{ kind }`, so only a `kind` facet can ever be
+      // discounted. But the signal queue is `shapesOfKind("signal")` — the
+      // single shape `entity_link_source_pattern` — and every row of that
+      // shape is `queue: "entity_link"` (`shapeOf`, src/lib/review/shapes.ts:
+      // 121), so BOTH of those facets select exactly the signal block's own
+      // set and remove not one row from it. Each is one click from this
+      // page's own chip row (`/queues?shape=entity_link_source_pattern`,
+      // `/queues?queue=entity_link`).
+      for (const query of ["shape=entity_link_source_pattern", "queue=entity_link"]) {
+        const params = paramsOf(query);
+
+        // 1. the facet removed nothing from this block
+        const populated = await renderQueues(healthyScript(), params);
+        const plain = await renderQueues(healthyScript());
+        expect(idsIn(populated, "signal"), query).toEqual(idsIn(plain, "signal"));
+        expect(idsIn(populated, "signal").length, query).toBeGreaterThan(0);
+
+        // 2. so it may not be given as the reason the figure is what it is
+        expect(openSub(populated, "signal"), `${query} sub-line`).toBe(
+          openSub(plain, "signal"),
+        );
+
+        // 3. nor as the reason the queue is empty when the table is
+        const empty = await renderQueues(EMPTY_TABLE, params);
+        expect(rowsRegion(empty, "signal"), `${query} empty card`).toBe(
+          rowsRegion(await renderQueues(EMPTY_TABLE), "signal"),
+        );
+      }
+    },
+  );
 
   it("scopes the zero of a queue that has rows but nothing open, too", async () => {
     // `?status=settled` leaves rows on screen and a real zero above them.
