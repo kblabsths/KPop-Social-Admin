@@ -15,6 +15,7 @@ import {
   readDashboard,
   type DashboardCycleRow,
   type DashboardRunRow,
+  type LastAppliedCycle,
 } from "@/lib/db/dashboard";
 import type { DbResult } from "@/lib/db/result";
 import { count, duration, isAbsent, relativeAge } from "@/lib/format";
@@ -368,6 +369,85 @@ function runColumns(now: string): Column<DashboardRunRow>[] {
 }
 
 /**
+ * The one ink both arms of the last-applied line render in, and the one
+ * sentence both of them state the read with.
+ *
+ * Spelled once and shared, so the page CANNOT colour this figure by how old it
+ * is — there is no second class to move to — and cannot describe the read it
+ * made two ways. The ink is the ordinary secondary-ink body the card's own
+ * lede already uses.
+ */
+const LAST_APPLIED_INK = "type-body text-ink-secondary";
+const LAST_APPLIED_SCOPE = "read over every cycle on record, not only the newest.";
+
+/**
+ * When the resolver last actually APPLIED something — one line on the cycles
+ * card (campaign admin-window/TASK-0039).
+ *
+ * The question it answers is not the one the table below answers. A user-sim
+ * watched 69 cycles run and write nothing while this page read calm, because
+ * "the resolver ran at 04:15" and "the resolver changed something at 04:15"
+ * are different facts and only the first was on screen. So this states the
+ * second, as an age in the page's own age rendering, with the absolute instant
+ * in the title like every other age here (Voice bar 6).
+ *
+ * **A timestamp, not a gauge, and that is a ruling** (Ben, on this ticket):
+ * there is no threshold, no elapsed-time colour and no "amber after N hours"
+ * — both arms render in the same ink through the same class, and neither
+ * compares the age to anything. A dial-able value would also have to live in
+ * a source file, which is exactly where a dial may not live; when the
+ * ecosystem gives that dial a row, a gauge can read the row.
+ *
+ * **An unmeasured figure is a refusal, not a zero** (LESSONS class 2): the
+ * `null` arm says the resolver applied nothing and names what was read for it
+ * — every cycle on record, not the newest few below — so an operator can never
+ * read it as "nothing in the last six". The instant is never rendered as a
+ * dash and never as a `0`.
+ *
+ * **The line follows the read** (ARCHITECTURE §4.3, DECISIONS 2026-09-04): it
+ * renders on `ok` with a row and on `ok` with none, and drops WHOLE when the
+ * read refused or the table is absent. It draws no state card of its own on
+ * purpose — the list beside it reads the same table and already names it, and
+ * a second card inside this surface would change the kind the surface declares
+ * to an oracle grading the list (`tests/live/parity.ts`, `stateOf`).
+ *
+ * A plain function, like the cells above: nothing here is a component element
+ * handed to a primitive that would hide an absence from `orDash`
+ * (admin-window/BUG-0026).
+ */
+function lastAppliedLine(
+  result: DbResult<LastAppliedCycle | null>,
+  now: string,
+): ReactNode {
+  if (result.kind !== "ok") return null;
+  if (result.data === null) {
+    return (
+      <p data-last-applied="none" className={LAST_APPLIED_INK}>
+        The resolver has applied nothing —{" "}
+        {LAST_APPLIED_SCOPE}
+      </p>
+    );
+  }
+  const age = relativeAge(result.data.started_at, now);
+  // An instant that will not parse is not an age: `relativeAge` hands back the
+  // app's absence for it, and this line renders no dash and no stale value —
+  // it drops, exactly as it does for a read that refused. `started_at` is
+  // `not null` in the table, so this is the unparseable case alone.
+  if (isAbsent(age.text)) return null;
+  return (
+    <p
+      data-last-applied="cycle"
+      data-last-applied-at={result.data.started_at}
+      className={LAST_APPLIED_INK}
+    >
+      The resolver last applied something{" "}
+      <span title={age.title}>{age.text}</span> —{" "}
+      {LAST_APPLIED_SCOPE}
+    </p>
+  );
+}
+
+/**
  * One line surface's four states, from the `ui` primitives (ARCHITECTURE §7).
  *
  * `not_provisioned` replaces the table with the gray card naming the missing
@@ -415,7 +495,7 @@ export default async function DashboardPage() {
   // running-or-died reading of every cycle, is measured against the same
   // instant — the same rule the Cycles & runs page renders under.
   const now = new Date().toISOString();
-  const { attention, cycles, runs } = await readDashboard();
+  const { attention, cycles, runs, lastApplied } = await readDashboard();
 
   return (
     <Page title="Dashboard">
@@ -449,6 +529,7 @@ export default async function DashboardPage() {
           The resolver&rsquo;s newest cycles, newest first — a window of{" "}
           {DASHBOARD_WINDOW}, not a count. Open Cycles &amp; runs for the rest.
         </p>
+        {lastAppliedLine(lastApplied, now)}
         <LineTable
           result={cycles}
           columns={cycleColumns(now)}

@@ -4,7 +4,9 @@ import DashboardPage from "@/app/page";
 import { DASHBOARD_WINDOW } from "@/lib/db/dashboard";
 import { T } from "@/lib/db/tables";
 import {
+  ABSENCE_CODES,
   assertParity,
+  codeOf,
   countOrAbsent,
   countRows,
   exactCount,
@@ -334,6 +336,141 @@ describe("last night's cycles against staging", () => {
     });
     if (state !== "ok" || whole === "absent") return;
     expect(rowsOf(markup, "cycles")).toHaveLength(Math.min(whole, DASHBOARD_WINDOW));
+  });
+});
+
+/**
+ * THIS TEST's own read of the newest cycle that applied something — the SQL
+ * behind the Dashboard's last-applied line (admin-window/TASK-0039).
+ *
+ * Written here from the schema, not asked of `src/lib/db/dashboard.ts`: the
+ * page's read and this one share nothing but the database (ARCHITECTURE §10).
+ * It is the maximum over EVERY row of `resolution_runs`, not over the
+ * Dashboard's window — a filter, a total order and one row — because that is
+ * the claim the line makes.
+ */
+async function newestApplied(): Promise<{ started_at: string; applied: number } | null> {
+  const { data, error } = await independentClient()
+    .from(T.resolutionRuns)
+    .select("run_id, started_at, applied")
+    .gt("applied", 0)
+    .order("started_at", { ascending: false })
+    .order("run_id", { ascending: false })
+    .limit(1);
+  if (error) {
+    if (ABSENCE_CODES.includes(codeOf(error))) return null;
+    throw new Error(`the last-applied query failed: ${JSON.stringify(error)}`);
+  }
+  return ((data ?? [])[0] as { started_at: string; applied: number } | undefined) ?? null;
+}
+
+/** The age this test derives itself, on the app's unit ladder, from one clock. */
+function ageOf(instant: string, now: number): { unit: string; magnitude: number } {
+  const seconds = Math.max(0, Math.round((now - Date.parse(instant)) / 1000));
+  if (seconds < 60) return { unit: "just now", magnitude: 0 };
+  if (seconds < 3600) return { unit: "m", magnitude: Math.floor(seconds / 60) };
+  if (seconds < 86_400) return { unit: "h", magnitude: Math.floor(seconds / 3600) };
+  return { unit: "d", magnitude: Math.floor(seconds / 86_400) };
+}
+
+describe("when the resolver last applied something, against staging", () => {
+  /**
+   * The figure is graded against direct SQL, and the surface's STATE KIND is
+   * named before anything is compared (ARCHITECTURE §10, rule 1) — the line
+   * sits on the cycles card, so that card's kind decides whether there is
+   * anything on it to grade at all.
+   *
+   * Both answers are real answers, and staging has shown both: a row (the
+   * line states its age) and none at all (the line says the resolver has
+   * applied nothing, and names what it read for that). Neither is a skip.
+   */
+  it("states the instant of the newest cycle that applied, or says none did", async () => {
+    const { made: markup, held: expected } = await whileStill(
+      newestApplied,
+      dashboardMarkup,
+    );
+    const state = await gradeSurface({
+      markup,
+      within: CYCLES,
+      object: T.resolutionRuns,
+      counted: () => countOrAbsent(() => exactCount(T.resolutionRuns)),
+    });
+    // `not_provisioned` and `empty` are graded by `gradeSurface` itself; only
+    // a card that read rows carries this line.
+    if (state !== "ok") return;
+
+    const now = Date.now();
+    const line = cheerio.load(markup)("[data-last-applied]");
+    expect(line, "the cycles card published no last-applied line").toHaveLength(1);
+
+    if (expected === null) {
+      // Nothing on record has applied anything: the line says so, carries no
+      // instant, and invents no zero.
+      expect(line.attr("data-last-applied")).toBe("none");
+      expect(line.attr("data-last-applied-at")).toBeUndefined();
+      expect(line.text()).not.toMatch(/\d/);
+      return;
+    }
+
+    // Two paths to one instant: the attribute the page rendered, and the row
+    // this test's own query chose.
+    expect(line.attr("data-last-applied")).toBe("cycle");
+    expect(line.attr("data-last-applied-at")).toBe(expected.started_at);
+    expect(expected.applied).toBeGreaterThan(0);
+
+    // The age on screen, against one this test computes itself. The ladder is
+    // coarse (minutes, hours, days), so a unit boundary crossed between the
+    // render and this line is tolerated by one; the unit itself is not.
+    const age = ageOf(expected.started_at, now);
+    const shown = line.find("[title]").text().trim();
+    expect(shown, "no age was rendered for the cycle that applied").not.toBe("");
+    if (age.unit === "just now") {
+      expect(shown).toContain("just now");
+    } else {
+      const magnitude = Number(shown.replace(/[^0-9]/g, ""));
+      expect(shown, `age "${shown}" is not on the ${age.unit} rung`).toContain(age.unit);
+      expect(Math.abs(magnitude - age.magnitude)).toBeLessThanOrEqual(1);
+    }
+    // The absolute instant is on the element an operator hovers.
+    expect(line.find("[title]").attr("title") ?? "").toContain(
+      expected.started_at.slice(0, 7),
+    );
+  });
+
+  it("answers a different question from the newest cycle the page lists", async () => {
+    // The distinction the line exists for: on staging the resolver has been
+    // running cycles that apply nothing, so the newest cycle and the newest
+    // cycle that APPLIED are different rows — and where they are the same row,
+    // that row applied something, which this asserts rather than assumes.
+    const { made: markup, held } = await whileStill(
+      async () => ({ applied: await newestApplied(), newest: await newestCycles() }),
+      dashboardMarkup,
+    );
+    const state = await gradeSurface({
+      markup,
+      within: CYCLES,
+      object: T.resolutionRuns,
+      counted: () => countOrAbsent(() => exactCount(T.resolutionRuns)),
+    });
+    if (state !== "ok") return;
+
+    const line = cheerio.load(markup)("[data-last-applied]");
+    const newest = held.newest[0];
+    expect(newest, "staging returned no cycles for an ok cycles card").toBeDefined();
+
+    if (held.applied === null) {
+      expect(line.attr("data-last-applied")).toBe("none");
+      // …and the page still lists the cycles that ran: "nothing applied" is
+      // never "nothing ran".
+      expect(rowsOf(markup, "cycles").length).toBeGreaterThan(0);
+      return;
+    }
+    if (held.applied.started_at === newest.started_at) {
+      expect(newest.applied).toBeGreaterThan(0);
+    } else {
+      expect(newest.applied).toBe(0);
+      expect(line.attr("data-last-applied-at")).not.toBe(newest.started_at);
+    }
   });
 });
 

@@ -248,11 +248,43 @@ function runs(): RunRow[] {
   ];
 }
 
+/**
+ * The cycle the LAST-APPLIED read returns: the newest row of
+ * `resolution_runs` carrying a non-zero `applied`, whenever that was
+ * (campaign admin-window/TASK-0039).
+ *
+ * A row of its own rather than one of `cycles()` above, because the two reads
+ * answer different questions and the whole point of the line is that their
+ * answers come apart: none of the three cycles the page LISTS need have
+ * applied anything, and on staging none of the last several days' worth has.
+ */
+const CYCLE_APPLIED = "01920000-0000-7000-8000-0000000006a0";
+
+function appliedCycle(minutesOld: number = 3 * 24 * 60): ResolutionRunRow {
+  const startedAt = minutesAgo(minutesOld);
+  return resolutionRunRow({
+    run_id: CYCLE_APPLIED,
+    started_at: startedAt,
+    ended_at: secondsAfter(startedAt, 40),
+    outcome: "succeeded",
+    applied: 12,
+    escalated: 0,
+    errors: 0,
+    error_summary: null,
+  });
+}
+
+/**
+ * The script the page's TWO reads of `resolution_runs` take: the cycles
+ * window first, then the last-applied row — the order `readDashboard` builds
+ * them in. A single response answers both reads, which is what every override
+ * below that hands one response is doing on purpose.
+ */
 function healthyScript(overrides: Script = {}): Script {
   const items = reviewItems();
   return {
     [T.reviewItems]: { data: items, count: items.length },
-    [T.resolutionRuns]: { data: cycles() },
+    [T.resolutionRuns]: [{ data: cycles() }, { data: appliedCycle() }],
     [T.runs]: { data: runs() },
     ...overrides,
   };
@@ -503,6 +535,214 @@ describe("last night's cycles and runs", () => {
       expect(row.escalated).toBe(String(expected[index].escalated));
       expect(row.errors).toBe(String(expected[index].errors));
     });
+  });
+});
+
+/* ── when the resolver last actually applied something ───────────────────── */
+
+/**
+ * The line that answers "did the resolver WRITE anything", not "did it RUN"
+ * (campaign admin-window/TASK-0039).
+ *
+ * A user-sim watched 69 cycles run and apply nothing while this page read
+ * calm: the cycles table showed cycles, and cycles are what it shows. So the
+ * card states, separately, when the resolver last applied something — over
+ * every cycle on record, not over the six the table lists.
+ *
+ * Behaviour only. Nothing below pins the line's words: it is read by the
+ * `data-last-applied` hook, its figure by the absolute instant in the title
+ * (the app's one age rendering, Voice bar 6), and its "no threshold" property
+ * by the line rendering IDENTICALLY at every age rather than by any class
+ * name being a particular string.
+ */
+describe("the line saying when the resolver last applied something", () => {
+  /** The line itself — one element, inside the cycles card, or none. */
+  function lastApplied(markup: string) {
+    return cheerio.load(markup)("[data-last-applied]");
+  }
+
+  function lineText(markup: string): string {
+    return lastApplied(markup).text().replace(/\s+/g, " ").trim();
+  }
+
+  /** The longest tail two strings share — the clause both arms state. */
+  function commonSuffix(one: string, two: string): string {
+    let shared = 0;
+    while (
+      shared < one.length &&
+      shared < two.length &&
+      one[one.length - 1 - shared] === two[two.length - 1 - shared]
+    ) {
+      shared += 1;
+    }
+    return one.slice(one.length - shared);
+  }
+
+  it("states the age of the cycle that applied, not of the newest cycle", async () => {
+    const applied = appliedCycle();
+    const markup = await renderDashboard(
+      healthyScript({
+        [T.resolutionRuns]: [{ data: cycles() }, { data: applied }],
+      }),
+    );
+    const line = lastApplied(markup);
+
+    expect(line).toHaveLength(1);
+    expect(line.attr("data-last-applied")).toBe("cycle");
+    // The instant is the row's own, and it is the absolute value an operator
+    // reads on hover — the same rendering every other age on this page carries.
+    expect(line.attr("data-last-applied-at")).toBe(applied.started_at);
+    expect(line.find("[title]").attr("title")).toBe(absoluteUtc(applied.started_at));
+
+    // …and it is NOT the newest cycle, which applied nothing. That divergence
+    // is the whole reason the line exists.
+    const newest = cycles()[0];
+    expect(newest.applied).toBe(0);
+    expect(line.attr("data-last-applied-at")).not.toBe(newest.started_at);
+    expect(line.find("[title]").attr("title")).not.toBe(absoluteUtc(newest.started_at));
+
+    // An age was rendered, not the app's absence.
+    expect(line.find("[title]").text().trim()).not.toBe("");
+    expect(lastApplied(markup).find('[aria-label="no value"]')).toHaveLength(0);
+  });
+
+  it("says plainly that nothing was applied, and still shows the cycles", async () => {
+    // The state the ticket was filed out of: cycles ran, none of them wrote.
+    const ran = cycles().map((row) => ({ ...row, applied: 0 }));
+    const markup = await renderDashboard(
+      healthyScript({ [T.resolutionRuns]: [{ data: ran }, { data: null }] }),
+    );
+    const line = lastApplied(markup);
+
+    expect(line).toHaveLength(1);
+    expect(line.attr("data-last-applied")).toBe("none");
+    // No instant to carry, so none is carried — and no dash, no zero, no age
+    // borrowed from a cycle that applied nothing.
+    expect(line.attr("data-last-applied-at")).toBeUndefined();
+    expect(line.find("[title]")).toHaveLength(0);
+    expect(line.find('[aria-label="no value"]')).toHaveLength(0);
+    expect(lineText(markup)).not.toMatch(/\d/);
+    // The cycles the page always showed are still there beside it.
+    expect(rowsOf(markup, "cycles")).toHaveLength(ran.length);
+  });
+
+  it("describes the read it made the same way in both states", async () => {
+    // Both arms name what was looked in — every cycle on record, not the
+    // window below — so an operator cannot read "nothing applied" as "nothing
+    // applied among these six". The words are the designer's; that the two
+    // arms share them is the app's.
+    const found = lineText(
+      await renderDashboard(
+        healthyScript({ [T.resolutionRuns]: [{ data: cycles() }, { data: appliedCycle() }] }),
+      ),
+    );
+    const none = lineText(
+      await renderDashboard(
+        healthyScript({ [T.resolutionRuns]: [{ data: cycles() }, { data: null }] }),
+      ),
+    );
+
+    expect(found).not.toBe("");
+    expect(none).not.toBe("");
+    expect(found).not.toBe(none);
+    expect(commonSuffix(found, none).length).toBeGreaterThan(20);
+  });
+
+  it("renders identically at every age — no threshold, no elapsed-time colour", async () => {
+    // The ruling this line is built under (Ben, on this ticket): it is a
+    // timestamp, not a gauge. A minute, eleven hours, a year and "nothing at
+    // all" must render in one ink and one shape — a page that coloured the
+    // figure by its age would differ here, whatever the class was called.
+    const renders = await Promise.all(
+      [1, 11 * 60, 400 * 24 * 60].map((minutes) =>
+        renderDashboard(
+          healthyScript({
+            [T.resolutionRuns]: [{ data: cycles() }, { data: appliedCycle(minutes) }],
+          }),
+        ),
+      ),
+    );
+    const none = await renderDashboard(
+      healthyScript({ [T.resolutionRuns]: [{ data: cycles() }, { data: null }] }),
+    );
+
+    const inks = [...renders, none].map((markup) => lastApplied(markup).attr("class"));
+    expect(inks).toHaveLength(4);
+    expect(new Set(inks).size).toBe(1);
+    expect(inks[0]).not.toBe(undefined);
+
+    // Same shape too: the aged arms carry one titled age and nothing else,
+    // and no state card, badge or outcome hook ever appears in the line.
+    for (const markup of renders) {
+      expect(lastApplied(markup).find("[title]")).toHaveLength(1);
+      // Not vacuous: the ages really are different renderings of the figure.
+      expect(lastApplied(markup).find("[title]").text().trim()).not.toBe("");
+    }
+    const ages = renders.map((markup) =>
+      lastApplied(markup).find("[title]").text().trim(),
+    );
+    expect(new Set(ages).size).toBe(renders.length);
+    for (const markup of [...renders, none]) {
+      const line = lastApplied(markup);
+      expect(line.find("[data-state]")).toHaveLength(0);
+      expect(line.find("[data-outcome]")).toHaveLength(0);
+    }
+  });
+
+  it("drops the line whole when its own read refused, leaving the card as it was", async () => {
+    // Rule 5: refused, or the table is not there, and the line is not rendered
+    // at all — no dash, no zero, no stale value. It draws no card of its own
+    // either: the list beside it reads the same table and already names it,
+    // and a second card here would change the state an oracle reads off this
+    // surface.
+    for (const refusal of [
+      permissionDenied(T.resolutionRuns),
+      tableNotInSchemaCache(T.resolutionRuns),
+    ]) {
+      const markup = await renderDashboard(
+        healthyScript({
+          [T.resolutionRuns]: [{ data: cycles() }, { error: refusal }],
+        }),
+      );
+      const $ = cheerio.load(markup);
+
+      expect(lastApplied(markup)).toHaveLength(0);
+      // The cycles the page could read are still rendered, in their ok state.
+      expect(rowsOf(markup, "cycles")).toHaveLength(cycles().length);
+      expect($('[data-surface="cycles"] [data-state]')).toHaveLength(0);
+      expect(blankCells(markup)).toBe(0);
+    }
+  });
+
+  it("drops the line when the whole table is absent, and adds no card", async () => {
+    const markup = await renderDashboard({
+      [T.reviewItems]: { data: reviewItems(), count: reviewItems().length },
+      [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
+      [T.runs]: { data: runs() },
+    });
+    const $ = cheerio.load(markup);
+
+    expect(lastApplied(markup)).toHaveLength(0);
+    // The not-provisioned card the page already rendered is the only state
+    // card on that surface, and it still names the object.
+    expect($('[data-surface="cycles"] [data-state]')).toHaveLength(1);
+    expect($('[data-surface="cycles"] [data-state]').attr("data-state")).toBe(
+      "not_provisioned",
+    );
+    expect(textOf(markup)).toContain(T.resolutionRuns);
+  });
+
+  it("is one line on the card that already exists — no new card, no new surface", async () => {
+    const markup = await renderDashboard(healthyScript());
+    const $ = cheerio.load(markup);
+
+    // Inside the cycles card, once, and nowhere else on the page.
+    expect($("[data-last-applied]")).toHaveLength(1);
+    expect($('[data-surface="cycles"] [data-last-applied]')).toHaveLength(1);
+    // The page's surfaces are the three it has always had.
+    expect($("[data-surface]")).toHaveLength(3);
+    expect($("section")).toHaveLength(3);
+    expect($("table")).toHaveLength(2);
   });
 });
 
