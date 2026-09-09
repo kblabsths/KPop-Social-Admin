@@ -1760,6 +1760,29 @@ describe("a refused write names what failed and what to do", () => {
     }
   });
 
+  // PIN, admin-window/BUG-0103 — strict: `it.fails` is red the day the
+  // divergence disappears, which sends the next reader to the ticket rather
+  // than leaving a stale expectation in place. The fixer DELETES `.fails`.
+  it.fails("PROBE: picks the arm from the database's words, not from what the operator typed (admin-window/BUG-0103)", () => {
+    // The refusal a coercion produces QUOTES the operator's own value back
+    // (`invalid input syntax for type integer: "<what they typed>"`), and the
+    // arms match on the whole string, so a value carrying another arm's prose
+    // steers the sentence. Asserted relationally, never against copy: two
+    // refusals of the SAME class, differing only in the quoted value, must
+    // carry the same fix, whatever the operator typed.
+    const quoted = (value: string) =>
+      `invalid input syntax for type integer: "${value}" (22P02)`;
+    const benign = refusalFix(quoted("seven"));
+    for (const typed of [
+      "violates not-null constraint",
+      "is not present in this database",
+      "does not match",
+      "(23502)",
+    ]) {
+      expect(refusalFix(quoted(typed)), typed).toEqual(benign);
+    }
+  });
+
   it("keeps red on the failure line and off the value the field reverted to", () => {
     // LOOK_AND_FEEL: "Red means broken, never unavailable." The reverted value
     // is the button's, in primary ink, and the only thing carrying the broken
