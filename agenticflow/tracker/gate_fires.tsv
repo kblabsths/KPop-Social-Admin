@@ -178,3 +178,4 @@
 2026-09-09T20:30:54Z	artifact_gate	blocked write outside repo: /tmp/does-not-exist
 2026-09-09T20:48:39Z	evidence_budget	qa_evidence_overbudget: BUG-0145 4089/4000 chars
 2026-09-09T21:04:49Z	artifact_gate	blocked write outside repo: /tmp_out.html
+2026-09-09T21:14:22Z	artifact_gate	blocked write outside repo: /tmp-unused
