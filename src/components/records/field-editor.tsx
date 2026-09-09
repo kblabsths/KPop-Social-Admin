@@ -1,6 +1,7 @@
 "use client";
 
 import { EditableCell } from "@/components/EditableCell";
+import type { HintSide } from "@/components/edit-cell-layout";
 import { submitFieldEdit } from "./submit";
 
 /**
@@ -23,17 +24,26 @@ export function FieldEditor({
   field,
   value,
   multiline = false,
+  hintSide,
 }: {
   table: string;
   id: string;
   field: string;
   value: string | null;
   multiline?: boolean;
+  /**
+   * Which side the open cell's hint hangs on — the surface knows where this
+   * line sits among its neighbours and the cell does not (campaign
+   * admin-window/BUG-0086, `hintSide`). Carried through unchanged, like every
+   * other prop here.
+   */
+  hintSide?: HintSide;
 }) {
   return (
     <EditableCell
       value={value}
       multiline={multiline}
+      hintSide={hintSide}
       label={`${field} of ${table}`}
       onSave={(next) => submitFieldEdit(table, id, field, next, fetch)}
     />

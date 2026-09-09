@@ -3,6 +3,7 @@
 import { useEffect, useId, useReducer, useRef, useState } from "react";
 import { orDash } from "@/lib/format";
 import { cx } from "@/components/ui/cx";
+import { type HintSide, cellLayout } from "@/components/edit-cell-layout";
 
 /**
  * The click-to-edit cell, brought onto the tokens (campaign admin-window,
@@ -19,6 +20,12 @@ import { cx } from "@/components/ui/cx";
  * and opening it selects what is there so a straight retype replaces
  * (`selectOnOpen`). Both are the control's, so every regime with a write path
  * gets them from one place.
+ *
+ * **An open cell changes no other row's layout** (campaign
+ * admin-window/BUG-0086): the resting value keeps its box while the cell is
+ * open and the field and its hint are drawn over the top of it, out of the
+ * flow (`cellLayout`). Before, opening one cell moved every other editable
+ * value on the record, and the next single click on one of them was swallowed.
  *
  * It knows nothing about routes or tables: `onSave` is the caller's, and
  * returns what happened rather than throwing. The display is a real button, so
@@ -348,8 +355,40 @@ export function EditStatus({ status }: { status: Status }) {
  */
 const RESTING_AFFORDANCE = "underline decoration-hairline decoration-1 underline-offset-2";
 
+/**
+ * The edit-mode subtree's box: over the resting value, out of the row's flow
+ * (`cellLayout`, campaign admin-window/BUG-0086).
+ *
+ * `min-w-full` so the editor is never narrower than the value it replaces, and
+ * `w-max` so a cell resting on one character still opens a field an operator
+ * can type into. Neither width can move anything: a box taken out of the flow
+ * contributes nothing to the flow it was taken out of.
+ *
+ * It is inert to the pointer as a whole and the FIELD alone takes that back
+ * (`pointer-events-auto` below), so the only part of this layer a click can
+ * land on is the part an operator means to click.
+ */
+const FLOAT_BOX =
+  "pointer-events-none absolute top-0 left-0 z-10 block w-max min-w-full";
+
+/**
+ * The hint's own box — out of the flow, and INERT to the pointer.
+ *
+ * It hangs over a neighbouring row, and on this surface that row carries
+ * another editable value, so a click aimed at that value has to pass straight
+ * through the hint. That is hit-testing and not merely painting: the defect
+ * being fixed is a click that reached the wrong element.
+ *
+ * Opaque, in the table's own fill, with a hairline border and the control
+ * radius, so it reads as one floating line rather than as two rows of text
+ * printed over each other. No shadow and no colour of its own — it is the same
+ * secondary `data` line it was when it sat in the flow.
+ */
+const HINT_BOX =
+  "type-data pointer-events-none absolute left-0 w-max rounded-control border border-hairline bg-surface px-1 py-0.5 text-ink-secondary";
+
 const FIELD_CLASS =
-  "type-data w-full rounded-control border border-accent bg-surface px-1 py-0.5 text-ink";
+  "type-data pointer-events-auto block w-full rounded-control border border-accent bg-surface px-1 py-0.5 text-ink";
 
 /**
  * The field opens with its value SELECTED, so a straight retype replaces it —
@@ -411,6 +450,7 @@ export function EditField({
   label,
   hintId,
   multiline = false,
+  side = "below",
   onChange,
   onBlur,
   onKeyDown,
@@ -421,6 +461,8 @@ export function EditField({
   /** The id of the hint this field is described by. Unique per cell. */
   hintId: string;
   multiline?: boolean;
+  /** Which side the hint hangs on — `hintSide` decides it (BUG-0086). */
+  side?: HintSide;
   onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   onBlur: () => void;
   onKeyDown: (event: React.KeyboardEvent) => void;
@@ -440,12 +482,18 @@ export function EditField({
     className: FIELD_CLASS,
   };
   return (
-    <>
+    // The whole subtree is the float (`FLOAT_BOX`): opening a cell adds
+    // nothing to the row's flow, so no other row's control moves under the
+    // pointer that is about to click it (campaign admin-window/BUG-0086).
+    <span className={FLOAT_BOX}>
       {multiline ? <textarea rows={4} {...shared} /> : <input {...shared} />}
-      <span id={hintId} className="type-data text-ink-secondary">
+      <span
+        id={hintId}
+        className={cx(HINT_BOX, side === "above" ? "bottom-full mb-1" : "top-full mt-1")}
+      >
         {editHint(multiline)}
       </span>
-    </>
+    </span>
   );
 }
 
@@ -454,6 +502,7 @@ export function EditableCell({
   onSave,
   label,
   multiline = false,
+  hintSide: side = "below",
 }: {
   value: string | null;
   /** Persist the new value. Returns the outcome; an empty field saves null. */
@@ -461,6 +510,12 @@ export function EditableCell({
   /** Which field this is, for the accessible name: "spotify_id of BLACKPINK". */
   label: string;
   multiline?: boolean;
+  /**
+   * Which side the open cell's hint hangs on, from `hintSide` — the caller
+   * knows where this cell sits among its neighbours and the cell does not
+   * (campaign admin-window/BUG-0086). Omitted, it hangs below.
+   */
+  hintSide?: HintSide;
 }) {
   const [shown, setShown] = useState<string | null>(value);
   const [draft, setDraft] = useState(value ?? "");
@@ -568,14 +623,44 @@ export function EditableCell({
     }
   }
 
+  const layout = cellLayout(editing);
+
   return (
-    <span className="inline-flex flex-wrap items-baseline gap-2">
-      {editing ? (
+    // `relative`: the open cell's field and hint are drawn against this box
+    // (`FLOAT_BOX`), out of the row's flow, so opening the cell moves nothing
+    // (campaign admin-window/BUG-0086).
+    <span className="relative inline-flex flex-wrap items-baseline gap-2">
+      <button
+        ref={button}
+        type="button"
+        aria-label={label}
+        disabled={status.kind === "saving"}
+        onClick={() => {
+          reverting.current = false;
+          edits.current += 1;
+          dispatch({ kind: "editing", edit: edits.current });
+          setEditing(true);
+        }}
+        className={cx(
+          "type-data cursor-text rounded-control px-1 py-0.5 text-left text-ink transition-colors hover:bg-chrome",
+          RESTING_AFFORDANCE,
+          status.kind === "saving" && "cursor-not-allowed opacity-50",
+          // Open: the value still holds the box it held — that is what keeps
+          // every other row where it was — and `visibility: hidden` is what
+          // takes it out of the eye, the pointer AND the tab order at once,
+          // so the field over it is the only thing anyone can reach.
+          layout.value === "flow-hidden" && "invisible",
+        )}
+      >
+        {orDash(shown)}
+      </button>
+      {layout.field === "absent" ? null : (
         <EditField
           value={draft}
           label={label}
           hintId={hintId}
           multiline={multiline}
+          side={side}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={() => {
             // Leaving the field is the operator's own move; the edit still
@@ -585,26 +670,6 @@ export function EditableCell({
           }}
           onKeyDown={onKeyDown}
         />
-      ) : (
-        <button
-          ref={button}
-          type="button"
-          aria-label={label}
-          disabled={status.kind === "saving"}
-          onClick={() => {
-            reverting.current = false;
-            edits.current += 1;
-            dispatch({ kind: "editing", edit: edits.current });
-            setEditing(true);
-          }}
-          className={cx(
-            "type-data cursor-text rounded-control px-1 py-0.5 text-left text-ink transition-colors hover:bg-chrome",
-            RESTING_AFFORDANCE,
-            status.kind === "saving" && "cursor-not-allowed opacity-50",
-          )}
-        >
-          {orDash(shown)}
-        </button>
       )}
       <EditStatus status={status} />
     </span>

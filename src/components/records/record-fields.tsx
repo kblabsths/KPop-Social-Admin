@@ -1,4 +1,5 @@
 import { DataTable, type Column } from "@/components/ui";
+import { hintSide } from "@/components/edit-cell-layout";
 import { relativeAge } from "@/lib/format";
 import type { FieldProvenance } from "@/lib/records/provenance";
 import { FieldEditor } from "./field-editor";
@@ -102,6 +103,20 @@ export function RecordFields({
   id: string;
   fields: readonly RecordField[];
 }) {
+  /**
+   * Which side each line's open-cell hint hangs on, by field name — campaign
+   * admin-window/BUG-0086.
+   *
+   * The hint is drawn out of the row's flow (so that opening a cell moves no
+   * other row), which means it hangs OVER a neighbouring line. The last line
+   * has no line below it, only the table's own clipping container, so its hint
+   * hangs above instead. This component is the one that knows the order; the
+   * cell only knows which side it was told.
+   */
+  const sides = new Map(
+    fields.map((field, index) => [field.name, hintSide(index, fields.length)]),
+  );
+
   const columns: Column<RecordField>[] = [
     {
       key: "field",
@@ -119,6 +134,7 @@ export function RecordFields({
             field={field.name}
             value={field.value}
             multiline={field.multiline}
+            hintSide={sides.get(field.name)}
           />
         ) : field.reference !== null ? (
           // A link, not a control: a reference column is read-only like every

@@ -5,6 +5,13 @@ import { describe, expect, it } from "vitest";
 import { RecordFields } from "@/components/records/record-fields";
 import type { RecordField } from "@/components/records/fields";
 import {
+  type CellLayout,
+  type HintSide,
+  cellLayout,
+  hintSide,
+  occupiesFlow,
+} from "@/components/edit-cell-layout";
+import {
   type EditEnding,
   type EditEvent,
   type EditState,
@@ -1083,5 +1090,141 @@ describe("a cell opens with its value selected, so a retype replaces", () => {
     expect(tagsOf(resting)).not.toContain("input");
     expect(tagsOf(resting)).not.toContain("textarea");
     expect(resting).not.toMatch(/autofocus/i);
+  });
+});
+
+
+/* ── an open cell moves nothing ────────────────────────────────────────────
+ *
+ * campaign admin-window/BUG-0086. Measured by QA on the TASK-0053 attack
+ * (2026-09-08, production build against staging, viewport 1400x950): with
+ * `label` open, the `note` cell's resting button had moved 101px left and 26px
+ * down — the open field claimed the column's full width and the hint line was
+ * added to the row's flow. One human-timed click on `note` then hit its button
+ * at mousedown and a `<td>` of a different row at mouseup: nothing opened, and
+ * the operator had to click twice to correct a second field.
+ *
+ * A bounding box is a browser fact and this tier is environment node with
+ * `renderToStaticMarkup` and no jsdom (STACK.md §4), so what is pinned here is
+ * `cellLayout` — the rule the rendering obeys — exactly as `focusVerdict` and
+ * `selectOnOpen` pin theirs. The boxes themselves are measured in the walk.
+ */
+
+/** The parts of a cell that take space in the row, in a given layout. */
+function flowing(layout: CellLayout): string[] {
+  return (["value", "field", "hint"] as const).filter((part) =>
+    occupiesFlow(layout[part]),
+  );
+}
+
+describe("opening a cell moves no other row", () => {
+  it("puts nothing into the row's flow that a resting cell does not, and takes nothing out", () => {
+    // The whole fix in one line: only a part that takes space in the row can
+    // move another row's control out from under a pointer.
+    expect(flowing(cellLayout(true))).toEqual(flowing(cellLayout(false)));
+  });
+
+  it("keeps the value holding the box it held, and shows it to nobody", () => {
+    // Something has to hold the row's height while the field is open, and the
+    // only box that is certainly the right one is the one that was there.
+    expect(occupiesFlow(cellLayout(true).value)).toBe(true);
+    expect(cellLayout(true).value).toEqual("flow-hidden");
+    expect(cellLayout(false).value).toEqual("flow");
+  });
+
+  it("draws everything edit mode adds outside the flow, in every state it is drawn at all", () => {
+    for (const editing of [false, true]) {
+      const layout = cellLayout(editing);
+      for (const part of ["field", "hint"] as const) {
+        if (layout[part] === "absent") continue;
+        expect(occupiesFlow(layout[part]), `${part}, editing=${editing}`).toBe(false);
+      }
+    }
+  });
+
+  it("lets a click pass through the hint, which hangs over another row's control", () => {
+    // A float that swallowed the click would be the same defect wearing the
+    // fix's clothes: the operator would still have to click twice.
+    expect(cellLayout(true).hint).toEqual("float-inert");
+    // The field is not inert — it is the thing being typed into.
+    expect(cellLayout(true).field).toEqual("float");
+  });
+
+  it("is not vacuously true: the two states really do differ", () => {
+    // A rule both sides of which are the same object proves nothing (LESSONS 3).
+    expect(cellLayout(true)).not.toEqual(cellLayout(false));
+    expect(occupiesFlow("float")).toBe(false);
+    expect(occupiesFlow("flow")).toBe(true);
+  });
+});
+
+/** The classes on the hint of an open cell told to hang on `side`. */
+function hintClasses(side: HintSide, multiline = false): string[] {
+  const html = render(
+    h(EditField, {
+      value: "Tuzi",
+      label: "label of walk_sandbox",
+      hintId: "hint-1",
+      multiline,
+      side,
+      onChange: () => {},
+      onBlur: () => {},
+      onKeyDown: () => {},
+    }),
+  );
+  const $ = cheerio.load(html);
+  return ($("#hint-1").attr("class") ?? "").split(/\s+/).filter(Boolean);
+}
+
+describe("the hint hangs over a line that is there", () => {
+  it("hangs below a line that has one below it", () => {
+    expect(hintSide(0, 6)).toEqual("below");
+    expect(hintSide(4, 6)).toEqual("below");
+  });
+
+  it("hangs above the last line, whose only neighbour below is the table's own clip", () => {
+    // `DataTable` wraps its table in `overflow-x-auto`, and a box whose other
+    // axis is `visible` computes to `auto` — a float below the last row is
+    // clipped, so the operator would read half a hint or none.
+    expect(hintSide(5, 6)).toEqual("above");
+    expect(hintSide(1, 2)).toEqual("above");
+  });
+
+  it("hangs below when there is no neighbour on either side", () => {
+    expect(hintSide(0, 1)).toEqual("below");
+  });
+
+  it("draws the open subtree over the value rather than beside it", () => {
+    // Positioned, therefore out of the flow: the mechanism `cellLayout` names.
+    expect(classesOf(editMode(false))).toContain("absolute");
+    expect(classesOf(editMode(true))).toContain("absolute");
+  });
+
+  it("carries the inertness to the markup, on the hint and not on the field", () => {
+    for (const multiline of [false, true]) {
+      const html = editMode(multiline);
+      const $ = cheerio.load(html);
+      const hint = ($("#hint-1").attr("class") ?? "").split(/\s+/);
+      const field = ($("input, textarea").attr("class") ?? "").split(/\s+/);
+      expect(hint, `multiline=${multiline}`).toContain("pointer-events-none");
+      expect(field, `multiline=${multiline}`).toContain("pointer-events-auto");
+    }
+  });
+
+  it("positions the hint from the field on the side it was told, both ways", () => {
+    // Two fixtures: a rule that only ever saw one side passes vacuously.
+    expect(hintClasses("below")).toContain("top-full");
+    expect(hintClasses("below")).not.toContain("bottom-full");
+    expect(hintClasses("above")).toContain("bottom-full");
+    expect(hintClasses("above")).not.toContain("top-full");
+  });
+
+  it("adds none of it to the resting markup: a closed cell is laid out as it always was", () => {
+    const resting = render(
+      h(EditableCell, { value: "Tuzi", onSave: noop, label: "label of walk_sandbox" }),
+    );
+    expect(classesOf(resting)).not.toContain("absolute");
+    expect(classesOf(resting)).not.toContain("invisible");
+    expect(classesOf(resting)).not.toContain("pointer-events-none");
   });
 });
