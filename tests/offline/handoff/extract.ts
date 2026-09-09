@@ -333,6 +333,15 @@ export function alterTableTargets(scan: string): string[] {
  * artifact's grants and revokes, in order, onto what the table is born with,
  * and ask what each role is left holding.
  *
+ * admin-window/BUG-0084, the same class one level down: replaying the grants is
+ * only half of who may write. Two statement forms reach this table without
+ * granting anything to the role that ends up holding it — `grant … to public`,
+ * because every role is a member of PUBLIC, and `alter table … owner to <role>`,
+ * because an owner holds everything on its own table and can re-grant it after
+ * any revoke. Both are now modelled in the answer `privilegesHeld` gives, and a
+ * role tail this reader cannot resolve to plain names is reported rather than
+ * dropped.
+ *
  * Lives here rather than in one test so the `settle_review_item` artifact —
  * whose own note is graded by a sibling of `verdicts.test.ts` — asks the same
  * question of its own object instead of re-deriving it.
@@ -353,24 +362,72 @@ export const TABLE_PRIVILEGES = [
 export type TablePrivilege = (typeof TABLE_PRIVILEGES)[number];
 
 /**
+ * The PUBLIC pseudo-role. Every role in the cluster is a member of it, so a
+ * privilege granted here is held by `anon`, `authenticated` and `service_role`
+ * alike. `privilegesHeld` folds this bucket into every role's answer — before
+ * admin-window/BUG-0084 it sat in a bucket named `public` that no assertion
+ * read, so `grant insert … to public` graded clean.
+ *
+ * It is a name this project's own migrations use (`revoke … from public` in
+ * `kspace Scraper/supabase/migrations/20260901000003_an_adjudicated_claim_carries_its_stamp.sql`),
+ * not a hypothetical.
+ */
+export const PUBLIC_ROLE = "public";
+
+/**
+ * Who owns a table these artifacts create. Ben applies them with `supabase db
+ * push` from the sibling, which runs as `postgres`, and every one of the 105
+ * `OWNER TO` lines in `20260818000000_the_schema_arrives_as_one_snapshot.sql`
+ * names that same role.
+ */
+export const TABLE_OWNER_AT_BIRTH = "postgres";
+
+/**
  * The roles a new `public` table in this project is born having granted
- * everything to, per the snapshot's `ALTER DEFAULT PRIVILEGES` block. `postgres`
- * is deliberately absent: it OWNS the tables, and an owner's rights over its own
- * table do not come from a grant (20260821000001's header says exactly this,
- * which is why revoking service_role's DML leaves the definer functions writing).
+ * everything to, per the snapshot's `ALTER DEFAULT PRIVILEGES` block
+ * (`20260818000000_the_schema_arrives_as_one_snapshot.sql:6848-6850`).
+ *
+ * `postgres` is absent — but NOT because the snapshot passes it over. It does
+ * not: line 6847 of that same block is `ALTER DEFAULT PRIVILEGES FOR ROLE
+ * "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "postgres"`, right above
+ * the three below. (The reason stated here until admin-window/BUG-0084 said the
+ * snapshot grants it nothing, which is false; the exclusion it justified is
+ * still right.) It is absent because this reader credits it by OWNERSHIP
+ * instead — `TABLE_OWNER_AT_BIRTH`, folded in by `privilegesHeld` — and the two
+ * are not interchangeable: a granted privilege is gone once revoked, while an
+ * owner's rights over its own table survive any revoke, because the owner may
+ * grant them straight back. Listing it here would let a `revoke … from
+ * postgres` read as though it had narrowed something.
  */
 export const ROLES_BORN_HOLDING_ALL: readonly string[] = ["anon", "authenticated", "service_role"];
 
 /** What an artifact leaves each role holding on one table. */
 export interface InstalledAcl {
-  /** Role → the privileges it still holds after the artifact applies. */
+  /**
+   * Grantee name → the privileges granted to THAT NAME, replayed literally.
+   * `PUBLIC_ROLE` is an ordinary entry here and ownership is not in here at
+   * all. Read this through `privilegesHeld`, which folds both in: a role's
+   * effective privileges are never just its own bucket (admin-window/BUG-0084).
+   */
   readonly held: ReadonlyMap<string, ReadonlySet<TablePrivilege>>;
+  /**
+   * The role that OWNS the table once the artifact has applied: the last
+   * `alter table <this table> owner to <role>` it carries, or
+   * `TABLE_OWNER_AT_BIRTH` when it carries none. An owner holds every privilege
+   * on its own table and may re-grant them at will, so `privilegesHeld` credits
+   * it with all eight and no revoke below the line narrows that — which is
+   * exactly what made `owner to service_role` grade clean before
+   * admin-window/BUG-0084.
+   */
+  readonly owner: string;
   /**
    * Statements this reader refused to interpret while they may still change the
    * table's ACL — a column-level grant, an unknown privilege word, `grant option
-   * for`, `on all tables in schema`, or an `alter default privileges`. NEVER
-   * ignore these: silently skipping the statement you cannot parse is how a
-   * grader certifies an ACL it never read (BUG-0082 again, one level down).
+   * for`, `on all tables in schema`, an `alter default privileges`, a role tail
+   * it cannot resolve to plain role names (`granted by …`, `with grant option`,
+   * `current_user`), or an owner it cannot name. NEVER ignore these: silently
+   * skipping the statement you cannot parse is how a grader certifies an ACL it
+   * never read (BUG-0082 again, one level down).
    */
   readonly unreadable: readonly string[];
 }
@@ -386,14 +443,44 @@ function parsePrivileges(text: string): TablePrivilege[] | null {
   return named as TablePrivilege[];
 }
 
-/** The role names one GRANT/REVOKE tail names, `public` included as itself. */
-function parseRoles(text: string): string[] {
-  return text
+/** A bare role name, optionally quoted and optionally preceded by `group`. */
+const ROLE_NAME = /^(?:group\s+)?"?([a-z_][a-z0-9_$]*)"?$/;
+
+/**
+ * Role specifications that name a role by context rather than by name. Whose
+ * privileges they change depends on who runs the file, which this reader cannot
+ * know — so it says so instead of inventing a role called `current_user`.
+ */
+const CONTEXTUAL_ROLES: readonly string[] = ["current_user", "session_user", "current_role"];
+
+/** One role specification resolved to a plain role name, or null. */
+function parseRoleName(text: string): string | null {
+  const match = ROLE_NAME.exec(text.trim().toLowerCase());
+  if (match === null) return null;
+  return CONTEXTUAL_ROLES.includes(match[1]) ? null : match[1];
+}
+
+/**
+ * The role names one GRANT/REVOKE tail names — `public` included as itself,
+ * because `privilegesHeld` is where PUBLIC's reach is applied — or null when
+ * the tail is more than a comma-separated list of plain names.
+ *
+ * The two null cases are ACL changes this reader will not pretend to model
+ * (admin-window/BUG-0084): `granted by <role>` puts a role specification where a
+ * name is expected and the old split produced the non-role `x granted by y`,
+ * which then matched nothing and vanished; `with grant option` hands the grantee
+ * the power to re-grant to anyone, which is a write path this model has no way
+ * to follow. Both are reported, not stripped.
+ */
+function parseRoles(text: string): string[] | null {
+  const tail = text
     .toLowerCase()
-    .replace(/\s+(?:with\s+grant\s+option|cascade|restrict)\s*$/, "")
-    .split(",")
-    .map((role) => role.replace(/"/g, "").trim())
-    .filter((role) => role.length > 0);
+    .replace(/\s+(?:cascade|restrict)\s*$/, "")
+    .trim();
+  if (/\bgranted\s+by\b/.test(tail) || /\bwith\s+grant\s+option\b/.test(tail)) return null;
+  const names = tail.split(",").map((entry) => parseRoleName(entry));
+  if (names.length === 0 || names.some((name) => name === null)) return null;
+  return names as string[];
 }
 
 /** The objects one GRANT/REVOKE names, unquoted and lowercased. */
@@ -408,6 +495,9 @@ function parseObjects(text: string): string[] {
 const PRIVILEGE_STATEMENT =
   /^(grant|revoke)\s+(.+?)\s+on\s+(?:table\s+)?(.+?)\s+(?:to|from)\s+(.+)$/;
 
+const OWNER_STATEMENT =
+  /^alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?([a-z0-9_."]+)\s+owner\s+to\s+(.+)$/;
+
 /**
  * Replay every privilege statement of `artifact` onto the birth ACL of
  * `qualifiedTable` and report what each role is left holding.
@@ -419,11 +509,13 @@ export function tableAclAfter(
   artifact: SqlArtifact,
   qualifiedTable: string,
   bornHoldingAll: readonly string[] = ROLES_BORN_HOLDING_ALL,
+  ownerAtBirth: string = TABLE_OWNER_AT_BIRTH,
 ): InstalledAcl {
   const table = qualifiedTable.toLowerCase();
   const held = new Map<string, Set<TablePrivilege>>();
   for (const role of bornHoldingAll) held.set(role, new Set(TABLE_PRIVILEGES));
   const unreadable: string[] = [];
+  let owner = ownerAtBirth.toLowerCase();
 
   for (const raw of artifact.statements) {
     const statement = raw.replace(/\s+/g, " ").trim();
@@ -433,6 +525,19 @@ export function tableAclAfter(
       unreadable.push(statement);
       continue;
     }
+
+    // An ownership change is an ACL change: the new owner holds everything on
+    // the table and every revoke below it is decorative, because it can grant
+    // itself back. Last one wins, as Postgres applies them.
+    const owned = OWNER_STATEMENT.exec(flat);
+    if (owned !== null) {
+      if (parseObjects(owned[1])[0] !== table) continue;
+      const named = parseRoleName(owned[2]);
+      if (named === null) unreadable.push(statement);
+      else owner = named;
+      continue;
+    }
+
     const parsed = PRIVILEGE_STATEMENT.exec(flat);
     if (parsed === null) continue;
     const [, verb, privilegeText, objectText, roleText] = parsed;
@@ -452,7 +557,12 @@ export function tableAclAfter(
       unreadable.push(statement);
       continue;
     }
-    for (const role of parseRoles(roleText)) {
+    const roles = parseRoles(roleText);
+    if (roles === null) {
+      unreadable.push(statement);
+      continue;
+    }
+    for (const role of roles) {
       const current = held.get(role) ?? new Set<TablePrivilege>();
       for (const privilege of privileges) {
         if (verb === "grant") current.add(privilege);
@@ -462,11 +572,20 @@ export function tableAclAfter(
     }
   }
 
-  return { held, unreadable };
+  return { held, owner, unreadable };
 }
 
-/** What one role is left holding, in `TABLE_PRIVILEGES` order. */
+/**
+ * What one role is left holding, in `TABLE_PRIVILEGES` order — its own grants
+ * PLUS the two reaches that are not grants to its name (admin-window/BUG-0084):
+ * everything, if it owns the table; and whatever PUBLIC holds, since every role
+ * is a member of PUBLIC. Asking `held` directly answers a narrower question
+ * than "may this role write the table", which is the only question worth asking.
+ */
 export function privilegesHeld(acl: InstalledAcl, role: string): TablePrivilege[] {
-  const held = acl.held.get(role) ?? new Set<TablePrivilege>();
-  return TABLE_PRIVILEGES.filter((privilege) => held.has(privilege));
+  const name = role.toLowerCase();
+  if (name === acl.owner) return [...TABLE_PRIVILEGES];
+  const own = acl.held.get(name) ?? new Set<TablePrivilege>();
+  const viaPublic = acl.held.get(PUBLIC_ROLE) ?? new Set<TablePrivilege>();
+  return TABLE_PRIVILEGES.filter((privilege) => own.has(privilege) || viaPublic.has(privilege));
 }
