@@ -175,3 +175,4 @@
 2026-09-09T20:13:49Z	evidence_budget	qa_evidence_overbudget: BUG-0143 4126/4000 chars
 2026-09-09T20:14:48Z	artifact_gate	blocked write outside repo: /bisNarrowedb/.test
 2026-09-09T20:22:54Z	evidence_budget	qa_evidence_overbudget: DEBT-0010 4409/4000 chars
+2026-09-09T20:30:54Z	artifact_gate	blocked write outside repo: /tmp/does-not-exist
