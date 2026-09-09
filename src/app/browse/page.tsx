@@ -153,6 +153,10 @@ export default async function BrowsePage({
               held: events.data.length,
               over: EVENTS_OBJECT,
               oldest: oldestIn(events.data, (row) => row.created_at),
+              // Unnarrowed: `?columns=` chooses which COLUMNS render and never
+              // which rows are read, so this window's floor is the catalog's
+              // own (admin-window/BUG-0114).
+              scope: null,
             })}
             shows={{ of: "catalog", rows: "events" }}
           />

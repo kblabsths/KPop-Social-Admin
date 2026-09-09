@@ -163,6 +163,31 @@ const GAUGE_LABEL: Record<ClaimsTab, string> = {
 };
 
 /**
+ * What the claim list's window was narrowed to, as the phrase its line reads
+ * after the row noun ("claims **matching these filters**") — `null` only when
+ * the drawn window really is every renderable claim.
+ *
+ * The list is windowed in TypeScript over a complete read, so its narrowing is
+ * the SELECTION and not a `.eq()`: the tab (the standing tab is one bucket's
+ * subset) and the facet chips. Both are named here from the same values
+ * `selectClaims` was given, because a window line that states a floor or an
+ * emptiness of "claims" over a selection that saw one bucket is making the
+ * claim admin-window/BUG-0114 was filed for — "the read happened and found no
+ * claims at all" stood directly above an empty card saying no claim matched
+ * THESE FILTERS.
+ *
+ * The bucket is named by its own value (`standing_disagreement`), which is what
+ * every bucket chip and every bucket row on this page renders: a machine
+ * identifier is shown verbatim, never prettified (ARCHITECTURE.md §11).
+ */
+function listScope(tab: ClaimsTab, filter: ClaimsFilter): string | null {
+  const narrowings: string[] = [];
+  if (tab === "standing") narrowings.push(`in the ${STANDING_BUCKET} bucket`);
+  if (isNarrowed(filter)) narrowings.push("matching these filters");
+  return narrowings.length === 0 ? null : narrowings.join(", ");
+}
+
+/**
  * The name each of this page's surfaces answers to — `data-surface`, rendered
  * by `Section` and read by the live parity oracle
  * (`tests/live/claims.live.test.ts`), pinned offline by
@@ -571,6 +596,9 @@ export default async function ClaimsPage({
               // read found; it just has no "nothing earlier" to state
               // (admin-window/BUG-0109).
               oldest: null,
+              // What the SELECTION below narrowed to, from the same tab and
+              // the same filter it used (admin-window/BUG-0114).
+              scope: listScope(tab, filter),
             }}
             shows={{ of: "matched", lede: SORT_STATEMENT, rows: "claims" }}
           />

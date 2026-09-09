@@ -694,6 +694,36 @@ describe("the claim list's window", () => {
     expect(small.held).toBe(SHOWABLE.length);
   });
 
+  it("says which narrowing its window is of, and only when there is one", async () => {
+    // The sibling of admin-window/BUG-0114, on the app's other narrowed drawn
+    // window: this list is windowed over a COMPLETE read and narrowed by the
+    // tab and the chips, so "it holds all the claims the read found" and "the
+    // read happened and found no claims at all" are claims about the whole
+    // view — while the empty card beside them says no claim matched THESE
+    // FILTERS. The narrowing now travels with the window.
+    const plain = windowLine(await renderClaims(healthyScript()));
+    expect(plain.text).not.toContain("matching these filters");
+
+    const filtered = windowLine(
+      await renderClaims(healthyScript(), { bucket: "awaiting_row" }),
+    );
+    expect(filtered.truncated).toBe(false);
+    expect(filtered.text).toContain("claims matching these filters");
+
+    // The standing tab is one bucket's subset with no chip to show for it, so
+    // the bucket is named by the value the page renders everywhere else.
+    const standing = windowLine(await renderClaims(healthyScript(), { tab: "standing" }));
+    expect(standing.text).toContain("standing_disagreement");
+
+    // …and a narrowing that matched nothing found nothing OF ITSELF.
+    const nothing = windowLine(
+      await renderClaims(crowdedScript(4), { bucket: "escalated" }),
+    );
+    expect(nothing.held).toBe(0);
+    expect(nothing.text).toContain("no claims matching these filters at all");
+    expect(nothing.text).not.toContain("found no claims at all");
+  });
+
   it("counts held claims per narrowing, not per rendered page", async () => {
     // Big enough that EACH bucket alone overflows the cap, so a narrowing is
     // windowed too and its held count is the narrowing's, not the page's.

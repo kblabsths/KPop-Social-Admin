@@ -88,6 +88,28 @@ export interface DrawnWindow extends WindowFacts {
    * and never a guessed instant.
    */
   oldest: string | null;
+  /**
+   * What the read was NARROWED to, in the app's words, as a phrase that reads
+   * straight after the row noun — `"from bandsintown"`, so `runs` becomes
+   * `runs from bandsintown` in every clause of the line — or `null` when the
+   * read covered the whole object.
+   *
+   * A window line states what the READ was (ARCHITECTURE.md §4.3), and a
+   * narrowed read is a different population from the object it ran over. It is
+   * REQUIRED for the same reason `oldest` is: a defaulted narrowing is a
+   * narrowing nobody declared, and every sentence built on it is a confident
+   * claim about rows the read never saw. `/cycles?source=<name>` read one
+   * source's runs below its cap and the line said "runs recorded since <that
+   * source's oldest run>; nothing earlier is retained" — of the whole `runs`
+   * table, which retains older runs from every other source and renders them
+   * on the same page without the facet (admin-window/BUG-0114).
+   *
+   * The call site fills it from the SAME narrowing its query carried — the
+   * `source` the runs read hands back, the filter the claim list selected on —
+   * never from a second reading of the URL, which is how the two come to
+   * disagree.
+   */
+  scope: string | null;
 }
 
 /**
@@ -133,6 +155,7 @@ export function drawnWindow(read: {
   held: number;
   over: WindowObject;
   oldest: string | null;
+  scope: string | null;
 }): DrawnWindow {
   return { ...read, truncated: read.held >= read.limit };
 }
@@ -218,6 +241,22 @@ function WindowParagraph({
 }
 
 /**
+ * The population a clause is about: the rows the arm names, carrying whatever
+ * the read was narrowed to (`DrawnWindow.scope`).
+ *
+ * EVERY clause that names the rows goes through here, so one line cannot state
+ * its cap over the facet and its floor over the object — the split that made
+ * `/cycles?source=<name>` say "runs recorded since <one source's oldest>;
+ * nothing earlier is retained" of a table that retains older runs from other
+ * sources (admin-window/BUG-0114). An unnarrowed window answers the bare noun,
+ * so its sentences are the ones the app rendered before a facet existed, to the
+ * byte.
+ */
+function population(rows: string, scope: string | null): string {
+  return scope === null ? rows : `${rows} ${scope}`;
+}
+
+/**
  * What a DRAWN window says about its own bottom when it did NOT fill its cap —
  * the other half of quality bar 13 (admin-window/BUG-0109).
  *
@@ -236,18 +275,30 @@ function WindowParagraph({
  * never by this file comparing the rows it was handed against a number.
  */
 function didNotFill(info: DrawnWindow, rows: string): string {
+  const of = population(rows, info.scope);
   // An empty window is still a window (ARCHITECTURE.md §4.3): the read happened
   // and found nothing, which is a different claim from "everything is below".
+  // What it found nothing OF is the narrowed population, never the object: a
+  // `?source=` read that matched no row found no runs FROM THAT SOURCE, above
+  // an empty card that says the same (admin-window/BUG-0114).
   if (info.held === 0) {
-    return ` The window did not fill: the read happened and found no ${rows} at all.`;
+    return ` The window did not fill: the read happened and found no ${of} at all.`;
   }
+  // "nothing earlier is retained" is a claim about everything the read could
+  // have seen, so it is only ever made about the population the read covered.
+  // Unnarrowed, that is the object and the sentence is the one bar 13 wrote;
+  // narrowed, the same words carry the facet — nothing earlier FROM THAT
+  // SOURCE is retained, which is true, where the bare sentence was not
+  // (admin-window/BUG-0114).
+  const earlier =
+    info.scope === null ? "nothing earlier" : `nothing earlier ${info.scope}`;
   const floor =
     info.oldest === null
       ? ""
-      : `: ${rows} recorded since ${absoluteUtc(info.oldest)}; nothing earlier is retained`;
+      : `: ${of} recorded since ${absoluteUtc(info.oldest)}; ${earlier} is retained`;
   return ` The window did not fill — ${count(info.held)} of at most ${count(
     info.limit,
-  )} — so it holds all the ${rows} the read found${floor}.`;
+  )} — so it holds all the ${of} the read found${floor}.`;
 }
 
 /**
@@ -315,14 +366,17 @@ export function WindowLine(
     return (
       <WindowParagraph gauge={props.gauge} window={info}>
         {shows.lede} — a window of at most {count(info.limit)}, not a count of
-        the {shows.rows} that exist.
+        the {population(shows.rows, info.scope)} that exist.
         {info.truncated
           ? // Arm-generic, because the arm is: `newest` is "the newest N rows
             // of an object, newest first", and the object may be cycles, runs
             // or verdicts. The clause said "older X ran than the ones below",
             // which is true of a resolver cycle and false of every other
             // newest-first window the arm serves (admin-window/TASK-0058).
-            ` The window filled its cap, so ${shows.rows} older than the ones below are not shown.`
+            ` The window filled its cap, so ${population(
+              shows.rows,
+              info.scope,
+            )} older than the ones below are not shown.`
           : didNotFill(info, shows.rows)}
         {info.truncated && shows.more !== undefined ? ` ${shows.more}` : ""}
       </WindowParagraph>
@@ -333,6 +387,11 @@ export function WindowLine(
       <WindowParagraph gauge={props.gauge} window={info}>
         {shows.lede} A window of at most {count(info.limit)} rows, not the whole{" "}
         {info.over}.
+        {/* The one truncated clause that does not take the window's `scope`:
+            this arm's own words already name the narrowing ("match these
+            filters"), and passing it through `population` too would say it
+            twice. The complement below does take it — "no claims at all" over
+            a filtered selection is the claim admin-window/BUG-0114 is about. */}
         {info.truncated
           ? ` ${count(info.held)} ${shows.rows} match these filters; the ${count(
               info.limit,
@@ -344,10 +403,13 @@ export function WindowLine(
   if (shows.of === "alphabetical") {
     return (
       <WindowParagraph gauge={props.gauge} window={info}>
-        The first {count(info.limit)} {shows.rows} by name — a window, not the
-        whole {info.over}.
+        The first {count(info.limit)} {population(shows.rows, info.scope)} by
+        name — a window, not the whole {info.over}.
         {info.truncated
-          ? ` The window filled its cap, so ${shows.rows} later in the alphabet are not in it.`
+          ? ` The window filled its cap, so ${population(
+              shows.rows,
+              info.scope,
+            )} later in the alphabet are not in it.`
           : didNotFill(info, shows.rows)}
       </WindowParagraph>
     );
@@ -358,10 +420,13 @@ export function WindowLine(
           arm said "The 50 newest events" whatever the read came back with, so
           a catalog holding twelve events was described as fifty
           (admin-window/BUG-0109). Every other arm already spells it this way. */}
-      The newest {shows.rows} by arrival, newest first — a window of at most{" "}
-      {count(info.limit)}, not the whole catalog.
+      The newest {population(shows.rows, info.scope)} by arrival, newest first —
+      a window of at most {count(info.limit)}, not the whole catalog.
       {info.truncated
-        ? ` The window filled its cap, so ${shows.rows} that arrived before the ones below are not shown.`
+        ? ` The window filled its cap, so ${population(
+            shows.rows,
+            info.scope,
+          )} that arrived before the ones below are not shown.`
         : didNotFill(info, shows.rows)}
     </WindowParagraph>
   );

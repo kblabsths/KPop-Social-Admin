@@ -719,7 +719,13 @@ describe("WindowLine", () => {
     truncated: true,
     over: "view",
     oldest: "2026-08-31T04:12:00.000Z",
+    // The read covered the whole object. Every case below that does not say
+    // otherwise is the unnarrowed one (admin-window/BUG-0114).
+    scope: null,
   };
+
+  /** A window whose read saw one facet of its object, and says which. */
+  const NARROWED = "from bandsintown";
 
   /** The longest text both renderings share — the window's own sentence. */
   const sharedPrefix = (a: string, b: string): string => {
@@ -899,6 +905,128 @@ describe("WindowLine", () => {
     expect(text).toContain(count(200));
     expect(text).toContain("runs");
     expect(text).not.toContain(count(DRAWN.held));
+  });
+
+  /* ── a window whose READ was narrowed (admin-window/BUG-0114) ─────────── */
+
+  it("states a narrowed window's floor over the population it read, never over the object", () => {
+    // The bug: `/cycles?source=<name>` reads one source's runs with
+    // `.eq("source", …)`, comes back below its cap, and the line then named
+    // that source's oldest run as the point before which NOTHING is retained —
+    // of a table that retains older runs from every other source and renders
+    // them on the same page without the facet.
+    const held = { ...DRAWN, held: 5, truncated: false };
+    for (const shows of EVERY_KIND) {
+      const narrowed = textOf(drawn(shows, { ...held, scope: NARROWED }));
+      // The floor is still stated — it is the floor of what the read saw —
+      // and every clause that names it names the narrowing with it.
+      expect(narrowed, shows.of).toContain(absoluteUtc(DRAWN.oldest));
+      expect(narrowed, shows.of).toContain(`${shows.rows} ${NARROWED} recorded since`);
+      // …and the unqualified claim about the object is never made.
+      expect(narrowed, shows.of).not.toContain("nothing earlier is retained");
+      expect(narrowed, shows.of).toContain(`nothing earlier ${NARROWED} is retained`);
+    }
+  });
+
+  it("says a narrowed window that returned nothing found nothing OF ITS FACET", () => {
+    // The same lie in the zero-row arm: "found no runs at all" stood over a
+    // read that had looked at one source, directly above an empty card saying
+    // the window holds "runs from <name>".
+    const empty = { ...DRAWN, held: 0, truncated: false, oldest: null };
+    for (const shows of EVERY_KIND) {
+      const narrowed = textOf(drawn(shows, { ...empty, scope: NARROWED }));
+      expect(narrowed, shows.of).toContain(`no ${shows.rows} ${NARROWED} at all`);
+      expect(narrowed, shows.of).not.toContain(`no ${shows.rows} at all`);
+    }
+  });
+
+  /**
+   * The one arm whose FILLED clause already names its own narrowing — "N
+   * claims match these filters" — so the window's `scope` is not threaded
+   * through it a second time and the sentence does not say it twice. Its
+   * did-not-fill and empty clauses take the scope like every other arm's,
+   * which is where admin-window/BUG-0114's claim lived.
+   */
+  const NAMES_ITS_OWN_NARROWING = (shows: DrawnSentence) => shows.of === "matched";
+
+  it("carries the narrowing into a FILLED window's sentence too", () => {
+    // A narrowed window that hit its cap says nothing false, but it must still
+    // say which population it is a window of: the reader who cannot see the
+    // facet cannot check the cap either.
+    for (const shows of EVERY_KIND.filter((kind) => !NAMES_ITS_OWN_NARROWING(kind))) {
+      const open = textOf(drawn(shows, { ...DRAWN, held: 5, truncated: false, scope: NARROWED }));
+      const narrowed = textOf(drawn(shows, { ...DRAWN, truncated: true, scope: NARROWED }));
+      expect(narrowed, shows.of).toContain(NARROWED);
+      // Not just in the window's own sentence: the clause truncation ADDS —
+      // everything past the prefix the two directions share — names the
+      // population it is a cap on, or a reader takes it for a cap on the
+      // object.
+      const clause = narrowed.slice(sharedPrefix(open, narrowed).length);
+      expect(clause, shows.of).toContain(NARROWED);
+    }
+    // …and the exempt arm names a narrowing in its own words instead of none.
+    const matched = textOf(
+      drawn({ of: "matched", lede: "Oldest first.", rows: "claims" }, { ...DRAWN, truncated: true }),
+    );
+    expect(matched).toContain("filters");
+  });
+
+  it("renders an unnarrowed window exactly as it did before facets existed", () => {
+    // The complement of the two cases above, and the reason `scope` is a field
+    // rather than a rewrite: with `scope: null` the sentence is the one bar 13
+    // asked for, to the byte, in every arm and both directions.
+    const cases: Array<[string, DrawnWindow]> = [
+      ["filled", { ...DRAWN, truncated: true }],
+      ["not filled", { ...DRAWN, held: 5, truncated: false }],
+      ["empty", { ...DRAWN, held: 0, truncated: false, oldest: null }],
+    ];
+    for (const shows of EVERY_KIND) {
+      for (const [state, drew] of cases) {
+        const text = textOf(drawn(shows, drew));
+        const narrowed = textOf(drawn(shows, { ...drew, scope: NARROWED }));
+        // Nothing of the facet leaks into the unnarrowed rendering…
+        expect(text, `${shows.of} ${state}`).not.toContain(NARROWED);
+        // …and the narrowing really did change what this state says, so the
+        // comparison above is not passing over two identical strings. The
+        // exempt arm's FILLED clause is the one pair that is equal by design.
+        if (state === "filled" && NAMES_ITS_OWN_NARROWING(shows)) continue;
+        expect(narrowed, `${shows.of} ${state}`).not.toBe(text);
+      }
+    }
+    // The one sentence the bar wrote, spelled out once so a future edit that
+    // drops "nothing earlier is retained" from the unnarrowed arm is caught
+    // where it is decided rather than on five pages.
+    const floor = textOf(
+      drawn({ of: "newest", lede: "The adapters’ newest runs, newest first", rows: "runs" }, {
+        ...DRAWN,
+        held: 5,
+        truncated: false,
+      }),
+    );
+    expect(floor).toContain(
+      `runs recorded since ${absoluteUtc(DRAWN.oldest)}; nothing earlier is retained`,
+    );
+  });
+
+  it("makes an omitted narrowing a compile error, not a default", () => {
+    // The fix is only a fix if the next drawn window cannot skip it: a
+    // defaulted `scope` is a narrowing nobody declared, and the sentence built
+    // on it is a confident claim about rows the read never saw. The window
+    // below omits it, and `tsc --noEmit` — which runs over this file — fails
+    // if that is ever allowed. The runtime assertion keeps the case honest:
+    // it must still be a window this component would render.
+    const omitted = {
+      limit: 50,
+      held: 5,
+      truncated: false,
+      over: "view" as const,
+      oldest: DRAWN.oldest,
+    };
+    // @ts-expect-error `scope` is required on every drawn window (admin-window/BUG-0114).
+    const bare: DrawnWindow = omitted;
+    expect(textOf(drawn({ of: "catalog", rows: "events" }, { ...bare, scope: null }))).toContain(
+      absoluteUtc(DRAWN.oldest),
+    );
   });
 
   it("is one paragraph carrying one window, whichever kind it is", () => {

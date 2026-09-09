@@ -468,38 +468,115 @@ describe("a ?source= link arriving from the Sources page", () => {
     expect(cheerio.load(plain)("[data-source-facet]").length).toBe(0);
   });
 
-  it.fails(
-    "does not offer its bottom row as the table's floor when a facet narrowed the read",
-    async () => {
-      // A window that did not fill returned everything ITS READ matched — and
-      // a `?source=` read matched one source only, so its bottom row is that
-      // source's oldest run and never the table's. The same population,
-      // rendered without the facet on the same page, holds a run an hour older
-      // than the faceted window's bottom; a line that names the faceted bottom
-      // as the point before which nothing is retained states as a fact of the
-      // object something that is false of it (admin-window/BUG-0109 seam).
-      const faceted = runsFrom(SOURCE.ticketmaster);
-      const markup = await renderCycles(
-        healthyScript({ [T.runs]: { data: faceted } }),
-        { source: SOURCE.ticketmaster },
-      );
+  it("does not offer its bottom row as the table's floor when a facet narrowed the read", async () => {
+    // A window that did not fill returned everything ITS READ matched — and a
+    // `?source=` read matched one source only, so its bottom row is that
+    // source's oldest run and never the table's. The same population, rendered
+    // without the facet on the same page, holds a run an hour older than the
+    // faceted window's bottom; a line that names the faceted bottom as the
+    // point before which nothing is retained states as a fact of the object
+    // something that is false of it (admin-window/BUG-0114, pinned by QA as
+    // `it.fails` and flipped here with the fix).
+    //
+    // Which of the two fixes the ticket left open this is: the window now
+    // CARRIES the narrowing (`DrawnWindow.scope`), so the floor is stated of
+    // the population the read covered — "runs from ticketmaster … nothing
+    // earlier from ticketmaster is retained" — and the unqualified claim about
+    // the table is never made. The instant may appear; the claim about the
+    // object may not.
+    const faceted = runsFrom(SOURCE.ticketmaster);
+    const markup = await renderCycles(
+      healthyScript({ [T.runs]: { data: faceted } }),
+      { source: SOURCE.ticketmaster },
+    );
 
-      const line = cheerio.load(markup)('[data-window="runs"]');
-      expect(line.attr("data-window-truncated")).toBe("false");
-      expect(line.attr("data-window-held")).toBe(String(faceted.length));
+    const line = cheerio.load(markup)('[data-window="runs"]');
+    expect(line.attr("data-window-truncated")).toBe("false");
+    expect(line.attr("data-window-held")).toBe(String(faceted.length));
 
-      // Two paths to the same fact, computed here: the table's own oldest run
-      // is older than the facet's, so the facet's bottom is not a floor of the
-      // table.
-      const facetOldest = faceted[faceted.length - 1].started_at;
-      const tableOldest = NEWEST_FIRST[NEWEST_FIRST.length - 1].started_at;
-      expect(Date.parse(tableOldest)).toBeLessThan(Date.parse(facetOldest));
+    // Two paths to the same fact, computed here: the table's own oldest run is
+    // older than the facet's, so the facet's bottom is not a floor of the
+    // table.
+    const facetOldest = faceted[faceted.length - 1].started_at;
+    const tableOldest = NEWEST_FIRST[NEWEST_FIRST.length - 1].started_at;
+    expect(Date.parse(tableOldest)).toBeLessThan(Date.parse(facetOldest));
 
-      // So the sentence may not put that instant forward as the object's
-      // floor. It may state no floor at all; it may not state a wrong one.
-      expect(line.text().replace(/\s+/g, " ")).not.toContain(absoluteUtc(facetOldest));
-    },
-  );
+    const text = line.text().replace(/\s+/g, " ");
+    // The sentence the unfaceted window makes about the table is not made here…
+    expect(text).not.toContain("nothing earlier is retained");
+    // …and wherever this window names its floor, it names whose floor it is.
+    expect(text).toContain(`runs from ${SOURCE.ticketmaster} recorded since`);
+    expect(text).toContain(
+      `${absoluteUtc(facetOldest)}; nothing earlier from ${SOURCE.ticketmaster} is retained`,
+    );
+    // The facet's own bottom is what it names — never the table's floor, which
+    // this read never saw.
+    expect(text).not.toContain(absoluteUtc(tableOldest));
+  });
+
+  it("makes the unfaceted claim about the table only when the read was unfaceted", async () => {
+    // The complement, on the same page and the same population: with no facet
+    // the read covered the table, so the line makes the claim bar 13 asked for
+    // — and it is the claim the faceted line above must not make.
+    const plain = cheerio
+      .load(await renderCycles(healthyScript()))('[data-window="runs"]')
+      .text()
+      .replace(/\s+/g, " ");
+    const tableOldest = NEWEST_FIRST[NEWEST_FIRST.length - 1].started_at;
+    expect(plain).toContain(
+      `runs recorded since ${absoluteUtc(tableOldest)}; nothing earlier is retained`,
+    );
+    expect(plain).not.toContain(SOURCE.ticketmaster);
+  });
+
+  it("says a facet that filled its cap is a window of THAT source's runs", async () => {
+    // The other direction of the same fact: a narrowed window that hit its cap
+    // says nothing false about a floor, but it must still say which population
+    // it is a window of — the operator who cannot see the facet in the line
+    // cannot check the cap against anything.
+    const capped = Array.from({ length: RUN_WINDOW }, (_, index) => ({
+      ...SUCCEEDED,
+      run_id: `capped-${String(index).padStart(4, "0")}`,
+      started_at: new Date(
+        Date.parse(SUCCEEDED.started_at) - index * 60_000,
+      ).toISOString(),
+    }));
+    const markup = await renderCycles(
+      healthyScript({ [T.runs]: { data: capped } }),
+      { source: SOURCE.ticketmaster },
+    );
+    const line = cheerio.load(markup)('[data-window="runs"]');
+    expect(line.attr("data-window-truncated")).toBe("true");
+    const text = line.text().replace(/\s+/g, " ");
+    expect(text).toContain(`runs from ${SOURCE.ticketmaster}`);
+    // A filled window has no floor to offer, faceted or not.
+    expect(text).not.toContain(absoluteUtc(capped[capped.length - 1].started_at));
+  });
+
+  it("says a facet that matched nothing found nothing OF THAT SOURCE", async () => {
+    // The second manifestation of the same root cause: over a read narrowed to
+    // one name, "the read happened and found no runs at all" is a claim about
+    // the table — and it stood directly above this page's own empty card,
+    // which says the window holds "runs from <name>"
+    // (admin-window/BUG-0114).
+    const markup = await renderCycles(
+      healthyScript({ [T.runs]: { data: [] } }),
+      { source: NO_SUCH_SOURCE },
+    );
+    const text = cheerio
+      .load(markup)('[data-window="runs"]')
+      .text()
+      .replace(/\s+/g, " ");
+    expect(text).toContain(`no runs from ${NO_SUCH_SOURCE} at all`);
+    expect(text).not.toContain("found no runs at all");
+
+    // …and with no facet, the same empty read is a claim about the table.
+    const plain = cheerio
+      .load(await renderCycles(healthyScript({ [T.runs]: { data: [] } })))('[data-window="runs"]')
+      .text()
+      .replace(/\s+/g, " ");
+    expect(plain).toContain("found no runs at all");
+  });
 
   it("renders the empty state with a stated 0 when the name matches nothing", async () => {
     // Not the error state: a facet that matched nothing is an answer, and a

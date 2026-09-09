@@ -86,6 +86,17 @@ export interface RunsWindow {
   rows: RunTableRow[];
   limit: number;
   truncated: boolean;
+  /**
+   * The source name the QUERY was narrowed to (`.eq("source", …)`), or `null`
+   * for a read over every run.
+   *
+   * It travels with the window rather than being re-read from the URL beside
+   * it, because the window line describes the read that happened: the line said
+   * "nothing earlier is retained" about the whole table over a read that saw
+   * one source, and had no fact to say otherwise with
+   * (admin-window/BUG-0114).
+   */
+  source: string | null;
 }
 
 /**

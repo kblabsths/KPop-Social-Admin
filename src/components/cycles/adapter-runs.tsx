@@ -58,6 +58,20 @@ function noRunsFrom(source: string): EmptyWords {
 }
 
 /**
+ * How the runs window's sentence names a narrowed read: the phrase that reads
+ * straight after the row noun, so every clause of the line is about `runs from
+ * bandsintown` rather than about `runs` (admin-window/BUG-0114).
+ *
+ * The name comes from the READ (`RunWindow.source`, `lib/db/runs.ts`) and never
+ * from the `source` prop beside it: the prop is what the URL asked for, the
+ * window carries what actually reached the database, and a line that describes
+ * the read must be built from the second.
+ */
+function runsScope(source: string | null): string | null {
+  return source === null ? null : `from ${source}`;
+}
+
+/**
  * The one sentence `?source=<name>` earns, beside the half it narrows.
  *
  * The Sources page links here by source name and the facet is REAL now: the
@@ -141,6 +155,12 @@ export function AdapterRuns({
             // so — five runs against a cap of 200 are every run recorded, not
             // the top of a long list (admin-window/BUG-0109).
             oldest: oldestIn(rows, (row) => row.started_at),
+            // What the read was narrowed to, taken from the read itself. A
+            // `?source=` window holds every run of ONE source, so the floor it
+            // names is that source's and never the table's — the table
+            // retains older runs from other sources and this same page
+            // renders them without the facet (admin-window/BUG-0114).
+            scope: runsScope(runs.data.source),
           }}
           shows={{
             of: "newest",

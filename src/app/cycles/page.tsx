@@ -247,6 +247,11 @@ export default async function CyclesPage({
               // came back with — the object's own floor on a window that did
               // not fill (admin-window/BUG-0109).
               oldest: oldestIn(rows, (row) => row.started_at),
+              // Unnarrowed, and it stays unnarrowed under `?source=`:
+              // `resolution_runs` carries no source column, so the facet
+              // narrows the runs half below and nothing here. The floor this
+              // line names really is the object's own (admin-window/BUG-0114).
+              scope: null,
             }}
             shows={{
               of: "newest",

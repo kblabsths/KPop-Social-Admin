@@ -465,6 +465,10 @@ function VerdictSection({ log }: { log: DbResult<VerdictLogWindow> }): ReactNode
             // came back with — the log's own floor when the window did not
             // fill (admin-window/BUG-0109).
             oldest: oldestIn(log.data.rows, (row) => row.created_at),
+            // The verdict log read carries no filter at all — the tab decides
+            // WHETHER this read happens, never which rows it may see — so the
+            // floor below is the log's own (admin-window/BUG-0114).
+            scope: null,
           }}
           shows={{ of: "newest", lede: VERDICT_LEDE, rows: "verdict rows" }}
         />
