@@ -41,10 +41,10 @@ import { readSourceNames } from "@/lib/db/sources";
 import { count, counted, duration } from "@/lib/format";
 import {
   claimsHref,
+  claimsNarrowed,
   droppedParams,
   filterBar,
   filterFrom,
-  isNarrowed,
   sourceHref,
   type FacetLabel,
   tabFrom,
@@ -169,15 +169,25 @@ const NOTHING_MATCHED: EmptyWords = {
  * did not draw").
  *
  * The narrowed arm is the sentence this page has always rendered, to the byte.
- * Which arm renders is decided by `isNarrowed` — the SAME predicate that picks
- * the empty card's words below, over the same filter — so the caption and the
- * card cannot come to disagree about whether anything is filtered.
+ * Which arm renders is decided by `claimsNarrowed` — the SAME rule that picks
+ * the empty card's words below — so the caption and the card cannot come to
+ * disagree about whether anything is filtered.
+ *
+ * That rule takes TWO facts, and the second is this TABLE's own population
+ * (admin-window/DEBT-0008): the whole view, against the rows this table is
+ * drawing. A facet that removed not one row of them narrowed nothing here —
+ * the bucket facet never can, since this table drops it on purpose, and a
+ * source or domain the whole view carries anyway does not either — so the
+ * unnarrowed arm is what stands. Which is why its clause states the ROWS'
+ * fact and not the URL's: "no filter is set" was false the moment a facet that
+ * removes nothing could reach this arm, and the sentence has to be true in
+ * every state that renders it (LOOK_AND_FEEL bar 13).
  */
 const BUCKET_CAPTION = {
   narrowed:
     "Every bucket the classification view can hold, with the claims in it under the filters above. A bucket with no claims is a real zero.",
   whole:
-    "Every bucket the classification view can hold, with every claim in it — no filter is set. A bucket with no claims is a real zero.",
+    "Every bucket the classification view can hold, with every claim in it — nothing above narrows these counts. A bucket with no claims is a real zero.",
 } as const;
 
 /** The h2 above the claim list, per tab. */
@@ -220,7 +230,7 @@ const GAUGE_LABEL: Record<ClaimsTab, string> = {
  * filters" over a tab-narrowed read whose chip bar was empty
  * (admin-window/BUG-0118).
  */
-function listScope(tab: ClaimsTab, filter: ClaimsFilter): string | null {
+function listScope(tab: ClaimsTab, narrowed: boolean): string | null {
   return narrowedTo([
     tab === "standing" ? `in the ${STANDING_BUCKET} bucket` : null,
     // The window line's own phrase for this narrowing, imported rather than
@@ -228,7 +238,12 @@ function listScope(tab: ClaimsTab, filter: ClaimsFilter): string | null {
     // words and subtracts this exact phrase from the scope so it is not said
     // twice, which a second spelling here would silently break
     // (admin-window/BUG-0118).
-    isNarrowed(filter) ? NARROWED_BY_FILTERS : null,
+    //
+    // `narrowed` is the LIST's two-fact answer, handed in rather than asked
+    // for here (admin-window/DEBT-0008): the window line and the empty card it
+    // stands beside describe one set, so they may not decide separately
+    // whether a filter is what shaped it.
+    narrowed ? NARROWED_BY_FILTERS : null,
   ]);
 }
 
@@ -583,11 +598,56 @@ export default async function ClaimsPage({
   // the sentence above the table can state how many claims it really holds
   // (admin-window/BUG-0041). Nothing else on the page reads these rows.
   const listed = claimWindow(claimLines(shown, names));
-  const emptyWords = isNarrowed(filter)
+
+  // The second fact the URL cannot supply: what each surface holds with NO url
+  // facet at all (ARCHITECTURE.md §4.3, admin-window/DEBT-0008). Both come out
+  // of the read this page has already made and issue no query of their own —
+  // `listClaims` is a COMPLETE read (§4.3 kind 1), so its `ok` array IS the
+  // population and a second count read would ask the database a question it
+  // has already answered. Its refusal is this page's own state, rendered by
+  // the `StateOf` cards below, so there is no second leg here to refuse
+  // separately and no sub-surface to report it on (the shape `/queues` needs,
+  // where the population is its own `readCount` — admin-window/BUG-0135).
+  //
+  // Two populations, because the two surfaces hold different sets. Both are
+  // derived HERE, in one place, from the one whole-view array: the day the
+  // whole-view read is replaced by a narrowed one (admin-window/BUG-0138)
+  // these two expressions become the reads that answer them and every rule
+  // below is untouched.
+  const population = claims.kind === "ok" ? claims.data : [];
+  const listPopulation = selectClaims(
+    population,
+    tab === "standing" ? { bucket: STANDING_BUCKET } : {},
+  ).length;
+
+  // The list's own answer: the URL's structural narrowing AND whether this
+  // tab's set holds anything at all. With a population of zero no facet
+  // removed a row, so no facet may be given as the reason the list is empty —
+  // "the standing tab holds no disagreements" and "your filter matched
+  // nothing" are different facts and never share a rendering (LOOK_AND_FEEL,
+  // the four states; admin-window/BUG-0133).
+  const listNarrowed = claimsNarrowed(filter, {
+    rendered: shown.length,
+    population: listPopulation,
+  });
+  const emptyWords = listNarrowed
     ? NOTHING_MATCHED
     : tab === "standing"
       ? NOTHING_STANDING
       : NOTHING_HELD;
+
+  // The bucket table's own answer, over ITS set: the whole view against the
+  // rows it draws, which are the view under the source and domain facets
+  // only — `bucketStats` drops the bucket facet, so a bucket facet removes
+  // not one row from this table and cannot be what narrowed it.
+  const bucketRows =
+    claims.kind === "ok"
+      ? bucketStats(claims.data, filter, tab, options.bucket)
+      : [];
+  const bucketsNarrowed = claimsNarrowed(filter, {
+    rendered: bucketRows.reduce((total, row) => total + row.claims, 0),
+    population: population.length,
+  });
 
   return (
     <Page title="Claims">
@@ -607,17 +667,13 @@ export default async function ClaimsPage({
             <>
               <BucketTable
                 label="Claims by bucket"
-                rows={
-                  claims.kind === "ok"
-                    ? bucketStats(claims.data, filter, tab, options.bucket)
-                    : []
-                }
+                rows={bucketRows}
                 line={
                   claims.kind === "error" ? <StateOf result={claims} /> : undefined
                 }
               />
               <p className="type-body text-ink-secondary">
-                {isNarrowed(filter)
+                {bucketsNarrowed
                   ? BUCKET_CAPTION.narrowed
                   : BUCKET_CAPTION.whole}
               </p>
@@ -655,7 +711,7 @@ export default async function ClaimsPage({
               oldest: null,
               // What the SELECTION below narrowed to, from the same tab and
               // the same filter it used (admin-window/BUG-0114).
-              scope: listScope(tab, filter),
+              scope: listScope(tab, listNarrowed),
             }}
             shows={{ of: "matched", lede: SORT_STATEMENT, rows: "claims" }}
           />
@@ -665,8 +721,14 @@ export default async function ClaimsPage({
         ) : claims.kind === "ok" && shown.length === 0 ? (
           // Three different emptinesses, three different renderings: the table
           // that holds nothing, the filter that matched nothing, and the table
-          // that is not in this database (LOOK_AND_FEEL, Emptiness).
-          <Empty holds={emptyWords.holds} filledBy={emptyWords.filledBy} />
+          // that is not in this database (LOOK_AND_FEEL, Emptiness). The hook
+          // says WHICH — the spelling `/sources` and `/queues` already carry
+          // (`data-empty`), so the two are told apart structurally and not by
+          // reading the copy, and one test grades the rule on all three
+          // surfaces at once (admin-window/DEBT-0008).
+          <div data-empty={listNarrowed ? "narrowing" : LIST_SURFACE}>
+            <Empty holds={emptyWords.holds} filledBy={emptyWords.filledBy} />
+          </div>
         ) : (
           <>
             <ClaimList

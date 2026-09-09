@@ -22,6 +22,7 @@ import {
 import { readAwaitingRowTrend } from "@/lib/gauges/pending-claims";
 import { readRejectionStampGauge } from "@/lib/gauges/settled-values";
 import { SOURCE_FACET } from "@/lib/sources/routes";
+import { isSurfaceNarrowed } from "@/lib/url/narrowing";
 
 /**
  * Sources — **the registry's state rows, and who keeps being wrong** (campaign
@@ -130,7 +131,10 @@ function firstValue(value: ParamValue): string | undefined {
  * spelling: the page renders `data-empty="narrowing"` — "nothing matched",
  * told apart from the registry that holds nothing — and the gauges answer the
  * same narrowing the table renders, which is the property a figure on this
- * page rests on.
+ * page rests on. That is fact 1 and it is not the whole answer: over a
+ * registry holding NO rows the same id removed nothing, and the arm the page
+ * renders is decided from the population too (`isSurfaceNarrowed` below,
+ * admin-window/DEBT-0008).
  */
 function filterFrom(params: SearchParams): SourcesFilter {
   const asked = firstValue(params[SOURCE_FACET]);
@@ -179,7 +183,25 @@ export default async function SourcesPage({
   const nameOf = (sourceId: string): string | null =>
     held.find((source) => source.source_id === sourceId)?.source ?? null;
 
-  const emptyWords = filter.source_id === undefined ? NOTHING_REGISTERED : NOTHING_MATCHED;
+  // Which emptiness this is, from TWO facts and not from the URL alone
+  // (ARCHITECTURE.md §4.3, admin-window/DEBT-0008). Fact 1 is structural: a
+  // `source_id` in the URL is always a real narrowing of this table, since no
+  // registry row is implied by anything else on it. Fact 2 is the REGISTRY'S
+  // OWN POPULATION — and it costs no query, because `listSources` is a
+  // COMPLETE read (§4.3 kind 1) of the registry whole, deliberately unnarrowed
+  // so `selectSources` can do every narrowing: its `ok` array IS the
+  // population. A registry holding nothing had no row for any id to remove, so
+  // an id in the URL may not be given as the reason the table is empty; the
+  // read's own refusal is this page's state and is rendered by the `StateOf`
+  // card above, so there is no separate leg here whose refusal could delete a
+  // row (the shape `/queues` needs, where the population is its own count
+  // read — admin-window/BUG-0135).
+  const narrowed = isSurfaceNarrowed(filter.source_id !== undefined, {
+    rendered: shown.length,
+    population: held.length,
+  });
+
+  const emptyWords = narrowed ? NOTHING_MATCHED : NOTHING_REGISTERED;
 
   return (
     <Page title="Sources">
@@ -197,7 +219,7 @@ export default async function SourcesPage({
           // that holds nothing, and the narrowing that matched nothing. The
           // hook says WHICH, so neither can be mistaken for the other or for
           // an absent table.
-          <div data-empty={filter.source_id === undefined ? "registry" : "narrowing"}>
+          <div data-empty={narrowed ? "narrowing" : "registry"}>
             <Empty holds={emptyWords.holds} filledBy={emptyWords.filledBy} />
           </div>
         ) : (

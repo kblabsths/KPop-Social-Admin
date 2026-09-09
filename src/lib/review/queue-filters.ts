@@ -1,4 +1,8 @@
 import {
+  isSurfaceNarrowed,
+  type SurfacePopulation,
+} from "@/lib/url/narrowing";
+import {
   KINDS,
   SHAPES,
   shapeOf,
@@ -415,18 +419,21 @@ export function isNarrowed(
  *
  * Pure, and decided here rather than in the page, for the same reason
  * `isNarrowed` is: it is one rule about a narrowing, and the page renders.
+ *
+ * **The rule itself now lives in `src/lib/url/narrowing.ts`** and this is its
+ * review-domain adapter (admin-window/DEBT-0008): the M2 structure walk found
+ * `/claims` and `/sources` answering the same question from fact 1 alone, and
+ * a rule with three callers is declared once. What stays here is the half that
+ * is this domain's — fact 1, `isNarrowed(filter, within)` over
+ * `NARROWING_FACETS` and a kind's implied narrowing, which no other surface
+ * can spell. Nothing about this function's name, signature or answer changed.
  */
 export function isBlockNarrowed(
   filter: ReviewItemFilter,
   within: ReviewItemFilter,
-  block: {
-    /** How many rows this block is rendering under the URL's filter. */
-    rendered: number;
-    /** How many rows its kind holds with no URL facet at all. */
-    population: number;
-  },
+  block: SurfacePopulation,
 ): boolean {
-  return isNarrowed(filter, within) && block.rendered !== block.population;
+  return isSurfaceNarrowed(isNarrowed(filter, within), block);
 }
 
 /* ── writing the URL ─────────────────────────────────────────────────────── */

@@ -1488,6 +1488,136 @@ describe("absence and failure", () => {
   });
 });
 
+/* ── an empty surface is explained from TWO facts (DEBT-0008) ────────────── */
+
+/**
+ * "Nothing here yet" and "nothing matched" never share a rendering, and the
+ * URL alone cannot tell them apart (ARCHITECTURE.md §4.3, promoted at the M2
+ * structure walk; admin-window/BUG-0133's rule, admin-window/DEBT-0008 for
+ * this page).
+ *
+ * This page decided the arm from `isNarrowed(filter)` — the URL and nothing
+ * else — so a facet over a tab holding zero claims said "no claims matched
+ * these filters" and pointed the operator at a filter that had removed
+ * nothing. The ledger records staging holding 0 standing disagreements, which
+ * is exactly that state.
+ *
+ * The second fact is the SURFACE'S OWN POPULATION, and the two surfaces here
+ * hold different sets: the list's is the tab's (the standing tab is one
+ * bucket's subset), the bucket table's is the whole view (that table drops the
+ * bucket facet on purpose). Both come out of the complete read the page
+ * already makes, so neither costs a query.
+ *
+ * **Copy-independent, and two fixtures per claim** (LESSONS 8): each case
+ * renders the same shape of URL against a population the facet emptied and one
+ * it never touched, and compares the surface with its own UNFACETED rendering
+ * rather than with a sentence typed here. A page whose narrowing arm was
+ * deleted outright fails the first and last cases below.
+ */
+describe("which emptiness this is", () => {
+  const emptyHook = (markup: string): string | undefined =>
+    cheerio.load(markup)('[data-surface="claims"] [data-empty]').attr("data-empty");
+
+  const emptyCard = (markup: string): string =>
+    cheerio
+      .load(markup)('[data-surface="claims"] [data-empty]')
+      .text()
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const listLine = (markup: string): string =>
+    cheerio.load(markup)('[data-window="claims"]').text().replace(/\s+/g, " ").trim();
+
+  /** The same view with one bucket's claims removed entirely. */
+  function withoutBucket(bucket: string): Script {
+    const kept = CLAIMS.filter((claim) => claim.bucket !== bucket);
+    return {
+      [T.pendingClaims]: { data: kept, count: kept.length },
+      [T.observations]: { data: [...OBSERVATIONS] },
+      [T.sources]: { data: [...REGISTRY] },
+    };
+  }
+
+  /** A view holding no claims at all, over a registry that still answers. */
+  function noClaims(): Script {
+    return {
+      [T.pendingClaims]: { data: [], count: 0 },
+      [T.observations]: { data: [] },
+      [T.sources]: { data: [...REGISTRY] },
+    };
+  }
+
+  it("blames the facet when the facet is what emptied the list", async () => {
+    // `venues` is a domain the view really carries and no standing
+    // disagreement is in it: three standing claims, none of them matching, so
+    // the filter is the whole reason this list is empty.
+    const markup = await renderClaims(healthyScript(), {
+      tab: "standing",
+      domain: "venues",
+    });
+    expect(claimIds(markup)).toEqual([]);
+    expect(emptyHook(markup)).toBe("narrowing");
+  });
+
+  it("blames no facet when the tab holds nothing for it to remove", async () => {
+    // The same shape of URL over a view with NO standing disagreements: the
+    // source facet removed not one row, because there was none to remove.
+    const script = withoutBucket(STANDING_BUCKET);
+    const narrowed = await renderClaims(script, {
+      tab: "standing",
+      source_id: SOURCE.first,
+    });
+    const bare = await renderClaims(script, { tab: "standing" });
+
+    expect(claimIds(narrowed)).toEqual([]);
+    expect(claimIds(bare)).toEqual([]);
+    expect(emptyHook(narrowed)).not.toBe("narrowing");
+    // …and it says exactly what the unfaceted tab says, which is the whole
+    // claim: the facet changed nothing, so it explains nothing.
+    expect(emptyHook(narrowed)).toBe(emptyHook(bare));
+    expect(emptyCard(narrowed)).toBe(emptyCard(bare));
+    // The card and the window line beside it describe ONE set, so the line
+    // may not claim a narrowing the card refuses to blame.
+    expect(listLine(narrowed)).toBe(listLine(bare));
+    // Non-vacuous: the fixture still holds claims, so what is empty here is
+    // the TAB's population and not the database.
+    expect(claimIds(await renderClaims(script)).length).toBeGreaterThan(0);
+  });
+
+  it("blames no facet when the whole view holds nothing", async () => {
+    // A bucket is the one facet a hand-typed URL can still apply over an empty
+    // view: its vocabulary is the app's `RENDERABLE_BUCKETS`, not the rows'.
+    const narrowed = await renderClaims(noClaims(), { bucket: "escalated" });
+    const bare = await renderClaims(noClaims());
+
+    expect(claimIds(narrowed)).toEqual([]);
+    expect(emptyHook(narrowed)).not.toBe("narrowing");
+    expect(emptyCard(narrowed)).toBe(emptyCard(bare));
+    // The bucket table's caption is this page's other sentence about the same
+    // question, and it moves with the card rather than against it.
+    expect(bucketCaption(narrowed)).toBe(bucketCaption(bare));
+    // Every bucket row is still a real zero, so the surface saying "nothing
+    // here yet" is still showing what would fill it.
+    expect(bucketRows(narrowed).map((row) => row.claims)).toEqual(
+      RENDERED_BUCKETS.map(() => 0),
+    );
+  });
+
+  it("still names its scope for a facet that really removed rows", async () => {
+    // The other direction, and the reason the fix is not "never blame a
+    // filter": a source carrying claims, but not these ones.
+    const markup = await renderClaims(healthyScript(), {
+      source_id: SOURCE.second,
+      domain: "venues",
+    });
+    expect(claimIds(markup)).toEqual([]);
+    expect(emptyHook(markup)).toBe("narrowing");
+    expect(bucketCaption(markup)).not.toBe(
+      bucketCaption(await renderClaims(healthyScript())),
+    );
+  });
+});
+
 /* ── the filter bar ──────────────────────────────────────────────────────── */
 
 describe("the filters", () => {

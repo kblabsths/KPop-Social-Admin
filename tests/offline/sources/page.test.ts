@@ -818,6 +818,34 @@ describe("the four data-surface states", () => {
     expect(sourceIds(markup)).toEqual([]);
   });
 
+  it("keeps blaming the registry when a source id is in the URL and it holds nothing", async () => {
+    // The two-fact rule (ARCHITECTURE.md §4.3, admin-window/DEBT-0008): the
+    // URL alone said "narrowing" here, because a well-formed id in the URL IS
+    // a structural narrowing — but a registry holding no rows had none for
+    // that id to remove, so nothing was matched away and no filter may be
+    // offered as the reason. Told apart from the case above by the FACT, not
+    // by the words, and the arm is the same one the bare URL renders.
+    const empty = healthyScript({ [T.sources]: [{ data: [], count: 0 }, { data: [] }] });
+    const narrowed = await renderSources(empty, {
+      source_id: "01920000-0000-7000-8000-0000000000ff",
+    });
+    const bare = await renderSources(empty);
+    const cardOf = (markup: string): string =>
+      cheerio.load(markup)("[data-empty]").text().replace(/\s+/g, " ").trim();
+
+    expect(sourceIds(narrowed)).toEqual([]);
+    expect(cheerio.load(narrowed)("[data-empty]").attr("data-empty")).toBe("registry");
+    expect(cardOf(narrowed)).toBe(cardOf(bare));
+    expect(notProvisioned(narrowed)).not.toContain(T.sources);
+    // Non-vacuous the other way: over a registry that HOLDS rows, the same
+    // shape of id still narrows and still says so (the case above pins every
+    // spelling of it).
+    const overRows = await renderSources(healthyScript(), {
+      source_id: "01920000-0000-7000-8000-0000000000ff",
+    });
+    expect(cheerio.load(overRows)("[data-empty]").attr("data-empty")).toBe("narrowing");
+  });
+
   it("renders per request rather than at build time", async () => {
     // A page prerendered where the app has no credential ships a frozen error
     // state that never re-reads (relayed from QA on admin-window/TASK-0009).
