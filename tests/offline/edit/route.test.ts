@@ -342,6 +342,75 @@ describe("the picker's choice", () => {
     expect(updateRecordField).not.toHaveBeenCalled();
   });
 
+  it("names the fact the DECISION LOG spells: the registry field for the reference, the column for a scalar", async () => {
+    // The mirror image of admin-window/BUG-0090, pinned on BOTH fixtures
+    // (QA finding relayed 2026-09-09). The resolver stamps
+    // `field_provenance.field` with the REGISTRY field and derives the column
+    // itself (`v_column := 'venue_id'`, scraper migration `20260901000005`
+    // and the handoff artifact's reference arm), and the record page's
+    // provenance read now asks in the log's vocabulary
+    // (`mappedRegistryFields`). So a write that stamped `venue_id` would make
+    // that read miss the fact it just wrote, and the em dash BUG-0090
+    // measured would come back from the other side.
+    //
+    // Both arms go through `registryFieldOf`, so this is one rule with two
+    // answers rather than two code paths that happen to agree today.
+    const cases: ReadonlyArray<readonly [string, unknown, string]> = [
+      // The reference: the two names differ, and the LOG's name is sent.
+      ["venue_id", { ref: "01920000-0000-7000-8000-0000000000a4" }, "venue"],
+      // A scalar: the two names are the same, so nothing moves.
+      ["title", { value: "A new title" }, "title"],
+    ];
+    for (const [field, payload, expected] of cases) {
+      settleReviewItem.mockClear();
+      await patch("events", { field, ...(payload as object) });
+      const [, decision] = settleReviewItem.mock.calls[0] as [
+        unknown,
+        { value: Record<string, unknown> },
+      ];
+      expect(decision.value.field, field).toBe(expected);
+      // ...and the envelope still names no COLUMN. The function derives it
+      // (`c_value_keys` carries no `column`, and an unknown key is refused),
+      // so sending one would be registry knowledge re-encoded by hand — and,
+      // on the shipped artifact, a refusal.
+      expect(
+        Object.prototype.hasOwnProperty.call(decision.value, "column"),
+        field,
+      ).toBe(false);
+    }
+  });
+
+  it("sends exactly the reference arm the settlement artifact will accept", async () => {
+    // Coupled to the artifact rather than to a builder's memory of it: its
+    // reference arm links `(domain='events', field='venue')` and RAISES on
+    // anything else carrying a ref, so a decision this route builds has to
+    // match that pair exactly (SPEC named gap 6, the same coupling
+    // `tests/offline/handoff/settle-review-item.test.ts` makes for the action
+    // names and the key sets).
+    const { readSqlArtifact } = await import("../handoff/extract");
+    // `code` is the artifact with comments stripped and its literals INTACT —
+    // the arm is a comparison against a literal, so `scan` (which empties
+    // them) would match the same regex on any two field names.
+    const sql = readSqlArtifact("M2-handoff-settle-review-item.md").code;
+    await patch("events", {
+      field: "venue_id",
+      ref: "01920000-0000-7000-8000-0000000000a4",
+    });
+    const [, decision] = settleReviewItem.mock.calls[0] as [
+      unknown,
+      { value: { domain: string; field: string } },
+    ];
+    const arm = new RegExp(
+      `v_domain\\s*=\\s*'${decision.value.domain}'\\s+and\\s+v_field\\s*=\\s*'${decision.value.field}'`,
+    );
+    expect(arm.test(sql), `no reference arm for ${decision.value.domain}.${decision.value.field}`).toBe(true);
+    // The second fixture: the pair the artifact does NOT carry is the column
+    // spelling, which is what makes the assertion above non-vacuous.
+    expect(/v_domain\s*=\s*'events'\s+and\s+v_field\s*=\s*'venue_id'/.test(sql)).toBe(
+      false,
+    );
+  });
+
   it("refuses the same column submitted as text, before any database call", async () => {
     // The shipped path criterion 1 names: `venue_id` is not in `editable`, so
     // a value submission for it is refused by the ONE authoriser — no

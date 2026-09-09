@@ -2,6 +2,7 @@ import { requireAdmin } from "@/lib/admin";
 import {
   decideEdit,
   decideReference,
+  registryFieldOf,
   type AllowedReference,
   type EditRefusal,
 } from "@/lib/edit/config";
@@ -453,7 +454,13 @@ export async function PATCH(
       {
         domain: decision.edit.config.table,
         entity_id: id,
-        field: decision.edit.field,
+        // The name the DECISION LOG spells this column's fact with, through
+        // the ONE reader of that pairing (admin-window/BUG-0090). Identity for
+        // all eight editable scalars — `title` is `title` — so nothing about
+        // this arm changes; it is asked anyway so that the write side and the
+        // read side (`mappedRegistryFields`, which the provenance query
+        // filters on) can never spell one fact two ways.
+        field: registryFieldOf(decision.edit.config, decision.edit.field),
         observation_id: null,
         value: body.value,
         ref: null,
