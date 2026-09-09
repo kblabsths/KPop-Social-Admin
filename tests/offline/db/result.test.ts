@@ -885,6 +885,96 @@ describe("reads against a scripted PostgREST response", () => {
     expect(refusedSilent).not.toHaveProperty("data");
   });
 
+  it("refuses the absence when a call site reaches a function through a TABLE read", async () => {
+    // The realistic way admin-window/BUG-0080 comes back: not a strange
+    // Postgres sentence, but a call site that wires the close slot with the
+    // read kind it already knows. `readOne`/`readRows`/`readCount`/
+    // `readComplete` all default to `asked: "table"`, so each must answer the
+    // function's own absence code with an honest error naming what it read —
+    // never the not-provisioned card, which only a caller that came through
+    // `callFunction` may be shown.
+    for (const error of [
+      functionNotInSchemaCache(SETTLE_FUNCTION),
+      undefinedFunction(SETTLE_FUNCTION),
+    ]) {
+      const script = { [SETTLE_FUNCTION]: { error } };
+      const rpc = (db: SupabaseClient) => db.rpc(SETTLE_FUNCTION, { p_decision: {} });
+      const results: DbResult<unknown>[] = [
+        await readOne(SETTLE_FUNCTION, rpc, stubClient(script).asSupabaseClient()),
+        await readRows(SETTLE_FUNCTION, rpc, stubClient(script).asSupabaseClient()),
+        await readCount(SETTLE_FUNCTION, rpc, stubClient(script).asSupabaseClient()),
+        await readComplete(SETTLE_FUNCTION, rpc, stubClient(script).asSupabaseClient()),
+      ];
+      for (const result of results) {
+        expect(result.kind).toBe("error");
+        expect(result).not.toHaveProperty("missing");
+        expect(result).not.toHaveProperty("data");
+      }
+    }
+
+    // And the same four, handed the same codes while reading a real TABLE,
+    // stay errors about that table rather than absences of it.
+    const onATable = await readRows(
+      T.groups,
+      (db) => db.from(T.groups).select("group_id"),
+      stubClient({ [T.groups]: { error: undefinedFunction("to_tsvector") } }).asSupabaseClient(),
+    );
+    expect(onATable.kind).toBe("error");
+    expect(onATable).not.toHaveProperty("missing");
+  });
+
+  it("hands back what the function returned, falsy answers included", async () => {
+    // A settlement procedure may legitimately answer `false`, `0` or an empty
+    // set, and none of those is "it returned nothing". Only a genuinely
+    // absent value becomes `null`, so a caller can tell "settled: false" from
+    // "the call said nothing" (ARCHITECTURE.md §4.1).
+    const answers: ReadonlyArray<readonly [unknown, unknown]> = [
+      [false, false],
+      [0, 0],
+      ["", ""],
+      [[], []],
+      [{ settled: false }, { settled: false }],
+      [null, null],
+      [undefined, null],
+    ];
+    for (const [returned, expected] of answers) {
+      const stub = stubClient({ [SETTLE_FUNCTION]: { data: returned } });
+      await expect(
+        callFunction(
+          SETTLE_FUNCTION,
+          (db) => db.rpc(SETTLE_FUNCTION, { p_decision: {} }),
+          stub.asSupabaseClient(),
+        ),
+      ).resolves.toEqual({ kind: "ok", data: expected });
+    }
+  });
+
+  it("reads a NUMERIC error code the same way as its string spelling", () => {
+    // PostgREST spells its codes as strings, but the client hands back
+    // whatever the transport parsed, and `42883` is a number in JSON. The
+    // asked-partition must survive that: the same code, both spellings, must
+    // reach the same verdict on both arms — otherwise a numeric code slips
+    // past `ABSENCE_CODES` and a real absence renders as a raw error, or the
+    // reverse (admin-window/BUG-0080).
+    const spellings: ReadonlyArray<readonly [unknown, unknown]> = [
+      [{ code: "42883", message: "function f(uuid) does not exist" }, { code: 42883, message: "function f(uuid) does not exist" }],
+      [{ code: "42703", message: 'column "c" does not exist' }, { code: 42703, message: 'column "c" does not exist' }],
+    ];
+    for (const [asString, asNumber] of spellings) {
+      for (const asked of ["table", "function"] as AskedObject[]) {
+        expect(classify(asNumber, ASKED_NAME[asked], asked)).toEqual(
+          classify(asString, ASKED_NAME[asked], asked),
+        );
+      }
+    }
+    // Named, so the equality above cannot be two identical wrongs: a numeric
+    // 42883 is an absence to a function caller and an error to a table read.
+    expect(classify({ code: 42883, message: "x" }, SETTLE_FUNCTION, "function").kind).toBe(
+      "not_provisioned",
+    );
+    expect(classify({ code: 42883, message: "x" }, T.groups).kind).toBe("error");
+  });
+
   it("keeps a CALL to an absent function an absence, and a refused call red", async () => {
     // The two verdicts a caller must be able to tell apart, through the same
     // helper: the function is not installed (absence), and the function is
@@ -1147,10 +1237,20 @@ describe("no exported read throws", () => {
   ];
 
   it.each(failures)("resolves rather than rejecting on %s", async (_label, error) => {
-    const stub = stubClient({ [T.reviewItems]: { error } });
+    const stub = stubClient({ [T.reviewItems]: { error }, [SETTLE_FUNCTION]: { error } });
     const client = stub.asSupabaseClient();
 
     const results: DbResult<unknown>[] = [
+      // `callFunction` is an exported read of `lib/db/result.ts` too, so
+      // ARCHITECTURE.md §4.1's "never throws" is its contract as much as any
+      // table read's — including for the codes that mean an absence of some
+      // OTHER kind of object, which is where the asked-partition sends it
+      // (admin-window/BUG-0080).
+      await callFunction(
+        SETTLE_FUNCTION,
+        (db) => db.rpc(SETTLE_FUNCTION, { p_decision: {} }),
+        client,
+      ),
       await readRows(T.reviewItems, (db) => db.from(T.reviewItems).select("*"), client),
       await readOne(T.reviewItems, (db) => db.from(T.reviewItems).select("*").maybeSingle(), client),
       await readCount(
@@ -1187,6 +1287,10 @@ describe("no exported read throws", () => {
     await expect(readOne(T.sources, thrower, client)).resolves.toEqual(thrown);
     await expect(readCount(T.sources, thrower, client)).resolves.toEqual(thrown);
     await expect(readComplete(T.sources, thrower, client)).resolves.toEqual(thrown);
+    // A callback that throws on the FUNCTION seam resolves the same way, and
+    // the throw carries no code — so nothing about it may be read as the
+    // function being absent.
+    await expect(callFunction(T.sources, thrower, client)).resolves.toEqual(thrown);
   });
 
   it("turns an unset credential name into an error result, not a crash", async () => {
@@ -1199,6 +1303,16 @@ describe("no exported read throws", () => {
       const result = await readRows(T.sources, (db) => db.from(T.sources).select("*"));
       expect(result.kind).toBe("error");
       expect(result).toMatchObject({ message: expect.stringContaining("SUPABASE_URL") });
+      // The close slot's own seam resolves an unset name the same way. It must
+      // not become "the resolver function is not installed": the app never
+      // reached a database at all, and M2's absence card is a claim about
+      // staging, not about this process's environment.
+      const called = await callFunction(SETTLE_FUNCTION, (db) =>
+        db.rpc(SETTLE_FUNCTION, { p_decision: {} }),
+      );
+      expect(called.kind).toBe("error");
+      expect(called).not.toHaveProperty("missing");
+      expect(called).toMatchObject({ message: expect.stringContaining("SUPABASE_URL") });
     } finally {
       vi.unstubAllEnvs();
     }
