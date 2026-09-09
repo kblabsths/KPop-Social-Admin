@@ -19,7 +19,16 @@
  *
  * It decides no membership: `selectClaims` in `lib/db/claims.ts` is the one
  * predicate over claims, and this module only says what the URL asked for.
+ *
+ * **Its one import** is `lib/verdict/decision.ts`, for the app's single
+ * definition of blank (admin-window/BUG-0136, below). That module imports
+ * NOTHING — it is the leaf every other leaf's blankness question already ends
+ * at, `lib/format.ts` included — so the arrow reaches nothing that can reach a
+ * database and no cycle can be written through it. The alternative was a
+ * second definition of "renders nothing" in this file, which is the exact
+ * defect admin-window/BUG-0089 consolidated away.
  */
+import { hasVisibleContent, visibleContent } from "@/lib/verdict/decision";
 
 /* ── the parameter names ─────────────────────────────────────────────────── */
 
@@ -163,13 +172,32 @@ function isFacet(key: string): key is ClaimFacet {
  *    states a reason that is not the reason: nothing is withheld, there is
  *    no name. Bar 3 is untouched either way — nothing is rendered.
  *
+ *    **"Names nothing" is decided by INK, not by whitespace**
+ *    (admin-window/BUG-0136). The rule above is right and `trim()` expressed
+ *    only its whitespace half: `String.prototype.trim` strips the Unicode
+ *    `White_Space` set and nothing else, so `/claims?%E2%80%8B=1` (ZERO WIDTH
+ *    SPACE), `?%00=1`, `?%C2%AD=1`, `?%E2%81%A0=1`, `?%E2%80%8E=1` and
+ *    `?%7F=1` all survived it and were spelled into the mono span, where a
+ *    browser laid every one of them out at 0px and the sentence read with the
+ *    same hole (measured in Chromium, both colour schemes, 2026-09-09). The
+ *    test is now the app's ONE definition of blank — `hasVisibleContent`
+ *    (`lib/verdict/decision.ts`, admin-window/BUG-0089) — so a key a reader
+ *    would see nothing of names nothing, whichever family its codepoints come
+ *    from, and this file holds no second opinion about what renders. Where
+ *    that definition draws the line is its ruling, not this module's: an
+ *    assigned printable character is content even when it looks unhelpful, so
+ *    a U+2800 BRAILLE PATTERN BLANK key is still named.
+ *
  * `neverNamed` is the small set of words this app may not put on screen at all
  * — the parked bucket (`UNRENDERABLE_BUCKET`, `lib/db/claims.ts`; LOOK_AND_FEEL
  * bar 3) — which a URL may perfectly well use as a KEY. It is handed in rather
  * than imported because this module is a pure domain leaf and may not reach
  * `lib/db/**` (ARCHITECTURE.md §4 rule 7). Such a parameter is still COUNTED:
  * the page says it dropped one without spelling it, which is bar 3 and bar 13
- * both kept.
+ * both kept. **The comparison is against what a reader would SEE of the key**
+ * (`visibleContent`, admin-window/BUG-0136): `?in_window%E2%80%8B=1` reads as
+ * `in_window` on screen, ink for ink, so a byte comparison would put the
+ * parked bucket in front of an operator while agreeing it had not.
  */
 export interface DroppedParams {
   /** The names, in the order the URL carried them, safe to render verbatim. */
@@ -187,14 +215,17 @@ export function droppedParams(
   let withheld = 0;
   for (const key of Object.keys(params)) {
     if (key === TAB_PARAM) continue;
-    // A key that is empty or whitespace-only names nothing, so it asked for
-    // nothing — the empty-value rule from the other side. The one thing this
-    // line may never do is spell a name that is not there.
-    if (key.trim() === "") continue;
+    // A key with nothing a reader could see in it names nothing, so it asked
+    // for nothing — the empty-value rule from the other side, and the whole
+    // of it: blank is ink, not whitespace (admin-window/BUG-0136). The one
+    // thing this line may never do is spell a name that is not there.
+    if (!hasVisibleContent(key)) continue;
     const asked = firstValue(params[key]);
     if (asked === undefined || asked === "") continue;
     if (isFacet(key) && applied[key] !== undefined) continue;
-    if (neverNamed.includes(key)) withheld += 1;
+    // What the app may not render is a word on the SCREEN, so the key is
+    // compared as it would be read, not as it was typed.
+    if (neverNamed.includes(visibleContent(key))) withheld += 1;
     else named.push(key);
   }
   return { named, withheld };
