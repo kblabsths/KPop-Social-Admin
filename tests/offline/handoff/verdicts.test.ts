@@ -6,10 +6,12 @@ import {
   dollarQuoteMarks,
   forbiddenConstructs,
   fencedBlocks,
+  privilegesHeld,
   readHandoffNote,
   splitTopLevel,
   sqlArtifactOf,
   sqlBlocks,
+  tableAclAfter,
   type SqlArtifact,
 } from "./extract";
 
@@ -35,9 +37,17 @@ import {
  * **Two fixtures, per LESSONS 3.** Every assertion below runs through one
  * grader, `gradeVerdicts`, exercised on the shipped block (it must report
  * nothing) and on doctored notes it must flag: a `create policy` line, a ninth
- * action in the CHECK, a `jsonb` column, a `commit;`, and a service_role write
- * grant — plus the other half of that lesson, a note that only TALKS about
- * those constructs in a comment and a string literal, which must grade clean.
+ * action in the CHECK, a `jsonb` column, a `commit;`, a service_role write
+ * grant, the pre-BUG-0082 block that carried the grant with no revoke, a
+ * missing client revoke, and a privilege statement the reader cannot model —
+ * plus the other half of that lesson, a note that only TALKS about those
+ * constructs in a comment and a string literal, which must grade clean.
+ *
+ * **The grants are graded as an ACL, never as statements** (admin-window/BUG-0082).
+ * A new public table on this project is born holding everything, so `grant
+ * select … to service_role` narrows nothing; `tableAclAfter` replays the block's
+ * grants and revokes onto that birth state and the grader asks what each role is
+ * left holding.
  */
 
 const NOTE = "M2-handoff-verdicts.md";
@@ -219,36 +229,44 @@ function gradeVerdicts(artifact: SqlArtifact): string[] {
     findings.push("rls_missing");
   }
 
-  const revokes = statementsStartingWith(artifact, "revoke").filter((statement) =>
-    statement.includes("public.verdicts"),
-  );
-  if (!revokes.some((statement) => /\banon\b/.test(statement) && /\bauthenticated\b/.test(statement))) {
-    findings.push("client_revoke_missing");
+  // The ACL this artifact INSTALLS, not the grant lines it writes — the table is
+  // born holding everything (`ROLES_BORN_HOLDING_ALL`), so only a revoke narrows
+  // it and a grant-side reading grades the opposite of what Ben would install
+  // (admin-window/BUG-0082).
+  const acl = tableAclAfter(artifact, "public.verdicts");
+  for (const statement of acl.unreadable) findings.push(`unreadable_privilege:${statement}`);
+
+  for (const role of ["anon", "authenticated"]) {
+    const held = privilegesHeld(acl, role);
+    if (held.length > 0) findings.push(`client_privilege:${role}:${held.join("+")}`);
   }
 
-  const grants = statementsStartingWith(artifact, "grant").filter((statement) =>
-    statement.includes("public.verdicts"),
-  );
-  if (grants.some((statement) => /\banon\b|\bauthenticated\b/.test(statement))) findings.push("client_grant");
-  const toServiceRole = grants.filter((statement) => /\bto\s+service_role\b/.test(statement));
-  if (!toServiceRole.some((statement) => /\bgrant\s+select\b/.test(statement))) {
-    findings.push("service_role_select_missing");
-  }
+  const serviceRole = privilegesHeld(acl, "service_role");
+  if (!serviceRole.includes("select")) findings.push("service_role_select_missing");
   // `settle_review_item` is the only writer (contract §7); it runs security
-  // definer as the owner, so a table write grant here would be a second path.
-  if (toServiceRole.some((statement) => /\b(?:insert|update|delete|truncate|all)\b/.test(statement))) {
-    findings.push("service_role_write_grant");
-  }
+  // definer as the owner, so any privilege beyond SELECT left standing here —
+  // inherited or granted — is a second write path.
+  const writes = serviceRole.filter((privilege) => privilege !== "select");
+  if (writes.length > 0) findings.push(`service_role_write:${writes.join("+")}`);
 
   if (!/\bnotify\s+pgrst\b/.test(artifact.scan)) findings.push("pgrst_reload_missing");
 
   return findings;
 }
 
-/** A doctored copy of the shipped NOTE — the fixture the grader must flag. */
+/**
+ * A doctored copy of the shipped NOTE — the fixture the grader must flag.
+ *
+ * The edit is anchored INSIDE the one fenced `sql` block and must be unique
+ * there. Both halves are load-bearing: the note's prose quotes its own SQL (the
+ * §1 rollback row carries `notify pgrst, 'reload schema';` verbatim), so a plain
+ * `noteText.replace` doctored a table cell, left the migration untouched, and
+ * every fixture built on that anchor graded clean while asserting it would not.
+ */
 function doctoredNote(find: string, replace: string): SqlArtifact {
-  expect(noteText).toContain(find);
-  return sqlArtifactOf(noteText.replace(find, replace));
+  const block = sqlBlocks(noteText)[0].text;
+  expect(block.split(find)).toHaveLength(2);
+  return sqlArtifactOf(noteText.replace(block, block.replace(find, replace)));
 }
 
 describe("the verdicts handoff note", () => {
@@ -314,33 +332,41 @@ describe("the verdicts migration", () => {
     expect(shipped.scan).not.toMatch(/\bcreate\s+policy\b/);
   });
 
-  it("revokes the client roles and grants service_role SELECT alone", () => {
-    const revoke = statementsStartingWith(shipped, "revoke");
+  it("revokes both the client roles and service_role, and grants exactly once", () => {
+    const revoke = statementsStartingWith(shipped, "revoke").filter((statement) =>
+      statement.includes("public.verdicts"),
+    );
     expect(revoke.some((statement) => /anon/.test(statement) && /authenticated/.test(statement))).toBe(true);
+    // The line BUG-0082 was missing. Its spelling is free — `revoke all` and the
+    // sibling's enumerated seven install the same ACL, and the ACL is what the
+    // test below asserts — but SOME revoke has to name the role, because the
+    // grant beside it cannot narrow anything.
+    expect(revoke.some((statement) => /\bservice_role\b/.test(statement))).toBe(true);
     const grants = statementsStartingWith(shipped, "grant");
     expect(grants).toHaveLength(1);
     expect(grants[0]).toBe("grant select on table public.verdicts to service_role");
   });
 
   /**
-   * PIN — admin-window/BUG-0082, strict: it must FAIL today, and the day the
-   * artifact carries the revoke this XPASSes and sends the reader to the ticket.
+   * admin-window/BUG-0082 — the posture is the ACL, not the grant line.
    *
-   * The block says service_role holds "SELECT and nothing else" (note §4 item 1)
-   * and grants exactly that — but on this project a new public table is BORN
-   * with ALL granted to service_role
+   * The block says service_role holds "SELECT and nothing else", and until this
+   * ticket it *granted* exactly that and installed the opposite: on this project
+   * a new public table is BORN with ALL granted to all three Supabase roles
    * (`kspace Scraper/supabase/migrations/20260818000000_the_schema_arrives_as_one_snapshot.sql:6850`,
    * measured as `service_role=arwdDxtm/postgres` at
-   * `20260821000001_the_gate_becomes_the_only_write_path.sql:30`). A GRANT cannot
-   * narrow an existing privilege; only a REVOKE can. So the assertion that has
-   * to hold is about the REVOKE side, not the grant side — which is exactly what
-   * `gradeVerdicts`'s `service_role_write_grant` finding does not look at.
+   * `20260821000001_the_gate_becomes_the_only_write_path.sql:30`). A GRANT
+   * cannot narrow an existing privilege; only a REVOKE can. So this asks what
+   * the pasted file LEAVES each role holding, replayed from that birth state.
    */
-  it.fails("PIN BUG-0082: narrows service_role by an explicit revoke, not by a bare grant", () => {
-    const revokes = statementsStartingWith(shipped, "revoke").filter((statement) =>
-      statement.includes("public.verdicts"),
-    );
-    expect(revokes.some((statement) => /\bservice_role\b/.test(statement))).toBe(true);
+  it("leaves service_role holding SELECT alone and the client roles nothing", () => {
+    const acl = tableAclAfter(shipped, "public.verdicts");
+    // Nothing in the block changes this table's ACL in a way the reader had to
+    // skip — a skipped statement would make the three assertions below vacuous.
+    expect(acl.unreadable).toEqual([]);
+    expect(privilegesHeld(acl, "service_role")).toEqual(["select"]);
+    expect(privilegesHeld(acl, "anon")).toEqual([]);
+    expect(privilegesHeld(acl, "authenticated")).toEqual([]);
   });
 
   it("alters nothing but its own table, and carries no data statement", () => {
@@ -398,7 +424,46 @@ describe("the grader proves itself on doctored blocks", () => {
       "grant select on table public.verdicts to service_role;",
       "grant select, insert, update, delete on table public.verdicts to service_role;",
     );
-    expect(gradeVerdicts(doctored)).toContain("service_role_write_grant");
+    // Granted back AFTER the revoke, so the ordered replay is what catches it.
+    expect(gradeVerdicts(doctored)).toContain("service_role_write:insert+update+delete");
+  });
+
+  it("flags the artifact as BUG-0082 authored it: the grant alone, no revoke", () => {
+    const doctored = doctoredNote(
+      "revoke insert, update, delete, truncate, references, trigger, maintain on table public.verdicts from service_role;\n",
+      "",
+    );
+    // Every privilege the ALTER DEFAULT PRIVILEGES block handed it is still
+    // there — TRUNCATE on the verdict log included — under a `grant select`
+    // that reads as if it were not.
+    expect(gradeVerdicts(doctored)).toContain(
+      "service_role_write:insert+update+delete+truncate+references+trigger+maintain",
+    );
+    expect(gradeVerdicts(shipped)).toEqual([]);
+  });
+
+  it("flags a missing client revoke, which the client GRANT lines never showed either", () => {
+    const doctored = doctoredNote("revoke all on table public.verdicts from anon, authenticated;\n", "");
+    const findings = gradeVerdicts(doctored);
+    expect(findings).toContain(
+      "client_privilege:anon:select+insert+update+delete+truncate+references+trigger+maintain",
+    );
+    expect(findings).toContain(
+      "client_privilege:authenticated:select+insert+update+delete+truncate+references+trigger+maintain",
+    );
+  });
+
+  it("refuses to grade a privilege statement it cannot model, rather than skipping it", () => {
+    // A schema-wide re-grant reaches this table without naming it. The reader
+    // must SAY it could not model it: a silently skipped statement is how a
+    // grader certifies an ACL it never read.
+    const doctored = doctoredNote(
+      "notify pgrst, 'reload schema';",
+      "grant all on all tables in schema public to service_role;\n\nnotify pgrst, 'reload schema';",
+    );
+    const findings = gradeVerdicts(doctored);
+    expect(findings.some((finding) => finding.startsWith("unreadable_privilege:"))).toBe(true);
+    expect(gradeVerdicts(shipped).some((finding) => finding.startsWith("unreadable_privilege:"))).toBe(false);
   });
 
   it("reads a banned word in a comment or a string as prose, not as a construct", () => {
