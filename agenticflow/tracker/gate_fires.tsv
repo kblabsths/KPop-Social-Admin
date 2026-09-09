@@ -112,3 +112,4 @@
 2026-09-09T02:52:59Z	artifact_gate	blocked write outside repo: /tmp/x.txt
 2026-09-09T03:00:44Z	artifact_gate	blocked write outside repo: //rest/v1/
 2026-09-09T03:07:53Z	evidence_budget	qa_evidence_overbudget: BUG-0083 4172/4000 chars
+2026-09-09T03:18:54Z	artifact_gate	blocked write outside repo: /g
