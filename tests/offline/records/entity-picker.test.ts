@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Status } from "@/components/EditableCell";
 import {
+  IDLE_PICK_STATE,
   PickerOptions,
   PickerPanel,
   PickerValue,
@@ -13,6 +14,9 @@ import {
   noMatchWords,
   optionFor,
   pickerWindowName,
+  reducePick,
+  type PickEvent,
+  type PickState,
   type PickerOption,
   type PickerWindow,
 } from "@/components/records/entity-picker";
@@ -254,17 +258,19 @@ describe("a choice while a choice is still saving", () => {
   });
 
   /**
-   * A strict xfail pin for admin-window/BUG-0097 — `it.fails` passes only
-   * while the assertion below FAILS, so the day the guard lands this turns red
-   * and sends the reader to the ticket. Flip it back to a plain `it(...)` then.
-   *
-   * Today every option is still clickable under `saving`, so a second click
-   * sends a second PATCH for the same field: two override decisions for one
-   * intent, and the value the panel settles on is whichever answer came back
-   * last rather than the choice made last.
+   * QA's pin for admin-window/BUG-0097, flipped from `it.fails` to a plain
+   * `it` by the fix. Before it: every option was still clickable under
+   * `saving`, so a second click sent a second PATCH for the same field — two
+   * override decisions for one intent, and the value the panel settled on was
+   * whichever answer came back last rather than the choice made last.
    */
-  it.fails("offers no option that would start a second write while one is saving", () => {
-    expect(liveOptions(panelAt({ kind: "saving" }))).toBe(0);
+  it("offers no option that would start a second write while one is saving", () => {
+    const markup = panelAt({ kind: "saving" });
+    expect(liveOptions(markup)).toBe(0);
+    // The rows are still DRAWN: the operator keeps the list they were reading
+    // and the panel does not blank itself mid-write. Going busy is not the
+    // same move as going away.
+    expect(cheerio.load(markup)("li button").length).toBe(OPTIONS.length);
   });
 
   it("offers them again once the write has answered", () => {
@@ -272,6 +278,118 @@ describe("a choice while a choice is still saving", () => {
     expect(liveOptions(panelAt({ kind: "failed", message: "refused" }))).toBe(
       OPTIONS.length,
     );
+  });
+});
+
+/* ── and whose answer it accepts ──────────────────────────────────────────── */
+
+/**
+ * The other half of the same rule, and it fails separately: which controls the
+ * panel offers is one property, whose ANSWER the state accepts is another
+ * (campaign admin-window/BUG-0097).
+ *
+ * Graded over `reducePick` rather than the component because a second click is
+ * a state no offline test can reach — `tests/offline` is environment node with
+ * no jsdom (STACK.md §4) — and because the reducer is where the guard has to
+ * live: two clicks inside one commit window read the same rendered closure, so
+ * only the reducer sees what the first click already did.
+ */
+describe("whose answer the picker's state accepts", () => {
+  const A: PickerOption = { id: VENUE, name: "Olympic Hall" };
+  const B: PickerOption = { id: DOME, name: "Gocheok Sky Dome" };
+
+  /** Choice `n` of `option`, and the answer it eventually gets. */
+  const choosing = (edit: number, option: PickerOption) =>
+    ({ kind: "choosing", edit, option }) as const;
+  const settled = (
+    edit: number,
+    option: PickerOption,
+    ok: boolean,
+  ): PickEvent => ({
+    kind: "settled",
+    edit,
+    option,
+    outcome: ok ? { ok: true } : { ok: false, message: `${option.id} refused` },
+  });
+
+  it("starts from nothing chosen and nothing said", () => {
+    expect(IDLE_PICK_STATE.status.kind).toBe("idle");
+    expect(IDLE_PICK_STATE.chosen).toBeNull();
+  });
+
+  it("takes a first choice, and shows it once its own write answers", () => {
+    // The fixture the rule must NOT flag: an ordinary choice still lands.
+    const saving = reducePick(IDLE_PICK_STATE, choosing(1, A));
+    expect(saving.status.kind).toBe("saving");
+    expect(saving.chosen).toBeNull(); // not yet: the write has not answered
+    const done = reducePick(saving, settled(1, A, true));
+    expect(done.status.kind).toBe("saved");
+    expect(done.chosen).toBe(A);
+  });
+
+  it("is not a second choice at all while the first write is in flight", () => {
+    const saving = reducePick(IDLE_PICK_STATE, choosing(1, A));
+    const second = reducePick(saving, choosing(2, B));
+    // Unchanged BY REFERENCE: the first write still owns the statement, and
+    // React bails out rather than re-rendering under it.
+    expect(second).toBe(saving);
+  });
+
+  it("never lets a superseded write's late answer win the display", () => {
+    // The measured symptom of admin-window/BUG-0097: two writes in the air for
+    // one field, and the line ends up showing whichever ANSWERED last rather
+    // than what was last decided.
+    let state: PickState = reducePick(IDLE_PICK_STATE, choosing(1, A));
+    state = reducePick(state, settled(1, A, false)); // write 1 refused
+    expect(state.chosen).toBeNull();
+
+    state = reducePick(state, choosing(2, B)); // the operator chooses B
+    expect(state.status.kind).toBe("saving");
+
+    // Write 1's answer arrives LATE, and it is a success for A.
+    const late = reducePick(state, settled(1, A, true));
+    expect(late).toBe(state); // no statement of A's, and B's write still runs
+    expect(late.chosen).toBeNull();
+
+    // B's own answer is the one that speaks.
+    const settledB = reducePick(late, settled(2, B, true));
+    expect(settledB.status.kind).toBe("saved");
+    expect(settledB.chosen).toBe(B);
+  });
+
+  it("never lets a superseded write's late refusal erase a newer statement", () => {
+    let state: PickState = reducePick(IDLE_PICK_STATE, choosing(1, A));
+    state = reducePick(state, settled(1, A, true));
+    state = reducePick(state, choosing(2, B));
+    const late = reducePick(state, settled(1, A, false));
+    // A 403 for a write nobody is waiting on does not speak over the write
+    // that IS in flight (admin-window/BUG-0075's rule, this widget).
+    expect(late).toBe(state);
+    expect(late.status.kind).toBe("saving");
+    expect(late.chosen).toBe(A); // still what the last ANSWERED write set
+  });
+
+  it("hands the widget back after a write, so the next choice can be made", () => {
+    const saved = reducePick(
+      reducePick(IDLE_PICK_STATE, choosing(1, A)),
+      settled(1, A, true),
+    );
+    const again = reducePick(saved, choosing(2, B));
+    expect(again.status.kind).toBe("saving");
+    expect(again.chosen).toBe(A); // the line still says what it says until B answers
+  });
+
+  it("clears a spent statement without speaking over a write in flight", () => {
+    // Reopening the picker acknowledges the last confirmation or refusal — and
+    // does nothing at all to a write still running.
+    const failed = reducePick(
+      reducePick(IDLE_PICK_STATE, choosing(1, A)),
+      settled(1, A, false),
+    );
+    expect(reducePick(failed, { kind: "cleared" }).status.kind).toBe("idle");
+
+    const saving = reducePick(IDLE_PICK_STATE, choosing(1, A));
+    expect(reducePick(saving, { kind: "cleared" })).toBe(saving);
   });
 });
 

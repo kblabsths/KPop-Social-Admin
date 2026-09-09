@@ -1,8 +1,11 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useReducer, useRef, useState } from "react";
 import {
   EditStatus,
+  IDLE_EDIT_STATE,
+  reduceEdit,
+  type EditState,
   type SaveOutcome,
   type Status,
 } from "@/components/EditableCell";
@@ -29,6 +32,13 @@ import { submitReferenceEdit } from "./submit";
  * **It offers only rows that exist, and creates nothing.** There is no
  * "add a venue" control, no free-text fallback and no insert anywhere behind
  * it — entity creation is the resolver's, not Admin's (spec §8, AGENTS.md).
+ *
+ * **A write in flight owns the widget** (campaign admin-window/BUG-0097). One
+ * field takes one override at a time: while a choice is saving, every OPTION
+ * is disabled — they are the controls that start a write — and no answer to a
+ * superseded write may overwrite a newer statement. That is the same rule the
+ * click-to-edit cell carries (`reduceEdit`, admin-window/BUG-0069/0075), and
+ * `reducePick` below delegates the status half to it rather than restating it.
  *
  * **It is not a door** (SPEC F12's second hard limit). It renders only on a
  * reference field of a record page that is already open; it is not a nav item,
@@ -142,6 +152,89 @@ export function pickerWindowName(domain: string): string {
   return `${domain}_choices`;
 }
 
+/**
+ * What the picker's line is saying, and WHICH choice put it there — campaign
+ * admin-window/BUG-0097.
+ *
+ * It is the click-to-edit cell's `EditState` with the one extra thing this
+ * widget displays: the row the field points at. The status half is not
+ * re-derived here — `reduceEdit` decides it, so "a status is only ever
+ * replaced or retired by the edit that produced it, or by a later one"
+ * (admin-window/BUG-0075) has exactly one implementation in this app and the
+ * two widgets cannot drift apart.
+ */
+export interface PickState extends EditState {
+  /** The row the resting line links to, set only by an answered write. */
+  readonly chosen: PickerOption | null;
+}
+
+/** Nothing chosen, nothing said, and no choice owning a statement. */
+export const IDLE_PICK_STATE: PickState = { ...IDLE_EDIT_STATE, chosen: null };
+
+/**
+ * What happens to the picker. Every event names the CHOICE it belongs to,
+ * because "which choice is this answer about" is what the defect could not
+ * answer: two overrides for one field were in the air and the display went to
+ * whichever PostgREST answered last, not to what was last decided.
+ */
+export type PickEvent =
+  /** The operator chose `option`; `edit` is the ordinal of this choice. */
+  | { kind: "choosing"; edit: number; option: PickerOption }
+  /** That choice's write answered. */
+  | { kind: "settled"; edit: number; option: PickerOption; outcome: SaveOutcome }
+  /** The operator reopened the picker, acknowledging the last statement. */
+  | { kind: "cleared" };
+
+/**
+ * The rule: a write in flight owns the widget until its own answer arrives.
+ *
+ * Pure and total over (state, event); a stale event returns the state
+ * unchanged BY REFERENCE, so `useReducer` bails out rather than re-rendering
+ * under a running write.
+ *
+ *  - `choosing` while a write is in flight is **not a choice**. This is the
+ *    guard that has to live in the reducer rather than in the click handler:
+ *    two clicks inside one commit window read the SAME rendered closure, so a
+ *    handler-local check sees `idle` twice, while the reducer sees the state
+ *    the first click already produced.
+ *  - `settled` answers only the choice still on screen. A superseded write's
+ *    answer — success or refusal — never overwrites a newer statement, and
+ *    never moves the line to the row a stale write happened to carry.
+ *  - `cleared` acknowledges a spent confirmation or refusal and says nothing
+ *    over a write still running.
+ */
+export function reducePick(state: PickState, event: PickEvent): PickState {
+  switch (event.kind) {
+    case "choosing": {
+      const next = reduceEdit(state, { kind: "committed", edit: event.edit });
+      if (state.status.kind === "saving" || next === state) return state;
+      return { ...next, chosen: state.chosen };
+    }
+    case "settled": {
+      const next = reduceEdit(state, {
+        kind: "settled",
+        edit: event.edit,
+        outcome: event.outcome,
+      });
+      if (next === state) return state;
+      // The line moves only on this choice's OWN successful answer; a refusal
+      // leaves it pointing where it pointed (there was no change to show).
+      return {
+        ...next,
+        chosen: event.outcome.ok ? event.option : state.chosen,
+      };
+    }
+    case "cleared": {
+      if (state.status.kind === "idle") return state;
+      const next = reduceEdit(state, { kind: "editing", edit: state.edit });
+      if (next === state) return state;
+      return { ...next, chosen: state.chosen };
+    }
+    default:
+      return state;
+  }
+}
+
 const SEARCH_CLASS =
   "type-data block w-full rounded-control border border-accent bg-surface px-1 py-0.5 text-ink";
 
@@ -161,11 +254,20 @@ const OPTION_CLASS =
 export function PickerOptions({
   options,
   current,
+  busy = false,
   onChoose,
 }: {
   options: readonly PickerOption[];
   /** The id this field already points at, so the list can say which it is. */
   current: string | null;
+  /**
+   * A write for this field is in flight, so no option may start another —
+   * campaign admin-window/BUG-0097. The rows stay DRAWN and readable (the
+   * operator keeps the list they were choosing from, and the panel does not
+   * jump mid-write); they simply cannot act. Same rule, same spelling, as the
+   * click-to-edit cell's `disabled={status.kind === "saving"}`.
+   */
+  busy?: boolean;
   onChoose: (id: string) => void;
 }) {
   if (options.length === 0) return null;
@@ -177,9 +279,11 @@ export function PickerOptions({
             type="button"
             onClick={() => onChoose(option.id)}
             aria-current={option.id === current ? "true" : undefined}
+            disabled={busy}
             className={cx(
               OPTION_CLASS,
               option.id === current && "bg-chrome",
+              busy && "cursor-not-allowed opacity-50",
             )}
           >
             {orDash(option.name)}{" "}
@@ -242,7 +346,12 @@ export function PickerPanel({
           filledBy={noMatchWords(info.domain)}
         />
       ) : (
-        <PickerOptions options={matches} current={current} onChoose={onChoose} />
+        <PickerOptions
+          options={matches}
+          current={current}
+          busy={status.kind === "saving"}
+          onChoose={onChoose}
+        />
       )}
       <p id={hintId} className="type-body text-ink-secondary">
         {PICKER_HINT}
@@ -328,16 +437,41 @@ export function EntityPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<Status>({ kind: "idle" });
-  const [chosen, setChosen] = useState<PickerOption | null>(
-    reference === null ? null : { id: reference.id, name: reference.name },
-  );
+  const [pick, dispatch] = useReducer(reducePick, undefined, () => ({
+    ...IDLE_PICK_STATE,
+    chosen:
+      reference === null ? null : { id: reference.id, name: reference.name },
+  }));
+  /** Ordinals handed out one per choice; see `PickState.edit`. */
+  const picks = useRef(0);
+  /**
+   * Whether a write for this field is in the air — campaign
+   * admin-window/BUG-0097.
+   *
+   * A ref rather than the reducer's own status because this gate has to hold
+   * WITHIN a tick: two clicks landing before React re-renders both read the
+   * same `pick`, so a check against that snapshot would let both through and
+   * two `override` decisions would be recorded for one intent. A ref is
+   * written synchronously, so the second click sees the first one's write.
+   * The reducer's epoch is the other half — it decides whose ANSWER counts.
+   */
+  const inFlight = useRef(false);
+  const status = pick.status;
+  const chosen = pick.chosen;
 
   async function choose(optionId: string) {
     // Only a row the read returned may be sent, whatever produced the id.
     const option = optionFor(info.options, optionId);
     if (option === null) return;
-    setStatus({ kind: "saving" });
+    // A choice while a choice is still saving is not a second write. The
+    // options are `disabled` for the whole of it, so this is the door behind
+    // the door: a stale click already in the air, or a hand-called handler.
+    if (inFlight.current) return;
+    inFlight.current = true;
+
+    picks.current += 1;
+    const edit = picks.current;
+    dispatch({ kind: "choosing", edit, option });
 
     let outcome: SaveOutcome;
     try {
@@ -349,16 +483,16 @@ export function EntityPicker({
       };
     }
 
+    inFlight.current = false;
     if (outcome.ok) {
-      setChosen(option);
       setOpen(false);
       setQuery("");
-      setStatus({ kind: "saved" });
-    } else {
-      // The route's own refusal, unchanged, and the panel stays open over the
-      // list the operator was choosing from (LOOK_AND_FEEL state 4).
-      setStatus({ kind: "failed", message: outcome.message });
     }
+    // Success moves the line to this option and failure keeps the route's own
+    // refusal, unchanged, over the list the operator was choosing from
+    // (LOOK_AND_FEEL state 4) — but only if this choice is still the one on
+    // screen. A superseded write's answer changes nothing.
+    dispatch({ kind: "settled", edit, option, outcome });
   }
 
   return (
@@ -376,7 +510,7 @@ export function EntityPicker({
         <button
           type="button"
           onClick={() => {
-            setStatus({ kind: "idle" });
+            dispatch({ kind: "cleared" });
             setOpen((was) => !was);
           }}
           aria-expanded={open}
