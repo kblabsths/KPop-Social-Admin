@@ -16049,3 +16049,7 @@
 2026-09-09T06:36:15Z	agent	-	-	-	-
 # STRANDED	2026-09-09T06:36:30Z	agent	8 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0098.json, agenticflow/visions/admin-window/tracker/receipts/BUG-0101.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0098.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0101.md
 2026-09-09T06:36:30Z	agent	-	-	-	-
+# STRANDED	2026-09-09T06:36:47Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0101.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0104.md
+2026-09-09T06:36:47Z	agent	-	-	-	-
+# STRANDED	2026-09-09T06:37:00Z	qa-adversary	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T06:37:00Z	qa-adversary	BUG-0098	16289	691	86250
