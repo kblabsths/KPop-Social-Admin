@@ -10,7 +10,8 @@ import {
   implicitInterElementSpacesIn,
   sourceFiles,
 } from "../source-tree";
-import { factoryTicketIds, render, runTogetherWords } from "../ui/markup";
+import { factoryTicketIds, h, render, runTogetherWords } from "../ui/markup";
+import { Badge } from "@/components/ui/badge";
 import {
   APPLIES,
   APPLY_COUNT,
@@ -914,6 +915,98 @@ describe("the tone a cycle's outcome earns", () => {
     // below is a finding and not an empty loop.
     expect(errored).toBeGreaterThan(1);
     expect(green).toEqual([]);
+  });
+
+  /**
+   * **The boundary is ONE error, not many** (QA of admin-window/BUG-0106).
+   *
+   * The bug was measured on rows carrying 108, and every assertion written for
+   * it uses that count — so an implementation that woke at `errors > 1` rather
+   * than `errors > 0` would pass all of them, and would leave green exactly
+   * the two rows the ticket's own table lists at **1 error** ("2 | succeeded |
+   * 1 | --color-healthy"). The palette bar's word is *non-zero*, and one is
+   * non-zero: a single failure is still something left to answer for.
+   */
+  it("reads a single error as an error, not as a rounding of zero [admin-window/BUG-0106]", async () => {
+    const ONE: ResolutionRunRow = {
+      ...SUCCEEDED,
+      run_id: "0192f0c1-0000-7000-8000-0000000000e2",
+      errors: 1,
+      error_summary: 'column "venue" of relation "events" does not exist',
+    };
+    const population = [...CYCLES, ONE];
+    const markup = await renderCycles(
+      healthyScript({ [T.resolutionRuns]: [{ data: population }, { data: population }] }),
+    );
+
+    const row = cycleRow(markup, ONE.run_id);
+    // The row really is the pair's errored half: same word, one error.
+    expect(row.outcome).toBe(SUCCEEDED.outcome);
+    expect(errorsShown(row)).toBe(1);
+    expect(row.tone).toBe("attention");
+    // …and the clean row of the same word is still green, so this cannot pass
+    // by `succeeded` having simply stopped being healthy.
+    expect(cycleRow(markup, SUCCEEDED.run_id).tone).toBe("healthy");
+  });
+
+  /**
+   * **Whatever word its producer wrote** (QA of admin-window/BUG-0106).
+   *
+   * The palette bar colours an errored outcome amber without asking which word
+   * it is, and the builder's implementation follows it for a NEUTRAL word too
+   * — a `skipped` row that reports errors reads attention rather than staying
+   * uncoloured. Nothing on staging exercises that today (measured 2026-09-09:
+   * the one `skipped` cycle in the 200-row window carries `errors = 0`), so it
+   * is pinned here: the rule is the count's, not a special case for the single
+   * word the bug happened to be filed about.
+   */
+  it("gives a neutral word with errors the same amber a succeeded one gets [admin-window/BUG-0106]", async () => {
+    const SKIPPED_WITH_ERRORS: ResolutionRunRow = {
+      ...SKIPPED,
+      run_id: "0192f0c1-0000-7000-8000-0000000000e3",
+      errors: 3,
+      error_summary: "three facts were skipped and nothing repaired them",
+    };
+    const population = [...CYCLES, SKIPPED_WITH_ERRORS];
+    const markup = await renderCycles(
+      healthyScript({ [T.resolutionRuns]: [{ data: population }, { data: population }] }),
+    );
+
+    const errored = cycleRow(markup, SKIPPED_WITH_ERRORS.run_id);
+    const clean = cycleRow(markup, SKIPPED.run_id);
+    // The producer's word is untouched on both, and only the count differs.
+    expect(errored.outcome).toBe(clean.outcome);
+    expect(errorsShown(errored)).toBe(3);
+    expect(errorsShown(clean)).toBe(0);
+
+    expect(errored.tone).toBe("attention");
+    expect(clean.tone).toBe("neutral");
+  });
+
+  /**
+   * **No new colour enters the palette** (criterion 6 of admin-window/BUG-0106).
+   *
+   * The amber an errored outcome earns is the ink the app already gives its
+   * high-severity badge — the same primitive, drawn the same way — and the
+   * clean row keeps the ink the app already gives a healthy one. Each side is
+   * compared against ANOTHER RENDERING of the app's own primitive, never
+   * against a class literal or a colour value: restyling the palette moves
+   * both sides of every equality below together, so a design change cannot
+   * redden this, while a hand-rolled second amber would.
+   */
+  it("draws an errored outcome with ink the palette already carries [admin-window/BUG-0106]", async () => {
+    const markup = await renderCycles(withErroredSuccess());
+    const $ = cheerio.load(markup);
+    const badgeOf = (runId: string) =>
+      $(`[data-cycle="${runId}"]`).closest("tr").find("[data-outcome-tone] span").attr("class");
+    const primitive = (tone: "high" | "healthy") =>
+      cheerio.load(render(h(Badge, { tone, children: "succeeded" })))("span").first().attr("class");
+
+    expect(badgeOf(ERRORED.run_id)).toBe(primitive("high"));
+    expect(badgeOf(SUCCEEDED.run_id)).toBe(primitive("healthy"));
+    // The two really are different renderings, so the equalities above are not
+    // both satisfied by one undifferentiated badge.
+    expect(badgeOf(ERRORED.run_id)).not.toBe(badgeOf(SUCCEEDED.run_id));
   });
 });
 
