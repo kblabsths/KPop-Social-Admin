@@ -2613,31 +2613,30 @@ describe("an evidence cell with nothing in it", () => {
   });
 
   /**
-   * STRICT PIN — admin-window/BUG-0134. The other half of BUG-0132's
-   * criterion 2, and it is not met (QA, attacking that ticket's landed fix on
-   * run/admin-window). `it.fails` is strict: the day the pair draws the app's
-   * absence element this test reddens with "Expect test to fail", and the
-   * reader comes here and drops the `.fails`.
+   * The other half of BUG-0132's criterion 2, met by admin-window/BUG-0134
+   * (this was QA's strict `it.fails` pin until that fix landed).
    *
-   * `contenders()` (src/components/review/shape-views.tsx:262) writes
-   * `tier: row.tier ?? EM_DASH` and `EvidenceClaim.tier` is `string`, so an
-   * unreadable registry reaches the pair as a BARE CHARACTER the caller typed,
-   * while the table cell for the same claim now draws `lib/format.ts`'s
-   * `nullDash()`. One page, one absent tier, two renderings again — the
-   * difference an operator who cannot see the ink actually gets is the
-   * accessible name: the table cell announces `no value`, the pair announces
-   * nothing at all, and `Column.cell`'s rule ("the cell never decides that
-   * itself") is broken one block above the cells that now obey it.
+   * `contenders()` (src/components/review/shape-views.tsx) used to write
+   * `tier: row.tier ?? EM_DASH` against an `EvidenceClaim.tier` typed
+   * `string`, so an unreadable registry reached the pair as a BARE CHARACTER
+   * the caller typed, while the table cell for the same claim drew
+   * `lib/format.ts`'s `nullDash()`. One page, one absent tier, two renderings
+   * — and the difference an operator who cannot see the ink actually gets is
+   * the accessible name: the table cell announced `no value`, the pair
+   * announced nothing at all, breaking `Column.cell`'s rule ("the cell never
+   * decides that itself") one block above the cells that obey it. The null now
+   * travels to the card and the card renders it with `orDash`.
    *
    * Graded on the accessible name, never on ink: the app's absence element is
    * the thing under test, and it is the same element `CardValue` in
    * `src/components/evidence/evidence-pair.tsx` already draws for an absent
-   * VALUE — so the pair is inconsistent with itself inside one card.
+   * VALUE — so the pair would otherwise be inconsistent with itself inside one
+   * card.
    *
-   * Second fixture (LESSONS 3): a fix that labelled every tier would redden
-   * the healthy leg below.
+   * Second fixture (LESSONS 3): a fix that labelled every tier reddens the
+   * healthy leg below.
    */
-  it.fails("says the pair's absent tier with the app's absence element too", async () => {
+  it("says the pair's absent tier with the app's absence element too", async () => {
     /** The pair's contender cards — where a claim's own tier is written. */
     function contenderCards(markup: string) {
       const $ = cheerio.load(markup);
