@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T01:59:00Z — do not edit)
+# Tracker index (regenerated 2026-09-09T02:04:57Z — do not edit)
 
 ## open
 - FEAT-0009 [P1][feat][M2] The two schema handoff artifacts, authored complete for Ben to install  (scope:agenticflow/tracker/for-human,agenticflow/docs/vision/SPEC.md)
@@ -21,10 +21,10 @@
 ## claimed
 - TASK-0045 [P1][task][M2] The verdicts table, authored complete as a handoff artifact Ben installs by hand  (deps:TASK-0042 scope:agenticflow/tracker/for-human/M2-handoff-verdicts.md,tests/offline/handoff/extract.ts,tests/offline/handoff/verdicts.test.ts @builder-128)
 - TASK-0048 [P1][task][M2] lib/db/verdict.ts: the one call site of settle_review_item, the readiness read, and the M2 guard inversion  (deps:TASK-0042,TASK-0047 scope:src/lib/db/verdict.ts,src/lib/db/tables.ts,tests/offline/verdict/seam.test.ts,tests/offline/edit/config.test.ts,tests/offline/review/one-place.test.ts,tests/fixtures/stub-client.ts,tests/fixtures/rows.ts @builder-129)
-- BUG-0080 [P2][bug][M2] a non-operator 42883 from a TABLE read renders a provisioned table as not_provisioned  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts,tests/fixtures/stub-client.ts @builder-127 from:TASK-0047)
 
 ## built
 - TASK-0040 [P1][task][patch] Strike the direct-edit path: groups/idols leave EDIT_CONFIG, and every surface that assumed it is reconciled  (scope:src/lib/edit,src/app/records,src/app/api/admin,src/components,src/lib/db,tests/offline,tests/live,tests/http @builder-118 from:inbox:2026-09-09-vision-amendment.md)
+- BUG-0080 [P2][bug][M2] a non-operator 42883 from a TABLE read renders a provisioned table as not_provisioned  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts,tests/fixtures/stub-client.ts @builder-127 from:TASK-0047)
 
 ## qa
 - BUG-0078 [P2][bug][patch] Walk docs and Ben's note still say staging has no walk_sandbox; the reset tool succeeds there today  (scope:agenticflow/docs/vision/STACK.md,agenticflow/tracker/for-human/TASK-0034.md @builder-124 from:TASK-0041)
@@ -34,4 +34,4 @@
 - TASK-0043 [P1][task][M2] ASK Ben: which registered sources row is the admin voice, and does it exist on staging  (scope:agenticflow/tracker/for-human)
 - TASK-0044 [P1][task][M2] ASK Ben: which columns of events and venues are editable at all  (scope:agenticflow/tracker/for-human)
 
-Totals — blocked:2, built:1, claimed:3, done:11, open:16, qa:2, wont_fix:1. Archived: 124.
+Totals — blocked:2, built:2, claimed:2, done:11, open:16, qa:2, wont_fix:1. Archived: 124.
