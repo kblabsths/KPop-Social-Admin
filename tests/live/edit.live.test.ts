@@ -580,6 +580,110 @@ describe("a resolver-owned record page", () => {
       );
     }
   });
+
+  /**
+   * QA, admin-window/BUG-0090 — the same claim over EVERY event the log holds
+   * a venue decision for, not the newest one.
+   *
+   * The case above seeks ONE event and is satisfied by it. That is a sample of
+   * size one over a translation the whole `events` surface depends on, and the
+   * defect it replaced was invisible on a sample of size one for a year of
+   * rows: every event rendered the dash and every event was "the" event. This
+   * one drives the whole population the mapping can be wrong about, and checks
+   * the OTHER half at the same time — that the re-key moved the reference's
+   * line and nothing else's, per event, against each fact's own current
+   * decision read independently of `lib/db`.
+   */
+  it("shows the venue source on EVERY event the log holds a venue decision for, and moves no scalar's line", async () => {
+    const config = EDIT_CONFIG.events;
+    const reference = config.reference;
+    if (reference === null) throw new Error("events lost its reference column");
+    const client = independentClient();
+
+    // Every entity whose venue fact has been decided. Bounded, and the bound
+    // is asserted: a truncated population would make "every" a lie.
+    const CAP = 200;
+    const decided = await client
+      .from("field_provenance")
+      .select("entity_id", { count: "exact" })
+      .eq("entity_type", config.table)
+      .eq("field", reference.registryField)
+      .order("provenance_id", { ascending: true })
+      .range(0, CAP - 1);
+    if (decided.error) {
+      throw new Error(`reading field_provenance failed: ${decided.error.message}`);
+    }
+    const rows = (decided.data ?? []) as Record<string, unknown>[];
+    expect(decided.count ?? 0, "venue decisions on staging").toBeLessThanOrEqual(CAP);
+    const ids = [...new Set(rows.map((row) => String(row.entity_id)))];
+    expect(ids.length, "events carrying a venue decision").toBeGreaterThan(0);
+
+    // The whole log for those events, over the fields the surface draws, read
+    // by this file's own client and reduced by its own reckoning. Keyed by the
+    // COLUMN, which is the translation under test applied independently.
+    const log = await client
+      .from("field_provenance")
+      .select("entity_id, field, source_id, applied_at, admin_locked, provenance_id")
+      .eq("entity_type", config.table)
+      .in("entity_id", ids)
+      .in("field", [...mappedRegistryFields(config)])
+      .order("applied_at", { ascending: true })
+      .order("provenance_id", { ascending: true });
+    if (log.error) throw new Error(`reading field_provenance failed: ${log.error.message}`);
+    const latest = new Map<string, Record<string, unknown>>();
+    for (const row of (log.data ?? []) as Record<string, unknown>[]) {
+      const column = columnOfRegistryField(config, String(row.field));
+      latest.set(`${String(row.entity_id)}\u0000${column}`, row);
+    }
+
+    const names = new Map<string, string>();
+    const sourceIds = [...latest.values()]
+      .map((row) => row.source_id)
+      .filter((id): id is string => typeof id === "string");
+    if (sourceIds.length > 0) {
+      const named = await client
+        .from("sources")
+        .select("source_id, source")
+        .in("source_id", [...new Set(sourceIds)]);
+      if (named.error) throw new Error(`reading sources failed: ${named.error.message}`);
+      for (const source of (named.data ?? []) as Record<string, unknown>[]) {
+        names.set(String(source.source_id), String(source.source));
+      }
+    }
+
+    const dashed: string[] = [];
+    for (const id of ids) {
+      const markup = await renderPage(RecordPage, {
+        params: Promise.resolve({ table: config.table, id }),
+      });
+      for (const column of mappedColumns(config)) {
+        const line = provenanceOf(markup, column);
+        expect(line, `${id}.${column}`).not.toBeNull();
+        const decision = latest.get(`${id}\u0000${column}`);
+        if (decision === undefined) {
+          // No decision on this fact: the app's one absence marker, and the
+          // re-key must not have invented a line here either.
+          expect(line, `${id}.${column}`).toBe(EM_DASH);
+          continue;
+        }
+        if (line === EM_DASH) {
+          dashed.push(`${id}.${column}`);
+          continue;
+        }
+        if (decision.admin_locked === true) {
+          expect(line, `${id}.${column}`).toContain("admin-set");
+        } else if (typeof decision.source_id === "string") {
+          expect(line, `${id}.${column}`).toContain(
+            names.get(decision.source_id) ?? decision.source_id,
+          );
+        }
+      }
+    }
+
+    // The defect in one assertion, over the whole population: not one decided
+    // fact on any of these events renders "no source behind this value".
+    expect(dashed, "decided facts still rendering the absence marker").toEqual([]);
+  });
 });
 
 /* ── the walk sandbox: the write path's own table ─────────────────────────── */

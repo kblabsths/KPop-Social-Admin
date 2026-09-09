@@ -504,6 +504,37 @@ describe("the map", () => {
     }
   });
 
+  it("cannot spell a reference without the name its fact is logged under", () => {
+    // QA, admin-window/BUG-0090. The defect was a fact addressed by a name
+    // nothing in the map carried, so the map now carries it — and the ONLY
+    // thing that keeps a future reference from re-opening the same hole is
+    // that `registryField` is REQUIRED, not that a reviewer notices it is
+    // missing. This is that requirement, graded by the compiler
+    // (`tsc --noEmit`, acceptance test 1), which is where a type is graded.
+    //
+    // A pin in both directions by construction: an unused `@ts-expect-error`
+    // is itself an error (TS2578), so the day the field becomes optional this
+    // line reddens instead of quietly permitting the omission.
+    const withoutTheLoggedName: TableEditConfig = {
+      table: "events",
+      pk: "event_id",
+      regime: "resolver_owned",
+      editable: [],
+      display: ["venue_id"],
+      // @ts-expect-error a reference with no registry field is unwritable: the
+      // log names the fact and the map must say what that name is.
+      reference: { field: "venue_id", domain: "venues" },
+    };
+    // ...and the same literal WITH the name compiles, so the directive above
+    // is refusing the omission and not the shape.
+    const withIt: TableEditConfig = {
+      ...withoutTheLoggedName,
+      reference: { field: "venue_id", domain: "venues", registryField: "venue" },
+    };
+    expect(registryFieldOf(withIt, "venue_id")).toBe("venue");
+    expect(columnOfRegistryField(withIt, "venue")).toBe("venue_id");
+  });
+
   it("names each reference the fact the decision log spells, not the column", () => {
     // admin-window/BUG-0090. `field_provenance.field` holds the REGISTRY field
     // name; the map's `field` is the CANONICAL COLUMN. They are the same
