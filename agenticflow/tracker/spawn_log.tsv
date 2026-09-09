@@ -13742,3 +13742,27 @@
 2026-09-09T04:21:27Z	qa-adversary	BUG-0086	spawned
 # STRANDED	2026-09-09T04:21:33Z	agent	8 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0088.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0090.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0091.md
 2026-09-09T04:21:33Z	agent	-	-	-	-
+# STRANDED	2026-09-09T04:21:54Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md
+2026-09-09T04:21:54Z	agent	-	-	-	-
+2026-09-09T04:21:55Z	qa-adversary	BUG-0088	spawned
+# STRANDED	2026-09-09T04:21:55Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md
+2026-09-09T04:21:55Z	agent	-	-	-	-
+# STRANDED	2026-09-09T04:21:58Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md
+2026-09-09T04:21:58Z	agent	-	-	-	-
+# STRANDED	2026-09-09T04:22:05Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md
+2026-09-09T04:22:05Z	agent	-	-	-	-
+2026-09-09T04:22:08Z	qa-adversary	TASK-0059	spawned
+2026-09-09T04:22:22Z	builder	BUG-0091	spawned
+# STRANDED	2026-09-09T04:22:26Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0088.md
+2026-09-09T04:22:26Z	agent	-	-	-	-
+# STRANDED	2026-09-09T04:22:26Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0088.md
+2026-09-09T04:22:26Z	agent	-	-	-	-
+# STRANDED	2026-09-09T04:22:27Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0088.md
+2026-09-09T04:22:27Z	agent	-	-	-	-
+# STRANDED	2026-09-09T04:22:30Z	agent	6 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0088.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0091.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0007.md
+2026-09-09T04:22:30Z	agent	-	-	-	-
+# STRANDED	2026-09-09T04:22:36Z	agent	7 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0088.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0091.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0007.md
+2026-09-09T04:22:36Z	agent	-	-	-	-
+2026-09-09T04:22:38Z	builder	TASK-0055	spawned
+# STRANDED	2026-09-09T04:22:39Z	agent	7 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0088.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0091.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0007.md
+2026-09-09T04:22:39Z	agent	-	-	-	-
