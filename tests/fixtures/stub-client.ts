@@ -25,10 +25,17 @@ export interface RecordedStep {
   args: unknown[];
 }
 
-/** One query, from `.from(table)` to the await. */
+/** One query, from `.from(table)` — or `.rpc(name)` — to the await. */
 export interface RecordedCall {
+  /** The object the call named: a table/view for `.from`, a function for `.rpc`. */
   table: string;
   steps: RecordedStep[];
+  /**
+   * Which kind of object that name is (campaign admin-window/TASK-0047).
+   * Absent means `"table"`, so every call site written before functions
+   * existed reads unchanged.
+   */
+  kind?: "table" | "function";
 }
 
 export interface StubClient {
@@ -38,9 +45,17 @@ export interface StubClient {
   readonly calls: RecordedCall[];
   /** The table names read, in order — the names the query actually used. */
   tablesRead(): string[];
+  /** The function names CALLED, in order — `.rpc(name)`, never a `.from`. */
+  functionsCalled(): string[];
 }
 
-/** A script: one response per table, or a queue of responses per table. */
+/**
+ * A script: one response per OBJECT, or a queue of responses per object.
+ *
+ * The key is the name the query names — a table or view for `.from(name)`, a
+ * function for `.rpc(name)`. One namespace, because PostgREST answers both
+ * over the same connection and a test scripting a call scripts one answer.
+ */
 export type Script = Record<string, ScriptedResponse | ScriptedResponse[]>;
 
 function settled(response: ScriptedResponse) {
@@ -72,8 +87,12 @@ export function stubClient(script: Script): StubClient {
     return queue.length > 1 ? (queue.shift() as ScriptedResponse) : queue[0];
   }
 
-  function query(table: string): unknown {
-    const call: RecordedCall = { table, steps: [] };
+  function query(
+    table: string,
+    kind: "table" | "function" = "table",
+    initial?: RecordedStep,
+  ): unknown {
+    const call: RecordedCall = { table, steps: initial ? [initial] : [], kind };
     calls.push(call);
     const resolve = () => Promise.resolve(settled(nextResponse(table)));
 
@@ -109,12 +128,31 @@ export function stubClient(script: Script): StubClient {
     from(table: string) {
       return query(table);
     },
+    /**
+     * A PostgREST function call (campaign admin-window/TASK-0047).
+     *
+     * Same builder, same script, same recording as `.from` — supabase-js
+     * returns a filter builder from `.rpc()` too, so the arguments are just
+     * the first recorded step and the script decides the answer. The M2 close
+     * calls one function, and its ABSENCE is the case that has to render
+     * (ARCHITECTURE.md §4.1); without this a test of that path would have to
+     * hand-roll a second fake client.
+     */
+    rpc(name: string, args?: unknown) {
+      return query(name, "function", {
+        method: "rpc",
+        args: args === undefined ? [] : [args],
+      });
+    },
   };
 
   return {
     asSupabaseClient: () => client as unknown as SupabaseClient,
     calls,
-    tablesRead: () => calls.map((call) => call.table),
+    tablesRead: () =>
+      calls.filter((call) => call.kind !== "function").map((call) => call.table),
+    functionsCalled: () =>
+      calls.filter((call) => call.kind === "function").map((call) => call.table),
   };
 }
 
@@ -181,6 +219,86 @@ export function undefinedColumnOfRelation(table: string, column: string) {
     details: null,
     hint: null,
     message: `column "${column}" of relation "${table}" does not exist`,
+  };
+}
+
+/* ── the FUNCTION shapes (campaign admin-window/TASK-0047) ───────────────── */
+
+/**
+ * PGRST202 — PostgREST cannot find the FUNCTION in its schema cache.
+ *
+ * Measured against staging 2026-09-08 on `ubfjjqlvnpnoborczbdb.supabase.co`,
+ * read-only, by calling the function M2 settles through before it is
+ * installed: `db.rpc("settle_review_item", { p_decision })` answers
+ *
+ *   code    PGRST202
+ *   message Could not find the function public.settle_review_item(p_decision)
+ *           in the schema cache
+ *   hint    Perhaps you meant to call the function public.<some other function>
+ *
+ * and writes nothing, because there is nothing there to write.
+ *
+ * **The trap this shape carries**, for whoever builds the call seam: PostgREST
+ * answers PGRST202 for an existing function called with the WRONG ARGUMENT
+ * NAMES too, and the app cannot tell the two apart from the code. The
+ * argument names in the call are therefore part of the contract; get them
+ * wrong and a provisioned function renders as an absent one.
+ */
+export function functionNotInSchemaCache(fn: string, args = "p_decision") {
+  return {
+    code: "PGRST202",
+    details: null,
+    hint: `Perhaps you meant to call the function public.${fn}_v2`,
+    message: `Could not find the function public.${fn}(${args}) in the schema cache`,
+  };
+}
+
+/**
+ * 42883 — Postgres's own `undefined_function`, as it spells a missing
+ * function: the shape a call that got PAST the schema cache raises, e.g. a
+ * function whose own body calls one that is not installed.
+ */
+export function undefinedFunction(fn: string, args = "jsonb") {
+  return {
+    code: "42883",
+    details: null,
+    hint: "No function matches the given name and argument types. You might need to add explicit type casts.",
+    message: `function public.${fn}(${args}) does not exist`,
+  };
+}
+
+/**
+ * 42883 again — and NOT an absent function: Postgres raises
+ * `undefined_function` for a missing OPERATOR as well.
+ *
+ * Measured against staging 2026-09-08, read-only, by aiming an `ilike` at a
+ * `timestamptz` column — the exact query that broke the residue sweep
+ * (admin-window/BUG-0058): `code 42883`, `message "operator does not exist:
+ * timestamp with time zone ~~* unknown"`. The table is right there; the QUERY
+ * was wrong. Classifying it as an absence would be a false claim about a
+ * provisioned object, so it stays an error carrying those words.
+ */
+export function missingOperator(left = "timestamp with time zone", operator = "~~*") {
+  return {
+    code: "42883",
+    details: null,
+    hint: "No operator matches the given name and argument types. You might need to add explicit type casts.",
+    message: `operator does not exist: ${left} ${operator} unknown`,
+  };
+}
+
+/**
+ * 23502 — `not_null_violation`. A NEIGHBOUR of the absence codes and not one
+ * of them: clearing a `not null` cell is refused by the database and the
+ * surface must show that refusal (ARCHITECTURE.md §9.1's deliberate walkable
+ * error path), never call the object absent.
+ */
+export function notNullViolation(table: string, column: string) {
+  return {
+    code: "23502",
+    details: `Failing row contains (…).`,
+    hint: null,
+    message: `null value in column "${column}" of relation "${table}" violates not-null constraint`,
   };
 }
 

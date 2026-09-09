@@ -66,6 +66,38 @@ const TABLE_ABSENT_CODES: ReadonlySet<string> = new Set(["PGRST205", "42P01"]);
  */
 const COLUMN_ABSENT_CODES: ReadonlySet<string> = new Set(["PGRST204", "42703"]);
 
+/**
+ * The FUNCTION is absent: PostgREST cannot find the function in its schema
+ * cache (`PGRST202`), or Postgres itself says undefined_function (`42883`).
+ *
+ * The fifth kind of object the window reads (campaign admin-window/TASK-0047).
+ * M2 settles a review item through one call to a resolver procedure that does
+ * not exist until the handoff migration is installed, so its absence is the
+ * NORMAL case for the whole milestone and must reach a page as the same
+ * not-provisioned state a missing table does — never as an error, never as a
+ * throw (ARCHITECTURE.md §4.1, §4.3).
+ */
+const FUNCTION_ABSENT_CODES: ReadonlySet<string> = new Set(["PGRST202", "42883"]);
+
+/**
+ * The one `42883` that is NOT an absent function.
+ *
+ * Postgres raises `undefined_function` for a missing OPERATOR as well as for a
+ * missing function — `operator does not exist: timestamp with time zone ~~*
+ * unknown` is the shape, measured on this project's own staging when an
+ * `ilike` was aimed at a non-text column (admin-window/BUG-0058, pinned in
+ * `tests/live/residue.live.test.ts`). That is a query this app got WRONG, not
+ * an object the database is missing, and "the object is not provisioned" is
+ * the one thing it must not be reported as: a false absence is a confident
+ * claim about a table that is right there. It stays `kind: "error"` carrying
+ * the database's own words, like every other failure.
+ *
+ * A `42883` that says nothing at all is still an absent function: the code is
+ * what classifies, and this is a single named exception to it, not a
+ * requirement that the database explain itself.
+ */
+const MISSING_OPERATOR = /\boperator does not exist\b/i;
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
@@ -274,7 +306,10 @@ function columnFromMessage(message: string): string | null {
  * and qualified. When the message names no column at all, the card falls back
  * to the object the query asked for rather than guessing a column out of it.
  *
- * Everything that is not one of the four absence codes is `kind: "error"`
+ * A function-absent code names nothing further: `missing` is the name the
+ * caller passed, which is the name it called (admin-window/TASK-0047).
+ *
+ * Everything that is not one of the six absence codes is `kind: "error"`
  * carrying the database's message verbatim.
  */
 export function classify(error: unknown, missing: string): DbResult<never> {
@@ -282,6 +317,14 @@ export function classify(error: unknown, missing: string): DbResult<never> {
 
   if (code !== null && TABLE_ABSENT_CODES.has(code)) {
     return { kind: "not_provisioned", missing };
+  }
+
+  if (code !== null && FUNCTION_ABSENT_CODES.has(code)) {
+    // The absent OPERATOR shares `42883` with the absent function and is not
+    // an absence of anything the app asked for; it falls through to `error`.
+    if (!MISSING_OPERATOR.test(messageOf(error))) {
+      return { kind: "not_provisioned", missing };
+    }
   }
 
   if (code !== null && COLUMN_ABSENT_CODES.has(code)) {

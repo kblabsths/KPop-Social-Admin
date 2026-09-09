@@ -12,12 +12,17 @@ import {
 import { T } from "@/lib/db/tables";
 import {
   columnNotInSchemaCache,
+  functionNotInSchemaCache,
+  missingOperator,
+  notNullViolation,
   permissionDenied,
+  statementTimeout,
   stubClient,
   tableNotInSchemaCache,
   transportFailure,
   undefinedColumn,
   undefinedColumnOfRelation,
+  undefinedFunction,
   undefinedQualifiedColumn,
   undefinedTable,
 } from "../../fixtures/stub-client";
@@ -37,6 +42,51 @@ import {
  * classified by code, everything else surfaces the database's own words, and
  * no exported read throws for any of it.
  */
+
+/**
+ * The function M2 settles a review item through (campaign
+ * admin-window/TASK-0047, spec F9/F10).
+ *
+ * It is spelled in this test and NOT in `lib/db/tables.ts`: this ticket adds
+ * no call seam, and the write-surface guard
+ * (`tests/offline/edit/config.test.ts`, "the write surface of the whole repo")
+ * forbids the name on a code line under `src/` until one exists. Nothing in
+ * the classifier knows it — `missing` is whatever the caller passed, which is
+ * the whole contract this file grades.
+ */
+const SETTLE_FUNCTION = "settle_review_item";
+
+/**
+ * Every code that means "the object you asked for is not here", with the
+ * object kind it is about. Six, since admin-window/TASK-0047 added the two
+ * FUNCTION codes to the four about a table, a view or a column
+ * (ARCHITECTURE.md §4.1).
+ */
+const ABSENCE_CODES: ReadonlyArray<readonly [string, string, unknown]> = [
+  ["PGRST205", "table", tableNotInSchemaCache(T.verdicts)],
+  ["42P01", "table", undefinedTable(T.verdicts)],
+  ["PGRST204", "column", columnNotInSchemaCache(T.reviewItems, "severity")],
+  ["42703", "column", undefinedColumn("severity")],
+  ["PGRST202", "function", functionNotInSchemaCache(SETTLE_FUNCTION)],
+  ["42883", "function", undefinedFunction(SETTLE_FUNCTION)],
+];
+
+/**
+ * Codes that look nothing like an absence and must never be read as one — the
+ * other half of the guard (LESSONS 3: a classifier proves itself on both kinds
+ * of input, or its green says only that it classifies nothing).
+ *
+ * `42883` appears in BOTH lists on purpose, in its two shapes: Postgres raises
+ * `undefined_function` for a missing OPERATOR as well as for a missing
+ * function, and an `ilike` aimed at a `timestamptz` is a query this app got
+ * wrong, not an object the database is missing (measured on staging
+ * 2026-09-08; admin-window/BUG-0058 is where it bit).
+ */
+const NEIGHBOURING_CODES: ReadonlyArray<readonly [string, unknown]> = [
+  ["57014 statement timeout", statementTimeout()],
+  ["23502 not-null violation", notNullViolation(T.walkSandbox, "label")],
+  ["42883 missing OPERATOR", missingOperator()],
+];
 
 describe("classify", () => {
   it("reads a table-absent code as not_provisioned naming the table", () => {
@@ -129,6 +179,72 @@ describe("classify", () => {
       "error",
     );
   });
+
+  /* ── the absent FUNCTION (campaign admin-window/TASK-0047) ─────────────── */
+
+  it("reads a function-absent code as not_provisioned naming the function", () => {
+    // The M2 normal case: `settle_review_item` is not installed on the
+    // database `main` deploys against, so a call to it must reach a page as
+    // the same absence a missing table is — never as an error, never a throw.
+    for (const error of [
+      functionNotInSchemaCache(SETTLE_FUNCTION),
+      undefinedFunction(SETTLE_FUNCTION),
+    ]) {
+      expect(classify(error, SETTLE_FUNCTION)).toEqual({
+        kind: "not_provisioned",
+        missing: SETTLE_FUNCTION,
+      });
+    }
+  });
+
+  it.each(ABSENCE_CODES)(
+    "reads %s (an absent %s) as not_provisioned",
+    (_code, _kind, error) => {
+      const result = classify(error, T.reviewItems);
+      expect(result.kind).toBe("not_provisioned");
+    },
+  );
+
+  it("names the function the CALLER passed, never one mined from the message", () => {
+    // A 42883 from inside the function names the callee — `apply_resolution`,
+    // which `settle_review_item`'s body calls. The card still names what the
+    // app asked for, in the app's own spelling (ARCHITECTURE.md §4.1).
+    expect(
+      classify(undefinedFunction("apply_resolution"), SETTLE_FUNCTION),
+    ).toEqual({ kind: "not_provisioned", missing: SETTLE_FUNCTION });
+  });
+
+  it.each(NEIGHBOURING_CODES)(
+    "leaves %s red, carrying the database's own words",
+    (_label, error) => {
+      const result = classify(error, T.groups);
+      expect(result.kind).toBe("error");
+      if (result.kind !== "error") return;
+      expect(result.reading).toBe(T.groups);
+      expect(result.message).toContain((error as { message: string }).message);
+      // An error is never an absence claim: nothing here says the object is
+      // missing, and nothing here carries data.
+      expect(result).not.toHaveProperty("missing");
+      expect(result).not.toHaveProperty("data");
+    },
+  );
+
+  it("tells the two 42883s apart: the absent function, and the absent operator", () => {
+    // Same code, opposite verdicts, and the only thing separating them is the
+    // database's own sentence. Both are asserted together so a later
+    // simplification of either arm reddens here rather than silently turning a
+    // provisioned table into an absence.
+    expect(classify(undefinedFunction(SETTLE_FUNCTION), SETTLE_FUNCTION).kind).toBe(
+      "not_provisioned",
+    );
+    expect(classify(missingOperator(), T.groups).kind).toBe("error");
+    // A 42883 that explains nothing is still an absent function: the CODE
+    // classifies, and the operator sentence is the one named exception.
+    expect(classify({ code: "42883" }, SETTLE_FUNCTION)).toEqual({
+      kind: "not_provisioned",
+      missing: SETTLE_FUNCTION,
+    });
+  });
 });
 
 /**
@@ -173,9 +289,14 @@ describe("the database client's own account", () => {
   });
 
   it("carries message, details, hint and code, in that order", () => {
+    // The code was `42883` until admin-window/TASK-0047 taught the classifier
+    // that an absent FUNCTION is `not_provisioned` — which would give this
+    // case no message to order. The case is about the ORDER of the account's
+    // four fields, so it now uses a code that is still an error; nothing else
+    // about it changed.
     const error = {
-      code: "42883",
-      message: "function public.settle(uuid) does not exist",
+      code: "42501",
+      message: "permission denied for function settle",
       details: "the resolver called it with two arguments",
       hint: "No function matches the given name and argument types.",
     };
@@ -556,6 +677,93 @@ describe("reads against a scripted PostgREST response", () => {
         stub.asSupabaseClient(),
       ),
     ).resolves.toEqual({ kind: "not_provisioned", missing: T.resolutionRuns });
+  });
+
+  /* ── the absent FUNCTION, through the read path (admin-window/TASK-0047) ── */
+
+  it("returns not_provisioned when the FUNCTION is not in the schema cache", async () => {
+    // The whole M2 path in miniature: a real call, through the same helper a
+    // page read uses, against a PostgREST that answers PGRST202 — and what
+    // comes back is the absence card's input, not an exception.
+    const stub = stubClient({
+      [SETTLE_FUNCTION]: { error: functionNotInSchemaCache(SETTLE_FUNCTION) },
+    });
+    const result = await readOne(
+      SETTLE_FUNCTION,
+      (db) => db.rpc(SETTLE_FUNCTION, { p_decision: { action: "keep_current" } }),
+      stub.asSupabaseClient(),
+    );
+
+    expect(result).toEqual({
+      kind: "not_provisioned",
+      missing: SETTLE_FUNCTION,
+    });
+    // The call really went through the client seam, as a FUNCTION call
+    // carrying its one argument — not as a table read.
+    expect(stub.functionsCalled()).toEqual([SETTLE_FUNCTION]);
+    expect(stub.tablesRead()).toEqual([]);
+    expect(stub.calls[0].steps[0]).toEqual({
+      method: "rpc",
+      args: [{ p_decision: { action: "keep_current" } }],
+    });
+  });
+
+  it("never turns the absent function into a number", async () => {
+    // ARCHITECTURE.md §4.3 and LESSONS 2: an absent object is a refusal, never
+    // a confident zero — and a null count is a refusal even when nothing is
+    // absent at all. Both, over the same function, so this change cannot have
+    // quietly made an unreadable object render as "0 settled".
+    const absent = stubClient({
+      [SETTLE_FUNCTION]: { error: undefinedFunction(SETTLE_FUNCTION) },
+    });
+    const refusedAbsent = await readCount(
+      SETTLE_FUNCTION,
+      (db) => db.rpc(SETTLE_FUNCTION, { p_decision: {} }),
+      absent.asSupabaseClient(),
+    );
+    expect(refusedAbsent).toEqual({
+      kind: "not_provisioned",
+      missing: SETTLE_FUNCTION,
+    });
+    expect(refusedAbsent).not.toHaveProperty("data");
+
+    const silent = stubClient({ [SETTLE_FUNCTION]: { count: null } });
+    const refusedSilent = await readCount(
+      SETTLE_FUNCTION,
+      (db) => db.rpc(SETTLE_FUNCTION, { p_decision: {} }),
+      silent.asSupabaseClient(),
+    );
+    expect(refusedSilent.kind).toBe("error");
+    expect(refusedSilent).not.toHaveProperty("data");
+  });
+
+  it("keeps a rows read of an absent function an absence, and a refused one red", async () => {
+    // The two verdicts a caller must be able to tell apart, through the same
+    // helper: the function is not installed (absence), and the function is
+    // there but the call was refused (error, in the database's own words).
+    const absent = stubClient({
+      [SETTLE_FUNCTION]: { error: functionNotInSchemaCache(SETTLE_FUNCTION) },
+    });
+    await expect(
+      readRows(
+        SETTLE_FUNCTION,
+        (db) => db.rpc(SETTLE_FUNCTION, { p_decision: {} }),
+        absent.asSupabaseClient(),
+      ),
+    ).resolves.toEqual({ kind: "not_provisioned", missing: SETTLE_FUNCTION });
+
+    const refused = stubClient({
+      [SETTLE_FUNCTION]: { error: permissionDenied(SETTLE_FUNCTION) },
+    });
+    const result = await readRows(
+      SETTLE_FUNCTION,
+      (db) => db.rpc(SETTLE_FUNCTION, { p_decision: {} }),
+      refused.asSupabaseClient(),
+    );
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.reading).toBe(SETTLE_FUNCTION);
+    expect(result.message).toContain("permission denied");
   });
 });
 
