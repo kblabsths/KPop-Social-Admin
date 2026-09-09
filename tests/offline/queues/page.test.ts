@@ -1073,11 +1073,10 @@ describe("a zero that a filter produced", () => {
     );
   });
 
-  // Landed STRICT and red-watched: `it.fails` PASSES while the divergence is
-  // live and turns red the moment it disappears, which is the signal to drop
-  // `.fails` and keep the test as the passing rule — the same way
-  // admin-window/BUG-0129's own pin above worked.
-  it.fails(
+  // QA landed this STRICT as `it.fails`; the fix turned it red ("Expect test to
+  // fail"), which was the signal to drop `.fails` and keep it as the passing
+  // rule — the same way admin-window/BUG-0129's own pin above worked.
+  it(
     "does not scope a block by a facet in ANOTHER NAME that cannot narrow it either (admin-window/BUG-0131)",
     async () => {
       // Same rule as the pin above, and the half the by-value exclusion does
@@ -1111,6 +1110,106 @@ describe("a zero that a filter produced", () => {
       }
     },
   );
+
+  /**
+   * The facet values each KIND implies — every value a row of that kind must
+   * carry, so a URL naming it removes not one row from that block.
+   *
+   * Spelled here from spec §6 and migration `20260901000002`, never imported:
+   * the signal queue is the single shape `entity_link_source_pattern`, and that
+   * shape exists only under `queue: "entity_link"`; the decision queue spans two
+   * shapes and both queues, so it implies nothing but its own kind. Asking
+   * `src/lib/review/queue-filters.ts` what it expects would only prove the page
+   * calls it (this file's header rule).
+   */
+  const IMPLIED_BY_KIND: Record<string, Record<string, string>> = {
+    decision: { kind: "decision" },
+    signal: {
+      kind: "signal",
+      shape: SHAPE_NAMES[2],
+      queue: QUEUE_NAMES[1],
+    },
+  };
+
+  /** Every facet the URL offers, with every value it may carry. */
+  const EVERY_FACET_VALUE: Record<string, readonly string[]> = {
+    kind: KIND_NAMES,
+    queue: QUEUE_NAMES,
+    shape: SHAPE_NAMES,
+    status: STATUS_NAMES,
+  };
+
+  /** Every `facet=value` the URL can carry, once, as a flat list. */
+  const EVERY_FACET_URL = Object.keys(EVERY_FACET_VALUE).flatMap((facet) =>
+    EVERY_FACET_VALUE[facet].map((value) => ({ facet, value })),
+  );
+
+  it("leaves a block untouched by EVERY value its kind implies, and by no other", async () => {
+    // The rule the fix states, swept over the whole URL vocabulary rather than
+    // the two values the pin above names: a block renders identically to the
+    // unfiltered page under a facet its own kind implies, and differently under
+    // every facet that really does remove rows from it. Both blocks, populated
+    // and empty — the empty half is where "nothing here yet" and "nothing
+    // matched your filters" would otherwise share one rendering.
+    for (const kind of KIND_NAMES) {
+      for (const { facet, value } of EVERY_FACET_URL) {
+        const implied = IMPLIED_BY_KIND[kind][facet] === value;
+        const where = `${facet}=${value} on ${kind}`;
+
+        // The fixture itself decides which case this is, from the rows: a
+        // value the kind implies removes none of that kind's rows, and every
+        // other value removes at least one. If this ever disagrees with
+        // `IMPLIED_BY_KIND`, the population stopped covering the case and the
+        // sweep below would be passing vacuously.
+        expect(
+          matching({ kind, [facet]: value }).length === matching({ kind }).length,
+          `${where}: removes no rows`,
+        ).toBe(implied);
+
+        const params = paramsOf(`${facet}=${value}`);
+        for (const [name, script] of [
+          ["populated", healthyScript()],
+          ["empty", EMPTY_TABLE],
+        ] as const) {
+          const own = blockHtml(await renderQueues(script, params), kind);
+          const plain = blockHtml(await renderQueues(script), kind);
+          if (implied) expect(own, `${where}/${name}`).toBe(plain);
+          else expect(own, `${where}/${name}`).not.toBe(plain);
+        }
+      }
+    }
+  });
+
+  it("adds the scope claim to the open figure only where the facet removed rows", async () => {
+    // The figure's sub-line, held against the SAME rendered rows with no filter
+    // at all: feed the page exactly the rows the URL leaves and ask for no
+    // narrowing, and any difference in the sub-line is the scope claim and
+    // nothing else. So the claim is pinned by its presence and absence rather
+    // than by its words.
+    for (const kind of KIND_NAMES) {
+      for (const { facet, value } of EVERY_FACET_URL) {
+        const implied = IMPLIED_BY_KIND[kind][facet] === value;
+        const where = `${facet}=${value} on ${kind}`;
+        const rows = matching({ [facet]: value });
+
+        const claimed = openSub(
+          await renderQueues(healthyScript(), paramsOf(`${facet}=${value}`)),
+          kind,
+        );
+        const unscoped = openSub(
+          await renderQueues({ [T.reviewItems]: { data: rows, count: rows.length } }),
+          kind,
+        );
+
+        if (implied) {
+          expect(claimed, where).toBe(unscoped);
+        } else {
+          expect(claimed, where).not.toBe(unscoped);
+          expect(claimed.length, `${where}: length`).toBeGreaterThan(unscoped.length);
+        }
+      }
+    }
+  });
 
   it("scopes the zero of a queue that has rows but nothing open, too", async () => {
     // `?status=settled` leaves rows on screen and a real zero above them.

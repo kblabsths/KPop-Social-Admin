@@ -1,8 +1,11 @@
 import {
   KINDS,
   SHAPES,
+  shapeOf,
+  shapesOfKind,
   type Kind,
   type ReviewItemFilter,
+  type ReviewItemRow,
   type ReviewQueue,
   type ReviewStatus,
   type Shape,
@@ -172,14 +175,115 @@ export function tabFrom(params: SearchParams = {}): QueuesTab {
   return chosen(TABS, params[TAB_PARAM]) ?? DEFAULT_TAB;
 }
 
+/* ── the narrowing a surface applies to ITSELF ───────────────────────── */
+
+/**
+ * A row that exists only to ask `shapeOf` a question.
+ *
+ * The two columns the classifier reads carry the case (`queue`, and the
+ * `source_id` discriminator migration `20260901000002` defines); every other
+ * column is filler it never looks at. Typed in full on purpose — if
+ * `ReviewItemRow` grows a column the registry starts classifying by, this stops
+ * compiling instead of answering from a probe that has gone stale.
+ */
+function probeRow(queue: ReviewQueue, source_id: string | null): ReviewItemRow {
+  return {
+    review_item_id: "",
+    queue,
+    source_id,
+    domain: null,
+    entity_id: null,
+    field: null,
+    severity: "low",
+    status: "open",
+    summary: "",
+    evidence: [],
+    folded_count: 0,
+    opened_at: "",
+    last_evidence_at: "",
+  };
+}
+
+/** The two states a subject can be in: a FACT (no source) or a SOURCE. */
+const SUBJECTS: readonly (string | null)[] = [
+  null,
+  "00000000-0000-4000-8000-000000000000",
+];
+
+/**
+ * The queues a shape's rows can appear in, read OUT OF `shapeOf` rather than
+ * declared a second time. `./shapes.ts` is the one module that says what a
+ * review item is (its own header: "everything that decides *what a review item
+ * is* lives here and only here"), so the inverse of its classifier is asked of
+ * the classifier — a `Record<Shape, ReviewQueue>` written here would be a second
+ * spelling of the same mapping, free to drift the day a shape moves.
+ */
+function queuesOfShape(shape: Shape): ReviewQueue[] {
+  return REVIEW_QUEUES.filter((queue) =>
+    SUBJECTS.some((source_id) => shapeOf(probeRow(queue, source_id)) === shape),
+  );
+}
+
+/** The one value a list holds — nothing when it holds none, nothing when several. */
+function only<Value>(values: readonly Value[]): Value | undefined {
+  return values.length === 1 ? values[0] : undefined;
+}
+
+/**
+ * **The narrowing one queue block applies to itself: every facet value its
+ * KIND implies** (admin-window/BUG-0131).
+ *
+ * A block renders `selectItems(rows, { kind })`. A URL facet removes not one
+ * row from it when every row of that kind carries that value anyway — so the
+ * block's own narrowing is not the one pair `{ kind }` but the whole SET of
+ * values the kind entails, derived here from the shape registry:
+ *
+ * - `kind` — the block's own, always.
+ * - `shape` — only when the kind has exactly ONE shape. `shapesOfKind("signal")`
+ *   is `["entity_link_source_pattern"]` and nothing else, so
+ *   `?shape=entity_link_source_pattern` selects exactly the signal block's set;
+ *   the decision kind spans two shapes, so `?shape=data_conflict_fact` really
+ *   does remove rows from it and keeps naming its scope.
+ * - `queue` — only when every shape of the kind lives in ONE queue. Every
+ *   signal row is `queue: "entity_link"` by `shapeOf`, so `?queue=entity_link`
+ *   removes nothing from that block; the decision kind spans both queues, so
+ *   neither queue value is implied for it.
+ * - `status` is never implied by any kind: it is a row's own state and both
+ *   values are open to every shape, so a status facet always narrows.
+ *
+ * Nothing here is a list of values written down beside the registry's: the
+ * shapes come from `shapesOfKind`, the queues from `shapeOf`, and a fourth
+ * shape or a third queue changes this answer without changing this file.
+ */
+export function narrowingOfKind(kind: Kind): ReviewItemFilter {
+  const narrowing: ReviewItemFilter = { kind };
+  const shapes = shapesOfKind(kind);
+  // A kind with no shapes has no rows, and vacuous implication would let a
+  // block discount every facet on screen. Claim nothing beyond the kind.
+  if (shapes.length === 0) return narrowing;
+
+  const shape = only(shapes);
+  if (shape !== undefined) narrowing.shape = shape;
+
+  const queues = shapes.map(queuesOfShape);
+  // A shape that no queue can produce would leave the union below narrower
+  // than the truth, so every shape must name a queue before the union may
+  // imply one.
+  if (queues.every((list) => list.length > 0)) {
+    const queue = only(Array.from(new Set(queues.flat())));
+    if (queue !== undefined) narrowing.queue = queue;
+  }
+  return narrowing;
+}
+
 /**
  * Is anything narrowed at all? What tells "nothing here yet" from "nothing
  * matched" — the ONE narrowing decision in this route, asked once per surface
  * that renders a scoped figure or a "nothing matched" card.
  *
  * `within` is the narrowing a surface ALREADY applies to itself, whatever the
- * URL says — `{ kind }` for one queue block, which selects its own rows with
- * exactly that filter. A URL facet whose value equals what the surface applies
+ * URL says — `narrowingOfKind(kind)` for one queue block, which is every facet
+ * value that block's kind implies. A URL facet whose value the surface applies
  * anyway REMOVES NOT ONE ROW from it, so it may not be counted as narrowing:
  * `/queues?kind=decision` (the Dashboard's own zero-decisions link) renders the
  * decision block's whole set, and a block that said a filter emptied it would
@@ -187,11 +291,13 @@ export function tabFrom(params: SearchParams = {}): QueuesTab {
  * matched your filters" are different states and never share a rendering
  * (LOOK_AND_FEEL, the four states; admin-window/BUG-0129).
  *
- * The exclusion is by VALUE and not by facet name: `?kind=signal` really does
- * empty the decision block, so that one still reads as filtered. A surface with
- * no narrowing of its own (`within` omitted) asks the whole-URL question, which
- * is what the page-level callers want and what this function has always
- * answered.
+ * The exclusion is by VALUE and not by facet name, and the value it compares
+ * against is the whole implied set rather than one facet: `?kind=signal` really
+ * does empty the decision block, and `?shape=entity_link_source_pattern` really
+ * is the signal block's own set under another name (admin-window/BUG-0131) — the
+ * first still reads as filtered, the second may not. A surface with no narrowing
+ * of its own (`within` omitted) asks the whole-URL question, which is what the
+ * page-level callers want and what this function has always answered.
  */
 export function isNarrowed(
   filter: ReviewItemFilter,
