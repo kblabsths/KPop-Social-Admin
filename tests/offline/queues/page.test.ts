@@ -907,10 +907,9 @@ describe("a zero that a filter produced", () => {
     expect(scoped.length).toBeGreaterThan(unscoped.length);
   });
 
-  // STRICT PIN — admin-window/BUG-0129. The assertion below is the RULE; it
-  // fails on this tree, so it is landed as `it.fails` and the suite stays
-  // green. Fix the scoping and this turns red: drop `.fails` and keep it.
-  it.fails(
+  // The RULE, landed strict as `it.fails` by QA when it failed on this tree
+  // and turned into a passing pin by the fix (admin-window/BUG-0129).
+  it(
     "does not scope a block by the one facet that cannot narrow it (BUG-0129)",
     async () => {
       // SEAM, and the URL the Dashboard's own zero attention card links to
@@ -947,6 +946,47 @@ describe("a zero that a filter produced", () => {
       }
     },
   );
+
+  it("still reads as filtered when a facet BESIDE the block's own kind narrows it", async () => {
+    // The other half of the rule above, on the URL where the two facets meet:
+    // `?kind=decision&status=settled` discounts nothing but the kind. `status`
+    // really does remove rows from the decision block, so its zero names the
+    // scope exactly as it does without the kind facet — the fix may not turn a
+    // block's whole narrowing off just because one facet cannot narrow it.
+    const params = paramsOf("kind=decision&status=settled");
+    const filtered = await renderQueues(healthyScript(), params);
+    const plain = await renderQueues(healthyScript());
+    const unscoped = openSub(await renderQueues(EMPTY_TABLE), "decision");
+
+    // The rows really are a narrower set than this block's own kind selection.
+    expect(idsIn(filtered, "decision")).toEqual(
+      idsOf(inQueueOrder(matching({ kind: "decision", status: "settled" }))),
+    );
+    expect(idsIn(filtered, "decision").length).toBeGreaterThan(0);
+    expect(idsIn(filtered, "decision").length).toBeLessThan(
+      idsIn(plain, "decision").length,
+    );
+    // So its zero says more than the unfiltered zero: it names the scope.
+    expect(readNumber(filtered, OPEN_LABEL.decision)).toBe(0);
+    expect(openSub(filtered, "decision")).toContain(unscoped);
+    expect(openSub(filtered, "decision").length).toBeGreaterThan(unscoped.length);
+  });
+
+  it("blames the filters on an empty table when a facet beside the kind is set", async () => {
+    // Same seam, the other state: with nothing in the table, `status` is a
+    // reason the block is empty and the card may say so — where `kind` alone
+    // (the test above) may not.
+    const rowsOf = (markup: string) =>
+      squash(cheerio.load(markup)(`[data-queue="decision"] [data-rows]`).text());
+    const filtered = await renderQueues(EMPTY_TABLE, paramsOf("kind=decision&status=settled"));
+
+    expect(stateOf(filtered, "decision")).toBe("empty");
+    expect(rowsOf(filtered)).not.toBe(rowsOf(await renderQueues(EMPTY_TABLE)));
+    // and it is the SAME card the facet draws without the kind beside it
+    expect(rowsOf(filtered)).toBe(
+      rowsOf(await renderQueues(EMPTY_TABLE, paramsOf("status=settled"))),
+    );
+  });
 
   it("scopes the zero of a queue that has rows but nothing open, too", async () => {
     // `?status=settled` leaves rows on screen and a real zero above them.

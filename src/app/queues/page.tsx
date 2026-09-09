@@ -212,10 +212,12 @@ function OpenDetail({
 }: {
   items: readonly ReviewItemRow[];
   /**
-   * A filter is narrowing the page, so the figure above counts the RENDERED
+   * A filter is narrowing THIS BLOCK, so the figure above counts the RENDERED
    * set and not the queue. `?status=settled` renders a real zero here, and a
    * zero that did not name its scope would read as "nothing is open" about a
-   * database that holds plenty.
+   * database that holds plenty. Decided by `isNarrowed(filter, { kind })`, so
+   * a facet that cannot remove a row from this block (its own `kind`) is not
+   * counted and the zero stays unscoped (admin-window/BUG-0129).
    */
   narrowed: boolean;
 }) {
@@ -283,8 +285,17 @@ function Queue({
   // narrowed and ordered. `selectItems` is the app's one predicate — a
   // hand-written `filter(i => …)` here would be a second one (acceptance
   // test 4), and the order is `queueOrder`'s, untouched.
-  const items = selectItems(result.data, { kind });
-  const narrowed = isNarrowed(filter);
+  const ownNarrowing: ReviewItemFilter = { kind };
+  const items = selectItems(result.data, ownNarrowing);
+  // Narrowed BY WHAT THIS BLOCK RENDERS, not by the URL: the same object the
+  // selection above ran with is what the predicate discounts, so the two
+  // cannot come to disagree about what this block already excludes. On
+  // `/queues?kind=decision` — the Dashboard's own zero-decisions link — the
+  // `kind` facet removes not one row from the decision block, so that block
+  // reads exactly as it does unfiltered, while the signal block beside it
+  // (which the same facet really did empty) still names its scope
+  // (admin-window/BUG-0129).
+  const narrowed = isNarrowed(filter, ownNarrowing);
   // The read succeeded either way, so it produced a figure either way. An
   // empty queue differs from a full one ONLY in the rows region, where its
   // card says what the queue holds and what fills it: the counted zero keeps

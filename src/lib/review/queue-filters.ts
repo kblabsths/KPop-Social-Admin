@@ -172,9 +172,34 @@ export function tabFrom(params: SearchParams = {}): QueuesTab {
   return chosen(TABS, params[TAB_PARAM]) ?? DEFAULT_TAB;
 }
 
-/** Is anything narrowed at all? What tells "nothing here yet" from "nothing matched". */
-export function isNarrowed(filter: ReviewItemFilter): boolean {
-  return FACETS.some((facet) => filter[facet] !== undefined);
+/**
+ * Is anything narrowed at all? What tells "nothing here yet" from "nothing
+ * matched" — the ONE narrowing decision in this route, asked once per surface
+ * that renders a scoped figure or a "nothing matched" card.
+ *
+ * `within` is the narrowing a surface ALREADY applies to itself, whatever the
+ * URL says — `{ kind }` for one queue block, which selects its own rows with
+ * exactly that filter. A URL facet whose value equals what the surface applies
+ * anyway REMOVES NOT ONE ROW from it, so it may not be counted as narrowing:
+ * `/queues?kind=decision` (the Dashboard's own zero-decisions link) renders the
+ * decision block's whole set, and a block that said a filter emptied it would
+ * be claiming a scope its own read does not support — "empty" and "nothing
+ * matched your filters" are different states and never share a rendering
+ * (LOOK_AND_FEEL, the four states; admin-window/BUG-0129).
+ *
+ * The exclusion is by VALUE and not by facet name: `?kind=signal` really does
+ * empty the decision block, so that one still reads as filtered. A surface with
+ * no narrowing of its own (`within` omitted) asks the whole-URL question, which
+ * is what the page-level callers want and what this function has always
+ * answered.
+ */
+export function isNarrowed(
+  filter: ReviewItemFilter,
+  within: ReviewItemFilter = {},
+): boolean {
+  return FACETS.some(
+    (facet) => filter[facet] !== undefined && filter[facet] !== within[facet],
+  );
 }
 
 /* ── writing the URL ─────────────────────────────────────────────────────── */
