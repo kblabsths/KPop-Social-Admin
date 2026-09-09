@@ -1,10 +1,13 @@
+import * as cheerio from "cheerio";
 import { describe, expect, it } from "vitest";
 
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { codeLinesIn, sourceFiles, sourceText } from "../source-tree";
 import {
   BROKEN_INK,
+  CHIP_FILL,
   REJECTED_AT_REST_SPELLING,
+  chipsInsideLinks,
   expectDrawnAsLinkAtRest,
   expectDrawnAsLinkAtRestIn,
   expectNotDrawnAsLink,
@@ -134,5 +137,43 @@ describe("the assertion every page test spells this rule with", () => {
   it("still says a value that goes nowhere is not a link", () => {
     expect(() => expectNotDrawnAsLink(["type-data"], "an inert value")).not.toThrow();
     expect(() => expectNotDrawnAsLink(published, "a link")).toThrow();
+  });
+});
+
+describe("the rule that a badge never sits inside a link", () => {
+  /*
+   * LOOK_AND_FEEL, "Chips and badges": "A badge never sits inside a link, and
+   * a link never wears one … any badge classifying it sits beside it, never
+   * around it. Walkable: no anchor inside `main` contains a chip-filled span."
+   * Earned by admin-window/BUG-0113, where a chip inside the /claims bucket
+   * anchors re-inked the words and painted over the underline.
+   *
+   * Both fixtures, so the guard cannot pass vacuously: the shape it must flag,
+   * and the shape the ruling prescribes instead.
+   */
+  const chip = `<span class="${CHIP_FILL.join(" ")} text-attention">high</span>`;
+
+  it("reads the chip's fill off the component, not off a literal here", () => {
+    // Non-vacuity of the derivation itself: an empty CHIP_FILL would make
+    // `every` trivially true and flag every element in the tree.
+    expect(CHIP_FILL.length).toBeGreaterThan(0);
+    expect(CHIP_FILL.some((className) => className.startsWith("text-"))).toBe(false);
+  });
+
+  it("flags a chip that sits inside the anchor", () => {
+    const $ = cheerio.load(`<p><a href="/x" class="${IN_PAGE_LINK}">open${chip}</a></p>`);
+    expect(chipsInsideLinks($, $.root())).toHaveLength(1);
+  });
+
+  it("stays green when the chip sits beside the anchor, which is the ruling", () => {
+    const $ = cheerio.load(
+      `<p><a href="/x" class="${IN_PAGE_LINK}">open</a>${chip}</p>`,
+    );
+    expect(chipsInsideLinks($, $.root())).toEqual([]);
+  });
+
+  it("stays green on a link whose body is its own words", () => {
+    const $ = cheerio.load(`<p><a href="/x" class="${IN_PAGE_LINK}">standing</a></p>`);
+    expect(chipsInsideLinks($, $.root())).toEqual([]);
   });
 });

@@ -8,6 +8,7 @@ import { absoluteUtc } from "@/lib/format";
 import { render } from "../ui/markup";
 import {
   BROKEN_INK,
+  chipsInsideLinks,
   classesOf,
   expectDrawnAsLinkAtRest,
   expectDrawnAsLinkAtRestIn,
@@ -493,6 +494,33 @@ describe("the attention summary", () => {
     // for it and never a percentage — the ranking formula is parked.
     expect(card).not.toMatch(/high\s*[:=]?\s*\d/);
     expect(card).not.toContain("%");
+  });
+
+  /*
+   * PIN — campaign admin-window/BUG-0113's sibling on the Dashboard, filed as
+   * BUG-0115. A strict `it.fails`: the day the chip moves out of the card's
+   * anchor this XPASSes red and sends the reader to the ticket.
+   *
+   * The `Open signals` StatCard is a link (`href` = /queues?kind=signal) and
+   * its sub-line renders the max severity as a `<Badge>` — a chip, with a fill
+   * of its own, INSIDE the anchor. LOOK_AND_FEEL, "Chips and badges": "A badge
+   * never sits inside a link, and a link never wears one … any badge
+   * classifying it sits beside it, never around it. Walkable: no anchor inside
+   * `main` contains a chip-filled span."
+   *
+   * Measured in bundled Chromium on a production build of run/admin-window at
+   * 23ea107, 1440x900, mouse parked at (0,0) then hovering the card: the chip
+   * and the card's hover state carry the SAME fill token, so the chip's box
+   * disappears under the pointer. In a 54x28 crop of the chip, light theme:
+   * 691 chip-fill px + 676 card-fill px at rest -> 1383 chip-fill px and ZERO
+   * card-fill px hovered. Dark: 683 + 676 -> 1359 + 0.
+   */
+  it.fails("never draws a chip inside a link, on the card the severity sits in", async () => {
+    const markup = await renderDashboard(healthyScript());
+    const $ = cheerio.load(markup);
+    // The population holds an open `high`, so a chip is rendered to find.
+    expect(reviewItems().some((item) => item.severity === "high")).toBe(true);
+    expect(chipsInsideLinks($, $.root())).toEqual([]);
   });
 
   it("shows the oldest open item's age, with the absolute instant in the title", async () => {

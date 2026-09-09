@@ -1,6 +1,10 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import * as cheerio from "cheerio";
 import type { CheerioAPI } from "cheerio";
 import { expect } from "vitest";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
+import { Badge } from "@/components/ui/badge";
 
 /**
  * "Is this drawn as a link, at rest?" — asked the same way on every surface
@@ -45,6 +49,61 @@ export function anchorClasses($: CheerioAPI, scope: Selection): string[][] {
 /** The type-scale face an element is drawn in — `type-body`, `type-data`, … */
 export function faceOf(classes: readonly string[]): string[] {
   return classes.filter((className) => className.startsWith("type-"));
+}
+
+/**
+ * The classes a chip is FILLED with, read off a rendered `<Badge>` rather than
+ * repeated here (`src/components/ui/badge.tsx`).
+ *
+ * The ink half is dropped: a badge's colour is its tone's job (`neutral`,
+ * `high`, `healthy`, …) and every tone is the same chip. What is left is the
+ * box — the face, the inline box, the radius, the fill and the padding — which
+ * is what "a chip-filled span" means in LOOK_AND_FEEL's walkable form. Derived,
+ * so restyling the chip moves this guard with it and pins no styling value.
+ */
+export const CHIP_FILL: readonly string[] = (
+  cheerio
+    .load(renderToStaticMarkup(createElement(Badge, null, "x")))("span")
+    .attr("class") ?? ""
+)
+  .split(/\s+/)
+  .filter((className) => className.length > 0 && !className.startsWith("text-"));
+
+/**
+ * Every chip sitting INSIDE an anchor, as `anchor text — the chip's classes`
+ * (campaign admin-window/BUG-0113 and its Dashboard sibling).
+ *
+ * LOOK_AND_FEEL, "Chips and badges": *"A badge never sits inside a link, and a
+ * link never wears one … any badge classifying it sits beside it, never around
+ * it. Walkable: no anchor inside `main` contains a chip-filled span."* The rule
+ * is not decorative. A chip is an inline-block box with a fill of its own, so
+ * inside an anchor it takes CSS priority over the inherited ink and paints over
+ * the ancestor's underline — which is how five bucket links on `/claims`
+ * measured as links and rendered as plain text (BUG-0113) — and where the
+ * anchor has a hover fill of the same token, the chip's own box dissolves into
+ * it under the pointer.
+ *
+ * Structural, and deliberately so: it asks "did a chip end up inside a link",
+ * never "what colour is it".
+ */
+export function chipsInsideLinks($: CheerioAPI, scope: Selection): string[] {
+  return scope
+    .find("a")
+    .toArray()
+    .flatMap((anchor) =>
+      $(anchor)
+        .find("*")
+        .toArray()
+        .filter((element) => {
+          const classes = classesOf($(element));
+          return CHIP_FILL.every((className) => classes.includes(className));
+        })
+        .map(
+          (element) =>
+            `${$(anchor).text().replace(/\s+/g, " ").trim().slice(0, 40)} — ` +
+            `${classesOf($(element)).join(" ")}`,
+        ),
+    );
 }
 
 /** The ink half of the spelling — what separates a link from every other value. */

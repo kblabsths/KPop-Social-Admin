@@ -15,6 +15,7 @@ import {
 import {
   classesOf,
   expectDrawnAsLinkAtRest,
+  chipsInsideLinks,
   expectLinkSpellingReachesTheGlyphs,
   expectNotDrawnAsLink,
 } from "../../fixtures/link-spelling";
@@ -565,6 +566,13 @@ describe("what on this page says it goes somewhere", () => {
         `${$(anchor).attr("data-bucket")} on the buckets tab`,
       );
     }
+    // The composition rule the ruling settled on, asserted where the defect
+    // was: LOOK_AND_FEEL, "Chips and badges" — "no anchor inside `main`
+    // contains a chip-filled span". The ink assertion above says the words are
+    // accent; this says nothing was put back around them.
+    expect(chipsInsideLinks($, $.root()), "a chip is back inside a bucket link").toEqual(
+      [],
+    );
   });
 
   it("keeps the values that go nowhere out of the link's ink", async () => {
