@@ -4,6 +4,8 @@ import {
   ANY_LABEL,
   FACETS,
   FACET_VALUES,
+  NARROWING_FACETS,
+  SOURCE_FACET,
   REVIEW_QUEUES,
   REVIEW_STATUSES,
   facetChips,
@@ -498,5 +500,115 @@ describe("the chips a page renders", () => {
 
   it("renders one group per facet", () => {
     expect(filterBar(PATH, {}).map((group) => group.facet)).toEqual([...FACETS]);
+  });
+});
+
+/* ── the source facet: narrowing without a chip (admin-window/BUG-0141) ───── */
+
+/**
+ * `review_items.source_id`, the facet `/sources`' "review items" anchor links
+ * this page with. It has no chip row — the vocabulary is unbounded data and
+ * this page reads no registry — so it is a narrowing that is NOT in the chip
+ * list, which is why there are two lists.
+ *
+ * The uuid grammar is the app's one grammar, HANDED IN. This file spells no
+ * uuid pattern of its own and imports none: every case below hands `filterFrom`
+ * a canonicaliser written HERE, so what is proved is the contract (the value
+ * the function RETURNS is what lands in the filter, and no canonicaliser means
+ * no source facet at all) rather than any particular grammar.
+ */
+describe("the source facet", () => {
+  /** A stand-in for `canonicalRecordId`: it lowercases, and refuses a non-id. */
+  const canonical = (raw: string): string | null =>
+    /^[0-9a-fA-F-]{36}$/.test(raw) ? raw.toLowerCase() : null;
+
+  const SOURCE = "01920000-0000-7000-8000-000000000101";
+
+  it("is spelled as the column, and is a narrowing but not a chip", () => {
+    expect(SOURCE_FACET).toBe("source_id");
+    expect([...FACETS]).not.toContain(SOURCE_FACET);
+    expect([...NARROWING_FACETS]).toEqual([...FACETS, SOURCE_FACET]);
+    // The chip vocabulary is untouched: a facet with no declared values draws
+    // no chips, and `FACET_VALUES` still holds exactly the four.
+    expect(Object.keys(FACET_VALUES).sort()).toEqual([...FACETS].sort());
+    expect(filterBar(PATH, {}).map((group) => group.facet)).toEqual([...FACETS]);
+  });
+
+  it("covers every field of the filter the data layer takes", () => {
+    // A narrowing facet that existed on neither list would be unreachable; a
+    // filter field with no facet would be unreachable from a URL.
+    const asFilterKeys: (keyof ReviewItemFilter)[] = [...NARROWING_FACETS];
+    expect(asFilterKeys.sort()).toEqual(["kind", "queue", "shape", "source_id", "status"]);
+  });
+
+  it("reads no source at all without a canonicaliser", () => {
+    // The 32 call sites that pass only `params` keep their present meaning, and
+    // an un-canonicalised id can reach the filter by no path: never an identity
+    // default (admin-window/BUG-0140 is what an uncanonicalised id costs).
+    for (const raw of [SOURCE, SOURCE.toUpperCase(), "not-a-uuid", ""]) {
+      expect(filterFrom({ source_id: raw }), raw).toEqual({});
+    }
+    expect(filterFrom({ source_id: SOURCE, kind: "signal" })).toEqual({ kind: "signal" });
+  });
+
+  it("takes the value the canonicaliser RETURNED, never the URL's own", () => {
+    expect(filterFrom({ source_id: SOURCE.toUpperCase() }, canonical)).toEqual({
+      source_id: SOURCE,
+    });
+    expect(filterFrom({ source_id: SOURCE }, canonical)).toEqual({ source_id: SOURCE });
+    // Combined with the chip facets, as an AND.
+    expect(filterFrom({ source_id: SOURCE, kind: "signal" }, canonical)).toEqual({
+      kind: "signal",
+      source_id: SOURCE,
+    });
+  });
+
+  it("narrows nothing by a value the grammar refuses, and never guesses one", () => {
+    for (const raw of ["not-a-uuid", "", "  ", "'; drop table --", "x".repeat(10_000)]) {
+      expect(filterFrom({ source_id: raw }, canonical), raw).toEqual({});
+    }
+    // A repeated key is ambiguous state; the first value is the answer, the
+    // same rule every other facet takes.
+    expect(filterFrom({ source_id: [SOURCE, "other"] }, canonical)).toEqual({
+      source_id: SOURCE,
+    });
+    expect(filterFrom({ source_id: [] }, canonical)).toEqual({});
+  });
+
+  it("always counts as narrowing: no kind implies a source", () => {
+    const filter = filterFrom({ source_id: SOURCE }, canonical);
+    expect(isNarrowed(filter)).toBe(true);
+    for (const kind of KINDS) {
+      const within = narrowingOfKind(kind);
+      expect(within.source_id, kind).toBeUndefined();
+      expect(isNarrowed(filter, within), kind).toBe(true);
+      // …and it is the SOURCE doing it, not the kind: the same filter without
+      // the source is discounted by the block's own narrowing.
+      expect(isNarrowed({ ...within }, within), kind).toBe(false);
+    }
+  });
+
+  it("travels in every URL this module writes", () => {
+    // LOOK_AND_FEEL bar 11: a chip or a tab may not silently widen the page
+    // back to every source.
+    const filter: ReviewItemFilter = { source_id: SOURCE, status: "open" };
+    expect(paramsOf(queuesHref(PATH, filter))).toEqual({
+      status: "open",
+      source_id: SOURCE,
+    });
+    expect(paramsOf(queuesHref(PATH, filter, "verdict_log"))).toEqual({
+      status: "open",
+      source_id: SOURCE,
+      tab: "verdict_log",
+    });
+    for (const facet of FACETS) {
+      for (const choice of facetChips(PATH, filter, facet).choices) {
+        expect(paramsOf(choice.href).source_id, choice.href).toBe(SOURCE);
+      }
+    }
+    // And the URL reads back as the same filter, with the same canonicaliser.
+    expect(filterFrom(paramsOf(queuesHref(PATH, filter)), canonical)).toEqual(filter);
+    // Dropping it is spelled by OMITTING it — one state, one URL.
+    expect(queuesHref(PATH, { source_id: undefined })).toBe(PATH);
   });
 });

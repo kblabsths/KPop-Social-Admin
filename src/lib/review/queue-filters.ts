@@ -47,6 +47,52 @@ export const FACETS = ["kind", "queue", "shape", "status"] as const;
 export type Facet = (typeof FACETS)[number];
 
 /**
+ * The narrowing this page offers that has NO CHIP ROW: the source an item is
+ * about (campaign admin-window/BUG-0141).
+ *
+ * Spelled exactly as the column and as every other surface's parameter for it
+ * (`/sources`' own `SOURCE_FACET`, `/claims`' `?source_id=`), so the anchor the
+ * Sources page labels "review items" narrows this page instead of landing on
+ * every source's items.
+ *
+ * It is NOT in `FACETS`, and the split is the design: `FACETS` is the CHIP
+ * vocabulary — the four facets whose every value is declared in `FACET_VALUES`
+ * — and a source vocabulary is unbounded data this page never reads (it holds
+ * no registry). So there is no chip row for it; what states the narrowing on
+ * screen is the page's scope element, and what clears it is that element's own
+ * link back.
+ */
+export const SOURCE_FACET = "source_id";
+
+/**
+ * Every facet that NARROWS, chips or no chips — what `filterFrom`, `queuesHref`
+ * and `isNarrowed` iterate.
+ *
+ * Two lists, deliberately: a facet with no chip row still travels in every
+ * href this page writes, or clicking `settled` — or the verdict-log tab —
+ * would silently widen the page back to every source (LOOK_AND_FEEL bar 11:
+ * the filter state survives). `facetChips` / `filterBar` / `withFacet` /
+ * `FACET_VALUES` keep iterating `FACETS`, because those four are the ones with
+ * a vocabulary to draw.
+ */
+export const NARROWING_FACETS = [...FACETS, SOURCE_FACET] as const;
+
+export type NarrowingFacet = (typeof NARROWING_FACETS)[number];
+
+/**
+ * The app's one uuid grammar, HANDED IN (admin-window/BUG-0139/BUG-0140 own
+ * it, in `src/lib/db/records.ts`).
+ *
+ * A pure domain leaf may not import `lib/db/**` (ARCHITECTURE.md §4 rule 7),
+ * and a uuid pattern written here would be a SECOND grammar — the defect that
+ * one is there to prevent. So `filterFrom` takes the canonicaliser as an
+ * argument, the way `claims/filters.ts` takes its `FacetOptions`: it returns
+ * the id in the database's own spelling, or `null` for a value that is not an
+ * id at all.
+ */
+export type CanonicalId = (raw: string) => string | null;
+
+/**
  * `review_items.queue` — both values, so an empty queue is a zero and not a
  * gap.
  *
@@ -150,8 +196,25 @@ function chosen<Value extends string>(
  * The narrowing the URL asked for. An absent, repeated or unrecognised
  * parameter constrains nothing, so `filterFrom({})` is the whole table —
  * settled items included, which is what keeps them browsable.
+ *
+ * **The source facet is read only when a canonicaliser is handed in**
+ * (admin-window/BUG-0141). Called with one argument this is byte for byte what
+ * it always was: no `source_id` key is ever set, so the call sites that read
+ * only the four chip facets keep their present meaning, and an
+ * UN-canonicalised id can reach the filter by no path at all. It is never an
+ * identity default: an id in a spelling Postgres would match but JavaScript
+ * would not is exactly how `/sources` once denied a source the database had
+ * just matched (admin-window/BUG-0140), and a filter is compared both ways.
+ *
+ * A value that is not a record id at all — `not-a-uuid` — canonicalises to
+ * `null` and so narrows NOTHING, the same answer `chosen` gives a value
+ * outside a vocabulary. The page names it in its dropped-parameter line
+ * rather than swallowing it, and no `22P02` ever reaches a read.
  */
-export function filterFrom(params: SearchParams = {}): ReviewItemFilter {
+export function filterFrom(
+  params: SearchParams = {},
+  canonicalId?: CanonicalId,
+): ReviewItemFilter {
   const filter: ReviewItemFilter = {};
   const kind = chosen(FACET_VALUES.kind, params.kind);
   const queue = chosen(FACET_VALUES.queue, params.queue);
@@ -161,6 +224,11 @@ export function filterFrom(params: SearchParams = {}): ReviewItemFilter {
   if (queue !== undefined) filter.queue = queue;
   if (shape !== undefined) filter.shape = shape;
   if (status !== undefined) filter.status = status;
+  if (canonicalId !== undefined) {
+    const asked = firstValue(params[SOURCE_FACET]);
+    const source = asked === undefined ? null : canonicalId(asked);
+    if (source !== null) filter[SOURCE_FACET] = source;
+  }
   return filter;
 }
 
@@ -298,12 +366,18 @@ export function narrowingOfKind(kind: Kind): ReviewItemFilter {
  * first still reads as filtered, the second may not. A surface with no narrowing
  * of its own (`within` omitted) asks the whole-URL question, which is what the
  * page-level callers want and what this function has always answered.
+ *
+ * **A source is always narrowing.** `narrowingOfKind` is unchanged and carries
+ * no `source_id`: no kind implies a source, so a source in the URL can never be
+ * discounted by a block's own narrowing, for either block
+ * (admin-window/BUG-0141). Whether it EMPTIED a block is the counted question
+ * `isBlockNarrowed` asks below.
  */
 export function isNarrowed(
   filter: ReviewItemFilter,
   within: ReviewItemFilter = {},
 ): boolean {
-  return FACETS.some(
+  return NARROWING_FACETS.some(
     (facet) => filter[facet] !== undefined && filter[facet] !== within[facet],
   );
 }
@@ -376,9 +450,13 @@ export function withFacet<F extends Facet>(
 /**
  * The URL showing exactly this filter.
  *
- * "No narrowing" is spelled by OMITTING the parameter, in `FACETS` order, so
- * one state has one URL: the unfiltered page is the bare path, and a bookmark
- * carries no redundant state.
+ * "No narrowing" is spelled by OMITTING the parameter, in `NARROWING_FACETS`
+ * order, so one state has one URL: the unfiltered page is the bare path, and a
+ * bookmark carries no redundant state.
+ *
+ * Every narrowing travels, the chipless source facet included — this is what
+ * every chip href and both tab hrefs are built from, so clicking `settled`, or
+ * the verdict log, keeps the source you arrived on (admin-window/BUG-0141).
  */
 export function queuesHref(
   path: string,
@@ -386,7 +464,7 @@ export function queuesHref(
   tab: QueuesTab = DEFAULT_TAB,
 ): string {
   const query = new URLSearchParams();
-  for (const facet of FACETS) {
+  for (const facet of NARROWING_FACETS) {
     const value = filter[facet];
     if (value !== undefined) query.set(facet, value);
   }

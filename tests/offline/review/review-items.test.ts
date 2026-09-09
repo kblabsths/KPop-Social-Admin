@@ -850,3 +850,110 @@ describe("truncation beats every filter (QA attack)", () => {
     expect(result).not.toHaveProperty("data");
   });
 });
+
+/* ── narrowed by a SOURCE (admin-window/BUG-0141) ─────────────────────────── */
+
+/**
+ * `review_items.source_id` as a filter field: pushed to the database like the
+ * other two real columns, re-applied by the one predicate, and NEVER applied to
+ * the population counts.
+ *
+ * The whole set below is spelled from the fixture rather than from
+ * `matchesFilter`: what is being proved is that the returned set is exactly the
+ * rows carrying that source, which asking the app's own predicate would only
+ * restate.
+ */
+describe("listReviewItems narrowed by a source", () => {
+  const CARRIED = ID.sourceBandsintown;
+  const ABSENT = ID.sourceTicketmaster;
+
+  it("pushes the source to the database, beside the other column filters", async () => {
+    const stub = withRows(population());
+    await listReviewItems(
+      { queue: "entity_link", status: "open", source_id: CARRIED },
+      stub.asSupabaseClient(),
+    );
+
+    expect(
+      stub.calls[0].steps.filter((step) => step.method === "eq").map((step) => step.args),
+    ).toEqual([
+      ["queue", "entity_link"],
+      ["status", "open"],
+      ["source_id", CARRIED],
+    ]);
+  });
+
+  it("returns exactly the rows carrying that source, and nothing else", async () => {
+    // The stub answers whatever the script says regardless of the chain, so
+    // this is the PREDICATE's answer — which is what makes the set right even
+    // where the database narrowed nothing.
+    const all = reviewItemEdgePopulation();
+    const result = await listReviewItems(
+      { source_id: CARRIED },
+      withRows(all).asSupabaseClient(),
+    );
+    if (result.kind !== "ok") throw new Error(result.kind);
+
+    const expected = all.filter((row) => row.source_id === CARRIED);
+    expect(expected.length).toBeGreaterThan(0);
+    expect(expected.length).toBeLessThan(all.length);
+    expect(ids(result.data).sort()).toEqual(ids(expected).sort());
+    // A per-fact item carries no source, so it can match no source narrowing.
+    expect(result.data.every((row) => row.source_id === CARRIED)).toBe(true);
+  });
+
+  it("returns nothing for a well-formed source the table does not carry", async () => {
+    const all = reviewItemEdgePopulation();
+    const result = await listReviewItems(
+      { source_id: ABSENT },
+      withRows(all).asSupabaseClient(),
+    );
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(all.some((row) => row.source_id === ABSENT)).toBe(false);
+    expect(result.data).toEqual([]);
+  });
+
+  it("counts each kind's WHOLE-queue population, never the source's share", async () => {
+    // What lets a source with no items render "nothing matched" instead of
+    // "this queue is empty" (admin-window/BUG-0133): the population is the
+    // unfiltered figure, so `rendered !== population` can be asked at all. A
+    // count narrowed by the URL would make every block's zero look unfiltered.
+    const table = reviewItemEdgePopulation();
+    const carried = table.filter((row) => row.source_id === CARRIED);
+    const stub = withLegs(carried, table);
+    const result = await readReviewQueues({ source_id: CARRIED }, stub.asSupabaseClient());
+    if (result.kind !== "ok") throw new Error(result.kind);
+
+    // The rows are the source's…
+    expect(ids(result.data.items).sort()).toEqual(ids(carried).sort());
+    // …and the populations are the whole table's, per kind.
+    for (const kind of ["decision", "signal"] as const) {
+      expect(result.data.population[kind], kind).toEqual({
+        kind: "ok",
+        data: table.filter((row) => kindOfItem(row) === kind).length,
+      });
+    }
+    // The source facet took the COUNT path at all — which is the other half of
+    // BUG-0133: an unnarrowed URL reads its population off its own rows.
+    expect(countLegsOf(stub)).toHaveLength(SHAPES.length);
+    // …and no count leg carries the source.
+    for (const leg of countLegsOf(stub)) {
+      expect(
+        leg.steps.filter((step) => step.method === "eq").map((step) => step.args[0]),
+      ).not.toContain("source_id");
+    }
+  });
+});
+
+/** The head-count legs of one recorded run — the population's own reads. */
+function countLegsOf(stub: ReturnType<typeof withLegs>) {
+  return stub.calls.filter((call) =>
+    call.steps.some(
+      (step) =>
+        step.method === "select" &&
+        typeof step.args[1] === "object" &&
+        step.args[1] !== null &&
+        (step.args[1] as Record<string, unknown>).head === true,
+    ),
+  );
+}

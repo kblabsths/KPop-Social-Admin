@@ -47,10 +47,12 @@ export function sourcesHref(filter: SourceNarrowing): string {
  * That source's review items — the Queues page narrowed to it.
  *
  * `review_items.source_id` is the column, and the parameter is spelled as the
- * column is. Queues does not offer this facet yet (its vocabulary is kind /
- * queue / shape / status), and an unrecognised parameter there narrows nothing
- * rather than erroring, so the link lands on the queues rather than anywhere
- * broken until that facet is added (admin-window/TASK-0013's handoff).
+ * column is. **Queues offers that facet** (`SOURCE_FACET` in
+ * `src/lib/review/queue-filters.ts`, admin-window/BUG-0141): the link narrows
+ * both queue blocks to this source's items and the page states the scope with
+ * a link back out. A source carrying no items renders the honest "nothing
+ * matched" rather than another source's row — which is what this anchor
+ * promised and did not do until that facet existed.
  */
 export function queueItemsHref(sourceId: string): string {
   return `/queues?source_id=${encodeURIComponent(sourceId)}`;

@@ -265,6 +265,24 @@ export interface ReviewItemFilter {
   shape?: Shape;
   kind?: Kind;
   status?: ReviewStatus;
+  /**
+   * `review_items.source_id` — the source an item is ABOUT, as a narrowing
+   * (campaign admin-window/BUG-0141).
+   *
+   * A field of the one filter and not a page-local one: `/sources` links each
+   * source to "its review items", and that link narrowed nothing until this
+   * existed — another source's item rendered as that source's. It is a plain
+   * uuid string because the column is a uuid, and it is compared for EQUALITY:
+   * the value reaching here has already been put in the database's own
+   * spelling by `canonicalRecordId` at the edge (`lib/db/records.ts`, the app's
+   * one uuid grammar), so the code comparison below and the `.eq` PostgREST
+   * makes agree by construction (admin-window/BUG-0140).
+   *
+   * It narrows the ITEMS and nothing else: no kind implies a source, so a
+   * source in the URL always counts as narrowing, and the whole-queue
+   * populations stay unnarrowed by it (admin-window/BUG-0133).
+   */
+  source_id?: string;
 }
 
 /**
@@ -283,6 +301,10 @@ export function matchesFilter(
   if (filter.status !== undefined && item.status !== filter.status) return false;
   if (filter.shape !== undefined && shapeOf(item) !== filter.shape) return false;
   if (filter.kind !== undefined && kindOfItem(item) !== filter.kind) return false;
+  // A per-fact item carries no source at all (`source_id` is the discriminator
+  // above), so it matches no source narrowing — `null !== "<uuid>"` says that
+  // without a special case.
+  if (filter.source_id !== undefined && item.source_id !== filter.source_id) return false;
   return true;
 }
 
