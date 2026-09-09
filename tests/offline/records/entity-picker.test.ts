@@ -492,6 +492,8 @@ describe("the picker's confirmation, on the click-to-edit cell's own clock", () 
       dispatch,
       /** What the picker is saying now. */
       now: (): PickState => state,
+      /** React unmounting the widget: the effect's cleanup, and nothing after. */
+      unmount: (): void => disarm?.(),
       /** What the open panel draws for it — the operator's actual evidence. */
       says: (): cheerio.CheerioAPI =>
         cheerio.load(
@@ -708,6 +710,145 @@ describe("the picker's confirmation, on the click-to-edit cell's own clock", () 
     );
     expect(reducePick(later, escape), "an older edit's Escape").toBe(later);
   });
+
+  /* ── QA/BUG-0111: the corners the arming rule is bought on ──────────────── */
+
+  /**
+   * The straggler case the suite did not have: an older clock reaching a NEWER
+   * CONFIRMATION. The two shipped straggler tests aim choice 1's clock at a
+   * `saving` and at a `failed`, where `reduceEdit`'s guard has two reasons to
+   * refuse it (wrong ordinal AND wrong status kind). Here only the ordinal
+   * separates them, so this is the one that grades the ordinal alone — and it
+   * is the visible harm: a second confirmation blinking out early, after a
+   * fraction of the delay the operator is owed.
+   */
+  it("gives a second confirmation its own full delay, not the remains of the first", () => {
+    const picker = mountPick({ leakClocks: true });
+    picker.dispatch(choosing(1, A));
+    picker.dispatch(settled(1, A, true)); // choice 1's clock is running, leaked
+    vi.advanceTimersByTime((DELAY ?? 0) - 200);
+    picker.dispatch({ kind: "cleared" });
+    picker.dispatch(choosing(2, B));
+    picker.dispatch(settled(2, B, true)); // a SECOND confirmation, 200ms from
+    //                                       the first clock's firing time
+    vi.advanceTimersByTime(200);
+    expect(picker.now().status.kind, "choice 1's clock is not choice 2's").toEqual(
+      "saved",
+    );
+    vi.advanceTimersByTime((DELAY ?? 0) - 200 - 1);
+    expect(picker.now().status.kind, "one tick short of ITS OWN delay").toEqual("saved");
+    vi.advanceTimersByTime(1);
+    expect(picker.now().status.kind).toEqual("idle");
+    expect(picker.now().chosen).toBe(B);
+  });
+
+  /**
+   * The widget going away mid-confirmation. The clock is a `setTimeout` holding
+   * a `dispatch` into a reducer that no longer has a component; the disposer
+   * `armConfirmationClock` returns is what React runs on unmount, and after it
+   * there must be no timer left to fire at all.
+   */
+  it("leaves no clock behind when the widget goes away mid-confirmation", () => {
+    const picker = mountPick();
+    picker.dispatch(choosing(1, A));
+    picker.dispatch(settled(1, A, true));
+    expect(vi.getTimerCount(), "a confirmation is on a clock").toEqual(1);
+
+    picker.unmount();
+    expect(vi.getTimerCount(), "and the cleanup takes it with it").toEqual(0);
+    vi.advanceTimersByTime((DELAY ?? 0) * 4);
+    expect(picker.now().status.kind, "nothing fired into the dead widget").toEqual(
+      "saved",
+    );
+  });
+
+  /**
+   * The arming rule itself, at the seam both widgets call — criterion 2, "the
+   * clock is armed by the state, not by a call site". A status that is not a
+   * confirmation schedules NOTHING (not a timer that later decides to do
+   * nothing), and a confirmation's timer fires exactly one `elapsed` carrying
+   * the ordinal that armed it.
+   */
+  it("arms a clock for a confirmation and for no other status the app can be in", () => {
+    const fired: { kind: "elapsed"; edit: number }[] = [];
+    const spy = (event: { kind: "elapsed"; edit: number }) => fired.push(event);
+    const saving = reduceEdit(IDLE_EDIT_STATE, { kind: "committed", edit: 7 });
+    const failed = reduceEdit(saving, {
+      kind: "settled",
+      edit: 7,
+      outcome: { ok: false, message: "venue_id is not a venue" },
+    });
+
+    expect(armConfirmationClock(IDLE_EDIT_STATE, spy)).toBeUndefined();
+    expect(armConfirmationClock(saving, spy)).toBeUndefined();
+    expect(armConfirmationClock(failed, spy)).toBeUndefined();
+    expect(vi.getTimerCount(), "no status but a confirmation is on a clock").toEqual(0);
+
+    const saved = reduceEdit(saving, { kind: "settled", edit: 7, outcome: { ok: true } });
+    expect(armConfirmationClock(saved, spy)).toBeTypeOf("function");
+    vi.advanceTimersByTime(DELAY ?? 0);
+    expect(fired, "one firing, carrying the ordinal that armed it").toEqual([
+      { kind: "elapsed", edit: 7 },
+    ]);
+  });
+
+  /**
+   * `abandoned` is delegated whole, so every BUG-0107 move already decides
+   * correctly through `retiresRefusal` — including the two the component does
+   * not yet feed it (a press outside, focus landing elsewhere) and the page's
+   * `superseded`. The reducer being ready is what makes BUG-0119 a wiring
+   * ticket rather than a state-machine one; the retirement also must not
+   * un-say the row an EARLIER successful write linked.
+   */
+  it("hands every BUG-0107 move to the one decision, and un-links nothing", () => {
+    const picker = mountPick();
+    picker.dispatch(choosing(1, A));
+    picker.dispatch(settled(1, A, true));
+    vi.advanceTimersByTime(DELAY ?? 0);
+    picker.dispatch(choosing(2, B));
+    picker.dispatch(settled(2, B, false)); // a refusal, over a line that says A
+    const failed = picker.now();
+
+    for (const move of [
+      { kind: "escape" },
+      { kind: "press", inside: false },
+      { kind: "focus", inside: false },
+      { kind: "superseded" },
+    ] as const) {
+      const ended = reducePick(failed, { kind: "abandoned", edit: 2, move });
+      expect(ended.status.kind, `${move.kind} ends a refusal`).toEqual("idle");
+      expect(ended.chosen, "and the refused write still changed nothing").toBe(A);
+    }
+    for (const move of [
+      { kind: "press", inside: true },
+      { kind: "focus", inside: true },
+    ] as const) {
+      expect(
+        reducePick(failed, { kind: "abandoned", edit: 2, move }),
+        `${move.kind} inside the widget is not an abandonment`,
+      ).toBe(failed);
+    }
+  });
+
+  /**
+   * PIN — admin-window/BUG-0119, strict: this is red today and `it.fails` is
+   * the marker. The clock came over from the cell; BUG-0107's page-wide half
+   * did not, so a picker refusal ends only on an Escape pressed while focus is
+   * still inside the open panel, and it never takes the page's one refusal
+   * slot — a picker refusal and a cell refusal can stand stacked. Flipping
+   * this to `it` is part of BUG-0119's fix; leaving `it.fails` on a fixed
+   * picker turns the file red, which is the point.
+   */
+  it.fails(
+    "arms the page-wide retire rule for a refusal the open panel cannot end (BUG-0119)",
+    () => {
+      const picker = sourceText("src/components/records/entity-picker.tsx");
+      expect(picker, "the three listeners a closed, refusing widget needs").toContain(
+        "armRetire",
+      );
+      expect(picker, "and the page's one refusal slot").toContain("takeRefusalSlot");
+    },
+  );
 });
 
 /* ── absence renders honestly ─────────────────────────────────────────────── */
