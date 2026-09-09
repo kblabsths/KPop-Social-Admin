@@ -56,14 +56,86 @@
 const DASH = "—";
 
 /**
- * A refusal states a SQLSTATE either in the database's own prose or as the
- * trailing code `errorMessage` appends (`lib/db/result.ts`), and the two do
- * not always both arrive: PostgREST's own envelope carries the code, a
- * `RAISE` inside a function carries the prose. Recognising on either is what
- * keeps an arm from going quiet when one of the two is missing.
+ * The refusal's own STRUCTURE — campaign admin-window/BUG-0103.
+ *
+ * A refusal can carry text the operator typed: a coercion quotes the offending
+ * value straight back into its message (`invalid input syntax for type
+ * integer: "violates not-null constraint" (22P02)`), and tomorrow a gate or a
+ * settlement refusal will quote a value from a payload nobody at this cell
+ * typed. Matching an arm against the WHOLE string therefore let the operator's
+ * own keystrokes choose the sentence the APP says, and the app said things
+ * that had not happened — that nothing they retyped would land, or that they
+ * had cleared a column they had just typed into. The mono half was truthful
+ * throughout; only the app's voice was steerable.
+ *
+ * So an arm is chosen from two things a value cannot forge:
+ *
+ *  - **`code`** — the SQLSTATE the refusal STATES, read only from the end of
+ *    the string, where `errorMessage` appends it (`lib/db/result.ts`). A value
+ *    can contain `(23502)`; it cannot be what follows the code the database
+ *    itself put last.
+ *  - **`prose`** — the message with the value struck out. A coercion refusal's
+ *    value is everything after `for type <t>:`, so that whole tail goes; every
+ *    other shape puts its values in double quotes, so each quoted run is
+ *    blanked (the NAMES a refusal quotes — the column, the field — are read
+ *    back out of the original string by the arm that owns them, once that arm
+ *    has been chosen on the strength of the structure).
  */
-function states(refusal: string, prose: RegExp, code: string): boolean {
-  return prose.test(refusal) || refusal.includes(`(${code})`);
+type RefusalShape = { readonly prose: string; readonly code: string | null };
+
+/** The code `errorMessage` appends last: `… violates not-null constraint (23502)`. */
+const STATED_CODE = /\(([A-Za-z0-9]{3,12})\)\s*$/;
+
+/** Everything from `invalid input syntax for type <t>:` on is the VALUE. */
+const COERCION_HEAD = /^([\s\S]*?\binvalid input syntax for type\s+[a-z][a-z0-9 ]*?\s*:)/i;
+
+/** A double-quoted run — where a refusal that is not a coercion puts a value. */
+const QUOTED_RUN = /"[^"]*"/g;
+
+function shapeOf(refusal: string): RefusalShape {
+  const stated = STATED_CODE.exec(refusal)?.[1];
+  const head = COERCION_HEAD.exec(refusal)?.[1];
+  return {
+    prose: head ?? refusal.replace(QUOTED_RUN, '""'),
+    code: stated === undefined ? null : stated.toUpperCase(),
+  };
+}
+
+/** `null value in column "label" … violates not-null constraint` */
+const NOT_NULL_CODE = "23502";
+/** `invalid input syntax` (22P02) and its datetime sibling (22007). */
+const COERCION_CODES = ["22P02", "22007"] as const;
+/** The gate's own schema refusal. */
+const SCHEMA_CODE = "KS003";
+
+/** Every code an arm below claims: the ones this module can decide ON. */
+const CLAIMED_CODES: ReadonlySet<string> = new Set<string>([
+  NOT_NULL_CODE,
+  ...COERCION_CODES,
+  SCHEMA_CODE,
+]);
+
+/**
+ * Does this refusal belong to the arm that owns `prose` and `codes`?
+ *
+ * A refusal states a SQLSTATE either in the database's own prose or as the
+ * trailing code, and the two do not always both arrive: PostgREST's own
+ * envelope carries the code, a `RAISE` inside a function carries the prose,
+ * and this app's own not-provisioned sentence carries neither. So when the
+ * refusal states a code an arm here claims, THAT decides and nothing else can
+ * — which is what keeps a quoted value out of the choice. When it states no
+ * code, or one nothing here claims, the arms fall back to prose that has had
+ * the value struck out of it.
+ */
+function states(
+  shape: RefusalShape,
+  prose: RegExp,
+  codes: readonly string[],
+): boolean {
+  if (shape.code !== null && CLAIMED_CODES.has(shape.code)) {
+    return codes.includes(shape.code);
+  }
+  return prose.test(shape.prose);
 }
 
 /** `null value in column "label" of relation "walk_sandbox" violates …` */
@@ -154,22 +226,31 @@ export const GENERAL_FIX = "Correct what the refusal names and save again.";
  * exported: a test can prove an arm fired by proving it is not the fallback.
  */
 export function refusalFix(refusal: string): string {
+  // Every arm below reads the STRUCTURE, never the raw string: the value a
+  // refusal quotes is the operator's, and it does not get a vote in what the
+  // app then says about it (admin-window/BUG-0103).
+  const shape = shapeOf(refusal);
+
   // A database object that has not arrived is not a value problem, and telling
   // the operator to correct the value would send them round a loop no retype
   // can leave. It is the normal answer on the override path for the whole of
-  // M2 (the route's own 503, `api/admin/records/[table]/[id]/route.ts`).
-  if (NOT_PROVISIONED.test(refusal)) {
+  // M2 (the route's own 503, `api/admin/records/[table]/[id]/route.ts`) — this
+  // app's own sentence, which no SQLSTATE accompanies, so it claims no code.
+  if (states(shape, NOT_PROVISIONED, [])) {
     return `This edit needs a database object that has not arrived yet ${DASH} nothing you retype will land until it does.`;
   }
 
-  if (states(refusal, NOT_NULL_PROSE, "23502")) {
+  if (states(shape, NOT_NULL_PROSE, [NOT_NULL_CODE])) {
     const column = columnOf(refusal);
     const subject = column === null ? "This column" : column;
     return `${subject} cannot be cleared ${DASH} type a value into it.`;
   }
 
-  if (states(refusal, BAD_SYNTAX_PROSE, "22P02")) {
-    const type = BAD_SYNTAX_TYPE.exec(refusal)?.[1];
+  if (states(shape, BAD_SYNTAX_PROSE, COERCION_CODES)) {
+    // The TYPE is read from the prose, where the value has already been struck
+    // out: the database names the type before the colon, and the operator owns
+    // everything after it.
+    const type = BAD_SYNTAX_TYPE.exec(shape.prose)?.[1];
     if (type === undefined) return "Type a value in the form this column stores.";
     const form = formOf(type);
     return form === null
@@ -181,7 +262,7 @@ export function refusalFix(refusal: string): string {
   // `events.poster_url` are enforced there and this repo holds no copy of
   // either, so the sentence points at the pattern the refusal states rather
   // than restating what a country code looks like.
-  if (states(refusal, SCHEMA_PROSE, "KS003")) {
+  if (states(shape, SCHEMA_PROSE, [SCHEMA_CODE])) {
     const field = fieldOf(refusal);
     return field === null
       ? `The value did not match this field's registered pattern ${DASH} correct it to that form and save again.`
