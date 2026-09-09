@@ -3,8 +3,14 @@ import path from "node:path";
 import * as cheerio from "cheerio";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import type { Status } from "@/components/EditableCell";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  IDLE_EDIT_STATE,
+  armConfirmationClock,
+  confirmationDelayMs,
+  reduceEdit,
+  type Status,
+} from "@/components/EditableCell";
 import {
   IDLE_PICK_STATE,
   PickerOptions,
@@ -23,7 +29,7 @@ import {
 import { recordFields } from "@/components/records/fields";
 import { EDIT_CONFIG, decideEdit, decideReference } from "@/lib/edit/config";
 import { EM_DASH } from "@/lib/format";
-import { codeText, repoRoot, sourceFiles, sourceText } from "../source-tree";
+import { codeLinesIn, codeText, repoRoot, sourceFiles, sourceText } from "../source-tree";
 
 /**
  * The entity picker — how a `kind: reference` field is edited (campaign
@@ -413,6 +419,294 @@ describe("whose answer the picker's state accepts", () => {
 
     const saving = reducePick(IDLE_PICK_STATE, choosing(1, A));
     expect(reducePick(saving, { kind: "cleared" })).toBe(saving);
+  });
+});
+
+/* ── and the confirmation it makes retires itself ─────────────────────────── */
+
+/**
+ * The picker's `saved` is on the CELL's clock, and on no clock of its own —
+ * campaign admin-window/BUG-0111.
+ *
+ * The defect: the picker renders the shared `EditStatus` from `reducePick`,
+ * and nothing in that module ever retired a confirmation, so a successful
+ * override left the green word standing until the operator reopened that same
+ * picker — while the click-to-edit cell a few rows above retired its own after
+ * 1.5s. One status renderer, two lifetimes.
+ *
+ * Driven the way the component composes it: `armConfirmationClock` is the
+ * arming rule both widgets call from a `useEffect` keyed on the state OBJECT,
+ * so `mountPick` below is that composition over vitest's fake timers — the
+ * cheapest thing that can answer "what is the picker saying at t=1501ms", with
+ * no jsdom (STACK.md §4) and no second copy of the clock to test.
+ *
+ * `leakClocks: true` is the shape the defect class has: a timeout that was
+ * armed and NOT torn down when the state moved on. Every timeline is driven
+ * both ways, so the picker is required to survive a straggler clock rather
+ * than merely never to have one — the reducer's epoch rule is the second
+ * defense and it is `reduceEdit`'s, not a restatement (admin-window/BUG-0075,
+ * BUG-0097).
+ */
+describe("the picker's confirmation, on the click-to-edit cell's own clock", () => {
+  const A: PickerOption = { id: VENUE, name: "Olympic Hall" };
+  const B: PickerOption = { id: DOME, name: "Gocheok Sky Dome" };
+
+  const choosing = (edit: number, option: PickerOption): PickEvent => ({
+    kind: "choosing",
+    edit,
+    option,
+  });
+  const settled = (edit: number, option: PickerOption, ok: boolean): PickEvent => ({
+    kind: "settled",
+    edit,
+    option,
+    outcome: ok ? { ok: true } : { ok: false, message: `${option.id} refused` },
+  });
+
+  /**
+   * How long a confirmation lives, read from the rule the cell reads. Never a
+   * literal here: a number written into this file is the second copy the
+   * ticket exists to prevent.
+   */
+  const DELAY = confirmationDelayMs({ kind: "saved" });
+
+  /**
+   * The picker's state machine plus its clock effect, over a virtual clock.
+   *
+   * `useReducer` bails out on an unchanged reference, so a stale event
+   * re-renders nothing and the timeout already running is untouched; every
+   * real transition runs the effect's cleanup and then the effect. That is
+   * exactly the four lines below, and it is what the component does.
+   */
+  function mountPick({ leakClocks = false }: { leakClocks?: boolean } = {}) {
+    let state: PickState = IDLE_PICK_STATE;
+    let disarm: (() => void) | undefined;
+    const dispatch = (event: PickEvent): void => {
+      const next = reducePick(state, event);
+      if (next === state) return;
+      state = next;
+      if (!leakClocks) disarm?.();
+      disarm = armConfirmationClock(state, dispatch);
+    };
+    return {
+      dispatch,
+      /** What the picker is saying now. */
+      now: (): PickState => state,
+      /** What the open panel draws for it — the operator's actual evidence. */
+      says: (): cheerio.CheerioAPI =>
+        cheerio.load(
+          renderToStaticMarkup(
+            createElement(PickerPanel, {
+              window: windowOf(),
+              query: "",
+              current: state.chosen?.id ?? null,
+              status: state.status,
+              onQuery: () => {},
+              onChoose: () => {},
+            }),
+          ),
+        ),
+    };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("takes its delay from the one rule, so the two widgets cannot drift", () => {
+    // The cell's confirmed state and the picker's, each built by its own
+    // reducer, are asked the same question and must give the same answer.
+    const cellSaved = reduceEdit(
+      reduceEdit(IDLE_EDIT_STATE, { kind: "committed", edit: 1 }),
+      { kind: "settled", edit: 1, outcome: { ok: true } },
+    );
+    const pickSaved = reducePick(
+      reducePick(IDLE_PICK_STATE, choosing(1, A)),
+      settled(1, A, true),
+    );
+    expect(confirmationDelayMs(pickSaved.status)).not.toBeNull();
+    expect(confirmationDelayMs(pickSaved.status)).toEqual(
+      confirmationDelayMs(cellSaved.status),
+    );
+  });
+
+  it("arms no clock of its own, in any spelling", () => {
+    // The rule: the picker module schedules nothing. Read over CODE lines, so
+    // a comment naming the mechanism is not a second clock (LESSONS 3).
+    const scheduling = (text: string) =>
+      codeLinesIn(text).filter((line) => /\bset(?:Timeout|Interval)\s*\(/.test(line));
+    const picker = sourceText("src/components/records/entity-picker.tsx");
+    expect(scheduling(picker)).toEqual([]);
+    // ...because it calls the cell's, which is what makes the delay shared.
+    expect(picker).toContain("armConfirmationClock");
+
+    // The two fixtures the guard is proved on: one it MUST flag, and one it
+    // must not (a comment about the clock is not a clock).
+    expect(
+      scheduling('const t = setTimeout(() => dispatch({ kind: "elapsed", edit }), 1500);\n'),
+    ).toHaveLength(1);
+    expect(
+      scheduling("/** A confirmation retires on setTimeout(...) — the cell's. */\n"),
+    ).toEqual([]);
+  });
+
+  it("retires a confirmation on that delay, and keeps what the write chose", () => {
+    const picker = mountPick();
+    picker.dispatch(choosing(1, A));
+    picker.dispatch(settled(1, A, true));
+    expect(picker.now().status.kind).toEqual("saved");
+    // On screen at t=0: the panel is drawing a live status region.
+    expect(picker.says()('[role="status"]')).toHaveLength(1);
+
+    vi.advanceTimersByTime((DELAY ?? 0) - 1);
+    expect(picker.now().status.kind, "one tick short of the delay").toEqual("saved");
+
+    vi.advanceTimersByTime(1);
+    expect(picker.now().status.kind, "the confirmation's own clock").toEqual("idle");
+    // Gone from the surface, not merely from the state.
+    expect(picker.says()('[role="status"]')).toHaveLength(0);
+    // ...and the line still points where the write actually put it.
+    expect(picker.now().chosen).toBe(A);
+  });
+
+  it("puts no clock on a refusal, however long it stands", () => {
+    const picker = mountPick();
+    picker.dispatch(choosing(1, A));
+    picker.dispatch(settled(1, A, false));
+    expect(confirmationDelayMs(picker.now().status)).toBeNull();
+
+    vi.advanceTimersByTime((DELAY ?? 0) * 2);
+    expect(picker.now().status.kind, "twice the confirmation's life").toEqual("failed");
+    // Still a sentence the operator has to act on, still on screen.
+    expect(picker.says()('[role="alert"]')).toHaveLength(1);
+    vi.advanceTimersByTime(60_000);
+    expect(picker.now().status.kind).toEqual("failed");
+  });
+
+  it("leaves a write still in flight alone", () => {
+    const picker = mountPick();
+    picker.dispatch(choosing(1, A));
+    expect(confirmationDelayMs(picker.now().status)).toBeNull();
+
+    vi.advanceTimersByTime((DELAY ?? 0) * 2);
+    expect(picker.now().status.kind, "the write has not answered").toEqual("saving");
+    expect(picker.says()('[role="status"]')).toHaveLength(1);
+    // And the options are still the busy ones: no clock hands the widget back
+    // early (admin-window/BUG-0097).
+    expect(
+      picker.says()("li button").filter((_, button) => button.attribs.disabled === undefined),
+    ).toHaveLength(0);
+  });
+
+  describe.each([{ leaked: false }, { leaked: true }])(
+    "and the clock belongs to the choice that armed it (straggler clock: $leaked)",
+    ({ leaked }) => {
+      it("never retires a newer choice's in-flight statement", () => {
+        const picker = mountPick({ leakClocks: leaked });
+        picker.dispatch(choosing(1, A));
+        picker.dispatch(settled(1, A, true)); // choice 1's clock is running
+        vi.advanceTimersByTime((DELAY ?? 0) - 200);
+        picker.dispatch({ kind: "cleared" }); // the operator reopens
+        picker.dispatch(choosing(2, B)); // ...and chooses again, still in flight
+        expect(picker.now().status.kind).toEqual("saving");
+
+        // Choice 1's clock fires in here somewhere. It is not its statement.
+        vi.advanceTimersByTime(1_000);
+        expect(picker.now().status.kind, "choice 2's write is still running").toEqual(
+          "saving",
+        );
+
+        picker.dispatch(settled(2, B, true));
+        expect(picker.now().status.kind).toEqual("saved");
+        vi.advanceTimersByTime((DELAY ?? 0) - 1);
+        expect(picker.now().status.kind, "its own full delay, and no less").toEqual(
+          "saved",
+        );
+        vi.advanceTimersByTime(1);
+        expect(picker.now().status.kind).toEqual("idle");
+        expect(picker.now().chosen).toBe(B);
+      });
+
+      it("never erases a newer choice's refusal", () => {
+        const picker = mountPick({ leakClocks: leaked });
+        picker.dispatch(choosing(1, A));
+        picker.dispatch(settled(1, A, true));
+        vi.advanceTimersByTime((DELAY ?? 0) - 200);
+        picker.dispatch({ kind: "cleared" });
+        picker.dispatch(choosing(2, B));
+        picker.dispatch(settled(2, B, false));
+
+        vi.advanceTimersByTime(60_000);
+        expect(picker.now().status.kind, "a refusal outlives every clock").toEqual(
+          "failed",
+        );
+        expect(picker.now().chosen, "and the line still says what was written").toBe(A);
+      });
+    },
+  );
+
+  /* the same rule at the reducer, where a hand-fired clock can be aimed */
+
+  it("retires only the confirmation its own choice put on screen", () => {
+    const saved = reducePick(
+      reducePick(IDLE_PICK_STATE, choosing(1, A)),
+      settled(1, A, true),
+    );
+    const retired = reducePick(saved, { kind: "elapsed", edit: 1 });
+    expect(retired.status.kind).toEqual("idle");
+    expect(retired.chosen, "the reference line is not un-said by the clock").toBe(A);
+
+    // An older choice's clock, arriving late: unchanged BY REFERENCE, so
+    // React bails out and nothing on screen moves.
+    expect(reducePick(saved, { kind: "elapsed", edit: 0 })).toBe(saved);
+
+    const saving = reducePick(saved, choosing(2, B));
+    expect(reducePick(saving, { kind: "elapsed", edit: 1 })).toBe(saving);
+    expect(reducePick(saving, { kind: "elapsed", edit: 2 })).toBe(saving);
+
+    const failed = reducePick(
+      reducePick(IDLE_PICK_STATE, choosing(1, A)),
+      settled(1, A, false),
+    );
+    expect(reducePick(failed, { kind: "elapsed", edit: 1 })).toBe(failed);
+  });
+
+  /**
+   * Escape ends a refusal, which is BUG-0107's rule reaching this widget —
+   * the picker owns that key already (its panel's `onKeyDown`), so the move it
+   * can see is dispatched through the same `abandoned` event and decided by
+   * the same `retiresRefusal`. The page-wide moves the cell also listens for
+   * (a press outside, focus landing elsewhere) are NOT armed here; see the
+   * ticket's handoff note.
+   */
+  it("ends a refusal on Escape, and speaks over nothing else", () => {
+    const escape = { kind: "abandoned", edit: 1, move: { kind: "escape" } } as const;
+
+    const failed = reducePick(
+      reducePick(IDLE_PICK_STATE, choosing(1, A)),
+      settled(1, A, false),
+    );
+    const ended = reducePick(failed, escape);
+    expect(ended.status.kind).toEqual("idle");
+    expect(ended.chosen).toBeNull(); // a refused write changed nothing
+
+    // Not a confirmation (that is the clock's), not a write in flight, and
+    // not a statement belonging to a later choice.
+    const saved = reducePick(
+      reducePick(IDLE_PICK_STATE, choosing(1, A)),
+      settled(1, A, true),
+    );
+    expect(reducePick(saved, escape)).toBe(saved);
+    const saving = reducePick(IDLE_PICK_STATE, choosing(1, A));
+    expect(reducePick(saving, escape)).toBe(saving);
+    const later = reducePick(
+      reducePick(failed, choosing(2, B)),
+      settled(2, B, false),
+    );
+    expect(reducePick(later, escape), "an older edit's Escape").toBe(later);
   });
 });
 

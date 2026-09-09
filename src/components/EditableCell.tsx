@@ -133,6 +133,38 @@ export function confirmationDelayMs(status: Status): number | null {
 }
 
 /**
+ * The confirmation's clock itself: arm it from the state that owns it, and
+ * return how to tear it down — campaign admin-window/BUG-0111.
+ *
+ * The MECHANISM, not just the constant, because two widgets render this app's
+ * one `Status` and both have to retire a confirmation the same way: the
+ * click-to-edit cell below and the entity picker
+ * (`records/entity-picker.tsx`), which reuses `reduceEdit` through
+ * `reducePick` and used to have no clock at all — a `saved` beside a reference
+ * field stood until the operator reopened the picker, while the cell one row
+ * above retired its own after 1.5s. A second `setTimeout` in that module would
+ * have been a second thing to keep in step; this is the same one.
+ *
+ * Called from a `useEffect` keyed on the state OBJECT, so React tears the
+ * timeout down on every real transition and on unmount, and the ordinal it
+ * closes over is re-checked by `reduceEdit`'s `elapsed` arm — a clock that
+ * outlives its own status is both cleared here and ignored there. It arms
+ * wherever `confirmationDelayMs` returns a delay and nowhere else, so a
+ * confirmation reached by a path no click handler knows about still retires,
+ * and a refusal and an in-flight write are never put on a clock.
+ */
+export function armConfirmationClock(
+  state: EditState,
+  dispatch: (event: { kind: "elapsed"; edit: number }) => void,
+): (() => void) | undefined {
+  const delay = confirmationDelayMs(state.status);
+  if (delay === null) return undefined;
+  const edit = state.edit;
+  const timer = setTimeout(() => dispatch({ kind: "elapsed", edit }), delay);
+  return () => clearTimeout(timer);
+}
+
+/**
  * What the operator just did that could end the refusal on screen — campaign
  * admin-window/BUG-0107.
  *
@@ -1167,14 +1199,12 @@ export function EditableCell({
    * (and on unmount), and the one it arms carries the ordinal of the edit whose
    * confirmation is on screen — so a clock outliving its own status is both
    * cleared here and ignored by `reduceEdit`.
+   *
+   * The arming itself is `armConfirmationClock`'s, shared with the entity
+   * picker so this app has ONE confirmation clock rather than one per widget
+   * (campaign admin-window/BUG-0111).
    */
-  useEffect(() => {
-    const delay = confirmationDelayMs(cell.status);
-    if (delay === null) return;
-    const edit = cell.edit;
-    const timer = setTimeout(() => dispatch({ kind: "elapsed", edit }), delay);
-    return () => clearTimeout(timer);
-  }, [cell]);
+  useEffect(() => armConfirmationClock(cell, dispatch), [cell]);
 
   /**
    * A refusal ends when the operator does — campaign admin-window/BUG-0107.
