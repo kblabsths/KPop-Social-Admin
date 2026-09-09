@@ -139,15 +139,40 @@ export function isRecordId(id: string): boolean {
 }
 
 /**
- * That id in the ONE spelling Postgres itself prints — lowercase, hyphenated,
- * 8-4-4-4-12 — or `null` when the value is not a record id at all (campaign
- * admin-window/BUG-0140).
+ * The id a REQUEST VALUE names, in the ONE spelling Postgres itself prints —
+ * lowercase, hyphenated, 8-4-4-4-12 — or `null` when the value names no record
+ * id at all (campaign admin-window/BUG-0140).
  *
- * It lives beside `isRecordId` and is built ON it, because the two are one
- * grammar: everything that predicate accepts as an id, this reduces to a
- * single string, and everything it refuses has no canonical form to give. A
- * second lowercasing spelled at a call site would be the second uuid pattern
- * `isRecordId` exists to prevent.
+ * It lives beside `isRecordId` and is built ON it, so there is ONE uuid
+ * grammar and not two: everything that predicate accepts as an id, this
+ * reduces to a single string. A second lowercasing spelled at a call site
+ * would be the second uuid pattern `isRecordId` exists to prevent.
+ *
+ * The two ask DIFFERENT questions of that one grammar, and each owns its own
+ * (LESSONS 4). `isRecordId` asks whether a string, AS IT STANDS, is an id —
+ * asked of a value the caller then carries to the query VERBATIM (a dynamic
+ * segment, a PATCH body's `ref`), which is why it is exactly as strict as
+ * `uuid_in` and refuses padding, as Postgres does. This one asks what id a
+ * value DERIVED FROM A REQUEST names, so it first strips the whitespace the
+ * paste brought — a copy off a log line or a psql column carries a leading
+ * space or a trailing newline, and a `?cycle=%20<id>` reaches a page as a real
+ * space — and then applies that same grammar to what is left. Until
+ * admin-window/BUG-0145 it did not, and `/cycles` printed "is not among the
+ * 200 newest cycles" about a cycle whose row it was rendering three elements
+ * below: HTML collapses the padding, so the denied id read character for
+ * character like the drawn one and the operator had nothing to see.
+ *
+ * Trimming HERE, and not at a page's edge, is what makes every facet that
+ * canonicalises answer a padded paste the same way — `?cycle=` and `?run=` on
+ * `/cycles`, `?source_id=` on `/queues`, `?source=` on `/sources` (LESSONS 5:
+ * a shared spelling is imported, never retyped). Whitespace INSIDE the value
+ * is not padding and is no id, and a value that is only whitespace names none
+ * either.
+ *
+ * What this RETURNS is always a string `isRecordId` accepts, which is the
+ * invariant every call site rests on: the canonical form — never the input —
+ * is what reaches a query, so no padded value can arrive at Postgres as
+ * `22P02`.
  *
  * **Why anything needs it.** Postgres compares a `uuid` column by VALUE, so
  * `.eq()` matches every spelling of one id; JavaScript compares the same id by
@@ -165,8 +190,9 @@ export function isRecordId(id: string): boolean {
  * from a row is already canonical and passing it through changes nothing.
  */
 export function canonicalRecordId(id: string): string | null {
-  if (!isRecordId(id)) return null;
-  const hex = id.replace(/-/g, "").toLowerCase();
+  const value = id.trim();
+  if (!isRecordId(value)) return null;
+  const hex = value.replace(/-/g, "").toLowerCase();
   return [
     hex.slice(0, 8),
     hex.slice(8, 12),

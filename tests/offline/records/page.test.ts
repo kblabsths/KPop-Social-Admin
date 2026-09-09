@@ -790,6 +790,18 @@ describe("the states", () => {
    * uuid one character short, and a uuid carrying a trailing space — which a
    * browser sends as `%20` and Next hands the page decoded.
    */
+  /**
+   * A real id wearing the padding a paste brings, as an ADDRESS.
+   *
+   * It stays in the list below because the record page's guard is unchanged by
+   * admin-window/BUG-0145: `isRecordId` asks whether the segment IS an id, and
+   * the segment is what the read carries verbatim to Postgres, which refuses a
+   * padded uuid itself. The trimming that ticket added lives one function over,
+   * in `canonicalRecordId` — the step that DERIVES an id from a request value —
+   * and the two are graded apart below.
+   */
+  const PADDED_ID = "00000000-0000-0000-0000-000000000000 ";
+
   const MISTYPED_IDS = [
     "not-a-uuid",
     "00000000-0000-0000-0000-00000000000",
@@ -798,7 +810,7 @@ describe("the states", () => {
     // build — `/records/groups/<id>%20` echoes `%20` back on screen), so the
     // decoded spelling is here too and both answer the same way.
     "00000000-0000-0000-0000-000000000000%20",
-    "00000000-0000-0000-0000-000000000000 ",
+    PADDED_ID,
     "%7B01920000-0000-7000-8000-0000000000a1%7D",
   ];
 
@@ -914,12 +926,70 @@ describe("the states", () => {
     expect(isRecordId(canonical)).toBe(true);
   });
 
-  it.each(MISTYPED_IDS)("has no canonical spelling for %o, which is no id", (id) => {
-    // Exactly what `isRecordId` refuses, and nothing else: a value with no
-    // canonical form is `null` rather than a string a query would carry to
-    // Postgres, where it is `22P02` and an error card advising a reload.
-    expect(canonicalRecordId(id)).toBeNull();
+  it.each(MISTYPED_IDS)("is no id as it stands, %o", (id) => {
+    // The raw-segment guard, unchanged by admin-window/BUG-0145: every one of
+    // these is refused before any read, so none reaches Postgres as `22P02`
+    // and an error card advising a reload.
     expect(isRecordId(id)).toBe(false);
+  });
+
+  it.each(MISTYPED_IDS.filter((id) => id !== PADDED_ID))(
+    "has no canonical spelling for %o, which names no id at all",
+    (id) => {
+      // No canonical form is `null` rather than a string a query would carry.
+      expect(canonicalRecordId(id)).toBeNull();
+    },
+  );
+
+  /**
+   * The one arm admin-window/BUG-0145 moved, and the seam it opened, pinned
+   * together (LESSONS 4: one grammar, but two questions, each with its own
+   * predicate).
+   *
+   * `isRecordId` answers "is this string, as it stands, an id" — asked of a
+   * value that is carried to the query VERBATIM (a dynamic segment, a PATCH
+   * body's `ref`), and Postgres refuses a padded uuid, so this must too.
+   * `canonicalRecordId` answers "what id does this REQUEST VALUE name" — the
+   * derivation step every facet uses (`?cycle=`, `?run=`, `?source_id=`,
+   * `?source=`), where the surrounding whitespace belongs to the paste and not
+   * to the id: `/cycles` denied a row it was rendering over one leading space
+   * (admin-window/BUG-0145), because HTML collapses the padding and the denied
+   * id read exactly like the drawn one.
+   *
+   * The invariant that keeps the split safe is asserted last: what the
+   * canonicaliser RETURNS is always something `isRecordId` accepts, so every
+   * call site that queries the return value — all of them — is comparing a
+   * value Postgres will parse.
+   */
+  it("reads a paste's surrounding whitespace as padding, not as another id [admin-window/BUG-0145]", () => {
+    const canonical = WELL_FORMED_IDS[0];
+    for (const spelling of WELL_FORMED_IDS) {
+      for (const padded of [
+        ` ${spelling}`,
+        `${spelling} `,
+        `${spelling}\n`,
+        `\t ${spelling} \r\n`,
+      ]) {
+        expect(isRecordId(padded), JSON.stringify(padded)).toBe(false);
+        expect(canonicalRecordId(padded), JSON.stringify(padded)).toBe(canonical);
+      }
+    }
+    // The second fixture every guard owes (LESSONS 8): whitespace INSIDE is not
+    // padding, and a value that is only whitespace names no id either.
+    for (const inner of [
+      `${canonical.slice(0, 8)} ${canonical.slice(9)}`,
+      `${canonical.slice(0, 20)} ${canonical.slice(20)}`,
+      "   ",
+      "",
+      "\n",
+    ]) {
+      expect(canonicalRecordId(inner), JSON.stringify(inner)).toBeNull();
+    }
+    // What it returns is an id by the raw guard's own grammar, so a caller may
+    // hand the RESULT to a query — which is what every call site does.
+    const derived = canonicalRecordId(` ${canonical.toUpperCase()}\n`);
+    expect(derived).toBe(canonical);
+    expect(isRecordId(derived ?? "")).toBe(true);
   });
 
   it("leaves the unknown-id state to a well-formed id that matches no row", async () => {

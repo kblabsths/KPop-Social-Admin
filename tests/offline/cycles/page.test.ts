@@ -970,18 +970,31 @@ describe("the cycles the resolver filed", () => {
   });
 
   /**
-   * STRICT PIN for admin-window/BUG-0145, open at the time of writing: it is
-   * `it.fails`, so it PASSES while the divergence stands and reddens the day it
-   * is fixed, sending the reader to the ticket. Whoever takes BUG-0145 flips
-   * this back to a plain `it(...)` and watches it red first.
+   * Was QA's strict `it.fails` pin for admin-window/BUG-0145 — flipped to a
+   * plain `it(...)` by that ticket, which trimmed the padding a paste carries
+   * where the value is DERIVED from the request (`canonicalRecordId`,
+   * `src/lib/db/records.ts`). QA's own assertions are kept verbatim below and
+   * the answer the page now gives is pinned above them, so the invariant and
+   * the behaviour that satisfies it are graded together.
+   *
+   * The ruling, against LOOK_AND_FEEL bars 4 and 11: a URL is a link an
+   * operator pasted, and the whitespace a copy off a log line or a psql column
+   * brings with it is the paste's, not the id's. The honest answer to
+   * ` <a real cycle id>` is therefore the ROW — HTML collapses the padding, so
+   * a denial naming it would read character-for-character like the row the same
+   * document is drawing three elements below.
    */
-  it.fails("never denies a row it is rendering, whatever the paste carried [admin-window/BUG-0145]", async () => {
-    // The harm admin-window/BUG-0143 named, stated as the invariant rather than
-    // as one spelling: whatever the URL carried, the page may not print "this
-    // cycle is not in this window" naming an id whose row is in the window it
-    // just drew. A paste that brought its surrounding whitespace along still
-    // does exactly that, and HTML collapses the whitespace, so the id in the
-    // denial reads character-for-character like the row three elements below.
+  it("never denies a row it is rendering, whatever the paste carried [admin-window/BUG-0145]", async () => {
+    // The render clock is the only thing two renders of one page disagree on
+    // (the gauges stamp `now` into their window lines); everything else is the
+    // fixtures', so a padded paste's whole document may be compared with the
+    // document the database's own spelling produces.
+    const clockless = (markup: string) =>
+      markup.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, "<instant>");
+    const canonicalPage = clockless(
+      await renderCycles(healthyScript(), { cycle: FAILED.run_id }),
+    );
+
     for (const spelling of [
       ` ${FAILED.run_id}`,
       `${FAILED.run_id} `,
@@ -990,6 +1003,31 @@ describe("the cycles the resolver filed", () => {
     ]) {
       const markup = await renderCycles(healthyScript(), { cycle: spelling });
       const $ = cheerio.load(markup);
+
+      // The answer is the row: found, marked once, and one accessible marking
+      // on the whole page — BUG-0143's criterion, for a padded paste of it.
+      expect($("[data-cycle-found]").attr("data-cycle-found"), spelling).toBe("true");
+      expect(cycleRow(markup, FAILED.run_id).marked, spelling).toBe("true");
+      expect(cycleRow(markup, FAILED.run_id).current, spelling).toBe("true");
+      expect($("tr[data-row-marked]").length, spelling).toBe(1);
+      expect($("[data-cycle][aria-current]").length, spelling).toBe(1);
+      // Named in the database's own spelling, with no padding left in the
+      // attribute the sentence carries — the operator reads back the id they
+      // meant, and the in-page link lands on that very row.
+      expect($("[data-cycle-asked]").attr("data-cycle-asked"), spelling).toBe(FAILED.run_id);
+      expect($('[data-cycle-found="true"] a').attr("href"), spelling).toBe(
+        `#${cycleRow(markup, FAILED.run_id).anchor}`,
+      );
+      // A facet the page APPLIED is not one it dropped.
+      expect($("[data-dropped-params]").length, spelling).toBe(0);
+      // And it is the SAME page, byte for byte, that the unpadded id draws:
+      // one derived value feeds the predicate, the ink, the anchor and all
+      // three arms, so the padding has no second path to leak down.
+      expect(clockless(markup), spelling).toBe(canonicalPage);
+
+      // QA's invariant, unchanged: whatever the URL carried, the page may not
+      // print "this cycle is not in this window" naming an id whose row is in
+      // the window it just drew.
       const denial = $('[data-cycle-found="false"]');
       const drawn = renderedCycles(markup);
       expect(drawn, spelling).toContain(FAILED.run_id);
@@ -999,6 +1037,18 @@ describe("the cycles the resolver filed", () => {
         );
       }
     }
+
+    // It discriminates: the padding is what was ignored, not the id. A padded
+    // paste of a DIFFERENT cycle draws a different page (LESSONS 8's second
+    // fixture), and padding around a value that is no id at all still has no
+    // canonical form, so that arm keeps the answer the three cases below pin.
+    expect(
+      clockless(await renderCycles(healthyScript(), { cycle: ` ${SUCCEEDED.run_id} ` })),
+    ).not.toBe(canonicalPage);
+    const nonsense = await renderCycles(healthyScript(), { cycle: "  a b c  " });
+    expect(cheerio.load(nonsense)('[data-cycle-found="false"]').attr("data-cycle-asked")).toBe(
+      "  a b c  ",
+    );
   });
 
   it("keeps the window's own limits on screen beside a cycle it could not find", async () => {
@@ -2130,6 +2180,48 @@ describe("a ?run= link arriving from the Dashboard", () => {
       expect(markup, nonsense).not.toContain(nonsense);
       expect($("script").length, nonsense).toBe(0);
     }
+  });
+
+  it("answers a padded paste of a run id the way its twin answers one [admin-window/BUG-0145]", async () => {
+    // The two facets are one page's answer to one kind of value, so they may
+    // not part company over what a paste dragged in with it. Before
+    // admin-window/BUG-0145 the identical input got two answers from the same
+    // document: `?run=` named the parameter as dropped and passed no verdict,
+    // while `?cycle=` denied a row it was rendering. Both now read the id.
+    for (const [cycle, run] of [
+      [` ${FAILED.run_id}`, ` ${RUN_FAILED.run_id}`],
+      [`${FAILED.run_id}\n`, `${RUN_FAILED.run_id} `],
+      [` ${FAILED.run_id.toUpperCase()} `, ` ${RUN_FAILED.run_id.toUpperCase()} `],
+    ]) {
+      const where = `${JSON.stringify(cycle)} + ${JSON.stringify(run)}`;
+      // The run facet alone: marked once, named in the database's spelling,
+      // and NOT reported as a parameter the page dropped.
+      const runOnly = await renderCycles(withRuns(), { run });
+      expect(markedRowTables(runOnly), where).toEqual([RUNS_TABLE]);
+      expect(runRow(runOnly, RUN_FAILED.run_id).marked, where).toBe("true");
+      expect(runRow(runOnly, RUN_FAILED.run_id).current, where).toBe("true");
+      expect($runAsked(runOnly), where).toBe(RUN_FAILED.run_id);
+      expect(droppedNames(runOnly), where).toEqual([]);
+
+      // And one URL carrying both padded ids marks one row in each half —
+      // neither facet's padding reaching the other's predicate.
+      const both = await renderCycles(withRuns(), { cycle, run });
+      const $ = cheerio.load(both);
+      expect(markedRowTables(both).sort(), where).toEqual([CYCLES_TABLE, RUNS_TABLE].sort());
+      expect(cycleRow(both, FAILED.run_id).marked, where).toBe("true");
+      expect(runRow(both, RUN_FAILED.run_id).marked, where).toBe("true");
+      expect($("[data-cycle-asked]").attr("data-cycle-asked"), where).toBe(FAILED.run_id);
+      expect($runAsked(both), where).toBe(RUN_FAILED.run_id);
+      expect(droppedNames(both), where).toEqual([]);
+    }
+
+    // The other direction, so the convergence is not a blanket acceptance:
+    // padding around a value that is no id at all leaves it no id, and `?run=`
+    // still names it in the dropped-parameter line rather than marking a row.
+    const padded = await renderCycles(withRuns(), { run: "  not-a-uuid  " });
+    expect(droppedNames(padded)).toEqual(["run"]);
+    expect(markedRowTables(padded)).toEqual([]);
+    expect(cheerio.load(padded)("[data-run-asked]").length).toBe(0);
   });
 
   it("takes the first value when the URL names the run twice", async () => {
