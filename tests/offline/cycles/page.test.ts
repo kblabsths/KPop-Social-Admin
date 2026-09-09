@@ -1240,6 +1240,13 @@ describe("the cycles the resolver filed", () => {
     ["ZERO WIDTH SPACE, inside", `ab${String.fromCodePoint(0x200b)}cd`],
     ["BRAILLE PATTERN BLANK", `ab${String.fromCodePoint(0x2800)}cd`],
     ["only blanks", "   "],
+    // The allowlist's OTHER edge, and the families its two regexes rule on
+    // that no case above reaches: the bound (128) by one character, a C1
+    // control, and an astral character — printable ASCII is a bound AND a
+    // range, and a bound nothing crosses in a test is a bound anyone may move.
+    ["one character over the bound", "a".repeat(129)],
+    ["C1 control, inside", `ab${String.fromCodePoint(0x0085)}cd`],
+    ["astral character, inside", `ab${String.fromCodePoint(0x1f600)}cd`],
   ] as const)(
     "spells nothing and reports the facet for a ?cycle= it may not print: %s [admin-window/BUG-0147]",
     async (_name, asked) => {
@@ -1288,6 +1295,10 @@ describe("the cycles the resolver filed", () => {
     ["a path a URL invented", "../../etc/passwd"],
     ["blanks around ink", " a "],
     ["punctuation only", "%%%"],
+    // The value AT the bound. With the 129 case in the table above, the two
+    // differ by one character and pin where the boundary IS, not merely that
+    // one exists.
+    ["a value the length of the bound", "a".repeat(128)],
   ] as const)(
     "still spells a ?cycle= it may print: %s [admin-window/BUG-0147]",
     async (_name, asked) => {
@@ -2219,6 +2230,55 @@ describe("a ?source= link arriving from the Sources page", () => {
     // No facet, no sentence.
     expect(cheerio.load(plain)("[data-source-facet]").length).toBe(0);
   });
+
+  /**
+   * QA's strict pin, watched RED on this tree (campaign admin-window).
+   *
+   * ARCHITECTURE.md §7 as `?cycle=` now satisfies it (admin-window/BUG-0147):
+   * foreign text reaches an app-authored sentence through an ALLOWLIST or in
+   * its OWN BOX. `?source=` does neither in the runs window line — the name is
+   * interpolated as BARE TEXT into the app's own paragraph four times, with no
+   * isolate around it, so an unterminated U+202E's scope is the whole
+   * paragraph. The facet's other sentence at least has the box
+   * (`<span dir="ltr">`), which contains the reorder on screen but does not
+   * travel with the text an operator copies out.
+   *
+   * Two arms pass, as BUG-0147's did: spell the name only off an allowlist and
+   * report the facet otherwise, or put every occurrence in its own box AND
+   * keep the copied-out text honest. The check is on the TEXT, never on
+   * styling.
+   *
+   * `/runs` renders the same component from the same props, so it carries the
+   * same defect.
+   */
+  it.fails(
+    "never lets a ?source= bidi control into the sentences the page wrote [admin-window/BUG-0153]",
+    async () => {
+    const CONTROLS = /[\u202A-\u202E\u2066-\u2069]/u;
+    for (const asked of [
+      `${String.fromCodePoint(0x202e)}bandsintown`,
+      `ab${String.fromCodePoint(0x202e)}cd`,
+      `x${String.fromCodePoint(0x2066)}y`,
+    ]) {
+      const where = [...asked]
+        .map((c) => "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"))
+        .join(" ");
+      const markup = await renderCycles(healthyScript({ [T.runs]: { data: [...RUNS] } }), {
+        source: asked,
+      });
+      const $ = cheerio.load(markup);
+      expect(CONTROLS.test($("[data-window='runs']").text()), where).toBe(false);
+      expect(CONTROLS.test($("[data-source-facet]").text()), where).toBe(false);
+    }
+    // Not vacuous: an ordinary source name is still spelled in both sentences.
+    const plain = await renderCycles(healthyScript({ [T.runs]: { data: [...RUNS] } }), {
+      source: "bandsintown",
+    });
+    const $plain = cheerio.load(plain);
+      expect($plain("[data-source-facet]").text()).toContain("bandsintown");
+      expect($plain("[data-window='runs']").text()).toContain("bandsintown");
+    },
+  );
 
   it("takes the first value when the URL names the source twice", async () => {
     const markup = await renderCycles(healthyScript(), {
