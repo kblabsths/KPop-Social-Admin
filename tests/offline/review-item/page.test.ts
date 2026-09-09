@@ -2011,8 +2011,15 @@ describe("no shape's lede claims a completeness its read cannot support", () => 
  * fires only when the lede says "table" while `[data-evidence-view]` carries
  * none — which happens exactly when no evidence id resolved and `ClaimRows`
  * rendered `Empty` instead of `DataTable`. In the healthy state the same read
- * finds the table and the rule passes, which the first test holds so the pin
- * below can never go vacuous.
+ * finds the table and the rule passes.
+ *
+ * Graded ONCE, over every `Shape` the app declares and BOTH states of the
+ * evidence block — QA's strict pin is folded in here rather than left beside a
+ * healthy-only sweep, which is what let the empty state ship ungraded twice
+ * (admin-window/BUG-0124, admin-window/BUG-0128). The word is conditioned, not
+ * banned: the healthy leg asserts that a lede naming a table really is
+ * rendered over one, so a copy change that drops the noun everywhere cannot
+ * turn this green vacuously.
  */
 describe("no lede sends the operator to a table the page did not render", () => {
   /** One view's lede, and what the view really rendered under it. */
@@ -2025,46 +2032,44 @@ describe("no lede sends the operator to a table the page did not render", () => 
     };
   }
 
-  /** The same item, with every evidence read answering with no claim. */
-  function nothingResolves(
-    script: Script,
-    item: ReturnType<typeof reviewItemEntityLink>,
-  ): Script {
+  /**
+   * The same item, with every evidence read answering with no claim.
+   *
+   * The item is the shape's own fixture, untouched: only the reads behind it
+   * are emptied, so each shape reaches the empty state the way the database
+   * produces it — ids that name no row this database holds.
+   */
+  function nothingResolves(script: Script): Script {
     return {
       ...script,
-      [T.reviewItems]: { data: item },
       [T.observations]: [{ data: [] }, { data: [] }],
       [T.pendingClaims]: { data: [] },
     };
   }
 
-  it("renders the table its lede names, on every shape, when claims resolve", async () => {
-    // Non-vacuity: healthy, the word and the element agree — so a red below is
-    // the empty state's doing and not this rule banning a noun.
+  it("names a table only where the block rendered one, on every shape, in both states", async () => {
+    let namesATable = 0;
     for (const [name, script, id] of SHAPED) {
-      const view = await viewOf(script(), id);
-      expect(view.lede.length, name).toBeGreaterThan(0);
-      expect(view.tables, name).toBeGreaterThan(0);
-    }
-  });
+      // Healthy: the word and the element agree, so a red on the empty leg is
+      // the empty state's doing and not this rule banning a noun.
+      const held = await viewOf(script(), id);
+      expect(held.lede.length, `${name}/held`).toBeGreaterThan(0);
+      expect(held.tables, `${name}/held`).toBeGreaterThan(0);
+      if (/\btable\b/i.test(held.lede)) namesATable += 1;
 
-  it.fails("holds when no evidence id resolves (admin-window/BUG-0130)", async () => {
-    const orphan = "01920000-0000-7000-8000-000000000999";
-    const cases = [
-      ["stuck", stuckScript, reviewItemEntityLink({ evidence: [orphan], folded_count: 12 })],
-      ["pattern", patternScript, reviewItemSourcePattern({ evidence: [], folded_count: 700 })],
-    ] as const;
-    for (const [name, script, item] of cases) {
-      const view = await viewOf(
-        nothingResolves(script(), item),
-        item.review_item_id,
-      );
       // The state this rule is about: the empty card stands where the table
       // would be, saying in the app's own words that there are no claims.
-      expect(view.empties, name).toBeGreaterThan(0);
-      expect(view.tables, name).toBe(0);
-      expect(view.lede, name).not.toMatch(/\btable\b/i);
+      const bare = await viewOf(nothingResolves(script()), id);
+      expect(bare.empties, `${name}/bare`).toBeGreaterThan(0);
+      expect(bare.tables, `${name}/bare`).toBe(0);
+      // The view still leads with a sentence — the fix is words that follow
+      // the read, never a lede that disappears with its table.
+      expect(bare.lede.length, `${name}/bare`).toBeGreaterThan(0);
+      expect(bare.lede, `${name}/bare`).not.toMatch(/\btable\b/i);
     }
+    // The antecedent is live: some shipped lede really does name its table in
+    // the held state, so the empty leg above is a condition and not a ban.
+    expect(namesATable).toBeGreaterThan(0);
   });
 });
 
@@ -2956,3 +2961,5 @@ describe("a table name in a queues empty state card", () => {
     expect(inTheMachinesFace($)).toEqual([T.reviewItems]);
   });
 });
+
+
