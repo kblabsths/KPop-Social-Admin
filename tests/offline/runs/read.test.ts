@@ -4,8 +4,8 @@ import {
   RUN_COLUMNS,
   RUN_COUNTS,
   RUN_WINDOW,
-  narrowedTo,
   readRuns,
+  sourceNarrowing,
 } from "@/lib/db/runs";
 import { T } from "@/lib/db/tables";
 import {
@@ -246,13 +246,13 @@ describe("the ?source= facet", () => {
   });
 
   it("treats a facet carrying nothing as no facet at all", async () => {
-    expect(narrowedTo(undefined)).toBeNull();
-    expect(narrowedTo("")).toBeNull();
-    expect(narrowedTo("   ")).toBeNull();
+    expect(sourceNarrowing(undefined)).toBeNull();
+    expect(sourceNarrowing("")).toBeNull();
+    expect(sourceNarrowing("   ")).toBeNull();
     // A present name is used verbatim: a source is a text identifier, and
     // trimming it would match a row the URL did not ask for.
-    expect(narrowedTo(SOURCE.ticketmaster)).toBe(SOURCE.ticketmaster);
-    expect(narrowedTo(" spaced ")).toBe(" spaced ");
+    expect(sourceNarrowing(SOURCE.ticketmaster)).toBe(SOURCE.ticketmaster);
+    expect(sourceNarrowing(" spaced ")).toBe(" spaced ");
 
     const stub = stubClient({ [T.runs]: { data: [SUCCEEDED] } });
     const result = await readRuns({ source: "" }, stub.asSupabaseClient());

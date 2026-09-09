@@ -37,8 +37,8 @@ import {
   RUN_COLUMNS,
   RUN_COUNTS,
   RUN_WINDOW,
-  narrowedTo,
   readRuns,
+  sourceNarrowing,
 } from "@/lib/db/runs";
 import { duration } from "@/lib/format";
 import { droppedParams } from "@/lib/url/dropped-params";
@@ -221,7 +221,7 @@ export default async function CyclesPage({
   const askedFor = markedCycle ?? askedRaw;
   // A `?source=` carrying nothing narrows nothing and earns no sentence: it is
   // half a typed URL, not a request for the runs of the empty name.
-  const askedSource = narrowedTo(firstValue(params[SOURCE_FACET])) ?? undefined;
+  const askedSource = sourceNarrowing(firstValue(params[SOURCE_FACET])) ?? undefined;
   // The run the Dashboard's run line named, in the database's own spelling, or
   // null when the URL carried none and when what it carried is not a run id.
   const askedRun = firstValue(params[RUN_FACET]);

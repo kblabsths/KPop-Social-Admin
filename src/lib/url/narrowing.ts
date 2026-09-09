@@ -15,9 +15,10 @@
  * Fact 1 is STRUCTURAL — can a facet of this URL remove a row of this
  * surface's kind at all, whatever the table holds. It is derived from the
  * facet vocabulary and never from a row count, so it is each domain's own
- * question and is answered by the caller: `isNarrowed(filter, within)` for
- * `/queues`, `isNarrowed(filter)` for `/claims`, `filter.source_id !== undefined`
- * for `/sources`. A boolean is the whole of what this rule needs from it, and
+ * question and is answered by the caller: `isNarrowedBeyond(filter, within)`
+ * for `/queues`, `hasNarrowingFacet(filter)` for `/claims`,
+ * `filter.source_id !== undefined` for `/sources` — one name per question
+ * (admin-window/DEBT-0010). A boolean is the whole of what this rule needs from it, and
  * taking a boolean is what keeps this leaf free of every filter type in the
  * app (the same reason `lib/url/dropped-params.ts` takes a plain record).
  *

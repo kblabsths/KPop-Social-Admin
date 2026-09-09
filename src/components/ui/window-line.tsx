@@ -275,6 +275,13 @@ const NARROWING_JOIN = ", ";
  * strings, because the `matched` arm reads one back OUT again
  * (admin-window/BUG-0118); the two halves of that round trip are next to each
  * other on purpose.
+ *
+ * **This is the only `narrowedTo` in the app** (admin-window/DEBT-0010). It
+ * takes narrowing PHRASES and returns a scope SENTENCE FRAGMENT; the facet
+ * canonicaliser that used to share the word is `sourceNarrowing` in
+ * `src/lib/db/runs.ts`, which takes a `?source=` and returns a query value.
+ * Nothing but the type checker stood between the two imports, so the word now
+ * belongs to this one.
  */
 export function narrowedTo(
   narrowings: readonly (string | null)[],

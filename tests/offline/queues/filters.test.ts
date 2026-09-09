@@ -12,7 +12,7 @@ import {
   filterBar,
   filterFrom,
   isBlockNarrowed,
-  isNarrowed,
+  isNarrowedBeyond,
   narrowingOfKind,
   queuesHref,
   withFacet,
@@ -84,7 +84,7 @@ describe("reading the URL", () => {
   it("narrows nothing when the URL says nothing", () => {
     expect(filterFrom({})).toEqual({});
     expect(filterFrom()).toEqual({});
-    expect(isNarrowed({})).toBe(false);
+    expect(isNarrowedBeyond({}, {})).toBe(false);
   });
 
   it("reads each facet's every value", () => {
@@ -101,7 +101,7 @@ describe("reading the URL", () => {
     expect(
       filterFrom({ kind: "signal", queue: "entity_link", status: "settled" }),
     ).toEqual({ kind: "signal", queue: "entity_link", status: "settled" });
-    expect(isNarrowed(filterFrom({ status: "open" }))).toBe(true);
+    expect(isNarrowedBeyond(filterFrom({ status: "open" }), {})).toBe(true);
   });
 
   it("ignores a value outside the vocabulary rather than emptying the page", () => {
@@ -129,8 +129,8 @@ describe("reading the URL", () => {
 
 describe("what narrows ONE surface, not the whole URL", () => {
   /**
-   * `isNarrowed(filter, within)` — the route's one narrowing decision, asked
-   * by a surface that already narrows itself (admin-window/BUG-0129). A queue
+   * `isNarrowedBeyond(filter, within)` — the route's one narrowing decision,
+   * asked by a surface that already narrows itself (admin-window/BUG-0129). A queue
    * block selects its own rows with `{ kind }`, so a URL facet naming that
    * same kind removes not one row from it and may not be counted; every other
    * facet, and the same facet with a different value, still counts.
@@ -142,8 +142,14 @@ describe("what narrows ONE surface, not the whole URL", () => {
     for (const facet of FACETS) {
       for (const value of FACET_VALUES[facet] as readonly string[]) {
         const asked = filterFrom({ [facet]: value });
-        expect(isNarrowed(asked), `${facet}=${value} against the whole URL`).toBe(true);
-        expect(isNarrowed(asked, asked), `${facet}=${value} within itself`).toBe(false);
+        expect(
+          isNarrowedBeyond(asked, {}),
+          `${facet}=${value} against the whole URL`,
+        ).toBe(true);
+        expect(
+          isNarrowedBeyond(asked, asked),
+          `${facet}=${value} within itself`,
+        ).toBe(false);
       }
     }
   });
@@ -154,7 +160,10 @@ describe("what narrows ONE surface, not the whole URL", () => {
       for (const value of values) {
         for (const other of values.filter((candidate) => candidate !== value)) {
           expect(
-            isNarrowed(filterFrom({ [facet]: other }), filterFrom({ [facet]: value })),
+            isNarrowedBeyond(
+              filterFrom({ [facet]: other }),
+              filterFrom({ [facet]: value }),
+            ),
             `${facet}=${other} within ${facet}=${value}`,
           ).toBe(true);
         }
@@ -166,19 +175,47 @@ describe("what narrows ONE surface, not the whole URL", () => {
     const within: ReviewItemFilter = { kind: "decision" };
     for (const facet of FACETS.filter((candidate) => candidate !== "kind")) {
       const value = (FACET_VALUES[facet] as readonly string[])[0];
-      expect(isNarrowed(filterFrom({ [facet]: value }), within), facet).toBe(true);
       expect(
-        isNarrowed(filterFrom({ kind: "decision", [facet]: value }), within),
+        isNarrowedBeyond(filterFrom({ [facet]: value }), within),
+        facet,
+      ).toBe(true);
+      expect(
+        isNarrowedBeyond(filterFrom({ kind: "decision", [facet]: value }), within),
         `kind + ${facet}`,
       ).toBe(true);
     }
   });
 
   it("answers the whole-URL question when the surface narrows nothing itself", () => {
-    // The default: what every page-level caller asks, unchanged.
-    expect(isNarrowed({}, {})).toBe(false);
-    expect(isNarrowed({ kind: "signal" }, {})).toBe(true);
-    expect(isNarrowed({}, { kind: "signal" })).toBe(false);
+    // A surface with no narrowing of its own says so, at the call: `{}` is the
+    // whole-URL question spelled out (admin-window/DEBT-0010). It used to be
+    // the DEFAULT value of `within`, so the same call could mean either
+    // question depending on how many arguments it carried.
+    expect(isNarrowedBeyond({}, {})).toBe(false);
+    expect(isNarrowedBeyond({ kind: "signal" }, {})).toBe(true);
+    expect(isNarrowedBeyond({}, { kind: "signal" })).toBe(false);
+  });
+
+  it("takes its second argument from the caller, always", () => {
+    // Two pins for admin-window/DEBT-0010's second half — the arity that used
+    // to answer a second question.
+    //
+    // Runtime: `Function.length` counts the parameters BEFORE the first one
+    // carrying a default, so `within: ReviewItemFilter = {}` would make this
+    // 1. It is 2.
+    expect(isNarrowedBeyond.length).toBe(2);
+
+    // Compile time, graded by `tsc --noEmit` (which reads `tests/**` — see
+    // `tsconfig.json`'s include) rather than by anything this file asserts:
+    // `@ts-expect-error` is ITSELF an error when the line under it
+    // type-checks, so putting the default back reddens the type check here.
+    // Never called: with `within` undefined the body would throw, which is
+    // the other half of why one argument is not a question this predicate
+    // answers.
+    const oneArgument = () =>
+      // @ts-expect-error one argument is not a question this predicate answers
+      isNarrowedBeyond({ kind: "signal" });
+    expect(typeof oneArgument).toBe("function");
   });
 });
 
@@ -186,8 +223,8 @@ describe("the narrowing a KIND implies", () => {
   /**
    * `narrowingOfKind(kind)` — every facet value a row of that kind must carry
    * (admin-window/BUG-0131). A queue block hands it to both `selectItems` and
-   * `isNarrowed`, so it has to be exactly right in both directions: claiming a
-   * value the kind does NOT imply would silently drop rows from the block,
+   * `isNarrowedBeyond`, so it has to be exactly right in both directions:
+   * claiming a value the kind does NOT imply would silently drop rows from the block,
    * claiming too few leaves the block blaming a facet that removed nothing.
    */
   const POPULATION = reviewItemEdgePopulation();
@@ -248,7 +285,7 @@ describe("the narrowing a KIND implies", () => {
       for (const facet of FACETS) {
         for (const value of FACET_VALUES[facet] as readonly string[]) {
           expect(
-            isNarrowed(filterFrom({ [facet]: value }), within),
+            isNarrowedBeyond(filterFrom({ [facet]: value }), within),
             `${facet}=${value} on ${kind}`,
           ).toBe(IMPLIED[kind][facet] !== value);
         }
@@ -265,9 +302,10 @@ describe("the narrowing a KIND implies", () => {
       "queue=entity_link&status=open",
       "kind=signal&status=settled",
     ]) {
-      expect(isNarrowed(filterFrom(paramsOf(`/queues?${query}`)), within), query).toBe(
-        true,
-      );
+      expect(
+        isNarrowedBeyond(filterFrom(paramsOf(`/queues?${query}`)), within),
+        query,
+      ).toBe(true);
     }
   });
 
@@ -333,7 +371,8 @@ describe("the narrowing ONE BLOCK is actually under", () => {
    * `isBlockNarrowed(filter, within, { rendered, population })` — the whole
    * four-state decision, from two facts (admin-window/BUG-0133).
    *
-   * `isNarrowed`/`narrowingOfKind` above answer only what a KIND implies:
+   * `isNarrowedBeyond`/`narrowingOfKind` above answer only what a KIND
+   * implies:
    * whether a facet CAN remove a row of that kind. They cannot answer whether
    * the table holds any row of that kind at all — so on staging's 0 decision
    * items every facet outside the kind's implied set flipped the decision
@@ -577,14 +616,14 @@ describe("the source facet", () => {
 
   it("always counts as narrowing: no kind implies a source", () => {
     const filter = filterFrom({ source_id: SOURCE }, canonical);
-    expect(isNarrowed(filter)).toBe(true);
+    expect(isNarrowedBeyond(filter, {})).toBe(true);
     for (const kind of KINDS) {
       const within = narrowingOfKind(kind);
       expect(within.source_id, kind).toBeUndefined();
-      expect(isNarrowed(filter, within), kind).toBe(true);
+      expect(isNarrowedBeyond(filter, within), kind).toBe(true);
       // …and it is the SOURCE doing it, not the kind: the same filter without
       // the source is discounted by the block's own narrowing.
-      expect(isNarrowed({ ...within }, within), kind).toBe(false);
+      expect(isNarrowedBeyond({ ...within }, within), kind).toBe(false);
     }
   });
 

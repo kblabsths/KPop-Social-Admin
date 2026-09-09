@@ -134,19 +134,25 @@ export function tabFrom(params: SearchParams = {}): ClaimsTab {
 }
 
 /**
- * Is anything narrowed STRUCTURALLY — can a facet of this URL remove a claim
- * at all? Fact 1 of the two the four states turn on, and never the whole
- * answer on its own.
+ * Is anything narrowed STRUCTURALLY — does this URL carry a claim facet that
+ * can remove a claim at all? Fact 1 of the two the four states turn on, and
+ * never the whole answer on its own.
  *
  * It reads the URL and nothing else, which is the half this leaf can answer:
  * it holds no rows and may reach no database. On its own it cannot tell "this
  * page holds no claims" from "your filter matched nothing", so a surface
  * asking which arm to render asks `claimsNarrowed` below
- * (admin-window/DEBT-0008). This function keeps its name and its answer for
- * every caller that wants the URL's own question — the chip bar, the dropped
- * -parameter comparison, the tests that pin the vocabulary.
+ * (admin-window/DEBT-0008). Its answer is unchanged for every caller that
+ * wants the URL's own question — the chip bar, the dropped-parameter
+ * comparison, the tests that pin the vocabulary.
+ *
+ * **It was `isNarrowed`, which `/queues` also exported with a different
+ * meaning** (admin-window/DEBT-0010): there, the question is whether the URL
+ * narrows a block BEYOND the narrowing that block already applies to itself
+ * (`isNarrowedBeyond`, `src/lib/review/queue-filters.ts`). Two questions, two
+ * names — the functions are NOT merged, because their facet sets differ.
  */
-export function isNarrowed(filter: ClaimsFilter): boolean {
+export function hasNarrowingFacet(filter: ClaimsFilter): boolean {
   return CLAIM_FACETS.some((facet) => filter[facet] !== undefined);
 }
 
@@ -154,8 +160,8 @@ export function isNarrowed(filter: ClaimsFilter): boolean {
  * **Is THIS claims surface's rendering scoped by the URL?** — the four-state
  * question, from BOTH facts (admin-window/DEBT-0008).
  *
- * `/claims` decided it from `isNarrowed` alone, so `?bucket=X` over a view
- * holding zero claims said "no claims matched these filters" and told the
+ * `/claims` decided it from `hasNarrowingFacet` alone, so `?bucket=X` over a
+ * view holding zero claims said "no claims matched these filters" and told the
  * operator to widen a filter that had removed nothing. The rule is
  * `src/lib/url/narrowing.ts`' — the same one `/queues`' `isBlockNarrowed` and
  * `/sources` call — and this is its claims-domain adapter: fact 1 is the URL
@@ -171,7 +177,7 @@ export function claimsNarrowed(
   filter: ClaimsFilter,
   surface: SurfacePopulation,
 ): boolean {
-  return isSurfaceNarrowed(isNarrowed(filter), surface);
+  return isSurfaceNarrowed(hasNarrowingFacet(filter), surface);
 }
 
 /**

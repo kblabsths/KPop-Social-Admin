@@ -187,15 +187,23 @@ function windowSize(limit: number): number {
 }
 
 /**
- * The facet as the query will use it, or `null` for no narrowing at all.
+ * The `?source=` FACET as the query will use it, or `null` for no narrowing at
+ * all.
  *
  * A `?source=` carrying nothing is not a narrowing to the empty name — it is
  * an operator who typed half a URL — so it narrows nothing rather than
  * rendering every run as unmatched. A name that is present is used VERBATIM:
  * `runs.source` is a text identifier, and trimming it would match a row the
  * URL did not ask for.
+ *
+ * **Named for the job it does** (admin-window/DEBT-0010). It was `narrowedTo`,
+ * which is also the name of the window line's scope-PHRASE composer
+ * (`narrowedTo` in `src/components/ui/window-line.tsx`, whose inverse is
+ * `besides`): one word over a query value and a sentence fragment, both
+ * imported by adjacent pages, and nothing but the type checker between them.
+ * This one canonicalises a facet; that one writes English.
  */
-export function narrowedTo(source: string | undefined): string | null {
+export function sourceNarrowing(source: string | undefined): string | null {
   if (source === undefined || source.trim() === "") return null;
   return source;
 }
@@ -215,7 +223,7 @@ export async function readRuns(
   db?: SupabaseClient,
 ): Promise<DbResult<RunWindow>> {
   const size = windowSize(filter.limit ?? RUN_WINDOW);
-  const source = narrowedTo(filter.source);
+  const source = sourceNarrowing(filter.source);
 
   const result = await readRows<RunRow>(
     T.runs,

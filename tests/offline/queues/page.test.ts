@@ -1051,8 +1051,9 @@ describe("a zero that a filter produced", () => {
     // The true half of the rule, both ways round. The sibling above drives
     // only `?kind=signal` against the decision block, so a scope decision that
     // discounted a HARD-CODED kind rather than the block's own would satisfy
-    // it while lying on the mirror URL: with `isNarrowed(filter, { kind:
-    // "decision" })` in place of the block's own narrowing, `?kind=decision`
+    // it while lying on the mirror URL: with `isNarrowedBeyond(filter, {
+    // kind: "decision" })` in place of the block's own narrowing,
+    // `?kind=decision`
     // leaves the empty SIGNAL block claiming nothing filtered it. Measured on
     // this tree: that mutation reddens this test and no other beside it.
     for (const kind of KIND_NAMES) {
