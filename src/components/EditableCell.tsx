@@ -98,15 +98,25 @@ export type EditEvent =
   /** That edit's write answered. */
   | { kind: "settled"; edit: number; outcome: SaveOutcome }
   /** The confirmation clock ARMED BY `edit` fired. */
-  | { kind: "elapsed"; edit: number };
+  | { kind: "elapsed"; edit: number }
+  /**
+   * The operator ended `edit` without starting another — Escape, or leaving
+   * the cell (campaign admin-window/BUG-0107). The counterpart of `editing`:
+   * that one retires a spent status by starting the next edit, this one
+   * retires it by walking away from the same one.
+   */
+  | { kind: "abandoned"; edit: number };
 
 /**
  * How long a status stays on screen on its own clock, or `null` if no clock
  * ever retires it.
  *
  * Only a confirmation is on a clock. A refusal is not: it stands until the
- * operator does something about it — reopening the cell is what clears it —
- * and an in-flight statement stands until its own write answers. Exported as a
+ * operator does something about it — reopening the cell, pressing Escape, or
+ * leaving it are what clear it (`abandoned`, campaign admin-window/BUG-0107)
+ * — and an in-flight statement stands until its own write answers. A refusal
+ * on a clock would be the worse bug: the operator is reading a sentence they
+ * have to act on, and the clock would delete it while they read. Exported as a
  * rule rather than buried in `commit()` so the offline suite can drive it
  * (tests/offline is environment node with `renderToStaticMarkup` and no jsdom,
  * STACK.md §4), and so the component ARMS the clock as a function of the
@@ -131,6 +141,16 @@ export function confirmationDelayMs(status: Status): number | null {
  *    superseded write does not overwrite a newer statement.
  *  - `editing` clears what the operator has now acted on, but never speaks
  *    over a write still in flight.
+ *  - `abandoned` retires a REFUSAL when the edit that produced it ends without
+ *    a next one (campaign admin-window/BUG-0107). Before it there was one way
+ *    out and it was reopening the cell, so a refused save outlived Escape,
+ *    outlived the operator clicking away, and outlived a later successful save
+ *    of another field — and a second refusal drew a second panel over the
+ *    first instead of replacing it. The event carries an edit ordinal like
+ *    every other, so the rule holds BOTH ways: the abandonment of the edit
+ *    whose refusal is showing retires it, and an abandonment belonging to any
+ *    other edit — an older cell state, a stale listener — is a no-op that
+ *    cannot erase a newer edit's statement.
  */
 export function reduceEdit(state: EditState, event: EditEvent): EditState {
   switch (event.kind) {
@@ -155,6 +175,13 @@ export function reduceEdit(state: EditState, event: EditEvent): EditState {
       // The clock belongs to the confirmation that armed it, and to nothing
       // else on screen.
       if (event.edit !== state.edit || state.status.kind !== "saved") return state;
+      return { status: { kind: "idle" }, edit: event.edit };
+    case "abandoned":
+      // Only a REFUSAL retires this way, and only for the edit that produced
+      // it. `saving` is a write still running and Escape does not stop it
+      // (BUG-0075's rule, unchanged); `saved` is on its own 1.5s clock and
+      // keeps it; `idle` has nothing to retire.
+      if (event.edit !== state.edit || state.status.kind !== "failed") return state;
       return { status: { kind: "idle" }, edit: event.edit };
     default:
       return state;
@@ -589,6 +616,21 @@ const FIELD_CLASS =
  * value, and `pointer-events-none` because that thing may be another editable
  * value and this line is not a control.
  *
+ * **And it has an EDGE, in the one spelling this app has for one** (campaign
+ * admin-window/BUG-0107). Opaque was half of being readable over a neighbour:
+ * `bg-surface` over a table that is itself `bg-surface` is a fill with no
+ * boundary, so the box covered the row hairlines it crossed and truncated the
+ * value beside it with nothing to say where the panel began — the designer
+ * measured `is_flagged` reading `fal`, the rest of `false` behind an unbordered
+ * panel belonging to another row (2026-09-09, 1440x900, light). The Look
+ * allows exactly one answer — "1px hairlines, never shadows; there is no
+ * elevation in this app" — and this component already writes it, on the hint
+ * popover a few lines up (`HINT_BOX`): `rounded-control border border-hairline
+ * bg-surface`. The same three, in the same order, so the two floating boxes
+ * one component draws are one box with two contents rather than two spellings.
+ * No shadow, no second radius, and no colour of its own: a refusal's red is
+ * the ink's (`text-broken`), never the edge's.
+ *
  * **It carries no VERTICAL anchor** (campaign admin-window/BUG-0101). It used
  * to hold `top-0` and therefore always grew downward, past the fields table's
  * `overflow-x-auto` container on the last line of a record — QA measured the
@@ -641,7 +683,7 @@ const FIELD_CLASS =
  */
 const STATUS_BOX =
   "pointer-events-none absolute left-full z-10 ml-2 w-max max-w-xs wrap-break-word " +
-  "rounded-control bg-surface px-1 py-0.5";
+  "rounded-control border border-hairline bg-surface px-1 py-0.5";
 
 /**
  * The field opens with its value SELECTED, so a straight retype replaces it —
@@ -898,6 +940,11 @@ export function EditableCell({
   const reverting = useRef(false);
   /** Ordinals handed out one per visit to edit mode; see `EditState.edit`. */
   const edits = useRef(0);
+  /**
+   * The cell's own box — what "inside this cell" means to the listener that
+   * retires a refusal (campaign admin-window/BUG-0107).
+   */
+  const root = useRef<HTMLSpanElement>(null);
   /** The resting control focus is returned to; see `focusVerdict`. */
   const button = useRef<HTMLButtonElement>(null);
   /** How the edit on screen ended, until focus has been dealt with. */
@@ -920,6 +967,65 @@ export function EditableCell({
     const edit = cell.edit;
     const timer = setTimeout(() => dispatch({ kind: "elapsed", edit }), delay);
     return () => clearTimeout(timer);
+  }, [cell]);
+
+  /**
+   * A refusal ends when the operator does — campaign admin-window/BUG-0107.
+   *
+   * A refusal is on no clock and must not be (`confirmationDelayMs`): it is a
+   * sentence the operator has to read and act on. But it belongs to the edit
+   * that produced it, and reopening the cell used to be the ONLY thing that
+   * ended it, so it outlived Escape, outlived the operator clicking away, and
+   * was still standing beside a reverted value after a later save of another
+   * field had succeeded — and a second refusal on the same page drew a second
+   * unbounded panel over the first (measured 2026-09-09, `walk_sandbox` row
+   * …0001, 1440x900).
+   *
+   * The two moves that end an edit without starting another are exactly the
+   * two listened for here, and both are DOCUMENT-level rather than the cell's
+   * own handlers, which is the whole reason this is an effect:
+   *
+   *  - **A press anywhere outside this cell.** After a refusal the cell is
+   *    closed, so the press that abandons it lands on someone else's element —
+   *    another cell's button, a link, the page background — and no handler of
+   *    this cell's would ever see it. At `pointerdown` and in the CAPTURE
+   *    phase, so it is the same instant `opensCell` opens the cell being
+   *    pressed (BUG-0086) and cannot be swallowed on the way up. A press
+   *    inside this cell is not an abandonment: it reopens the cell, and
+   *    `editing` retires the refusal through the same reducer.
+   *  - **Escape.** Focus is on the resting button after an Enter-committed
+   *    refusal and wherever the operator left it after a blur-committed one,
+   *    so binding Escape to a node would answer for one of those and not the
+   *    other. At most one refusal is on screen (that is this effect's other
+   *    half), so "Escape dismisses the refusal" is unambiguous from anywhere.
+   *
+   * It is armed only while a refusal is showing, so a page of resting cells
+   * adds no listeners at all. The ordinal it closes over is the one whose
+   * refusal is on screen, and `reduceEdit` re-checks it: a listener torn down
+   * a tick late cannot retire a newer edit's statement, and neither can it
+   * touch a `saving` or a `saved` — that is the reducer's, both ways.
+   */
+  useEffect(() => {
+    if (cell.status.kind !== "failed") return;
+    const edit = cell.edit;
+    const box = root.current;
+    if (box === null) return;
+    const owner = box.ownerDocument;
+    const retire = () => dispatch({ kind: "abandoned", edit });
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && box.contains(target)) return;
+      retire();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") retire();
+    };
+    owner.addEventListener("pointerdown", onPointerDown, true);
+    owner.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      owner.removeEventListener("pointerdown", onPointerDown, true);
+      owner.removeEventListener("keydown", onKeyDown, true);
+    };
   }, [cell]);
 
   /**
@@ -1012,7 +1118,24 @@ export function EditableCell({
     // against this box (`FLOAT_BOX`, `STATUS_BOX`), out of the row's flow, so
     // nothing this cell ever does moves another row (campaign
     // admin-window/BUG-0086). The box the row sees is the button's, always.
-    <span className="relative inline-flex flex-wrap items-baseline">
+    <span
+      ref={root}
+      className="relative inline-flex flex-wrap items-baseline"
+      // Focus leaving the cell ends the edit that is showing, exactly as a
+      // press outside it does (campaign admin-window/BUG-0107) — this is the
+      // keyboard's half of the same move, since Tab moves nothing and presses
+      // nothing. React's `onBlur` is `focusout`, so it catches focus leaving
+      // the resting button and focus leaving the open field alike; a move
+      // WITHIN the cell (the field to its own button as an edit ends) is not a
+      // leaving and is skipped. It is `reduceEdit` that decides whether
+      // anything retires: a blur that commits leaves `saving` on screen, and
+      // the abandonment dispatched beside it is a no-op.
+      onBlur={(event) => {
+        const next = event.relatedTarget;
+        if (next instanceof Node && event.currentTarget.contains(next)) return;
+        dispatch({ kind: "abandoned", edit: edits.current });
+      }}
+    >
       <button
         ref={button}
         type="button"
