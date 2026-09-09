@@ -726,3 +726,59 @@ describe("the dashes the block draws", () => {
     });
   });
 });
+
+/* ── the close's placement, in the state where its slot is tallest ───────── */
+
+describe("a settled item's close is still reachable without exhausting the evidence", () => {
+  /**
+   * Campaign admin-window/BUG-0096 moved the close ABOVE the evidence, so the
+   * operator reaches the decision without scrolling 3,483px of folded records
+   * out of the way first. That ticket's placement tests
+   * (`tests/offline/review-item/page.test.ts`) render OPEN items only — this
+   * file holds the suite's only page-level SETTLED renders, and settled is the
+   * state whose close slot is TALLEST: it carries this ticket's verdict block
+   * *inside* the slot as well as the status card. Nothing pinned that the
+   * placement survives the state whose slot content grows, and the growing is
+   * exactly what BUG-0096 was filed about.
+   *
+   * Read off the delivered document, never off a class name or a grid literal:
+   * "the operator meets the close before the evidence" is a fact about
+   * document order, which a browser and the live oracle both inherit.
+   */
+  function surfaceOrder(markup: string): string[] {
+    const $ = cheerio.load(markup);
+    return $("[data-surface]")
+      .toArray()
+      .map((element) => $(element).attr("data-surface") ?? "");
+  }
+
+  it("comes before the evidence in all three states of the log", async () => {
+    for (const [name, script] of [
+      ["log absent", logAbsent()],
+      ["no row", noRow()],
+      ["the verdict", withVerdict()],
+    ] as const) {
+      const order = surfaceOrder(await renderItem(script));
+
+      expect(order.filter((one) => one === "close"), name).toHaveLength(1);
+      expect(order.filter((one) => one === "evidence"), name).toHaveLength(1);
+      expect(
+        order.indexOf("close"),
+        `${name}: the close precedes the evidence it closes`,
+      ).toBeLessThan(order.indexOf("evidence"));
+      expect(order.indexOf("what_happened"), name).toBeLessThan(order.indexOf("close"));
+    }
+  });
+
+  it("keeps the verdict inside the close, above the evidence rather than between", async () => {
+    const markup = await renderItem(withVerdict());
+    const $ = cheerio.load(markup);
+    const order = surfaceOrder(markup);
+
+    expect($(CLOSE).find(VERDICT)).toHaveLength(1);
+    expect($('[data-surface="evidence"]').find(VERDICT)).toHaveLength(0);
+    expect(order.indexOf("item_verdict")).toBeLessThan(order.indexOf("evidence"));
+    // …and the evidence the close closes is still all there below it.
+    expect($("[data-evidence]")).toHaveLength(2);
+  });
+});
