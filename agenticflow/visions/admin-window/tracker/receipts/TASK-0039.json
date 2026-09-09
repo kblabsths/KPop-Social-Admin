@@ -1,0 +1,34 @@
+{
+ "id": "TASK-0039",
+ "created": "2026-09-09T02:14:17Z",
+ "green": true,
+ "git_head": "9d92e15b56b31c9e91b7a9e81fe56e41cfcfabda",
+ "scope": [
+  "src/app/page.tsx",
+  "src/components",
+  "src/lib/db",
+  "src/lib/gauges",
+  "tests/offline",
+  "tests/live/dashboard.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 7,
+ "tree_hash": "e6d486d21e517e085fec60250a8b4126fef9d3a4f515a530077150fd222902a7",
+ "commands": [
+  {
+   "cmd": "bash -c 'npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "bash -c 'npm test'",
+   "exit": 0,
+   "output_tail": " 27.86s, tests 93.74s, environment 32ms, prepare 13.77s)\n\n\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-56845\n\n \u2713 |isolated| tests/isolated/probe-race.isolated.test.ts (6 tests) 17741ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is readable  1638ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is listed but cannot be opened  1520ms\n   \u2713 walking src/ while the layering probe comes and goes > survives the probe directory appearing and vanishing under the walk  4404ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no OTHER offline file that walks the tree either  10178ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  19:13:53\n   Duration  18.28s (transform 39ms, setup 0ms, collect 41ms, tests 17.74s, environment 0ms, prepare 122ms)\n\nnpm notice run kpop-social-space@0.1.0 test\nnpm notice run vitest run --project=offline && vitest run --project=isolated\n(node:57254) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:57279) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:57288) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:57349) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:57732) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c 'npm run test:live -- tests/live/dashboard.live.test.ts'",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-56845\n\n \u2713 |live| tests/live/dashboard.live.test.ts (10 tests) 4419ms\n   \u2713 the Dashboard's surface hooks against staging > names every surface on the page once, whatever order they are in  934ms\n   \u2713 the attention summary against staging > renders the open decision count the database holds  369ms\n   \u2713 the attention summary against staging > renders the open signal count the database holds  323ms\n   \u2713 the attention summary against staging > counts open items alone \u2014 the two figures plus the settled ones are the table  419ms\n   \u2713 the attention summary against staging > shows the oldest open item of each kind, as the database orders them  412ms\n   \u2713 last night's cycles against staging > renders the newest cycles, newest first, exactly as the database orders them  400ms\n   \u2713 when the resolver last applied something, against staging > states the instant of the newest cycle that applied, or says none did  376ms\n   \u2713 when the resolver last applied something, against staging > answers a different question from the newest cycle the page lists  526ms\n   \u2713 last night's adapter runs against staging > renders the newest runs, newest first, with the source the database holds  366ms\n\n Test Files  1 passed (1)\n      Tests  10 passed (10)\n   Start at  19:14:12\n   Duration  5.22s (transform 155ms, setup 37ms, collect 306ms, tests 4.42s, environment 0ms, prepare 198ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/dashboard.live.test.ts\n(node:58201) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

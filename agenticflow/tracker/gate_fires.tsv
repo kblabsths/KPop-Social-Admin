@@ -98,3 +98,7 @@
 2026-09-09T01:54:40Z	artifact_gate	blocked write outside repo: /tmp/x
 2026-09-09T01:55:52Z	evidence_budget	qa_evidence_overbudget: TASK-0037 4240/4000 chars
 2026-09-09T01:56:31Z	evidence_budget	qa_evidence_overbudget: TASK-0047 4404/4000 chars
+2026-09-09T02:07:12Z	artifact_gate	blocked write outside repo: /g,
+2026-09-09T02:07:59Z	artifact_gate	blocked write outside repo: /bcheckb/i.test
+2026-09-09T02:11:27Z	artifact_gate	blocked write outside repo: /verdicts/.test
+2026-09-09T02:13:37Z	evidence_budget	qa_evidence_overbudget: TASK-0040 4179/4000 chars

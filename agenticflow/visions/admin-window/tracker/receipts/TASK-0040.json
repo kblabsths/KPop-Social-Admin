@@ -1,0 +1,51 @@
+{
+ "id": "TASK-0040",
+ "created": "2026-09-09T02:12:56Z",
+ "green": true,
+ "git_head": "9d92e15b56b31c9e91b7a9e81fe56e41cfcfabda",
+ "scope": [
+  "src/lib/edit",
+  "src/app/records",
+  "src/app/api/admin",
+  "src/components",
+  "src/lib/db",
+  "tests/offline",
+  "tests/live",
+  "tests/http"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "65536ff0447cd8e072d1197e863ba35e32e5bc91eb08e8e124bf74d84c199fcd",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "bash -c 'npm test'",
+   "exit": 0,
+   "output_tail": "t 16.06s, tests 44.97s, environment 9ms, prepare 5.42s)\n\n\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-54962\n\n \u2713 |isolated| tests/isolated/probe-race.isolated.test.ts (6 tests) 29926ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is readable  1512ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is listed but cannot be opened  2526ms\n   \u2713 walking src/ while the layering probe comes and goes > survives the probe directory appearing and vanishing under the walk  10258ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no OTHER offline file that walks the tree either  15627ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  19:12:13\n   Duration  30.30s (transform 31ms, setup 0ms, collect 30ms, tests 29.93s, environment 0ms, prepare 104ms)\n\nnpm notice run kpop-social-space@0.1.0 test\nnpm notice run vitest run --project=offline && vitest run --project=isolated\n(node:55143) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:55166) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:55172) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:55199) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:55384) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c 'test \"$(grep -nE \"table: \\\"(groups|idols)\\\"\" src/lib/edit/config.ts | wc -l)\" -eq 0'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'test \"$(grep -rn \"pre_cutover\" src --include=*.ts --include=*.tsx | wc -l)\" -eq 0'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/edit.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-54962\n\n \u2713 |live| tests/live/edit.live.test.ts (8 tests) 4627ms\n   \u2713 the struck table 'groups' > has left the map, has no record page, and refuses every column its allowlist carried \u2014 with the row identical  485ms\n   \u2713 a forged edit > is refused on a resolver-owned table, which has no write path at all  461ms\n   \u2713 a resolver-owned record page > renders from staging with no editable widget on it  736ms\n   \u2713 a resolver-owned record page > displays every column the map names, with staging's own value  788ms\n   \u2713 a resolver-owned record page > shows the source behind each field the decision log covers  776ms\n   \u2713 the walk sandbox > edits a mapped column through the surface, and a reset restores the fixture  1041ms\n\n Test Files  1 passed (1)\n      Tests  8 passed (8)\n   Start at  19:12:45\n   Duration  5.64s (transform 232ms, setup 43ms, collect 464ms, tests 4.63s, environment 0ms, prepare 78ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/edit.live.test.ts\n(node:56175) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/residue.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-54962\n\nstdout | tests/live/residue.live.test.ts > staging, after the campaign > carries no value this campaign wrote, in any column it could write\nresidue sweep of ubfjjqlvnpnoborczbdb.supabase.co: 16 column(s) scanned across 3 of 3 mapped table(s)\n  events: scanned 7 text column(s) for \"admin-window\" [title=0, event_type=0, status=0, time_precision=0, description=0, poster_url=0, ticket_url=0]; not scannable, ilike has no operator for their type: [event_id (uuid), starts_at (timestamp with time zone), ends_at (timestamp with time zone), venue_id (uuid), created_at (timestamp with time zone)]\n  venues: scanned 7 text column(s) for \"admin-window\" [name=0, address=0, city=0, country=0, timezone=0, website=0, image_url=0]; not scannable, ilike has no operator for their type: [venue_id (uuid), aliases (text[]), latitude (double precision), longitude (double precision), created_at (timestamp with time zone)]\n  walk_sandbox: scanned 2 text column(s) for \"admin-window\" [label=0, note=0]; not scannable, ilike has no operator for their type: [sandbox_id (uuid), tally (integer), is_flagged (boolean), observed_on (date), created_at (timestamp with time zone)]\n\n \u2713 |live| tests/live/residue.live.test.ts (6 tests) 1985ms\n   \u2713 staging, after the campaign > carries no value this campaign wrote, in any column it could write  1749ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  19:12:52\n   Duration  3.39s (transform 159ms, setup 54ms, collect 640ms, tests 1.98s, environment 0ms, prepare 336ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/residue.live.test.ts\n(node:56361) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
