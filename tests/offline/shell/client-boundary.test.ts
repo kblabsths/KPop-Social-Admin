@@ -563,6 +563,34 @@ describe("the client-boundary guard itself", () => {
     expect(violations('import { HintSide } from "./cell";\n', laundered)).toHaveLength(1);
   });
 
+  // PIN, admin-window/BUG-0094 (reopened): `it.fails` while the hole is open —
+  // the day the guard closes it this XPASSes and goes red, which is the
+  // signal to delete `.fails` here rather than to re-file the bug.
+  it.fails("a capitalised ARROW helper does not launder past the guard either", () => {
+    // admin-window/BUG-0094, reopened by QA 2026-09-08. `declaresComponent`
+    // accepts any right-hand side that opens with `(`, so an ordinary helper
+    // written as an arrow function and given a component's name is read as a
+    // component and waved through — the very bypass the test above claims to
+    // close, one spelling further on. MEASURED on this tree, production build
+    // on 127.0.0.1:8823 against staging: adding
+    // `export const HintSideFor = (row: number, rows: number): HintSide => …`
+    // to src/components/EditableCell.tsx and calling it from
+    // `RecordFields` (src/components/records/record-fields.tsx, a server
+    // component) left this file at 13 passed, the whole offline suite at 2589
+    // passed, `npm run lint` at 0 and `tsc --noEmit` clean — while
+    // GET /records/walk_sandbox/00000000-0000-4000-8000-000000000001 answered
+    // **500** (`Attempted to call HintSideFor() from the server`, digest
+    // 2955157816). Reverting the two files and rebuilding answered 200.
+    const client =
+      '"use client";\n' +
+      "export const HintSide = (row: number, rows: number) =>\n" +
+      '  rows > 1 && row === rows - 1 ? "above" : "below";\n' +
+      "export function Cell() {\n  return <span />;\n}\n";
+    const found = violations('import { HintSide } from "./cell";\n', client);
+    expect(found).toHaveLength(1);
+    expect(found[0].symbol).toBe("HintSide");
+  });
+
   it("judges a default import by the name it is given", () => {
     const client = '"use client";\nexport default function Cell() {\n  return <span />;\n}\n';
     expect(violations('import Cell from "./cell";\n', client)).toEqual([]);
