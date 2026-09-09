@@ -2001,6 +2001,46 @@ describe("a parameter the page did not apply", () => {
     expect(droppedLine(await renderClaims(healthyScript(), { record_id: TYPED })).names)
       .toEqual(["record_id"]);
   });
+
+  /**
+   * The same sentence and the same hole, from a key `String.prototype.trim`
+   * does not strip.
+   *
+   * admin-window/BUG-0127 closed the blank-key hole by ignoring a key whose
+   * `trim()` is empty, which is the WHITESPACE half of "this key names
+   * nothing". The other half is a key whose codepoints are not whitespace and
+   * still lay out to nothing: `?%00=1`, `?%E2%80%8B=1` (ZERO WIDTH SPACE),
+   * `?%C2%AD=1` (SOFT HYPHEN), `?%E2%81%A0=1` (WORD JOINER), `?%E2%80%8E=1`
+   * (LEFT-TO-RIGHT MARK), `?%7F=1` (DELETE). Each reaches `droppedParams`
+   * with the key intact, each lands in `named`, and each is spelled into the
+   * mono span — where a browser lays it out at **0px, not visible** and the
+   * operator reads "The URL carries , which this page did not apply"
+   * (measured in Chromium, both colour schemes, against a production build on
+   * port 8796, 2026-09-09; the `record_id` control measures 59.41px, visible).
+   *
+   * Either arm satisfies this pin, exactly as BUG-0127's criterion 1 allowed:
+   * ignore such a key (no name to hole) or spell something readable. What it
+   * refuses is a name with no renderable glyph in it.
+   *
+   * STRICT PIN for admin-window/BUG-0136 — `it.fails`, so the day the
+   * divergence is fixed this turns RED and sends the reader to that ticket
+   * (flip it to `it` there, which is that ticket's criterion 4).
+   */
+  it.fails("names a parameter an operator can read back, whatever the key's codepoints", async () => {
+    const invisible = ["\u0000", "\u200B", "\u00AD", "\u2060", "\u200E", "\u007F"];
+    for (const key of invisible) {
+      const where = `U+${key.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`;
+      const line = droppedLine(await renderClaims(healthyScript(), { [key]: "1" }));
+      for (const name of line.names) {
+        // Control characters, format characters and spaces are what a reader
+        // never sees; a name that is nothing but those names nothing.
+        expect(name.replace(/[\p{Cc}\p{Cf}\p{Zs}]/gu, ""), where).not.toBe("");
+      }
+    }
+    // Not vacuous: the line still renders, and still names, a real key.
+    expect(droppedLine(await renderClaims(healthyScript(), { record_id: TYPED })).names)
+      .toEqual(["record_id"]);
+  });
 });
 
 /* ══ the adversary's cross-product (admin-window/TASK-0012, QA) ═══════════ */
