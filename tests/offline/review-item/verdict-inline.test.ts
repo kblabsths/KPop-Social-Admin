@@ -585,7 +585,7 @@ describe("a settled item renders the verdict that settled it", () => {
    * the primitive's own render, so restyling the identifier moves this
    * assertion with it. What is pinned is only that the two agree.
    */
-  it.fails("renders the observation id through the one identifier primitive, like the action beside it", async () => {
+  it("renders the observation id through the one identifier primitive, like the action beside it", async () => {
     const markup = await renderItem(withVerdict({}, []));
     const $ = cheerio.load(markup);
 
