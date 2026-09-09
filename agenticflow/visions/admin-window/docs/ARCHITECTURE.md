@@ -148,19 +148,29 @@ src/
       browse.ts        the recent-events view's query + its provenance join
       records.ts       one canonical record for the edit surface, + the direct update
       gauges.ts        the six gauges' bounded windows (one file, one per read)
+      verdict.ts       the settle path's reads and the verdict log
     review/            LEAF: shapes.ts (shape -> kind, ordering, predicates), queue-filters.ts
     browse/            LEAF: rows.ts (row shaping), views.ts (the column sets)
     claims/            LEAF: filters.ts (bucket + source narrowing)
+    cycles/            LEAF: state.ts (a cycle's state, from its own row)
     records/           LEAF: provenance.ts, routes.ts (`recordHref` — the ONE record URL)
-    sources/           LEAF: routes.ts — the `/sources`, `/queues?source_id=` and
+    sources/           LEAF: names.ts (a source's display name); routes.ts — the
+                       `/sources`, `/queues?source_id=` and
                        `/cycles?source=` URLs, spelled once (BUG-0141)
     url/               LEAF: dropped-params.ts — the ONE "parameters this page did
                        not apply" rule; `/claims` and `/queues` both render it
                        from here, never from a copy (BUG-0141, common violation 9)
+                       IN FLIGHT under BUG-0141 — the only forward entry in this
+                       map; everything else here is what the tree holds
+    verdict/           LEAF: decision.ts — the decision envelope (§9.2), the app's
+                       ONE definition of visible content, and `ADMIN_SOURCE`.
+                       Imports nothing; `lib/format.ts`, `lib/claims/filters.ts`
+                       and `lib/db/verdict.ts` all consume it (§4 rule 7)
     gauges/
       gauge.ts         the window/figure shapes every gauge returns
       cycle-health.ts  resolution-latency.ts  pending-claims.ts
       queue-health.ts  standing-disagreements.ts  settled-values.ts
+      index.ts         the barrel the pages import the six through
     edit/
       config.ts        THE ONE hand-written {table -> editable columns} map (§9)
     format.ts          relative ages, absolute UTC timestamps, thousand separators, the null dash
@@ -170,9 +180,18 @@ src/
   components/
     ui/                Page, Section, DataTable, StatCard, Badge, Chip, Button,
                        Loading, Empty, NotProvisioned, ErrorLine, StateOf,
-                       WindowLine, DroppedParamsLine
+                       WindowLine, MicroLabel/Eyebrow, cx, DroppedParamsLine.
+                       **No identifier primitive** — §11's mono-identifier rule
+                       is hand-spelled 44 times across 24 files instead
+                       (DEBT-0011; structure walk, M2)
     EditableCell.tsx   the one old component that re-earned its place (§2), at
                        the components root and PascalCase for that reason (§11)
+    edit-cell-layout.ts  the inline edit's placement rule (BUG-0101/0104/0105)
+    edit-refusal.ts      the refusal's two halves — the database's words and the
+                       app's (BUG-0098/0103). Both import nothing; they sit at
+                       the components root because the edit surface's two
+                       widgets (`EditableCell`, `records/entity-picker`) share
+                       them and neither owns the other (structure walk, M2)
     gauges/            the gauge cards (figure, trend table, distribution, state)
     evidence/          EvidencePair — the app's signature block (LOOK_AND_FEEL)
     shell/             the frame: nav items + the sidebar/content shell
@@ -212,8 +231,10 @@ lib/gauges/**   ->  lib/db/**            ->  @supabase/supabase-js
                     everything above     ->  lib/<leaf>/**  ->  (nothing)
 
 <leaf> = the PURE DOMAIN LEAVES, the bottom of the app:
-         lib/review/**, lib/browse/**, lib/claims/**, lib/records/**,
-         lib/sources/**, lib/url/**, lib/format.ts, lib/edit/config.ts
+         lib/review/**, lib/browse/**, lib/claims/**, lib/cycles/**,
+         lib/records/**, lib/sources/**, lib/url/**, lib/verdict/**,
+         lib/format.ts, lib/edit/config.ts
+         (a leaf may import a leaf — rule 7, second paragraph)
 ```
 
 1. **`components/**` never imports from `lib/db/**` and never fetches.** A
@@ -251,6 +272,25 @@ lib/gauges/**   ->  lib/db/**            ->  @supabase/supabase-js
    `ReviewItemRow` in `lib/review/shapes.ts` already does.
    `lib/gauges/**` is not a leaf: a gauge fetches its own bounded window
    through `lib/db/**` (§8), which is the arrow as drawn.
+
+   **A leaf may import a leaf, and the leaf layer is a DAG** (ruled at the M2
+   structure walk, 2026-09-09 — the diagram's `lib/<leaf>/** -> (nothing)`
+   read as absolute while the tree has held leaf-to-leaf edges since M2, and
+   they are the shape this contract wants, not a violation). The one rule
+   that matters is the one already written above — a leaf reaches nothing
+   that can reach a database — and an edge between two leaves cannot break
+   it. What the edge buys is the opposite of drift: `visibleContent` /
+   `hasVisibleContent` in `lib/verdict/decision.ts` is the app's ONE
+   definition of "is there anything here", and `lib/format.ts` (the null
+   dash) and `lib/claims/filters.ts` (the dropped-parameter line) both
+   import it rather than each answering the question again. Four M2 bugs —
+   BUG-0089, BUG-0095, BUG-0127, BUG-0136 — are that question answered
+   twice, and BUG-0137's ruling is what happens when one shared predicate
+   answers two DIFFERENT questions. So: **no cycles**, at any depth,
+   including type-only imports (the reason rule 7's first paragraph bans the
+   `lib/db/**` back-edge applies unchanged between leaves); and a leaf that
+   another leaf imports states in its docstring which question it owns, so
+   the next reader widens it for that question or not at all.
 8. **`next.config.ts` is a build host, and it may import the leaf — only the
    leaf.** It imports `EDITABLE_TABLES` from `lib/edit/config.ts` so the
    rewrite that backstops an unmapped `/records/<table>/<id>` URL is derived
@@ -364,6 +404,37 @@ for it, and complete-or-refuse means there is never a partial page to
 continue. When a table genuinely outgrows `ROW_CAP` the app says so with the
 real number, and raising the cap or narrowing the filter is then a deliberate
 decision with evidence behind it.
+
+**An empty surface is explained from TWO facts, never one** (promoted at the
+M2 structure walk, 2026-09-09, from Common violations row 14 — six bugs:
+BUG-0110, BUG-0125, BUG-0129, BUG-0131, BUG-0133, BUG-0135). "A table with no
+rows" and "a filter that matched nothing" never share a rendering
+(LOOK_AND_FEEL, the four states), and the URL alone cannot tell them apart. A
+surface deciding which arm it renders needs both:
+
+1. **Structural** — can a facet of this URL remove a row of THIS surface's
+   kind at all, whatever the table holds? Derived from the facet vocabulary,
+   never from the row count. `?kind=decision` on the decision queue is not a
+   narrowing (BUG-0129, BUG-0131).
+2. **Population** — how many rows does this surface hold with no URL facet at
+   all? If that is zero, no facet removed anything, and a surface that blamed
+   a filter would be telling the operator to widen a filter that hides
+   nothing (BUG-0133).
+
+`isBlockNarrowed` in `src/lib/review/queue-filters.ts` is the reference
+implementation and its docstring is the longest statement of the rule.
+**Fact 2 is a read the page almost always already has** — an unnarrowed
+count, or the unnarrowed rows themselves — so this costs a comparison, not a
+query; where it does cost a query, that query is a bounded `head: true`
+count, never a row read (BUG-0135). Every surface with an empty state owes
+both facts: `/queues` has them, `/claims` and `/sources` decide from fact 1
+alone today and DEBT-0008 is open against that.
+
+The same two facts answer the figure beside the surface: a zero stated with
+no denominator is fact 2 missing. "0 ran longer than the 15m cadence" beside
+four cycles that never finished (BUG-0110) and the Dashboard's attention
+zeros that never said what fills the queue (BUG-0125) are this rule, in the
+gauge rather than in the empty card.
 
 ## 5. Rendering: one async boundary per route
 
@@ -1194,6 +1265,18 @@ already ships.
   defect in a review-item module.
 - Machine identifiers (`data_conflict`, `admin_locked`, `wont_fix`,
   `awaiting_row`) render **verbatim in mono**, never prettified.
+  **Through the shared primitive, not through the class pair** (structure
+  walk, M2, 2026-09-09): the rule is currently hand-spelled as
+  `type-data text-ink` 44 times across 24 files, with two byte-identical
+  file-local components (`TableName` in the record page, `ReviewItems` in the
+  queues item page) that cannot see each other — which is how three M2 bugs
+  arrived one route at a time (BUG-0112, then BUG-0120 "the face BUG-0112
+  fixed one paragraph above", then BUG-0121 "the face BUG-0120 fixed one
+  route over"). DEBT-0011 builds the primitive; until it lands, a ticket
+  rendering an identifier states in its criteria which face it uses, and
+  after it lands a new hand-spelling is a defect. A rule spelled as two
+  Tailwind classes at every call site also has nowhere to hold the bidi
+  isolation the row-15 ruling requires of foreign text.
 - **The kind is derived, never stored** (spec §6): `lib/review/shapes.ts` is
   the one place that maps a shape to `decision` or `signal`. The three shapes
   today: `data_conflict` fact item → decision; `entity_link` fact item
@@ -1365,6 +1448,12 @@ decomposition brief of every ticket touching that surface.
 
 | 15 | **A blocklist chased one codepoint class at a time — foreign text inlined into an app-authored sentence, then "made safe" by removing the family that last broke it** | 3 | One sentence, `/claims`' dropped-parameter line, patched three times: BUG-0127 (`trim()`, so `?=x` and `?%20%20=1` stopped naming nothing), BUG-0136 (`trim()` replaced by the app's one definition of blank, closing `Cf`/`Cc`/the Hangul fillers), BUG-0137 (the same 0px hole through `\p{Mn}`, the parked word `in_win<U+034F>dow` rendered legibly past bar 3, and an unterminated U+202E in a key reversing the rest of the app's own sentence in the copied-out text) | **PROMOTED at 3, 2026-09-09** (architect, this ruling): §7 gains the rule — foreign text reaches prose through an allowlist or inside its own bidi-isolated box, and never by scrubbing. BUG-0137's criteria were amended to the allowlist shape (`^[A-Za-z0-9_.-]{1,64}$`, counted-not-spelled otherwise) and its touch scope narrowed to drop `src/lib/verdict/decision.ts`, because the third patch's tempting move — widening `INK_LESS` to `\p{Mn}` — would have changed what the EDIT surface commits as a draft (`tests/offline/ui/editable-cell.test.ts` pins U+FE0F and U+2800 as content). That is the class's real cost: a shared predicate answering two different questions gets widened by whichever question broke last. Cited in the decomposition brief of every ticket that renders text the app did not author. The measurement the ruling was made on — the allowlist replayed against every fixture BUG-0123/0127/0136 pinned — is `agenticflow/tracker/evidence/BUG-0137/rule-dryrun.mjs`; it is what showed that QA's two strict pins were jointly satisfiable only by a fourth blocklist, so criterion 5 widens one of them by one field rather than leaving the builder to discover it. |
 
+| 14 (re-count) | **A surface deciding "nothing here yet" vs "nothing matched" from the URL ALONE** — the two-fact rule with one owner | **3** (1 → 3) | Two more surfaces found at the M2 structure walk, 2026-09-09, both measured on run/admin-window: `src/app/claims/page.tsx:647` (`isNarrowed(filter) ? NOTHING_MATCHED : …`, and again at :232 and :681 for the bucket caption) and `src/app/sources/page.tsx:200` (`data-empty={filter.source_id === undefined ? "registry" : "narrowing"}`). Both read fact 1 and nothing else, so a facet over an EMPTY set renders "nothing matched" and tells the operator to widen a filter that removed nothing. The ledger records staging holds 0 standing disagreements, so `/claims?tab=standing` with any facet is in that state today | **PROMOTED at 3, 2026-09-09** (architect, M2 structure walk) — §4.3 gains "An empty surface is explained from TWO facts, never one", with the population fact and the note that it is a read the page already has. Row 14's count-1 note said "if a second composed read is found refusing whole for a leg it does not render, promote"; what the walk found is the *other* half of the same class — not a leg refusing, but a surface with only one fact — so the rule promoted is the one BUG-0133's own docstring already states, generalised off `/queues`. `isBlockNarrowed` in `src/lib/review/queue-filters.ts` is named as the reference implementation. DEBT-0008 carries the two surfaces, chained behind BUG-0141, and criterion 4 makes `tests/offline/absence/pages.test.ts` grade all three at once, on two population fixtures each — the file that already generalises absence rules across surfaces, so a fourth surface inherits the rule instead of a comment about it |
+| 16 | **The mono identifier face hand-spelled at the call site, with no primitive to import** | 3 | `grep -rno 'type-data text-ink' src` = **44 occurrences in 24 files** (measured 2026-09-09). `src/components/ui/` holds fifteen primitives and none of them is the identifier, so two pages grew private ones with byte-identical bodies: `TableName` (`src/app/records/[table]/[id]/page.tsx:277`) and `ReviewItems` (`src/app/queues/[reviewItemId]/page.tsx:174`). The three bugs are BUG-0112, BUG-0120 ("the face BUG-0112 fixed one paragraph above") and BUG-0121 ("the face BUG-0120 fixed one route over") | **PROMOTED at 3, 2026-09-09** (architect, M2 structure walk) — §11's machine-identifier bullet now requires the shared primitive, not the class pair, and §3's `ui/` entry records the gap. This is Common violation 9 (a page helper hand-copied) in the form 9's own promotion did not cover: not a copied *component* but a copied *rule*, which no `wc -l` on declarations catches. DEBT-0011 builds it (milestone `patch`, behind BUG-0141 and DEBT-0008 — it rewrites 24 files, several of which they are writing), and its criterion 4 hangs the row-15 bidi isolation off the primitive, which is the second thing 44 call sites have nowhere to hold |
+| 17 | **A pure function parked in `lib/db/**` because that is where its first caller was** | 2 | `isRecordId` / `canonicalRecordId` (`src/lib/db/records.ts:167`) — the app's ONE uuid grammar, no client, no env, no table name, and §4 rule 7 therefore forbids every pure domain leaf from importing it. It cost a workaround written into a ruling (the BUG-0141 History entry has to specify that `source_id` is canonicalised at the page and "handed INTO the leaf as an argument, because a pure domain leaf may not import `lib/db/**`"), and it cost the grammar's reach: five call sites import it and `/claims` is not one, so BUG-0140's defect — a registered id in an uppercased or hyphen-less spelling reading as "nothing matched" — still ships on `/claims?record_id=`, one route over from where it was fixed. Second instance: `narrowedTo` in `src/lib/db/runs.ts:198`, a pure `(string\|undefined) => string\|null` facet canonicaliser in a db module, which is also half of row 18 | **PROMOTED at 2, 2026-09-09** (architect, M2 structure walk) — the rule is §4 rule 7 read forwards instead of backwards: **a function that touches no client, no env and no table name belongs in the leaf layer, wherever its first caller happened to live.** A leaf that cannot import what it needs is the defect, not the leaf. Cited in the decomposition brief of every ticket adding an exported function to `src/lib/db/**`: if it takes no `SupabaseClient` and returns no `DbResult`, it is a leaf. DEBT-0009 moves the uuid grammar to `src/lib/records/id.ts` and takes `/claims` with it |
+| 18 | **One exported identifier, two meanings — the narrowing vocabulary with no owner** | 3 | `narrowedTo` is exported twice with unrelated types: `src/components/ui/window-line.tsx:279` joins narrowing PHRASES into a scope sentence (and is re-exported from the `@/components/ui` barrel), `src/lib/db/runs.ts:198` canonicalises the `?source=` FACET for a query. Adjacent pages import different ones — `src/app/cycles/page.tsx:38` the db one, `src/app/claims/page.tsx:28` the ui one. `isNarrowed` is exported twice with two different definitions (`src/lib/claims/filters.ts:132`, `src/lib/review/queue-filters.ts:302`), and the second means two things by arity: with `within` it is "narrowed relative to this block's own scope" (BUG-0129/0131's question), with its default `within = {}` it collapses to the claims meaning — **and no production call site uses the default**; its only one-argument callers are `tests/offline/queues/filters.test.ts:85,102,143`, grading a meaning the app never asks | **PROMOTED at 3, 2026-09-09** (architect, M2 structure walk) — §11's "contract vocabulary is the app's vocabulary, in code as in copy" gets teeth: **no identifier is exported twice from `src/` with two meanings, and a predicate has one signature per question.** The narrowing vocabulary is the most-touched idea of M2 (nine bugs: 0109/0114/0118/0123/0124/0128/0129/0131/0133) and it is where a reader most needs one word to mean one thing. A default parameter kept alive by its tests is the mechanism row 15's ruling named — a shared predicate widened by whichever question broke last — one step earlier. DEBT-0010 carries it as a rename with a byte-for-byte criterion; no behaviour changes |
+| 19 | **A read answering questions the URL did not ask** | 3 | BUG-0138 (`/claims` reads the whole claim population every request: ~14 sequential round trips, 2.9-3.8s warm); BUG-0139 (`/sources` reads runs once per registered source then waits for both gauges: ~9 round trips, 2.0-2.3s warm); `readPopulation` in `src/lib/db/review-items.ts:203-231` maps over all three `SHAPES` unconditionally, so `/queues?kind=signal` issues two counts for shapes it will not render (found at the M2 structure walk; bounded `head: true` counts in parallel, so 2 extra round trips, no wrong number — DEBT-0012, P3) | **Count 3, note only — NOT promoted, deliberately.** The rule this would become ("read what the URL asked for") is one Ben has open decisions in front of: paging past the window on Claims and Browse through on-demand client fetching against a route handler, search, retention on `runs`, the `runs` row-cap horizon on `/sources`, and BUG-0138's own A/B (`observations.observed_at` through the `pending_claims` view). Writing a read-shape rule into the contract before those land would pin a shape the answers may not want; §4.3's complete-or-refuse contract is what governs until then. Recorded here so the count is not lost and so the next architect promotes it *after* the rulings, not before |
+
 | 3 (re-count) | A list read with no `.range()`, no `.limit()` and no `.order()` | **0 new** | — | **The rule held.** M1 structure walk, 2026-09-03: every `.select(` in `src/lib/db/**` was traced. Fourteen chains a crude scan flagged are all either `.maybeSingle()` by primary key or by-id chunks bounded with `.limit(ids.length)`; every list read goes through `readComplete` / `readRows` with a total order and a bound. Count stays 1 (the original, fixed under TASK-0026). |
 
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
@@ -1374,6 +1463,45 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-09, M2 structure walk (architect).** The `src/` tree walked
+  against §3 and §4 on run/admin-window. **Amendments, each with its why:**
+  §3's module map now records the five modules the tree holds and the map did
+  not (`lib/verdict/decision.ts`, `lib/cycles/state.ts`,
+  `lib/sources/names.ts`, `lib/db/verdict.ts`, `lib/gauges/index.ts`) plus the
+  two non-component modules at the components root (`edit-cell-layout.ts`,
+  `edit-refusal.ts`, shared by the edit surface's two widgets), marks
+  `lib/url/` as the map's one forward entry (in flight under BUG-0141), and
+  records that `ui/` has no identifier primitive. §4's leaf list gains
+  `lib/cycles/**` and `lib/verdict/**`. **§4 rule 7 is widened by ruling, with
+  no code churn**: a leaf may import a leaf and the leaf layer is a DAG. The
+  diagram's `lib/<leaf>/** -> (nothing)` read as absolute while the tree has
+  held `lib/format.ts -> lib/verdict/decision` and
+  `lib/claims/filters.ts -> lib/verdict/decision` since M2 — and those edges
+  are what this contract wants: `visibleContent` is the app's ONE definition
+  of "is there anything here", and four M2 bugs (0089, 0095, 0127, 0136) are
+  that question answered twice. Same precedent as row 1: the rule was
+  over-broad, not the code, and the next reader must not "fix" the code to
+  match the old wording. The invariant that matters — a leaf reaches nothing
+  that can reach a database — is unchanged, no cycles at any depth including
+  type-only imports, and a leaf another leaf imports states which question it
+  owns. **§4.3 gains "An empty surface is explained from TWO facts, never
+  one"** (row 14 promoted at 3) and **§11's machine-identifier bullet now
+  requires the shared primitive** (row 16 promoted at 3). Ledger rows 17
+  (a pure function parked in `lib/db/**`) and 18 (one identifier, two
+  meanings) promoted at 2 and 3; row 19 (a read answering questions the URL
+  did not ask) recorded at 3 and deliberately NOT promoted, because five of
+  Ben's read-shape rulings are still open and a contract rule written now
+  would pin a shape those answers may not want. Filed: DEBT-0008 through
+  DEBT-0013. **One walk observation that is NOT a violation and got no
+  ticket:** the evidence tables carry up to 7 columns (`recordColumn` …
+  `payloadColumn`, `src/components/review/shape-views.tsx:525-532`) inside
+  `DataTable`'s `overflow-x-auto`, so `observed` and `payload` fall off-screen
+  with no affordance saying columns exist there. LOOK_AND_FEEL explicitly
+  sanctions that scroll ("Tables that exceed their width scroll horizontally
+  *inside their own border*; the page does not") and no bar requires a hint,
+  so inventing one here would be the architect writing design. Routed to the
+  designer's walk jurisdiction and recorded in the M2 milestone notes.
 
 - **2026-09-09, BUG-0141 ruling (architect).** `/queues` **gains the
   `source_id` facet**; the dropped-parameter line alone was the cheaper answer
