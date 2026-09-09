@@ -617,7 +617,15 @@ function evidenceMarkup(rows: readonly EvidenceRow[]): string {
       empty: EMPTY_WORDS,
       canonical: {
         value: "TWICE 5TH WORLD TOUR",
-        provenance: "ticketmaster · official at apply · applied 3d ago",
+        // The line in PARTS, as `canonicalCard` hands it over: the source's own
+        // name and the tier frozen at the apply are machine values and reach
+        // the card as values, not as words inside a sentence
+        // (admin-window/DEBT-0011).
+        provenance: [
+          { identifier: "ticketmaster" },
+          { identifier: "official", after: "at apply" },
+          "applied 3d ago",
+        ],
       },
       dial: null,
     }),

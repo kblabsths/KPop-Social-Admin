@@ -67,14 +67,27 @@ import type { ComponentPropsWithoutRef, ReactNode } from "react";
 const DATA_INK = "type-data text-ink";
 
 /**
- * The mono step at secondary ink, as a class, for the four places that wear the
- * identifier's FACE without being an identifier: `Loading`'s line, a stat
- * card's sub-line, and the two in-flight statuses the app writes in mono
- * (`saving…`, `settling…`). They compose it with layout classes or sit on an
- * element this component does not render, and none of them is foreign text, so
- * none of them is isolated.
+ * The mono step at secondary ink, as a class, for text that wears the
+ * identifier's FACE without being an identifier.
  *
- * A machine identifier takes `<Identifier muted>` instead — never this.
+ * **The rule, not a roster** — an earlier version of this comment counted its
+ * call sites ("the four places"), the count went stale the moment a surface
+ * added a fifth, and a stale count reads as permission (admin-window/DEBT-0011).
+ * The test is what the element HOLDS, and there are exactly two ways to pass it:
+ *
+ *  - the text is the **app's own**, transient and mono by choice — `Loading`'s
+ *    line, a stat card's sub-line, the in-flight statuses the app writes while a
+ *    write is in the air (`saving…`, `settling…`); or
+ *  - the element is a **wrapper that inks only the app's own words**, every
+ *    machine value inside it already in its own `<Identifier>` box — the
+ *    evidence card's claim and provenance lines, whose separators, "at apply"
+ *    and "applied 3d ago" are the app's while the source, the tier and the
+ *    status are not.
+ *
+ * Either way nothing foreign wears this class directly, which is why nothing
+ * wearing it is isolated. A machine identifier takes `<Identifier muted>`
+ * instead — never this; it renders this very class pair, so the swap costs the
+ * face nothing and buys the isolation above.
  */
 export const DATA_MUTED = "type-data text-ink-secondary";
 

@@ -127,7 +127,14 @@ const SAMPLES: Sample[] = [
           { id: "1", value: "a", source: "ticketmaster", tier: "primary", observedAt: "2026-08-26T04:12:00Z" },
           { id: "2", value: null, source: "bandsintown", tier: "secondary", observedAt: "2026-08-28T04:12:00Z" },
         ],
-        canonical: { value: "a", provenance: "ticketmaster, applied 3d ago" },
+        canonical: {
+          value: "a",
+          provenance: [
+            { identifier: "ticketmaster" },
+            { identifier: "primary", after: "at apply" },
+            "applied 3d ago",
+          ],
+        },
       }),
     ),
   },
