@@ -1,12 +1,10 @@
-# Tracker index (regenerated 2026-09-09T01:57:59Z — do not edit)
+# Tracker index (regenerated 2026-09-09T01:59:00Z — do not edit)
 
 ## open
 - FEAT-0009 [P1][feat][M2] The two schema handoff artifacts, authored complete for Ben to install  (scope:agenticflow/tracker/for-human,agenticflow/docs/vision/SPEC.md)
 - FEAT-0010 [P1][feat][M2] The verdict UI: every spec 7 action as one typed decision, one call, one transaction  (deps:FEAT-0009(unmet:1) scope:src/app/queues,src/components,src/lib/db,src/lib/review,tests/offline,tests/live)
 - FEAT-0011 [P1][feat][M2] The edit surface's override half: events and venues write only as recorded overrides  (deps:FEAT-0009(unmet:1) scope:src/lib/edit,src/app/records,src/app/api/admin,src/components,src/lib/db,tests/offline,tests/live,tests/http)
-- TASK-0045 [P1][task][M2] The verdicts table, authored complete as a handoff artifact Ben installs by hand  (deps:TASK-0042 scope:agenticflow/tracker/for-human/M2-handoff-verdicts.md,tests/offline/handoff/extract.ts,tests/offline/handoff/verdicts.test.ts)
 - TASK-0046 [P1][task][M2] settle_review_item, authored complete against the installed apply_resolution and gate  (deps:TASK-0042,TASK-0043,TASK-0045(unmet:2) scope:agenticflow/tracker/for-human/M2-handoff-settle-review-item.md,tests/offline/handoff/settle-review-item.test.ts)
-- TASK-0048 [P1][task][M2] lib/db/verdict.ts: the one call site of settle_review_item, the readiness read, and the M2 guard inversion  (deps:TASK-0042,TASK-0047 scope:src/lib/db/verdict.ts,src/lib/db/tables.ts,tests/offline/verdict/seam.test.ts,tests/offline/edit/config.test.ts,tests/offline/review/one-place.test.ts,tests/fixtures/stub-client.ts,tests/fixtures/rows.ts)
 - TASK-0049 [P1][task][M2] The close slot: the settle route, the shared frame, the absent-function state and the note field  (deps:TASK-0048(unmet:1) scope:src/app/api/admin/review-items/[reviewItemId]/settle/route.ts,src/components/review/close/slot.tsx,src/components/review/close/actions.ts,src/components/review/close/conflict-actions.tsx,src/components/review/close/link-actions.tsx,src/components/review/close/signal-actions.tsx,src/app/queues/[reviewItemId]/page.tsx,tests/offline/review-item/close-slot.test.ts,tests/offline/review-item/page.test.ts,tests/offline/absence/pages.test.ts)
 - TASK-0050 [P1][task][M2] The data_conflict item's three verdict actions, one typed decision each  (deps:TASK-0049(unmet:1) scope:src/components/review/close/conflict-actions.tsx,tests/offline/review-item/conflict-actions.test.ts)
 - TASK-0051 [P1][task][M2] The signal item's two dispositions: fixed, and wont_fix with its required note  (deps:TASK-0049(unmet:1) scope:src/components/review/close/signal-actions.tsx,tests/offline/review-item/signal-actions.test.ts)
@@ -21,11 +19,14 @@
 - TASK-0059 [P2][task][M2] A settled review item's detail carries its own verdict inline  (deps:TASK-0058,TASK-0049(unmet:2) scope:src/app/queues/[reviewItemId]/page.tsx,src/lib/db/verdict.ts,src/lib/db/review-item.ts,src/components/review/close/slot.tsx,tests/offline/review-item/verdict-inline.test.ts,tests/live/review-item.live.test.ts)
 
 ## claimed
-- TASK-0040 [P1][task][patch] Strike the direct-edit path: groups/idols leave EDIT_CONFIG, and every surface that assumed it is reconciled  (scope:src/lib/edit,src/app/records,src/app/api/admin,src/components,src/lib/db,tests/offline,tests/live,tests/http @builder-118 from:inbox:2026-09-09-vision-amendment.md)
+- TASK-0045 [P1][task][M2] The verdicts table, authored complete as a handoff artifact Ben installs by hand  (deps:TASK-0042 scope:agenticflow/tracker/for-human/M2-handoff-verdicts.md,tests/offline/handoff/extract.ts,tests/offline/handoff/verdicts.test.ts @builder-128)
+- TASK-0048 [P1][task][M2] lib/db/verdict.ts: the one call site of settle_review_item, the readiness read, and the M2 guard inversion  (deps:TASK-0042,TASK-0047 scope:src/lib/db/verdict.ts,src/lib/db/tables.ts,tests/offline/verdict/seam.test.ts,tests/offline/edit/config.test.ts,tests/offline/review/one-place.test.ts,tests/fixtures/stub-client.ts,tests/fixtures/rows.ts @builder-129)
 - BUG-0080 [P2][bug][M2] a non-operator 42883 from a TABLE read renders a provisioned table as not_provisioned  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts,tests/fixtures/stub-client.ts @builder-127 from:TASK-0047)
 
+## built
+- TASK-0040 [P1][task][patch] Strike the direct-edit path: groups/idols leave EDIT_CONFIG, and every surface that assumed it is reconciled  (scope:src/lib/edit,src/app/records,src/app/api/admin,src/components,src/lib/db,tests/offline,tests/live,tests/http @builder-118 from:inbox:2026-09-09-vision-amendment.md)
+
 ## qa
-- BUG-0079 [P1][bug][M2] decisionRefusals throws on an absent `value` key and mis-refuses two ordinary bodies (undefined vs null)  (scope:src/lib/verdict/decision.ts,tests/offline/verdict/decision.test.ts @builder-125 from:TASK-0042)
 - BUG-0078 [P2][bug][patch] Walk docs and Ben's note still say staging has no walk_sandbox; the reset tool succeeds there today  (scope:agenticflow/docs/vision/STACK.md,agenticflow/tracker/for-human/TASK-0034.md @builder-124 from:TASK-0041)
 - TASK-0039 [P3][task][patch] Dashboard: one line saying when the resolver last actually applied something  (scope:src/app/page.tsx,src/components,src/lib/db,src/lib/gauges,tests/offline,tests/live/dashboard.live.test.ts @builder-123 from:M1-endgame-user-sim)
 
@@ -33,4 +34,4 @@
 - TASK-0043 [P1][task][M2] ASK Ben: which registered sources row is the admin voice, and does it exist on staging  (scope:agenticflow/tracker/for-human)
 - TASK-0044 [P1][task][M2] ASK Ben: which columns of events and venues are editable at all  (scope:agenticflow/tracker/for-human)
 
-Totals — blocked:2, claimed:2, done:10, open:18, qa:3, wont_fix:1. Archived: 124.
+Totals — blocked:2, built:1, claimed:3, done:11, open:16, qa:2, wont_fix:1. Archived: 124.
