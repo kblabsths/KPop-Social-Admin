@@ -1,7 +1,8 @@
+import type { ReactNode } from "react";
 import type { EvidenceRow } from "@/components/review";
 import { EM_DASH } from "@/lib/format";
 import type { ReviewItemRow } from "@/lib/review/shapes";
-import type { VerdictValue } from "@/lib/verdict/decision";
+import { isReferenceField, type VerdictValue } from "@/lib/verdict/decision";
 import type { ActionSpec, ShapeActionsInput } from "./actions";
 
 /**
@@ -18,7 +19,11 @@ import type { ActionSpec, ShapeActionsInput } from "./actions";
  *     tier. `supply_value`, carrying a scalar and no observation. The value is
  *     typed into the shared edit cell (`EditableCell`, the M1 widget the
  *     record surface already uses) rather than into a second widget spelling
- *     of the same thing, which is what `ActionSpec.supplies` exists to say;
+ *     of the same thing, which is what `ActionSpec.supplies` exists to say.
+ *     **Offered for a scalar fact and for no other**: a `kind: reference`
+ *     field links rows and cannot be typed, so it gets the two remaining
+ *     controls and a line saying why the third is missing
+ *     (`conflictNotice`, campaign admin-window/BUG-0087);
  *  3. **keep current & settle** — the disagreement is fine as it stands.
  *     `keep_current`, carrying nothing: canonical holds, and the rejections
  *     the verdict implies still land inside the function.
@@ -66,6 +71,16 @@ function factOf(item: ReviewItemRow): Pick<
 }
 
 /**
+ * The fact, as the app already spells one: `events.title`, `events.venue`.
+ *
+ * Spelled through one function so the control's `supplies` and the withheld
+ * line's identifier cannot drift into two spellings of the same fact.
+ */
+function factName(fact: Pick<VerdictValue, "domain" | "field">): string {
+  return `${fact.domain}.${fact.field}`;
+}
+
+/**
  * What the control that adopts one claim says.
  *
  * A verb plus its object, naming what gets written (LOOK_AND_FEEL copy bar 1),
@@ -109,15 +124,19 @@ export function conflictActions({
       });
     }
 
-    actions.push({
-      label: "Supply a different value",
-      action: "supply_value",
-      // The scalar is the operator's and does not exist yet; the frame merges
-      // it in at submission (`decisionValue`). Everything the SERVER knows
-      // about where the value lands is here.
-      value: { ...fact, observation_id: null, value: null, ref: null },
-      supplies: `${fact.domain}.${fact.field}`,
-    });
+    // A REFERENCE field gets no supply control at all — see `conflictNotice`
+    // below for the whole reason, and for what the operator is told instead.
+    if (!isReferenceField(fact.domain, fact.field)) {
+      actions.push({
+        label: "Supply a different value",
+        action: "supply_value",
+        // The scalar is the operator's and does not exist yet; the frame merges
+        // it in at submission (`decisionValue`). Everything the SERVER knows
+        // about where the value lands is here.
+        value: { ...fact, observation_id: null, value: null, ref: null },
+        supplies: factName(fact),
+      });
+    }
   }
 
   actions.push({
@@ -129,4 +148,41 @@ export function conflictActions({
   });
 
   return actions;
+}
+
+/**
+ * Why this item has no "supply a different value" control — rendered by the
+ * slot, or null when the item HAS one (campaign admin-window/BUG-0087).
+ *
+ * A `kind: reference` field names another record: its value is an entity id
+ * the apply links (`venue_id`, `event_performers`), never text
+ * (contracts/admin-observability.md §8, "the apply links rows … instead of
+ * writing text"). So the scalar cell is withheld above — and withholding a
+ * control silently would leave the operator reading a shorter list with no
+ * idea why one shape of item offers three actions and this one two. The
+ * absence is RENDERED, with its reason, which is the same bar every other
+ * absence on this window meets.
+ *
+ * It says what IS offered as well as what is not, because both are true and
+ * only one of them is visible: adopting a claim carries that observation's id
+ * and settles the link honestly, and keeping current settles it as it stands.
+ * The entity picker (§8) is the control that will fill the gap; when it lands
+ * this line goes with it.
+ *
+ * The fact is a machine identifier and renders verbatim in mono, as its own
+ * element (§11, LESSONS 5).
+ */
+export function conflictNotice({ item }: ShapeActionsInput): ReactNode {
+  const fact = factOf(item);
+  if (fact === null || !isReferenceField(fact.domain, fact.field)) return null;
+  const name = factName(fact);
+  return (
+    <p className="type-body text-ink-secondary" data-close-notice={name}>
+      <span className="type-data text-ink">{name}</span>{" "}
+      names another record rather than holding a value, so there is nothing to
+      type here. Adopt one of the claims above, or keep the current value;
+      choosing a different record needs the entity picker, which is not built
+      yet.
+    </p>
+  );
 }

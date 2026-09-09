@@ -9,7 +9,11 @@ import {
   type EvidenceRow,
   type ItemLink,
 } from "@/components/review";
-import { ACTIONS_BY_SHAPE, CloseSlot } from "@/components/review/close/slot";
+import {
+  ACTIONS_BY_SHAPE,
+  CloseSlot,
+  NOTICE_BY_SHAPE,
+} from "@/components/review/close/slot";
 import { ARRIVES_WITH, Empty, Page, RETRY, Section, StateOf } from "@/components/ui";
 import { claimsHref, sourceHref } from "@/lib/claims/filters";
 import { readPendingClaims, type PendingClaimRow } from "@/lib/db/claims";
@@ -607,12 +611,16 @@ export default async function ReviewItemPage({
           at all — is `readiness`; with the verdict log absent, which is the
           normal case for the whole of M2, the slot renders that state and
           offers no control. The shape's action list comes from the one map
-          (`ACTIONS_BY_SHAPE`), never from a shape re-derived here. */}
+          (`ACTIONS_BY_SHAPE`), never from a shape re-derived here, and its
+          companion says what the shape WITHHOLDS and why — today only a
+          conflict on a reference field, whose value links a row rather than
+          carrying text (`NOTICE_BY_SHAPE`, spec §8). */}
       <Section title="The close" surface={CLOSE_SURFACE}>
         <CloseSlot
           item={row}
           readiness={readiness}
           actions={ACTIONS_BY_SHAPE[shape]({ item: row, evidence: evidenceRows })}
+          notice={NOTICE_BY_SHAPE[shape]({ item: row, evidence: evidenceRows })}
         />
       </Section>
     </Page>

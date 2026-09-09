@@ -190,6 +190,56 @@ export function noteRequired(action: VerdictAction): boolean {
   return action === "wont_fix";
 }
 
+/* ── which registry fields are references ────────────────────────────────── */
+
+/**
+ * The registry fields whose kind is `reference` — a field that LINKS ROWS
+ * (`events.venue` -> `venue_id`, `events.performers` -> `event_performers`)
+ * rather than holding a value — spelled `domain.field`, the way every surface
+ * here already spells a fact.
+ *
+ * **A mirrored literal, knowingly.** `kind: reference` and the `references:`
+ * targets beside it live ONLY in the scraper repo's
+ * `registry/domains/<domain>.yaml`. The database does not hold them —
+ * `domain_target` carries the target table, `domain_schema` the value schema,
+ * and neither says which fields are references — so no read this app can make
+ * answers the question, and consulting "the registry's field kind" at runtime
+ * is not an option that exists. The resolver's own SQL mirrors the same
+ * knowledge as a literal for exactly this reason and says so in place
+ * (`field_reference_target`, the pending-claim bucket view of
+ * `kspace Scraper/supabase/migrations/20260901000004_*.sql`). This is the
+ * Admin side of that mirror.
+ *
+ * **One place, and the picker replaces it.** Spec §8's entity picker is what
+ * brings the registry's field settings to the surfaces that need them; when it
+ * lands, the surfaces stop asking this constant and this constant goes. Until
+ * then a reference field added to the registry without a line here loses the
+ * protection below, which is why the list is spelled once, in the domain leaf
+ * both the close slot and the record surface's override already import, rather
+ * than hand-copied into each of them (LESSONS 3's drift, and ARCHITECTURE.md
+ * §13.7).
+ */
+export const REFERENCE_FIELDS: readonly string[] = [
+  "events.venue",
+  "events.performers",
+];
+
+/**
+ * Is this fact a reference — a field that links rows rather than holding a
+ * scalar?
+ *
+ * The question a surface asks BEFORE it offers a control for a fact. A
+ * reference's value is an entity, so it travels in the `ref` slot
+ * (`link_entity`, or an `override` carrying the picker's choice) and never in
+ * the `value` slot that `supply_value` is the sole filler of
+ * (`PAYLOAD_SLOTS` below). A free-text control offered for one would settle a
+ * `venue_id` fact with typed text, which is the write §8 exists to prevent
+ * ("the apply links rows … instead of writing text").
+ */
+export function isReferenceField(domain: string, field: string): boolean {
+  return REFERENCE_FIELDS.includes(`${domain}.${field}`);
+}
+
 /** The three slots of `VerdictValue` that can carry the verdict's payload. */
 type PayloadSlot = "observation_id" | "value" | "ref";
 
