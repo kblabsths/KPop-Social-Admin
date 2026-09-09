@@ -15,6 +15,11 @@ import {
   transportFailure,
   type Script,
 } from "../../fixtures/stub-client";
+import {
+  classesOf,
+  expectDrawnAsLinkAtRest,
+  expectNotDrawnAsLink,
+} from "../../fixtures/link-spelling";
 
 /**
  * The Queues page, rendered (campaign admin-window/TASK-0010).
@@ -529,6 +534,28 @@ describe("a row", () => {
       expect(rowOf(markup, item.review_item_id).href).toBe(
         `/queues/${item.review_item_id}`,
       );
+    }
+  });
+
+  it("draws what happened as this app draws a link, at rest", async () => {
+    // **BUG-0099 (admin-window).** The row's one route out announced itself
+    // only under the pointer, so a reader who had not moved the mouse saw a
+    // table of plain sentences. Asserted against the app's one link spelling
+    // (`components/cycles/links.ts`), never a class literal.
+    const markup = await renderQueues(healthyScript());
+    const $ = cheerio.load(markup);
+
+    for (const item of POPULATION) {
+      const summary = $(`[data-item="${item.review_item_id}"]`);
+      expect(summary.length, item.review_item_id).toBe(1);
+      expectDrawnAsLinkAtRest(classesOf(summary), `the ${item.review_item_id} row's summary`);
+      // The second fixture on the same row (LESSONS 3): what does NOT go
+      // anywhere must not wear the link's ink, or the affordance says nothing.
+      for (const inert of ["[data-severity]", "[data-shape]", "[data-folds]"]) {
+        const cell = summary.closest("tr").find(inert);
+        expect(cell.length, `${item.review_item_id} ${inert}`).toBeGreaterThan(0);
+        expectNotDrawnAsLink(classesOf(cell), `${inert} on ${item.review_item_id}`);
+      }
     }
   });
 

@@ -1,4 +1,5 @@
 import type { Column } from "@/components/ui";
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { relativeAge } from "@/lib/format";
 
 /**
@@ -77,16 +78,19 @@ export const valueColumn: Column<EvidenceRow> = {
   cell: (row) => <span data-evidence={row.observationId}>{row.value}</span>,
 };
 
-/** The source, in one click (LOOK_AND_FEEL bar 10). */
+/**
+ * The source, in one click (LOOK_AND_FEEL bar 10).
+ *
+ * In the app's one link spelling (`IN_PAGE_LINK`), so the column reads as the
+ * way through with nothing hovering it: an evidence table runs to dozens of
+ * rows of mono values, and a route out that only the pointer reveals is one
+ * the reader scanning the column never finds (admin-window/BUG-0099).
+ */
 export const sourceColumn: Column<EvidenceRow> = {
   key: "source",
   label: "source",
   cell: (row) => (
-    <a
-      href={row.sourceHref}
-      data-claim-source={row.source}
-      className="transition-colors hover:text-accent"
-    >
+    <a href={row.sourceHref} data-claim-source={row.source} className={IN_PAGE_LINK}>
       {row.source}
     </a>
   ),
@@ -142,11 +146,7 @@ export const factColumn: Column<EvidenceRow> = {
     row.recordHref === null ? (
       <span data-fact={row.fact}>{row.fact}</span>
     ) : (
-      <a
-        href={row.recordHref}
-        data-fact={row.fact}
-        className="transition-colors hover:text-accent"
-      >
+      <a href={row.recordHref} data-fact={row.fact} className={IN_PAGE_LINK}>
         {row.fact}
       </a>
     ),
