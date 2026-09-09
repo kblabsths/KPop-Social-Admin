@@ -194,6 +194,51 @@ function patternScript(overrides: Script = {}): Script {
   };
 }
 
+/**
+ * The signal item at the size staging really produces it — campaign
+ * admin-window/BUG-0096.
+ *
+ * The one real review item on staging folds the same fact 700 times and
+ * resolves to 91 folded records, which is what made the close 3,483px of
+ * evidence away from the summary it closes. `patternScript` above carries ONE
+ * claim, so it can never catch a placement that only breaks once the evidence
+ * is tall: this script is the long twin of it, and the two are asserted to
+ * place the close identically.
+ *
+ * 104 ids crosses `ID_CHUNK` (100, `src/lib/db/result.ts`), so the evidence
+ * read really chunks here — the observations queue below is the two chunks and
+ * then the dial's own windowed scan.
+ */
+const FOLDED = Array.from({ length: 104 }, (_, index) =>
+  observationRow({
+    observation_id: `01920000-0000-7000-8000-${String(900000000000 + index)}`,
+    source_id: ID.sourceBandsintown,
+    value: "The Forum, Inglewood",
+    status: "pending",
+    payload_ref: `bandsintown/2026-08-31/forum-${index}.json`,
+  }),
+);
+
+/** The source-pattern item carrying all 104 of them, in fold order. */
+function longPatternScript(overrides: Script = {}): Script {
+  const item = reviewItemSourcePattern({
+    evidence: FOLDED.map((claim) => claim.observation_id),
+    folded_count: 700,
+  });
+  return {
+    [T.reviewItems]: { data: item },
+    [T.observations]: [
+      { data: FOLDED.slice(0, 100) },
+      { data: FOLDED.slice(100) },
+      { data: [] },
+    ],
+    [T.sources]: { data: [BANDSINTOWN] },
+    [T.pendingClaims]: [{ data: [] }, { data: [] }, { data: [] }],
+    ...SETTLEMENT_ABSENT,
+    ...overrides,
+  };
+}
+
 /* ── the addressing the live oracle depends on ───────────────────────────── */
 
 /**
@@ -266,6 +311,25 @@ function accountingIn(markup: string): [number, number] {
   expect(match, "the page accounts for the evidence ids it looked at").not.toBeNull();
   const [, resolved, total] = match as RegExpMatchArray;
   return [Number(resolved.replace(/,/g, "")), Number(total.replace(/,/g, ""))];
+}
+
+/**
+ * The page's graded surfaces, by name, in the order the DOCUMENT carries them
+ * (campaign admin-window/BUG-0096).
+ *
+ * Order is read off the delivered markup rather than off a class name, a
+ * pixel or a grid declaration: a stylesheet is presentation and a rendered
+ * offline page has no layout at all, but "the operator meets the close before
+ * the evidence" is a fact about the document either way, and it is the one the
+ * live oracle and a browser both inherit. Nested names (the settled item's
+ * `item_verdict`, inside the close) appear here too, which is harmless — every
+ * assertion below is about the relative position of two names.
+ */
+function surfaceOrder(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("[data-surface]")
+    .toArray()
+    .map((element) => $(element).attr("data-surface") ?? "");
 }
 
 function attrsOf(markup: string, selector: string): string[] {
@@ -1003,6 +1067,114 @@ describe("the close, with the verdict log present", () => {
       });
       expect(cheerio.load(markup)('[data-state="error"]'), name).toHaveLength(0);
     }
+  });
+});
+
+/* ── where the close sits ────────────────────────────────────────────────── */
+
+/**
+ * The close is reachable without exhausting the evidence — campaign
+ * admin-window/BUG-0096.
+ *
+ * The designer's early walk measured the close slot at y=3,781 on the one real
+ * review item: `what_happened` 128px tall, then 3,483px of evidence — 91
+ * folded records and the source's trend — and only then the controls that
+ * settle the item. Four screenfuls of scrolling to reach the thing the page
+ * exists for, and FEAT-0010 fills that slot with three controls.
+ *
+ * The bar is LOOK_AND_FEEL's ("Review item detail — the evidence pair, and the
+ * close beside it"), and the ticket allows three placements: beside, above, or
+ * pinned. This build renders the close ABOVE — first in document order — and
+ * these tests grade THAT, structurally, because document order is what a
+ * browser, the live oracle and this offline render all agree on without any
+ * test reading a stylesheet.
+ *
+ * The load-bearing half is the SECOND test: the placement is decided by the
+ * page, once, so it cannot depend on how tall a shape's evidence happens to
+ * be. A fix living inside a view would pass the first test and fail that one.
+ */
+describe("the close is reachable without exhausting the evidence", () => {
+  it("comes before the evidence on every shape, in both states of the close", async () => {
+    for (const [name, script, id] of SHAPED) {
+      for (const [state, built] of [
+        ["absent", script()],
+        ["present", withSettlement(script())],
+      ] as const) {
+        const where = `${name}/${state}`;
+        const markup = await renderItem(built, id);
+        const order = surfaceOrder(markup);
+
+        // Each name still answers for exactly one element — the whole point of
+        // `data-surface` (`stateOf` refuses a selector matching two).
+        expect(order.filter((one) => one === CLOSE_HOOK), where).toHaveLength(1);
+        expect(order.filter((one) => one === "evidence"), where).toHaveLength(1);
+        expect(
+          order.indexOf(CLOSE_HOOK),
+          `${where}: the close precedes the evidence it closes`,
+        ).toBeLessThan(order.indexOf("evidence"));
+
+        // Neither surface is inside the other: the close is its own section,
+        // graded by its own read, and the evidence body is untouched.
+        const $ = cheerio.load(markup);
+        expect($(`[data-surface="${CLOSE_HOOK}"]`).find(EVIDENCE_HOOK), where).toHaveLength(0);
+        expect($(EVIDENCE_HOOK).find(`[data-surface="${CLOSE_HOOK}"]`), where).toHaveLength(0);
+      }
+    }
+  });
+
+  it("places it the same way when the signal folds a hundred records", async () => {
+    // The long twin of the pattern script: 104 resolved claims instead of one,
+    // which is the shape that produced the 3,483px measurement. The placement
+    // must not turn on the height of what follows it.
+    const short = await renderItem(patternScript(), reviewItemSourcePattern().review_item_id);
+    const long = await renderItem(
+      longPatternScript(),
+      reviewItemSourcePattern().review_item_id,
+    );
+
+    // The fixture really is long: every folded record resolved and rendered.
+    expect(evidenceIds(long)).toHaveLength(FOLDED.length);
+    expect(evidenceIds(long).length).toBeGreaterThan(100);
+    expect(evidenceIds(short)).toHaveLength(1);
+    expect(cheerio.load(long)("[data-unresolved]")).toHaveLength(0);
+
+    for (const [where, markup] of [
+      ["short", short],
+      ["long", long],
+    ] as const) {
+      const order = surfaceOrder(markup);
+      expect(order.indexOf(CLOSE_HOOK), where).toBeLessThan(order.indexOf("evidence"));
+    }
+
+    // Same relative order, both heights — asserted as the sequence itself so a
+    // change that only reorders the tall page is caught too.
+    expect(surfaceOrder(long)).toEqual(surfaceOrder(short));
+
+    // And the evidence view kept its own anatomy through the move: the
+    // source-pattern view is still its table of folded records with the
+    // source's dial beside it (LOOK_AND_FEEL, the evidence pair).
+    const $ = cheerio.load(long);
+    expect($(EVIDENCE_HOOK).find('[data-evidence-view="source-pattern"]')).toHaveLength(1);
+    expect($(EVIDENCE_HOOK).find("[data-dial]")).toHaveLength(1);
+    expect($(EVIDENCE_HOOK).find("table").length).toBeGreaterThan(0);
+  });
+
+  it("keeps the contended fact's pair in its fixed order, canonical rightmost", async () => {
+    // The other half of the same guarantee (criterion 3): moving the close
+    // must not have touched what the evidence pair renders or the order it
+    // renders it in — contenders left, the current canonical value last.
+    const item = reviewItemDataConflict();
+    const markup = await renderItem(conflictScript(), item.review_item_id);
+    const cards = pairCards(markup);
+    const order = surfaceOrder(markup);
+
+    expect(cards).toHaveLength(item.evidence.length + 1);
+    expect(cards.at(-1)).toContain(String(CLAIM_A.value));
+    expect(cards.at(-1)).toContain(DECISION.tier_at_apply);
+    // …and the pair itself is still inside the evidence surface, below the
+    // close rather than hoisted into it.
+    expect(cheerio.load(markup)(EVIDENCE_HOOK).find("[data-pair]")).toHaveLength(1);
+    expect(order.indexOf(CLOSE_HOOK)).toBeLessThan(order.indexOf("evidence"));
   });
 });
 

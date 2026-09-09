@@ -57,11 +57,7 @@ import { factKey } from "@/lib/verdict/decision";
  *
  *  1. **what happened** — the summary sentence, severity, age, and
  *     `folded_count` as "asked again ×N" (`ItemHeader`);
- *  2. **evidence, side by side** — every id in `review_items.evidence`
- *     resolved to its claim (value, source, tier, `observed_at`, payload
- *     pointer) with the fact's current canonical value and provenance beside
- *     them, in the shape's own view (`EVIDENCE_VIEW_BY_SHAPE`);
- *  3. **the close** — spec §7's verdict actions, rendered by
+ *  2. **the close** — spec §7's verdict actions, rendered by
  *     `CloseSlot` (`src/components/review/close/slot.tsx`, campaign
  *     admin-window/TASK-0049). What it offers is decided by ONE read,
  *     `readSettlementReadiness`: with the verdict log absent — the normal case
@@ -75,9 +71,28 @@ import { factKey } from "@/lib/verdict/decision";
  *     `readItemVerdict`, so the investigation ends where the decision was made
  *     rather than at the log tab. An unsettled item renders no verdict block.
  *
- * The recommendation slot sits between 1 and 2 and renders nothing either —
- * its producer is parked (spec §6, "the anatomy's recommendation slot … exists
- * in the contract and renders nothing until the first recommender ships").
+ *     **It renders ABOVE the evidence** (campaign admin-window/BUG-0096). The
+ *     close used to be last, which on the shape staging really holds put it
+ *     3,483px — four screenfuls at 1440x900 — under the evidence it closes, so
+ *     the operator had to exhaust 91 folded records to reach the controls that
+ *     settle the item. LOOK_AND_FEEL, Key screens, asks for "the evidence
+ *     pair, and the close beside it"; of the placements that satisfy that bar
+ *     this is the one that costs the evidence views nothing — the close leads
+ *     in document order and neither view's markup, width or internal grid
+ *     changes. Being decided here rather than inside a view is what makes it
+ *     hold identically for all three shapes.
+ *  3. **evidence, side by side** — every id in `review_items.evidence`
+ *     resolved to its claim (value, source, tier, `observed_at`, payload
+ *     pointer) with the fact's current canonical value and provenance beside
+ *     them, in the shape's own view (`EVIDENCE_VIEW_BY_SHAPE`). It is the
+ *     unbounded part of this page — one row per fold, and a signal folds
+ *     hundreds of times — which is exactly why nothing an operator must reach
+ *     sits after it.
+ *
+ * The recommendation slot sits between 1 and the close and renders nothing
+ * either — its producer is parked (spec §6, "the anatomy's recommendation slot
+ * … exists in the contract and renders nothing until the first recommender
+ * ships").
  *
  * **No `notFound()`, by ruling** (admin-window/BUG-0017, ARCHITECTURE.md §5):
  * a review-item id is DATA, not an enum this app owns, so a dynamic segment
@@ -632,7 +647,37 @@ export default async function ReviewItemPage({
 
       {/* The recommendation slot. It exists in the anatomy and renders nothing
           in M1: its producer — the specialist's proposed action, rationale and
-          confidence — is parked (spec §6). */}
+          confidence — is parked (spec §6). Its place is still directly under
+          what happened; what moved beneath it is the close, not this slot. */}
+
+      {/* The close (spec §7), ABOVE the evidence it closes — campaign
+          admin-window/BUG-0096. Placement is the whole of what that ticket
+          moved: the slot renders before `EVIDENCE_SURFACE` in document order,
+          so an operator reaches the decision without scrolling the evidence
+          out of the way first (LOOK_AND_FEEL, Key screens: the close is beside
+          the evidence, never four screenfuls under it). It is decided HERE,
+          once, for all three shapes rather than inside a shape's view, which
+          is what makes the placement the same whether the evidence is two
+          cards or the signal's hundred-odd folded records; the views
+          themselves are untouched and keep their own anatomy.
+
+          Its ONE question — may a settlement be offered at all — is
+          `readiness`; with the verdict log absent, which is the normal case
+          for the whole of M2, the slot renders that state and offers no
+          control. The shape's action list comes from the one map
+          (`ACTIONS_BY_SHAPE`), never from a shape re-derived here, and its
+          companion says what the shape WITHHOLDS and why — today only a
+          conflict on a reference field, whose value links a row rather than
+          carrying text (`NOTICE_BY_SHAPE`, spec §8). */}
+      <Section title="The close" surface={CLOSE_SURFACE}>
+        <CloseSlot
+          item={row}
+          readiness={readiness}
+          actions={ACTIONS_BY_SHAPE[shape]({ item: row, evidence: evidenceRows })}
+          notice={NOTICE_BY_SHAPE[shape]({ item: row, evidence: evidenceRows })}
+          verdict={settledWith(verdict)}
+        />
+      </Section>
 
       <Section title="Evidence">
         {evidence.kind !== "ok" ? (
@@ -675,23 +720,6 @@ export default async function ReviewItemPage({
         )}
       </Section>
 
-      {/* The close (spec §7). Its ONE question — may a settlement be offered
-          at all — is `readiness`; with the verdict log absent, which is the
-          normal case for the whole of M2, the slot renders that state and
-          offers no control. The shape's action list comes from the one map
-          (`ACTIONS_BY_SHAPE`), never from a shape re-derived here, and its
-          companion says what the shape WITHHOLDS and why — today only a
-          conflict on a reference field, whose value links a row rather than
-          carrying text (`NOTICE_BY_SHAPE`, spec §8). */}
-      <Section title="The close" surface={CLOSE_SURFACE}>
-        <CloseSlot
-          item={row}
-          readiness={readiness}
-          actions={ACTIONS_BY_SHAPE[shape]({ item: row, evidence: evidenceRows })}
-          notice={NOTICE_BY_SHAPE[shape]({ item: row, evidence: evidenceRows })}
-          verdict={settledWith(verdict)}
-        />
-      </Section>
     </Page>
   );
 }
