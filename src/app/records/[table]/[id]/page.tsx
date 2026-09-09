@@ -273,7 +273,13 @@ function RecordFrame({
           looking at a failed read still needs to know which row they asked
           for. Mono, because it is a value the database produced. */}
       <p className="type-data text-ink-secondary">{id}</p>
-      <Section title="Fields">
+      {/* The one surface on this route, named so a live oracle can address it
+          by NAME rather than by position (ARCHITECTURE §10: "every surface a
+          live test grades carries `data-surface`, unique on the page"). Every
+          state card this page can draw — the not-provisioned card, either
+          emptiness, a leg's error line — renders inside it, so the name
+          addresses the whole read (admin-window/TASK-0052). */}
+      <Section title="Fields" surface="fields">
         <p className="type-body text-ink-secondary">{regimeNote(config)}</p>
         {children}
       </Section>
