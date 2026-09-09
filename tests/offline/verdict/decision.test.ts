@@ -249,6 +249,39 @@ describe("invariant 1 — the action is one of the eight", () => {
   });
 });
 
+/**
+ * Notes with NOTHING VISIBLE in them — admin-window/BUG-0089’s fixture, and
+ * the one `String.prototype.trim()` cannot see. Whitespace it did strip
+ * (U+00A0, U+FEFF) sits beside the Cf characters it did not (U+200B zero-width
+ * space, U+2060 word joiner, U+00AD soft hyphen), because a guard that
+ * disagreed with itself about which blanks count is what the bug was.
+ */
+const INVISIBLE_ONLY: readonly string[] = [
+  "\u200b", // zero-width space — a paste out of a rendered web page
+  "\u2060", // word joiner
+  "\u00ad", // soft hyphen — a paste out of a PDF
+  "\ufeff", // byte-order mark — a paste out of a spreadsheet export
+  "\u00a0", // non-breaking space
+  "\u3164", // hangul filler: ink-less, and in neither C class
+  "\u0001", // a C0 control `trim()` leaves alone
+  "  \u200b  ", // the mixture an operator actually produces
+  "\u200b\u2060\u00ad\ufeff\u00a0\t\n",
+];
+
+/**
+ * The fixtures the same guard must NOT flag, or it is vacuous: real words,
+ * words WRAPPED in the characters above (present is not the same as
+ * only), and U+2800 BRAILLE PATTERN BLANK — an assigned printable character,
+ * which the leaf’s own docstring rules is content even though it looks empty.
+ */
+const VISIBLE_NOTES: readonly string[] = [
+  "the source has been paused; the condition stands until it returns",
+  "\u200bwhy it stands\u200b",
+  "\u00ad-\u00ad",
+  "0",
+  "\u2800",
+];
+
 describe("invariant 2 — the item, and the one action without it", () => {
   it("flags a null review_item_id on every non-override action", () => {
     for (const action of VERDICT_ACTIONS.filter((one) => one !== "override")) {
@@ -260,6 +293,18 @@ describe("invariant 2 — the item, and the one action without it", () => {
   it("flags an all-whitespace review_item_id, which a form alone would let through", () => {
     const decision = decisionOf({ ...WELL_FORMED.fixed, review_item_id: "   " });
     expect(decisionRefusals(decision)).toContain("review_item_required");
+  });
+
+  it("flags a review_item_id with nothing visible in it", () => {
+    // A uuid FK cannot be satisfied by a string of invisible characters any
+    // more than by spaces, and both are the shape a form alone lets through
+    // (admin-window/BUG-0089).
+    for (const invisible of INVISIBLE_ONLY) {
+      const decision = decisionOf({ ...WELL_FORMED.fixed, review_item_id: invisible });
+      expect(decisionRefusals(decision), JSON.stringify(invisible)).toContain(
+        "review_item_required",
+      );
+    }
   });
 
   it("flags an override that carries an item", () => {
@@ -297,24 +342,49 @@ describe("invariant 3 — the note wont_fix cannot settle without", () => {
   /**
    * A note whose every character is invisible is a note nobody can read, and
    * `wont_fix` is the one action whose note is the CONTRACT ("say why the
-   * condition stands", spec §7). `present()` uses `String.prototype.trim()`,
-   * which strips the Unicode WhiteSpace set and U+FEFF but not the Cf format
-   * characters — so a note pasted as a zero-width space, a word joiner or a
-   * soft hyphen is graded as written, settles the item, and lands in
-   * `verdicts.note` as content `isAbsent()` also calls present: the verdict
-   * log then draws a blank cell with no dash, which is the very rendering
+   * condition stands", spec §7). The guard used to decide blankness with
+   * `String.prototype.trim()`, which strips the Unicode WhiteSpace set and
+   * U+FEFF but not the Cf format characters — so a note pasted as a
+   * zero-width space, a word joiner or a soft hyphen was graded as written,
+   * settled the item, and landed in `verdicts.note` as content `isAbsent()`
+   * (trim() again) then drew as a blank cell with no dash, the very rendering
    * admin-window/BUG-0085 was filed to remove.
    *
-   * Strict `it.fails` for admin-window/BUG-0089 — the day the guard reads
-   * blankness by visible content, this reddens and sends the reader to the
-   * ticket.
+   * Fixed in admin-window/BUG-0089: all three guards ask
+   * `hasVisibleContent` — one definition of blank, in the leaf both others
+   * import.
    */
-  it.fails("flags a note whose every character is invisible on wont_fix", () => {
-    for (const invisible of ["\u200b", "\u2060", "\u00ad", "  \u200b  "]) {
+  it("flags a note whose every character is invisible on wont_fix", () => {
+    for (const invisible of INVISIBLE_ONLY) {
       const decision = decisionOf({ ...WELL_FORMED.wont_fix, note: invisible });
       expect(decisionRefusals(decision), JSON.stringify(invisible)).toContain(
         "note_required",
       );
+    }
+  });
+
+  it("keeps a note that has anything visible in it, however it is padded", () => {
+    // The other fixture the guard needs or it passes vacuously (LESSONS 3):
+    // the invisible characters are refused for being ALL there is, never for
+    // being present. A note wrapped in them still says what it says, and is
+    // not this guard’s business to rewrite.
+    for (const written of VISIBLE_NOTES) {
+      const decision = decisionOf({ ...WELL_FORMED.wont_fix, note: written });
+      expect(decisionRefusals(decision), JSON.stringify(written)).toEqual([]);
+    }
+  });
+
+  it("does not flag an invisible-only note on an action that requires none", () => {
+    // The forbidden branch of the same fixture: a note is at the admin’s
+    // discretion everywhere but `wont_fix`, so an unreadable one there is not
+    // a refusal — the widened test must not turn an optional field into a
+    // required one.
+    for (const action of VERDICT_ACTIONS.filter((one) => !noteRequired(one))) {
+      for (const invisible of INVISIBLE_ONLY) {
+        const decision = decisionOf({ ...WELL_FORMED[action], note: invisible });
+        expect(decisionRefusals(decision), `${action} ${JSON.stringify(invisible)}`)
+          .not.toContain("note_required");
+      }
     }
   });
 
@@ -415,6 +485,21 @@ describe("invariant 6 — who decided", () => {
       const decision = decisionOf({ ...WELL_FORMED.settle, actor: blank });
       expect(decisionRefusals(decision), JSON.stringify(blank)).toContain("actor_required");
     }
+  });
+
+  it("flags an actor with nothing visible in it, and keeps one that has words", () => {
+    // The same one definition of blank, on the other required text field:
+    // `verdicts.actor` is the record of WHO decided, and an actor of
+    // zero-width spaces names nobody (admin-window/BUG-0089).
+    for (const invisible of INVISIBLE_ONLY) {
+      const decision = decisionOf({ ...WELL_FORMED.settle, actor: invisible });
+      expect(decisionRefusals(decision), JSON.stringify(invisible)).toContain(
+        "actor_required",
+      );
+    }
+    // …and the fixture it must not flag: an ordinary address, padded.
+    const padded = decisionOf({ ...WELL_FORMED.settle, actor: "\u200badmin@example.test" });
+    expect(decisionRefusals(padded)).toEqual([]);
   });
 
   it("does not flag an actor on any well-formed decision", () => {

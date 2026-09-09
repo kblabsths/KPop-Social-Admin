@@ -34,11 +34,86 @@
  *     reference rather than a cell;
  *   - no HTTP, no client, no React.
  *
+ * **It also holds the app's one definition of "blank"** (`hasVisibleContent`,
+ * admin-window/BUG-0089). That is not verdict vocabulary, and it lives here
+ * for a structural reason spelled out at the function itself: the two other
+ * guards that ask the question may import this module, and this module may
+ * import nothing.
+ *
  * **Absence is not this file's business.** Whether `settle_review_item` is
  * installed is answered by `readSettlementReadiness` reading the `verdicts`
  * table (§9.2), and by the data layer's `not_provisioned` classification — not
  * by a flag here. This module is pure and says nothing about provisioning.
  */
+
+/* ── blank, defined once for the whole app ───────────────────────────────── */
+
+/**
+ * The characters that put NO INK on the page — the class
+ * `String.prototype.trim()` does not know about (admin-window/BUG-0089).
+ *
+ * `trim()` strips the Unicode `White_Space` set (plus U+FEFF, which it treats
+ * as one) and nothing else, so a note pasted out of a web page or a PDF as
+ * U+200B ZERO WIDTH SPACE, U+2060 WORD JOINER or U+00AD SOFT HYPHEN reads as
+ * written to it while being unreadable to a person. Three guards all tested
+ * blankness with `trim()`, so all three agreed, and all three were wrong the
+ * same way.
+ *
+ * What the class holds, and why each part is in it:
+ *
+ *   - `\p{White_Space}` — the spaces `trim()` already removed (ASCII, U+00A0,
+ *     the U+2000 family, U+3000);
+ *   - `\p{Cf}` — the FORMAT characters: U+200B/200C/200D, U+2060, U+00AD,
+ *     U+FEFF, the bidi controls. Ink-less by definition, and the family this
+ *     defect arrived as;
+ *   - `\p{Cc}` — the C0/C1 controls. `trim()` removes five of them (tab, the
+ *     two newlines, form feed, carriage return) and leaves the rest;
+ *   - the four HANGUL FILLERS (U+115F, U+1160, U+3164, U+FFA0) — letters by
+ *     category, blank by rendering, and the ink-less characters best known for
+ *     being outside the two C classes.
+ *
+ * Where the line is DRAWN, so it reads as a ruling rather than an oversight:
+ * an assigned printable character is CONTENT even when it looks unhelpful.
+ * U+2800 BRAILLE PATTERN BLANK is a braille cell and a lone combining mark is
+ * a mark — both stay content. This class means "renders nothing", not "says
+ * nothing worth saying".
+ */
+const INK_LESS = /[\p{White_Space}\p{Cf}\p{Cc}\u115F\u1160\u3164\uFFA0]/gu;
+
+/**
+ * This text with every ink-less character removed — what a reader would
+ * actually SEE of it.
+ *
+ * Only ever asked a question of. Nothing stores or sends this: a note with
+ * visible content travels byte-identical (`settleBody`), because an operator's
+ * words are theirs and this is a test, not a sanitiser.
+ */
+export function visibleContent(text: string): string {
+  return text.replace(INK_LESS, "");
+}
+
+/**
+ * **The app's one definition of blank**: is there anything here a person could
+ * read? Takes `unknown` because a caller's field may be absent or not a string
+ * at all, and a non-string has no visible content by definition.
+ *
+ * Every guard that asks "was this filled in?" asks HERE — `decisionRefusals`'
+ * invariants 2, 3 and 6 below, the close form's `closeRefusal`, and
+ * `isAbsent` in `lib/format.ts`, which decides whether the verdict log draws
+ * the note or the em dash. One definition, so a note the form accepts cannot
+ * be one the log renders as nothing (admin-window/BUG-0089, BUG-0085).
+ *
+ * **Why it lives in this leaf, of all files** — the dependency direction, and
+ * it only points one way. This module imports NOTHING and must keep importing
+ * nothing (ARCHITECTURE §4 rule 7, pinned by `tests/offline/db/layering.test.ts`),
+ * so it can import neither `lib/format.ts` (which imports React) nor a new
+ * shared module of its own; `format.ts` has no such constraint and imports
+ * this. Putting the definition anywhere else means either breaking the leaf
+ * rule or keeping the copies this bug was made of.
+ */
+export function hasVisibleContent(text: unknown): boolean {
+  return typeof text === "string" && visibleContent(text).length > 0;
+}
 
 /**
  * The eight actions, ruled in ARCHITECTURE.md §9.2 because no contract spelled
@@ -301,11 +376,16 @@ function filled(value: unknown, slot: PayloadSlot): boolean {
 }
 
 /**
- * Non-blank after trim — the test a required text field actually has to pass.
- * Takes `unknown` because the caller's field may be absent or not a string.
+ * Non-blank BY VISIBLE CONTENT — the test a required text field actually has
+ * to pass. Takes `unknown` because the caller's field may be absent or not a
+ * string; anything that is not a string has no visible content at all.
+ *
+ * `hasVisibleContent` is the app's ONE definition of blank (above); this is
+ * the local name the invariants below read by, and it delegates rather than
+ * repeating the test.
  */
 function present(text: unknown): boolean {
-  return typeof text === "string" && text.trim().length > 0;
+  return hasVisibleContent(text);
 }
 
 /**
@@ -334,13 +414,17 @@ function present(text: unknown): boolean {
  *     are NOT evaluated — there is no rule to evaluate them against — while
  *     `actor` still is, because invariant 6 does not depend on the action.
  *  2. `review_item_required` / `review_item_forbidden` — `review_item_id` is
- *     null on `override`, and a non-blank id on every other action. An
- *     all-whitespace id is refused as `review_item_required`: it is the same
- *     defect as a blank note, and `verdicts.review_item_id` is a uuid FK that
- *     no blank string can satisfy.
- *  3. `note_required` — a null, empty or all-whitespace note where
- *     `noteRequired(action)`. A present-but-blank note is exactly the shape a
- *     form alone lets through, and the function would RAISE on it.
+ *     null on `override`, and a non-blank id on every other action. An id of
+ *     nothing but ink-less characters — spaces, or the invisible ones
+ *     `trim()` leaves behind — is refused as `review_item_required`: it is the
+ *     same defect as a blank note, and `verdicts.review_item_id` is a uuid FK
+ *     that no such string can satisfy.
+ *  3. `note_required` — a null note, or one with no VISIBLE CONTENT
+ *     (`hasVisibleContent`), where `noteRequired(action)`. A present-but-blank
+ *     note is exactly the shape a form alone lets through, and the function
+ *     would RAISE on it. Blank is not "empty after `trim()`": a note of zero-
+ *     width spaces or soft hyphens is a note nobody can read, and it settled
+ *     the item until admin-window/BUG-0089.
  *  4. `value_required` / `value_forbidden` — a `VerdictValue` is present on the
  *     value-carrying actions and absent (or null) on the settle-only ones. A
  *     `value` that is present but not an envelope — a string, a number, an
@@ -349,8 +433,9 @@ function present(text: unknown): boolean {
  *  5. `value_payload_missing` / `value_payload_ambiguous` /
  *     `value_payload_not_allowed` — exactly one payload slot is filled, and it
  *     is one this action may fill (`PAYLOAD_SLOTS`).
- *  6. `actor_required` — a blank actor. `verdicts.actor` is not null, and the
- *     verdict log is the record of every admin data action.
+ *  6. `actor_required` — a blank actor, by the same visible-content test.
+ *     `verdicts.actor` is not null, and the verdict log is the record of every
+ *     admin data action.
  *
  * All refusals that apply are returned, so a caller sees every problem at
  * once rather than one per round trip.
