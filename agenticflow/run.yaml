@@ -2,7 +2,7 @@
 # agenticflow/scripts/lib_ticket.py). install.sh copies this to
 # agenticflow/run.yaml; fill every FILL line before the first /ship.
 
-builders: 4               # concurrent builder agents
+builders: 1               # concurrent builder agents
 qa_probes: 1              # concurrent QA attack agents in /ship release sweeps
 max_milestones: 6         # runaway guard, not a target
 qa_dry_rounds: 2          # consecutive clean sweeps ending a /ship release pass (dev milestones run walks, no sweeps)
@@ -11,7 +11,7 @@ stall_no_delta_minutes: 30 # claim with zero file changes under scope this long 
 qa_relaunch_minutes: 75   # a QA lane younger than this suppresses re-offer of its
                           # ticket; older, the offer stands with a costed
                           # qa_overrun flag (device-walk QA runs 28-45 min routinely)
-qa_batch_patience: 2      # dispatch ticks a lone built P2/P3 ticket waits for
+qa_batch_patience: 0      # dispatch ticks a lone built P2/P3 ticket waits for
                           # batch-mates before QA spawns (0 = immediately; try 2 on
                           # bigger projects — QA measured ~45% of role-hours in
                           # batches of one). P0/P1 never wait.
