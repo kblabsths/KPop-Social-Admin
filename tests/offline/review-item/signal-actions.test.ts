@@ -418,6 +418,39 @@ describe("a won’t-fix with no note", () => {
     expect(closeRefusal(fixed, "")).toBeNull();
   });
 
+  /**
+   * The blank spellings above are the ones `String.prototype.trim()` removes.
+   * These are the ones it does not: the Cf format characters an operator gets
+   * by PASTING (a zero-width space out of a web page, a soft hyphen out of a
+   * PDF). Every one of them is a note with nothing in it to read, and
+   * `wont_fix` is the one action whose note IS the contract — so the form's
+   * courtesy guard lets it through, `submitSettlement` puts it on the wire,
+   * `decisionRefusals` passes it, and the item settles with an unreadable
+   * reason that the verdict log draws as a blank cell with no dash.
+   *
+   * Strict `it.fails` for admin-window/BUG-0088.
+   */
+  it.fails("refuses a note whose every character is invisible", () => {
+    for (const invisible of ["\u200b", "\u2060", "\u00ad", "  \u200b  "]) {
+      expect(closeRefusal(wontFix, invisible), JSON.stringify(invisible)).toBe(
+        "note_required",
+      );
+    }
+  });
+
+  it.fails("puts no invisible-only note on the wire", async () => {
+    const { calls, fetchImpl } = recordingFetch(
+      Response.json({ ok: true, verdict: verdictLogEntry({ action: "wont_fix" }) }),
+    );
+    await submitSettlement({
+      reviewItemId: SIGNAL_ID,
+      spec: wontFix,
+      note: "\u200b",
+      fetchImpl,
+    });
+    expect(calls).toEqual([]);
+  });
+
   it("sends nothing at all: the payload never reaches the network", async () => {
     const { calls, fetchImpl } = recordingFetch(
       Response.json({ ok: true, verdict: verdictLogEntry({ action: "wont_fix" }) }),

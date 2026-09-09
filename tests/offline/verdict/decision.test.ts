@@ -241,6 +241,30 @@ describe("invariant 3 — the note wont_fix cannot settle without", () => {
     }
   });
 
+  /**
+   * A note whose every character is invisible is a note nobody can read, and
+   * `wont_fix` is the one action whose note is the CONTRACT ("say why the
+   * condition stands", spec §7). `present()` uses `String.prototype.trim()`,
+   * which strips the Unicode WhiteSpace set and U+FEFF but not the Cf format
+   * characters — so a note pasted as a zero-width space, a word joiner or a
+   * soft hyphen is graded as written, settles the item, and lands in
+   * `verdicts.note` as content `isAbsent()` also calls present: the verdict
+   * log then draws a blank cell with no dash, which is the very rendering
+   * admin-window/BUG-0085 was filed to remove.
+   *
+   * Strict `it.fails` for admin-window/BUG-0088 — the day the guard reads
+   * blankness by visible content, this reddens and sends the reader to the
+   * ticket.
+   */
+  it.fails("flags a note whose every character is invisible on wont_fix", () => {
+    for (const invisible of ["\u200b", "\u2060", "\u00ad", "  \u200b  "]) {
+      const decision = decisionOf({ ...WELL_FORMED.wont_fix, note: invisible });
+      expect(decisionRefusals(decision), JSON.stringify(invisible)).toContain(
+        "note_required",
+      );
+    }
+  });
+
   it("does not flag a missing note on any action that does not require one", () => {
     for (const action of VERDICT_ACTIONS.filter((one) => !noteRequired(one))) {
       const decision = decisionOf({ ...WELL_FORMED[action], note: null });
