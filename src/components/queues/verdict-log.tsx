@@ -68,7 +68,7 @@ export interface VerdictLine {
  */
 const DASH_MEANS =
   `A ${EM_DASH} here is not missing data: an override settles no review item, ` +
-  "and a settle-only verdict writes no observation.";
+  "and a settle-only verdict writes no claim.";
 
 export function VerdictLog({
   lines,
@@ -132,7 +132,7 @@ export function VerdictLog({
     },
     {
       key: "observation",
-      label: "observation",
+      label: "observation id",
       cell: (row) => {
         if (row.observationId === null) return null;
         // The id is real whether or not this app can resolve where it leads,
