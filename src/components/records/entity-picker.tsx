@@ -1,11 +1,13 @@
 "use client";
 
-import { useId, useReducer, useRef, useState } from "react";
+import { useEffect, useId, useReducer, useRef, useState } from "react";
 import {
   EditStatus,
   IDLE_EDIT_STATE,
+  armConfirmationClock,
   reduceEdit,
   type EditState,
+  type RetireMove,
   type SaveOutcome,
   type Status,
 } from "@/components/EditableCell";
@@ -183,6 +185,13 @@ export type PickEvent =
   | { kind: "choosing"; edit: number; option: PickerOption }
   /** That choice's write answered. */
   | { kind: "settled"; edit: number; option: PickerOption; outcome: SaveOutcome }
+  /** The confirmation clock ARMED BY `edit` fired — admin-window/BUG-0111. */
+  | { kind: "elapsed"; edit: number }
+  /**
+   * The operator ended `edit` without choosing again — the Escape the open
+   * panel already listens for (campaign admin-window/BUG-0107, this widget).
+   */
+  | { kind: "abandoned"; edit: number; move: RetireMove }
   /** The operator reopened the picker, acknowledging the last statement. */
   | { kind: "cleared" };
 
@@ -203,6 +212,11 @@ export type PickEvent =
  *    never moves the line to the row a stale write happened to carry.
  *  - `cleared` acknowledges a spent confirmation or refusal and says nothing
  *    over a write still running.
+ *  - `elapsed` and `abandoned` are `reduceEdit`'s two retirements, delegated
+ *    whole (campaign admin-window/BUG-0111): a confirmation goes on the app's
+ *    one clock, a refusal goes on none and ends when the operator does, and
+ *    both are checked against the ordinal that owns the statement. Neither
+ *    un-links the row a successful write chose.
  */
 export function reducePick(state: PickState, event: PickEvent): PickState {
   switch (event.kind) {
@@ -224,6 +238,25 @@ export function reducePick(state: PickState, event: PickEvent): PickState {
         ...next,
         chosen: event.outcome.ok ? event.option : state.chosen,
       };
+    }
+    case "elapsed": {
+      // A spent confirmation, and only that: `reduceEdit` re-checks whose
+      // clock this was, so a straggler cannot retire a newer statement and no
+      // clock ever touches a refusal or a write in flight.
+      const next = reduceEdit(state, { kind: "elapsed", edit: event.edit });
+      if (next === state) return state;
+      // The row the write actually linked stays linked: what retires is the
+      // WORD beside the field, never the value it confirmed.
+      return { ...next, chosen: state.chosen };
+    }
+    case "abandoned": {
+      const next = reduceEdit(state, {
+        kind: "abandoned",
+        edit: event.edit,
+        move: event.move,
+      });
+      if (next === state) return state;
+      return { ...next, chosen: state.chosen };
     }
     case "cleared": {
       if (state.status.kind === "idle") return state;
@@ -469,6 +502,22 @@ export function EntityPicker({
   const status = pick.status;
   const chosen = pick.chosen;
 
+  /**
+   * The confirmation's clock — the click-to-edit cell's, not a second one
+   * (campaign admin-window/BUG-0111).
+   *
+   * The picker rendered the same `EditStatus` from the same `Status` and armed
+   * nothing, so a successful override's green word stood until this picker was
+   * reopened while the cell a few rows above retired its own after 1.5s — one
+   * status renderer, two lifetimes. `armConfirmationClock` is the cell's own
+   * arming rule and the one place `CONFIRMATION_MS` is read, so the two
+   * widgets cannot drift; keying the effect on the state OBJECT is what makes
+   * it a function of the STATE rather than of the click handler, so a
+   * confirmation reached by any path retires, and React tears the timeout down
+   * on every real transition and on unmount.
+   */
+  useEffect(() => armConfirmationClock(pick, dispatch), [pick]);
+
   async function choose(optionId: string) {
     // Only a row the read returned may be sent, whatever produced the id.
     const option = optionFor(info.options, optionId);
@@ -539,6 +588,18 @@ export function EntityPicker({
           onKeyDown={(event) => {
             if (event.key !== "Escape") return;
             event.preventDefault();
+            // Escape ends a refusal as well as the panel — the move
+            // `retiresRefusal` already decides for the cell (campaign
+            // admin-window/BUG-0107). It is a no-op on a confirmation (that is
+            // the clock's), on a write still in flight, and on any statement
+            // but the one this choice put on screen. The cell's other two
+            // moves — a press outside, focus landing elsewhere — are page-wide
+            // listeners the picker does not arm.
+            dispatch({
+              kind: "abandoned",
+              edit: pick.edit,
+              move: { kind: "escape" },
+            });
             setOpen(false);
             setQuery("");
           }}
