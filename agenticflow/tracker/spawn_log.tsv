@@ -10770,3 +10770,39 @@
 2026-09-09T01:30:33Z	strategist	TASK-0057	4407	102	34585
 # STRANDED	2026-09-09T01:30:33Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json
 2026-09-09T01:30:33Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:30:44Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json
+2026-09-09T01:30:44Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:30:47Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json
+2026-09-09T01:30:47Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:30:49Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json
+2026-09-09T01:30:49Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:30:55Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json
+2026-09-09T01:30:55Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:30:57Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json
+2026-09-09T01:30:57Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:31:07Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json
+2026-09-09T01:31:07Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:31:15Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json
+2026-09-09T01:31:15Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:31:21Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json
+2026-09-09T01:31:21Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:31:27Z	agent	6 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0078.md, tests/offline/verdict/__qa_probe__.test.ts
+2026-09-09T01:31:27Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:31:29Z	agent	6 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0078.md, tests/offline/verdict/__qa_probe__.test.ts
+2026-09-09T01:31:29Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:31:38Z	agent	6 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0078.md, tests/offline/verdict/__qa_probe__.test.ts
+2026-09-09T01:31:38Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:31:47Z	agent	6 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0078.md, tests/offline/verdict/__qa_probe__.test.ts
+2026-09-09T01:31:47Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:31:53Z	agent	7 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0078.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0037.md
+2026-09-09T01:31:53Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:31:58Z	agent	7 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0078.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0037.md
+2026-09-09T01:31:58Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:32:00Z	agent	7 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0078.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0037.md
+2026-09-09T01:32:00Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:32:02Z	builder	7 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0078.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0037.md
+2026-09-09T01:32:02Z	builder	TASK-0037	22414	931	144337
+# STRANDED	2026-09-09T01:32:04Z	agent	6 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0078.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0037.md
+2026-09-09T01:32:04Z	agent	-	-	-	-
+# STRANDED	2026-09-09T01:32:19Z	agent	7 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0038.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0041.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0078.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0037.md
+2026-09-09T01:32:19Z	agent	-	-	-	-
