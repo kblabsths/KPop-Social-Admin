@@ -563,6 +563,38 @@ describe("the map", () => {
     }
   });
 
+  it("offers no editable field the verdict leaf calls a reference — QA, admin-window/BUG-0091+DEBT-0007", () => {
+    // The batch seam. admin-window/BUG-0091 gave `decisionRefusals` invariant
+    // 6: a FILLED `value` slot on a reference fact is refused
+    // `reference_field_not_scalar`, read off the fact and not off the action —
+    // so it fires for the `override` the record surface's PATCH builds
+    // (`src/app/api/admin/records/[table]/[id]/route.ts`, `overrideField`:
+    // `domain: edit.config.table`, `field: edit.field`, the operator's text in
+    // `value`). Nothing pins the two lists to each other: `editable` is this
+    // map's, `REFERENCE_FIELDS` is the leaf's, and a reference field arriving
+    // in `editable` would give the record page a cell that renders, accepts a
+    // value, and is then refused at the route by an identifier no words are
+    // written for on that surface — a control that cannot work.
+    //
+    // Both directions, so it cannot pass vacuously: no editable field is a
+    // reference, and the reference each config DOES declare is really one the
+    // leaf knows and really absent from `editable`.
+    for (const config of Object.values(EDIT_CONFIG)) {
+      expect(config.editable.length, config.table).toBeGreaterThan(0);
+      for (const field of config.editable) {
+        expect(
+          isReferenceField(config.table, field),
+          `${config.table}.${field} is editable and a reference fact`,
+        ).toBe(false);
+      }
+      const reference = config.reference;
+      if (reference === null) continue;
+      expect(isReferenceField(config.table, reference.registryField)).toBe(true);
+      expect([...config.editable], config.table).not.toContain(reference.registryField);
+      expect([...config.editable], config.table).not.toContain(reference.field);
+    }
+  });
+
   it("maps column to logged field and back, and leaves every scalar alone", () => {
     // admin-window/BUG-0090, both directions and the identity case. The read
     // asks in the log's vocabulary and the surface draws in the schema's, so
