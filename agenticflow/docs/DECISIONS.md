@@ -874,3 +874,138 @@ a seventh nav item (contradicts VISION's enumeration); a Dashboard card (the log
 is a history, not a breakfast figure); no UI at all (contradicts Ben's ruling).
 The door this closes: the sidebar holds exactly six links at the M2 close, and
 FEAT-0013's criteria grade that.
+
+## 2026-09-08 — direct catalog editing is struck: the three regimes, and the door that must stay shut
+
+Ben struck the sentence *"groups/idols edit directly within it"* from the frozen
+VISION on 2026-09-08 (`vision.py amend --strike`, human-only; the inbox note
+carries his words): **"admin edits catalog tables only through the observation
+pipeline; do not re-implement direct edits. groups/idols stay as test tables
+until they are removed."** The strike removes; it licenses nothing new.
+
+What it closes, and how the closure is kept:
+
+- **`pre_cutover` ceases to exist**, as a concept and as an identifier. Two
+  regimes remain: `resolver_owned` (`events`, `venues` — the override path
+  through the gate, ARCHITECTURE §9.2) and `sandbox` (`walk_sandbox` alone,
+  a staging-only fixture table in nobody's domain, which is why the strike does
+  not reach its direct PATCH). After M2 the ONE way a catalog value changes from
+  Admin is the override path.
+- **`groups` and `idols` leave `EDIT_CONFIG` outright** (TASK-0040): no record
+  page, no PATCH branch, no regime of their own. *First drafted this day as a
+  third `read_only` regime that kept their record pages as reads* — SPEC F12's
+  display half names the idol↔group islands, and Ben's note says the tables
+  "stay as test tables" — *and re-ruled against it the same day, on the
+  builder's question.* Three reasons: with no door (Ben, 2026-09-08: no listing,
+  no search) and no write, a record page reachable only by a pasted uuid is a
+  surface no operator can reach; the reference-as-link mechanism is fully
+  carried by `events.venue_id`, which is what acceptance test 8 grades, so F12
+  loses nothing it is measured on; and "stay as test tables" is satisfied by the
+  DATABASE — `lib/db/tables.ts` keeps both names and the residue sweep still
+  reads all their columns. Ben expects to drop both tables soon, and every line
+  kept for them is a line to delete then. Restoring an entry is two objects in
+  one file if he ever wants the page back. **F12's display half is cut, not
+  deferred** — no flag, no scaffold, no link to either table anywhere in `src`.
+- **The teeth are structural, and they are NOT the type.** A `Regime` member
+  does not stop the struck path returning: a catalog table re-added under
+  `sandbox` would be exactly it. The pin lives in
+  `tests/offline/edit/config.test.ts` — **the only table whose write path is
+  `direct` is `walk_sandbox`** — proved on two fixtures, the way every guard in
+  this repo must be (LESSONS 3). ARCHITECTURE §13.8 puts the sentence in every
+  edit-surface brief, and Common violations row 12 carries the class, promoted
+  at count 1 because a human ruling closed it rather than a second instance.
+- **Consequences accepted today, not discovered later.** `tests/live/edit.live.test.ts`
+  writes one field of a `groups`/`idols` row and restores it — that path is gone,
+  so the suite inverts to prove the refusal (TASK-0040) and its write half moves
+  to `walk_sandbox`, which Ben pasted into staging on 2026-09-08 and which
+  builder-118 measured present with rows on 2026-09-09. The interim walk-write
+  exception dies with the path it depended on, ahead of TASK-0037's schedule.
+- **What is NOT decided here**: whether `events`/`venues` may be edited at all is
+  Ben's (`EDIT_ALLOWLIST_EVENTS_VENUES`), and this ruling does not pre-answer it.
+
+Door closed: no direct write to a catalog table from Admin, under any regime
+name, in this campaign or after it. Door left open, deliberately: `walk_sandbox`'s
+direct PATCH, because a staging-only fixture table in nobody's domain is not a
+catalog table — the day it becomes one, or the day a second table joins the
+`sandbox` regime, this paragraph is the one to revisit.
+
+## 2026-09-08 — the walk sandbox's regime is `sandbox`, and the record page's note becomes honest
+
+`walk_sandbox` kept its direct PATCH and lost the name it shared. ARCHITECTURE
+§9.1 item 5 had reused `pre_cutover` on the explicit grounds that `Regime`
+answers one question — which write path — and that the sandbox's answer was
+identical to `groups`/`idols`'; it named the trigger to revisit ("if any code
+starts reading `pre_cutover` to mean 'a catalog table'"). The strike fired that
+trigger: the sandbox's answer is now shared with nothing.
+
+*Rejected*: leaving the identifier alone. It would name a regime whose only
+member is a table that was never pre anything, and it would leave the
+groups/idols write path one word away from being restored by a map edit.
+*Rejected*: dropping the sandbox's write path so the app has two regimes. That
+deletes the only surface a walker may write while `settle_review_item` is
+absent, which is the whole of M2 — Ben granted the table for exactly this.
+*Chosen*: `sandbox`, one word in `config.ts`, one arm in `writePathFor`, and a
+three-way `regimeNote` on the record page. The rename also pays off the one
+inaccuracy §9.1 accepted on purpose: the sandbox's note said a value written
+there goes "to the catalog", which for a staging fixture it never did.
+
+## 2026-09-08 — the two §9 handoff artifacts live in `tracker/for-human/`, as fenced SQL, and nowhere else
+
+The `verdicts` and `settle_review_item` migrations are authored complete in this
+repo. They are NOT `.sql` files. Each is a single fenced `sql` block inside
+`agenticflow/tracker/for-human/M2-handoff-verdicts.md` and
+`…/M2-handoff-settle-review-item.md`, beside its target path in
+`kspace Scraper/supabase/migrations/`, the apply command Ben runs there, and a
+citation table naming, per identifier, the sibling migration that defines it.
+
+*Rejected*: `agenticflow/handoffs/*.sql` or `contracts/handoffs/*.sql`. A file
+with a `.sql` extension in this repo is a migration-shaped object: a glob, a
+`supabase db push` run from the wrong directory, or an agent looking for
+"the migrations" can apply it, and M2 EC10 exists to make that impossible.
+`contracts/` is additionally the human's, which no agent edits.
+*Chosen*: markdown, because (1) `supabase/migrations/` stays at exactly the two
+app-owned files and no `.sql` exists anywhere else in the tree — one check, one
+grep, permanently; (2) it is the shipped precedent Ben already consumes
+(TASK-0031's index and TASK-0034's sandbox DDL were pasted from exactly this
+place); (3) the digest routes `for-human/` notes to him without anyone
+remembering to.
+
+**How they are graded without a database.** No `psql`, no dry-run, no SQL parser
+(a DEP for one file is not proportionate, and SPEC F9 says the bar is a REVIEW
+bar). Three honest instruments instead, and none of them claims the artifact
+"parses": (1) an offline vitest test extracts the one fenced block and asserts
+its structure — the seven columns with their types, nullability, defaults and
+FKs; `enable row level security` present and zero `create policy`; zero
+`json`/`jsonb` columns; the revoke/grant pair; no `commit`, no `dblink`, no
+autonomous-transaction construct; balanced `$$` and `begin`/`end`; and — the
+one that matters most — the `action` CHECK's value set equals `VERDICT_ACTIONS`
+imported from `src/lib/verdict/decision.ts`, which closes SPEC gap 6 by
+construction rather than by two builders remembering. It ships one block it must
+flag and one it must not (LESSONS 3). (2) A stored check resolves each cited
+identifier in the sibling's migrations **by absolute path** — a receipt runs in
+`agenticflow/.worktrees/<name>`, where `../kspace Scraper` resolves inside this
+repo and a relative sibling check is a false RED. (3) Ben's review, which is the
+actual bar (VISION: "complete and reviewed").
+
+## 2026-09-08 — a surface reads the `verdicts` TABLE to know whether it may offer an action
+
+PostgREST cannot introspect a function without calling it, and calling
+`settle_review_item` to find out whether it exists is a write attempt dressed as
+a probe. So every M2 surface that offers a settlement or an override asks one
+question instead — is the `verdicts` table there? — through the single helper
+`readSettlementReadiness` in `src/lib/db/verdict.ts` (one owner; four pages
+hand-copying `StateOf` is common violation 9 and this is the same shape).
+
+It is honest because the two migrations install together and the function's own
+artifact writes the table it depends on: "table present, function absent" is a
+state the handoff cannot produce. If it arrives anyway — Ben applies one file and
+not the other — the attempted call answers `PGRST202`, the data layer classifies
+it `not_provisioned` naming `settle_review_item` (the classifier learns
+`PGRST202` and `42883` in the same change), and the surface draws the same card
+after the click that it would have drawn before it. Both paths are graded and
+neither throws.
+
+Door closed: no `.rpc()` call made for the purpose of discovery, and no
+"pending overrides" queue, retry buffer, or flag-guarded direct write standing in
+for the absent function — spec §10's one forbidden move, which this campaign
+treats as its brightest line.

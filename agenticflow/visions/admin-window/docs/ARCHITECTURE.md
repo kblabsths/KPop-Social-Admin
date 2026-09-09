@@ -596,7 +596,11 @@ it**, everything else derives.
 
 ```ts
 // src/lib/edit/config.ts — the ONLY place a table becomes editable
-export type Regime = "pre_cutover" | "resolver_owned";
+export type Regime = "sandbox" | "resolver_owned";
+export type WritePath = "direct" | "override";
+// The regime DECIDES the write path. Total over Regime: a table Admin may not
+// write is not in the map at all, so there is no "no path" arm to fall into.
+export function writePathFor(regime: Regime): WritePath;
 export interface ReferenceColumn {
   readonly field: string;          // the `display` column holding the linked row's id
   readonly domain: string;         // the table it points at, as the map keys it: /records/<domain>/<id>
@@ -612,9 +616,42 @@ export interface TableEditConfig {
 export const EDIT_CONFIG: Readonly<Record<string, TableEditConfig>>;
 ```
 
-- **M1 builds the `pre_cutover` write path only**: `groups` and `idols` edit
-  **directly**, within their allowlist — legal and unprovenanced (spec §8,
-  AGENTS.md data-ownership rule).
+- **TWO REGIMES, and no map entry for a table Admin may not write** (Ben's
+  ruling, 2026-09-08, recorded in DECISIONS.md; it struck VISION's
+  "groups/idols edit directly within it" with the instruction *"admin edits
+  catalog tables only through the observation pipeline; do not re-implement
+  direct edits"*, and ruled the same day that groups/idols get **no door** —
+  no listing, no search, no entry point — and that he expects to drop both
+  tables soon). `pre_cutover` is **gone as a concept and as an identifier**:
+  - **`resolver_owned`** — `events`, `venues`. `writePathFor` → `"override"`:
+    the edit lands as an admin-tier observation through the gate, applied
+    through `apply_resolution`, stamped `admin_locked`, logged in `verdicts` as
+    `action = 'override'` with a null `review_item_id` (§9.2). **This is the
+    only path by which a catalog value changes from Admin, ever.**
+  - **`sandbox`** — `walk_sandbox` alone. `writePathFor` → `"direct"`: a direct
+    PATCH within the allowlist, on a staging-only fixture table that is **not a
+    catalog table and belongs to no ecosystem domain**, which is why the strike
+    does not reach it (§9.1 item 5). It is the app's only direct write, and the
+    only writable surface at all until Ben installs `settle_review_item`.
+  - **`groups` and `idols` are not in the map at all.** `editConfigFor` returns
+    null for them, `/records/groups/<uuid>` is a routed 404, and a PATCH is
+    refused `unknown_table`. *Considered and rejected 2026-09-08*: a third
+    `read_only` regime keeping their record pages as reads, on the grounds that
+    SPEC F12's display half names the idol↔group islands and Ben's note says
+    they "stay as test tables". It loses on three counts — with no door and no
+    write, a record page reachable only by a pasted uuid is a surface no
+    operator can reach; the reference-as-link mechanism is fully carried by
+    `events.venue_id`, which is what acceptance test 8 grades; and "stay as test
+    tables" is satisfied by the DATABASE, since `lib/db/tables.ts` keeps both
+    names and the residue sweep still reads them. Restoring an entry is two
+    objects in one file if Ben ever wants the page back.
+  **Where the teeth are, now that the type no longer carries them**: a `Regime`
+  member is not what stops the struck path returning — a catalog table re-added
+  under `sandbox` would be exactly it. The pin is structural and lives in
+  `tests/offline/edit/config.test.ts`: **the only table whose write path is
+  `direct` is `walk_sandbox`**, proved on two fixtures (a probe entry it must
+  flag, the shipped map it must not). A ticket that re-adds a catalog table with
+  a direct path is re-implementing what was struck; refuse it and cite this line.
 - **`display` is the read-only half of the same one map** (Ben's ruling,
   2026-09-02, admin-window/TASK-0029). A `resolver_owned` table has an empty
   `editable` and a non-empty `display`, so its record page shows the columns an
@@ -636,10 +673,13 @@ export const EDIT_CONFIG: Readonly<Record<string, TableEditConfig>>;
   carries `null`. Where the linked table's NAME is read from is deliberately
   not in the map: that is a relation name, and §4 rule 4 leaves
   `lib/db/tables.ts` the only file in `src/` that spells one.
-- `events` and `venues` appear with `regime: "resolver_owned"` and render
-  **read-only**. **No write path to them exists in M1** — no PATCH branch, no
-  helper, no scaffold. Their override path is M2's, through
-  `settle_review_item`, and building toward it now is out of scope.
+- `events` and `venues` carry `regime: "resolver_owned"`. In **M1** they
+  rendered read-only with an empty `editable` and no write path of any kind. In
+  **M2** they gain an `editable` set — **Ben's answer, never a builder's pick**
+  (SPEC named gap 7; the ASK carries the candidate list) — and that set is
+  written through §9.2's override path and through nothing else. Every column
+  of them still refuses through the one code path when it is absent from the
+  map, and no `.update()` on either table exists anywhere in `src/`.
 - **A column absent from `editable` is refused server-side**, by the route,
   with the row unchanged — hiding the widget is not the refusal (acceptance
   test 7). The route reads the same `EDIT_CONFIG`; there is no second
@@ -742,7 +782,26 @@ It DELETEs every row and re-INSERTs a checked-in fixture — PostgREST cannot
   of the guard). Measured on this tree 2026-09-03: `tsc --noEmit` 0,
   `npm run lint` 0, `npm run build` green, and Next does not rewrite the flag.
 
-**5. Its `Regime` is `pre_cutover`, reused on purpose.** `Regime` answers one
+**5. Its `Regime` is `sandbox` — re-ruled 2026-09-08, and the door this
+paragraph left open is the one that opened.** The original ruling (kept below,
+because its reasoning is why the new name is a rename and not a third code
+path) reused `pre_cutover` on the grounds that `Regime` answers one question —
+which WRITE PATH — and the sandbox's answer was identical to `groups`/`idols`'.
+Ben's strike of 2026-09-08 ends that: `groups`/`idols` leave the map entirely,
+so the sandbox's answer is shared with nothing, and the identifier
+`pre_cutover` would name a regime whose only member is a table that was never
+pre anything. The trigger this paragraph named — *"if a second non-catalog
+table ever enters the map, or if any code starts reading `pre_cutover` to mean
+'a catalog table', the third regime is earned then"* — is exactly what fired.
+The rename costs one word in `config.ts`, one arm in `writePathFor`, and the
+`regimeNote` ternary on the record page, which is now **three-way and honest**:
+the sandbox's note says a value written here goes to a staging fixture, not "to
+the catalog" — the one inaccuracy this section had been carrying on purpose is
+paid off by the same edit. The direct PATCH itself is unchanged, and it is
+UNTOUCHED by the strike because a fixture table in nobody's domain is not a
+catalog table. The original ruling, for its reasoning:
+
+**5a. (superseded 2026-09-08) Its `Regime` was `pre_cutover`, reused on purpose.** `Regime` answers one
 question — which WRITE PATH — and the sandbox's answer is identical to
 `groups`/`idols`': a direct PATCH within the map's `editable` allowlist,
 unprovenanced. A third member would be a second answer to a question the type
@@ -817,6 +876,94 @@ absence code, read with the existing `codeOf` / `objectIsAbsent` idiom
 An absent table is not a residue finding, and it is not a pass it can hide in
 either: the scanned-column floor still has to be met by the tables that ARE
 there.
+
+### 9.2 The override path — how a catalog value changes from Admin after M2
+
+*(Written 2026-09-08 at the M2 decomposition, from spec §7/§8,
+`contracts/resolver.md`, and the sibling's INSTALLED migrations read the same
+day. Every ticket that writes a catalog value carries this subsection.)*
+
+**One entry point, and the app holds exactly one call to it.**
+`settle_review_item(p_decision jsonb)` — a jsonb ARGUMENT, following the two
+shipped idioms in the sibling (`apply_resolution(p_decisions jsonb)`,
+`ingest_observations(p_batch jsonb)`, whose own migration comment records that
+"the ban is on jsonb COLUMNS, and a batch argument is not a column"). The app's
+one call site is `settleReviewItem` in `src/lib/db/verdict.ts`; a second `.rpc(`
+anywhere in `src/` is a defect, pinned by
+`tests/offline/edit/config.test.ts` and `tests/offline/review/one-place.test.ts`.
+
+**The decision envelope is a pure leaf**, `src/lib/verdict/decision.ts`
+(ARCHITECTURE §4 rule 7: it imports nothing). It is the SAME shape the §9
+handoff artifact's SQL reads, and the handoff's own offline test imports
+`VERDICT_ACTIONS` from it and asserts the artifact's `action` CHECK equals it —
+so SPEC named gap 6 ("the shape F9 authors is the shape F10 calls") is closed
+by a test rather than by two builders remembering.
+
+The eight action names, ruled here because no contract spells them and two
+builders may not each invent one — snake_case, rendered verbatim in mono (§11):
+`choose_claimed_value`, `supply_value`, `keep_current` (the `data_conflict`
+three), `link_entity`, `settle` (the `entity_link` fact two), `fixed`,
+`wont_fix` (the signal dispositions), `override` (item-less, from the record
+surface). A disagreement Ben finds at install is a patch, never a silent
+Admin-side adaptation (SPEC F9).
+
+**What the envelope may NOT carry, because the database already knows it:**
+
+- **No `schema_version`.** The gate validates a claim against
+  `domain_schema(domain, version)`, whose content is the scraper's registry
+  compiled into SQL. A version number in Admin is scraper registry knowledge
+  re-encoded by hand — spec §10's "flagged gap, not a silent copy". The
+  FUNCTION resolves the domain's current version; Admin never names one.
+- **No source name, no tier, no `rejected_by`.** All three belong to the
+  function's own branches.
+- **No canonical column name.** The registry's field names ARE the canonical
+  column names (the sibling's own words: "`column` defaults to `field`, because
+  the registry gives a domain's fields the canonical columns' own names"), with
+  exactly one exception: `events.venue` is the registry field, `events.venue_id`
+  the column it produces — which is what makes it a **reference** and F12's
+  picker rather than a cell.
+
+**Two facts of the installed schema that decide the shape of the override**
+(read 2026-09-08 from `kspace Scraper/supabase/migrations/`, and any change
+here is a re-read, not a guess):
+
+1. **The gate refuses an unregistered source** (`ingest_observation`, KS007:
+   "source \"%\" is not registered"). An admin-tier observation therefore needs
+   a `sources` row whose tier is `admin` — `source_tier` already has the value.
+   **Whether that row exists on staging, and what it is called, is Ben's**: it
+   is a registry fact owned by the scraper repo, so it is an ASK, and the
+   function's value-carrying branches cannot be authored without it.
+2. **A reference is observed as a ref, not as an id.** Events v3 declares
+   `venue` as `{"ref": "<the source's own id for the venue>"}`, and the link
+   stage resolves `(source, 'venues', external_ref)` through
+   `confirmed_matches` into `venue_id`. `confirmed_matches.matched_by` already
+   admits `'verdict'`. So a picker's choice lands as **the observation plus its
+   confirmed match** — which is exactly what spec §8 says, and it is authorable
+   against what is installed.
+
+**How a surface knows the path is open.** PostgREST cannot introspect a
+function without calling it, so nothing may probe `settle_review_item` by
+calling it. **Ruled: a surface reads the presence of the `verdicts` TABLE**
+(`readSettlementReadiness` in `lib/db/verdict.ts`, one owner, one helper — never
+hand-copied per page, common violation 9). Absent, it renders
+`data-state="not_provisioned"` naming `verdicts` and offers no control. The two
+migrations install together and the function's own artifact writes the table it
+depends on, so "table present, function absent" is a state the handoff cannot
+produce — and if it arrives anyway, the attempted call returns
+`not_provisioned` naming `settle_review_item` and the same card is drawn after
+the click instead of before it. Both paths are graded; neither throws.
+
+**`not_provisioned` learns the absent FUNCTION** (§4.1's classifier): PostgREST
+answers a missing function with `PGRST202`, and Postgres with `42883`. Both
+join `PGRST205` / `PGRST204` / `42P01` / `42703` in the one helper, and `missing`
+carries the function's name.
+
+**What must never be built** (spec §10's one forbidden move, and it is the
+sentence the whole milestone hangs on): **no Admin-side workaround for the
+absent function.** Not a queued write, not a "pending overrides" table, not a
+direct `.update()` behind a flag, not a second write path "until Ben installs
+it". The surface degrades to read-only with the reason named, which is what M1
+already ships.
 
 ## 10. Tests
 
@@ -961,9 +1108,32 @@ Each carries a marker. **A question is closed only when its marker leaves this
 list** — that is the structural bar its ASK ticket checks, and the architect is
 the only one who removes a marker.
 
-**No question is open.** The list is empty as of 2026-09-03, and an empty list
-is a state this section is allowed to be in — it is not an invitation to
-invent one, and a new silence is a new blocked ASK ticket with its own marker.
+**Two questions are open, both filed 2026-09-08 at the M2 decomposition.**
+Neither may be resolved by choosing; each is a blocked ticket for Ben, and each
+is closed only when the architect removes its marker from this list.
+
+- **`EDIT_ALLOWLIST_EVENTS_VENUES`** — *which columns of `events` and `venues`
+  are editable at all* (SPEC named gap 7). Spec §8 says the map is hand-written
+  and says no more. What the M2 decomposition ADDED to the question, so Ben
+  answers a closed list rather than an open one: the gate validates every claim
+  against the registry, so an editable column must be **declared in the
+  registry** as well as being a vetted scalar of the table. Read 2026-09-08
+  from the sibling's `domain_schema` (events v3, venues v2), the candidates are
+  exactly — events: `title`, `event_type`, `status`, `starts_at`, `ends_at`,
+  `time_precision`, `description`, `poster_url`, `ticket_url`; venues: `name`,
+  `address`, `city`, `country`, `latitude`, `longitude`, `timezone`, `website`,
+  `image_url`. Anything outside those two lists is refused by the gate before
+  it is refused by taste. `venue` is the reference (§9.2), never a cell.
+- **`ADMIN_SOURCE_IDENTITY`** — *which registered `sources` row is the admin
+  voice, and does it exist on staging?* The gate refuses an unregistered source
+  (KS007), so a value-carrying verdict and every override need one; the row and
+  its registry entry are the scraper repo's, which makes creating one a handoff
+  and naming one a question. `source_tier` already carries `'admin'`; nothing
+  else about the row is knowable from here.
+
+An empty list is a state this section is allowed to be in, and a full one is not
+an invitation to invent a third: a new silence is a new blocked ASK ticket with
+its own marker.
 
 **The sixth question — the claims-cost one — was settled 2026-09-03**, and its
 marker left this list for that reason (it is not spelled here: the ticket's
@@ -1043,6 +1213,22 @@ of bugs would not have survived it.)*
    Builders work in isolated worktrees and cannot see each other's code, so a
    helper nobody seeded becomes N hand-copies that drift (common violation 9:
    `StateOf` stands in four pages byte-for-byte, including its comment).
+8. **A ticket that touches the edit surface carries the no-direct-catalog-write
+   line, verbatim** (Ben's ruling, 2026-09-08; §9's three-regime bullet;
+   DECISIONS 2026-09-08): *after M2 the only path by which a catalog value
+   changes from Admin is the override path through the gate; the struck direct
+   path is never re-implemented, under any name.* A ticket whose work would
+   re-add a catalog table to `EDIT_CONFIG` under the `sandbox` regime, give a
+   `resolver_owned` table a direct write, or route a catalog write around
+   `settle_review_item` is wrong on its face, and the builder says so instead of
+   building it. The one pin that catches it: the only table whose write path is
+   `direct` is `walk_sandbox`.
+9. **Consolidation-shaped M2 work is chained at its DESTINATION, not at its
+   source.** `src/lib/edit/config.ts`, `tests/offline/edit/config.test.ts`,
+   `src/app/queues/[reviewItemId]/page.tsx` and `src/lib/db/verdict.ts` are each
+   written by several M2 features; every ticket that lands in one of them
+   depends on the previous one that does, because worktrees isolate builds and
+   not landings.
 
 ## Common violations
 
@@ -1067,6 +1253,8 @@ decomposition brief of every ticket touching that surface.
 | 10 | **A page's presentation living in `app/` because it has no component module** | 2 | `src/app/cycles/page.tsx` is 1,291 lines with 8 local components; `src/app/sources/page.tsx` is 793 with 6. Every other page has a `src/components/<page>/` directory and its page is 85–300 code lines | **Promoted to a rule 2026-09-03** — §13.6: a new page ships with its own `src/components/<page>/` module. §5's division (page reads and shapes, components render) was never wrong; nothing said where the components go, so two pages grew them inline. DEBT-0004 extracts the existing two. |
 | 11 | **A window line that disagrees with its own read — stated over a read that never happened, or dropped on a read that happened and found nothing** | 3 | BUG-0063 (`/claims` published `data-window-held="0"` over a refused read); BUG-0067 (`/cycles`, the same shape on two hooks); BUG-0070 (`/claims` drops the whole line on an ok-but-empty read, where six other hooks on two routes keep theirs — measured 2026-09-04) | **Promoted to a rule 2026-09-04** — §4.3: a window line states a read that happened, and an empty window is still a window. The first two were fixed one surface at a time and pinned only in their own page suites, which is how the third arrived under a test whose docstring claims to grade the rule; BUG-0070 generalises `tests/offline/absence/pages.test.ts` so the next surface inherits the rule rather than a comment about it. Cited in the brief of every ticket that renders a windowed surface. |
 
+| 12 | **A direct catalog write path from Admin** — the shape Ben struck from VISION on 2026-09-08 | 1 | The M1 `pre_cutover` regime: `groups`/`idols` PATCHed their own rows through `updateRecordField`. It was legal when it shipped (spec §8, AGENTS.md) and it is not legal now | **Standing rule from the day it was filed, not from a second instance** — the class is closed by a human ruling rather than by a count, so it is promoted at 1: §9's three-regime bullet and §13.8. Cited in the decomposition brief of every ticket touching `src/lib/edit/config.ts`, the PATCH route, or `src/components/records/**`. The teeth are structural and live in `tests/offline/edit/config.test.ts`: the only table whose write path is `direct` is `walk_sandbox`, so a catalog table re-added with a direct path reddens on two fixtures |
+
 | 3 (re-count) | A list read with no `.range()`, no `.limit()` and no `.order()` | **0 new** | — | **The rule held.** M1 structure walk, 2026-09-03: every `.select(` in `src/lib/db/**` was traced. Fourteen chains a crude scan flagged are all either `.maybeSingle()` by primary key or by-id chunks bounded with `.limit(ids.length)`; every list read goes through `readComplete` / `readRows` with a total order and a bound. Count stays 1 (the original, fixed under TASK-0026). |
 
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
@@ -1077,6 +1265,32 @@ this table from here.)*
 
 ## History
 
+- **2026-09-08, M2 decomposition (architect).** Three amendments, all traceable
+  to one human ruling and one read of the sibling's installed schema.
+  (1) **§9's regimes are now `sandbox` / `resolver_owned`**, and `pre_cutover`
+  is gone as an identifier and as a concept — Ben struck VISION's "groups/idols
+  edit directly within it" on 2026-09-08 with the instruction not to
+  re-implement it. `groups`/`idols` leave the map outright (first drafted this
+  day as a third `read_only` regime; re-ruled the same day against it — with no
+  door and no write, a uuid-only record page is a surface nobody can reach, and
+  the reference-as-link mechanism stands on `events.venue_id`), so the teeth
+  move from the type to a structural pin: the only table whose write path is
+  `direct` is `walk_sandbox`;
+  `walk_sandbox` becomes `sandbox`, which is the door §9.1 item 5 explicitly
+  left open and which also pays off the "goes to the catalog" inaccuracy that
+  section was carrying. (2) **§9.2 is new**: the override path, the eight action
+  names (ruled here because no contract spells them and two builders may not
+  each invent one), the decision envelope as a pure leaf, what the envelope may
+  NOT carry because the database already knows it, the two installed-schema
+  facts that decide the override's shape (the gate's KS007 source refusal; a
+  reference is observed as a `ref` and resolved through `confirmed_matches`),
+  and the ruling that a surface reads the presence of the `verdicts` TABLE
+  rather than probing a function PostgREST cannot introspect. (3) **§12 is no
+  longer empty**: `EDIT_ALLOWLIST_EVENTS_VENUES` and `ADMIN_SOURCE_IDENTITY`,
+  both blocked for Ben, the first now framed as a closed candidate list read
+  from the registry rather than an open invitation. Common violations gains row
+  12, promoted at count 1 because a human ruling closed the class, and §13 gains
+  rules 8 and 9.
 - **2026-09-04, key-shape ruling + residual pass (architect).**
   **§9.1 item 9 (new)** — the walk sandbox is uuid-keyed. Text keys made
   `isRecordId`'s stated premise false and left both of the sandbox's required
