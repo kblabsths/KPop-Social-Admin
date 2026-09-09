@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { listReviewItems, readReviewAttention } from "@/lib/db/review-items";
+import {
+  listReviewItems,
+  readReviewAttention,
+  readReviewQueues,
+} from "@/lib/db/review-items";
 import {
   SHAPES,
   kindOfItem,
@@ -450,6 +454,97 @@ describe("readReviewAttention over the edge population (QA attack)", () => {
   it("reports no attention rather than throwing when the read is refused", async () => {
     const stub = stubClient({ [T.reviewItems]: { error: permissionDenied(T.reviewItems) } });
     const result = await readReviewAttention(stub.asSupabaseClient());
+    expect(result.kind).toBe("error");
+  });
+});
+
+describe("readReviewQueues", () => {
+  /**
+   * The Queues page's read (campaign admin-window/BUG-0133): the filtered rows
+   * AND each kind's whole-table count, so a block can tell "my queue is empty"
+   * from "the filter matched nothing". The stub answers every read of a table
+   * with the same script whatever the chain built, so the population here is
+   * the population `selectItems` finds in the scripted rows.
+   */
+  it("returns the filtered rows beside BOTH kinds' whole-table counts", async () => {
+    const rows = population();
+    const stub = withRows(rows);
+    const result = await readReviewQueues({ kind: "signal" }, stub.asSupabaseClient());
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    // the rows are the filtered ones...
+    expect(ids(result.data.items)).toEqual(
+      ids(queueOrder(rows.filter((row) => kindOfItem(row) === "signal"))),
+    );
+    // ...and the population is NOT: it counts every row of each kind, settled
+    // ones included, which is the set the bare `/queues` renders.
+    expect(result.data.population).toEqual({
+      decision: rows.filter((row) => kindOfItem(row) === "decision").length,
+      signal: rows.filter((row) => kindOfItem(row) === "signal").length,
+    });
+    expect(result.data.population.decision).toBeGreaterThan(0);
+  });
+
+  it("counts a kind the filter emptied as the rows it really holds", async () => {
+    // The seam the defect lived in: the filtered read cannot see the rows the
+    // facet removed, so a decision block reading only its own result cannot
+    // tell this state from an empty table.
+    const rows = population();
+    const stub = withRows(rows);
+    const result = await readReviewQueues({ kind: "signal" }, stub.asSupabaseClient());
+
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+    expect(result.data.items.filter((row) => kindOfItem(row) === "decision")).toEqual([]);
+    expect(result.data.population.decision).toBe(
+      rows.filter((row) => kindOfItem(row) === "decision").length,
+    );
+  });
+
+  it("reports a real zero for a kind the TABLE holds none of", async () => {
+    const signals = population().filter((row) => kindOfItem(row) === "signal");
+    const stub = withRows(signals);
+    const result = await readReviewQueues({ status: "open" }, stub.asSupabaseClient());
+
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+    expect(result.data.population.decision).toBe(0);
+    expect(result.data.population.signal).toBe(signals.length);
+  });
+
+  it("reads ONCE when the URL narrows nothing, and is its own population", async () => {
+    // The bare `/queues` must not pay for a second read: the unfiltered result
+    // already IS the whole table.
+    const rows = population();
+    const stub = withRows(rows);
+    const result = await readReviewQueues({}, stub.asSupabaseClient());
+
+    expect(stub.tablesRead().filter((table) => table === T.reviewItems)).toHaveLength(1);
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+    expect(result.data.population.decision + result.data.population.signal).toBe(
+      rows.length,
+    );
+  });
+
+  it("refuses whole rather than reporting a population the database never gave", async () => {
+    // Both legs are the same table and the same query; a refusal on either is
+    // the page's refusal. A count the app substituted would be exactly the
+    // figure LOOK_AND_FEEL state 3 forbids.
+    for (const [name, script] of [
+      ["absent", tableNotInSchemaCache(T.reviewItems)],
+      ["refused", permissionDenied(T.reviewItems)],
+    ] as const) {
+      const stub = stubClient({ [T.reviewItems]: { error: script } });
+      const result = await readReviewQueues({ kind: "signal" }, stub.asSupabaseClient());
+      expect(result.kind, name).not.toBe("ok");
+      expect(result, name).not.toHaveProperty("data.population");
+    }
+  });
+
+  it("refuses a truncated read rather than counting a population it did not see", async () => {
+    const stub = stubClient({
+      [T.reviewItems]: { data: reviewItemEdgePopulation(), count: ROW_CAP + 40 },
+    });
+    const result = await readReviewQueues({ kind: "signal" }, stub.asSupabaseClient());
     expect(result.kind).toBe("error");
   });
 });
