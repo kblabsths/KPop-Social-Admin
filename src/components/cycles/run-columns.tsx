@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Badge, type Column } from "@/components/ui";
 import { CLAMP_LIMIT, clamped, count, isAbsent, relativeAge } from "@/lib/format";
+import { runAnchorFor } from "./links";
 import { OUTCOME_BADGE_TONE, outcomeTone } from "./outcome";
 import type { RunColumnName, RunCountName, RunTableRow } from "./rows";
 
@@ -43,6 +44,7 @@ export type RunRole = "window" | "lead";
 function runCells(
   now: string,
   role: RunRole,
+  asked: string | undefined,
 ): Record<RunColumnName, (row: RunTableRow) => ReactNode> {
   const lead = role === "lead";
   return {
@@ -59,11 +61,22 @@ function runCells(
       // this page (`tests/offline/runs/`, `tests/live/runs.live.test.ts`), and
       // a repeated row answering to the same hook would double the window
       // those readers see (campaign admin-window/BUG-0040).
+      //
+      // It is also the WINDOW row that carries the anchor a `?run=<run_id>`
+      // link lands on and, when this is the run the URL asked for, the
+      // accessible marking of it (campaign admin-window/BUG-0142). The lead
+      // carries neither: it is this row repeated, so an id on both would put
+      // two elements on one anchor and `aria-current` on two rows for one
+      // asked-for run. The DRAWN mark is the row's, from `DataTable`'s
+      // `marked`; the same predicate decides both, so the mark the operator
+      // sees and the one a screen reader hears can never name different rows.
       <span
+        id={lead ? undefined : runAnchorFor(row.run_id)}
         data-run={lead ? undefined : row.run_id}
         data-run-source={lead ? undefined : row.source}
         data-latest-run={lead ? row.run_id : undefined}
         data-latest-run-source={lead ? row.source : undefined}
+        aria-current={!lead && row.run_id === asked ? "true" : undefined}
         className="type-data text-ink"
       >
         {row.source}
@@ -237,6 +250,7 @@ export function runColumns({
   role,
   columns,
   counts,
+  asked,
 }: {
   now: string;
   role: RunRole;
@@ -244,8 +258,16 @@ export function runColumns({
   columns: readonly RunColumnName[];
   /** Which of them are figures, and so right-aligned (`RUN_COUNTS`). */
   counts: readonly RunCountName[];
+  /**
+   * The run a `?run=<run_id>` URL asked for, in the database's own spelling,
+   * or undefined for none (campaign admin-window/BUG-0142). It is compared to
+   * a row's key by `===`, so it is canonicalised at the edge where it is
+   * derived from the request — `canonicalRecordId` in `src/app/cycles/page.tsx`
+   * — and never here: a component reaches no `lib/db` module.
+   */
+  asked?: string;
 }): Column<RunTableRow>[] {
-  const cells = runCells(now, role);
+  const cells = runCells(now, role, asked);
   const rightAligned: ReadonlySet<string> = new Set(counts);
   return columns.map((column) => ({
     key: column,

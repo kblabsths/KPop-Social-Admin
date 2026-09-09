@@ -15,6 +15,7 @@ import {
 } from "@/components/cycles";
 import {
   DataTable,
+  DroppedParamsLine,
   Empty,
   Page,
   Section,
@@ -29,6 +30,7 @@ import {
   readCycles,
   type ResolutionRunRow,
 } from "@/lib/db/cycles";
+import { canonicalRecordId } from "@/lib/db/records";
 import type { DbUnavailable } from "@/lib/db/result";
 import {
   RUNS_OBJECT,
@@ -39,6 +41,7 @@ import {
   readRuns,
 } from "@/lib/db/runs";
 import { duration } from "@/lib/format";
+import { droppedParams } from "@/lib/url/dropped-params";
 import { CYCLE_OUTCOME_KEYS, readCycleHealth } from "@/lib/gauges/cycle-health";
 import { RESOLVER_CADENCE_SECONDS, secondsBetween } from "@/lib/gauges/gauge";
 import { readResolutionLatency } from "@/lib/gauges/resolution-latency";
@@ -111,13 +114,32 @@ export const dynamic = "force-dynamic";
  * The facet this page consumes: the Dashboard links a cycle line to
  * `/cycles?cycle=<run_id>` (`lineHref` in `src/app/page.tsx`), so the URL
  * names the row the operator came to read and this page marks it.
- *
- * One more parameter reaches this route today and narrows NOTHING here:
- * `run=<run_id>` (the Dashboard's run lines). It is not guessed at — an
- * unrecognised parameter narrows nothing rather than erroring, so the link
- * lands on this page rather than dead-ending.
  */
 const CYCLE_FACET = "cycle";
+
+/**
+ * The Dashboard's OTHER line: a run row links to `/cycles?run=<run_id>` (the
+ * same `lineHref`, with this parameter), and the ADAPTER RUNS half below marks
+ * that row and names it (campaign admin-window/BUG-0142).
+ *
+ * It was consumed in SILENCE until then — the id appeared nowhere on the page
+ * it landed on, no row was marked, and the operator had a window of up to 200
+ * runs to guess in (walked 2026-09-09). Landing on the page rather than
+ * dead-ending was the right half of that; saying nothing was not, and this
+ * page's own `?source=` had recorded the opposite standard for the identical
+ * situation since admin-window/TASK-0016.
+ *
+ * The value is CANONICALISED here, at the edge where it is derived from the
+ * request (`canonicalRecordId`, `lib/db/records.ts` — the app's one uuid
+ * grammar, admin-window/BUG-0139/BUG-0140). Postgres compares a uuid by value
+ * and JavaScript compares it by string, and the mark is a string compare
+ * against the row's key, so an uppercased or unhyphenated spelling of a real
+ * run id marks the row it names rather than nothing at all. A value that is
+ * not a run id AT ALL canonicalises to null, marks nothing, and is named by
+ * the dropped-parameter line at the top of the page — the same answer
+ * `/queues` gives a `?source_id=` that is not an id (admin-window/BUG-0141).
+ */
+const RUN_FACET = "run";
 
 /**
  * The Sources page links each source to `/cycles?source=<name>`, and that
@@ -177,6 +199,10 @@ export default async function CyclesPage({
   // A `?source=` carrying nothing narrows nothing and earns no sentence: it is
   // half a typed URL, not a request for the runs of the empty name.
   const askedSource = narrowedTo(firstValue(params[SOURCE_FACET])) ?? undefined;
+  // The run the Dashboard's run line named, in the database's own spelling, or
+  // null when the URL carried none and when what it carried is not a run id.
+  const askedRun = firstValue(params[RUN_FACET]);
+  const markedRun = askedRun === undefined ? null : canonicalRecordId(askedRun);
 
   // One clock for the whole render: every age on the page, and the
   // running-or-died reading of every row, is measured against the same
@@ -213,6 +239,30 @@ export default async function CyclesPage({
 
   return (
     <Page title="Cycles & runs">
+      {/* What the URL asked for that this page did not do — the one sentence
+          `/claims` and `/queues` already render, from the same code
+          (admin-window/BUG-0141; ARCHITECTURE.md common violations row 9). It
+          is a fact of the URL and not of any read, so it stands above every
+          section and renders the same over an `ok` read, a refusal and a table
+          that is not there.
+
+          The three facets this page applies are handed in as the APPLIED
+          narrowing, so each is named here exactly when the page did NOT act on
+          it: a `?run=` that is not a run id, a `?source=` carrying only blanks.
+          This route has no tab and no word it may not render, so nothing is
+          consumed elsewhere and nothing is withheld by name. */}
+      <DroppedParamsLine
+        dropped={droppedParams(
+          params,
+          {
+            [CYCLE_FACET]: askedFor,
+            [SOURCE_FACET]: askedSource,
+            [RUN_FACET]: markedRun ?? undefined,
+          },
+          [],
+          [],
+        )}
+      />
       {/* The newest run leads the page, because bar 1 asks for it above the
           fold and the cycles window below is up to 200 rows tall
           (admin-window/BUG-0040). It is the first row of that same window,
@@ -316,6 +366,7 @@ export default async function CyclesPage({
           runs={runs}
           now={now}
           source={askedSource}
+          run={markedRun ?? undefined}
           limit={RUN_WINDOW}
           over={RUNS_OBJECT}
           columns={RUN_COLUMNS}

@@ -9,6 +9,8 @@ import {
   WindowLine,
   oldestIn,
 } from "@/components/ui";
+import { count } from "@/lib/format";
+import { IN_PAGE_LINK, runAnchorFor } from "./links";
 import { RUNS_WINDOW } from "./surfaces";
 import { runColumns } from "./run-columns";
 import type { ReadOf, RunColumnName, RunCountName, RunTableRow, RunsWindow } from "./rows";
@@ -100,6 +102,111 @@ function AskedSource({ source }: { source: string }) {
 }
 
 /**
+ * What this page knows about the run a `?run=<run_id>` link asked for — three
+ * states, the same three `AskedCycle` has, for the same reason
+ * (admin-window/BUG-0023: a read that returned no window is not evidence of
+ * absence).
+ *
+ * Decided HERE rather than in the page, because this half already holds the
+ * read that answers it: the window's rows, the cap they came under, and the
+ * source the query was narrowed to are one fact of one read, and a second
+ * derivation in the page could disagree with the table beneath the sentence
+ * (LESSONS 11).
+ */
+type AskedRunState =
+  | { kind: "found" }
+  | { kind: "absent" }
+  /** No window was read at all; `reading` is the object whose read said so. */
+  | { kind: "unchecked"; reading: string };
+
+function askedRunState(runs: ReadOf<RunsWindow>, run: string): AskedRunState {
+  if (runs.kind === "not_provisioned") return { kind: "unchecked", reading: runs.missing };
+  if (runs.kind === "error") return { kind: "unchecked", reading: runs.reading };
+  return runs.data.rows.some((row) => row.run_id === run)
+    ? { kind: "found" }
+    : { kind: "absent" };
+}
+
+/**
+ * The one sentence `?run=<run_id>` earns — the Dashboard's run lines land here
+ * (campaign admin-window/BUG-0142).
+ *
+ * Until this landed the parameter was consumed in silence: the run an operator
+ * had just clicked was named nowhere on the page it arrived at, no row was
+ * marked, and with a window of up to 200 runs there was nothing to scan for
+ * (walked 2026-09-09). The page's own `?cycle=` had answered the identical
+ * question since admin-window/BUG-0054, so this is that answer applied to the
+ * other half, not a new device.
+ *
+ * **The absent sentence claims only the scope its read had** (LESSONS 2). Under
+ * `?source=<name>` the window below holds one source's runs, so a run that is
+ * not in it may still be a run of another source that this page renders
+ * without the facet — and the line says the third possibility out loud rather
+ * than telling the operator the id belongs to no run at all. The scope comes
+ * from the READ (`RunsWindow.source`), never from the `?source=` the URL
+ * carried, for the reason `runsScope` above gives.
+ */
+function AskedRun({
+  run,
+  state,
+  limit,
+  scope,
+}: {
+  /** The id the URL asked for, in the database's own spelling. */
+  run: string;
+  state: AskedRunState;
+  /** The window's row cap — what "not among the N newest runs" counts. */
+  limit: number;
+  /** What the read was narrowed to, as a phrase, or null for the whole table. */
+  scope: string | null;
+}) {
+  if (state.kind === "unchecked") {
+    return (
+      <p
+        data-run-asked={run}
+        data-run-unchecked={state.reading}
+        className="type-body text-ink-secondary"
+      >
+        Whether run{" "}
+        <span className="type-data text-ink">{run}</span>{" "}
+        is in this window is not something this page can say: the read of{" "}
+        <span className="type-data text-ink">{state.reading}</span>{" "}
+        returned no window to look in. What is below says why.
+      </p>
+    );
+  }
+  if (state.kind === "found") {
+    return (
+      <p
+        data-run-asked={run}
+        data-run-found="true"
+        className="type-body text-ink-secondary"
+      >
+        Run{" "}
+        <a href={`#${runAnchorFor(run)}`} className={`type-data ${IN_PAGE_LINK}`}>
+          {run}
+        </a>{" "}
+        is marked in the table below.
+      </p>
+    );
+  }
+  return (
+    <p
+      data-run-asked={run}
+      data-run-found="false"
+      className="type-body text-ink-secondary"
+    >
+      Run{" "}
+      <span className="type-data text-ink">{run}</span>{" "}
+      is not among the {count(limit)} newest runs{scope === null ? "" : ` ${scope}`}, so
+      it is not in this window — it ran earlier
+      {scope === null ? "" : ", it was filed under another source"}, or no run
+      carries that id.
+    </p>
+  );
+}
+
+/**
  * The adapter framework's runs — the page's other half.
  *
  * Four states, none of which shares a rendering with another (LOOK_AND_FEEL,
@@ -112,6 +219,7 @@ export function AdapterRuns({
   runs,
   now,
   source,
+  run,
   limit,
   over,
   columns,
@@ -121,6 +229,13 @@ export function AdapterRuns({
   now: string;
   /** The `?source=` facet as the URL carried it, or undefined for no facet. */
   source: string | undefined;
+  /**
+   * The `?run=<run_id>` the URL asked for, in the database's own spelling, or
+   * undefined for no facet and for a value that is not a run id at all — which
+   * marks nothing here and is named by the page's dropped-parameter line
+   * instead (campaign admin-window/BUG-0142).
+   */
+  run: string | undefined;
   /** The cap the query carried (`RUN_WINDOW`). */
   limit: number;
   /** The kind of object the read ran over (`RUNS_OBJECT`). */
@@ -134,6 +249,10 @@ export function AdapterRuns({
   const kind = runs.kind === "ok" && rows.length === 0 ? "empty" : runs.kind;
   const truncated = runs.kind === "ok" && runs.data.truncated;
   const words = source === undefined ? NO_RUNS_RECORDED : noRunsFrom(source);
+  // One derivation of the asked-for run, read by the sentence AND by the row
+  // predicate below, so the row that is drawn as marked is the row the
+  // sentence names.
+  const asked = run === undefined ? undefined : askedRunState(runs, run);
 
   return (
     <Section title={RUNS_LABEL}>
@@ -173,6 +292,20 @@ export function AdapterRuns({
           did: an operator who followed a link deserves to know which half it
           addressed even when that half could not be read. */}
       {source === undefined ? null : <AskedSource source={source} />}
+      {/* The run sentence answers the URL the same way, and for the same
+          reason: an operator who clicked a run line on the Dashboard is told
+          which run they are looking at even when the window could not be
+          read. */}
+      {run === undefined || asked === undefined ? null : (
+        <AskedRun
+          run={run}
+          state={asked}
+          limit={limit}
+          // From the READ, never from the `?source=` prop beside it: the line
+          // describes the window that was actually asked for.
+          scope={runsScope(runs.kind === "ok" ? runs.data.source : null)}
+        />
+      )}
       <div data-surface="runs" data-state={kind} className="flex flex-col gap-2">
         {runs.kind === "not_provisioned" ? (
           // A card replaces the surface; nothing above it describes a table
@@ -196,11 +329,16 @@ export function AdapterRuns({
         ) : (
           <DataTable<RunTableRow>
             label={RUNS_LABEL}
-            columns={runColumns({ now, role: "window", columns, counts })}
+            columns={runColumns({ now, role: "window", columns, counts, asked: run })}
             rows={rows}
             // The primary key is the row key and the order's tiebreak. It is
             // not a tenth column and is never rendered as one.
             rowKey={(row) => row.run_id}
+            // What "is marked in the table below" means on screen. The
+            // predicate is the one the sentence was decided from, so a mark is
+            // drawn exactly when the line above claims one (LOOK_AND_FEEL bar
+            // 13: no screen claims a mark it did not draw).
+            marked={run === undefined ? undefined : (row) => row.run_id === run}
             placeholder={runs.kind === "error" ? <StateOf result={runs} /> : undefined}
           />
         )}
