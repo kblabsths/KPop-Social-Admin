@@ -26,6 +26,7 @@ you inserted yourself, is never rewritten from Admin's copy of it.
 | create it by | pasting §2 below into that new file, verbatim |
 | apply command | `supabase db push`, run **from the `kspace Scraper` repo root** — the only repo that pushes migrations (root `CLAUDE.md`) |
 | order | **after** `20260908000001_the_verdict_becomes_a_row.sql`: this function inserts into `verdicts`, and `create function` does not check that, so a wrong order installs a function that raises `42P01` on its first call instead of failing at install |
+| companion edit | **required, in the same sitting** — §1a. This file raises four codes (`KS029`–`KS032`) that `tests/helpers/ks_codes.py` names nowhere, and your admission rule is that every `KSnnn` the migrations raise is named there. Paste §1a's four entries and grow `test_codes_named_once.py`'s pinned list by the same four, or your own suite goes RED on the paste, before any `db push` |
 | rollback | `drop function public.settle_review_item(jsonb);` then `notify pgrst, 'reload schema';`. The `sources` row is left standing on purpose — deleting a registered source is a registry decision, not a rollback step, and an `observations` row may already reference it. The reload is not optional: PostgREST caches the schema, so until it reloads it goes on advertising a function that is gone |
 
 Paste-ready, from the scraper repo root (`/Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper`):
@@ -40,6 +41,64 @@ supabase db push
 Staging is a separate apply from production, as every file in that directory has
 been. Applying it twice re-creates the function (it is `create or replace`) and
 re-runs the idempotent `sources` insert, which writes nothing the second time.
+
+## 1a. The companion edit, in your repo — two files, both under `tests/`
+
+This is a **handoff, not an edit**: nothing in the Admin repo touches your
+checkout, so these two hunks are written out in full for you to apply. They are
+test-side only — no migration, no schema, no data.
+
+**Why it is not optional.** Your registry's admission rule is that every `KSnnn`
+the migrations raise is named once, in `tests/helpers/ks_codes.py`
+(`tests/live_safety/test_codes_named_once.py`, whose
+`test_no_code_the_migrations_raise_is_left_unnamed_by_the_harness` asserts
+`codes_not_named(migration_codes(MIGRATIONS), _harness_ks_codes()) == []`).
+§2 raises four codes that file names nowhere, so the paste alone turns your suite
+red — offline, before any `db push`, with a failure that looks like a bug in your
+repo and is actually this file's missing half.
+
+**1.** Append to `tests/helpers/ks_codes.py`, after `LEASE_NOT_LIVE`:
+
+```python
+# KS029: a verdict this function cannot read as a decision - a decision that is
+# not an object, a key the envelope does not declare, an action that is not one
+# of the eight, a missing actor, an item id that is not an id, an item named on
+# an override or absent everywhere else, a value that is not an object or fills
+# no payload slot or fills one its action may not fill, a value whose fact is
+# not the item's fact, a ref on a field the registry declares no reference for,
+# and an adopted claim that is not the item's own evidence for that fact. The
+# gate's KS008 for one admin verdict.
+UNREADABLE_VERDICT = "KS029"
+
+# KS030: a `wont_fix` verdict carrying no note, or a blank one. The note is
+# required on that action and nowhere else: it is the whole record of why the
+# condition stands, and a form alone lets a present-but-blank one through.
+WONT_FIX_WITHOUT_NOTE = "KS030"
+
+# KS031: a review item a verdict cannot settle - absent from the queue, or
+# already settled. Settling one twice would write a second verdict for a
+# question that was already answered.
+ITEM_NOT_OPEN = "KS031"
+
+# KS032: a settlement whose canonical write did not settle. `apply_resolution`
+# answers `failed` or `skipped` rather than raising, and a verdict row over a
+# write that did not happen is the one thing the settlement may not leave
+# behind, so the answer is raised and the whole settlement goes back.
+SETTLEMENT_NOT_APPLIED = "KS032"
+```
+
+**2.** In `tests/live_safety/test_codes_named_once.py`, the `ks_codes.py` row of
+`test_a_files_codes_are_the_ones_it_is_the_home_of`'s `parametrize` pins that
+registry exactly; grow its list by the same four, so the last line reads:
+
+```python
+                "KS024", "KS025", "KS026", "KS027", "KS028",
+                "KS029", "KS030", "KS031", "KS032",
+```
+
+Nothing else in your repo moves. `test_the_harness_names_no_code_the_sql_never_raises`
+pins nothing and needs no edit: it compares the two live trees against each
+other, and after the paste each of the four is both raised and named.
 
 ## 2. The migration
 
@@ -243,7 +302,7 @@ begin
   if jsonb_typeof(p_decision) is distinct from 'object' then
     raise exception 'verdict refused: a decision is %, not an object',
                     coalesce(jsonb_typeof(p_decision), '<null>')
-      using errcode = 'KS027',
+      using errcode = 'KS029',
             detail  = format('decision=%s',
                              coalesce(jsonb_typeof(p_decision), '<null>')),
             hint    = 'send one decision object carrying action, review_item_id, '
@@ -258,7 +317,7 @@ begin
   if v_unreadable is not null then
     raise exception 'verdict refused: the decision carries a key this function '
                     'does not accept: %', array_to_string(v_unreadable, ', ')
-      using errcode = 'KS027',
+      using errcode = 'KS029',
             detail  = format('unaccepted=%s', array_to_string(v_unreadable, ',')),
             hint    = 'send only the five keys of the decision envelope; the '
                       'function comment lists them';
@@ -268,7 +327,7 @@ begin
   if v_action is null or not (v_action = any (c_actions)) then
     raise exception 'verdict refused: % is not one of the eight actions',
                     coalesce(v_action, '<null>')
-      using errcode = 'KS027',
+      using errcode = 'KS029',
             detail  = format('action=%s', coalesce(v_action, '<null>')),
             hint    = 'name one of choose_claimed_value, supply_value, '
                       'keep_current, link_entity, settle, fixed, wont_fix, '
@@ -280,7 +339,7 @@ begin
   v_actor := p_decision ->> 'actor';
   if v_actor is null or v_actor ~ '^[[:space:]]*$' then
     raise exception 'verdict refused: the verdict names no actor'
-      using errcode = 'KS027',
+      using errcode = 'KS029',
             detail  = format('action=%s actor=%s', v_action,
                              coalesce(v_actor, '<null>')),
             hint    = 'send the signed-in identity that decided this verdict';
@@ -295,7 +354,7 @@ begin
      and (v_note is null or v_note ~ '^[[:space:]]*$') then
     raise exception 'verdict refused: wont_fix carries the note that says why '
                     'the condition stands'
-      using errcode = 'KS028',
+      using errcode = 'KS030',
             detail  = format('action=%s note=%s', v_action,
                              coalesce(v_note, '<null>')),
             hint    = 'write why the condition stands; every other action takes '
@@ -306,7 +365,7 @@ begin
   if p_decision ->> 'review_item_id' is not null
      and lower(p_decision ->> 'review_item_id') !~ c_uuid_shape then
     raise exception 'verdict refused: review_item_id is not an id'
-      using errcode = 'KS027',
+      using errcode = 'KS029',
             detail  = format('action=%s review_item_id=%s', v_action,
                              p_decision ->> 'review_item_id'),
             hint    = 'send the review item id as a uuid, or omit it on an '
@@ -318,7 +377,7 @@ begin
     if v_item_id is not null then
       raise exception 'verdict refused: an override answers no queued question '
                       'and settles no item'
-        using errcode = 'KS027',
+        using errcode = 'KS029',
               detail  = format('action=%s review_item_id=%s', v_action, v_item_id),
               hint    = 'omit review_item_id on an override; every other action '
                         'settles one';
@@ -326,7 +385,7 @@ begin
   elsif v_item_id is null then
     raise exception 'verdict refused: % settles a review item and names none',
                     v_action
-      using errcode = 'KS027',
+      using errcode = 'KS029',
             detail  = format('action=%s', v_action),
             hint    = 'name the review item this verdict settles; only an '
                       'override enters item-less';
@@ -339,7 +398,7 @@ begin
     if jsonb_typeof(v_value) is distinct from 'object' then
       raise exception 'verdict refused: % carries a value, and this one is %',
                       v_action, coalesce(jsonb_typeof(v_value), '<null>')
-        using errcode = 'KS027',
+        using errcode = 'KS029',
               detail  = format('action=%s value=%s', v_action,
                                coalesce(jsonb_typeof(v_value), '<null>')),
               hint    = 'send value as an object naming domain, entity_id, '
@@ -354,7 +413,7 @@ begin
     if v_unreadable is not null then
       raise exception 'verdict refused: the value carries a key this function '
                       'does not accept: %', array_to_string(v_unreadable, ', ')
-        using errcode = 'KS027',
+        using errcode = 'KS029',
               detail  = format('action=%s unaccepted=%s', v_action,
                                array_to_string(v_unreadable, ',')),
               hint    = 'send only the six keys of the value envelope; the '
@@ -366,7 +425,7 @@ begin
     if v_value ->> 'entity_id' is not null
        and lower(v_value ->> 'entity_id') !~ c_uuid_shape then
       raise exception 'verdict refused: entity_id is not an id'
-        using errcode = 'KS027',
+        using errcode = 'KS029',
               detail  = format('action=%s entity_id=%s', v_action,
                                v_value ->> 'entity_id'),
               hint    = 'name the canonical row this value lands on by its uuid';
@@ -376,7 +435,7 @@ begin
     if v_domain is null or v_field is null or v_entity_id is null then
       raise exception 'verdict refused: a value names its domain, its row and '
                       'its field'
-        using errcode = 'KS027',
+        using errcode = 'KS029',
               detail  = format('action=%s domain=%s entity_id=%s field=%s',
                                v_action, coalesce(v_domain, '<null>'),
                                coalesce(v_entity_id::text, '<null>'),
@@ -398,7 +457,7 @@ begin
       raise exception 'verdict refused: a value fills exactly one of '
                       'observation_id, value, ref, and this one fills %',
                       coalesce(array_to_string(v_filled, ', '), 'none')
-        using errcode = 'KS027',
+        using errcode = 'KS029',
               detail  = format('action=%s filled=%s', v_action,
                                coalesce(array_to_string(v_filled, ','), '')),
               hint    = 'choose_claimed_value fills observation_id, supply_value '
@@ -412,7 +471,7 @@ begin
        or (v_action = 'override' and v_filled[1] = 'observation_id') then
       raise exception 'verdict refused: % may not carry its value as %',
                       v_action, v_filled[1]
-        using errcode = 'KS027',
+        using errcode = 'KS029',
               detail  = format('action=%s filled=%s', v_action, v_filled[1]),
               hint    = 'a reference chosen by an operator arrives as an '
                         'override or a link_entity, never as a supply_value';
@@ -420,7 +479,7 @@ begin
   elsif v_value is not null and jsonb_typeof(v_value) <> 'null' then
     raise exception 'verdict refused: % writes no value and carries one',
                     v_action
-      using errcode = 'KS027',
+      using errcode = 'KS029',
             detail  = format('action=%s value=%s', v_action,
                              jsonb_typeof(v_value)),
             hint    = 'omit value on keep_current, settle, fixed and wont_fix; '
@@ -441,7 +500,7 @@ begin
 
     if not found then
       raise exception 'verdict refused: no review item %', v_item_id
-        using errcode = 'KS029',
+        using errcode = 'KS031',
               detail  = format('action=%s review_item_id=%s', v_action, v_item_id),
               hint    = 'name an item the queue holds';
     end if;
@@ -449,7 +508,7 @@ begin
     if v_item.status is distinct from 'open' then
       raise exception 'verdict refused: review item % is already %',
                       v_item_id, v_item.status
-        using errcode = 'KS029',
+        using errcode = 'KS031',
               detail  = format('action=%s review_item_id=%s status=%s', v_action,
                                v_item_id, v_item.status),
               hint    = 'a settled item stays settled; a question that comes '
@@ -469,7 +528,7 @@ begin
       raise exception 'verdict refused: the decision writes %.% of %, and item '
                       '% is about a different fact',
                       v_domain, v_field, v_entity_id, v_item_id
-        using errcode = 'KS027',
+        using errcode = 'KS029',
               detail  = format('review_item_id=%s item=%s.%s/%s decision=%s.%s/%s',
                                v_item_id, coalesce(v_item.domain, '<none>'),
                                coalesce(v_item.field, '<none>'),
@@ -503,7 +562,7 @@ begin
       else
         raise exception 'verdict refused: %.% is not a reference field this '
                         'function can link', v_domain, v_field
-          using errcode = 'KS027',
+          using errcode = 'KS029',
                 detail  = format('action=%s domain=%s field=%s', v_action,
                                  v_domain, v_field),
                 hint    = 'events.venue is the one reference field the registry '
@@ -513,7 +572,7 @@ begin
       if lower(v_ref) !~ c_uuid_shape then
         raise exception 'verdict refused: a reference names the chosen row by '
                         'its id, and this one is %', left(v_ref, 200)
-          using errcode = 'KS027',
+          using errcode = 'KS029',
                 detail  = format('action=%s domain=%s field=%s ref=%s', v_action,
                                  v_domain, v_field, left(v_ref, 200)),
                 hint    = 'the picker sends the chosen row id; it never creates '
@@ -528,7 +587,7 @@ begin
       -- rather than re-sent by the dashboard, so the two cannot differ.
       if lower(v_value ->> 'observation_id') !~ c_uuid_shape then
         raise exception 'verdict refused: observation_id is not an id'
-          using errcode = 'KS027',
+          using errcode = 'KS029',
                 detail  = format('action=%s observation_id=%s', v_action,
                                  v_value ->> 'observation_id'),
                 hint    = 'name the claim being adopted by its uuid';
@@ -568,7 +627,7 @@ begin
                         'claims item % holds as evidence for %.% of %',
                         v_value ->> 'observation_id', v_item_id, v_domain,
                         v_field, v_entity_id
-          using errcode = 'KS027',
+          using errcode = 'KS029',
                 detail  = format('action=%s observation_id=%s review_item_id=%s '
                                  'decision=%s.%s/%s', v_action,
                                  v_value ->> 'observation_id',
@@ -711,7 +770,7 @@ begin
     if v_item.domain is null then
       raise exception 'verdict refused: keep_current settles a fact, and item % '
                       'is about no fact', v_item_id
-        using errcode = 'KS027',
+        using errcode = 'KS029',
               detail  = format('review_item_id=%s queue=%s', v_item_id,
                                v_item.queue),
               hint    = 'keep_current answers a data_conflict about one fact; a '
@@ -769,7 +828,7 @@ begin
       raise exception 'verdict refused: the canonical write was %: %',
                       coalesce(v_outcome, '<no answer>'),
                       coalesce(v_explanation, '<no explanation>')
-        using errcode = 'KS030',
+        using errcode = 'KS032',
               detail  = format('action=%s outcome=%s refusal_code=%s', v_action,
                                coalesce(v_outcome, '<none>'),
                                coalesce(v_code, '<none>')),
@@ -803,7 +862,7 @@ $$;
 
 alter function public.settle_review_item(p_decision jsonb) owner to postgres;
 
-comment on function public.settle_review_item(p_decision jsonb) is 'The one entry point for a verdict (contracts/admin-observability.md section 7): the ONLY writer of public.verdicts and the ONLY setter of review_items.status. Takes ONE typed decision - action, review_item_id, actor, note, value{domain, entity_id, field, observation_id, value, ref} - and branches inside, in one transaction, so a settlement''s apply and its rejections share a timestamp. choose_claimed_value, supply_value and override write the admin-tier observation through ingest_observation and apply it through apply_resolution with the rejections the verdict implies (rejected_by = verdict); link_entity does the same for a reference field and writes the confirmed match the link stage reads; keep_current carries rejections alone through the adjudicate kind, canonical standing; settle, fixed and wont_fix write no canonical value. An override enters item-less (review_item_id null) and settles nothing. wont_fix with a null or blank note is refused KS028. Refuses KS027 a decision whose shape, keys, action or payload this function does not accept, KS029 an item that is absent or already settled, KS030 a canonical write that did not settle, and KS001 a domain with no registered schema; the gate''s own KS codes reach the caller unchanged. Neither the schema version nor the source name arrives from the caller: both are resolved here';
+comment on function public.settle_review_item(p_decision jsonb) is 'The one entry point for a verdict (contracts/admin-observability.md section 7): the ONLY writer of public.verdicts and the ONLY setter of review_items.status. Takes ONE typed decision - action, review_item_id, actor, note, value{domain, entity_id, field, observation_id, value, ref} - and branches inside, in one transaction, so a settlement''s apply and its rejections share a timestamp. choose_claimed_value, supply_value and override write the admin-tier observation through ingest_observation and apply it through apply_resolution with the rejections the verdict implies (rejected_by = verdict); link_entity does the same for a reference field and writes the confirmed match the link stage reads; keep_current carries rejections alone through the adjudicate kind, canonical standing; settle, fixed and wont_fix write no canonical value. An override enters item-less (review_item_id null) and settles nothing. wont_fix with a null or blank note is refused KS030. Refuses KS029 a decision whose shape, keys, action or payload this function does not accept, KS031 an item that is absent or already settled, KS032 a canonical write that did not settle, and KS001 a domain with no registered schema; the gate''s own KS codes reach the caller unchanged. Neither the schema version nor the source name arrives from the caller: both are resolved here';
 
 -- ── 3. Who may call it ───────────────────────────────────────────────────────
 -- The standard revoke pair, exactly as apply_resolution carries it
@@ -843,7 +902,7 @@ question for you rather than a line in this block.
 | `events.venue_id` | the canonical column a `venue` reference produces — the one reference mapping §2 spells | `20260825000002_canonical_event_storage_stands_up.sql` (`events_venue_id_fkey`); the `venue` field is declared in `20260829000004` |
 | `public.uuid_generate_v7()` | the PK default behind `verdicts.verdict_id` (named by the companion file, not by this one) | `20260818000000_the_schema_arrives_as_one_snapshot.sql`; its revoke/grant pair is `20260821000002_the_foundation_functions_get_their_revoke_grant_pair.sql` |
 | `public`, `anon`, `authenticated`, `service_role` | Supabase's managed roles. This project's `ALTER DEFAULT PRIVILEGES` hands a newly created function EXECUTE to all four (measured on staging 2026-09-01 and recorded in `20260901000006`'s header), which is why §3 is written as a revoke with one grant after it — the same pair `apply_resolution` carries | `20260818000000_the_schema_arrives_as_one_snapshot.sql`; the pair is copied from `20260901000006` |
-| `KS027`, `KS028`, `KS029`, `KS030` | the four SQLSTATEs this file allocates, in the sibling's own grammar. A grep of that directory on 2026-09-08 shows `KS001`–`KS026` in use and nothing above it, so these collide with none; **if the resolver campaign has since taken them, renumber here** | allocated by this file; the grammar is `20260821000003`'s and `20260901000005`'s |
+| `KS029`, `KS030`, `KS031`, `KS032` | the four SQLSTATEs this file allocates, in the sibling's own grammar. Your repo raises `KS` codes from **two** SQL worlds and this was first cleared against only one of them (admin-window/BUG-0093): a grep of the WHOLE checkout on 2026-09-08 — `grep -rho "KS[0-9]\\{3\\}" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=agenticflow .` from `kspace Scraper` — shows `KS001`–`KS026` raised by `supabase/migrations/` and `KS027`–`KS028` raised by the staging harness doors of `tools/staging/harness_objects.sql`, nothing above, so the four here collide with none. `KS998`/`KS999` are `test_codes_named_once.py`'s own throwaway fixtures, not allocations. **Each of the four also needs its name next door before the paste applies cleanly — §1's companion edit** | allocated by this file; the grammar is `20260821000003`'s and `20260901000005`'s |
 
 ## 4. The five things worth a second look before you paste
 
@@ -903,7 +962,7 @@ question for you rather than a line in this block.
    evidence card", and the fact triple is what a PER-SOURCE item needs, whose
    subject is a source and whose evidence spans fields
    (`20260901000002_the_review_item_opens_once_per_subject.sql`). A miss is one
-   `KS027` naming the claim and the item. **If you want it looser**, drop the
+   `KS029` naming the claim and the item. **If you want it looser**, drop the
    three `claim.domain` / `claim.entity_id` / `claim.field` lines and keep the
    evidence one; **if you want it stricter still**, that is a status filter on
    the claim, which this file deliberately does not carry — a claim already
@@ -925,3 +984,18 @@ the EXECUTE the revoke pair leaves each role holding. Each of those is proved on
 a doctored copy of this block that must go red as well as on the block itself.
 The stored checks on the ticket resolve every identifier of §3 in your
 migrations directory by absolute path.
+
+**The four allocated codes are graded twice, and the second one reads your
+repo** (admin-window/BUG-0093, which is why they are `KS029`–`KS032` and not
+`KS027`–`KS030`). First against a dated snapshot of what you already hold —
+`KS001`–`KS028`, both SQL worlds — which is the check that still answers on a
+machine where your checkout is not present. Then against your tree AS IT
+STANDS: the codes §3's first cell declares are compared with every `KSnnn`
+spelled anywhere under `/Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper`, and
+the scan must find `KS027`/`KS028` — the harness-door codes the first grep
+missed — before its silence about the other four counts for anything. That read
+is read-only, skips `node_modules`, `agenticflow` and every dot-prefixed name
+(your `.env` included, which nothing here ever opens), and it is the only thing
+in this campaign's suite that looks outside its own repo. §1a's companion edit
+is NOT graded from here — it is yours to apply, and your own
+`test_codes_named_once.py` is what grades it.

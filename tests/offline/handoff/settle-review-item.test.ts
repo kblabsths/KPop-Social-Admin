@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ADMIN_SOURCE,
@@ -117,6 +119,101 @@ const TABLES = [
  * states this, having measured it.
  */
 const ROLES_BORN_HOLDING_EXECUTE = ["public", "anon", "authenticated", "service_role"];
+
+/**
+ * The sibling checkout on this machine, spelled ONCE and read ONLY.
+ *
+ * It is not a package and it is never imported: a relative import from a test
+ * resolves inside whichever git worktree the suite is running from, so it would
+ * reach the wrong tree or nothing at all. An absolute path reaches the one
+ * checkout that exists, wherever this suite runs — and reaching it is a read of
+ * three constants' worth of text, never a write, never an import, never a
+ * network call, so the offline suite stays offline.
+ */
+const SIBLING_ROOT = "/Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper";
+
+/**
+ * Every KS code in use next door on 2026-09-08, across BOTH of the sibling's
+ * SQL worlds: `supabase/migrations/` (KS001–KS026) and the staging harness
+ * doors of `tools/staging/` (KS027, KS028) — the set `tests/helpers/ks_codes.py`
+ * names one meaning each and `test_codes_named_once.py` pins.
+ *
+ * A dated snapshot, deliberately: it is the floor this suite holds on a machine
+ * where the sibling is not checked out at all. The live scan below is what
+ * keeps it honest.
+ */
+const TAKEN_NEXT_DOOR = Array.from(
+  { length: 28 },
+  (_, index) => `KS${String(index + 1).padStart(3, "0")}`,
+);
+
+/**
+ * The codes the note DECLARES it allocates, read off §3's citation row rather
+ * than hardcoded anywhere, so a renumber of the artifact moves every check that
+ * asks about allocation with the file itself.
+ */
+function allocatedCodes(): string[] {
+  const row = /\|([^|]*)\|[^|]*SQLSTATEs this file allocates/.exec(noteText);
+  if (row === null) return [];
+  return [...row[1].matchAll(/KS\d{3}/g)].map((match) => match[0]);
+}
+
+
+/** Whether that checkout is on this machine at all; the scan runs only if so. */
+const SIBLING_PRESENT = fs.existsSync(SIBLING_ROOT);
+
+/**
+ * Names the sibling scan neither descends into nor opens.
+ *
+ * Dot-prefixed names are skipped WHOLE, and the load-bearing reason is a single
+ * file: the sibling's repo-root `.env`. Nothing in this campaign opens one, not
+ * even to count `KS` codes in it, because a transcript that touches a secrets
+ * file is the wrong habit whatever it extracted. The dot skip also drops the
+ * derived caches (`.venv`, `.mypy_cache`, `.pytest_cache`, `.ruff_cache`),
+ * whose contents are copies of the `.py` files this walk reads anyway; the two
+ * named directories are vendored code and another factory's tracker.
+ */
+const UNSCANNED_NEXT_DOOR = new Set(["node_modules", "agenticflow", "__pycache__"]);
+
+/**
+ * Every `KSnnn` spelled anywhere under `root`, read as text.
+ *
+ * Deliberately broader than "raised": a code the sibling merely NAMES in
+ * `tests/helpers/ks_codes.py`, pins in a witness or writes into a receipt is
+ * still a code with a meaning, and allocating it here would give it a second
+ * one. A path that vanishes or refuses to read is skipped rather than thrown
+ * on — which would make an empty result a silent pass, so the caller asserts a
+ * code it MUST find before it trusts an absence.
+ */
+function ksCodesUnder(root: string): Set<string> {
+  const found = new Set<string>();
+  const pending = [root];
+  while (pending.length > 0) {
+    const dir = pending.pop() as string;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") || UNSCANNED_NEXT_DOOR.has(entry.name)) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(full);
+        continue;
+      }
+      let text: string;
+      try {
+        text = fs.readFileSync(full, "utf8");
+      } catch {
+        continue;
+      }
+      for (const match of text.matchAll(/KS\d{3}/g)) found.add(match[0]);
+    }
+  }
+  return found;
+}
 
 /* ── reading the artifact ─────────────────────────────────────────────────── */
 
@@ -674,20 +771,23 @@ describe("the settle_review_item migration", () => {
   it("raises only in the sibling's KS grammar, and allocates the next free codes", () => {
     const raised = [...new Set(errcodes(shipped))].sort();
     expect(raised.every((code) => /^KS\d{3}$/.test(code))).toBe(true);
-    // KS001–KS026 are in use next door (grep of that directory, 2026-09-08);
-    // everything this file allocates sits above them, and the note says so.
+    // KS001–KS028 are in use next door across BOTH SQL worlds — the migrations
+    // (KS001–KS026) and the staging harness doors (KS027, KS028), measured
+    // 2026-09-08 (admin-window/BUG-0093). Everything this file allocates sits
+    // above them, and the note says so.
     for (const code of raised) {
-      if (Number(code.slice(2)) > 26) expect(noteText).toContain(code);
+      if (Number(code.slice(2)) > TAKEN_NEXT_DOOR.length) expect(noteText).toContain(code);
     }
   });
 
   /**
-   * QA attack on admin-window/BUG-0088 — the code allocation itself.
+   * QA attack on admin-window/BUG-0088 — the code allocation itself, answered
+   * by admin-window/BUG-0093.
    *
-   * The test above, and the note's own citation table, take "free next door"
-   * from a grep of `kspace Scraper/supabase/migrations/` alone. That is not
-   * where the sibling's codes all live: `tools/staging/harness_objects.sql` is
-   * SQL applied to the staging project by `tools/staging/bootstrap_staging.sh`,
+   * The test above, and the note's own citation table, once took "free next
+   * door" from a grep of `kspace Scraper/supabase/migrations/` alone. That is
+   * not where the sibling's codes all live: `tools/staging/harness_objects.sql`
+   * is SQL applied to the staging project by `tools/staging/bootstrap_staging.sh`,
    * it is never a migration, and it raises two codes of its own. The sibling
    * keeps a witness for exactly this mistake —
    * `tests/live_safety/test_codes_named_once.py`, whose `HARNESS_DOORS`
@@ -701,31 +801,20 @@ describe("the settle_review_item migration", () => {
    * pins that registry at `KS001`–`KS028`.
    *
    * So the codes this artifact allocates are asserted against what the sibling
-   * ALREADY holds, captured here as a dated constant rather than by reading a
-   * path outside this repo (the offline suite reads nothing it does not own).
-   * Landed as `it.fails` (strict xfail, the house convention — cf.
-   * admin-window/BUG-0087, BUG-0088): watched RED as a plain `it` first, on
-   * HEAD 9043b72 of run/admin-window, reporting
-   * `expected [ 'KS027', 'KS028' ] to deeply equal []`. It goes RED again the
-   * day the file renumbers into free codes, which is the signal to flip it
-   * back to `it`.
+   * ALREADY holds, captured here as a dated constant so that this check answers
+   * the same on a machine where the sibling is not checked out at all. The scan
+   * below asks the sibling itself, and is what stops the snapshot going stale
+   * in silence.
+   *
+   * Landed by QA as `it.fails` (strict xfail) reporting
+   * `expected [ 'KS027', 'KS028' ] to deeply equal []`; the artifact renumbered
+   * onto KS029–KS032 (admin-window/BUG-0093) and it is a plain `it` again,
+   * watched RED as one against the pre-renumber note first.
    */
-  it.fails("allocates codes the sibling has not already taken", () => {
-    // Every KS code in use next door on 2026-09-08, across BOTH SQL worlds:
-    // `supabase/migrations/` (KS001–KS026) and the staging harness doors in
-    // `tools/staging/` (KS027, KS028) — the set `tests/helpers/ks_codes.py`
-    // names one meaning each and `test_codes_named_once.py` enforces.
-    const TAKEN_NEXT_DOOR = Array.from(
-      { length: 28 },
-      (_, index) => `KS${String(index + 1).padStart(3, "0")}`,
-    );
-    // The codes the note itself declares it ALLOCATES, read off §3's citation
-    // row rather than hardcoded, so renumbering the file moves this test with
-    // it. A code raised but not allocated is a code reused with the sibling's
-    // own meaning (KS001, the gate's unregistered domain), which is fine.
-    const row = /\|([^|]*)\|[^|]*SQLSTATEs this file allocates/.exec(noteText);
-    expect(row).not.toBeNull();
-    const allocated = [...(row?.[1] ?? "").matchAll(/KS\d{3}/g)].map((match) => match[0]);
+  it("allocates codes the sibling has not already taken", () => {
+    // A code raised but not allocated is a code reused with the sibling's own
+    // meaning (KS001, the gate's unregistered domain), which is fine.
+    const allocated = allocatedCodes();
     expect(allocated.length).toBeGreaterThan(0);
     expect(allocated.filter((code) => TAKEN_NEXT_DOOR.includes(code))).toEqual([]);
     // And nothing is raised that is neither allocated here nor already the
@@ -733,6 +822,36 @@ describe("the settle_review_item migration", () => {
     for (const code of new Set(errcodes(shipped))) {
       expect(allocated.includes(code) || TAKEN_NEXT_DOOR.includes(code), code).toBe(true);
     }
+  });
+
+  /**
+   * The same question asked of the sibling AS IT STANDS — admin-window/BUG-0093.
+   *
+   * `TAKEN_NEXT_DOOR` is a snapshot, and a snapshot is exactly what failed the
+   * first time: it was assembled from one of the sibling's two SQL worlds and
+   * cleared two codes that were already taken in the other. A snapshot cannot
+   * go stale loudly, so this check reads the sibling's actual tree — every
+   * `KSnnn` it raises, names, pins or writes into a receipt — and asserts that
+   * no code this artifact ALLOCATES appears in it.
+   *
+   * **Two fixtures, as every scanning guard needs** (LESSONS 3). The scan must
+   * FIND `KS027` and `KS028` — the harness-door lease codes, which live outside
+   * `supabase/migrations/` and are precisely what the first grep missed — before
+   * its silence about anything else is worth trusting; a walk that read nothing
+   * would otherwise pass this by returning an empty set. Then it must NOT find
+   * any code the note allocates.
+   *
+   * It runs only where the sibling is present. On a machine without that
+   * checkout there is nothing to read and nothing this check could honestly
+   * say, so the dated snapshot above — which always runs — is the floor.
+   */
+  it.runIf(SIBLING_PRESENT)("allocates no code the sibling's tree holds today", () => {
+    const inUse = ksCodesUnder(SIBLING_ROOT);
+    expect(inUse.has("KS027"), `${SIBLING_ROOT} read`).toBe(true);
+    expect(inUse.has("KS028"), `${SIBLING_ROOT} read`).toBe(true);
+    const allocated = allocatedCodes();
+    expect(allocated.length).toBeGreaterThan(0);
+    expect(allocated.filter((code) => inUse.has(code))).toEqual([]);
   });
 
   /**
