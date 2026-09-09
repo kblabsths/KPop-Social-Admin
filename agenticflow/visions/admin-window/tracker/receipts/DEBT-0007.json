@@ -1,0 +1,22 @@
+{
+ "id": "DEBT-0007",
+ "created": "2026-09-09T04:56:19Z",
+ "green": true,
+ "git_head": "72127c138b8201a68a5a73ca1bb095657601e8d5",
+ "scope": [
+  "src/lib/verdict/decision.ts",
+  "src/components/review/close/conflict-actions.tsx",
+  "src/components/claims/claim-list.tsx",
+  "src/app/queues/[reviewItemId]/page.tsx"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "6df4e147864fd34937a9071e08118dafd62ac1c47dfccf7433254a94e48cd6b2",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review-item/ tests/offline/verdict/ tests/offline/claims/",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-33238\n\n \u2713 |offline| tests/offline/verdict/decision.test.ts (67 tests) 47ms\n \u2713 |offline| tests/offline/verdict/seam.test.ts (45 tests) 17ms\n \u2713 |offline| tests/offline/claims/read.test.ts (18 tests) 26ms\n \u2713 |offline| tests/offline/review-item/read.test.ts (18 tests) 9ms\n \u2713 |offline| tests/offline/claims/filters.test.ts (15 tests) 9ms\n \u2713 |offline| tests/offline/review-item/close-slot.test.ts (34 tests) 59ms\n \u2713 |offline| tests/offline/review-item/signal-actions.test.ts (27 tests) 66ms\n \u2713 |offline| tests/offline/review-item/conflict-actions.test.ts (47 tests) 187ms\n \u2713 |offline| tests/offline/review-item/verdict-inline.test.ts (29 tests) 289ms\n \u2713 |offline| tests/offline/review-item/page.test.ts (70 tests) 525ms\n \u2713 |offline| tests/offline/claims/page.test.ts (98 tests) 2538ms\n\n Test Files  11 passed (11)\n      Tests  468 passed (468)\n   Start at  21:56:15\n   Duration  3.69s (transform 1.45s, setup 0ms, collect 5.12s, tests 3.77s, environment 2ms, prepare 1.67s)\n\n(node:33245) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

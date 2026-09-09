@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T04:55:12Z — do not edit)
+# Tracker index (regenerated 2026-09-09T04:57:25Z — do not edit)
 
 ## open
 - FEAT-0009 [P1][feat][M2] The two schema handoff artifacts, authored complete for Ben to install  (scope:agenticflow/tracker/for-human,agenticflow/docs/vision/SPEC.md)
@@ -15,12 +15,8 @@
 - BUG-0095 [P2][bug][M2] An invisible-only cell value is stored as content while every surface draws it as an absence  (scope:src/app/api/admin/records/[table]/[id]/route.ts,src/components/EditableCell.tsx,tests/offline/edit/route.test.ts @builder-158 from:qa:BUG-0089)
 - TASK-0055 [P2][task][M2] The reference field edits as an entity picker whose choice carries its confirmed match  (deps:TASK-0042,TASK-0048,TASK-0054 scope:src/components/records/entity-picker.tsx,src/lib/db/records.ts,tests/offline/records/entity-picker.test.ts,tests/offline/records/records-read.test.ts @builder-152)
 
-## built
+## qa
+- BUG-0093 [P2][bug][M2] the artifact allocates KS027/KS028, which the sibling's staging harness doors already raise  (scope:agenticflow/tracker/for-human/M2-handoff-settle-review-item.md,tests/offline/handoff/settle-review-item.test.ts @builder-154 from:BUG-0088)
 - TASK-0059 [P2][task][M2] A settled review item's detail carries its own verdict inline  (deps:TASK-0058,TASK-0049 scope:src/app/queues/[reviewItemId]/page.tsx,src/lib/db/verdict.ts,src/lib/db/review-item.ts,src/components/review/close/slot.tsx,tests/offline/review-item/verdict-inline.test.ts,tests/live/review-item.live.test.ts @builder-155)
 
-## qa
-- BUG-0091 [P2][bug][M2] the settle route accepts a text-carrying supply_value for a reference fact — the reference rule is guarded only by the courtesy layer  (scope:src/lib/verdict/decision.ts,tests/offline/review-item/conflict-actions.test.ts @builder-151 from:qa:BUG-0087)
-- BUG-0093 [P2][bug][M2] the artifact allocates KS027/KS028, which the sibling's staging harness doors already raise  (scope:agenticflow/tracker/for-human/M2-handoff-settle-review-item.md,tests/offline/handoff/settle-review-item.test.ts @builder-154 from:BUG-0088)
-- DEBT-0007 [P3][debt][M2] a fact identifier is hand-spelled ${domain}.${field} in four places, one of them now load-bearing for the reference rule  (scope:src/lib/verdict/decision.ts,src/components/review/close/conflict-actions.tsx,src/components/claims/claim-list.tsx,src/app/queues/[reviewItemId]/page.tsx @builder-153 from:qa:BUG-0087)
-
-Totals — built:1, claimed:4, done:36, open:7, qa:3, wont_fix:1. Archived: 124.
+Totals — claimed:4, done:38, open:7, qa:2, wont_fix:1. Archived: 124.
