@@ -1315,7 +1315,13 @@ describe("a resolver-owned record", () => {
 
   it("keeps the venue line's provenance coming from field_provenance", async () => {
     // A reference field is still a field: the link says where the value POINTS,
-    // and `field_provenance` on `venue_id` still says who decided it.
+    // and `field_provenance` on the venue fact still says who decided it.
+    //
+    // The log spells that fact `venue`, not `venue_id` — the registry field
+    // name, which is the canonical column's name for every other fact and this
+    // one alone differs (admin-window/BUG-0090; staging holds 11 `events.venue`
+    // rows and zero `venue_id` rows). The decision still has to land on the
+    // `venue_id` LINE, because that is the line the operator reads.
     const markup = await renderRecord("events", {
       ...eventWithVenue(IDS.venues, {
         event_listings: { data: { event_id: IDS.events, venue_name: VENUE_NAME } },
@@ -1323,7 +1329,7 @@ describe("a resolver-owned record", () => {
       field_provenance: complete([
         decided({
           provenance_id: "01920000-0000-7000-8000-0000000004c1",
-          field: "venue_id",
+          field: "venue",
         }),
       ]),
       sources: complete([{ source_id: TICKETMASTER, source: "ticketmaster" }]),
