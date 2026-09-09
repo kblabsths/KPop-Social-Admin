@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T14:20:56Z — do not edit)
+# Tracker index (regenerated 2026-09-09T14:21:06Z — do not edit)
 
 ## open
 - BUG-0126 [P3][bug][M2] The record page draws a subset of the row's columns and never says so — absent and not-drawn share one rendering  (scope:src/app/records/[table]/[id]/page.tsx,src/components/records/record-fields.tsx,tests/offline/records/page.test.ts from:usersim:priya)
