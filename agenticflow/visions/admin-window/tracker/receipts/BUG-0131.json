@@ -1,0 +1,26 @@
+{
+ "id": "BUG-0131",
+ "created": "2026-09-09T15:35:05Z",
+ "green": true,
+ "git_head": "45aa1ed8a4bbf1548ecbe5c1d8505632fd491626",
+ "scope": [
+  "src/app/queues/page.tsx",
+  "src/lib/review/queue-filters.ts",
+  "tests/offline/queues/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "d0675b16fc204e8b6b1923933abea918a23ade60c5269074668fcc34d727fd29",
+ "commands": [
+  {
+   "cmd": "bash -c \"rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit\"",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/queues/page.test.ts tests/offline/queues/filters.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-49768\n\n \u2713 |offline| tests/offline/queues/filters.test.ts (29 tests) 12ms\n \u2713 |offline| tests/offline/queues/page.test.ts (99 tests) 2694ms\n   \u2713 a zero that a filter produced > leaves a block untouched by EVERY value its kind implies, and by no other  720ms\n\n Test Files  2 passed (2)\n      Tests  128 passed (128)\n   Start at  08:35:01\n   Duration  3.62s (transform 359ms, setup 0ms, collect 695ms, tests 2.71s, environment 0ms, prepare 304ms)\n\n(node:49866) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
