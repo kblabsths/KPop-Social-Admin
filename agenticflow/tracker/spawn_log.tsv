@@ -21025,3 +21025,15 @@
 2026-09-09T20:10:51Z	agent	-	-	-	-
 # STRANDED	2026-09-09T20:10:51Z	builder	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0145.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0010.md, tests/offline/cycles/page.test.ts
 2026-09-09T20:10:51Z	builder	DEBT-0010	25559	836	129263
+2026-09-09T20:11:15Z	builder	BUG-0144	spawned
+# STRANDED	2026-09-09T20:11:23Z	agent	2 uncommitted in primary checkout: .env.example, tests/offline/cycles/page.test.ts
+2026-09-09T20:11:23Z	agent	-	-	-	-
+2026-09-09T20:11:32Z	qa-adversary	DEBT-0010	spawned
+# STRANDED	2026-09-09T20:11:46Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0144.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0010.md
+2026-09-09T20:11:46Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:11:55Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0144.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0010.md
+2026-09-09T20:11:55Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:12:04Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-DEBT-0010/, agenticflow/visions/admin-window/tracker/tickets/BUG-0144.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0010.md
+2026-09-09T20:12:04Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:12:18Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-DEBT-0010/, agenticflow/visions/admin-window/tracker/tickets/BUG-0144.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0010.md
+2026-09-09T20:12:18Z	agent	-	-	-	-
