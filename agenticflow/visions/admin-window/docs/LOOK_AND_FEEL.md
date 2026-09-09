@@ -14,6 +14,13 @@ invent. So the language below is mostly the app that exists, tightened where
 it drifted (seven ad-hoc type sizes, unreadable gray, five accent colors).
 Where I correct the old app rather than document it, the line says so.
 
+**Revised 2026-09-08** (TASK-0038) from the M1 endgame: five bars the two
+document-blind walks earned, two of them (the resting edit affordance, the
+pre-selected editor) written here for FEAT-0011 to build, plus one clause on
+copy bar 6. Each says where it came from. VISION.md is untouched by this pass;
+Ben's amendment of 2026-09-08 — direct `groups`/`idols` editing struck — is
+honoured in the inline-edit rule below.
+
 **Out of scope:** `/login`. The sign-in gate carries over untouched (spec §3),
 so its rounded card, pink mark and drop shadow are sanctioned exceptions —
 neither a precedent to copy nor a violation to file. Nothing else in the app
@@ -69,6 +76,15 @@ screen). Every surface ships light and dark.
 - **Severity is a color, not a scale**: `high` = amber, `low` = gray. No
   gradient, no third color, no computed score (spec parks the severity
   formula; VISION: "no severity formula").
+- **Healthy is green only when nothing needs a human.** An outcome whose own
+  row or card carries a non-zero error count renders in **attention amber**,
+  whatever word its producer wrote: the word stays verbatim in mono (copy bar
+  5) and only the colour is the app's reading of it. Green is for an outcome
+  with nothing left to answer for. Walkable on `/cycles`: no row that shows
+  errors carries its outcome word in healthy green. *(Earned 2026-09-03 — a
+  user-sim found fifteen cycles reporting 108 errors each, labelled
+  `succeeded` in green: "'succeeded' is doing work it hasn't earned." The
+  build followed this palette exactly; the palette was wrong.)*
 - Red means *broken*, never *unavailable*. A missing backing table is gray.
 
 ### Typography — one family pair, five steps
@@ -140,6 +156,22 @@ renders as `—` in disabled-gray — never blank, never `null`, `N/A` or `none`
 Tables that exceed their width scroll horizontally *inside their own border*;
 the page does not.
 
+**A row the URL asked for is marked**: page fill plus a 1px accent rule down
+its left edge — accent is the palette's selection job — and it holds both
+under hover, because what a row says about itself must not change under the
+pointer. No new colour, no shadow, no motion, no change to row height or table
+density, and a row nothing asked for renders exactly as it did before. The
+mark is never the only way to reach it: the line naming the asked-for id
+carries that id as an in-page link drawn as a link **at rest** (accent ink,
+underlined), so a `?<facet>=<id>` deep link lands on its row in one click
+rather than a scan of 36-character ids. Where no mark is drawn the same line
+says why — the id is outside the window, or the window was never read — and no
+screen claims a mark it did not draw. *(Chrome-inverse fill, the active nav
+item's device, was measured and rejected for a row: on it a dark-theme row
+puts broken at 3.57:1, accent at 3.69:1 and secondary at 3.96:1, all under bar
+12, and a row carries all three. Earned by BUG-0054, which had to invent this
+rendering because the file was silent.)*
+
 **Stat / gauge card** — square, 1px border, surface fill, 12px padding:
 `micro` label, then the `figure` number (thousand-separated), then at most one
 `data` line of sub-detail. Color on the figure only when it carries a state
@@ -172,6 +204,21 @@ word beside the field for 1.5s; failure is a red `data` line that names the
 failure, and the field reverts to its old value. Every focusable element
 shows a 2px accent outline at 1px offset on keyboard focus — no exceptions,
 no `outline: none`.
+
+Two further rules on that cell, from the M1 walks. **An editable value looks
+editable at rest**: a 1px hairline underline under the value — not colour, not
+weight — so a page of fields shows which values can be changed without
+hovering, tabbing or clicking. Hairline rather than accent is what keeps it
+apart from a link, which this app draws as accent ink plus underline. **A
+click-to-edit cell opens with its value selected**, so a straight retype
+replaces it and an arrow key still appends; correcting a value is this
+control's whole job, and a cell that opens unselected is a trap every operator
+falls into once per field. *(A stranger found the affordance by tabbing, not
+by looking, and a second one saved `7OCSOC` over a catalog value.)* **These are
+bars on the control, and FEAT-0011 builds them** — the surfaces they govern are
+the M2 override editor and the walk sandbox's cells. They license no editor on
+a catalog row: Ben struck direct `groups`/`idols` editing on 2026-09-08, those
+rows carry no editor and none returns.
 
 **Chips and badges** — `data` mono, 4px radius, 2/8 padding. A *filter chip*
 is interactive: active = accent fill + white; inactive = chrome fill +
@@ -245,6 +292,18 @@ header's `animate-pulse` stale dot is gone).
     item's chrome-inverse fill carries primary text only, and the
     disabled/placeholder/null gray is exempt by job (see the palette). No
     browser-console error or warning on load.
+13. **Every windowed list states its window on screen** — which read produced
+    the rows, the cap it carried, and whether it filled — including where the
+    window's bottom is the data's own floor rather than its cap: a list that
+    did **not** fill its cap has the oldest row the object holds, and its line
+    says so ("runs recorded since 2026-08-31; nothing earlier is retained")
+    instead of letting a three-day history read like a long one. The line
+    follows the **read**, not the rows: a read that returned keeps its line at
+    zero rows; a read that was refused, absent or never made drops the line
+    whole and lets the surface's state say why (DECISIONS 2026-09-04).
+    *(VISION: "real staging rows whose numbers match what the database says".
+    Both M1 sims named this behaviour as the reason they trusted the tool, and
+    the one place it was missing is the only number a sim could not check.)*
 
 ### Key screens
 
@@ -278,6 +337,14 @@ no bespoke layout.
 - **Emptiness:** an empty queue is good news and reads that way; an empty
   bucket, a table with no rows, and an unprovisioned table are three different
   states and never share a rendering.
+- **Zeroes:** a zero states what it excludes whenever the excluded set is not
+  empty — "0 of 65 finished cycles ran longer than the cadence; 4 never
+  finished" — and never stands bare beside the rows it silently drops. The
+  line names the excluded set and how many rows are in it; whether the figure
+  is good news stays the operator's call, never the app's.
+  *(A sim, on an unqualified zero beside four dead cycles: "'0 ran long'
+  sitting next to four corpses is the sort of reassuring sentence I've been
+  burned by before.")*
 - **Repeat use:** the operator sees these pages every morning. Nothing moves
   between visits, counts sit in fixed positions, and yesterday's link still
   works.
@@ -337,4 +404,10 @@ newcomer")*
 6. **Ages are relative, scheduled times are absolute, counts carry their
    noun**: "3d ago" (absolute in the title attribute), "2026-08-29 04:12 UTC"
    with the zone stated once in the column header, "12 open decisions" —
-   never "Count: 12", never a raw ISO string in a scannable column.
+   never "Count: 12", never a raw ISO string in a scannable column — **and a
+   record page's value column is not a scannable column**: it shows the stored
+   value verbatim in mono (`2027-05-01T19:00:00+00:00`), because that surface
+   exists to show and correct exactly what the database holds, while every
+   list renders the same instant scannably (`2027-05-01 19:00 UTC`). The app's
+   own words about a value — ages, provenance lines — stay relative on every
+   surface, the record page included.
