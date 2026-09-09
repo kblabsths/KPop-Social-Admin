@@ -1,0 +1,41 @@
+{
+ "id": "BUG-0109",
+ "created": "2026-09-09T10:57:30Z",
+ "green": true,
+ "git_head": "f3ff5a3c6c9fedabe2e78bbaf8213e67412ebdee",
+ "scope": [
+  "src/components/ui/window-line.tsx",
+  "src/app/page.tsx",
+  "src/components/cycles/adapter-runs.tsx",
+  "src/components/browse/browse-table.tsx",
+  "tests/offline/ui/primitives.test.ts",
+  "tests/offline/cycles/page.test.ts",
+  "tests/offline/browse/page.test.ts",
+  "tests/offline/dashboard/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "779eb2f9d93de08f3487d01cc054742a50f0c3f0fd3cc9ff5bb6a2d0b8f03d2f",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "bash -c 'grep -q \"truncated\" src/app/page.tsx'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/ui/primitives.test.ts tests/offline/cycles/page.test.ts tests/offline/browse/page.test.ts tests/offline/dashboard/page.test.ts tests/offline/absence/pages.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-21698\n\n \u2713 |offline| tests/offline/ui/primitives.test.ts (84 tests) 89ms\n \u2713 |offline| tests/offline/browse/page.test.ts (39 tests) 168ms\n \u2713 |offline| tests/offline/dashboard/page.test.ts (61 tests) 375ms\n \u2713 |offline| tests/offline/cycles/page.test.ts (79 tests) 1452ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (269 tests) 2118ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  319ms\n   \u2713 a surface offers a control only where the read behind it answered > puts no control inside a card that says a read did not happen, and gains none  793ms\n\n Test Files  5 passed (5)\n      Tests  532 passed (532)\n   Start at  03:57:12\n   Duration  3.18s (transform 1.68s, setup 0ms, collect 3.05s, tests 4.20s, environment 1ms, prepare 621ms)\n\n(node:21837) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/cycles.live.test.ts tests/live/browse.live.test.ts tests/live/dashboard.live.test.ts",
+   "exit": 0,
+   "output_tail": " as the database orders them  403ms\n   \u2713 last night's cycles against staging > renders the newest cycles, newest first, exactly as the database orders them  397ms\n   \u2713 when the resolver last applied something, against staging > states the instant of the newest cycle that applied, or says none did  390ms\n   \u2713 when the resolver last applied something, against staging > answers a different question from the newest cycle the page lists  593ms\n   \u2713 last night's adapter runs against staging > renders the newest runs, newest first, with the source the database holds  382ms\n \u2713 |live| tests/live/cycles.live.test.ts (7 tests) 12686ms\n   \u2713 the resolver's cycles against staging > names every surface on the page once, whatever order they are in  2851ms\n   \u2713 the resolver's cycles against staging > renders the newest cycles, newest first, as the table holds them  1411ms\n   \u2713 the resolver's cycles against staging > renders every count and every error line the row carries  2546ms\n   \u2713 the resolver's cycles against staging > reads a running, a skipped and a dead cycle as what they are  1178ms\n   \u2713 the resolver's cycles against staging > marks the cycle a Dashboard link asks for  2215ms\n   \u2713 the two gauges on this page against staging > counts the cycles of its window as the table holds them  1212ms\n   \u2713 the two gauges on this page against staging > separates the applies it measured from the decisions that name no claim  1272ms\n\n Test Files  3 passed (3)\n      Tests  22 passed (22)\n   Start at  03:57:16\n   Duration  13.43s (transform 304ms, setup 123ms, collect 957ms, tests 20.62s, environment 0ms, prepare 398ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/cycles.live.test.ts tests/live/browse.live.test.ts tests/live/dashboard.live.test.ts\n(node:21893) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
