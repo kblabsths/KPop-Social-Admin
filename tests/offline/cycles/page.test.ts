@@ -511,6 +511,20 @@ const REASSURANCE =
   /\b(all clear|healthy|no problems?|nothing to worry|nothing is wrong|looking good|good news|on track|as expected)\b/i;
 
 /**
+ * The first paragraph standing AFTER the named table, in document order — the
+ * note a distribution's figures are qualified by. Positional within the page's
+ * own reading order rather than addressed by class or by copy.
+ */
+function noteBelow(markup: string, table: string): string {
+  const $ = cheerio.load(markup);
+  const all = $("*").toArray();
+  const start = all.indexOf($(`table[aria-label="${table}"]`).get(0) as never);
+  if (start === -1) throw new Error(`no table labelled "${table}" in this markup.`);
+  const note = all.slice(start).find((element) => $(element).is("p"));
+  return note === undefined ? "" : $(note).text().replace(/\s+/g, " ").trim();
+}
+
+/**
  * The run ids of every rendered cycle whose duration cell holds no duration —
  * the rows the over-cadence figure cannot be computed over, as the TABLE
  * shows them.
@@ -1220,8 +1234,12 @@ describe("the cycle-health gauge", () => {
     };
   }
 
-  /** A cycle with no end, older than a cadence: it never finished. */
-  function neverFinished(suffix: string, days: number): ResolutionRunRow {
+  /**
+   * A cycle that recorded no end, older than a cadence — a row the page's own
+   * outcome panel calls dead, used where a test needs the excluded set to be
+   * unambiguous.
+   */
+  function recordedNoEnd(suffix: string, days: number): ResolutionRunRow {
     return {
       ...BARE_CYCLE,
       run_id: `0192f0c1-0000-7000-8000-2000000000${suffix}`,
@@ -1235,41 +1253,37 @@ describe("the cycle-health gauge", () => {
     healthyScript({ [T.resolutionRuns]: [{ data: rows }, { data: rows }] });
 
   const FINISHED = [ranFor("01", 5, 45), ranFor("02", 20, 60), ranFor("03", 35, 120)];
-  const UNFINISHED = [neverFinished("01", 3), neverFinished("02", 4)];
+  const NO_END = [recordedNoEnd("01", 3), recordedNoEnd("02", 4)];
 
   it("states what the over-cadence zero counts, and how many cycles it leaves out", async () => {
-    const rows = [...FINISHED, ...UNFINISHED];
+    const rows = [...FINISHED, ...NO_END];
     const markup = await renderCycles(scriptOf(rows));
 
     // The figure is untouched: the card still counts the whole window.
     expect(readNumber(markup, "Cycles in this window")).toBe(rows.length);
 
     // The zero beside it names both sets it was computed over: none of the
-    // three that finished ran long, and two never finished at all.
+    // three that finished ran long, and two recorded no end at all.
     expect(countsIn(cardSubLine(markup, "Cycles in this window"))).toEqual([
       0,
       FINISHED.length,
-      UNFINISHED.length,
+      NO_END.length,
     ]);
   });
 
-  it("counts the cycles it excludes the same way every other surface on the page does", async () => {
-    const markup = await renderCycles(scriptOf([...FINISHED, ...UNFINISHED]));
+  it("counts the cycles it excludes as one number, wherever the page states it", async () => {
+    const markup = await renderCycles(scriptOf([...FINISHED, ...NO_END]));
     const excluded = countsIn(cardSubLine(markup, "Cycles in this window"))[2];
 
     // The rows themselves: a cycle with no end renders no duration, and there
     // are exactly as many of those as the line says it left out.
     expect(cyclesWithoutDuration(markup)).toHaveLength(excluded);
-    // ...and the outcome panel, which counts the same set under its own word,
-    // reads the same number. One read, one count of one set — the page cannot
-    // show three (admin-window/BUG-0055 is the same property from the rows'
-    // side).
-    const outcomes = new Map(
-      tableRows(markup, OUTCOMES).map((cells) => [cells[0], cells[1]]),
-    );
-    expect(outcomes.get(cycleRow(markup, UNFINISHED[0].run_id).cells[2])).toBe(
-      String(excluded),
-    );
+    // ...and the note under the duration percentiles, which qualifies the same
+    // figures from the same field, states that one number and no other. One
+    // read, one count of one set: the page cannot report it twice and disagree
+    // with itself. It is NOT required to equal the outcome panel's dead, which
+    // is a subset of it — that demand was retired with admin-window/BUG-0116.
+    expect(countsIn(noteBelow(markup, DURATIONS))).toEqual([excluded]);
   });
 
   it("leaves the zero bare when every cycle in the window finished", async () => {
@@ -1285,7 +1299,7 @@ describe("the cycle-health gauge", () => {
     // reassuring sentence the bar was written against must trip it.
     expect(REASSURANCE.test("0 ran longer than the 15m cadence — all clear")).toBe(true);
     for (const [state, rows] of [
-      ["with cycles that never finished", [...FINISHED, ...UNFINISHED]],
+      ["with cycles that recorded no end", [...FINISHED, ...NO_END]],
       ["with none", FINISHED],
     ] as const) {
       const sub = cardSubLine(await renderCycles(scriptOf([...rows])), "Cycles in this window");
@@ -1309,6 +1323,13 @@ describe("the cycle-health gauge", () => {
    * the figure leaves rows out, and how many, and it may call them unfinished.
    * It may not say they never finish while the page itself is saying one of
    * them is still going.
+   *
+   * Was a strict `it.fails` pin (QA, commit 4242769). Fixed by naming the
+   * excluded set by what is true of every row in it — it recorded no end, the
+   * duration note's own words — and passing no verdict on what became of them
+   * (the architect's ruling of 2026-09-09: classifying a cycle by STATE is
+   * `STATE_WORD`'s job and the outcome panel's surface). It is a plain `it`
+   * now and reddens if a death verdict ever returns to this card.
    */
   const NEVER_ENDS =
     /\bnever\b[^.;]*\b(finish|finishes|finished|complete|completes|completed|end|ends|ended)\b/i;
@@ -1359,16 +1380,13 @@ describe("the cycle-health gauge", () => {
     expect(outcomes.get(cycleRow(markup, RUNNING_NOW.run_id).cells[2])).toBe("1");
   });
 
-  it.fails(
-    "does not pronounce a cycle it is rendering as in-flight one that never finished (admin-window/BUG-0116)",
-    async () => {
-      const sub = cardSubLine(
-        await renderCycles(scriptOf([...FINISHED, RUNNING_NOW])),
-        "Cycles in this window",
-      );
-      expect(NEVER_ENDS.test(sub), sub).toBe(false);
-    },
-  );
+  it("does not pronounce a cycle it is rendering as in-flight one that never finished (admin-window/BUG-0116)", async () => {
+    const sub = cardSubLine(
+      await renderCycles(scriptOf([...FINISHED, RUNNING_NOW])),
+      "Cycles in this window",
+    );
+    expect(NEVER_ENDS.test(sub), sub).toBe(false);
+  });
 
   it("names the newest cycle carrying errors, and links to its row", async () => {
     const markup = await renderCycles(healthyScript());

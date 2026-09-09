@@ -78,8 +78,18 @@ export function CycleHealthSection({
   const cadence = duration(health.cadenceSeconds);
   // The over-cadence figure is computed over the cycles that HAVE a measured
   // duration, and `spread.unmeasurable` is the set it therefore leaves out —
-  // the same field the duration note below renders, so the two cannot report
-  // one set as two numbers (admin-window/BUG-0110).
+  // the same field the duration note below renders, in the same words, so the
+  // two cannot report one set as two numbers (admin-window/BUG-0110).
+  //
+  // The clause states what is TRUE OF EVERY ROW in that set — it recorded no
+  // end — and passes no verdict on what became of them. That set is a strict
+  // superset of the dead: a cycle in flight has no end yet, and a row with an
+  // unparseable end is in it too, so a clause saying they never finished
+  // pronounced dead a cycle the outcome panel three cards down was calling
+  // still running, off one read (admin-window/BUG-0116, the architect's
+  // ruling of 2026-09-09). Classifying a cycle BY STATE is `STATE_WORD`'s job
+  // and the outcome panel's surface; this card counts, and does not name
+  // states.
   //
   // LOOK_AND_FEEL, Zeroes: a figure states what it excludes whenever the
   // excluded set is not empty, and says nothing about whether the figure is
@@ -87,7 +97,7 @@ export function CycleHealthSection({
   // stays the one figure rather than gaining a clause that counts to zero.
   const overCadence =
     spread.unmeasurable > 0
-      ? `${count(health.overCadence)} of ${counted(spread.count, "finished cycle")} ran longer than the ${cadence} cadence; ${count(spread.unmeasurable)} never finished`
+      ? `${count(health.overCadence)} of ${counted(spread.count, "finished cycle")} ran longer than the ${cadence} cadence; ${count(spread.unmeasurable)} recorded no end`
       : `${count(health.overCadence)} ran longer than the ${cadence} cadence`;
   // A window with no cycles at all is the state a reviewer sees first against
   // a database whose resolver has not run. It is an emptiness with a reason,
