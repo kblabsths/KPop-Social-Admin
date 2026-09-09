@@ -77,6 +77,38 @@ function withRows(rows: ReviewItemRow[]) {
   return stubClient({ [T.reviewItems]: { data: rows, count: rows.length } });
 }
 
+/**
+ * A stub whose `review_items` reads answer PER LEG (admin-window/BUG-0135).
+ *
+ * `readReviewQueues` on a faceted URL makes FOUR reads of one table: the URL's
+ * own row read, then one HEAD count per shape, in `SHAPES` order. The stub
+ * answers every read of a table from one script entry unless the entry is a
+ * queue (`tests/fixtures/stub-client.ts`), so a single `withRows` hands the
+ * same count to all four and no population assertion can distinguish the legs.
+ *
+ * `legOne` is what the row read returns — the whole table stands in for a
+ * database that narrowed nothing, exactly as everywhere else in this file —
+ * and `table` is what the database HOLDS, which is what the counts are of.
+ */
+function withLegs(legOne: ReviewItemRow[], table: ReviewItemRow[]) {
+  return stubClient({
+    [T.reviewItems]: [
+      { data: legOne, count: legOne.length },
+      ...SHAPES.map((shape) => ({
+        // A head count returns no rows at all — only the count.
+        data: null,
+        count: table.filter((row) => shapeOf(row) === shape).length,
+      })),
+    ],
+  });
+}
+
+/** The count each kind's population came back as, unwrapped, or the refusal's kind. */
+function populationOf(result: Awaited<ReturnType<typeof readReviewQueues>>) {
+  if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+  return result.data.population;
+}
+
 describe("listReviewItems", () => {
   it("reads review_items and returns the rows in queue order", async () => {
     const stub = withRows(population());
@@ -468,7 +500,7 @@ describe("readReviewQueues", () => {
    */
   it("returns the filtered rows beside BOTH kinds' whole-table counts", async () => {
     const rows = population();
-    const stub = withRows(rows);
+    const stub = withLegs(rows, rows);
     const result = await readReviewQueues({ kind: "signal" }, stub.asSupabaseClient());
 
     expect(result.kind).toBe("ok");
@@ -478,12 +510,22 @@ describe("readReviewQueues", () => {
       ids(queueOrder(rows.filter((row) => kindOfItem(row) === "signal"))),
     );
     // ...and the population is NOT: it counts every row of each kind, settled
-    // ones included, which is the set the bare `/queues` renders.
+    // ones included, which is the set the bare `/queues` renders. Each kind
+    // answers for itself, so the number arrives inside its own `ok`.
     expect(result.data.population).toEqual({
-      decision: rows.filter((row) => kindOfItem(row) === "decision").length,
-      signal: rows.filter((row) => kindOfItem(row) === "signal").length,
+      decision: {
+        kind: "ok",
+        data: rows.filter((row) => kindOfItem(row) === "decision").length,
+      },
+      signal: {
+        kind: "ok",
+        data: rows.filter((row) => kindOfItem(row) === "signal").length,
+      },
     });
-    expect(result.data.population.decision).toBeGreaterThan(0);
+    expect(populationOf(result).decision).toEqual({
+      kind: "ok",
+      data: expect.any(Number),
+    });
   });
 
   it("counts a kind the filter emptied as the rows it really holds", async () => {
@@ -491,38 +533,42 @@ describe("readReviewQueues", () => {
     // facet removed, so a decision block reading only its own result cannot
     // tell this state from an empty table.
     const rows = population();
-    const stub = withRows(rows);
+    const stub = withLegs(rows, rows);
     const result = await readReviewQueues({ kind: "signal" }, stub.asSupabaseClient());
 
     if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
     expect(result.data.items.filter((row) => kindOfItem(row) === "decision")).toEqual([]);
-    expect(result.data.population.decision).toBe(
-      rows.filter((row) => kindOfItem(row) === "decision").length,
-    );
+    expect(result.data.population.decision).toEqual({
+      kind: "ok",
+      data: rows.filter((row) => kindOfItem(row) === "decision").length,
+    });
   });
 
   it("reports a real zero for a kind the TABLE holds none of", async () => {
     const signals = population().filter((row) => kindOfItem(row) === "signal");
-    const stub = withRows(signals);
+    const stub = withLegs(signals, signals);
     const result = await readReviewQueues({ status: "open" }, stub.asSupabaseClient());
 
     if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
-    expect(result.data.population.decision).toBe(0);
-    expect(result.data.population.signal).toBe(signals.length);
+    // A real zero, from a count the database gave — never a gap and never a
+    // refusal dressed as nothing (ARCHITECTURE.md §4.3).
+    expect(result.data.population.decision).toEqual({ kind: "ok", data: 0 });
+    expect(result.data.population.signal).toEqual({ kind: "ok", data: signals.length });
   });
 
   it("reads ONCE when the URL narrows nothing, and is its own population", async () => {
     // The bare `/queues` must not pay for a second read: the unfiltered result
-    // already IS the whole table.
+    // already IS the whole table. Not one count leg is issued either.
     const rows = population();
-    const stub = withRows(rows);
+    const stub = withLegs(rows, rows);
     const result = await readReviewQueues({}, stub.asSupabaseClient());
 
     expect(stub.tablesRead().filter((table) => table === T.reviewItems)).toHaveLength(1);
-    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
-    expect(result.data.population.decision + result.data.population.signal).toBe(
-      rows.length,
-    );
+    const counted = populationOf(result);
+    if (counted.decision.kind !== "ok" || counted.signal.kind !== "ok") {
+      throw new Error("expected both populations ok");
+    }
+    expect(counted.decision.data + counted.signal.data).toBe(rows.length);
   });
 
   it("refuses whole rather than reporting a population the database never gave", async () => {
@@ -541,9 +587,9 @@ describe("readReviewQueues", () => {
   });
 
   /**
-   * STRICT pin, landed red by QA (admin-window/BUG-0135). Drop `.fails` the day
-   * a population leg that could not be read stops deleting the rows the URL's
-   * own complete read DID return.
+   * Landed red by QA as a strict `it.fails` pin (admin-window/BUG-0135) and
+   * flipped to `it` by the fix: a population leg that could not be read no
+   * longer deletes the rows the URL's own complete read DID return.
    *
    * The population leg is unconditionally the WHOLE table, so no URL facet
    * narrows it: past `ROW_CAP` it refuses for every faceted URL, including the
@@ -558,7 +604,7 @@ describe("readReviewQueues", () => {
    * leg is the truncated one, those rows really are unknown and the read
    * refuses.
    */
-  it.fails(
+  it(
     "keeps the rows its own complete read returned when only the POPULATION leg is truncated (admin-window/BUG-0135)",
     async () => {
       const rows = population();
@@ -589,6 +635,188 @@ describe("readReviewQueues", () => {
     });
     const result = await readReviewQueues({ kind: "signal" }, stub.asSupabaseClient());
     expect(result.kind).toBe("error");
+  });
+});
+
+/**
+ * The POPULATION leg, as admin-window/BUG-0135 shapes it: one HEAD count per
+ * shape, built from the declaration in `src/lib/review/shapes.ts`, each kind's
+ * figure the sum of the counts the database gave — and never the read's own
+ * refusal.
+ */
+describe("readReviewQueues counts the population instead of reading it", () => {
+  /** The count legs of one recorded run, in the order they were issued. */
+  function countLegs(stub: ReturnType<typeof withLegs>) {
+    return stub.calls.filter((call) =>
+      call.steps.some(
+        (step) =>
+          step.method === "select" &&
+          typeof step.args[1] === "object" &&
+          step.args[1] !== null &&
+          (step.args[1] as Record<string, unknown>).head === true,
+      ),
+    );
+  }
+
+  it("asks for a head count and no rows, one leg per shape", async () => {
+    const rows = population();
+    const stub = withLegs(rows, rows);
+    await readReviewQueues({ queue: "data_conflict" }, stub.asSupabaseClient());
+
+    const legs = countLegs(stub);
+    expect(legs).toHaveLength(SHAPES.length);
+    for (const leg of legs) {
+      const select = leg.steps.find((step) => step.method === "select");
+      expect(select?.args[1]).toMatchObject({ head: true, count: "exact" });
+      // No cap can apply to a read that returns no rows — which is the whole
+      // reason this leg is a count (admin-window/BUG-0135).
+      expect(leg.steps.map((step) => step.method)).not.toContain("range");
+      expect(leg.steps.map((step) => step.method)).not.toContain("order");
+    }
+  });
+
+  it("narrows each leg by the columns the shape is DECLARED by", async () => {
+    // The declaration is `SHAPE_COLUMNS` in `src/lib/review/shapes.ts`; spelled
+    // here from spec §6 and migration `20260901000002` instead, so a `lib/db`
+    // that grew a queue value or a null check of its own would disagree with
+    // this rather than with itself. `data_conflict` constrains only the queue —
+    // a `data_conflict` row is a fact item whatever `source_id` it carries.
+    const expected: Record<string, { eq: unknown[][]; is: unknown[][]; not: unknown[][] }> = {
+      data_conflict_fact: { eq: [["queue", "data_conflict"]], is: [], not: [] },
+      entity_link_fact: {
+        eq: [["queue", "entity_link"]],
+        is: [["source_id", null]],
+        not: [],
+      },
+      entity_link_source_pattern: {
+        eq: [["queue", "entity_link"]],
+        is: [],
+        not: [["source_id", "is", null]],
+      },
+    };
+
+    const rows = population();
+    const stub = withLegs(rows, rows);
+    await readReviewQueues({ queue: "data_conflict" }, stub.asSupabaseClient());
+
+    const legs = countLegs(stub);
+    const by = (leg: (typeof legs)[number], method: string) =>
+      leg.steps.filter((step) => step.method === method).map((step) => step.args);
+    // In `SHAPES` order — the order the per-leg scripting in this file and in
+    // `tests/offline/queues/page.test.ts` depends on.
+    SHAPES.forEach((shape, index) => {
+      const leg = legs[index];
+      expect([shape, by(leg, "eq")]).toEqual([shape, expected[shape].eq]);
+      expect([shape, by(leg, "is")]).toEqual([shape, expected[shape].is]);
+      expect([shape, by(leg, "not")]).toEqual([shape, expected[shape].not]);
+    });
+  });
+
+  it("answers a faceted URL whatever the table's size — ROW_CAP cannot reach a count", async () => {
+    // The defect, at the read: leg 1 is the URL's own complete read and leg 2
+    // WAS the whole table as rows, so past the cap it refused for every faceted
+    // URL and took the rendered rows with it. A count of a million is a number
+    // the database gave, not a truncation.
+    const rows = population();
+    const conflicts = rows.filter((row) => row.queue === "data_conflict");
+    const stub = stubClient({
+      [T.reviewItems]: [
+        { data: conflicts, count: conflicts.length },
+        { data: null, count: 1_000_000 },
+      ],
+    });
+    const result = await readReviewQueues(
+      { queue: "data_conflict" },
+      stub.asSupabaseClient(),
+    );
+
+    expect(result.kind).toBe("ok");
+    const counted = populationOf(result);
+    expect(ids(result.kind === "ok" ? result.data.items : [])).toEqual(
+      ids(queueOrder(conflicts)),
+    );
+    // Two shapes make the decision queue, so its figure is the SUM of the two
+    // counts — no subtraction from a table total anywhere.
+    expect(counted.decision).toEqual({ kind: "ok", data: 2_000_000 });
+    expect(counted.signal).toEqual({ kind: "ok", data: 1_000_000 });
+  });
+
+  it("carries a refused count as THAT kind's refusal, and keeps every row", async () => {
+    // The signal queue is one shape, the last leg; the decision queue's two
+    // legs answered, so its figure stands. A leg that refused is reported by
+    // the caller, never returned as the read's own refusal.
+    const rows = population();
+    const stub = stubClient({
+      [T.reviewItems]: [
+        { data: rows, count: rows.length },
+        { data: null, count: 3 },
+        { data: null, count: 4 },
+        { error: permissionDenied(T.reviewItems) },
+      ],
+    });
+    const result = await readReviewQueues({ status: "open" }, stub.asSupabaseClient());
+
+    expect(result.kind).toBe("ok");
+    const counted = populationOf(result);
+    expect(counted.decision).toEqual({ kind: "ok", data: 7 });
+    expect(counted.signal.kind).toBe("error");
+    if (counted.signal.kind !== "error") return;
+    expect(counted.signal.reading).toBe(T.reviewItems);
+    expect(counted.signal.message).toContain(permissionDenied(T.reviewItems).message);
+    // and the rows the URL's own read returned are all still here
+    expect(ids(result.kind === "ok" ? result.data.items : [])).toEqual(
+      ids(queueOrder(rows.filter((row) => row.status === "open"))),
+    );
+  });
+
+  it("reports an absent table on a count leg as that kind's not_provisioned", async () => {
+    const rows = population();
+    const stub = stubClient({
+      [T.reviewItems]: [
+        { data: rows, count: rows.length },
+        { error: tableNotInSchemaCache(T.reviewItems) },
+      ],
+    });
+    const result = await readReviewQueues({ status: "open" }, stub.asSupabaseClient());
+
+    expect(result.kind).toBe("ok");
+    const counted = populationOf(result);
+    for (const kind of ["decision", "signal"] as const) {
+      expect([kind, counted[kind]]).toEqual([
+        kind,
+        { kind: "not_provisioned", missing: T.reviewItems },
+      ]);
+    }
+  });
+
+  it("is non-ok exactly when the URL's own read is", async () => {
+    // The rule, both ways round. A count leg that refused never makes the read
+    // refuse; a FILTERED leg that refused always does.
+    const rows = population();
+    const filter = { queue: "data_conflict" } as const;
+
+    const populationRefused = await readReviewQueues(
+      filter,
+      stubClient({
+        [T.reviewItems]: [
+          { data: rows, count: rows.length },
+          { error: permissionDenied(T.reviewItems) },
+        ],
+      }).asSupabaseClient(),
+    );
+    expect(populationRefused.kind).toBe("ok");
+
+    const filteredRefused = await readReviewQueues(
+      filter,
+      stubClient({
+        [T.reviewItems]: [
+          { error: permissionDenied(T.reviewItems) },
+          { data: null, count: 1 },
+        ],
+      }).asSupabaseClient(),
+    );
+    expect(filteredRefused.kind).toBe("error");
+    expect(filteredRefused).not.toHaveProperty("data");
   });
 });
 

@@ -137,6 +137,70 @@ export function shapesOfKind(kind: Kind): Shape[] {
   return SHAPES.filter((shape) => kindOf(shape) === kind);
 }
 
+/* ── the shape as COLUMN CONDITIONS — the inverse of `shapeOf` ────────────── */
+
+/**
+ * The columns one shape is DEFINED by, as data.
+ *
+ * `shapeOf` above reads a row and says which shape it is. A reader that wants
+ * the shape's rows from the DATABASE — `src/lib/db/review-items.ts`, counting
+ * each shape's whole-table population (campaign admin-window/BUG-0135) — needs
+ * the same rule pointing the other way, as conditions PostgREST can apply.
+ *
+ * It is declared here, beside `shapeOf`, because §6's "the kind is derived in
+ * code — no column carries it" only holds while there is ONE derivation: a
+ * `lib/db` module spelling `queue = "entity_link" and source_id is null` for
+ * itself would be a second definition of kindhood, agreeing today and drifting
+ * the day a fourth shape lands. `lib/db` builds its queries FROM this object
+ * and spells no queue value of its own.
+ *
+ * The two spellings are pinned against each other over the edge population in
+ * `tests/offline/review/shapes.test.ts`.
+ */
+export interface ShapeColumns {
+  /** `review_items.queue`. Every shape constrains it. */
+  queue: ReviewQueue;
+  /**
+   * What `source_id` must be: `true` null, `false` set, and `null` for
+   * UNCONSTRAINED — which is exactly `data_conflict_fact`, because a
+   * `data_conflict` row is a fact item whatever else it carries (`shapeOf`'s
+   * own rule; that queue has no per-source subject, resolver.md §11).
+   */
+  sourceIdIsNull: boolean | null;
+}
+
+/**
+ * Every shape's conditions. Disjoint and exhaustive over the table — which is
+ * why per-shape counts SUM to a kind's population with no arithmetic between
+ * reads and no subtraction from a table total.
+ */
+export const SHAPE_COLUMNS: Readonly<Record<Shape, ShapeColumns>> = {
+  data_conflict_fact: { queue: "data_conflict", sourceIdIsNull: null },
+  entity_link_fact: { queue: "entity_link", sourceIdIsNull: true },
+  entity_link_source_pattern: { queue: "entity_link", sourceIdIsNull: false },
+};
+
+/** The column conditions of one shape — the spelling readers use. */
+export function columnsOfShape(shape: Shape): ShapeColumns {
+  return SHAPE_COLUMNS[shape];
+}
+
+/**
+ * Does this row satisfy the DECLARED conditions of that shape?
+ *
+ * The predicate over `SHAPE_COLUMNS`, so a test can hold the declaration
+ * against `shapeOf` without re-reading either by hand. Nothing in `src/`
+ * classifies with it — `shapeOf` remains the classifier — and it is exported
+ * so the two can be compared row by row.
+ */
+export function matchesShapeColumns(item: ReviewItemRow, shape: Shape): boolean {
+  const columns = SHAPE_COLUMNS[shape];
+  if (item.queue !== columns.queue) return false;
+  if (columns.sourceIdIsNull === null) return true;
+  const isNull = item.source_id === null || item.source_id === undefined;
+  return isNull === columns.sourceIdIsNull;
+}
+
 /* ── the ordering ────────────────────────────────────────────────────────── */
 
 /** Epoch ms for a timestamptz string, or `null` when it does not parse. */

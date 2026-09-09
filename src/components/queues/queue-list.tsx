@@ -61,6 +61,7 @@ export function QueueList({
   hrefFor,
   card,
   line,
+  note,
 }: {
   /** Which queue this is. Rendered as the block's own hook, `data-queue`. */
   kind: Kind;
@@ -100,8 +101,23 @@ export function QueueList({
   /**
    * A LINE state — the page's own `ErrorLine` — rendered inside the table so
    * the header stays put and the operator still sees what the list is of.
+   *
+   * It is the `DataTable` PLACEHOLDER, so it stands in place of the rows: pass
+   * it only where this block's own read produced none. A leg that refused
+   * BESIDE the rows belongs in `note` (admin-window/BUG-0135).
    */
   line?: ReactNode;
+  /**
+   * A sub-surface of this block, rendered inside the block's own wrapper and
+   * BELOW the rows region — never in place of them (admin-window/BUG-0135).
+   *
+   * What it is for: a leg the block composed that refused while the rows
+   * themselves are here, so the block is not in that leg's state and its rows,
+   * figure and card are untouched. The `/claims` source registry is the same
+   * shape, and the page wraps whatever it passes in its own `data-surface` so
+   * a live oracle addresses it by name rather than by position.
+   */
+  note?: ReactNode;
 }) {
   const columns: Column<ReviewItemRow>[] = [
     {
@@ -192,6 +208,7 @@ export function QueueList({
             </>
           )}
         </div>
+        {note}
       </Section>
     </div>
   );

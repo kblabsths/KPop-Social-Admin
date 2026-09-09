@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   KINDS,
   SHAPES,
+  columnsOfShape,
   kindOf,
   kindOfItem,
   matchesFilter,
+  matchesShapeColumns,
   oldestOpenedAt,
   queueOrder,
   selectItems,
@@ -144,6 +146,67 @@ describe("shapeOf and kindOf — the three shapes of spec §6", () => {
       expect(SHAPES).toContain(shapeOf(item));
       expect(KINDS).toContain(kindOfItem(item));
     }
+  });
+});
+
+/**
+ * The shape's COLUMN CONDITIONS, held against `shapeOf` (campaign
+ * admin-window/BUG-0135).
+ *
+ * `shapeOf` reads a row and says which shape it is; `SHAPE_COLUMNS` says which
+ * rows a shape is made of, in conditions a database can apply — and
+ * `src/lib/db/review-items.ts` counts each shape's whole-table population from
+ * the second. Two spellings of one rule is exactly what §6 forbids, so they
+ * are pinned to each other row by row rather than trusted to agree.
+ */
+describe("SHAPE_COLUMNS is the same rule as shapeOf, pointing the other way", () => {
+  it("selects exactly the rows shapeOf assigns, for all three shapes", () => {
+    // The EDGE population, because that is where the two could differ: it
+    // carries a `data_conflict` row WITH a `source_id`, which `shapeOf` files
+    // as a fact item anyway (that queue has no per-source subject) and which a
+    // declaration constraining `source_id` on that queue would drop.
+    const rows = reviewItemEdgePopulation();
+    const withSource = rows.filter(
+      (row) => row.queue === "data_conflict" && row.source_id !== null,
+    );
+    expect(withSource.length, "the edge case this test exists for").toBeGreaterThan(0);
+
+    for (const shape of SHAPES) {
+      const declared = rows.filter((row) => matchesShapeColumns(row, shape));
+      const classified = rows.filter((row) => shapeOf(row) === shape);
+      expect([shape, declared.map((row) => row.review_item_id)]).toEqual([
+        shape,
+        classified.map((row) => row.review_item_id),
+      ]);
+    }
+  });
+
+  it("is disjoint and exhaustive, which is why per-shape counts sum", () => {
+    // A kind's population is the SUM of its shapes' counts, with no
+    // subtraction from a table total: that only holds while every row is in
+    // exactly one shape.
+    for (const row of reviewItemEdgePopulation()) {
+      const matched = SHAPES.filter((shape) => matchesShapeColumns(row, shape));
+      expect([row.review_item_id, matched.length]).toEqual([row.review_item_id, 1]);
+    }
+  });
+
+  it("constrains only the queue where the queue is the whole rule", () => {
+    // `data_conflict_fact` leaves `source_id` unconstrained (`null`), which is
+    // `shapeOf`'s own rule spelled as data; both entity_link shapes constrain
+    // it, in opposite directions.
+    expect(columnsOfShape("data_conflict_fact")).toEqual({
+      queue: "data_conflict",
+      sourceIdIsNull: null,
+    });
+    expect(columnsOfShape("entity_link_fact")).toEqual({
+      queue: "entity_link",
+      sourceIdIsNull: true,
+    });
+    expect(columnsOfShape("entity_link_source_pattern")).toEqual({
+      queue: "entity_link",
+      sourceIdIsNull: false,
+    });
   });
 });
 
