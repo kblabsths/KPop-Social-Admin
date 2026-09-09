@@ -512,6 +512,21 @@ describe("the grader proves itself on doctored blocks", () => {
     expect(gradeVerdicts(doctored)).toEqual([]);
   });
 
+  it("keeps PUBLIC's reach when the revoke names a role instead of PUBLIC", () => {
+    // The ordering half of the fold above. Revoking from `anon` does not touch
+    // what PUBLIC holds — in Postgres the two are separate ACL entries — so a
+    // block that takes the grant back from one role by name has taken nothing
+    // back at all, and all three roles still hold the write.
+    const doctored = doctoredNote(
+      "grant select on table public.verdicts to service_role;",
+      "grant select on table public.verdicts to service_role;\ngrant insert on table public.verdicts to public;\nrevoke insert on table public.verdicts from anon;",
+    );
+    const findings = gradeVerdicts(doctored);
+    expect(findings).toContain("client_privilege:anon:insert");
+    expect(findings).toContain("client_privilege:authenticated:insert");
+    expect(findings).toContain("service_role_write:insert");
+  });
+
   it("does not certify a block that hands the table's ownership to service_role", () => {
     const doctored = doctoredNote(
       "alter table public.verdicts owner to postgres;",
@@ -525,6 +540,19 @@ describe("the grader proves itself on doctored blocks", () => {
     expect(findings).toContain(
       "service_role_write:insert+update+delete+truncate+references+trigger+maintain",
     );
+  });
+
+  it("grades clean when an ownership change is handed back before the file ends", () => {
+    // LESSONS 3 for the owner model, whose flagging half is the test above: the
+    // fixture it must NOT fire on. Postgres applies `owner to` in order and the
+    // last one wins, so a file that borrows the table and gives it back installs
+    // the ownership it shipped with — and a grader that fired here would make
+    // every artifact that touches ownership unpasteable.
+    const doctored = doctoredNote(
+      "alter table public.verdicts owner to postgres;",
+      "alter table public.verdicts owner to service_role;\nalter table public.verdicts owner to postgres;",
+    );
+    expect(gradeVerdicts(doctored)).toEqual([]);
   });
 
   it("refuses a role tail it cannot resolve to plain role names", () => {
