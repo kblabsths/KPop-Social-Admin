@@ -36,6 +36,7 @@ import {
   reviewItemDataConflict,
   reviewItemEntityLink,
   reviewItemSourcePattern,
+  venueWindow,
   verdictLogEntry,
 } from "../../fixtures/rows";
 import { functionNotInSchemaCache, stubClient, type Script, type StubClient } from "../../fixtures/stub-client";
@@ -822,10 +823,16 @@ describe("the kind of fact the item is about — QA attack", () => {
 
   it("withholds nothing on the shapes and rows that withhold nothing", () => {
     // The other two shapes answer null, and their nulls are real answers: an
-    // `entity_link` fact HAS its picker action, a signal names no fact.
+    // `entity_link` fact HAS its picker action where it names a whole
+    // reference and rows were read for it (campaign admin-window/TASK-0056),
+    // and a signal names no fact at all.
     const evidence = venueCards();
     expect(
-      NOTICE_BY_SHAPE.entity_link_fact({ item: reviewItemEntityLink(), evidence }),
+      NOTICE_BY_SHAPE.entity_link_fact({
+        item: reviewItemEntityLink({ entity_id: ID.eventEntity }),
+        evidence,
+        choices: { window: venueWindow(), note: null },
+      }),
     ).toBeNull();
     expect(
       NOTICE_BY_SHAPE.entity_link_source_pattern({

@@ -1038,9 +1038,13 @@ describe("the close, with the verdict log present", () => {
    * script resolves two. The source-pattern SIGNAL is filled too (campaign
    * admin-window/TASK-0051): it takes no verdict and closes with a
    * disposition, so it offers those two and nothing that carries a value. The
-   * remaining shape still ships an empty list, and its own ticket amends this
-   * table when it fills it — which is exactly what this table exists for,
-   * rather than one number repeated per shape.
+   * `entity_link` FACT item is filled too (campaign admin-window/TASK-0056),
+   * and on THIS script it offers `settle` alone: its picker needs a whole
+   * reference fact, and the stuck fixture's `entity_id` is null — the ordinary
+   * state of an item opened before its canonical row exists, and the reason
+   * the page makes no window read for it at all. The picker beside the settle
+   * control is graded on a linkable fixture in
+   * `tests/offline/review-item/link-actions.test.ts`.
    */
   const OFFERED: Readonly<Record<string, readonly string[]>> = {
     conflict: [
@@ -1049,7 +1053,7 @@ describe("the close, with the verdict log present", () => {
       "supply_value",
       "keep_current",
     ],
-    stuck: [],
+    stuck: ["settle"],
     pattern: ["fixed", "wont_fix"],
   };
 
@@ -1065,11 +1069,10 @@ describe("the close, with the verdict log present", () => {
           .map((element) => $(element).attr("data-close-action")),
         name,
       ).toEqual(OFFERED[name]);
-      // A shape with nothing to offer offers nothing at all — not a disabled
-      // button standing in for a control.
-      if (OFFERED[name].length === 0) {
-        expect(close.find("button"), name).toHaveLength(0);
-      }
+      // Every control on offer is live: nothing rests disabled, on any shape.
+      // A disabled control standing in for one this database cannot perform is
+      // exactly what the not-provisioned card exists to render instead.
+      expect(close.find("button[disabled]"), name).toHaveLength(0);
       // A read that answered is not an emptiness and not an absence.
       expect(close.find("[data-state]"), name).toHaveLength(0);
     }

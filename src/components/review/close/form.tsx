@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { EditableCell, type SaveOutcome } from "@/components/EditableCell";
+import { PickerPanel, optionFor } from "@/components/records/entity-picker";
 import { Button } from "@/components/ui";
 import type { VerdictAction } from "@/lib/verdict/decision";
 import {
@@ -212,6 +213,84 @@ export function SuppliedControl({
   );
 }
 
+/**
+ * A control the operator CHOOSES a record with — campaign
+ * admin-window/TASK-0056, spec §7's "link to an existing entity".
+ *
+ * It is the shared entity picker (`components/records/entity-picker.tsx`, the
+ * F12 widget the record surface already links rows with) and NOT a second
+ * picker spelling of the same thing: the search box that filters rather than
+ * submits, the window line above the list, the nameless row that still gets
+ * offered with the app's dash, "Escape cancels" and the labelled emptiness all
+ * come from that one panel, so the two places an operator picks a record
+ * behave identically. Only the SUBMISSION differs, and it differs where it
+ * must: the record surface sends a field edit, and this sends one typed
+ * decision through the close's own single request path.
+ *
+ * **It creates nothing.** The panel offers the rows the read returned, the
+ * search filters those rows and is never itself a value, and the choice is
+ * guarded by `optionFor` — so an id that was not in the window cannot be sent
+ * however it was produced (a stale click, a re-render between reads, a console
+ * call on the handler).
+ *
+ * Pure over its props, exported for the reason `SuppliedControl` and
+ * `CloseStatus` are: `tests/offline` is node with `renderToStaticMarkup` and
+ * no jsdom (STACK §4), so a state reachable only from a click is a state no
+ * offline test could render. `CloseForm` below holds the open flag.
+ */
+export function ChosenControl({
+  spec,
+  open,
+  query,
+  disabled,
+  onToggle,
+  onQuery,
+  onChoose,
+}: {
+  spec: ActionSpec;
+  /** Is the panel showing? Closed is the resting state. */
+  open: boolean;
+  query: string;
+  /** A settlement is in flight, so this control may not start a second one. */
+  disabled: boolean;
+  onToggle: () => void;
+  onQuery: (next: string) => void;
+  onChoose: (id: string) => void;
+}) {
+  const window = spec.chooses;
+  // A spec with no window is not a choosing control and never reaches here;
+  // the guard is what makes that a fact rather than a convention.
+  if (window === undefined) return null;
+  return (
+    <span data-close-action={spec.action} className="flex flex-col gap-1">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        disabled={disabled}
+        className="type-body rounded-control border border-hairline px-2 py-0.5 text-ink transition-colors hover:bg-chrome disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {spec.label}
+      </button>
+      {open ? (
+        <PickerPanel
+          window={window}
+          query={query}
+          // Nothing is linked yet — this item exists BECAUSE the reference did
+          // not resolve — so no row is the current one and none is marked.
+          current={null}
+          // The close states its own work once, below the controls
+          // (`CloseStatus`): a second live region inside the panel would
+          // announce one settlement twice.
+          status={{ kind: "idle" }}
+          onQuery={onQuery}
+          onChoose={onChoose}
+        />
+      ) : null}
+    </span>
+  );
+}
+
 /** The note field's own words — a hint, not a placeholder inside the field. */
 export function noteHint(actions: readonly ActionSpec[]): string {
   return noteIsRequiredBy(actions)
@@ -229,6 +308,14 @@ export function CloseForm({
 }) {
   const [state, setState] = useState<CloseState>(IDLE_CLOSE_STATE);
   const [note, setNote] = useState("");
+  /**
+   * Which control's picker is open, by its index in `actions`, and what has
+   * been typed into it. Held here rather than inside the control so the list
+   * stays one list of plain specs — and because at most one picker may be open
+   * at a time, which an index says and a flag per control would not.
+   */
+  const [choosing, setChoosing] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
   /** The control the operator pressed, so focus can come back to it. */
   const pressed = useRef<HTMLButtonElement | null>(null);
   const noteId = useId();
@@ -305,10 +392,33 @@ export function CloseForm({
       {actions.length === 0 ? null : (
         <div className="flex flex-wrap items-center gap-2">
           {actions.map((spec, index) =>
-            // A control whose payload the operator types is the shared edit
-            // cell; every other control is a button. One list, two renderings,
-            // and the same single request path underneath.
-            spec.supplies === undefined ? (
+            // A control whose payload the operator CHOOSES is the shared
+            // entity picker, one whose payload they TYPE is the shared edit
+            // cell, and every other control is a button. One list, three
+            // renderings, and the same single request path underneath.
+            spec.chooses !== undefined ? (
+              <ChosenControl
+                key={`${spec.action}-${index}`}
+                spec={spec}
+                open={choosing === index}
+                query={query}
+                disabled={settling}
+                onToggle={() => {
+                  setQuery("");
+                  setChoosing((was) => (was === index ? null : index));
+                }}
+                onQuery={setQuery}
+                onChoose={(id) => {
+                  // Only a row the read returned may be settled with, whatever
+                  // produced the id — the picker's own guard, asked again here
+                  // because THIS is the call site that sends one.
+                  if (optionFor(spec.chooses?.options ?? [], id) === null) return;
+                  setChoosing(null);
+                  setQuery("");
+                  void settle(spec, null, id);
+                }}
+              />
+            ) : spec.supplies === undefined ? (
               <Button
                 key={`${spec.action}-${index}`}
                 data-close-action={spec.action}

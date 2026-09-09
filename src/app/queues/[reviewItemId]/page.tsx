@@ -9,6 +9,8 @@ import {
   type EvidenceRow,
   type ItemLink,
 } from "@/components/review";
+import type { ShapeChoices } from "@/components/review/close/actions";
+import { linkableFact } from "@/components/review/close/link-actions";
 import {
   ACTIONS_BY_SHAPE,
   CloseSlot,
@@ -18,7 +20,7 @@ import {
 import { ARRIVES_WITH, Empty, Page, RETRY, Section, StateOf } from "@/components/ui";
 import { claimsHref, sourceHref } from "@/lib/claims/filters";
 import { readPendingClaims, type PendingClaimRow } from "@/lib/db/claims";
-import { isRecordId } from "@/lib/db/records";
+import { isRecordId, readLinkChoices } from "@/lib/db/records";
 import type { DbResult, DbUnavailable } from "@/lib/db/result";
 import {
   readItemEvidence,
@@ -498,6 +500,47 @@ function settledWith(read: DbResult<ItemVerdict | null> | null): CloseVerdict | 
   };
 }
 
+/**
+ * The rows this item's fact may be linked to, or null when no read was made —
+ * the close's link control's whole database side (campaign
+ * admin-window/TASK-0056, SPEC F10's first action).
+ *
+ * **Four narrowings before a query, and each one is a reason not to read:**
+ *
+ *  - the verdict log is absent or refused, so NO control renders at all and a
+ *    window nobody can choose from is a round trip nobody asked for. That is
+ *    the graded normal case for the whole of M2;
+ *  - the item is already settled, so the close offers its verdict instead;
+ *  - the item names no whole reference fact — `linkableFact`, the ONE
+ *    predicate, imported rather than re-spelled here (common violation 9): an
+ *    `entity_link` item opened before its canonical row exists has nothing to
+ *    link, and that is the ordinary state of one;
+ *  - the map does not call that field a reference of that table, so this app
+ *    has no search for the rows behind it — asked and answered inside
+ *    `readLinkChoices`, which makes no query in that case.
+ *
+ * Past all four it is the same read the record surface's picker makes, through
+ * the same one seam, so the two surfaces choose from the same window.
+ */
+async function linkableChoices(
+  item: ReviewItemRow,
+  readiness: DbResult<unknown> | { kind: "ok" } | DbUnavailable,
+): Promise<ShapeChoices | null> {
+  if (readiness.kind !== "ok" || item.status === "settled") return null;
+
+  const fact = linkableFact(item);
+  if (fact === null) return null;
+
+  // The fact -> table lookup and the read itself are both the data layer's
+  // (`readLinkChoices`): the one edit map is declared once and read by its own
+  // consumers, and a page reaching into it directly is the second allowlist
+  // `tests/offline/edit/config.test.ts` refuses to let grow. A domain that map
+  // does not call a reference of this field answers with nothing to show and
+  // nothing to report, having made no query.
+  const choices = await readLinkChoices(fact.domain, fact.field);
+  return { window: choices.window, note: choices.note };
+}
+
 /* ── the page ────────────────────────────────────────────────────────────── */
 
 export default async function ReviewItemPage({
@@ -616,6 +659,18 @@ export default async function ReviewItemPage({
       ? await readItemVerdict(row.review_item_id)
       : null;
 
+  // The SIXTH leg, and the narrowest: the rows this item's reference fact may
+  // be LINKED to (campaign admin-window/TASK-0056, spec §7's "link to an
+  // existing entity"). Read only where a picker could be drawn at all — an
+  // `entity_link` FACT item, still open, naming a whole reference fact
+  // (`linkableFact`, the one predicate, never a copy of it here), on a table
+  // whose map entry calls that field a reference — so the graded normal case,
+  // an absent verdict log, makes no venue read at all and shows no card for
+  // one. A refused read costs the PICKER and nothing else: the settle control,
+  // the evidence and every other leg stay exactly as they were, and
+  // `linkNotice` says on screen why the picker is missing.
+  const linkChoices: ShapeChoices | null = await linkableChoices(row, readiness);
+
   const EvidenceView = EVIDENCE_VIEW_BY_SHAPE[shape];
   const bucketById = new Map(
     (buckets.kind === "ok" ? buckets.data : []).map((claim) => [
@@ -673,8 +728,16 @@ export default async function ReviewItemPage({
         <CloseSlot
           item={row}
           readiness={readiness}
-          actions={ACTIONS_BY_SHAPE[shape]({ item: row, evidence: evidenceRows })}
-          notice={NOTICE_BY_SHAPE[shape]({ item: row, evidence: evidenceRows })}
+          actions={ACTIONS_BY_SHAPE[shape]({
+            item: row,
+            evidence: evidenceRows,
+            choices: linkChoices,
+          })}
+          notice={NOTICE_BY_SHAPE[shape]({
+            item: row,
+            evidence: evidenceRows,
+            choices: linkChoices,
+          })}
           verdict={settledWith(verdict)}
         />
       </Section>
