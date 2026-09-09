@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { codeLines, codeLinesIn, sourceFiles } from "../source-tree";
+import { codeLines, codeLinesIn, codeText, sourceFiles } from "../source-tree";
 
 /**
  * **One name, one question** — the narrowing vocabulary's own guard
@@ -58,14 +58,55 @@ const RETIRED = /\bisNarrowed\b/;
  */
 function declares(name: string, lines: readonly string[]): boolean {
   const declaration = new RegExp(
-    `^export\\s+(?:async\\s+)?(?:function|const|let)\\s+${name}\\b`,
+    // `function|const|let` were the three spellings the vocabulary happens to
+    // use today. `var` and `class` are declarations too, and `export default
+    // function ${name}` puts the identifier in the tree a second time even
+    // though importers rename it — measured under QA, each of them walked
+    // straight past this detector while `export function` was caught
+    // (campaign admin-window/DEBT-0010, QA round 1).
+    `^export\\s+(?:default\\s+)?(?:async\\s+)?(?:function|const|let|var|class)\\s+${name}\\b`,
   );
   return lines.some((line) => declaration.test(line.trim()));
+}
+
+/**
+ * Every `export { … }` block of a file's CODE, joined — where a name can be
+ * exported under a spelling the declaration above never used.
+ *
+ * Written over `codeText` rather than line by line because an export block is
+ * ordinarily formatted across several lines, which a one-line scan cannot see
+ * (the reason `tests/offline/source-tree.ts` offers `codeText` at all).
+ */
+const EXPORT_BLOCK = /export\s+(?:type\s+)?\{[^}]*\}/g;
+
+/**
+ * Does this code export something ELSE under the vocabulary's name —
+ * `export { joinScope as narrowedTo }`?
+ *
+ * This is the hole the detector above cannot see and criterion 1 of
+ * admin-window/DEBT-0010 cares about most: an alias is a second EXPORT of the
+ * word with an unrelated meaning, which is exactly the state the ticket
+ * exists to end, and it carries no declaration line to be caught by.
+ * Measured under QA on the real tree: a `src/lib/*.ts` holding
+ * `export { joinScope as narrowedTo }` left the whole guard green.
+ *
+ * A plain re-export (`export { narrowedTo } from "./window-line"`, the
+ * `@/components/ui` barrel) is still not a violation — it carries the word to
+ * the same function, which is the point of a barrel. Only `as ${name}` is.
+ */
+function aliasesTo(name: string, code: string): boolean {
+  const alias = new RegExp(`\\bas\\s+${name}\\s*(?:,|\\}|$)`);
+  return (code.match(EXPORT_BLOCK) ?? []).some((block) => alias.test(block));
 }
 
 /** Every file of the tree whose CODE declares `name`. */
 function declaringFiles(name: string): string[] {
   return sourceFiles().filter((file) => declares(name, codeLines(file)));
+}
+
+/** Every file of the tree that exports something else AS `name`. */
+function aliasingFiles(name: string): string[] {
+  return sourceFiles().filter((file) => aliasesTo(name, codeText(file)));
 }
 
 describe("the declaration detector, before it is trusted with the tree", () => {
@@ -93,6 +134,67 @@ export { narrowedTo };
   it("does not flag a mention, an import, a call or a re-export", () => {
     expect(declares("narrowedTo", codeLinesIn(MUST_NOT_FLAG))).toBe(false);
   });
+
+  /**
+   * The spellings a detector written for `export function` walks past (QA
+   * round 1, admin-window/DEBT-0010). Each was measured against the real tree
+   * before it was pinned here: a file in `src/lib/` carrying it left the guard
+   * green, so "one declaration per name" was true only of the one spelling the
+   * vocabulary happened to use.
+   */
+  const ALSO_A_DECLARATION: Readonly<Record<string, string>> = {
+    "export class": `export class narrowedTo {}`,
+    "export var": `export var narrowedTo = 1;`,
+    "export default function": `export default function narrowedTo(a: string) {\n  return a;\n}`,
+    "export async function": `export async function narrowedTo(a: string) {\n  return a;\n}`,
+    "export const arrow": `export const narrowedTo = (a: string) => a;`,
+  };
+
+  for (const [spelling, fixture] of Object.entries(ALSO_A_DECLARATION)) {
+    it(`flags a declaration written as \`${spelling}\``, () => {
+      expect(declares("narrowedTo", codeLinesIn(fixture)), spelling).toBe(true);
+    });
+  }
+
+  it("does not flag a NAMED FUNCTION EXPRESSION bound to another name", () => {
+    // `narrowedTo` here is only in scope inside its own body; the module
+    // exports `scope`. Nothing reads the word from this file, so it is not a
+    // second owner of it — the detector must stay quiet or the vocabulary
+    // rule starts grading things no importer can see.
+    const fixture = `export const scope = function narrowedTo(a: string) {\n  return a;\n};`;
+    expect(declares("narrowedTo", codeLinesIn(fixture))).toBe(false);
+  });
+});
+
+describe("the ALIAS detector, before it is trusted with the tree", () => {
+  /** The fixture equivalent of `codeText(file)` — code lines, rejoined. */
+  const asCode = (text: string): string => codeLinesIn(text).join("\n");
+
+  const ALIASES: Readonly<Record<string, string>> = {
+    "on one line": `export { joinScope as narrowedTo };`,
+    "inside a multi-line block": `export {\n  besides,\n  joinScope as narrowedTo,\n  windowLine,\n};`,
+    "re-exported straight from another module": `export { joinScope as narrowedTo } from "./scope";`,
+  };
+
+  for (const [shape, fixture] of Object.entries(ALIASES)) {
+    it(`flags something else exported under the name, ${shape}`, () => {
+      expect(aliasesTo("narrowedTo", asCode(fixture)), shape).toBe(true);
+    });
+  }
+
+  const NOT_ALIASES: Readonly<Record<string, string>> = {
+    "a plain barrel re-export": `export { narrowedTo } from "./window-line";`,
+    "a barrel block": `export {\n  besides,\n  narrowedTo,\n  windowLine,\n} from "./window-line";`,
+    "an import renamed the OTHER way": `import { narrowedTo as joinScope } from "@/components/ui";`,
+    "the word inside a doc comment": `/**\n * export { joinScope as narrowedTo }\n */\nexport const a = 1;`,
+    "an alias to a DIFFERENT name": `export { joinScope as narrowedToScope };`,
+  };
+
+  for (const [shape, fixture] of Object.entries(NOT_ALIASES)) {
+    it(`leaves ${shape} alone`, () => {
+      expect(aliasesTo("narrowedTo", asCode(fixture)), shape).toBe(false);
+    });
+  }
 });
 
 describe("the narrowing vocabulary has one name per question", () => {
@@ -100,6 +202,20 @@ describe("the narrowing vocabulary has one name per question", () => {
     for (const [name, owner] of Object.entries(OWNER)) {
       expect(declaringFiles(name), name).toEqual([owner]);
     }
+  });
+
+  it("exports nothing ELSE under one of these names", () => {
+    // The other half of criterion 1 (QA round 1): "no identifier is exported
+    // twice from `src/` with two different meanings" is broken by an alias
+    // just as thoroughly as by a declaration, and an alias carries no
+    // declaration line. `export { joinScope as narrowedTo }` is the shape.
+    for (const name of Object.keys(OWNER)) {
+      expect(aliasingFiles(name), name).toEqual([]);
+    }
+  });
+
+  it("does not read the retired name back in through an alias either", () => {
+    expect(aliasingFiles("isNarrowed")).toEqual([]);
   });
 
   it("spells the two-meaning name `isNarrowed` nowhere in the app's code", () => {

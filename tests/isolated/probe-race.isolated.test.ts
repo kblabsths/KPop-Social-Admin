@@ -56,12 +56,22 @@ const probeDir = path.dirname(probePath);
  */
 const LAYERING_SUITE = "tests/offline/db/layering.test.ts";
 
-/** The four offline files that walk the source tree. */
+/**
+ * The offline files that walk the source tree and are NAMED here.
+ *
+ * `tests/offline/url/narrowing.test.ts` is the fifth (admin-window/DEBT-0010):
+ * it asserts that each name of the narrowing vocabulary is declared in exactly
+ * one module, which is precisely a rule the probe can be reported as breaking.
+ * The whole-project case below would have covered it either way; naming it
+ * here makes the two DETERMINISTIC cases cover it as well, which is worth more
+ * than a race that has to be reached.
+ */
 const WALKERS = [
   "tests/offline/claims/read.test.ts",
   "tests/offline/browse/views.test.ts",
   "tests/offline/edit/config.test.ts",
   "tests/offline/review/one-place.test.ts",
+  "tests/offline/url/narrowing.test.ts",
 ];
 
 /**
@@ -78,6 +88,15 @@ const LOUD_PROBE = [
   'export const wrote = db.from("field_provenance").insert({ a: 1 });',
   'export const called = db.rpc("settle_review_item");',
   'export const shape = "data_conflict";',
+  // The fifth walker's rule, admin-window/DEBT-0010: a SECOND declaration of a
+  // narrowing-vocabulary name, and the retired two-meaning name itself. Both
+  // redden `tests/offline/url/narrowing.test.ts` when the file holding them is
+  // visible to the filtered walk — measured under QA by planting the same two
+  // lines at `src/lib/*.ts` (red) and at this probe path (green). Without
+  // them the whole-project case passes for that walker whatever it does,
+  // because the probe would name nothing it grades.
+  "export function narrowedTo(a: readonly string[]) { return a.join(''); }",
+  "export function isNarrowed(x: boolean) { return x; }",
   "",
 ].join("\n");
 
