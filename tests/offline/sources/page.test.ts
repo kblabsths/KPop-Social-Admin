@@ -560,6 +560,49 @@ describe("a source's links", () => {
     expect(trendSources(markup, REJECTED_BY_SOURCE)).toEqual([]);
   });
 
+  /**
+   * PIN — admin-window/BUG-0140. `it.fails` is STRICT: the day the defect is
+   * fixed this case XPASSes and turns red, which sends the next reader to the
+   * ticket instead of leaving a dead pin behind.
+   */
+  it.fails("narrows to the source the URL names, in every uuid spelling Postgres accepts", async () => {
+    // Since admin-window/BUG-0139 the narrowing comes from the URL alone and
+    // is compared to `source_id` as a JAVASCRIPT STRING (`selectSources`),
+    // while the same value goes to the awaiting-row gauge's QUERY, where
+    // Postgres compares it as a UUID. Postgres accepts three spellings of one
+    // uuid — canonical, uppercased, hyphen-less — and `isRecordId`
+    // (lib/db/records.ts, admin-window/BUG-0065) accepts all three as ids;
+    // `/records` already answers all three with the SAME row
+    // (tests/offline/records/page.test.ts, WELL_FORMED_IDS). Measured
+    // read-only on staging 2026-09-09: `sources` filtered `eq source_id` by
+    // the canonical, uppercased, and hyphen-less spellings of one registered
+    // id returns count=1 for each.
+    //
+    // So a URL naming a REGISTERED source in one of the other two spellings
+    // must render that source's row. Anything else tells the operator the
+    // registry holds no such source while the database it just read does.
+    const { sources: registry, runs } = manySources(1);
+    const only = registry[0];
+    const spellings = [
+      only.source_id,
+      only.source_id.toUpperCase(),
+      only.source_id.replace(/-/g, ""),
+    ];
+    for (const spelling of spellings) {
+      const markup = await renderSources(
+        healthyScript({
+          [T.sources]: [
+            { data: [...registry], count: registry.length },
+            { data: [...registry] },
+          ],
+          [T.runs]: { data: [...runs], count: runs.length },
+        }),
+        { source_id: spelling },
+      );
+      expect(sourceIds(markup), spelling).toEqual([only.source_id]);
+    }
+  });
+
   it("issues its three reads together, so neither gauge waits behind the registry", async () => {
     // The registry, the awaiting-row trend and the settled-values gauge need
     // nothing from each other, and this page awaited them one after the other
