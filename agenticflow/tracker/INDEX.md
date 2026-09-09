@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T01:28:16Z — do not edit)
+# Tracker index (regenerated 2026-09-09T01:30:41Z — do not edit)
 
 ## open
 - FEAT-0009 [P1][feat][M2] The two schema handoff artifacts, authored complete for Ben to install  (scope:agenticflow/tracker/for-human,agenticflow/docs/vision/SPEC.md)
@@ -36,6 +36,5 @@
 ## blocked
 - TASK-0043 [P1][task][M2] ASK Ben: which registered sources row is the admin voice, and does it exist on staging  (scope:agenticflow/tracker/for-human)
 - TASK-0044 [P1][task][M2] ASK Ben: which columns of events and venues are editable at all  (scope:agenticflow/tracker/for-human)
-- TASK-0057 [P2][task][M2] A reference renders as a link: an idol reaches its group, a group reaches its idols  (deps:TASK-0054(unmet:1) scope:src/lib/edit/config.ts,src/lib/db/records.ts,src/components/records/record-fields.tsx,tests/offline/edit/config.test.ts,tests/offline/records/page.test.ts,tests/offline/records/routes.test.ts)
 
-Totals — blocked:3, built:1, claimed:4, done:5, open:18, qa:2. Archived: 124.
+Totals — blocked:2, built:1, claimed:4, done:5, open:18, qa:2, wont_fix:1. Archived: 124.
