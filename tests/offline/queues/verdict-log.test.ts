@@ -397,6 +397,50 @@ describe("the nulls that are structure, not missing data", () => {
     const markup = await renderQueues(scriptOf(POPULATION, OBSERVATIONS));
     expect(markup).not.toMatch(/<td[^>]*>\s*<\/td>/);
   });
+
+  /**
+   * A note that is PRESENT but blank — `""` or all whitespace — is an absence
+   * everywhere else in this app: `isAbsent` (`lib/format.ts`) trims before it
+   * decides, and `DataTable` passes every cell body through `orDash` for
+   * exactly that reason. The log escapes that rule because its note column
+   * returns an ELEMENT (`<span title=...>`), which `isAbsent` never looks
+   * inside — the shape `tests/offline/absence/blank-cells.test.ts` was written
+   * to sweep, and which that sweep cannot reach here because it renders one
+   * view per route and this surface is a TAB.
+   *
+   * The value is reachable: `src/app/api/admin/review-items/[reviewItemId]/settle/route.ts`
+   * forwards `body.note` verbatim (the app's own control nulls a blank in
+   * `components/review/close/actions.ts`, the ROUTE does not), and
+   * `decisionRefusals` refuses a blank note only on `wont_fix`, so a settle
+   * carrying `"note": ""` reaches `settle_review_item` and `verdicts.note` —
+   * a nullable `text` with no CHECK (`for-human/M2-handoff-verdicts.md`).
+   *
+   * STRICT xfail for admin-window/BUG-0085 (QA of admin-window/TASK-0058):
+   * `it.fails` passes only while the defect stands, so the day the note cell
+   * dashes, this XPASSes, reddens, and sends the reader to the ticket. Flip it
+   * back to a plain `it(...)` in the fixing commit — the way
+   * admin-window/BUG-0067's pin was flipped in `tests/offline/cycles/page.test.ts`.
+   */
+  it.fails("dashes a note that is present but blank [admin-window/BUG-0085]", async () => {
+    const EMPTY_NOTE = verdictLogEntry({
+      verdict_id: "01920000-0000-7000-8000-000000000811",
+      action: "settle",
+      note: "",
+      observation_id: null,
+      created_at: "2026-09-08T10:00:00Z",
+    });
+    const SPACES_NOTE = verdictLogEntry({
+      verdict_id: "01920000-0000-7000-8000-000000000812",
+      action: "fixed",
+      note: "   ",
+      observation_id: null,
+      created_at: "2026-09-08T09:00:00Z",
+    });
+    const markup = await renderQueues(scriptOf([EMPTY_NOTE, SPACES_NOTE], []));
+
+    expect(cellsOf(markup, "settle").cells[4]).toBe(EM_DASH);
+    expect(cellsOf(markup, "fixed").cells[4]).toBe(EM_DASH);
+  });
 });
 
 /* ── the action, verbatim, for all eight ─────────────────────────────────── */
