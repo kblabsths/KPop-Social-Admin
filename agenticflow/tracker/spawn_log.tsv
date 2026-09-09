@@ -21719,3 +21719,5 @@
 2026-09-09T21:56:25Z	agent	-	-	-	-
 # STRANDED	2026-09-09T21:56:38Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-DEBT-0013/, agenticflow/visions/admin-window/tracker/tickets/BUG-0148.md
 2026-09-09T21:56:38Z	agent	-	-	-	-
+# STRANDED	2026-09-09T21:56:57Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-DEBT-0013/
+2026-09-09T21:56:57Z	agent	-	-	-	-
