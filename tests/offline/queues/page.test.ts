@@ -14,6 +14,7 @@ import {
   tableNotInSchemaCache,
   transportFailure,
   type Script,
+  type ScriptedResponse,
 } from "../../fixtures/stub-client";
 import {
   classesOf,
@@ -152,9 +153,40 @@ function idsOf(items: ReviewItemRow[]): string[] {
 
 /* ── rendering ───────────────────────────────────────────────────────────── */
 
+/**
+ * The `review_items` legs of ONE render, for a table holding exactly `rows`
+ * (campaign admin-window/BUG-0135).
+ *
+ * A faceted URL makes FIVE reads of that one table: the queue lists' own row
+ * read, the health gauge's window, then one HEAD count per shape in spec §6's
+ * order — the counts each block's population is summed from. The stub answers
+ * every read of a table from one script entry unless the entry is a QUEUE, so
+ * a single response would hand the same count to all five and a block whose
+ * queue is empty would read a population it does not have. An unfiltered URL
+ * never reaches the count entries; the queue's LAST entry answers every read
+ * past it, so a page making fewer reads is scripted by the same list.
+ *
+ * The counts are computed HERE, from this file's own `shapeName`, like every
+ * other expectation in this file.
+ */
+function tableHolding(rows: ReviewItemRow[]): ScriptedResponse[] {
+  return [
+    // The two ROW readers of the queues tab, in the order the page issues
+    // them: the queue lists' own read, then the queue-health gauge's window.
+    // Both see the same table.
+    { data: rows, count: rows.length },
+    { data: rows, count: rows.length },
+    ...SHAPE_NAMES.map((shape) => ({
+      // A head count returns no rows at all.
+      data: null,
+      count: rows.filter((row) => shapeName(row) === shape).length,
+    })),
+  ];
+}
+
 function healthyScript(overrides: Script = {}): Script {
   return {
-    [T.reviewItems]: { data: POPULATION, count: POPULATION.length },
+    [T.reviewItems]: tableHolding(POPULATION),
     ...overrides,
   };
 }
@@ -672,7 +704,7 @@ describe("the copy the operator actually reads", () => {
       healthy: healthyScript(),
       // the queue-health slices fall to their EMPTY cards here, which is where
       // the eyebrow moves onto a state card instead of a figure card
-      empty: healthyScript({ [T.reviewItems]: { data: [], count: 0 } }),
+      empty: healthyScript({ [T.reviewItems]: tableHolding([]) }),
       absent: { [T.reviewItems]: { error: tableNotInSchemaCache(T.reviewItems) } },
       refused: { [T.reviewItems]: { error: permissionDenied(T.reviewItems) } },
     } satisfies Record<string, Script>)) {
@@ -731,7 +763,7 @@ describe("the copy the operator actually reads", () => {
     }
 
     const markup = await renderQueues(
-      healthyScript({ [T.reviewItems]: { data: single, count: single.length } }),
+      healthyScript({ [T.reviewItems]: tableHolding(single) }),
     );
     expect(disagreeingCounts(markup)).toEqual([]);
   });
@@ -824,7 +856,7 @@ describe("when a read fails", () => {
   });
 });
 
-const EMPTY_TABLE: Script = { [T.reviewItems]: { data: [], count: 0 } };
+const EMPTY_TABLE: Script = { [T.reviewItems]: tableHolding([]) };
 
 describe("with the table present and empty", () => {
   it("says what each queue holds and what fills it, and shows a real zero", async () => {
@@ -1218,7 +1250,7 @@ describe("a zero that a filter produced", () => {
           kind,
         );
         const unscoped = openSub(
-          await renderQueues({ [T.reviewItems]: { data: rows, count: rows.length } }),
+          await renderQueues({ [T.reviewItems]: tableHolding(rows) }),
           kind,
         );
 
@@ -1250,9 +1282,7 @@ describe("a zero that a filter produced", () => {
       // wording is pinned — only the presence of a scope claim that the read
       // does not support.
       const signals = matching({ kind: "signal" });
-      const SIGNALS_ONLY: Script = {
-        [T.reviewItems]: { data: signals, count: signals.length },
-      };
+      const SIGNALS_ONLY: Script = { [T.reviewItems]: tableHolding(signals) };
       expect(signals.length).toBeGreaterThan(0);
       expect(matching({ kind: "decision" }).length).toBeGreaterThan(0); // fixture holds some
       const plain = await renderQueues(SIGNALS_ONLY);
@@ -1292,6 +1322,144 @@ describe("a zero that a filter produced", () => {
   });
 });
 
+/* ── a population that would not read (admin-window/BUG-0135) ────────────── */
+
+describe("when only the POPULATION leg refuses", () => {
+  /**
+   * Leg 1 — the URL's own read — is COMPLETE, the gauge's window is complete,
+   * and every per-shape HEAD count refuses. The last scripted response answers
+   * every read past it, so all three count legs refuse together.
+   *
+   * The defect this describes: that refusal used to be returned as the whole
+   * read's, so every faceted URL rendered the error state and no rows at all —
+   * on a read PostgREST had narrowed by a real column and answered in full.
+   */
+  function populationRefused(rows: ReviewItemRow[]): Script {
+    return {
+      [T.reviewItems]: [
+        { data: rows, count: rows.length },
+        { data: rows, count: rows.length },
+        { error: permissionDenied(T.reviewItems) },
+      ],
+    };
+  }
+
+  const CONFLICTS = paramsOf("queue=data_conflict");
+
+  it("renders the rows its own read returned, in no error state", async () => {
+    const markup = await renderQueues(populationRefused(POPULATION), CONFLICTS);
+
+    // every row the URL matches is on screen, in the block its kind belongs to
+    expect(new Set(idsIn(markup))).toEqual(
+      new Set(idsOf(matching({ queue: "data_conflict" }))),
+    );
+    expect(idsIn(markup).length).toBeGreaterThan(0);
+    for (const kind of KIND_NAMES) {
+      expect(idsIn(markup, kind), kind).toEqual(
+        idsOf(inQueueOrder(matching({ queue: "data_conflict", kind }))),
+      );
+      // and no block is in the refusing leg's state
+      expect(stateOf(markup, kind), kind).not.toBe("error");
+      expect(stateOf(markup, kind), kind).not.toBe("not_provisioned");
+      // the figure its own read produced still stands
+      expect(readNumber(markup, OPEN_LABEL[kind]), kind).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("reports the refusal on its own sub-surface, inside the block and below the rows", async () => {
+    const markup = await renderQueues(populationRefused(POPULATION), CONFLICTS);
+    const $ = cheerio.load(markup);
+
+    // Exactly one refusal node per block, and none anywhere else on the page:
+    // the gauge read fine and says nothing.
+    const failed = $(`[data-read-failed="${T.reviewItems}"]`).toArray();
+    expect(failed).toHaveLength(KIND_NAMES.length);
+    for (const kind of KIND_NAMES) {
+      const inBlock = $(`[data-queue="${kind}"] [data-read-failed="${T.reviewItems}"]`);
+      expect(inBlock, kind).toHaveLength(1);
+      // addressable by NAME, not by position (ARCHITECTURE.md §10)
+      const surface = inBlock.closest("[data-surface]");
+      expect(surface, kind).toHaveLength(1);
+      expect($(`[data-queue="${kind}"] [data-surface]`), kind).toHaveLength(1);
+
+      // BELOW the rows region, and not inside it: the rows are untouched.
+      const children = $(`[data-queue="${kind}"] section`).children().toArray();
+      const rowsAt = children.findIndex((child) => $(child).is("[data-rows]"));
+      const noteAt = children.findIndex(
+        (child) => $(child).find(`[data-read-failed]`).length > 0 || $(child).is("[data-surface]"),
+      );
+      expect(rowsAt, kind).toBeGreaterThanOrEqual(0);
+      expect(noteAt, `${kind} below the rows`).toBeGreaterThan(rowsAt);
+      expect(
+        $(`[data-queue="${kind}"] [data-rows] [data-read-failed]`),
+        `${kind} not inside the rows region`,
+      ).toHaveLength(0);
+    }
+    // and the two sub-surfaces answer to two different names
+    const names = $("[data-queue] [data-surface]")
+      .toArray()
+      .map((element) => $(element).attr("data-surface") ?? "");
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("says nothing extra where the population WAS readable", async () => {
+    // The other direction of the same rule: no line when the count came back,
+    // and none in the block's own error / not-provisioned arms, where its
+    // state already names the same object.
+    for (const [name, script, params] of [
+      ["readable", healthyScript(), CONFLICTS],
+      ["readable, unfiltered", healthyScript(), {}],
+      ["refused read", { [T.reviewItems]: { error: permissionDenied(T.reviewItems) } }, CONFLICTS],
+      [
+        "absent table",
+        { [T.reviewItems]: { error: tableNotInSchemaCache(T.reviewItems) } },
+        CONFLICTS,
+      ],
+    ] as [string, Script, Record<string, string | string[]>][]) {
+      const $ = cheerio.load(await renderQueues(script, params));
+      expect($("[data-queue] [data-surface]").length, name).toBe(0);
+    }
+  });
+
+  it("falls back to the structural rule, and the sub-surface is what says so", async () => {
+    // With the population unreadable the block cannot ask "did this facet
+    // remove any of MY rows"; it falls back to BUG-0131's structural half. On
+    // `?queue=data_conflict` that reads as narrowed for both blocks, which is
+    // an over-claim on a URL that IS structurally narrowing — never a lie
+    // about a facet — and the refusal beside the rows is what tells the reader
+    // the count behind those words is missing.
+    const refused = await renderQueues(populationRefused(POPULATION), CONFLICTS);
+    const unscoped = openSub(await renderQueues(EMPTY_TABLE), "signal");
+
+    // The signal block is emptied by this facet and says so...
+    expect(idsIn(refused, "signal")).toEqual([]);
+    expect(openSub(refused, "signal")).toContain(unscoped);
+    expect(openSub(refused, "signal").length).toBeGreaterThan(unscoped.length);
+    // ...and a facet the block's own kind IMPLIES still scopes nothing, with
+    // the population refused exactly as with it readable (BUG-0129/BUG-0131).
+    for (const kind of KIND_NAMES) {
+      const own = await renderQueues(populationRefused(POPULATION), paramsOf(`kind=${kind}`));
+      const plain = await renderQueues(populationRefused(POPULATION));
+      expect(openSub(own, kind), kind).toBe(openSub(plain, kind));
+    }
+  });
+
+  it("still renders the block's error state when its OWN read is truncated", async () => {
+    // The pre-existing refusal, unchanged: a FILTERED leg that came back short
+    // means those rows really are unknown, and the block says so.
+    const markup = await renderQueues(
+      { [T.reviewItems]: { data: POPULATION, count: POPULATION.length + 7 } },
+      CONFLICTS,
+    );
+
+    for (const kind of KIND_NAMES) {
+      expect(stateOf(markup, kind), kind).toBe("error");
+    }
+    expect(idsIn(markup)).toEqual([]);
+    expect(textOf(markup)).toContain(T.reviewItems);
+  });
+});
+
 /* ── one queue quiet, the other busy ─────────────────────────────────────── */
 
 describe("one queue quiet while the other is busy", () => {
@@ -1302,9 +1470,7 @@ describe("one queue quiet while the other is busy", () => {
   // empties one WITH a filter, and neither reaches this seam: a queue whose
   // zero is real, unscoped, and standing beside a populated sibling.
   const SIGNALS = matching({ kind: "signal" });
-  const SIGNALS_ONLY: Script = {
-    [T.reviewItems]: { data: SIGNALS, count: SIGNALS.length },
-  };
+  const SIGNALS_ONLY: Script = { [T.reviewItems]: tableHolding(SIGNALS) };
 
   /** The figure the open card shows, as rendered text — a number or a dash. */
   function openFigure(markup: string, kind: string): string {
@@ -1605,7 +1771,7 @@ describe("the queue-health section's state, as the live oracle reads it", () => 
   /** Rows in ONE queue only, so the other queue's slice is honestly empty. */
   const ONE_QUEUE_ONLY: Script = (() => {
     const rows = matching({ queue: "entity_link" });
-    return { [T.reviewItems]: { data: rows, count: rows.length } };
+    return { [T.reviewItems]: tableHolding(rows) };
   })();
 
   it("stays ok while a slice of it is empty, and the slice really is empty", async () => {
@@ -1731,6 +1897,27 @@ describe("each tab reads only what it renders", () => {
 
     expect(stub.tablesRead()).toContain(T.reviewItems);
     expect(stub.tablesRead()).not.toContain(T.verdicts);
+  });
+
+  it("reads review_items twice on the bare URL, and counts only when a facet narrows", async () => {
+    // What the fix COSTS, pinned as a number (admin-window/BUG-0135). The bare
+    // `/queues` is unchanged: the queue lists' complete read IS its own
+    // population, and the health gauge's window is the second read. A faceted
+    // URL adds one HEAD count per shape — reads that return no rows, which is
+    // why no row cap can refuse them.
+    for (const [params, expected] of [
+      [{}, 2],
+      [paramsOf("queue=data_conflict"), 2 + SHAPE_NAMES.length],
+    ] as [Record<string, string | string[]>, number][]) {
+      const stub = stubClient(healthyScript());
+      readWith.client = stub.asSupabaseClient();
+      render(await QueuesPage({ searchParams: Promise.resolve(params) }));
+
+      expect(
+        stub.tablesRead().filter((table) => table === T.reviewItems),
+        JSON.stringify(params),
+      ).toHaveLength(expected);
+    }
   });
 
   it("asks review_items nothing on the verdict tab, and renders no queue block", async () => {

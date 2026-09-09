@@ -33,6 +33,7 @@ import {
   filterBar,
   filterFrom,
   isBlockNarrowed,
+  isNarrowed,
   narrowingOfKind,
   tabFrom,
   tabLinks,
@@ -144,6 +145,26 @@ const VERDICT_LOG_WINDOW = "verdict_log";
  */
 const VERDICT_SURFACE = "verdict_log";
 const VERDICT_PROVENANCE_SURFACE = "verdict_provenance";
+
+/**
+ * The name each queue block's POPULATION sub-surface answers to — one per
+ * kind, so a live oracle addresses it by name and never by position
+ * (ARCHITECTURE.md §10; campaign admin-window/BUG-0135).
+ *
+ * The population is the size of the set that block renders with NO url facet.
+ * It decides four words of a sub-line and which of two empty cards shows, and
+ * it renders no row of its own — so a population that could not be read is
+ * reported here, beside the rows the block's own read did return, exactly as
+ * `/claims` reports a source registry that would not read while every claim
+ * still renders. It is never the block's own state.
+ */
+const POPULATION_SURFACE: Record<Kind, string> = {
+  decision: "decision_queue_population",
+  signal: "signal_queue_population",
+};
+
+/** The eyebrow over that refusal: the fact that could not be read. */
+const POPULATION_EYEBROW = "Whole-queue count";
 
 /** The h2 above the log, and the accessible name of its table. */
 const VERDICT_TITLE = "Verdict log";
@@ -309,10 +330,21 @@ function Queue({
   // — the state staging is in today, with 0 decision items
   // (admin-window/BUG-0133). The read supplies the population beside the rows
   // so the two facts come from one refusal-or-answer.
-  const narrowed = isBlockNarrowed(filter, ownNarrowing, {
-    rendered: items.length,
-    population: result.data.population[kind],
-  });
+  //
+  // The population is its OWN read and answers for itself: `ok` with the count
+  // the database gave, or that leg's refusal (admin-window/BUG-0135). With it
+  // readable the words are decided exactly as admin-window/BUG-0133 landed
+  // them; with it refused this block falls back to the STRUCTURAL rule alone —
+  // and says so, on its own sub-surface below, rather than claiming a scope no
+  // read supports or silently dropping to a rule the reader cannot see.
+  const population = result.data.population[kind];
+  const narrowed =
+    population.kind === "ok"
+      ? isBlockNarrowed(filter, ownNarrowing, {
+          rendered: items.length,
+          population: population.data,
+        })
+      : isNarrowed(filter, ownNarrowing);
   // The read succeeded either way, so it produced a figure either way. An
   // empty queue differs from a full one ONLY in the rows region, where its
   // card says what the queue holds and what fills it: the counted zero keeps
@@ -335,6 +367,20 @@ function Queue({
         items.length === 0 ? (
           <Empty holds={words.holds} filledBy={words.filledBy} />
         ) : undefined
+      }
+      // Beside the rows, never instead of them: this block's own read
+      // succeeded, so its state, rows, figure and card are decided above and
+      // stand whatever the population did. Only the four words the sub-line
+      // could have carried are missing, and this names the read that could not
+      // supply them (admin-window/BUG-0135). No note in the `error` /
+      // `not_provisioned` arms above — there the block's own state already
+      // names the same object.
+      note={
+        population.kind === "ok" ? undefined : (
+          <div data-surface={POPULATION_SURFACE[kind]}>
+            <StateOf result={population} eyebrow={POPULATION_EYEBROW} />
+          </div>
+        )
       }
     />
   );
@@ -561,9 +607,11 @@ export default async function QueuesPage({
     );
   }
 
-  // One complete read for both queues — plus, when the URL carries a facet, the
-  // same read unfiltered, so each block knows its own population and an empty
+  // One complete read for both queues — plus, when the URL carries a facet, one
+  // HEAD count per shape, so each block knows its own population and an empty
   // queue's zero is never dressed as a filtered one (admin-window/BUG-0133).
+  // Those counts return no rows, so no row cap can refuse them and a faceted
+  // URL always renders the rows its own read returned (admin-window/BUG-0135).
   // And the gauge's own bounded window.
   // Reported separately: with the gauge's window unreadable the lists still
   // render, and each surface names the read that refused.

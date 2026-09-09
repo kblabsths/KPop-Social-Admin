@@ -1,15 +1,25 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { readComplete, type DbCountedResponse, type DbResult } from "./result";
+import {
+  readComplete,
+  readCount,
+  type DbCountedResponse,
+  type DbResult,
+  type DbUnavailable,
+} from "./result";
 import { T } from "./tables";
 import {
   KINDS,
+  SHAPES,
+  columnsOfShape,
   queueOrder,
   selectItems,
+  shapesOfKind,
   summarizeByKind,
   type Kind,
   type ReviewAttention,
   type ReviewItemFilter,
   type ReviewItemRow,
+  type Shape,
 } from "../review/shapes";
 
 /**
@@ -122,7 +132,7 @@ export async function listReviewItems(
 /**
  * What ONE queue block needs to tell its four states apart: the rows the URL
  * left it, and how many rows its kind holds when NOTHING is filtered
- * (campaign admin-window/BUG-0133).
+ * (campaign admin-window/BUG-0133, reshaped by admin-window/BUG-0135).
  *
  * `listReviewItems` narrows at the database, so its `ok` array never contains
  * the rows a facet removed — from it alone a block cannot tell "my queue is
@@ -134,19 +144,104 @@ export interface ReviewQueues {
   /** The items matching the URL filter, in queue order — what the page renders. */
   items: ReviewItemRow[];
   /**
-   * Per kind, the rows the table holds with NO url facet at all: the size of
-   * the set that block would render on the bare `/queues`. Both kinds are
-   * always present, so an empty queue is a real `0` and never a gap.
+   * Per kind, the rows the TABLE holds with no URL facet at all — a count,
+   * never rows. `ok` is the number the database gave; a non-`ok` arm is THIS
+   * kind's population refusing, and it is the CALLER's to report beside the
+   * rows, not the read's to propagate as its own refusal
+   * (admin-window/BUG-0135: a leg that renders no row of its own may not
+   * delete the rows the URL's own complete read returned).
+   *
+   * Both kinds are always present, so an unreadable population is a named
+   * refusal and never a gap.
    */
-  population: Record<Kind, number>;
+  population: Record<Kind, DbResult<number>>;
 }
 
-/** Every kind's whole-table row count, by the app's one predicate. */
-function populationByKind(items: ReviewItemRow[]): Record<Kind, number> {
-  const population = {} as Record<Kind, number>;
-  // Not `summarizeByKind`: that counts OPEN items (attention), and a block's
-  // unfiltered set is every row of its kind, settled ones included.
-  for (const kind of KINDS) population[kind] = selectItems(items, { kind }).length;
+/**
+ * One shape's whole-table row count: `{ head: true, count: "exact" }`, no rows.
+ *
+ * Built from `SHAPE_COLUMNS` in `src/lib/review/shapes.ts` — the one owner of
+ * what a shape IS (§6: "the kind is derived in code, no column carries it").
+ * This module spells no queue value and no null-check of its own; it spells
+ * only the column NAMES the declaration names, which is what turns that
+ * declaration into a query.
+ *
+ * No `.range` and no `.order`: a head count returns no rows, so there is
+ * nothing to bound or to order, and `readComplete`'s ROW_CAP cannot apply to
+ * it. That is the whole point — a `review_items` table of any size answers a
+ * faceted `/queues` URL with its rows AND its populations
+ * (admin-window/BUG-0135).
+ */
+function countQuery(db: SupabaseClient, shape: Shape) {
+  const columns = columnsOfShape(shape);
+  let builder = db
+    .from(T.reviewItems)
+    .select("*", { head: true, count: "exact" })
+    .eq("queue", columns.queue);
+  if (columns.sourceIdIsNull === true) {
+    builder = builder.is("source_id", null);
+  } else if (columns.sourceIdIsNull === false) {
+    builder = builder.not("source_id", "is", null);
+  }
+  return builder as unknown as PromiseLike<{ count: number | null; error: unknown }>;
+}
+
+/**
+ * Each kind's whole-table population, one COUNT read per shape.
+ *
+ * The shapes are disjoint and exhaustive, so a kind's figure is the SUM of the
+ * counts the database gave — never a subtraction from a table total and never
+ * arithmetic between two reads. A shape whose count refused makes that kind's
+ * population that refusal, so the number is one the database stated or it is
+ * not a number at all (ARCHITECTURE.md §4.3; a null count is a refusal, never
+ * a zero).
+ *
+ * The reads are issued in `SHAPES` order and answered together; one refusing
+ * says nothing about the others, and the kind that did not need it is
+ * unaffected.
+ */
+async function readPopulation(
+  db?: SupabaseClient,
+): Promise<Record<Kind, DbResult<number>>> {
+  const answered = await Promise.all(
+    SHAPES.map((shape) =>
+      readCount(T.reviewItems, (client) => countQuery(client, shape), db),
+    ),
+  );
+  const byShape = {} as Record<Shape, DbResult<number>>;
+  SHAPES.forEach((shape, index) => {
+    byShape[shape] = answered[index];
+  });
+
+  const population = {} as Record<Kind, DbResult<number>>;
+  for (const kind of KINDS) {
+    let total = 0;
+    let refused: DbUnavailable | null = null;
+    for (const shape of shapesOfKind(kind)) {
+      const counted = byShape[shape];
+      if (counted.kind !== "ok") {
+        refused = counted;
+        break;
+      }
+      total += counted.data;
+    }
+    population[kind] = refused ?? { kind: "ok", data: total };
+  }
+  return population;
+}
+
+/**
+ * Each kind's population read off rows the caller ALREADY holds — the whole
+ * table, because the URL narrowed nothing.
+ *
+ * Not `summarizeByKind`: that counts OPEN items (attention), and a block's
+ * unfiltered set is every row of its kind, settled ones included.
+ */
+function populationOfRows(items: ReviewItemRow[]): Record<Kind, DbResult<number>> {
+  const population = {} as Record<Kind, DbResult<number>>;
+  for (const kind of KINDS) {
+    population[kind] = { kind: "ok", data: selectItems(items, { kind }).length };
+  }
   return population;
 }
 
@@ -164,34 +259,38 @@ function narrows(filter: ReviewItemFilter): boolean {
 }
 
 /**
- * The Queues page's read: both facts, or one refusal.
+ * The Queues page's read: the URL's own rows, and each kind's population
+ * beside them.
  *
- * TWO COMPLETE READS (ARCHITECTURE.md §4.3 kind 1), and only when the URL
- * carries a facet — the bare `/queues` reads once and IS its own population,
- * so the common case costs exactly what it costs today. Neither read is
- * partial and neither is a window: an `ok` here means both answered in full,
- * and if either refused the caller gets that refusal and renders no figure at
- * all rather than a population the app never counted (LESSONS 2: a null count
- * is a refusal, never a zero).
+ * **The URL's own read decides the whole read** (admin-window/BUG-0135). This
+ * is non-`ok` if and only if `listReviewItems(filter)` is: that leg is the one
+ * the URL narrows and the one every rendered row comes from, so its refusal is
+ * the page's. The population legs decide four words of a sub-line and which of
+ * two empty cards shows, and render no row of their own — a refusal there is
+ * carried per kind and REPORTED beside the rows, the way `/claims` reports a
+ * source registry that would not read while every claim still renders. It used
+ * to be returned as the whole read's refusal, which deleted the rows a
+ * complete, database-narrowed read had already returned, on every faceted URL,
+ * as soon as the table passed ROW_CAP.
  *
- * The population read is deliberately the SAME query with an empty filter, so
- * the two legs cannot come to disagree about columns, order or completeness.
+ * The population leg is now a per-shape COUNT (`readCount`, `head: true`), so
+ * ROW_CAP cannot reach it at all; the FILTERED leg stays a COMPLETE read
+ * (§4.3) and still refuses whole when it is truncated, because those rows
+ * really are unknown.
+ *
+ * The bare `/queues` still costs exactly ONE query: an unnarrowed read IS the
+ * whole table, so its own rows are the population.
  */
 export async function readReviewQueues(
   filter: ReviewItemFilter = {},
   db?: SupabaseClient,
 ): Promise<DbResult<ReviewQueues>> {
-  const [filtered, whole] = await Promise.all([
-    listReviewItems(filter, db),
-    narrows(filter) ? listReviewItems({}, db) : null,
-  ]);
+  const filtered = await listReviewItems(filter, db);
   if (filtered.kind !== "ok") return filtered;
-  const population = whole ?? filtered;
-  if (population.kind !== "ok") return population;
-  return {
-    kind: "ok",
-    data: { items: filtered.data, population: populationByKind(population.data) },
-  };
+  const population = narrows(filter)
+    ? await readPopulation(db)
+    : populationOfRows(filtered.data);
+  return { kind: "ok", data: { items: filtered.data, population } };
 }
 
 /**
