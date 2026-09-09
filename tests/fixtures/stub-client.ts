@@ -288,6 +288,30 @@ export function missingOperator(left = "timestamp with time zone", operator = "~
 }
 
 /**
+ * 42883 a third time — raised by a plain TABLE read, and naming a function the
+ * caller never asked for.
+ *
+ * Measured read-only on `ubfjjqlvnpnoborczbdb.supabase.co` 2026-09-08
+ * (admin-window/TASK-0047 QA): `db.from("groups").select("id").filter(
+ * "created_at", "fts", "x")` — a full-text filter aimed at a `timestamptz` —
+ * answers `code 42883`, `message "function to_tsvector(timestamp with time
+ * zone) does not exist"`. `plfts` on a `uuid` gives the same shape.
+ *
+ * The absent function is real, but it is an OVERLOAD Postgres does not have,
+ * not the object the query asked for: `groups` is right there holding rows.
+ * The operator sentence is therefore not the only 42883 a provisioned table
+ * can raise, which is what `missingOperator` alone does not cover.
+ */
+export function missingFunctionOnTableRead(argumentType = "timestamp with time zone") {
+  return {
+    code: "42883",
+    details: null,
+    hint: "No function matches the given name and argument types. You might need to add explicit type casts.",
+    message: `function to_tsvector(${argumentType}) does not exist`,
+  };
+}
+
+/**
  * 23502 — `not_null_violation`. A NEIGHBOUR of the absence codes and not one
  * of them: clearing a `not null` cell is refused by the database and the
  * surface must show that refusal (ARCHITECTURE.md §9.1's deliberate walkable

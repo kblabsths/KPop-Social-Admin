@@ -13,6 +13,7 @@ import { T } from "@/lib/db/tables";
 import {
   columnNotInSchemaCache,
   functionNotInSchemaCache,
+  missingFunctionOnTableRead,
   missingOperator,
   notNullViolation,
   permissionDenied,
@@ -228,6 +229,27 @@ describe("classify", () => {
       expect(result).not.toHaveProperty("data");
     },
   );
+
+  /**
+   * PINNED `it.fails` (strict) for admin-window/BUG-0080 — green only while
+   * the divergence stands, RED the day it is fixed. The fix flips it back to
+   * a plain `it(...)`; nothing else about the case changes.
+   */
+  it.fails("never calls a PROVISIONED table absent because a TABLE read raised 42883", () => {
+    // MEASURED read-only on the declared staging target 2026-09-08
+    // (admin-window/TASK-0047 QA): `db.from("groups").select("id")
+    // .filter("created_at", "fts", "x")` answers 42883 "function
+    // to_tsvector(timestamp with time zone) does not exist" — a non-operator
+    // 42883 from a plain TABLE read. `groups` is provisioned and holds rows,
+    // so "not_provisioned: groups" is a false claim about an object that is
+    // right there — the exact harm the operator exception exists to prevent,
+    // reached by the sentence the exception does not match.
+    const result = classify(missingFunctionOnTableRead(), T.groups);
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.reading).toBe(T.groups);
+    expect(result.message).toContain("to_tsvector");
+  });
 
   it("tells the two 42883s apart: the absent function, and the absent operator", () => {
     // Same code, opposite verdicts, and the only thing separating them is the
