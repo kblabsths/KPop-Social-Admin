@@ -5,7 +5,10 @@ import {
   EditStatus,
   IDLE_EDIT_STATE,
   armConfirmationClock,
+  armRetire,
+  domRetireHost,
   reduceEdit,
+  takeRefusalSlot,
   type EditState,
   type RetireMove,
   type SaveOutcome,
@@ -188,8 +191,12 @@ export type PickEvent =
   /** The confirmation clock ARMED BY `edit` fired — admin-window/BUG-0111. */
   | { kind: "elapsed"; edit: number }
   /**
-   * The operator ended `edit` without choosing again — the Escape the open
-   * panel already listens for (campaign admin-window/BUG-0107, this widget).
+   * The operator ended `edit` without choosing again — a press outside the
+   * widget, focus landing elsewhere, Escape from wherever focus is, or a
+   * refusal elsewhere on the page taking its one slot (campaign
+   * admin-window/BUG-0107, wired to this widget by admin-window/BUG-0119).
+   * The MOVE travels with the event, so what each one means is
+   * `retiresRefusal`'s one answer rather than a condition per listener.
    */
   | { kind: "abandoned"; edit: number; move: RetireMove }
   /** The operator reopened the picker, acknowledging the last statement. */
@@ -480,6 +487,8 @@ export function EntityPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  /** The whole widget's box: what "inside" means to the retire rule below. */
+  const root = useRef<HTMLDivElement | null>(null);
   const [pick, dispatch] = useReducer(reducePick, undefined, () => ({
     ...IDLE_PICK_STATE,
     chosen:
@@ -517,6 +526,52 @@ export function EntityPicker({
    * on every real transition and on unmount.
    */
   useEffect(() => armConfirmationClock(pick, dispatch), [pick]);
+
+  /**
+   * A refused choice ends when the operator does — the cell's page-wide rule,
+   * reaching this widget (campaign admin-window/BUG-0119).
+   *
+   * The clock came over with admin-window/BUG-0111; BUG-0107's other half did
+   * not. The panel's `onKeyDown` below is bound to the OPEN panel, so it hears
+   * an Escape only while focus is still inside it — and a refusal leaves the
+   * panel open with focus wherever the operator put it. Every other move they
+   * make (a press anywhere else, a Tab, an Escape from outside) reached no
+   * handler of this widget's at all, so the red line stood until this same
+   * picker was toggled open again; and because the widget never took the
+   * page's one refusal slot, its refusal could stand stacked with a cell's.
+   *
+   * So the arming is `armRetire`'s over `domRetireHost` — the cell's own three
+   * page-wide listeners and its one DOM adapter, not a second copy — and
+   * `takeRefusalSlot` is the page-level half: at most ONE refusal on screen at
+   * any moment, whichever widget put it there (BUG-0107 criterion 2). Armed
+   * only while a refusal is showing, so a picker at rest adds no listener at
+   * all; what each move MEANS is `retiresRefusal`'s single answer, so a move
+   * that reaches a `saving` or a `saved` is a no-op rather than a listener
+   * that had to remember not to fire.
+   *
+   * **A retirement does not close the panel** — the decision this ticket
+   * carried, stated plainly. The panel is where the operator is working: it
+   * opens on the Choose button, closes on that button, on a choice that lands,
+   * and on the Escape they press inside it (`PICKER_HINT` says so), and this
+   * rule retires a SENTENCE rather than ending the widget. Closing it here
+   * would mean an unrelated cell's refusal (`superseded`) or a press on some
+   * other part of the page could shut a list the operator is reading and lose
+   * their search — while leaving it open costs nothing, since the panel is
+   * drawn in the row's flow and covers nothing.
+   */
+  useEffect(() => {
+    if (pick.status.kind !== "failed") return;
+    const edit = pick.edit;
+    const box = root.current;
+    if (box === null) return;
+    const retire = (move: RetireMove) => dispatch({ kind: "abandoned", edit, move });
+    const disarm = armRetire(domRetireHost(box), retire);
+    const release = takeRefusalSlot(() => retire({ kind: "superseded" }));
+    return () => {
+      release();
+      disarm();
+    };
+  }, [pick]);
 
   async function choose(optionId: string) {
     // Only a row the read returned may be sent, whatever produced the id.
@@ -559,7 +614,7 @@ export function EntityPicker({
     // WHICH control a field offers rather than counting elements — the
     // distinction this ticket is about is picker versus cell, and both are
     // "a control" to anything that only counts (ARCHITECTURE §10).
-    <div data-widget="picker">
+    <div data-widget="picker" ref={root}>
       <div className="flex flex-wrap items-baseline gap-2">
         <PickerValue
           id={chosen?.id ?? null}
@@ -588,18 +643,13 @@ export function EntityPicker({
           onKeyDown={(event) => {
             if (event.key !== "Escape") return;
             event.preventDefault();
-            // Escape ends a refusal as well as the panel — the move
-            // `retiresRefusal` already decides for the cell (campaign
-            // admin-window/BUG-0107). It is a no-op on a confirmation (that is
-            // the clock's), on a write still in flight, and on any statement
-            // but the one this choice put on screen. The cell's other two
-            // moves — a press outside, focus landing elsewhere — are page-wide
-            // listeners the picker does not arm.
-            dispatch({
-              kind: "abandoned",
-              edit: pick.edit,
-              move: { kind: "escape" },
-            });
+            // Escape CLOSES the panel, and that is all this handler does now:
+            // what Escape means for the statement on screen is the page-wide
+            // rule armed above, which hears it from wherever focus is and
+            // hands it to the one `retiresRefusal` (campaign
+            // admin-window/BUG-0119). Dispatching here too would be a second
+            // path to the same decision, which is the shape of the defect
+            // BUG-0107 was bounced for.
             setOpen(false);
             setQuery("");
           }}
