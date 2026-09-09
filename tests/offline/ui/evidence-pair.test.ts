@@ -5,7 +5,7 @@ import * as cheerio from "cheerio";
 import { EvidencePair, type EvidenceClaim } from "@/components/evidence/evidence-pair";
 import { Button } from "@/components/ui/button";
 import { Identifier } from "@/components/ui/identifier";
-import { EM_DASH, absoluteUtc } from "@/lib/format";
+import { EM_DASH, absoluteUtc, relativeAge } from "@/lib/format";
 
 import { classesOf, h, render, textOf } from "./markup";
 
@@ -106,20 +106,14 @@ describe("EvidencePair", () => {
    * itself: `src/components/ui/identifier.tsx` names "a source's own name"
    * among the foreign text an identifier span is where it lands, and its
    * `DATA_MUTED` doc says "a machine identifier takes `<Identifier muted>`
-   * instead — never this". The card hands the whole line `DATA_MUTED` and
-   * leaves the source a bare text node inside it, so the value is not
-   * isolated and the app's own words share its bidi paragraph.
+   * instead — never this" (campaign admin-window/BUG-0151, DEBT-0011
+   * criteria 2 and 4).
    *
    * The expectation is READ OFF the primitive rather than typed here: whatever
    * `<Identifier muted>` renders for `dir` is what the source must carry, so
    * this pins the behaviour and not a literal.
-   *
-   * PINNED `it.fails` for admin-window/BUG-0151 (open). Watched red as a plain
-   * `it` first — 1 failed | 10 passed, so the failure is this assertion and not
-   * a broken fixture. When the source goes through the primitive, this file
-   * reddens as an XPASS and the pin comes off (plain `it`).
    */
-  it.fails("gives the claim's source the isolation the identifier primitive gives an identifier — admin-window/BUG-0151", () => {
+  it("gives the claim's source the isolation the identifier primitive gives an identifier — admin-window/BUG-0151", () => {
     const source = "ticketmaster";
     const $primitive = cheerio.load(render(h(Identifier, { muted: true, children: source })));
     const isolation = $primitive("span").attr("dir");
@@ -129,6 +123,107 @@ describe("EvidencePair", () => {
 
     expect(own).toHaveLength(1);
     expect($(own[0]).attr("dir")).toBe(isolation);
+  });
+
+  /**
+   * The TIER is the same class of value — `sources.tier`, the source's own
+   * word, straight out of the registry (admin-window/BUG-0151) — so a present
+   * one takes the same isolated box. Second fixture: an ABSENT tier is not a
+   * machine value at all but the app's own absence element
+   * (`lib/format.ts`'s dash, admin-window/BUG-0134), so it must NOT be dressed
+   * as an identifier — a fix that wrapped `orDash`'s result wholesale would
+   * pass the first arm and fail here.
+   */
+  it("isolates a present tier, and leaves an absent one the app's own absence element", () => {
+    const isolation = cheerio
+      .load(render(h(Identifier, { muted: true, children: "x" })))("span")
+      .attr("dir");
+
+    const tier = "primary";
+    const $present = cheerio.load(pair({ claims: [{ ...CLAIMS[0], tier }] }));
+    const own = $present("*").toArray().filter((element) => $present(element).text() === tier);
+    expect(own).toHaveLength(1);
+    expect($present(own[0]).attr("dir")).toBe(isolation);
+
+    const $absent = cheerio.load(pair({ claims: [{ ...CLAIMS[0], tier: null }] }));
+    const dash = $absent('[aria-label="no value"]');
+    expect(dash, "the app's absence element still draws the absent tier").toHaveLength(1);
+    expect(dash.attr("dir"), "the dash is the app's own, not a machine value").toBeUndefined();
+    expect(dash.parents("[dir]"), "and it sits in no isolated box").toHaveLength(0);
+  });
+
+  /**
+   * The harm the isolation exists to stop, on two fixtures (ARCHITECTURE §7,
+   * promoted from Common violations row 15; admin-window/BUG-0137, BUG-0151).
+   *
+   * Fixture 1 — a source name carrying an unterminated RIGHT-TO-LEFT OVERRIDE.
+   * The control must stay inside the value's own box, so the app's own words on
+   * that line (the separators and the relative age) are exactly the words, in
+   * exactly the order, the app wrote them in — measured here as "identical to
+   * the healthy render's". Before the fix the whole line was one un-isolated
+   * inline box and Chromium drew `ticketmaster · official · 14d ago` as
+   * `ticketoga d41 · laiciffo · retsam`.
+   *
+   * Fixture 2 — the healthy line, whose TEXT the isolation must not change by
+   * one character: the three values in order, separated by the app's own
+   * separator (rendered twice, identically), and nothing else. Isolation
+   * reorders nothing and adds nothing; it only draws a box.
+   */
+  it("keeps the app's separators and age out of the source's bidi box, and adds no text to the healthy line", () => {
+    const RLO = "\u202e";
+    const claim = { ...CLAIMS[0], source: "ticketmaster", tier: "official" };
+
+    /** The claim line of the first contender card: the card's last span child. */
+    function line(html: string) {
+      const $ = cheerio.load(html);
+      const card = $("div").first().children("div").first();
+      return { $, element: card.children("span").last() };
+    }
+
+    /** The line's text, and the app's own words in it — everything outside the isolated boxes. */
+    function parts(html: string) {
+      const { $, element } = line(html);
+      const isolated = element.find("[dir]").toArray().map((node) => $(node).text());
+      const appWords = element
+        .contents()
+        .toArray()
+        .filter((node) => !("attribs" in node && node.attribs?.dir !== undefined))
+        .map((node) => $(node).text())
+        .join("");
+      return { text: element.text(), isolated, appWords };
+    }
+
+    const healthy = parts(pair({ claims: [claim] }));
+    const hostile = parts(pair({ claims: [{ ...claim, source: `ticket${RLO}master` }] }));
+
+    // Fixture 1: the control reached the screen verbatim, inside the value's
+    // own box — and nowhere else on the line.
+    expect(hostile.isolated[0]).toBe(`ticket${RLO}master`);
+    expect(hostile.appWords).not.toContain(RLO);
+    // ...so the app's own words beside a hostile source are the words, in the
+    // order, it writes beside a healthy one.
+    expect(hostile.appWords).toBe(healthy.appWords);
+
+    // Fixture 2: the healthy line still reads source, tier, age in that fixed
+    // order, holds those three values and nothing else, and puts the SAME
+    // app-authored separator between them both times — the isolation drew a
+    // box and did not add, drop or move one character of text.
+    expect(healthy.isolated).toEqual([claim.source, claim.tier]);
+    const age = relativeAge(claim.observedAt);
+    const values = [claim.source, claim.tier, age.text];
+    let rest = healthy.text;
+    const separators: string[] = [];
+    for (const value of values) {
+      const at = rest.indexOf(value);
+      expect(at, `the line carries ${value}, in order`).toBeGreaterThanOrEqual(0);
+      separators.push(rest.slice(0, at));
+      rest = rest.slice(at + value.length);
+    }
+    // Nothing before the first value, nothing after the last, and the two
+    // separators between them are the same string as each other.
+    expect([separators[0], rest]).toEqual(["", ""]);
+    expect(separators[2]).toBe(separators[1]);
+    expect(separators[1].trim(), "the app writes a separator there").not.toBe("");
   });
 
   it("renders with no contenders at all and draws no dangling separator", () => {
