@@ -617,3 +617,111 @@ describe("an unsettled item", () => {
     expect(stub.calls.filter((call) => call.table === T.verdicts)).toHaveLength(1);
   });
 });
+
+/* ── the block's own dash contract ───────────────────────────────────────── */
+
+/**
+ * How this block accounts for the dashes it puts on screen — the invariant
+ * behind admin-window/BUG-0092, measured structurally.
+ *
+ * Two numbers and a hook, and nothing about wording:
+ *
+ *  - `appDashes` — dashes drawn by the app's ONE dash element (`orDash`,
+ *    `lib/format.ts`), which is the only absence rendering this app has;
+ *  - `strayDashes` — em dashes reaching the screen as bare text instead, from
+ *    a value that never went through it (LESSONS 1: "Every nullable value goes
+ *    through `lib/format.ts`'s dash"). The block's own dash-meaning sentence
+ *    carries an em dash of its own and is removed before counting, exactly as
+ *    the log tab's note says it must be;
+ *  - `absenceNotes` — the `data-absence-note` hook, which is what makes "said
+ *    once" a structural claim rather than a copy one.
+ *
+ * Deliberately fixture-scoped: an operator's note may legitimately contain an
+ * em dash, so this is asked only of rows whose values carry none.
+ */
+function dashAccounting(markup: string): {
+  appDashes: number;
+  strayDashes: number;
+  absenceNotes: number;
+} {
+  const $ = cheerio.load(markup);
+  const block = $(VERDICT);
+  const drawn = block.find('[aria-label="no value"]');
+  const inDrawn = drawn
+    .toArray()
+    .reduce((total, element) => total + ($(element).text().split(EM_DASH).length - 1), 0);
+  const absenceNotes = block.find("[data-absence-note]").length;
+  block.find("[data-absence-note]").remove();
+  return {
+    appDashes: drawn.length,
+    strayDashes: block.text().split(EM_DASH).length - 1 - inDrawn,
+    absenceNotes,
+  };
+}
+
+describe("the dashes the block draws", () => {
+  /**
+   * The invariant both pins below assert, and neither prescribes a fix: the
+   * block may stop dashing these values or may explain every dash it draws,
+   * and either shape satisfies it. `it.fails` is the strict pin — the day the
+   * block stops diverging these turn RED and send the reader to BUG-0092,
+   * rather than passing silently on a fix nobody noticed.
+   */
+
+  it.fails(
+    "admin-window/BUG-0092: explains the dash it draws for a blank actor",
+    async () => {
+      // Every other line carries a value, so the actor's dash is the only one
+      // on screen — and it stands there with nothing saying what it means.
+      const markup = await renderItem(
+        withVerdict({ actor: "   ", note: "the marketing title, not the billed one" }),
+      );
+      const seen = dashAccounting(markup);
+
+      expect(seen.appDashes).toBeGreaterThan(0);
+      expect({ dashOnScreen: seen.appDashes > 0, notes: seen.absenceNotes }).toEqual({
+        dashOnScreen: true,
+        notes: 1,
+      });
+    },
+  );
+
+  it.fails(
+    "admin-window/BUG-0092: draws an unparseable instant with the app's own dash",
+    async () => {
+      // `relativeAge` answers `{ text: EM_DASH, title: "" }` for an instant it
+      // cannot read, and this block renders that text directly — where the
+      // log's own `created` column hands it over as null so the table's
+      // `orDash` draws it (`components/queues/verdict-log.tsx`). The same
+      // column, two renderings, one of them outside the app's one dash.
+      const markup = await renderItem(
+        withVerdict({ created_at: "settled last tuesday", note: "a note" }),
+      );
+      const seen = dashAccounting(markup);
+
+      expect({ stray: seen.strayDashes, drawn: seen.appDashes }).toEqual({
+        stray: 0,
+        drawn: 1,
+      });
+    },
+  );
+
+  it("draws and explains both structural dashes on a settle-only verdict", async () => {
+    // The state the block gets RIGHT, pinned beside the two it does not, so a
+    // fix for BUG-0092 cannot buy the invariant by dropping this line.
+    const markup = await renderItem(withVerdict({ observation_id: null, note: null }, []));
+    const seen = dashAccounting(markup);
+
+    expect(seen).toEqual({ appDashes: 2, strayDashes: 0, absenceNotes: 1 });
+  });
+
+  it("draws no dash, and no dash-meaning line, on a verdict that carries everything", async () => {
+    const markup = await renderItem(withVerdict({ note: "a note" }));
+
+    expect(dashAccounting(markup)).toEqual({
+      appDashes: 0,
+      strayDashes: 0,
+      absenceNotes: 0,
+    });
+  });
+});
