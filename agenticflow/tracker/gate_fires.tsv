@@ -168,3 +168,4 @@
 2026-09-09T16:51:50Z	evidence_budget	qa_evidence_overbudget: BUG-0135 4063/4000 chars
 2026-09-09T17:41:53Z	artifact_gate	blocked write outside repo: /tmp_probe.html
 2026-09-09T18:19:08Z	artifact_gate	blocked write outside repo: /[a-f]/i.test
+2026-09-09T19:05:49Z	artifact_gate	blocked write outside repo: /tmp/dev/null
