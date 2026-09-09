@@ -558,4 +558,48 @@ describe("a body whose optional keys are absent, not null", () => {
     } as unknown as VerdictValue;
     expect(decisionRefusals(decisionOf({ action: "supply_value", value }))).toEqual([]);
   });
+
+  it("lets no `__proto__` key in a parsed BODY satisfy an invariant it did not send", () => {
+    // The body-level twin of the value-level case above (QA, admin-window/
+    // BUG-0079). `actor` is the one invariant checked on every action and
+    // `verdicts.actor` is the log of who decided, so a forged body that spells
+    // the identity under `__proto__` instead of as its own key must be refused
+    // as `actor_required` — never credited with an inherited actor — and must
+    // leave `Object.prototype` untouched for every later body in the process.
+    const body = JSON.parse(
+      '{"action":"settle","review_item_id":"22222222-2222-4222-8222-222222222222",' +
+        '"__proto__":{"actor":"forged@attacker.test","value":{"ref":"r"}}}',
+    ) as Record<string, unknown>;
+    expect(decisionRefusals(bodyAsDecision(body))).toEqual(["actor_required"]);
+    expect(({} as Record<string, unknown>).actor).toBeUndefined();
+    expect(decisionRefusals(WELL_FORMED.settle)).toEqual([]);
+  });
+
+  it("grades a re-submitted body identically and never writes to it", () => {
+    // The double-submit an operator makes by clicking twice, and the retry a
+    // route makes on the same parsed body: the guard is a pure read, so the
+    // second grading is the first, and nothing it returns can travel back into
+    // the body the caller is about to send to the database.
+    const body = JSON.parse(
+      JSON.stringify({
+        action: "supply_value",
+        review_item_id: "22222222-2222-4222-8222-222222222222",
+        actor: "admin@example.test",
+        note: null,
+        value: valueOf({ value: "BLACKPINK at the Forum" }),
+      }),
+    ) as Record<string, unknown>;
+    const beforeGrading = JSON.stringify(body);
+    const first = decisionRefusals(bodyAsDecision(body));
+    const second = decisionRefusals(bodyAsDecision(body));
+    expect(first).toEqual([]);
+    expect(second).toEqual(first);
+    expect(JSON.stringify(body)).toEqual(beforeGrading);
+
+    // A caller that keeps and mutates the returned array cannot poison the
+    // next grading of the same body, and a frozen body grades without throwing.
+    (first as string[]).push("actor_required");
+    expect(decisionRefusals(bodyAsDecision(body))).toEqual([]);
+    expect(decisionRefusals(Object.freeze(WELL_FORMED.wont_fix))).toEqual([]);
+  });
 });
