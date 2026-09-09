@@ -20441,3 +20441,27 @@
 2026-09-09T18:39:34Z	agent	-	-	-	-
 # STRANDED	2026-09-09T18:39:48Z	verifier	1 uncommitted in primary checkout: .env.example
 2026-09-09T18:39:48Z	verifier	BUG-0139	27950	1452	234035
+# STRANDED	2026-09-09T18:40:05Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T18:40:05Z	agent	-	-	-	-
+# STRANDED	2026-09-09T18:40:37Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T18:40:37Z	agent	-	-	-	-
+# STRANDED	2026-09-09T18:41:08Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T18:41:08Z	agent	-	-	-	-
+# STRANDED	2026-09-09T18:42:10Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T18:42:10Z	agent	-	-	-	-
+# STRANDED	2026-09-09T18:42:41Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T18:42:41Z	agent	-	-	-	-
+# STRANDED	2026-09-09T18:43:12Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T18:43:12Z	agent	-	-	-	-
+# STRANDED	2026-09-09T18:43:44Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T18:43:44Z	agent	-	-	-	-
+# STRANDED	2026-09-09T18:44:15Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0141.md
+2026-09-09T18:44:15Z	agent	-	-	-	-
+# STRANDED	2026-09-09T18:44:46Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0141.md
+2026-09-09T18:44:46Z	agent	-	-	-	-
+# STRANDED	2026-09-09T18:45:18Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0141.md
+2026-09-09T18:45:18Z	agent	-	-	-	-
+# STRANDED	2026-09-09T18:45:49Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/docs/DECISIONS.md, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0141.md
+2026-09-09T18:45:49Z	agent	-	-	-	-
+# STRANDED	2026-09-09T18:46:20Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/docs/DECISIONS.md, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0141.md
+2026-09-09T18:46:20Z	agent	-	-	-	-

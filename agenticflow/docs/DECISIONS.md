@@ -1165,3 +1165,40 @@ floor under the milestone walk, never a replacement for it. It was dry-run befor
 it was written into criteria (2 hits on `/`, 0 on the other seven routes), because
 a repo-wide guard authored against an instance nobody measured is how row 4's
 false-red absence pins were born.
+
+## 2026-09-09 — `/queues` narrows by `source_id`; the dropped-parameter rule gets one owner (BUG-0141)
+
+The Sources page's `review items` anchor sent `/queues?source_id=<id>` into a
+page whose vocabulary was kind / queue / shape / status, and an unrecognised
+parameter there narrows nothing — so a source's own link presented another
+source's item as that source's (verifier walk, 2026-09-09). The ticket left the
+choice open: add the facet, or add the honest "this page did not apply that
+parameter" line `/claims` already renders. **Ruled: add the facet.** Spec F5 is
+"a source links to its review items and its runs"; a link that lands on every
+source's items with an apology beside it does not link to its review items, and
+shipping (b) would have converted a wrong-data bug into an unmet spec clause
+with the same verifier verdict at the end of it. `review_items.source_id` is a
+real, populated column, PostgREST can narrow on it, and the campaign already
+carries this shape on three surfaces — the marginal cost over the line-only fix
+was small enough that "M2 endgame" argued for the facet rather than against it.
+
+The door this closes: `source_id` is now part of `/queues`' URL contract and a
+future facet on that route follows this seam — filter field on
+`ReviewItemFilter`, compared by the app's one predicate, narrowed at the query
+where a column exists, canonicalised once at the page edge by
+`canonicalRecordId` handed INTO the leaf (a pure domain leaf may not import
+`lib/db/**`, and a second uuid grammar was already closed by BUG-0139/0140).
+Two things it deliberately does NOT do: no chip row for the source (its
+vocabulary is unbounded data and `/queues` reads no registry — the narrowing is
+stated by a scope element that spells the canonicalised id and links back
+without it), and no narrowing of the queue-health gauge or the verdict log,
+which stay honest whole-object reads.
+
+The second half is a consolidation, not a new sentence: the dropped-parameter
+rule and its rendering move to `src/lib/url/dropped-params.ts` and
+`src/components/ui/dropped-params.tsx`, with `lib/claims/filters.ts`
+re-exporting so `/claims` does not move. `/queues` needs the line anyway — for
+`?source_id=not-a-uuid`, which it cannot apply — and a copy would have been born
+without the four fixes that landed on that one sentence
+(BUG-0123/0127/0136/0137). That is common violation 9's promoted rule applied to
+a bug fix rather than to a decomposition.

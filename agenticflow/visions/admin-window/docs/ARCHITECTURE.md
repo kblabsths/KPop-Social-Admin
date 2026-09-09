@@ -152,6 +152,11 @@ src/
     browse/            LEAF: rows.ts (row shaping), views.ts (the column sets)
     claims/            LEAF: filters.ts (bucket + source narrowing)
     records/           LEAF: provenance.ts, routes.ts (`recordHref` — the ONE record URL)
+    sources/           LEAF: routes.ts — the `/sources`, `/queues?source_id=` and
+                       `/cycles?source=` URLs, spelled once (BUG-0141)
+    url/               LEAF: dropped-params.ts — the ONE "parameters this page did
+                       not apply" rule; `/claims` and `/queues` both render it
+                       from here, never from a copy (BUG-0141, common violation 9)
     gauges/
       gauge.ts         the window/figure shapes every gauge returns
       cycle-health.ts  resolution-latency.ts  pending-claims.ts
@@ -164,7 +169,8 @@ src/
                        exemption to §4 rule 3 — see that rule.
   components/
     ui/                Page, Section, DataTable, StatCard, Badge, Chip, Button,
-                       Loading, Empty, NotProvisioned, ErrorLine
+                       Loading, Empty, NotProvisioned, ErrorLine, StateOf,
+                       WindowLine, DroppedParamsLine
     EditableCell.tsx   the one old component that re-earned its place (§2), at
                        the components root and PascalCase for that reason (§11)
     gauges/            the gauge cards (figure, trend table, distribution, state)
@@ -207,7 +213,7 @@ lib/gauges/**   ->  lib/db/**            ->  @supabase/supabase-js
 
 <leaf> = the PURE DOMAIN LEAVES, the bottom of the app:
          lib/review/**, lib/browse/**, lib/claims/**, lib/records/**,
-         lib/format.ts, lib/edit/config.ts
+         lib/sources/**, lib/url/**, lib/format.ts, lib/edit/config.ts
 ```
 
 1. **`components/**` never imports from `lib/db/**` and never fetches.** A
@@ -1368,6 +1374,38 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-09, BUG-0141 ruling (architect).** `/queues` **gains the
+  `source_id` facet**; the dropped-parameter line alone was the cheaper answer
+  and the wrong one — spec F5 says "a source links to its review items", and an
+  anchor labelled `review items` that lands on every source's items with an
+  apology beside it does not satisfy it. `review_items.source_id` is a real,
+  populated column, so the narrowing is the shape three surfaces already carry:
+  the field joins `ReviewItemFilter` and the app's one predicate, the query
+  narrows with `.eq` like `queue`/`status` (so a table past `ROW_CAP` still
+  answers completely), and the value is canonicalised ONCE at the page with
+  `canonicalRecordId` — handed INTO the leaf as an argument, because a pure
+  domain leaf may not import `lib/db/**` (§4 rule 7) and a second uuid grammar
+  is what BUG-0139/0140 closed. Two facts the ruling pins so a lane cannot get
+  them wrong: `narrowingOfKind` never carries a source (no kind implies one, so
+  a source facet always counts as narrowing), and the POPULATION counts stay
+  unnarrowed (that is what makes a source with no items read "nothing matched"
+  rather than "this queue is empty" — BUG-0133). `source_id` gets no chip row:
+  its vocabulary is unbounded data and `/queues` reads no registry, so the
+  narrowing is stated instead by a scope element (`data-scope="source_id"`,
+  spelling the CANONICALISED id, with a link back that drops it) — a narrowing
+  visible only in the URL is a page claiming a population its read did not
+  cover. **The dropped-parameter line comes too, and with one owner**: it is
+  required anyway for `?source_id=not-a-uuid`, and copying it would be common
+  violation 9 with four blocklist fixes (BUG-0123/0127/0136/0137) left behind,
+  so the rule moves to the leaf `src/lib/url/dropped-params.ts` and the
+  rendering to `src/components/ui/dropped-params.tsx`, with `lib/claims/filters.ts`
+  re-exporting so `/claims`' markup, callers and tests do not move. Module map
+  and the leaf set above amended in the same pass (they were also missing
+  `lib/sources/**`). Ticket criteria and checks amended; the inherited checks
+  were a defective gate — `npm test -- <offline path>` can never exit 0, because
+  the script is two vitest project runs and the isolated one then finds no files
+  (measured on the unmodified tree).
 
 - **2026-09-09, BUG-0137 ruling (architect).** The Claims dropped-parameter line
   is fixed by a RULE, not by a fourth blocklist. **§7 gains it** and **Common
