@@ -139,3 +139,4 @@
 2026-09-09T06:02:10Z	artifact_gate	blocked write outside repo: /tmp/qa0094_guard.keep
 2026-09-09T06:05:46Z	evidence_budget	qa_evidence_overbudget: TASK-0056 4665/4000 chars
 2026-09-09T07:20:19Z	evidence_budget	qa_evidence_overbudget: BUG-0103 4940/4000 chars
+2026-09-09T07:54:06Z	evidence_budget	qa_evidence_overbudget: BUG-0103 4376/4000 chars
