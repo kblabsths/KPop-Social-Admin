@@ -46,8 +46,9 @@ import {
  *
  * **There is no insert and no delete here, and there never will be**: no
  * catalog row is created or destroyed from Admin (spec §8, AGENTS.md). The one
- * mutating call in this file is `.update()`, and it runs only for a
- * `pre_cutover` table's allowlisted column.
+ * mutating call in this file is `.update()`, and it runs only for an
+ * allowlisted column of a table whose write path is `direct` — since Ben's
+ * strike of 2026-09-08 that is the walk sandbox alone, and no catalog table.
  */
 
 /** What a PATCH may set: a scalar, or null to clear the field. No json, ever. */
@@ -178,7 +179,12 @@ function updateField(
 }
 
 /**
- * Write one allowlisted field of one `pre_cutover` record, directly.
+ * Write one allowlisted field of one record whose regime says `direct`.
+ *
+ * That regime is `sandbox` and its only member is the staging walk sandbox
+ * (ARCHITECTURE §9): no catalog table has a direct write path since Ben's
+ * strike of 2026-09-08, and giving one back would take a new arm of
+ * `writePathFor`, which is exactly where the teeth were put.
  *
  * The `AllowedEdit` argument can only come from `decideEdit()`, so a caller
  * cannot reach this function without having consulted the map — and the map is
@@ -334,7 +340,7 @@ export interface RecordProvenance {
   note: DbUnavailable | null;
 }
 
-/** Nothing to show and nothing to report — the pre-cutover answer. */
+/** Nothing to show and nothing to report — the no-`display` answer. */
 const NO_PROVENANCE: RecordProvenance = { fields: new Map(), note: null };
 
 /**
@@ -403,13 +409,13 @@ function sourcesFor(
  * The current provenance of one record's displayed fields.
  *
  * **A table with no `display` columns issues no query at all** and answers
- * with nothing to show and nothing to report. That is the pre-cutover case:
- * `field_provenance` carries rows for resolver-owned entities, `groups` and
- * `idols` are unprovenanced by construction, and their record page says so
+ * with nothing to show and nothing to report. That is the walk sandbox's
+ * case: `field_provenance` carries rows for resolver-owned entities, a staging
+ * fixture table is unprovenanced by construction, and its record page says so
  * once in words rather than per field (Ben's ruling on
- * admin-window/TASK-0025). Reading the log for them would be a round trip
- * whose only possible answer is "no rows" — or a not-provisioned card on a
- * page that has no provenance to miss.
+ * admin-window/TASK-0025). Reading the log for it would be a round trip whose
+ * only possible answer is "no rows" — or a not-provisioned card on a page that
+ * has no provenance to miss.
  *
  * Two legs, one note: the source-name lookup answers the same question the
  * log does ("who is behind this value"), so a failure of either is one note,

@@ -20,8 +20,8 @@ import type { FieldReference, RecordField } from "./fields";
  * **The provenance column, per table.** `field_provenance` carries rows for
  * RESOLVER-OWNED entities. `events` and `venues` therefore show a real line
  * per displayed field — the authority behind the value and how long ago it was
- * applied. `groups` and `idols` are pre-cutover and unprovenanced by
- * construction: no row exists for them, so every cell in this column is an
+ * applied. The walk sandbox is a staging fixture, unprovenanced by
+ * construction: no row exists for it, so every cell in this column is an
  * absence and renders as the em dash the whole app uses for "no value", with
  * the page saying ONCE, in words, that no provenance is recorded for such a
  * table (Ben's ruling on admin-window/TASK-0025 — the reason stands with the

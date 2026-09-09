@@ -77,12 +77,29 @@ const { default: RecordPage } = await import("@/app/records/[table]/[id]/page");
  * row in any database either.
  */
 const IDS: Record<string, string> = {
-  groups: "01920000-0000-7000-8000-0000000000a1",
-  idols: "01920000-0000-7000-8000-0000000000a2",
   events: "01920000-0000-7000-8000-0000000000a3",
   venues: "01920000-0000-7000-8000-0000000000a4",
   walk_sandbox: "00000000-0000-4000-8000-000000000001",
 };
+
+/**
+ * A well-formed id to ask an UNMAPPED table for. It belongs to no entry in the
+ * map by construction — every table the map carries takes its address from
+ * `IDS` above — which is what the not-on-the-map loop needs: the refusal must
+ * be about the TABLE, and an id that looks wrong would prove nothing.
+ */
+const OFF_MAP_ID = "01920000-0000-7000-8000-0000000000a1";
+
+/**
+ * The one table left with a direct write path (`sandbox`, ARCHITECTURE §9).
+ *
+ * `groups` and `idols` stood here until Ben struck the direct catalog edit on
+ * 2026-09-08 and they left the map with it, so every assertion about a drawn
+ * CONTROL now has exactly one subject. The assertions that used to run over
+ * the two of them are unchanged in what they claim; only their subject moved,
+ * and the struck pair is asserted absent in `NOT_ON_THE_MAP` below.
+ */
+const DIRECT_WRITE_TABLE = "walk_sandbox";
 
 /**
  * A column that is NOT in the map and is not a key — scripted onto the row on
@@ -99,8 +116,8 @@ function scriptedRecord(table: string): Record<string, unknown> {
     row[column] = `stored ${column}`;
   }
   // A number and an absence among the scalars, so both renderings are covered.
-  if (config.editable.includes("member_count")) row.member_count = 4;
-  if (config.editable.includes("korean_name")) row.korean_name = null;
+  if (config.editable.includes("tally")) row.tally = 4;
+  if (config.editable.includes("note")) row.note = null;
   row[UNMAPPED_COLUMN] = "not in the map";
   return row;
 }
@@ -254,24 +271,22 @@ describe("the id fixture", () => {
 /* ── the widget follows the map, table by table ───────────────────────────── */
 
 describe("which fields edit", () => {
-  it("offers a control for every column the map carries, on both pre-cutover tables", async () => {
-    for (const table of ["groups", "idols"]) {
-      const markup = await renderRecord(table);
-      const editable = EDIT_CONFIG[table].editable;
-      expect(editable.length, table).toBeGreaterThan(0);
-      for (const column of editable) {
-        expect(lineFor(markup, column).editable, `${table}.${column}`).toBe(true);
-      }
+  it("offers a control for every column the map carries, on the directly-written table", async () => {
+    const table = DIRECT_WRITE_TABLE;
+    const markup = await renderRecord(table);
+    const editable = EDIT_CONFIG[table].editable;
+    expect(editable.length, table).toBeGreaterThan(0);
+    for (const column of editable) {
+      expect(lineFor(markup, column).editable, `${table}.${column}`).toBe(true);
     }
   });
 
   it("offers none for a column absent from the map, though the row carries it", async () => {
-    for (const table of ["groups", "idols"]) {
-      const markup = await renderRecord(table);
-      expect(lineFor(markup, UNMAPPED_COLUMN).editable, table).toBe(false);
-      // ...and it is still SHOWN: read-only is not hidden.
-      expect(lineFor(markup, UNMAPPED_COLUMN).value, table).toContain("not in the map");
-    }
+    const table = DIRECT_WRITE_TABLE;
+    const markup = await renderRecord(table);
+    expect(lineFor(markup, UNMAPPED_COLUMN).editable, table).toBe(false);
+    // ...and it is still SHOWN: read-only is not hidden.
+    expect(lineFor(markup, UNMAPPED_COLUMN).value, table).toContain("not in the map");
   });
 
   it("never offers a control for the primary key", async () => {
@@ -291,8 +306,8 @@ describe("which fields edit", () => {
     }
   });
 
-  it("proves that negative is not vacuous: a pre-cutover table does draw controls", async () => {
-    expect(controlCount(await renderRecord("groups"))).toBeGreaterThan(0);
+  it("proves that negative is not vacuous: the sandbox does draw controls", async () => {
+    expect(controlCount(await renderRecord(DIRECT_WRITE_TABLE))).toBeGreaterThan(0);
   });
 
   it("edits through the EditableCell primitive, not a hand-rolled input", async () => {
@@ -306,21 +321,21 @@ describe("which fields edit", () => {
     const { renderToStaticMarkup } = await import("react-dom/server");
     const primitive = renderToStaticMarkup(
       createElement(EditableCell, {
-        value: "stored name",
+        value: "stored label",
         onSave: async () => ({ ok: true }) as const,
-        label: "name of groups",
+        label: `label of ${DIRECT_WRITE_TABLE}`,
       }),
     );
-    expect(await renderRecord("groups")).toContain(primitive);
+    expect(await renderRecord(DIRECT_WRITE_TABLE)).toContain(primitive);
   });
 
   it("names the field in each control's accessible name", async () => {
-    const markup = await renderRecord("groups");
+    const markup = await renderRecord(DIRECT_WRITE_TABLE);
     const $ = cheerio.load(markup);
     const labels = $("button[aria-label]")
       .toArray()
       .map((button) => $(button).attr("aria-label") ?? "");
-    for (const column of EDIT_CONFIG.groups.editable) {
+    for (const column of EDIT_CONFIG[DIRECT_WRITE_TABLE].editable) {
       expect(labels.some((label) => label.includes(column)), column).toBe(true);
     }
   });
@@ -330,22 +345,22 @@ describe("which fields edit", () => {
 
 describe("what a line shows", () => {
   it("shows the stored value, including a number, as the database gave it", async () => {
-    const markup = await renderRecord("groups");
-    expect(lineFor(markup, "name").value).toContain("stored name");
-    expect(lineFor(markup, "member_count").value).toContain("4");
+    const markup = await renderRecord(DIRECT_WRITE_TABLE);
+    expect(lineFor(markup, "label").value).toContain("stored label");
+    expect(lineFor(markup, "tally").value).toContain("4");
   });
 
   it("shows an empty column as the absence, still editable", async () => {
-    const line = lineFor(await renderRecord("groups"), "korean_name");
+    const line = lineFor(await renderRecord(DIRECT_WRITE_TABLE), "note");
     expect(line.value).toContain(EM_DASH);
     // An unset column is how a value is first set: absence never hides a field.
     expect(line.editable).toBe(true);
   });
 
   it("draws a line for a mapped column the read returned nothing for", async () => {
-    const config = EDIT_CONFIG.groups;
-    const markup = await renderRecord("groups", {
-      groups: { data: { [config.pk]: IDS.groups } },
+    const config = EDIT_CONFIG[DIRECT_WRITE_TABLE];
+    const markup = await renderRecord(DIRECT_WRITE_TABLE, {
+      [DIRECT_WRITE_TABLE]: { data: { [config.pk]: IDS[DIRECT_WRITE_TABLE] } },
     });
     for (const column of config.editable) {
       expect(lineFor(markup, column).value, column).toContain(EM_DASH);
@@ -353,31 +368,30 @@ describe("what a line shows", () => {
   });
 
   it("shows the record's id whatever the read did", async () => {
-    const failed = await renderRecord("groups", {
-      groups: { error: permissionDenied("groups") },
+    const failed = await renderRecord(DIRECT_WRITE_TABLE, {
+      [DIRECT_WRITE_TABLE]: { error: permissionDenied(DIRECT_WRITE_TABLE) },
     });
-    expect(failed).toContain(IDS.groups);
+    expect(failed).toContain(IDS[DIRECT_WRITE_TABLE]);
   });
 });
 
 /* ── the provenance slot ──────────────────────────────────────────────────── */
 
 describe("the provenance slot", () => {
-  it("stands on every line, and holds an absence on a pre-cutover table", async () => {
-    // groups/idols carry no `field_provenance` row by construction, so there
-    // is nothing to show — and nothing is invented into the slot. What may
-    // eventually stand there is admin-window/TASK-0025, still unanswered.
-    for (const table of ["groups", "idols"]) {
-      const drawn = lines(await renderRecord(table));
-      expect(drawn.length, table).toBeGreaterThan(0);
-      for (const line of drawn) {
-        expect(line.provenanceAbsent, `${table}.${line.name}`).toBe(true);
-      }
+  it("stands on every line, and holds an absence on the directly-written table", async () => {
+    // The walk sandbox carries no `field_provenance` row by construction, so
+    // there is nothing to show — and nothing is invented into the slot. What
+    // may eventually stand there is admin-window/TASK-0025, still unanswered.
+    const table = DIRECT_WRITE_TABLE;
+    const drawn = lines(await renderRecord(table));
+    expect(drawn.length, table).toBeGreaterThan(0);
+    for (const line of drawn) {
+      expect(line.provenanceAbsent, `${table}.${line.name}`).toBe(true);
     }
   });
 
   it("names no source, tier, apply time or lock state anywhere", async () => {
-    const markup = await renderRecord("groups");
+    const markup = await renderRecord(DIRECT_WRITE_TABLE);
     for (const invented of [
       "ticketmaster",
       "bandsintown",
@@ -395,24 +409,26 @@ describe("the provenance slot", () => {
 
 describe("the states", () => {
   it("reports an absent table as not provisioned, naming it", async () => {
-    const markup = await renderRecord("groups", {
-      groups: { error: tableNotInSchemaCache("groups") },
+    const markup = await renderRecord(DIRECT_WRITE_TABLE, {
+      [DIRECT_WRITE_TABLE]: { error: tableNotInSchemaCache(DIRECT_WRITE_TABLE) },
     });
-    expect(markup).toContain("groups");
+    expect(markup).toContain(DIRECT_WRITE_TABLE);
     expect(controlCount(markup)).toBe(0);
   });
 
   it("reports a failed read in the database's own words", async () => {
-    const markup = await renderRecord("groups", {
-      groups: { error: permissionDenied("groups") },
+    const markup = await renderRecord(DIRECT_WRITE_TABLE, {
+      [DIRECT_WRITE_TABLE]: { error: permissionDenied(DIRECT_WRITE_TABLE) },
     });
-    expect(markup).toContain(permissionDenied("groups").message);
+    expect(markup).toContain(permissionDenied(DIRECT_WRITE_TABLE).message);
   });
 
   it("reports a table that holds no such row as its own state", async () => {
-    const missingRow = await renderRecord("groups", { groups: { data: null } });
-    const absentTable = await renderRecord("groups", {
-      groups: { error: tableNotInSchemaCache("groups") },
+    const missingRow = await renderRecord(DIRECT_WRITE_TABLE, {
+      [DIRECT_WRITE_TABLE]: { data: null },
+    });
+    const absentTable = await renderRecord(DIRECT_WRITE_TABLE, {
+      [DIRECT_WRITE_TABLE]: { error: tableNotInSchemaCache(DIRECT_WRITE_TABLE) },
     });
     // Three different states never share a rendering (LOOK_AND_FEEL).
     expect(missingRow).not.toBe(absentTable);
@@ -447,19 +463,18 @@ describe("the states", () => {
     return { ...defaultScript(table), [table]: { data: null } };
   }
 
-  it("tells a pre-cutover operator the record is reached by id, naming no surface that could list it", async () => {
-    for (const table of ["groups", "idols"]) {
-      expect(EDIT_CONFIG[table].regime, table).toBe("pre_cutover");
-      const text = emptyText(await renderRecord(table, missingRowScript(table)));
-      // The bug: the state pointed at Browse, which is the recent-events view
-      // and structurally cannot list a pre-cutover table (spec F7). No page of
-      // this app can, so the state may name none of them.
-      for (const item of NAV_ITEMS) {
-        expect(text, `${table} names ${item.label}`).not.toContain(item.label);
-      }
-      // ...and it still says what fills the surface (Voice bar 4): the id.
-      expect(text, table).toMatch(/\bid\b/i);
+  it("tells the operator the record is reached by id, naming no surface that could list it", async () => {
+    const table = DIRECT_WRITE_TABLE;
+    expect(EDIT_CONFIG[table].regime, table).toBe("sandbox");
+    const text = emptyText(await renderRecord(table, missingRowScript(table)));
+    // The bug: the state pointed at Browse, which is the recent-events view
+    // and structurally cannot list a table with no listing (spec F7). No page
+    // of this app can, so the state may name none of them.
+    for (const item of NAV_ITEMS) {
+      expect(text, `${table} names ${item.label}`).not.toContain(item.label);
     }
+    // ...and it still says what fills the surface (Voice bar 4): the id.
+    expect(text, table).toMatch(/\bid\b/i);
   });
 
   it("keeps naming Browse for a resolver-owned table, which Browse does list", async () => {
@@ -494,8 +509,11 @@ describe("the states", () => {
   // page never gets that far.
   it("does not report a mistyped id as a failed database read", async () => {
     const markup = await renderRecord(
-      "groups",
-      { ...defaultScript("groups"), groups: { error: invalidUuidSyntax("not-a-uuid") } },
+      DIRECT_WRITE_TABLE,
+      {
+        ...defaultScript(DIRECT_WRITE_TABLE),
+        [DIRECT_WRITE_TABLE]: { error: invalidUuidSyntax("not-a-uuid") },
+      },
       "not-a-uuid",
     );
     const $ = cheerio.load(markup);
@@ -565,7 +583,7 @@ describe("the states", () => {
   it.each(MISTYPED_IDS)(
     "does not answer %o with the unknown-id state, in either regime",
     async (id) => {
-      for (const table of ["groups", "events"]) {
+      for (const table of [DIRECT_WRITE_TABLE, "events"]) {
         const mistyped = await renderRecord(table, defaultScript(table), id);
         const unknown = await renderRecord(table, missingRowScript(table));
         // Both states are a single card, and they are different cards: a
@@ -597,10 +615,12 @@ describe("the states", () => {
     }
   });
 
-  it("says something different on each side of the cutover, from one map", async () => {
-    const preCutover = emptyFiller(await renderRecord("groups", missingRowScript("groups")));
+  it("says something different in each regime, from one map", async () => {
+    const direct = emptyFiller(
+      await renderRecord(DIRECT_WRITE_TABLE, missingRowScript(DIRECT_WRITE_TABLE)),
+    );
     const resolverOwned = emptyFiller(await renderRecord("events", missingRowScript("events")));
-    expect(preCutover).not.toBe(resolverOwned);
+    expect(direct).not.toBe(resolverOwned);
   });
 
   /**
@@ -613,6 +633,11 @@ describe("the states", () => {
    * page — or throw — for each of the last four.
    */
   const NOT_ON_THE_MAP = [
+    // The two Ben struck on 2026-09-08. They rendered a record page until the
+    // map lost them; the whole of the strike is that this page now refuses
+    // them exactly as it refuses the raw archive (ARCHITECTURE §9).
+    "groups",
+    "idols",
     "scraped_events",
     "event_listings",
     "Groups",
@@ -635,7 +660,7 @@ describe("the states", () => {
       // segment (Next 16, `04-functions/not-found.md`) — the page's twin of the
       // route's 404 for the same table.
       await expect(
-        RecordPage({ params: Promise.resolve({ table, id: IDS.groups }) }),
+        RecordPage({ params: Promise.resolve({ table, id: OFF_MAP_ID }) }),
       ).rejects.toThrow(/404/);
     },
   );
@@ -1143,7 +1168,7 @@ describe("a resolver-owned record", () => {
   });
 
   it("makes no name read for a table the map gives no reference", async () => {
-    for (const table of ["venues", "groups", "idols"]) {
+    for (const table of ["venues", DIRECT_WRITE_TABLE]) {
       expect(EDIT_CONFIG[table].reference, table).toBeNull();
       const db = stubClient({
         [table]: { data: scriptedRecord(table) },
@@ -1245,19 +1270,19 @@ describe("a resolver-owned record", () => {
     expect(lines(markup)).toEqual([]);
   });
 
-  it("makes no provenance read for a pre-cutover table", async () => {
-    // `field_provenance` carries rows for resolver-owned entities; groups and
-    // idols are unprovenanced by construction, and the page says so once in
-    // words rather than reading a log that could only answer "no rows".
-    for (const table of ["groups", "idols"]) {
-      const db = stubClient({ [table]: { data: scriptedRecord(table) } });
-      readWith.client = db.asSupabaseClient();
-      const { renderToStaticMarkup } = await import("react-dom/server");
-      renderToStaticMarkup(
-        await RecordPage({ params: Promise.resolve({ table, id: IDS[table] }) }),
-      );
-      expect(db.tablesRead(), table).toEqual([table]);
-    }
+  it("makes no provenance read for the directly-written table", async () => {
+    // `field_provenance` carries rows for resolver-owned entities; the walk
+    // sandbox is a staging fixture, unprovenanced by construction, and the
+    // page says so once in words rather than reading a log that could only
+    // answer "no rows".
+    const table = DIRECT_WRITE_TABLE;
+    const db = stubClient({ [table]: { data: scriptedRecord(table) } });
+    readWith.client = db.asSupabaseClient();
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    renderToStaticMarkup(
+      await RecordPage({ params: Promise.resolve({ table, id: IDS[table] }) }),
+    );
+    expect(db.tablesRead(), table).toEqual([table]);
   });
   /* ── the legend that says what an empty provenance cell means ──────────── */
 
@@ -1369,13 +1394,12 @@ describe("a resolver-owned record", () => {
       expect(lineFor(markup, UNMAPPED_COLUMN).provenanceAbsent).toBe(true);
     });
 
-    it("says nothing on a pre-cutover record, whose regime note already explains it", async () => {
+    it("says nothing on a directly-written record, whose regime note already explains it", async () => {
       // The other fixture of the guard above, and the asymmetry the ticket is
       // about: the branch that needed no legend is not given a second one.
-      for (const table of ["groups", "idols"]) {
-        expect(EDIT_CONFIG[table].regime, table).toBe("pre_cutover");
-        expect(legend(await renderRecord(table)), table).toEqual([]);
-      }
+      const table = DIRECT_WRITE_TABLE;
+      expect(EDIT_CONFIG[table].regime, table).toBe("sandbox");
+      expect(legend(await renderRecord(table)), table).toEqual([]);
     });
 
     it("leaves a provenance leg that failed to explain its own dashes", async () => {

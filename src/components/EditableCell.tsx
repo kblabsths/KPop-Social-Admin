@@ -336,7 +336,7 @@ export function EditField({
   onKeyDown,
 }: {
   value: string;
-  /** The field's accessible name: "short_name of groups". */
+  /** The field's accessible name: "label of walk_sandbox". */
   label: string;
   /** The id of the hint this field is described by. Unique per cell. */
   hintId: string;

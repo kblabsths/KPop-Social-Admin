@@ -49,8 +49,10 @@ interface DerivedRoute {
 const SEGMENT_SAMPLE: Readonly<Record<string, string>> = {
   // A table the edit map DOES carry, so the URL reaches the record page rather
   // than `next.config.ts`'s unmapped-table rewrite. The unmapped spelling is
-  // asserted separately below.
-  table: "groups",
+  // asserted separately below. It was `groups` until Ben struck the direct
+  // catalog edit on 2026-09-08 and both catalog tables left the map
+  // (admin-window/TASK-0040); `events` is mapped, and stays mapped.
+  table: "events",
 };
 const SAMPLE_ID = "2f0bc11e";
 
@@ -147,7 +149,7 @@ const RENDERING_ROUTES = [
   "/sources",
   "/cycles",
   "/browse",
-  "/records/groups/2f0bc11e",
+  "/records/events/2f0bc11e",
 ];
 
 /**
@@ -263,7 +265,7 @@ describe("the route inventory", () => {
   it("skips exactly the three paths the app declares public", () => {
     expect(publicRoutePrefixes().sort()).toEqual(["/api/auth", "/api/health", "/login"]);
     // …and the sweep therefore covers everything else, the API route included.
-    expect(GATED_ROUTES).toContain(`/api/admin/records/groups/${SAMPLE_ID}`);
+    expect(GATED_ROUTES).toContain(`/api/admin/records/events/${SAMPLE_ID}`);
     expect(GATED_ROUTES).not.toContain("/login");
     expect(GATED.filter((route) => route.kind === "handler").length).toBe(1);
     expect(GATED.length).toBe(9);
@@ -541,6 +543,13 @@ describe("a record URL for a table the edit map does not carry", () => {
         // plausibly still have bookmarked.
         "/records/artists/2f0bc11e",
         "/records/scraped_events/2f0bc11e",
+        // The two Ben struck on 2026-09-08 (admin-window/TASK-0040). They
+        // served a real record page until the map lost them, which makes them
+        // the likeliest bookmark of all — and the rewrite is derived from
+        // `EDITABLE_TABLES`, so their URLs became routed 404s by that edit
+        // alone. This is the inversion of the 200 this file used to assert.
+        "/records/groups/2f0bc11e",
+        "/records/idols/2f0bc11e",
       ];
       for (const route of unmapped) {
         const res = await fetch(`${base}${route}`, { headers: { cookie }, redirect: "manual" });
@@ -556,12 +565,12 @@ describe("a record URL for a table the edit map does not carry", () => {
       //     The document it gets is the framework's, which is the residue
       //     admin-window/BUG-0017 could not remove; asserting the shape of
       //     that document would pin a defect in place, so this does not.
-      const caseVariant = await fetch(`${base}/records/GROUPS/2f0bc11e`, {
+      const caseVariant = await fetch(`${base}/records/EVENTS/2f0bc11e`, {
         headers: { cookie },
         redirect: "manual",
       });
       expect(caseVariant.status).toBe(404);
-      expect(await caseVariant.text()).not.toContain("groups record");
+      expect(await caseVariant.text()).not.toContain("events record");
 
       // 1c. The other half of that trade, and the one with a user behind it:
       //     the rewrite excludes percent-encoded table segments BECAUSE a
@@ -572,11 +581,11 @@ describe("a record URL for a table the edit map does not carry", () => {
       //     rewrite must never swallow a URI that names a table the map holds.
       //     The read fails here (dead port), so this asserts the surface
       //     RENDERED, framed and not-404 — the same bar as loop 3 below.
-      const encodedConfigured = await fetch(`${base}/records/gro%75ps/2f0bc11e`, {
+      const encodedConfigured = await fetch(`${base}/records/ev%65nts/2f0bc11e`, {
         headers: { cookie },
         redirect: "manual",
       });
-      expect(encodedConfigured.status, "/records/gro%75ps/<id> is /records/groups/<id>").toBe(200);
+      expect(encodedConfigured.status, "/records/ev%65nts/<id> is /records/events/<id>").toBe(200);
       const encodedBody = await encodedConfigured.text();
       expect(encodedBody).toMatch(/<h1[\s>]/);
       expect(encodedBody).not.toContain('id="__next_error__"');

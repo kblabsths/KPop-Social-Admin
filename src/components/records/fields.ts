@@ -118,7 +118,8 @@ function orderedNames(
  *
  * `provenance` is the current provenance per column (`readRecordProvenance` in
  * `lib/db/records.ts`), keyed by column name and defaulting to empty — a
- * pre-cutover table has none, and the page then says so once in words rather
+ * directly-written table has none, and the page then says so once in words
+ * rather
  * than per field (Ben's ruling on admin-window/TASK-0025). A field the map
  * carries and the log says nothing about keeps its line and gets `null`, which
  * the surface draws as the app's absence.

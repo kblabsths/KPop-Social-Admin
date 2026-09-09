@@ -9,13 +9,15 @@ import {
   editConfigFor,
   isEditable,
   mappedColumns,
+  writePathFor,
+  type TableEditConfig,
 } from "@/lib/edit/config";
 import { TABLE_NAMES } from "@/lib/db/tables";
 import { codeLines, repoRoot, sourceFiles, sourceText } from "../source-tree";
 
 /**
  * The edit config map — campaign admin-window/TASK-0017, acceptance test 7's
- * pre-cutover half and M1 EC10.
+ * direct-write half and M1 EC10.
  *
  * Two halves. The first proves the MAP IS THE SINGLE SOURCE of what may be
  * edited: what it carries, and that `decideEdit` — the one decision both the
@@ -38,19 +40,104 @@ const ROUTE_MODULE = "src/app/api/admin/records/[table]/[id]/route.ts";
 const PAGE_MODULE = "src/app/records/[table]/[id]/page.tsx";
 const FIELDS_MODULE = "src/components/records/fields.ts";
 
+/**
+ * The two tables Ben struck from the edit surface on 2026-09-08 — *"admin
+ * edits catalog tables only through the observation pipeline; do not
+ * re-implement direct edits"* (ARCHITECTURE §9, DECISIONS 2026-09-08).
+ *
+ * They are named HERE, in the test, and nowhere in `src/`: that is the whole
+ * point. The map cannot say "not these two" — it says nothing about them at
+ * all — so the assertion that they are absent has to spell them somewhere, and
+ * a test is where a name that must NOT appear in the product belongs.
+ */
+const STRUCK_TABLES = ["groups", "idols"] as const;
+
+/**
+ * The exact allowlists those two carried until the strike (`config.ts` as of
+ * the commit before this one), so the refusal is proved over the whole vetted
+ * set rather than a sample: a partial restoration cannot slip through.
+ */
+const STRUCK_ALLOWLISTS: Readonly<Record<string, readonly string[]>> = {
+  groups: [
+    "name",
+    "korean_name",
+    "short_name",
+    "company",
+    "status",
+    "type",
+    "member_count",
+    "debut_date",
+    "image_url",
+    "bio",
+  ],
+  idols: [
+    "stage_name",
+    "real_name",
+    "korean_name",
+    "position",
+    "nationality",
+    "gender",
+    "bio",
+    "birth_date",
+    "image_url",
+    "status",
+    "height_cm",
+    "weight_kg",
+    "blood_type",
+    "mbti",
+    "agency",
+    "birth_place",
+  ],
+};
+
+/**
+ * **Where the teeth are, now that the type no longer carries them**
+ * (ARCHITECTURE §9, 2026-09-08). A `Regime` member is not what stops the
+ * struck path returning — a catalog table re-added under `sandbox` would be
+ * exactly it. So the pin is this: over any map, the tables whose write path is
+ * `direct`.
+ *
+ * Taking a map rather than reading `EDIT_CONFIG` directly is what lets the
+ * rule be proved on TWO fixtures (LESSONS 3): one it must flag and one it must
+ * not. A guard that has only ever seen the passing input passes vacuously.
+ */
+function directWriteTables(
+  map: Readonly<Record<string, TableEditConfig>>,
+): string[] {
+  return Object.values(map)
+    .filter((config) => writePathFor(config.regime) === "direct")
+    .map((config) => config.table)
+    .sort();
+}
+
 /* ── the map ──────────────────────────────────────────────────────────────── */
 
 describe("the map", () => {
-  it("carries exactly the four canonical tables and the walk sandbox, keyed by their own name", () => {
-    expect(EDITABLE_TABLES).toEqual([
-      "groups",
-      "idols",
-      "events",
-      "venues",
-      "walk_sandbox",
-    ]);
+  it("carries exactly the two resolver-owned tables and the walk sandbox, keyed by their own name", () => {
+    expect(EDITABLE_TABLES).toEqual(["events", "venues", "walk_sandbox"]);
     for (const [key, config] of Object.entries(EDIT_CONFIG)) {
       expect(config.table, key).toBe(key);
+    }
+  });
+
+  it("carries no groups and no idols entry: the struck direct edit left with them", () => {
+    // Ben's strike, 2026-09-08 (ARCHITECTURE §9, DECISIONS 2026-09-08): admin
+    // edits catalog tables only through the observation pipeline. Absence from
+    // the map IS the mechanism — `editConfigFor` answers null, the record URL
+    // is a routed 404 and a PATCH is refused `unknown_table` — so this asserts
+    // the absence at every door the map opens.
+    for (const table of STRUCK_TABLES) {
+      expect(EDITABLE_TABLES, table).not.toContain(table);
+      expect(Object.keys(EDIT_CONFIG), table).not.toContain(table);
+      expect(editConfigFor(table), table).toBeNull();
+      expect(decideEdit(table, "name").allowed, table).toBe(false);
+    }
+
+    // ...and the TABLES are untouched. `lib/db/tables.ts` still spells both,
+    // which is what "they stay as test tables until they are removed" means
+    // here: the residue sweep and the schema description still reach them.
+    for (const table of STRUCK_TABLES) {
+      expect(TABLE_NAMES, table).toContain(table);
     }
   });
 
@@ -63,44 +150,20 @@ describe("the map", () => {
     }
   });
 
-  it("gives the pre-cutover tables their vetted column sets", () => {
-    // The set the retired per-table PATCH routes allowed, carried over
-    // unchanged — that is what makes it vetted rather than newly invented.
-    expect(EDIT_CONFIG.groups.regime).toBe("pre_cutover");
-    expect(EDIT_CONFIG.groups.pk).toBe("id");
-    expect([...EDIT_CONFIG.groups.editable]).toEqual([
-      "name",
-      "korean_name",
-      "short_name",
-      "company",
-      "status",
-      "type",
-      "member_count",
-      "debut_date",
-      "image_url",
-      "bio",
-    ]);
-
-    expect(EDIT_CONFIG.idols.regime).toBe("pre_cutover");
-    expect(EDIT_CONFIG.idols.pk).toBe("id");
-    expect([...EDIT_CONFIG.idols.editable]).toEqual([
-      "stage_name",
-      "real_name",
-      "korean_name",
-      "position",
-      "nationality",
-      "gender",
-      "bio",
-      "birth_date",
-      "image_url",
-      "status",
-      "height_cm",
-      "weight_kg",
-      "blood_type",
-      "mbti",
-      "agency",
-      "birth_place",
-    ]);
+  it("refuses every column the struck allowlists used to carry", () => {
+    // Not a token sample: the WHOLE vetted set each table carried until the
+    // strike, so a partial restoration cannot pass. The refusal is the
+    // table's, not the column's — an unmapped table has no fields.
+    for (const [table, columns] of Object.entries(STRUCK_ALLOWLISTS)) {
+      for (const column of columns) {
+        const decision = decideEdit(table, column);
+        expect(decision.allowed, `${table}.${column}`).toBe(false);
+        if (decision.allowed) continue;
+        expect(decision.refusal.kind, `${table}.${column}`).toBe("unknown_table");
+        expect(decision.refusal.message, `${table}.${column}`).toContain(table);
+        expect(isEditable(table, column), `${table}.${column}`).toBe(false);
+      }
+    }
   });
 
   it("gives the walk sandbox its staging-only key, regime and column set", () => {
@@ -110,10 +173,11 @@ describe("the map", () => {
     // because a name the database does not spell reads back as
     // `not_provisioned` and makes the map a lie.
     expect(EDIT_CONFIG.walk_sandbox.pk).toBe("sandbox_id");
-    // `pre_cutover` is reused deliberately: `Regime` answers which WRITE PATH,
-    // and the sandbox's is identical to groups'/idols' (§9.1 item 5). A third
-    // member would change `decideEdit` and `regimeNote` for no new behaviour.
-    expect(EDIT_CONFIG.walk_sandbox.regime).toBe("pre_cutover");
+    // `sandbox`, re-ruled 2026-09-08 (§9.1 item 5): it had shared the retired
+    // regime name with groups/idols, and the strike left it sharing its answer
+    // with nothing.
+    expect(EDIT_CONFIG.walk_sandbox.regime).toBe("sandbox");
+    expect(writePathFor(EDIT_CONFIG.walk_sandbox.regime)).toBe("direct");
     expect([...EDIT_CONFIG.walk_sandbox.editable]).toEqual([
       "label",
       "note",
@@ -123,6 +187,47 @@ describe("the map", () => {
     ]);
     expect([...EDIT_CONFIG.walk_sandbox.display]).toEqual([]);
     expect(EDIT_CONFIG.walk_sandbox.reference).toBeNull();
+  });
+
+  it("gives a direct write path to the walk sandbox and to nothing else", () => {
+    // THE PIN (ARCHITECTURE §9): the strike is kept by this assertion, not by
+    // the type. Fixture 1 — the shipped map — must NOT be flagged: exactly one
+    // table writes directly, and it is the staging fixture.
+    expect(directWriteTables(EDIT_CONFIG)).toEqual(["walk_sandbox"]);
+
+    // Fixture 2 — a map that re-adds a catalog table with a direct path, which
+    // is precisely the struck shape — MUST be flagged. Without this half the
+    // assertion above has never seen an input it should reject.
+    const restored: Record<string, TableEditConfig> = {
+      ...EDIT_CONFIG,
+      groups: {
+        table: "groups",
+        pk: "id",
+        regime: "sandbox",
+        editable: ["name"],
+        display: [],
+        reference: null,
+      },
+    };
+    expect(directWriteTables(restored)).toEqual(["groups", "walk_sandbox"]);
+    expect(directWriteTables(restored)).not.toEqual(
+      directWriteTables(EDIT_CONFIG),
+    );
+  });
+
+  it("sends every regime the map uses down exactly one write path", () => {
+    // `writePathFor` is TOTAL over `Regime` (there is no "no path" arm to fall
+    // into, because a table Admin may not write is not in the map), so every
+    // entry answers, and only the sandbox answers `direct`.
+    for (const config of Object.values(EDIT_CONFIG)) {
+      const path = writePathFor(config.regime);
+      expect(["direct", "override"], config.table).toContain(path);
+      expect(path === "direct", config.table).toBe(
+        config.table === "walk_sandbox",
+      );
+    }
+    expect(writePathFor("sandbox")).toBe("direct");
+    expect(writePathFor("resolver_owned")).toBe("override");
   });
 
   it("leaves created_at outside the sandbox's map, so no read ever asks for it", () => {
@@ -256,14 +361,12 @@ describe("the map", () => {
     }
   });
 
-  it("leaves the pre-cutover tables no display list — they edit their columns", () => {
-    // Their columns are already on screen through `editable`; a name in both
+  it("leaves the sandbox no display list — it edits its columns", () => {
+    // Its columns are already on screen through `editable`; a name in both
     // would be one line drawn once either way, and the empty list is what
     // says "nothing extra to show" rather than "not decided yet".
-    for (const table of ["groups", "idols"]) {
-      expect([...EDIT_CONFIG[table].display], table).toEqual([]);
-      expect(EDIT_CONFIG[table].editable.length, table).toBeGreaterThan(0);
-    }
+    expect([...EDIT_CONFIG.walk_sandbox.display]).toEqual([]);
+    expect(EDIT_CONFIG.walk_sandbox.editable.length).toBeGreaterThan(0);
   });
 
   it("gives events the one reference the surface links through, and no other table one", () => {
@@ -273,7 +376,7 @@ describe("the map", () => {
       field: "venue_id",
       domain: "venues",
     });
-    for (const table of ["groups", "idols", "venues"]) {
+    for (const table of ["venues", "walk_sandbox"]) {
       expect(EDIT_CONFIG[table].reference, table).toBeNull();
     }
   });
@@ -348,9 +451,9 @@ describe("mappedColumns", () => {
 
   it("de-duplicates, so a column named twice is still drawn once", () => {
     const columns = mappedColumns({
-      table: "groups",
+      table: "probe_table",
       pk: "id",
-      regime: "pre_cutover",
+      regime: "sandbox",
       editable: ["name", "company"],
       display: ["company", "id", "bio"],
       reference: null,
@@ -374,46 +477,43 @@ describe("mappedColumns", () => {
 
 describe("decideEdit", () => {
   it("accepts a column the map carries", () => {
-    const decision = decideEdit("groups", "company");
+    const decision = decideEdit("walk_sandbox", "label");
     expect(decision.allowed).toBe(true);
     if (decision.allowed) {
-      expect(decision.edit.field).toBe("company");
-      expect(decision.edit.config).toBe(EDIT_CONFIG.groups);
+      expect(decision.edit.field).toBe("label");
+      expect(decision.edit.config).toBe(EDIT_CONFIG.walk_sandbox);
     }
-    expect(isEditable("idols", "mbti")).toBe(true);
+    expect(isEditable("walk_sandbox", "tally")).toBe(true);
   });
 
   it("refuses a column the map does not carry, naming the field", () => {
-    // `fanclub_name` and `spotify_id` are real, writable columns of `groups`
-    // that the vetted set leaves out — the route could technically reach them,
-    // and the map is what stops it (spec §8).
-    for (const field of ["fanclub_name", "spotify_id", "wikipedia_url"]) {
-      const decision = decideEdit("groups", field);
+    // Real, writable columns of the one table with a direct write path that
+    // the map leaves out — the route could technically reach them, and the map
+    // is what stops it (spec §8).
+    for (const field of ["created_at", "sandbox_note", "label_2"]) {
+      const decision = decideEdit("walk_sandbox", field);
       expect(decision.allowed, field).toBe(false);
       if (!decision.allowed) {
         expect(decision.refusal.kind).toBe("field_not_editable");
         expect(decision.refusal.message).toContain(field);
-        expect(decision.refusal.message).toContain("groups");
+        expect(decision.refusal.message).toContain("walk_sandbox");
       }
     }
   });
 
   it("refuses an id, key or timestamp column spelled correctly", () => {
     const cases: ReadonlyArray<readonly [string, string]> = [
-      ["groups", "id"],
-      ["groups", "created_at"],
-      ["groups", "updated_at"],
-      ["idols", "id"],
-      ["idols", "group_id"],
-      ["idols", "profile_image_id"],
-      ["idols", "last_synced_at"],
+      ["walk_sandbox", "sandbox_id"],
+      ["walk_sandbox", "created_at"],
+      ["events", "event_id"],
+      ["events", "created_at"],
+      ["venues", "venue_id"],
     ];
     for (const [table, field] of cases) {
       const decision = decideEdit(table, field);
       expect(decision.allowed, `${table}.${field}`).toBe(false);
       if (!decision.allowed) {
-        expect(decision.refusal.kind).toBe("field_not_editable");
-        expect(decision.refusal.message).toContain(field);
+        expect(decision.refusal.message).toContain(table);
       }
     }
   });
@@ -458,11 +558,10 @@ describe("decideEdit", () => {
   });
 
   it("ignores a display list entirely, however it is spelled", () => {
-    // A forged config claiming a column is displayed — or a pre-cutover table
-    // whose display list names a column its allowlist does not — changes no
-    // answer: `decideEdit` reads the MAP, and the map's answer comes from
-    // `regime` and `editable` alone.
-    expect(isEditable("groups", "spotify_id")).toBe(false);
+    // A forged config claiming a column is displayed changes no answer:
+    // `decideEdit` reads the MAP, and the map's answer comes from the write
+    // path the regime decides and from `editable` alone.
+    expect(isEditable("walk_sandbox", "created_at")).toBe(false);
     expect(isEditable("events", "title")).toBe(false);
     for (const config of Object.values(EDIT_CONFIG)) {
       for (const column of config.display) {
@@ -473,6 +572,10 @@ describe("decideEdit", () => {
 
   it("refuses a table the map does not carry, naming the table", () => {
     for (const table of [
+      // The two Ben struck lead the list: after 2026-09-08 they are unknown
+      // tables to this map, exactly like the archive and the app-owned ones.
+      "groups",
+      "idols",
       "event_performers",
       "scraped_events",
       "events_legacy",
@@ -498,7 +601,7 @@ describe("decideEdit", () => {
       expect(isEditable(table, "name"), table).toBe(false);
     }
     for (const field of ["constructor", "toString", "__proto__"]) {
-      expect(isEditable("groups", field), field).toBe(false);
+      expect(isEditable("walk_sandbox", field), field).toBe(false);
     }
   });
 });

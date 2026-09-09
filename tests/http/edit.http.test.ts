@@ -56,11 +56,16 @@ async function signedInCookie(): Promise<string> {
 
 /** The forgeries a real attacker would send at this route. */
 const FORGED_EDITS: ReadonlyArray<readonly [string, string, string, unknown]> = [
-  ["a column the map does not carry", "groups", "spotify_id", "forged"],
-  ["another unmapped column", "groups", "fanclub_name", "BLINK"],
-  ["a primary key", "groups", "id", "00000000-0000-4000-8000-000000000000"],
-  ["a timestamp", "groups", "updated_at", "2026-01-01T00:00:00Z"],
-  ["a provenance column", "idols", "last_synced_at", "2026-01-01T00:00:00Z"],
+  ["a column the map does not carry", "walk_sandbox", "created_at", "forged"],
+  ["another unmapped column", "walk_sandbox", "spotify_id", "forged"],
+  ["a primary key", "walk_sandbox", "sandbox_id", "00000000-0000-4000-8000-000000000000"],
+  // The two Ben struck on 2026-09-08 (admin-window/TASK-0040), each on a
+  // column its retired allowlist carried: until then these two requests wrote
+  // a catalog row, and they are the forgery this route most has to refuse.
+  ["a struck catalog table", "groups", "bio", "forged"],
+  ["its number column", "groups", "member_count", 9],
+  ["the other struck table", "idols", "stage_name", "forged"],
+  ["a provenance column of a struck table", "idols", "last_synced_at", "2026-01-01T00:00:00Z"],
   ["a link column of a resolver-owned table", "events", "venue_id", RECORD_ID],
   ["a real column of a resolver-owned table", "events", "title", "forged"],
   ["a column of the other resolver-owned table", "venues", "name", "forged"],
@@ -68,8 +73,9 @@ const FORGED_EDITS: ReadonlyArray<readonly [string, string, string, unknown]> = 
   ["the raw-payload archive", "scraped_events", "payload", "forged"],
   ["a legacy table", "events_legacy", "title", "forged"],
   ["an app-owned table", "admin_allowed_emails", "email", "forged"],
-  ["a json value for a mapped column", "groups", "bio", { nested: true }],
-  ["an array value for a mapped column", "groups", "bio", ["a", "b"]],
+  // On a MAPPED column, so what is refused is the VALUE and not the table.
+  ["a json value for a mapped column", "walk_sandbox", "label", { nested: true }],
+  ["an array value for a mapped column", "walk_sandbox", "label", ["a", "b"]],
 ];
 
 describe("the record PATCH route over http", () => {
@@ -86,7 +92,7 @@ describe("the record PATCH route over http", () => {
 
       // 1. The gate. A stranger's PATCH never reaches the handler: the proxy
       //    sends it to the sign-in page, exactly as it does every other route.
-      for (const table of ["groups", "idols", "events", "venues"]) {
+      for (const table of ["walk_sandbox", "groups", "events", "venues"]) {
         const res = await patch(url(table), { field: "name", value: "forged" });
         expect(res.status, table).toBeGreaterThanOrEqual(300);
         expect(res.status, table).toBeLessThan(400);
@@ -103,7 +109,7 @@ describe("the record PATCH route over http", () => {
         maxAgeSeconds: 60 * 60,
       });
       const forgedSession = await patch(
-        url("groups"),
+        url("walk_sandbox"),
         { field: "name", value: "forged" },
         { cookie: `${bad.name}=${bad.value}` },
       );
@@ -123,7 +129,7 @@ describe("the record PATCH route over http", () => {
 
       // 4. A malformed body is refused rather than crashing the route.
       for (const body of ["not json at all", '{"field":123}', '{"value":"x"}', "[]", "{}"]) {
-        const res = await fetch(url("groups"), {
+        const res = await fetch(url("walk_sandbox"), {
           method: "PATCH",
           headers: { "content-type": "application/json", cookie },
           body,
@@ -136,13 +142,17 @@ describe("the record PATCH route over http", () => {
       // 5. No request shape gets a 2xx out of this route without a database —
       //    including a perfectly legal edit of a mapped column. The write is
       //    the database's to accept, never the route's to fake.
-      const legal = await patch(url("groups"), { field: "bio", value: "hello" }, { cookie });
+      const legal = await patch(
+        url("walk_sandbox"),
+        { field: "label", value: "hello" },
+        { cookie },
+      );
       expect(legal.status).toBeGreaterThanOrEqual(400);
 
       // 6. PATCH is the only method. A 405 for the rest is the route's own
       //    proof that no read, insert or delete path exists at this URL.
       for (const method of ["GET", "POST", "PUT", "DELETE"]) {
-        const res = await fetch(url("groups"), {
+        const res = await fetch(url("walk_sandbox"), {
           method,
           headers: { cookie },
           redirect: "manual",
@@ -201,11 +211,15 @@ describe("a hostile record id at the wire (QA, admin-window/BUG-0068)", () => {
     const { child } = await startServer();
     try {
       const cookie = await signedInCookie();
+      // A table the map DOES carry, and a column it DOES allow: otherwise the
+      // map refuses first and the id gate under attack here is never reached
+      // — the test would pass without exercising it (LESSONS 3). It was
+      // `groups`/`bio` until Ben struck that table from the map on 2026-09-08.
       const send = (id: string, headers: HeadersInit) =>
-        fetch(`${base}/api/admin/records/groups/${id}`, {
+        fetch(`${base}/api/admin/records/walk_sandbox/${id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json", ...headers },
-          body: JSON.stringify({ field: "bio", value: "x" }),
+          body: JSON.stringify({ field: "label", value: "x" }),
           redirect: "manual",
         });
 
@@ -236,7 +250,7 @@ describe("a hostile record id at the wire (QA, admin-window/BUG-0068)", () => {
 
       // 3. A hostile id opens no other method either.
       for (const method of ["GET", "POST", "PUT", "DELETE"]) {
-        const res = await fetch(`${base}/api/admin/records/groups/walk-1`, {
+        const res = await fetch(`${base}/api/admin/records/walk_sandbox/walk-1`, {
           method,
           headers: { cookie },
           redirect: "manual",

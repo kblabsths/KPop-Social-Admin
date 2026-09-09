@@ -31,19 +31,44 @@
  */
 export type Regime =
   /**
-   * Not yet cut over to the resolver (`groups`, `idols`, until catalog
-   * maintenance at ROADMAP queue item 9). Admin edits the row DIRECTLY within
-   * its allowlist — legal and unprovenanced, as the ownership rules allow
-   * (spec §8, AGENTS.md data-ownership).
+   * The walk sandbox alone (`walk_sandbox`) — a staging-only fixture table in
+   * nobody's ecosystem domain, which is why Ben's 2026-09-08 strike of the
+   * direct catalog edit does not reach it (ARCHITECTURE §9.1 item 5). It is
+   * the app's ONLY direct write, and the only writable surface at all until
+   * `settle_review_item` is installed.
    */
-  | "pre_cutover"
+  | "sandbox"
   /**
-   * Produced by the resolver (`events`, `venues`). **Read-only from Admin in
-   * M1**: no write path to these tables exists — no PATCH branch, no helper,
-   * no scaffold. Their override path is M2's, through `settle_review_item`,
-   * and building toward it now is out of scope.
+   * Produced by the resolver (`events`, `venues`). Their values change through
+   * the resolution pipeline: an admin edit lands as an admin-tier observation
+   * through the gate (ARCHITECTURE §9.2), never as a direct write, and that
+   * override path is FEAT-0011's. Until it lands they carry an empty
+   * `editable` list and every column of them refuses.
    */
   | "resolver_owned";
+
+/** How a table's values are written, once the regime has decided. */
+export type WritePath =
+  /** A PATCH straight at the row, within `editable`. `sandbox` only. */
+  | "direct"
+  /** An admin-tier observation through the resolver gate (ARCHITECTURE §9.2). */
+  | "override";
+
+/**
+ * The regime DECIDES the write path — the single arm of that question, so no
+ * caller re-derives it from a table name.
+ *
+ * **Total over `Regime`, deliberately**: there is no "no path" arm to fall
+ * into, because a table Admin may not write is not in the map at all. That is
+ * Ben's ruling of 2026-09-08 as the architect ruled it into ARCHITECTURE §9
+ * ("TWO REGIMES, and no map entry for a table Admin may not write") — the
+ * struck direct catalog edit is not re-implementable by flipping a regime
+ * name, and `tests/offline/edit/config.test.ts` pins the teeth where they now
+ * live: the ONLY table whose write path is `direct` is `walk_sandbox`.
+ */
+export function writePathFor(regime: Regime): WritePath {
+  return regime === "sandbox" ? "direct" : "override";
+}
 
 /**
  * A displayed column that POINTS AT another record rather than holding a value
@@ -79,7 +104,7 @@ export interface ReferenceColumn {
 export interface TableEditConfig {
   /** The canonical table, spelled as the database spells it. */
   readonly table: string;
-  /** Its primary-key column — `id` for groups/idols, `event_id`, `venue_id`. */
+  /** Its primary-key column — `event_id`, `venue_id`, `sandbox_id`. */
   readonly pk: string;
   /** Decides the write path. Never configured per column. */
   readonly regime: Regime;
@@ -106,9 +131,9 @@ export interface TableEditConfig {
    * points at is a read, and AGENTS.md's rule bans WIDENING AN EDIT set to a
    * link, not looking at one.
    *
-   * A `pre_cutover` table carries an empty list: its columns are already on
-   * screen through `editable`, and a column named in both would be drawn once
-   * either way.
+   * The walk sandbox carries an empty list: its columns are already on screen
+   * through `editable`, and a column named in both would be drawn once either
+   * way.
    */
   readonly display: readonly string[];
   /**
@@ -124,59 +149,19 @@ export interface TableEditConfig {
  * The entries, as a list; `EDIT_CONFIG` is built from it so each table name is
  * spelled exactly once in this file.
  *
- * `groups` and `idols` are seeded from the columns the retired per-table PATCH
- * routes allowed — that is the vetted set, carried over unchanged (the routes
- * as of commit 5cf4199^, `src/app/api/admin/{groups,idols}/[id]/route.ts`).
- * Every one is a scalar column of that table in the scraper's schema snapshot
- * (`20260818000000_the_schema_arrives_as_one_snapshot.sql`); `social_links`
- * (jsonb), the `source_*` / `last_*` provenance columns, `group_id` and the
- * timestamps are all deliberately absent.
+ * **`groups` and `idols` are not here, and that is the whole of Ben's strike**
+ * (2026-09-08: *"admin edits catalog tables only through the observation
+ * pipeline; do not re-implement direct edits"*, with no listing, no search and
+ * no entry point for either table). Absence from this map is the mechanism:
+ * `editConfigFor` answers null, `/records/groups/<uuid>` is a routed 404
+ * through `next.config.ts`, and a PATCH is refused `unknown_table`. The
+ * allowlist those two carried until then is gone with them; restoring an entry
+ * would be re-implementing what was struck (ARCHITECTURE §9, DECISIONS
+ * 2026-09-08). The TABLES themselves are untouched — `lib/db/tables.ts` still
+ * spells both, the schema description still describes them, and the residue
+ * sweep still reads every column of both.
  */
 const ENTRIES: readonly TableEditConfig[] = [
-  {
-    table: "groups",
-    pk: "id",
-    regime: "pre_cutover",
-    editable: [
-      "name",
-      "korean_name",
-      "short_name",
-      "company",
-      "status",
-      "type",
-      "member_count",
-      "debut_date",
-      "image_url",
-      "bio",
-    ],
-    display: [],
-    reference: null,
-  },
-  {
-    table: "idols",
-    pk: "id",
-    regime: "pre_cutover",
-    editable: [
-      "stage_name",
-      "real_name",
-      "korean_name",
-      "position",
-      "nationality",
-      "gender",
-      "bio",
-      "birth_date",
-      "image_url",
-      "status",
-      "height_cm",
-      "weight_kg",
-      "blood_type",
-      "mbti",
-      "agency",
-      "birth_place",
-    ],
-    display: [],
-    reference: null,
-  },
   // Resolver-owned. Present in the map so the surface knows they exist and
   // renders them READ-ONLY — with an empty `editable` list, which is what
   // makes every column of theirs refuse through the same one code path, and a
@@ -236,16 +221,18 @@ const ENTRIES: readonly TableEditConfig[] = [
   // selects `mappedColumns` explicitly, so a column the map does not name is
   // never read and never drawn.
   //
-  // `pre_cutover` is reused on purpose (§9.1 item 5): `Regime` answers which
-  // WRITE PATH, and this table's answer is identical to groups'/idols' — a
-  // direct PATCH within this allowlist. A third member would be a second
-  // answer to a question the type does not ask. The cost accepted: the regime
-  // note on its record page says a value written here goes "to the catalog",
-  // which for a staging fixture it does not.
+  // Its regime is `sandbox`, re-ruled 2026-09-08 (§9.1 item 5). It had shared
+  // the retired regime name with `groups`/`idols` on the grounds that `Regime`
+  // answers which WRITE PATH and this table's answer was identical to theirs;
+  // Ben's strike removed those two from the map entirely, so this table's
+  // answer is now shared with nothing, and the old name claimed a history a
+  // staging fixture never had. The rename also pays off the inaccuracy that
+  // section carried on purpose: the record page's regime note now says a value
+  // written here goes to a staging fixture, which is what it does.
   {
     table: "walk_sandbox",
     pk: "sandbox_id",
-    regime: "pre_cutover",
+    regime: "sandbox",
     editable: ["label", "note", "tally", "is_flagged", "observed_on"],
     display: [],
     reference: null,
@@ -340,7 +327,7 @@ export function decideEdit(table: string, field: string): EditDecision {
       },
     };
   }
-  if (config.regime !== "pre_cutover") {
+  if (writePathFor(config.regime) !== "direct") {
     return {
       allowed: false,
       refusal: {
