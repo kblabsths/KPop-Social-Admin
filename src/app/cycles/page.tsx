@@ -129,6 +129,13 @@ export const dynamic = "force-dynamic";
  * sentence, which is this page's own walked behaviour and what its tests pin.
  * Converging them is a design question, out of scope for BUG-0143, which is
  * why the raw value — never the canonical one — is what survives that arm.
+ *
+ * A real id wearing the whitespace a PASTE carried is NOT such a value, since
+ * admin-window/BUG-0145: `canonicalRecordId` strips the padding where the
+ * value is derived from the request, so both facets answer ` <id>`, `<id> `,
+ * `<id>\n` and a padded uppercase spelling with the row — the answer they
+ * already gave the same id unpadded. It is the ONE canonicaliser that moved,
+ * so nothing on this page had to learn about whitespace.
  */
 const CYCLE_FACET = "cycle";
 
