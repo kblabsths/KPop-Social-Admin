@@ -116,6 +116,61 @@ describe("reading the URL", () => {
   });
 });
 
+describe("what narrows ONE surface, not the whole URL", () => {
+  /**
+   * `isNarrowed(filter, within)` — the route's one narrowing decision, asked
+   * by a surface that already narrows itself (admin-window/BUG-0129). A queue
+   * block selects its own rows with `{ kind }`, so a URL facet naming that
+   * same kind removes not one row from it and may not be counted; every other
+   * facet, and the same facet with a different value, still counts.
+   *
+   * Pinned BOTH ways below: the facet that cannot narrow answers `false`, the
+   * facet that can answers `true`.
+   */
+  it("discounts a facet whose value the surface already applies", () => {
+    for (const facet of FACETS) {
+      for (const value of FACET_VALUES[facet] as readonly string[]) {
+        const asked = filterFrom({ [facet]: value });
+        expect(isNarrowed(asked), `${facet}=${value} against the whole URL`).toBe(true);
+        expect(isNarrowed(asked, asked), `${facet}=${value} within itself`).toBe(false);
+      }
+    }
+  });
+
+  it("counts the same facet asking for a DIFFERENT value", () => {
+    for (const facet of FACETS) {
+      const values = FACET_VALUES[facet] as readonly string[];
+      for (const value of values) {
+        for (const other of values.filter((candidate) => candidate !== value)) {
+          expect(
+            isNarrowed(filterFrom({ [facet]: other }), filterFrom({ [facet]: value })),
+            `${facet}=${other} within ${facet}=${value}`,
+          ).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("counts every OTHER facet beside the one the surface applies", () => {
+    const within: ReviewItemFilter = { kind: "decision" };
+    for (const facet of FACETS.filter((candidate) => candidate !== "kind")) {
+      const value = (FACET_VALUES[facet] as readonly string[])[0];
+      expect(isNarrowed(filterFrom({ [facet]: value }), within), facet).toBe(true);
+      expect(
+        isNarrowed(filterFrom({ kind: "decision", [facet]: value }), within),
+        `kind + ${facet}`,
+      ).toBe(true);
+    }
+  });
+
+  it("answers the whole-URL question when the surface narrows nothing itself", () => {
+    // The default: what every page-level caller asks, unchanged.
+    expect(isNarrowed({}, {})).toBe(false);
+    expect(isNarrowed({ kind: "signal" }, {})).toBe(true);
+    expect(isNarrowed({}, { kind: "signal" })).toBe(false);
+  });
+});
+
 describe("writing the URL", () => {
   it("spells no narrowing as the bare path", () => {
     expect(queuesHref(PATH, {})).toBe(PATH);
