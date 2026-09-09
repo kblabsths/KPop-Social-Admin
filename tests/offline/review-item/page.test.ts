@@ -2510,7 +2510,7 @@ describe("an evidence cell with nothing in it", () => {
     payload_ref: null,
   });
 
-  it.fails("renders the app's dash, on every absence the evidence table reaches", async () => {
+  it("renders the app's dash, on every absence the evidence table reaches", async () => {
     const id = reviewItemEntityLink().review_item_id;
     const absences: [string, Script][] = [
       // The source registry could not be read, so no claim has a tier
@@ -2533,6 +2533,112 @@ describe("an evidence cell with nothing in it", () => {
       expect(cells.filter((cell) => cell === ""), `${what}: blank cells`).toEqual([]);
       expect(cells, `${what}: the app's dash`).toContain(EM_DASH);
     }
+  });
+
+  /* ── the four columns, one absent and one present (LESSONS 3) ─────────── */
+
+  /** The hook each nullable cell is addressed by; the value cell's is the row's. */
+  const NULLABLE = ["[data-evidence]", "[data-tier-now]", "[data-payload]", "[data-held]"];
+
+  /** One nullable cell of the stuck item's single evidence row. */
+  function cellOf(markup: string, hook: string) {
+    const $ = cheerio.load(markup);
+    return $(`[data-evidence="${ID.observationB}"]`).closest("tr").find(hook);
+  }
+
+  /** The three absences of the pin at once, so every nullable cell is empty. */
+  const NOTHING_HELD: Script = stuckScript({
+    [T.observations]: { data: [NOTHING_SAID] },
+    [T.sources]: { error: tableNotInSchemaCache(T.sources) },
+    [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
+  });
+
+  it("keeps every hook the suite addresses these cells by while it dashes", async () => {
+    // The row stays addressable: `[data-evidence="<id>"]` is how `rowOf`,
+    // `evidenceIds` and the live parity oracle all find an evidence row, so a
+    // fix that dropped the span for a null would make the row unfindable
+    // rather than merely dashless.
+    const markup = await renderItem(NOTHING_HELD, reviewItemEntityLink().review_item_id);
+
+    expect(evidenceIds(markup)).toEqual([ID.observationB]);
+    for (const hook of NULLABLE) {
+      expect(cellOf(markup, hook), hook).toHaveLength(1);
+    }
+    const row = rowOf(markup, ID.observationB);
+    expect(row.tier, "the tier hook").toBeDefined();
+    expect(row.payload, "the payload hook").toBeDefined();
+    expect(row.held, "the held-by hook").toBeDefined();
+  });
+
+  it("draws the app's one absence element inside each of them, not a bare character", async () => {
+    // LESSONS 1: absence is `lib/format.ts`'s dash — secondary ink, labelled
+    // `no value` for a reader who cannot see the ink — and never a character
+    // the cell wrote itself.
+    const markup = await renderItem(NOTHING_HELD, reviewItemEntityLink().review_item_id);
+
+    for (const hook of NULLABLE) {
+      const cell = cellOf(markup, hook);
+      expect(cell.find('[aria-label="no value"]'), hook).toHaveLength(1);
+      expect(cell.text().trim(), hook).toBe(EM_DASH);
+    }
+  });
+
+  it("reads the absent tier the same way the evidence pair one block above does", async () => {
+    // Criterion 2: one absence, one reading. The pair already draws an
+    // unreadable tier as the dash (§6 trap 5); before this fix the row for the
+    // SAME claim drew it as a blank, so one page said an absent tier two ways.
+    const markup = await renderItem(
+      stuckScript({ [T.sources]: { error: tableNotInSchemaCache(T.sources) } }),
+      reviewItemEntityLink().review_item_id,
+    );
+    const $ = cheerio.load(markup);
+
+    // The pair states the claim as `source · tier · age`, so its tier is the
+    // middle term of that line.
+    const pairLines = $(EVIDENCE_HOOK)
+      .find("span")
+      .toArray()
+      .map((node) => $(node).text().replace(/\s+/g, " ").trim())
+      .filter((text) => / · .* · /.test(text));
+    expect(pairLines.length, "the pair renders the claim").toBeGreaterThan(0);
+    for (const line of pairLines) {
+      expect(line.split(" · ")[1], "the pair's tier").toBe(EM_DASH);
+    }
+
+    // ...and the table row says it with the same character, drawn by the app's
+    // one absence element.
+    const cell = cellOf(markup, "[data-tier-now]");
+    expect(cell.text().trim()).toBe(EM_DASH);
+    expect(cell.find('[aria-label="no value"]')).toHaveLength(1);
+  });
+
+  it("leaves a cell whose value the app does hold exactly as it is", async () => {
+    // The other fixture (LESSONS 3): a fix that dashed everything would pass
+    // every assertion above.
+    const markup = await renderItem(stuckScript(), reviewItemEntityLink().review_item_id);
+    const row = rowOf(markup, ID.observationB);
+
+    expect(cellOf(markup, "[data-evidence]").text().trim()).toBe(CLAIM_B.value);
+    expect(row.tier).toBe(BANDSINTOWN.tier);
+    expect(row.payload).toBe(CLAIM_B.payload_ref);
+    expect(row.held).toContain("awaiting_row");
+    for (const hook of NULLABLE) {
+      expect(cellOf(markup, hook).find('[aria-label="no value"]'), hook).toHaveLength(0);
+    }
+  });
+
+  it("says what a dash means once, and only while one is on screen", async () => {
+    // LESSONS 1: "a column of dashes carries one line saying what a dash
+    // means" — and `close/slot.tsx`'s other half, that a sentence about a
+    // character nobody can see is noise.
+    const id = reviewItemEntityLink().review_item_id;
+    const filled = cheerio.load(await renderItem(stuckScript(), id));
+    expect(filled(EVIDENCE_HOOK).find("[data-absence-note]")).toHaveLength(0);
+
+    const $ = cheerio.load(await renderItem(NOTHING_HELD, id));
+    const note = $(EVIDENCE_HOOK).find("[data-absence-note]");
+    expect(note).toHaveLength(1);
+    expect(note.text()).toContain(EM_DASH);
   });
 });
 
