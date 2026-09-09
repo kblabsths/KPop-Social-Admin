@@ -1,0 +1,32 @@
+{
+ "id": "BUG-0122",
+ "created": "2026-09-09T13:42:14Z",
+ "green": true,
+ "git_head": "4c8dfd66b2da01597a05ff72d019216817a984e0",
+ "scope": [
+  "src/components/review/evidence-cells.tsx",
+  "src/components/review/shape-views.tsx",
+  "src/app/queues/[reviewItemId]/page.tsx",
+  "tests/offline/review-item/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "7b234f6ca3e6548a05f361578e34ac691b15dc25f4d6edfae2c86a51f4c804ae",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review-item/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-91487\n\n \u2713 |offline| tests/offline/review-item/page.test.ts (88 tests) 482ms\n\n Test Files  1 passed (1)\n      Tests  88 passed (88)\n   Start at  06:42:12\n   Duration  1.40s (transform 327ms, setup 0ms, collect 542ms, tests 482ms, environment 0ms, prepare 122ms)\n\n(node:91705) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c 'grep -q \"external_ref\" src/components/review/evidence-cells.tsx && grep -q \"label: \\\"fact\\\"\" src/components/review/evidence-cells.tsx'",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
