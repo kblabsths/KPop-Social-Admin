@@ -145,9 +145,20 @@ export interface ShapeEvidenceProps {
   dial: DialProps | null;
 }
 
-/** The lede: what this shape's evidence is, said once, above it. */
+/**
+ * The lede: what this shape's evidence is, said once, above it.
+ *
+ * Hooked `data-lede` so a test can address the sentence that makes the claim
+ * rather than the first paragraph inside a view — a positional selector is how
+ * this repo has lost oracles before (admin-window/DEBT-0002), and what the
+ * lede may claim is graded per shape (admin-window/BUG-0124).
+ */
 function Lede({ children }: { children: ReactNode }) {
-  return <p className="type-body text-ink-secondary">{children}</p>;
+  return (
+    <p data-lede className="type-body text-ink-secondary">
+      {children}
+    </p>
+  );
 }
 
 /**
@@ -377,6 +388,16 @@ function Dial({ label, series, window: read, empty, state }: DialProps) {
 }
 
 /**
+ * **The lede says what the table HOLDS, and claims no more than that**
+ * (campaign admin-window/BUG-0124). It used to assert that the rows below were
+ * every record this signal had folded — a completeness the page cannot
+ * establish: `folded_count` and `evidence` are two columns of the same row,
+ * this app compares them nowhere, and on the one signal staging holds they are
+ * 700 and 91. Both M2 user-sims met that sentence over 91 rows and stopped
+ * trusting the screen. What the table is, is the claims behind the item&rsquo;s
+ * evidence ids — which is exactly the population the accounting sentence under
+ * it accounts for, and exactly the count the header states beside the folds.
+ *
  * Both columns of the pattern view are `min-w-0`, and that is load-bearing
  * rather than decorative: a grid item's `min-width` is `auto`, which is its
  * CONTENT's minimum — so the records table (91 rows of unbreakable
@@ -402,10 +423,10 @@ function PatternEvidence({
     >
       <div className="flex min-w-0 flex-col gap-3">
         <Lede>
-          One source, many records stuck the same way. Every record folded into
-          this signal is listed here; the source&rsquo;s own dial is beside it.
-          There is no canonical value to stand them against — the subject is the
-          source, not a fact.
+          One source, many records stuck the same way. The table holds the
+          claims behind this item&rsquo;s evidence ids; the source&rsquo;s own dial is
+          beside it. There is no canonical value to stand them against — the
+          subject is the source, not a fact.
         </Lede>
         <ClaimRows
           rows={rows}

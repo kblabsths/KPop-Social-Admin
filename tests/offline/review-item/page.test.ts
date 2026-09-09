@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { ClaimList, type ClaimLine } from "@/components/claims/claim-list";
 import { isRecordId } from "@/lib/db/records";
-import { EM_DASH } from "@/lib/format";
+import { EM_DASH, counted } from "@/lib/format";
 import { T } from "@/lib/db/tables";
 import { h, render, uppercasedIdentifiers } from "../ui/markup";
 import {
@@ -1583,6 +1583,247 @@ describe("the close is reachable without exhausting the evidence", () => {
     // close rather than hoisted into it.
     expect(cheerio.load(markup)(EVIDENCE_HOOK).find("[data-pair]")).toHaveLength(1);
     expect(order.indexOf(CLOSE_HOOK)).toBeLessThan(order.indexOf("evidence"));
+  });
+});
+
+/* ── the three counts, and what each one counts ──────────────────────────── */
+
+/**
+ * **admin-window/BUG-0124** — the three figures on the signal's page, and the
+ * completeness claim over the smallest of them.
+ *
+ * Both M2 user-sims (2026-09-09) read the same screen and could not reconcile
+ * `asked again ×700` in the header, `stuck records 769` on the dial and the 91
+ * rows the evidence table listed under a lede saying the rows were every
+ * record the signal had folded. One of them said outright that, asked to
+ * summarise the signal in one line, they would have quoted the wrong number.
+ * The dial was already right — it prints its scope under its figure — so what
+ * these tests grade is the other two: every figure states what it counts, the
+ * fold count is stated against the count of what the block below lists, and no
+ * sentence claims a completeness this app never read.
+ *
+ * The words are the designer's; what is asserted is that each figure wears a
+ * noun (`counted`, the app's own formatter — never a copy of the sentence),
+ * that the second figure equals what the block below really lists, and that no
+ * third number appears between them.
+ */
+
+/** The header's fold sentence: its text, its hook, and the figures in it. */
+function foldScopeOf(markup: string) {
+  const $ = cheerio.load(markup);
+  const stated = $("[data-fold-scope]");
+  expect(stated, "the header states what its fold count counts").toHaveLength(1);
+  const text = stated.text().replace(/\s+/g, " ").trim();
+  return {
+    text,
+    /** The evidence-id count it published, or undefined on a read that did not happen. */
+    evidenceIds: stated.attr("data-fold-evidence-ids"),
+    /** Every number in the sentence, in order. */
+    // A digit-led run, so the sentence's commas are not read as zeroes.
+    figures: (text.match(/\d[\d,]*/g) ?? []).map((figure) =>
+      Number(figure.replace(/,/g, "")),
+    ),
+  };
+}
+
+/**
+ * The accounting sentence's two figures, read from the sentence's OWN element.
+ *
+ * `accountingIn` above reads the page's whole text, which is safe on the two
+ * fact shapes and not on this one: the dial's trend table ends in a bare `0`
+ * immediately above the sentence, so a page-wide match reads `2026-09-090` +
+ * `1 of 1` as `901 of 1`. Same parse, narrower input.
+ */
+function accountingOfBlock(markup: string): [number, number] {
+  const block = cheerio.load(markup)("[data-evidence-accounting]");
+  expect(block, "the evidence block states its accounting").toHaveLength(1);
+  return accountingIn(block.html() ?? "");
+}
+
+/** How many evidence ids the block below really lists: rows, plus ids named unresolved. */
+function idsListed(markup: string): number {
+  return evidenceIds(markup).length + attrsOf(markup, "[data-unresolved]").length;
+}
+
+/**
+ * The trap fixture: the fold count, the evidence-id count and the dial's
+ * stuck-record count are all the SAME number.
+ *
+ * Three ones on one page is the case a fix that merely printed the numbers
+ * closer together would pass while still being unreadable — the sims' actual
+ * complaint is that a figure says nothing about its population, and where the
+ * populations coincide only the nouns can tell them apart. One fold, one
+ * evidence id resolving to one claim, and one `awaiting_row` claim for this
+ * source in the dial's own window.
+ */
+function coincidingScript(overrides: Script = {}): Script {
+  const item = reviewItemSourcePattern({
+    folded_count: 1,
+    evidence: [ID.observationB],
+  });
+  return {
+    [T.reviewItems]: { data: item },
+    // The evidence read, then the dial's own windowed scan.
+    [T.observations]: [{ data: [CLAIM_B] }, { data: [CLAIM_B] }],
+    [T.sources]: { data: [BANDSINTOWN] },
+    [T.pendingClaims]: [
+      { data: [] },
+      {
+        data: [
+          pendingClaimRow("awaiting_row", {
+            observation_id: ID.observationB,
+            source_id: ID.sourceBandsintown,
+          }),
+        ],
+      },
+    ],
+    ...SETTLEMENT_ABSENT,
+    ...overrides,
+  };
+}
+
+describe("every figure says what it counts", () => {
+  it("states what a fold is, and the evidence-id count it stands over", async () => {
+    // The staging-shaped signal: 700 folds over an evidence array of a
+    // different size entirely (`longPatternScript`, 104 ids).
+    const item = reviewItemSourcePattern();
+    const markup = await renderItem(longPatternScript(), item.review_item_id);
+    const $ = cheerio.load(markup);
+    const scope = foldScopeOf(markup);
+
+    // Both figures, each wearing its own noun (LOOK_AND_FEEL Voice bar 6).
+    expect(scope.text).toContain(counted(700, "fold"));
+    expect(scope.text).toContain(counted(idsListed(markup), "evidence id"));
+
+    // The second figure IS the population the block below lists — read off
+    // the markup, so the sentence cannot drift from the table under it.
+    expect(idsListed(markup)).toBe(FOLDED.length);
+    expect(Number(scope.evidenceIds)).toBe(idsListed(markup));
+
+    // …and there is no third number between them: no ratio, no percentage, no
+    // score (spec criterion 5; VISION non-goal "no severity formula").
+    expect([...new Set(scope.figures)].sort((a, b) => a - b)).toEqual(
+      [700, FOLDED.length].sort((a, b) => a - b),
+    );
+    expect(scope.text).not.toContain("%");
+
+    // The machine's own number is still rendered verbatim beside the sentence.
+    expect($("[data-folds]").attr("data-folds")).toBe("700");
+    expect($("[data-folds]").text()).toContain("700");
+  });
+
+  it("says so plainly when the two counts are the same number", async () => {
+    const item = reviewItemSourcePattern();
+    const markup = await renderItem(coincidingScript(), item.review_item_id);
+    const scope = foldScopeOf(markup);
+
+    expect(idsListed(markup)).toBe(1);
+    expect(Number(scope.evidenceIds)).toBe(1);
+    // One fold, one evidence id — and the singular noun on each, so neither
+    // figure reads as the other one (admin-window/BUG-0046's rule, applied to
+    // the pair this ticket relates).
+    expect(scope.text).toContain(counted(1, "fold"));
+    expect(scope.text).toContain(counted(1, "evidence id"));
+    expect([...new Set(scope.figures)]).toEqual([1]);
+  });
+
+  it("keeps the third figure on its own scope when all three coincide", async () => {
+    const item = reviewItemSourcePattern();
+    const markup = await renderItem(coincidingScript(), item.review_item_id);
+    const $ = cheerio.load(markup);
+
+    // The dial reads the same number as the other two, from a different read
+    // entirely — the source's stuck records in ITS window, not this item's
+    // folds and not this item's evidence.
+    const dial = $("[data-dial]").text().replace(/\s+/g, " ").trim();
+    expect(dial).toContain("1");
+    expect(dial).toMatch(/stuck records/);
+    // Its own scope is stated with it: the window it was read over, published
+    // as the hook the §4.3 rule grades (`data-window`), and named in words
+    // beside the figure.
+    expect($('[data-dial] [data-window="awaiting_row"]')).toHaveLength(1);
+    expect(dial).toMatch(/window/i);
+
+    // And the evidence block's own accounting still accounts for the ids it
+    // looked at, untouched by this ticket.
+    expect(accountingOfBlock(markup)).toEqual([1, 1]);
+  });
+
+  it("states no evidence-id count when that read did not happen", async () => {
+    // The rule a window line follows (ARCHITECTURE.md §4.3): a count over a
+    // read that never returned is not published at all. The fold count is the
+    // machine's own column and still renders, with what a fold IS.
+    const item = reviewItemSourcePattern();
+    const markup = await renderItem(
+      patternScript({
+        [T.observations]: { error: tableNotInSchemaCache(T.observations) },
+      }),
+      item.review_item_id,
+    );
+    const $ = cheerio.load(markup);
+    const scope = foldScopeOf(markup);
+
+    expect(scope.evidenceIds).toBeUndefined();
+    // No figure at all in the sentence: the fold count is stated once, in the
+    // mono span that carries the column, and nothing counts rows nobody read.
+    expect(scope.figures).toEqual([]);
+    expect(scope.text.length).toBeGreaterThan(0);
+    expect($("[data-folds]").text()).toContain(String(item.folded_count));
+  });
+
+  it("states it on every shape, inside the header surface", async () => {
+    for (const [name, script, id] of SHAPED) {
+      const $ = cheerio.load(await renderItem(script(), id));
+      expect($(`${HEADER_HOOK} [data-fold-scope]`), name).toHaveLength(1);
+    }
+  });
+});
+
+describe("the lede claims only what the read supports", () => {
+  /**
+   * The retired sentence, kept here as the input the guard below MUST flag
+   * (LESSONS 3: a guard that never saw a failing spelling passes vacuously).
+   * It is the string the source-pattern lede carried until this ticket, and
+   * `! grep -q` over `shape-views.tsx` is the other half of the same check.
+   */
+  const RETIRED_CLAIM = "Every record folded into this signal is listed here";
+  const CLAIMS_A_TOTAL = /\b(every|all|complete|entire)\b/i;
+
+  it("flags the claim it is banning", () => {
+    expect(RETIRED_CLAIM).toMatch(CLAIMS_A_TOTAL);
+  });
+
+  it("says what the table holds, and nothing about the folds", async () => {
+    // 700 folds over 104 evidence ids: a lede calling the rows below every
+    // folded record is false HERE, and unknowable everywhere else —
+    // `folded_count` and `evidence` are two columns this app never compares.
+    const item = reviewItemSourcePattern();
+    const markup = await renderItem(longPatternScript(), item.review_item_id);
+    const lede = cheerio.load(markup)(
+      '[data-evidence-view="source-pattern"] [data-lede]',
+    );
+
+    expect(lede, "the source-pattern view leads with a lede").toHaveLength(1);
+    const text = lede.text().replace(/\s+/g, " ").trim();
+    expect(text).not.toMatch(CLAIMS_A_TOTAL);
+    // It names the population instead — the same noun the header states the
+    // fold count against and the accounting sentence accounts for.
+    expect(text).toContain("evidence ids");
+    // Nothing in it is a figure: the counts are stated where they are read.
+    expect(text).not.toMatch(/\d/);
+  });
+
+  it("leaves the accounting sentence and the dial's own line alone", async () => {
+    // Criterion 4: this ticket adds a sentence, it does not reword the two
+    // that were already right.
+    const item = reviewItemSourcePattern();
+    const markup = await renderItem(longPatternScript(), item.review_item_id);
+    const listed = idsListed(markup);
+
+    expect(accountingOfBlock(markup)).toEqual([listed, listed]);
+    expect(cheerio.load(markup)('[data-dial] [data-window="awaiting_row"]')).toHaveLength(
+      1,
+    );
   });
 });
 

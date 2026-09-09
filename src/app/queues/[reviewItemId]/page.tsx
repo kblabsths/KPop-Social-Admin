@@ -58,7 +58,9 @@ import { factKey } from "@/lib/verdict/decision";
  * The anatomy, in order down the page:
  *
  *  1. **what happened** — the summary sentence, severity, age, and
- *     `folded_count` as "asked again ×N" (`ItemHeader`);
+ *     `folded_count` as "asked again ×N", stated against the number of
+ *     evidence ids the item carries so neither figure stands unqualified
+ *     (`ItemHeader`, campaign admin-window/BUG-0124);
  *  2. **the close** — spec §7's verdict actions, rendered by
  *     `CloseSlot` (`src/components/review/close/slot.tsx`, campaign
  *     admin-window/TASK-0049). What it offers is decided by ONE read,
@@ -739,6 +741,14 @@ export default async function ReviewItemPage({
           kind={kind}
           shape={shape}
           links={linksOf(row, names)}
+          // What the fold count is stated AGAINST (campaign
+          // admin-window/BUG-0124): the ids the evidence read looked at, which
+          // is the population the block below lists and the accounting
+          // sentence accounts for. `null` when that read did not happen, so
+          // the header states the folds alone rather than a count of rows
+          // nobody read — the rule a window line follows (ARCHITECTURE.md
+          // §4.3).
+          evidenceIds={evidence.kind === "ok" ? evidence.data.ids.distinct : null}
         />
       </Section>
 
@@ -818,7 +828,12 @@ export default async function ReviewItemPage({
               // claims are still the item's evidence (admin-window/BUG-0021).
               <StateOf result={evidence.data.sourcesUnavailable} />
             )}
-            <p className="type-body text-ink-secondary">
+            {/* The accounting, in an element of its own so a test can read
+                the sentence rather than the page's whole text: the dial's
+                trend table ends in a bare `0` directly above it, which a
+                page-wide regex reads as part of the first figure (campaign
+                admin-window/BUG-0124). Its words are unchanged. */}
+            <p data-evidence-accounting className="type-body text-ink-secondary">
               {accountingOf(evidence.data)}
             </p>
           </>

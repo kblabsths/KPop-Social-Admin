@@ -1,6 +1,6 @@
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { Badge } from "@/components/ui";
-import { count, relativeAge } from "@/lib/format";
+import { count, counted, relativeAge } from "@/lib/format";
 import type { Kind, ReviewItemRow, Shape } from "@/lib/review/shapes";
 
 /**
@@ -15,6 +15,23 @@ import type { Kind, ReviewItemRow, Shape } from "@/lib/review/shapes";
  *
  * `folded_count` is a real zero, not an absence: an item nothing has folded
  * into was asked once, and that is a fact rather than a missing number.
+ *
+ * **The fold count does not stand alone** (campaign admin-window/BUG-0124).
+ * Both M2 user-sims read `asked again ×700` over an evidence table of 91 rows
+ * and could not say what either number counted; one said outright that, asked
+ * for a one-line summary of the signal, they would have quoted the wrong
+ * figure. So the block states what a fold IS — one re-ask of this item, never
+ * one record — and names the other count beside it: how many evidence ids the
+ * item carries, which is the population the block below lists. Two figures,
+ * each with its noun, in one sentence, and no ratio between them: Admin holds
+ * `folded_count` and `evidence` as two columns of one row and relates them
+ * nowhere else (LOOK_AND_FEEL Voice bar 6; VISION non-goal "no severity
+ * formula").
+ *
+ * The evidence-id clause follows the READ, exactly as a window line does
+ * (ARCHITECTURE.md §4.3): `evidenceIds` is null on every state where the
+ * evidence read did not happen, so its absence means that and nothing else,
+ * and the sentence never counts ids nobody read.
  *
  * **It re-derives nothing.** `kind` and `shape` arrive as props because
  * `shapeOf`/`kindOfItem` in `src/lib/review/shapes.ts` are the only spellings
@@ -52,17 +69,52 @@ export interface ItemLink {
   value?: string;
 }
 
+/**
+ * The fold count wearing its noun, beside the count of what the evidence block
+ * below lists — campaign admin-window/BUG-0124.
+ *
+ * Three arms, and each says only what this page can stand behind:
+ *
+ *  - the evidence read did not happen (`null`): the definition alone. No
+ *    second figure is invented for a read nobody made;
+ *  - the item carries no evidence id: the folds, and that absence stated as an
+ *    absence — the block below already says what would fill it;
+ *  - both counts are real: both are printed with their nouns, and where they
+ *    are the SAME number the sentence says so, rather than leaving a reader to
+ *    decide for themselves whether one figure is the other one narrowed.
+ */
+function foldScope(folds: number, evidenceIds: number | null): string {
+  const fold = "Each fold is a re-ask of this item, not a record";
+  if (evidenceIds === null) return `${fold}.`;
+  if (evidenceIds === 0) {
+    return `${fold}: ${counted(folds, "fold")}, and it carries no evidence id.`;
+  }
+  const both = `${fold}: ${counted(folds, "fold")} over the ${counted(
+    evidenceIds,
+    "evidence id",
+  )} it carries, listed below`;
+  return folds === evidenceIds ? `${both} — the two counts agree.` : `${both}.`;
+}
+
 export function ItemHeader({
   item,
   kind,
   shape,
   links,
+  evidenceIds,
 }: {
   item: ReviewItemRow;
   kind: Kind;
   shape: Shape;
   /** Where this investigation continues (LOOK_AND_FEEL bar 10). */
   links: readonly ItemLink[];
+  /**
+   * How many DISTINCT evidence ids this item carries — the population the
+   * evidence block below lists, each one resolved to a row or named as
+   * unresolved — or `null` when that read did not happen at all
+   * (`ItemEvidence.ids.distinct`, `src/lib/db/review-item.ts`).
+   */
+  evidenceIds: number | null;
 }) {
   const opened = relativeAge(item.opened_at);
   const lastEvidence = relativeAge(item.last_evidence_at);
@@ -95,6 +147,17 @@ export function ItemHeader({
         <span data-folds={item.folded_count}>
           asked again ×{count(item.folded_count)}
         </span>
+      </p>
+
+      {/* What that figure counts, and what the other one does. The evidence-id
+          count is published as a hook of its own, so the relation is graded
+          against the block below rather than against these words. */}
+      <p
+        data-fold-scope
+        data-fold-evidence-ids={evidenceIds ?? undefined}
+        className="type-body text-ink-secondary"
+      >
+        {foldScope(item.folded_count, evidenceIds)}
       </p>
 
       {links.length === 0 ? null : (
