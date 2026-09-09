@@ -81,22 +81,85 @@ const DASH = "—";
  *    back out of the original string by the arm that owns them, once that arm
  *    has been chosen on the strength of the structure).
  */
-type RefusalShape = { readonly prose: string; readonly code: string | null };
+type RefusalShape = {
+  /** The Postgres shape the message OPENS with, when it is one of the two. */
+  readonly head: RefusalHead | null;
+  /** The account with the dumped row struck off — where NAMES are read from. */
+  readonly named: string;
+  /** `named` again, with every value struck out — where PROSE is matched. */
+  readonly prose: string;
+  /** The SQLSTATE the account states last, when it states one at all. */
+  readonly code: string | null;
+};
+
+/** What the message's own opening says the refusal IS. */
+type RefusalHead =
+  | { readonly arm: "notNull"; readonly column: string | null }
+  | { readonly arm: "coercion"; readonly type: string | null };
+
+/**
+ * `null value in column "label" of relation "walk_sandbox" violates not-null
+ * constraint` — Postgres's own wording, anchored at the head of the account.
+ *
+ * Anchored because `errorMessage` joins the client's fields in a FIXED order,
+ * message first (`lib/db/result.ts`), so position 0 is the one place in the
+ * string no value can reach. Everything after it — the `Failing row contains`
+ * dump — is values, and this is the shape that lets the arm be chosen without
+ * reading a word of them.
+ */
+const NOT_NULL_HEAD =
+  /^\s*null value in column "([^"]*)"(?:\s+of relation "[^"]*")?\s+violates not-null constraint/i;
+
+/** `invalid input syntax for type integer: "seven"` — the same, for a coercion. */
+const COERCION_HEAD = /^\s*invalid input syntax for type\s+([a-z][a-z0-9 ]*?)\s*:/i;
 
 /** The code `errorMessage` appends last: `… violates not-null constraint (23502)`. */
 const STATED_CODE = /\(([A-Za-z0-9]{3,12})\)\s*$/;
 
-/** Everything from `invalid input syntax for type <t>:` on is the VALUE. */
-const COERCION_HEAD = /^([\s\S]*?\binvalid input syntax for type\s+[a-z][a-z0-9 ]*?\s*:)/i;
+/**
+ * Where a refusal stops being prose and starts being DUMPED VALUES.
+ *
+ * Postgres's DETAIL lines print the offending row, and they print it
+ * UNQUOTED — `Failing row contains (…, is not present in this database, …)`.
+ * Nothing after one of these markers is the database's account of what is
+ * wrong; it is the data, and no arm may read it (admin-window/BUG-0103,
+ * second cut: a `note` spelling `23502` cost the account its trailing code,
+ * and the dump then chose the app's sentence).
+ */
+const DUMPED_VALUES = /\bFailing row contains\b|\bKey \(|\bDETAIL:/i;
 
-/** A double-quoted run — where a refusal that is not a coercion puts a value. */
+/** Everything from `invalid input syntax for type <t>:` on is the VALUE. */
+const COERCION_TAIL = /^([\s\S]*?\binvalid input syntax for type\s+[a-z][a-z0-9 ]*?\s*:)/i;
+
+/** A double-quoted run — where a refusal puts a value it does not dump. */
 const QUOTED_RUN = /"[^"]*"/g;
 
+/** The account up to the first dumped row: prose, and the names in it. */
+function withoutDumpedValues(account: string): string {
+  const dump = DUMPED_VALUES.exec(account);
+  return dump === null ? account : account.slice(0, dump.index);
+}
+
+/** `named` with the values struck out: the coercion's tail, then every quote. */
+function withoutValues(named: string): string {
+  const beforeTheValue = COERCION_TAIL.exec(named)?.[1];
+  return (beforeTheValue ?? named).replace(QUOTED_RUN, '""');
+}
+
 function shapeOf(refusal: string): RefusalShape {
+  const named = withoutDumpedValues(refusal);
+  const notNull = NOT_NULL_HEAD.exec(named);
+  const coercion = notNull === null ? COERCION_HEAD.exec(named) : null;
   const stated = STATED_CODE.exec(refusal)?.[1];
-  const head = COERCION_HEAD.exec(refusal)?.[1];
   return {
-    prose: head ?? refusal.replace(QUOTED_RUN, '""'),
+    head:
+      notNull !== null
+        ? { arm: "notNull", column: notNull[1] === "" ? null : notNull[1] }
+        : coercion !== null
+          ? { arm: "coercion", type: coercion[1] ?? null }
+          : null,
+    named,
+    prose: withoutValues(named),
     code: stated === undefined ? null : stated.toUpperCase(),
   };
 }
@@ -125,7 +188,10 @@ const CLAIMED_CODES: ReadonlySet<string> = new Set<string>([
  * refusal states a code an arm here claims, THAT decides and nothing else can
  * — which is what keeps a quoted value out of the choice. When it states no
  * code, or one nothing here claims, the arms fall back to prose that has had
- * the value struck out of it.
+ * both kinds of value — the quoted and the dumped — struck out of it.
+ *
+ * This runs only for a refusal whose message OPENS with neither shape
+ * `shapeOf` knows: a head, where there is one, has already decided.
  */
 function states(
   shape: RefusalShape,
@@ -158,8 +224,20 @@ const BAD_SYNTAX_TYPE = /invalid input syntax for type ([a-z][a-z0-9 ]*?)\s*[:(]
 const SCHEMA_PROSE = /violates domain "[^"]*" schema|does not match/i;
 const SCHEMA_FIELD = /value for field "([^"]+)"/i;
 
-/** `settle_review_item is not present in this database` — this app's own words. */
-const NOT_PROVISIONED = /\bis not present in this database\b/i;
+/**
+ * `settle_review_item is not present in this database` — this app's own words,
+ * and the WHOLE of them.
+ *
+ * The route composes this sentence in one piece and passes nothing else with
+ * it (`api/admin/records/[table]/[id]/route.ts`, `…/settle/route.ts`), so the
+ * arm can require the whole message to BE that sentence rather than to contain
+ * it. It is the one arm whose sentence tells the operator to stop, so it is
+ * also the one that must never be reachable from text a refusal is merely
+ * carrying — the two live misfires of admin-window/BUG-0103 were both this
+ * sentence, said over a refusal a retype fixes. A message that wraps it in
+ * anything else falls to the general fix, which is never false.
+ */
+const NOT_PROVISIONED = /^\s*\S+ is not present in this database\.?\s*$/i;
 
 /**
  * How a Postgres type is TYPED, in the app's words and with an example of the
@@ -184,17 +262,23 @@ const TYPE_FORMS: readonly (readonly [RegExp, string])[] = [
   [/^uuid$/, "a uuid, like 00000000-0000-4000-8000-000000000001"],
 ];
 
-/** The column a not-null refusal names, or `null` when it names none. */
-function columnOf(refusal: string): string | null {
-  return NOT_NULL_COLUMN.exec(refusal)?.[1] ?? null;
+/**
+ * The column a not-null refusal names, or `null` when it names none.
+ *
+ * Read from `named` — the account with the dumped row already struck off — so
+ * that a value in some other column of that row cannot pose as the column the
+ * operator emptied.
+ */
+function columnOf(named: string): string | null {
+  return NOT_NULL_COLUMN.exec(named)?.[1] ?? null;
 }
 
 /**
  * The FIELD a gate refusal is about, unqualified: the gate spells it
  * `venues.country` and the operator is looking at a line called `country`.
  */
-function fieldOf(refusal: string): string | null {
-  const qualified = SCHEMA_FIELD.exec(refusal)?.[1];
+function fieldOf(named: string): string | null {
+  const qualified = SCHEMA_FIELD.exec(named)?.[1];
   if (qualified === undefined) return null;
   const bare = qualified.split(".").pop() ?? "";
   return bare === "" ? null : bare;
@@ -225,37 +309,51 @@ export const GENERAL_FIX = "Correct what the refusal names and save again.";
  * criterion 2 of admin-window/BUG-0098 and the reason `GENERAL_FIX` is
  * exported: a test can prove an arm fired by proving it is not the fallback.
  */
+/** The not-null arm's sentence, about the column the refusal named. */
+function cannotBeCleared(column: string | null): string {
+  const subject = column === null ? "This column" : column;
+  return `${subject} cannot be cleared ${DASH} type a value into it.`;
+}
+
+/** The coercion arm's sentence, about the form the named type is typed in. */
+function typeItThisWay(type: string | null): string {
+  if (type === null) return "Type a value in the form this column stores.";
+  const form = formOf(type);
+  return form === null
+    ? `Type a value the database reads as ${type.trim()}.`
+    : `Type ${form}.`;
+}
+
 export function refusalFix(refusal: string): string {
-  // Every arm below reads the STRUCTURE, never the raw string: the value a
-  // refusal quotes is the operator's, and it does not get a vote in what the
-  // app then says about it (admin-window/BUG-0103).
+  // Every arm below reads the STRUCTURE, never the raw string: the values a
+  // refusal carries — the one it quotes and the whole row it dumps — are the
+  // operator's, and they do not get a vote in what the app then says about
+  // them (admin-window/BUG-0103, both cuts).
   const shape = shapeOf(refusal);
 
-  // A database object that has not arrived is not a value problem, and telling
-  // the operator to correct the value would send them round a loop no retype
-  // can leave. It is the normal answer on the override path for the whole of
-  // M2 (the route's own 503, `api/admin/records/[table]/[id]/route.ts`) — this
-  // app's own sentence, which no SQLSTATE accompanies, so it claims no code.
-  if (states(shape, NOT_PROVISIONED, [])) {
-    return `This edit needs a database object that has not arrived yet ${DASH} nothing you retype will land until it does.`;
+  // 1. What the message OPENS with. Postgres's two shapes are fixed prose at
+  //    position 0 of the account, which is the one place a value cannot reach,
+  //    and both name what the arm needs before the values begin. Neither
+  //    depends on the SQLSTATE having survived: `errorMessage` appends the
+  //    code "only when the account does not already spell it", so a row that
+  //    happens to dump `23502` arrives with no code at all.
+  if (shape.head !== null) {
+    return shape.head.arm === "notNull"
+      ? cannotBeCleared(shape.head.column)
+      : typeItThisWay(shape.head.type);
   }
 
+  // 2. Else the SQLSTATE it states, and 3. else its prose with every value
+  //    struck out — `states` takes those two in that order.
   if (states(shape, NOT_NULL_PROSE, [NOT_NULL_CODE])) {
-    const column = columnOf(refusal);
-    const subject = column === null ? "This column" : column;
-    return `${subject} cannot be cleared ${DASH} type a value into it.`;
+    return cannotBeCleared(columnOf(shape.named));
   }
 
   if (states(shape, BAD_SYNTAX_PROSE, COERCION_CODES)) {
     // The TYPE is read from the prose, where the value has already been struck
     // out: the database names the type before the colon, and the operator owns
     // everything after it.
-    const type = BAD_SYNTAX_TYPE.exec(shape.prose)?.[1];
-    if (type === undefined) return "Type a value in the form this column stores.";
-    const form = formOf(type);
-    return form === null
-      ? `Type a value the database reads as ${type.trim()}.`
-      : `Type ${form}.`;
+    return typeItThisWay(BAD_SYNTAX_TYPE.exec(shape.prose)?.[1] ?? null);
   }
 
   // The gate's, not Postgres's: the registry patterns on `venues.country` and
@@ -263,10 +361,22 @@ export function refusalFix(refusal: string): string {
   // either, so the sentence points at the pattern the refusal states rather
   // than restating what a country code looks like.
   if (states(shape, SCHEMA_PROSE, [SCHEMA_CODE])) {
-    const field = fieldOf(refusal);
+    const field = fieldOf(shape.named);
     return field === null
       ? `The value did not match this field's registered pattern ${DASH} correct it to that form and save again.`
       : `${field} did not match its registered pattern ${DASH} correct the value to that form and save again.`;
+  }
+
+  // LAST, and only for a message that opens with neither Postgres shape: a
+  // database object that has not arrived is not a value problem, and telling
+  // the operator to correct the value would send them round a loop no retype
+  // can leave. It is the normal answer on the override path for the whole of
+  // M2 (the route's own 503, `api/admin/records/[table]/[id]/route.ts`). Its
+  // sentence is the only one here that tells the operator to STOP, so it is
+  // reached only by a refusal that is this app's own sentence and nothing
+  // else — never by one merely carrying those words.
+  if (NOT_PROVISIONED.test(shape.prose)) {
+    return `This edit needs a database object that has not arrived yet ${DASH} nothing you retype will land until it does.`;
   }
 
   return GENERAL_FIX;
