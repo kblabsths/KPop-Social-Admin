@@ -38,6 +38,37 @@ function pair(overrides: Partial<Parameters<typeof EvidencePair>[0]> = {}) {
   return render(h(EvidencePair, { claims: CLAIMS, canonical: CANONICAL, ...overrides }));
 }
 
+/**
+ * The claim line of a contender card: the card's last span child — the
+ * `source · tier · age` line, whose app-authored words and isolated machine
+ * values these tests read apart (admin-window/BUG-0151).
+ *
+ * Read off the rendered markup rather than named by class, so a face change
+ * cannot redden it and a structural change must.
+ */
+function line(html: string, card = 0) {
+  const $ = cheerio.load(html);
+  const cards = $("div").first().children("div");
+  return { $, element: cards.eq(card).children("span").last() };
+}
+
+/**
+ * That line split the way the browser splits it: the text of every isolated
+ * box, and everything OUTSIDE those boxes — the app's own words, which are the
+ * words a hostile value must not be able to move (ARCHITECTURE §7).
+ */
+function parts(html: string, card = 0) {
+  const { $, element } = line(html, card);
+  const isolated = element.find("[dir]").toArray().map((node) => $(node).text());
+  const appWords = element
+    .contents()
+    .toArray()
+    .filter((node) => !("attribs" in node && node.attribs?.dir !== undefined))
+    .map((node) => $(node).text())
+    .join("");
+  return { text: element.text(), isolated, appWords };
+}
+
 describe("EvidencePair", () => {
   it("puts the contenders on the left and the canonical value in the rightmost card", () => {
     const text = textOf(pair());
@@ -153,6 +184,64 @@ describe("EvidencePair", () => {
   });
 
   /**
+   * The same containment, driven from the TIER (admin-window/BUG-0151, QA
+   * attack). The fix routes both machine values through the one helper, so a
+   * hostile tier is the arm the source fixture above cannot see: if only the
+   * source were isolated, `sources.tier` — equally a value this app did not
+   * author — would still be able to draw the app's separators, the source
+   * beside it and the relative age backwards.
+   *
+   * Measured in Chromium (playwright, 1440x900, per-character Range rects
+   * sorted by x, 2026-09-09) on this markup: logical
+   * `ticketmaster · off<U+202E>icial · 14d ago` reaches the screen as
+   * `ticketmaster · offlaici<U+202E> · 14d ago` — the reversal stops at the
+   * tier's own box and every app-authored character is in the order the app
+   * wrote it.
+   */
+  it("keeps the app's words out of a hostile TIER's bidi box too", () => {
+    const RLO = "\u202e";
+    const claim = { ...CLAIMS[0], source: "ticketmaster", tier: "official" };
+
+    const healthy = parts(pair({ claims: [claim] }));
+    const hostile = parts(pair({ claims: [{ ...claim, tier: `off${RLO}icial` }] }));
+
+    expect(hostile.isolated).toEqual([claim.source, `off${RLO}icial`]);
+    expect(hostile.appWords).not.toContain(RLO);
+    expect(hostile.appWords).toBe(healthy.appWords);
+  });
+
+  /**
+   * The absence arm of the SOURCE (admin-window/BUG-0151, QA attack).
+   *
+   * The fix put `claim.source` behind the same absence guard the tier has, so a
+   * source with nothing visible in it is the app's own dash — announced to a
+   * reader who cannot see the ink — and NOT an empty isolated box, which is
+   * what wrapping the value unconditionally would draw: a machine identifier's
+   * box with no identifier in it, and no absence announced at all. Both halves
+   * are asserted, because only the second one fails under that wrong fix.
+   *
+   * The fixtures are every shape `isAbsent` calls empty (`lib/format.ts`,
+   * admin-window/BUG-0004/BUG-0085): the empty string, whitespace, and a string
+   * whose only characters are invisible.
+   */
+  it.each([["empty", ""], ["blank", "   "], ["ink-less", "\u200b\u202e"]])(
+    "draws a %s source as the app's absence element, not an empty isolated box",
+    (_name, source) => {
+      const { $, element } = line(pair({ claims: [{ ...CLAIMS[0], source }] }));
+      const dash = element.find('[aria-label="no value"]');
+
+      expect(dash, "the app's absence element stands in for the source").toHaveLength(1);
+      expect(dash.attr("dir"), "the dash is the app's own, not a machine value").toBeUndefined();
+      expect(dash.parents("[dir]"), "and it sits in no isolated box").toHaveLength(0);
+
+      const boxes = element.find("[dir]").toArray().map((node) => $(node).text());
+      expect(boxes, "the absent source leaves no empty identifier box behind").toEqual([
+        CLAIMS[0].tier,
+      ]);
+    },
+  );
+
+  /**
    * The harm the isolation exists to stop, on two fixtures (ARCHITECTURE §7,
    * promoted from Common violations row 15; admin-window/BUG-0137, BUG-0151).
    *
@@ -173,25 +262,6 @@ describe("EvidencePair", () => {
     const RLO = "\u202e";
     const claim = { ...CLAIMS[0], source: "ticketmaster", tier: "official" };
 
-    /** The claim line of the first contender card: the card's last span child. */
-    function line(html: string) {
-      const $ = cheerio.load(html);
-      const card = $("div").first().children("div").first();
-      return { $, element: card.children("span").last() };
-    }
-
-    /** The line's text, and the app's own words in it — everything outside the isolated boxes. */
-    function parts(html: string) {
-      const { $, element } = line(html);
-      const isolated = element.find("[dir]").toArray().map((node) => $(node).text());
-      const appWords = element
-        .contents()
-        .toArray()
-        .filter((node) => !("attribs" in node && node.attribs?.dir !== undefined))
-        .map((node) => $(node).text())
-        .join("");
-      return { text: element.text(), isolated, appWords };
-    }
 
     const healthy = parts(pair({ claims: [claim] }));
     const hostile = parts(pair({ claims: [{ ...claim, source: `ticket${RLO}master` }] }));
