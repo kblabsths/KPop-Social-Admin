@@ -34,11 +34,12 @@
  *     reference rather than a cell;
  *   - no HTTP, no client, no React.
  *
- * **It also holds the app's one definition of "blank"** (`hasVisibleContent`,
- * admin-window/BUG-0089). That is not verdict vocabulary, and it lives here
- * for a structural reason spelled out at the function itself: the two other
- * guards that ask the question may import this module, and this module may
- * import nothing.
+ * **It also holds two things that are not verdict vocabulary**: `factKey`, the
+ * app's one spelling of a fact identifier (`events.venue`), and the one
+ * definition of "blank" (`hasVisibleContent`, admin-window/BUG-0089). Both
+ * live here for the same structural reason, spelled out at each function: the
+ * surfaces and guards that need them may import this module, and this module
+ * may import nothing.
  *
  * **Absence is not this file's business.** Whether `settle_review_item` is
  * installed is answered by `readSettlementReadiness` reading the `verdicts`
@@ -265,13 +266,53 @@ export function noteRequired(action: VerdictAction): boolean {
   return action === "wont_fix";
 }
 
+/* ── the fact identifier, spelled once ───────────────────────────────────── */
+
+/**
+ * **The app's one spelling of a fact identifier**: a registry domain and a
+ * registry field, joined — `events.title`, `events.venue`, `venues.city`.
+ *
+ * The identifier is not decoration. `isReferenceField` below LOOKS UP the key
+ * this returns in `REFERENCE_FIELDS`, so the predicate that decides whether a
+ * `venue_id` fact may be settled with typed text is exactly this string; the
+ * close slot renders the same string in its withheld-control notice and hands
+ * it to the supply control as `supplies`; the claim table and the review
+ * item's evidence rows show it to the operator. Every one of those was its own
+ * hand-built template literal until admin-window/DEBT-0007 — four copies of one
+ * two-part join, agreeing only by everyone reaching for the obvious spelling,
+ * with nothing that would notice if one stopped (ARCHITECTURE.md §13.7, the
+ * doctrine `settlePath` and `recordFieldApiPath` exist for). One producer now,
+ * so the guard and the notice cannot disagree about what a fact is called.
+ *
+ * It takes the two parts SEPARATELY rather than a `VerdictValue`-shaped
+ * object, because two of its callers have no envelope — a claim row and an
+ * observation each carry `domain` and `field` as their own columns — and a
+ * shared shape invented for them would be a second thing to keep in step.
+ *
+ * Pure, total, and it validates nothing: an empty domain or a field carrying a
+ * dot is joined as given. There is no fact key this app may not name, and a
+ * key with no entry in `REFERENCE_FIELDS` is simply not a reference — which
+ * is the answer for every scalar in the registry.
+ *
+ * **Why it lives in this leaf**: it is the one module all four call sites may
+ * import, being the one that imports nothing (ARCHITECTURE.md §4 rule 7,
+ * pinned by `tests/offline/db/layering.test.ts`) — the same reason
+ * `hasVisibleContent` is here. `tests/offline/verdict/decision.test.ts`
+ * additionally scans `src/**` for a hand-built two-part join of a domain and a
+ * field, so a fifth copy reddens the suite rather than joining the drift.
+ */
+export function factKey(domain: string, field: string): string {
+  return `${domain}.${field}`;
+}
+
 /* ── which registry fields are references ────────────────────────────────── */
 
 /**
  * The registry fields whose kind is `reference` — a field that LINKS ROWS
  * (`events.venue` -> `venue_id`, `events.performers` -> `event_performers`)
- * rather than holding a value — spelled `domain.field`, the way every surface
- * here already spells a fact.
+ * rather than holding a value — each entry spelled by `factKey` above, which
+ * is how every surface here names a fact, so the list and the lookup cannot be
+ * two different two-part joins (admin-window/DEBT-0007).
  *
  * **A mirrored literal, knowingly.** `kind: reference` and the `references:`
  * targets beside it live ONLY in the scraper repo's
@@ -295,8 +336,8 @@ export function noteRequired(action: VerdictAction): boolean {
  * §13.7).
  */
 export const REFERENCE_FIELDS: readonly string[] = [
-  "events.venue",
-  "events.performers",
+  factKey("events", "venue"),
+  factKey("events", "performers"),
 ];
 
 /**
@@ -312,7 +353,7 @@ export const REFERENCE_FIELDS: readonly string[] = [
  * ("the apply links rows … instead of writing text").
  */
 export function isReferenceField(domain: string, field: string): boolean {
-  return REFERENCE_FIELDS.includes(`${domain}.${field}`);
+  return REFERENCE_FIELDS.includes(factKey(domain, field));
 }
 
 /** The three slots of `VerdictValue` that can carry the verdict's payload. */

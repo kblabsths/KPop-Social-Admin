@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Badge, type Column, DataTable } from "@/components/ui";
 import { relativeAge } from "@/lib/format";
+import { factKey } from "@/lib/verdict/decision";
 
 /**
  * The claims themselves — campaign admin-window/TASK-0012.
@@ -141,7 +142,7 @@ export function ClaimList({
         <span
           data-claim={row.observationId}
           data-claim-domain={row.domain}
-        >{`${row.domain}.${row.field}`}</span>
+        >{factKey(row.domain, row.field)}</span>
       ),
     },
     {

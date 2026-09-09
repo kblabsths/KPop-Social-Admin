@@ -42,6 +42,7 @@ import {
 import { recordHref } from "@/lib/records/routes";
 import { kindOfItem, shapeOf, type ReviewItemRow } from "@/lib/review/shapes";
 import { sourceLabel } from "@/lib/sources/names";
+import { factKey } from "@/lib/verdict/decision";
 
 /**
  * A review item, rendered — **three typed views over one anatomy** (campaign
@@ -248,7 +249,7 @@ function evidenceRow(
     observedAt: observation.observed_at,
     status: observation.status,
     payloadRef: observation.payload_ref,
-    fact: `${observation.domain}.${observation.field}`,
+    fact: factKey(observation.domain, observation.field),
     recordHref: recordHref(observation.domain, observation.entity_id),
     held:
       bucket === undefined

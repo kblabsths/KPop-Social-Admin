@@ -3,12 +3,14 @@ import {
   REFERENCE_FIELDS,
   VERDICT_ACTIONS,
   decisionRefusals,
+  factKey,
   isReferenceField,
   noteRequired,
   type VerdictAction,
   type VerdictDecision,
   type VerdictValue,
 } from "@/lib/verdict/decision";
+import { codeText, sourceFiles } from "../source-tree";
 
 /**
  * The verdict decision envelope — campaign admin-window/TASK-0042, the leaf
@@ -124,6 +126,127 @@ describe("the action set", () => {
     // The ratchet under every iteration below: a ninth action lands here
     // first, as a missing fixture, rather than passing untested.
     expect(Object.keys(WELL_FORMED).sort()).toEqual([...VERDICT_ACTIONS].sort());
+  });
+});
+
+/* ── the fact identifier, and its one producer ───────────────────────────── */
+
+/**
+ * The two spellings a hand-built fact identifier actually takes: a template
+ * literal joining a domain to a field with a dot, and the same join written
+ * with `+`. Each is proved on an input it MUST flag and one it must NOT
+ * (LESSONS 3) — a scanner that has never seen a hit passes vacuously.
+ *
+ * **Deliberately narrow, and this is where the line is.** The rule asks for a
+ * dot-join whose two halves NAME a domain and a field, not for any
+ * `${a}.${b}`: `src/lib/db/result.ts` joins a table to a column that way
+ * (`not_provisioned`, `missing`), and that identifier is not a fact key and
+ * must not be dragged into this one's producer. So the guard catches the
+ * copy-and-paste this debt was made of — the four sites of
+ * admin-window/DEBT-0007 all read `${…domain}.${…field}` — and does not
+ * pretend to catch a join through two variables named something else.
+ */
+const HAND_SPELLINGS: readonly { readonly name: string; readonly pattern: RegExp }[] = [
+  {
+    name: "template join",
+    pattern: /\$\{[^}]*\bdomain\b[^}]*\}\s*\.\s*\$\{[^}]*\bfield\b[^}]*\}/,
+  },
+  {
+    name: "concatenation",
+    pattern: /\bdomain\b\s*\+\s*(["'`])\.\1\s*\+\s*[\w.[\]"'`]*\bfield\b/,
+  },
+];
+
+/**
+ * Every hand-built fact identifier in a file's CODE, as `spelling: text`.
+ *
+ * Fed `codeText`, so a doc comment quoting the spelling it warns about stays
+ * documentation and only a real occurrence is a site — the same reading every
+ * other structural rule in this suite takes (`tests/offline/source-tree.ts`).
+ * It is asserted over `src/**` alone: a test that builds its expected string by
+ * hand is an independent oracle, and rewriting those through `factKey` would
+ * make the assertion agree with the code by construction.
+ */
+function handSpelledFactKeys(code: string): string[] {
+  const hits: string[] = [];
+  for (const { name, pattern } of HAND_SPELLINGS) {
+    for (const text of code.match(new RegExp(pattern.source, "g")) ?? []) {
+      hits.push(`${name}: ${text.replace(/\s+/g, " ")}`);
+    }
+  }
+  return hits;
+}
+
+/** The one file allowed to spell the join: `factKey`'s own body. */
+const FACT_KEY_PRODUCER = "src/lib/verdict/decision.ts";
+
+describe("factKey — the app's one spelling of a fact identifier", () => {
+  it("joins a domain and a field the way every surface names a fact", () => {
+    expect(factKey("events", "title")).toBe("events.title");
+    expect(factKey("venues", "city")).toBe("venues.city");
+  });
+
+  it("is what REFERENCE_FIELDS is spelled with, so the lookup cannot miss its own key", () => {
+    // The whole stake of admin-window/DEBT-0007: `isReferenceField` builds a
+    // key and looks it up in this list. Built by one function, the list and
+    // the lookup are the same string; built twice, they agreed by luck.
+    expect(REFERENCE_FIELDS.length).toBeGreaterThan(0);
+    for (const spelling of REFERENCE_FIELDS) {
+      const [domain, field] = spelling.split(".");
+      expect(factKey(domain, field), spelling).toBe(spelling);
+      expect(isReferenceField(domain, field), spelling).toBe(true);
+    }
+  });
+
+  it("names any pair and validates none — it is an identifier, not a guard", () => {
+    // A key with no entry in the list is simply not a reference, which is the
+    // answer for every scalar; naming it is still `factKey`'s job.
+    expect(factKey("events", "venue_id")).toBe("events.venue_id");
+    expect(isReferenceField("events", "venue_id")).toBe(false);
+    expect(factKey("", "")).toBe(".");
+    expect(factKey("events", "")).toBe("events.");
+  });
+});
+
+describe("the hand-spelling guard itself", () => {
+  it("flags a hand-built join, in each spelling it knows", () => {
+    // The four sites of admin-window/DEBT-0007, as they were written, plus the
+    // concatenation the same drift takes without a template literal.
+    for (const site of [
+      "    fact: `${observation.domain}.${observation.field}`,",
+      "  return `${fact.domain}.${fact.field}`;",
+      "        >{`${row.domain}.${row.field}`}</span>",
+      "  return REFERENCE_FIELDS.includes(`${domain}.${field}`);",
+      '  const key = item.domain + "." + item.field;',
+    ]) {
+      expect(handSpelledFactKeys(site), site).toHaveLength(1);
+    }
+  });
+
+  it("says nothing about code that is not one", () => {
+    // Each of these would make the rule useless if it fired: the first is the
+    // real table.column join in `lib/db/result.ts`, the second is the fold
+    // this ticket is, and the last two are a domain and a field on screen
+    // without an identifier being built at all.
+    for (const line of [
+      '    return { kind: "not_provisioned", missing: `${missing}.${column}` };',
+      "        supplies: factKey(fact.domain, fact.field),",
+      "  const heading = `${row.domain} / ${row.field}`;",
+      "  return `${row.field} of ${row.domain}`;",
+    ]) {
+      expect(handSpelledFactKeys(line), line).toEqual([]);
+    }
+  });
+
+  it("finds the join in src/ nowhere but factKey's own body", () => {
+    // The walk and the comment-stripping read are `tests/offline/source-tree.ts`
+    // — one copy for every structural rule here, tolerant of the probe
+    // `db/layering.test.ts` writes and deletes in a parallel worker.
+    const sites = sourceFiles().filter((file) => handSpelledFactKeys(codeText(file)).length > 0);
+    expect(sites).toEqual([FACT_KEY_PRODUCER]);
+    // And the producer spells it ONCE: a second join here is the same debt,
+    // four lines from the function that exists to prevent it.
+    expect(handSpelledFactKeys(codeText(FACT_KEY_PRODUCER))).toHaveLength(1);
   });
 });
 
