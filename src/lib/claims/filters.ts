@@ -20,14 +20,22 @@
  * It decides no membership: `selectClaims` in `lib/db/claims.ts` is the one
  * predicate over claims, and this module only says what the URL asked for.
  *
- * **Its one import** is `lib/url/dropped-params.ts`, the shared owner of the
- * dropped-parameter rule this file re-exports (admin-window/BUG-0141) — another
- * pure leaf, which in turn asks `lib/verdict/decision.ts` the app's single
- * definition of blank (admin-window/BUG-0136). Neither reaches anything that
- * can reach a database, so no cycle can be written through them. The
- * alternative was a second copy of that rule, which is the exact defect
- * ARCHITECTURE.md Common violations row 9 promoted to a rule.
+ * **Its two imports are both `lib/url/` leaves**: `dropped-params.ts`, the
+ * shared owner of the dropped-parameter rule this file re-exports
+ * (admin-window/BUG-0141) — which in turn asks `lib/verdict/decision.ts` the
+ * app's single definition of blank (admin-window/BUG-0136) — and
+ * `narrowing.ts`, the shared owner of the two-fact rule that tells "nothing
+ * here yet" from "nothing matched" (admin-window/DEBT-0008). None of them
+ * reaches anything that can reach a database, so no cycle can be written
+ * through them. The alternative in both cases was a second copy of a rule,
+ * which is the exact defect ARCHITECTURE.md Common violations row 9 promoted
+ * to a rule.
  */
+
+import {
+  isSurfaceNarrowed,
+  type SurfacePopulation,
+} from "@/lib/url/narrowing";
 
 /* ── the parameter names ─────────────────────────────────────────────────── */
 
@@ -125,9 +133,45 @@ export function tabFrom(params: SearchParams = {}): ClaimsTab {
   return (value as ClaimsTab | undefined) ?? DEFAULT_TAB;
 }
 
-/** Is anything narrowed? What tells "nothing here yet" from "nothing matched". */
+/**
+ * Is anything narrowed STRUCTURALLY — can a facet of this URL remove a claim
+ * at all? Fact 1 of the two the four states turn on, and never the whole
+ * answer on its own.
+ *
+ * It reads the URL and nothing else, which is the half this leaf can answer:
+ * it holds no rows and may reach no database. On its own it cannot tell "this
+ * page holds no claims" from "your filter matched nothing", so a surface
+ * asking which arm to render asks `claimsNarrowed` below
+ * (admin-window/DEBT-0008). This function keeps its name and its answer for
+ * every caller that wants the URL's own question — the chip bar, the dropped
+ * -parameter comparison, the tests that pin the vocabulary.
+ */
 export function isNarrowed(filter: ClaimsFilter): boolean {
   return CLAIM_FACETS.some((facet) => filter[facet] !== undefined);
+}
+
+/**
+ * **Is THIS claims surface's rendering scoped by the URL?** — the four-state
+ * question, from BOTH facts (admin-window/DEBT-0008).
+ *
+ * `/claims` decided it from `isNarrowed` alone, so `?bucket=X` over a view
+ * holding zero claims said "no claims matched these filters" and told the
+ * operator to widen a filter that had removed nothing. The rule is
+ * `src/lib/url/narrowing.ts`' — the same one `/queues`' `isBlockNarrowed` and
+ * `/sources` call — and this is its claims-domain adapter: fact 1 is the URL
+ * question above, fact 2 is the surface's own population.
+ *
+ * Asked PER SURFACE, because the two on this page hold different sets: the
+ * claim list's population is every claim the current TAB spans (the standing
+ * tab is one bucket's subset), while the bucket table's is every claim the
+ * view holds, since that table drops the bucket facet on purpose. A page-wide
+ * answer would make one of them speak for a set it does not render.
+ */
+export function claimsNarrowed(
+  filter: ClaimsFilter,
+  surface: SurfacePopulation,
+): boolean {
+  return isSurfaceNarrowed(isNarrowed(filter), surface);
 }
 
 /**

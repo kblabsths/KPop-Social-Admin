@@ -819,3 +819,98 @@ describe("two surfaces over one read describe it the same way", () => {
     }
   });
 });
+
+/* ── an empty surface is explained from TWO facts, never one ─────────────── */
+
+/**
+ * The two-fact rule, graded across every surface that has an empty state at
+ * once (ARCHITECTURE.md §4.3, promoted at the M2 structure walk 2026-09-09;
+ * admin-window/BUG-0129, BUG-0131, BUG-0133, BUG-0135, DEBT-0008).
+ *
+ * "A table with no rows" and "a filter that matched nothing" never share a
+ * rendering, and the URL ALONE cannot tell them apart. A surface deciding
+ * which arm it renders owes two facts:
+ *
+ *   1. structural — can a facet of this URL remove a row of this surface's
+ *      kind at all;
+ *   2. population — does the surface hold any row with no URL facet at all.
+ *
+ * `/queues` was given both by BUG-0133 and `/claims` and `/sources` decided
+ * from fact 1 alone until DEBT-0008 — so the rule had one owner and two
+ * surfaces that had never met it. It is graded HERE, once, for every surface
+ * that publishes the `data-empty` hook, so a fourth surface inherits the rule
+ * rather than a comment about it.
+ *
+ * Behaviour, not copy: it reads the hook `/sources` and `/queues` already
+ * publish and asserts nothing about the words in the card.
+ *
+ * **Two fixtures per surface, and neither leg can pass vacuously** (LESSONS 8).
+ * The SAME URL is rendered against two databases:
+ *
+ *   - over a population that the facet really did shrink, the surface must say
+ *     `narrowing` — a test that only ever saw the empty fixture would pass by
+ *     deleting the narrowing arm outright;
+ *   - over a population that holds nothing at all, no surface of that page may
+ *     say `narrowing` — nothing was removed, so no filter may be blamed.
+ *
+ * Each leg additionally asserts the page rendered an empty hook at all, so a
+ * page that stopped publishing one cannot pass both legs by saying nothing.
+ */
+function emptyHooks(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("[data-empty]")
+    .toArray()
+    .map((element) => $(element).attr("data-empty") ?? "")
+    .sort();
+}
+
+/**
+ * One URL per surface whose facet EMPTIES that surface over the populated
+ * fixture, and empties it again — for the other reason — over the empty one.
+ *
+ * `/claims`: `escalated` claims are `venues`-domain in the claims population,
+ * so the pair matches nothing while both values are real vocabulary.
+ * `/sources`: a well-formed id the registry does not hold (BUG-0140's rule —
+ * it is still an id, so it still narrows). `/queues`: `?kind=signal` empties
+ * the decision block, whose own kind the facet really does remove.
+ */
+const TWO_FACT: ReadonlyArray<readonly [string, Params]> = [
+  ["/claims", { bucket: "escalated", domain: "groups" }],
+  ["/sources", { source_id: "00000000-0000-7000-8000-000000000000" }],
+  ["/queues", { kind: "signal" }],
+];
+
+describe("an empty surface is explained from two facts", () => {
+  const surfaceOf = (route: string): Surface => {
+    const found = SURFACES.find((surface) => surface.route === route);
+    if (found === undefined) throw new Error(`${route} is not in the swept surfaces`);
+    return found;
+  };
+
+  it.each(TWO_FACT)("%s blames the facet that really removed rows", async (route, params) => {
+    const surface = surfaceOf(route);
+    scriptDatabase(populatedScript(surface));
+    const hooks = emptyHooks(await renderSurface(surface, params));
+    expect(hooks, `${route} rendered no empty surface under a facet that empties one`)
+      .not.toEqual([]);
+    expect(hooks, `${route} did not name the narrowing that emptied it`).toContain(
+      "narrowing",
+    );
+  });
+
+  it.each(TWO_FACT)(
+    "%s blames no facet over a population that holds nothing",
+    async (route, params) => {
+      const surface = surfaceOf(route);
+      scriptDatabase(emptyScript());
+      const hooks = emptyHooks(await renderSurface(surface, params));
+      expect(hooks, `${route} rendered no empty surface over an empty database`).not.toEqual(
+        [],
+      );
+      expect(
+        hooks,
+        `${route} told the operator to widen a filter that removed nothing`,
+      ).not.toContain("narrowing");
+    },
+  );
+});
