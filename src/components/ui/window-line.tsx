@@ -241,6 +241,63 @@ function WindowParagraph({
 }
 
 /**
+ * The narrowing the `matched` arm's TRUNCATED clause states in its OWN words
+ * ("73 claims **match these filters**") — the phrase a call site folds into
+ * that same window's `scope` for the very same narrowing.
+ *
+ * It exists so the clause can subtract exactly this narrowing from the scope
+ * and name every OTHER one the read carried: `/claims?tab=standing` is
+ * narrowed by the TAB, with an empty chip bar, so the clause stated a count of
+ * one bucket over "these filters" and named no bucket at all, while the same
+ * window's other two arms said "in the standing_disagreement bucket"
+ * (admin-window/BUG-0118).
+ *
+ * Exported so the one call site that has this narrowing (`/claims`'s
+ * `listScope`) spells it ONCE, here: a second spelling is how the two come to
+ * disagree, and a scope that no longer matches this string is one the clause
+ * would say twice.
+ */
+export const NARROWED_BY_FILTERS = "matching these filters";
+
+/**
+ * How a scope of several narrowings is joined — one spelling, seen by both the
+ * composing (`narrowedTo`) and the subtraction (`besides`), so a scope built by
+ * a page can always be read back apart by this file.
+ */
+const NARROWING_JOIN = ", ";
+
+/**
+ * The `scope` of a read narrowed by more than one thing — the phrases in the
+ * order they read, with the ones that do not apply left out, and `null` when
+ * none of them do.
+ *
+ * A call site composes its scope through here rather than joining its own
+ * strings, because the `matched` arm reads one back OUT again
+ * (admin-window/BUG-0118); the two halves of that round trip are next to each
+ * other on purpose.
+ */
+export function narrowedTo(
+  narrowings: readonly (string | null)[],
+): string | null {
+  const named = narrowings.filter((phrase): phrase is string => phrase !== null);
+  return named.length === 0 ? null : named.join(NARROWING_JOIN);
+}
+
+/**
+ * The window's narrowing MINUS the one a clause's own words already state —
+ * what `population()` should see from inside a clause that names a narrowing
+ * itself, so the sentence states it once and states the rest (bar 13's
+ * requirement is that the clause name the population, not that it name it
+ * twice).
+ */
+function besides(scope: string | null, stated: string): string | null {
+  if (scope === null) return null;
+  return narrowedTo(
+    scope.split(NARROWING_JOIN).filter((phrase) => phrase !== stated),
+  );
+}
+
+/**
  * The population a clause is about: the rows the arm names, carrying whatever
  * the read was narrowed to (`DrawnWindow.scope`).
  *
@@ -387,13 +444,23 @@ export function WindowLine(
       <WindowParagraph gauge={props.gauge} window={info}>
         {shows.lede} A window of at most {count(info.limit)} rows, not the whole{" "}
         {info.over}.
-        {/* The one truncated clause that does not take the window's `scope`:
-            this arm's own words already name the narrowing ("match these
-            filters"), and passing it through `population` too would say it
-            twice. The complement below does take it — "no claims at all" over
-            a filtered selection is the claim admin-window/BUG-0114 is about. */}
+        {/* This clause names ONE narrowing in its own words — the filters —
+            and takes every other one from the window, like every other clause
+            in this file. It used to take none at all, on the reasoning that
+            "match these filters" was already the narrowing; that holds only
+            when the narrowing IS the chips. `/claims?tab=standing` is narrowed
+            by the TAB with an empty chip bar, so a count of one bucket was
+            stated over filters nobody had set and the bucket was never named,
+            while the two clauses below — on the same window, the same read —
+            said "in the standing_disagreement bucket" (admin-window/BUG-0118).
+            `besides` subtracts what this sentence already says, so the filters
+            are stated once and an unnarrowed (or filter-only) window renders
+            the sentence it always did, to the byte. */}
         {info.truncated
-          ? ` ${count(info.held)} ${shows.rows} match these filters; the ${count(
+          ? ` ${count(info.held)} ${population(
+              shows.rows,
+              besides(info.scope, NARROWED_BY_FILTERS),
+            )} match these filters; the ${count(
               info.limit,
             )} longest-waiting are below — narrow with the filters above to reach the rest.`
           : didNotFill(info, shows.rows)}

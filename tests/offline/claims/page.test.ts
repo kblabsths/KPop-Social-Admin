@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { CLAIM_WINDOW } from "@/components/claims";
+import { count } from "@/lib/format";
 import { STANDING_BUCKET } from "@/lib/gauges/standing-disagreements";
 import { T } from "@/lib/db/tables";
 import {
@@ -630,6 +631,15 @@ describe("the claim list's window", () => {
   }
 
   /** The window line's own hooks — the app's stated bound, read structurally. */
+  /**
+   * How many times a phrase stands in a line — the question "is this narrowing
+   * stated twice?" asks (admin-window/BUG-0118). `split` rather than a regular
+   * expression so a phrase carrying a metacharacter is counted literally.
+   */
+  function occurrencesIn(text: string, phrase: string): number {
+    return text.split(phrase).length - 1;
+  }
+
   function windowLine(markup: string) {
     const line = cheerio.load(markup)('[data-window="claims"]');
     return {
@@ -765,34 +775,85 @@ describe("the claim list's window", () => {
     };
   }
 
-  it.fails(
-    "states the count of a FILLED window over the narrowing it actually read (admin-window/BUG-0118)",
-    async () => {
-      // The sibling of admin-window/BUG-0114 on the one clause that does not
-      // take the window's `scope`: the `matched` arm's truncated sentence
-      // attributes its held count to "these filters", which is true only when
-      // the narrowing IS the chips. On the standing tab the narrowing is the
-      // TAB — one bucket's subset, with the chip bar showing nothing selected
-      // — so a count of that bucket is presented as a count under filters that
-      // are not set.
-      const size = CLAIM_WINDOW + 23;
-      const script = standingCrowd(size);
+  it("states the count of a FILLED window over the narrowing it actually read (admin-window/BUG-0118)", async () => {
+    // The sibling of admin-window/BUG-0114 on the one clause that used to take
+    // no `scope` at all: the `matched` arm's truncated sentence attributed its
+    // held count to "these filters", which is true only when the narrowing IS
+    // the chips. On the standing tab the narrowing is the TAB — one bucket's
+    // subset, with the chip bar showing nothing selected — so a count of that
+    // bucket was presented as a count under filters that are not set, on a
+    // page whose other two clauses named the bucket.
+    const size = CLAIM_WINDOW + 23;
 
-      // Same window, same page, unfilled: the not-filled and zero arms DO name
-      // the bucket, so the two halves of one sentence disagree about what the
-      // window is a window of.
-      const unfilled = windowLine(await renderClaims(standingCrowd(4), { tab: "standing" }));
-      expect(unfilled.truncated).toBe(false);
-      expect(unfilled.text).toContain(STANDING_BUCKET);
+    // Same window, same page, unfilled: the not-filled and zero arms name the
+    // bucket, and now the filled one does too — one window, one population.
+    const unfilled = windowLine(await renderClaims(standingCrowd(4), { tab: "standing" }));
+    expect(unfilled.truncated).toBe(false);
+    expect(unfilled.text).toContain(STANDING_BUCKET);
 
-      const filled = windowLine(await renderClaims(script, { tab: "standing" }));
-      expect(filled.truncated).toBe(true);
-      // The number is right — it is the standing bucket's own count.
-      expect(filled.held).toBe(size);
-      // What it is a count OF is what the sentence does not say.
-      expect(filled.text).toContain(STANDING_BUCKET);
-    },
-  );
+    const filled = windowLine(await renderClaims(standingCrowd(size), { tab: "standing" }));
+    expect(filled.truncated).toBe(true);
+    // The number is the standing bucket's own count, and the sentence now says
+    // so: what it is a count OF is stated where the count is stated.
+    expect(filled.held).toBe(size);
+    expect(filled.text).toContain(STANDING_BUCKET);
+
+    // The other direction, on the same page and the same held count: a window
+    // narrowed by NOTHING (the buckets tab, no chip set) says the sentence it
+    // said before this narrowing could travel, and names no bucket at all.
+    const unnarrowed = windowLine(await renderClaims(crowdedScript(size)));
+    expect(unnarrowed.truncated).toBe(true);
+    expect(unnarrowed.held).toBe(size);
+    expect(unnarrowed.text).not.toContain(STANDING_BUCKET);
+    // …and the ONLY difference between the two sentences is the population
+    // named beside the count. Two windows of the same size, one narrowed and
+    // one not: the narrowed one is the unnarrowed one with the phrase inserted
+    // after the row noun, so the fix cannot quietly reword the rest of the
+    // clause (acceptance criterion 2 — unnarrowed to the byte).
+    expect(filled.text).toBe(
+      unnarrowed.text.replace(
+        `${count(size)} claims`,
+        `${count(size)} claims in the ${STANDING_BUCKET} bucket`,
+      ),
+    );
+  });
+
+  it("says a filled window's narrowing once, whichever narrowings it carries", async () => {
+    // Both narrowings at once — the tab AND a chip. The bucket comes from the
+    // window's `scope` and the filters from the clause's own words, so the two
+    // carriers must not both render the filters (admin-window/BUG-0118,
+    // acceptance criterion 3).
+    const size = CLAIM_WINDOW * 3 + 9;
+    const both = windowLine(
+      await renderClaims(standingCrowd(size), {
+        tab: "standing",
+        source_id: SOURCE.first,
+      }),
+    );
+    expect(both.truncated).toBe(true);
+    // The count is the narrowed one: one source of one bucket, still over the
+    // cap and still under the tab's own total.
+    expect(both.held).toBeGreaterThan(CLAIM_WINDOW);
+    expect(both.held).toBeLessThan(size);
+    expect(occurrencesIn(both.text, STANDING_BUCKET)).toBe(1);
+    expect(occurrencesIn(both.text, "these filters")).toBe(1);
+    // The scope's own phrase for the chips is the one the clause subtracts, so
+    // it never reaches the sentence beside the words that already say it.
+    expect(both.text).not.toContain("matching these filters");
+
+    // A window narrowed by the CHIPS alone keeps the sentence it always had:
+    // there the arm's own words are the whole narrowing, and nothing is added.
+    const chipped = windowLine(
+      await renderClaims(crowdedScript(size), { bucket: "awaiting_row" }),
+    );
+    expect(chipped.truncated).toBe(true);
+    expect(chipped.text).not.toContain("matching these filters");
+    expect(occurrencesIn(chipped.text, "these filters")).toBe(1);
+    const plain = windowLine(await renderClaims(crowdedScript(size)));
+    expect(chipped.text).toBe(
+      plain.text.replace(count(size), count(chipped.held)),
+    );
+  });
 
   it("counts held claims per narrowing, not per rendered page", async () => {
     // Big enough that EACH bucket alone overflows the cap, so a narrowing is

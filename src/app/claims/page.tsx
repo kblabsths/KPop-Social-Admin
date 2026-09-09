@@ -16,7 +16,15 @@ import {
   type EmptyWords,
 } from "@/components/gauges";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
-import { Empty, Page, Section, StateOf, WindowLine } from "@/components/ui";
+import {
+  Empty,
+  NARROWED_BY_FILTERS,
+  Page,
+  Section,
+  StateOf,
+  WindowLine,
+  narrowedTo,
+} from "@/components/ui";
 import {
   CLAIMS_OBJECT,
   claimOrder,
@@ -179,12 +187,22 @@ const GAUGE_LABEL: Record<ClaimsTab, string> = {
  * The bucket is named by its own value (`standing_disagreement`), which is what
  * every bucket chip and every bucket row on this page renders: a machine
  * identifier is shown verbatim, never prettified (ARCHITECTURE.md §11).
+ *
+ * It feeds EVERY clause of that line, the filled one included: the window's
+ * count sentence used to name no narrowing at all and say "match these
+ * filters" over a tab-narrowed read whose chip bar was empty
+ * (admin-window/BUG-0118).
  */
 function listScope(tab: ClaimsTab, filter: ClaimsFilter): string | null {
-  const narrowings: string[] = [];
-  if (tab === "standing") narrowings.push(`in the ${STANDING_BUCKET} bucket`);
-  if (isNarrowed(filter)) narrowings.push("matching these filters");
-  return narrowings.length === 0 ? null : narrowings.join(", ");
+  return narrowedTo([
+    tab === "standing" ? `in the ${STANDING_BUCKET} bucket` : null,
+    // The window line's own phrase for this narrowing, imported rather than
+    // spelled: the `matched` arm's filled clause says the filters in its own
+    // words and subtracts this exact phrase from the scope so it is not said
+    // twice, which a second spelling here would silently break
+    // (admin-window/BUG-0118).
+    isNarrowed(filter) ? NARROWED_BY_FILTERS : null,
+  ]);
 }
 
 /**
