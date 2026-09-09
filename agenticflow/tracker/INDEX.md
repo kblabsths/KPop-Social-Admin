@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T23:20:23Z — do not edit)
+# Tracker index (regenerated 2026-09-09T23:20:41Z — do not edit)
 
 ## open
 - BUG-0153 [P3][bug][M2] /cycles spells a raw ?source= into the runs window line as bare text, so a bidi control in the URL reverses 87 characters of the app's own prose  (scope:src/components/cycles/adapter-runs.tsx,src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts from:BUG-0147)
