@@ -298,6 +298,22 @@ function besides(scope: string | null, stated: string): string | null {
 }
 
 /**
+ * Does this window's read really carry that narrowing?
+ *
+ * The other half of `besides`, and the reason both live here: a clause that
+ * states a narrowing IN ITS OWN WORDS may only do so when the read actually
+ * carried it. `besides` subtracts a phrase whether or not it was there, so on
+ * an unnarrowed window it answered `null` and the clause went on asserting the
+ * narrowing anyway — "877 claims match these filters" over a read no filter
+ * touched, byte-identical to the same page with a chip set
+ * (admin-window/BUG-0123). Asked of the same `scope` the subtraction reads, so
+ * the two cannot come to disagree about what the window was narrowed by.
+ */
+function narrows(scope: string | null, stated: string): boolean {
+  return scope !== null && scope.split(NARROWING_JOIN).includes(stated);
+}
+
+/**
  * The population a clause is about: the rows the arm names, carrying whatever
  * the read was narrowed to (`DrawnWindow.scope`).
  *
@@ -454,15 +470,33 @@ export function WindowLine(
             while the two clauses below — on the same window, the same read —
             said "in the standing_disagreement bucket" (admin-window/BUG-0118).
             `besides` subtracts what this sentence already says, so the filters
-            are stated once and an unnarrowed (or filter-only) window renders
-            the sentence it always did, to the byte. */}
+            are stated once and a filter-narrowed window renders the sentence
+            it always did, to the byte.
+
+            And it may only say them when they are SET (admin-window/BUG-0123).
+            The phrase was unconditional, so a read no filter touched was
+            described as "877 claims match these filters" — the same sentence,
+            to the byte, as the same page with a chip set, which is the one
+            claim bar 13 forbids ("no screen claims a mark it did not draw").
+            An unfiltered window states the same count over the population the
+            window itself names: the whole object where nothing narrowed it,
+            the tab's bucket where the tab did. Both arms end on the same cap
+            clause, so the only thing the filters change is the phrase beside
+            the count. */}
         {info.truncated
-          ? ` ${count(info.held)} ${population(
-              shows.rows,
-              besides(info.scope, NARROWED_BY_FILTERS),
-            )} match these filters; the ${count(
-              info.limit,
-            )} longest-waiting are below — narrow with the filters above to reach the rest.`
+          ? narrows(info.scope, NARROWED_BY_FILTERS)
+            ? ` ${count(info.held)} ${population(
+                shows.rows,
+                besides(info.scope, NARROWED_BY_FILTERS),
+              )} match these filters; the ${count(
+                info.limit,
+              )} longest-waiting are below — narrow with the filters above to reach the rest.`
+            : ` ${count(info.held)} ${population(
+                shows.rows,
+                info.scope,
+              )} in all; the ${count(
+                info.limit,
+              )} longest-waiting are below — narrow with the filters above to reach the rest.`
           : didNotFill(info, shows.rows)}
       </WindowParagraph>
     );

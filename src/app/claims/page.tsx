@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import {
   BucketTable,
   ClaimList,
@@ -32,16 +34,19 @@ import {
   listClaims,
   selectClaims,
   RENDERABLE_BUCKETS,
+  UNRENDERABLE_BUCKET,
   type ClaimRow,
 } from "@/lib/db/claims";
 import { readSourceNames } from "@/lib/db/sources";
 import { count, counted, duration } from "@/lib/format";
 import {
   claimsHref,
+  droppedParams,
   filterBar,
   filterFrom,
   isNarrowed,
   sourceHref,
+  type DroppedParams,
   type FacetLabel,
   tabFrom,
   tabLinks,
@@ -152,6 +157,29 @@ const NOTHING_MATCHED: EmptyWords = {
   holds: "claims matching these filters",
   filledBy: "Widen a filter above; the 'all' chip on any row shows everything again.",
 };
+
+/**
+ * What the bucket table's figures are figures OF — the sentence under it, in
+ * the two states the page can be in (admin-window/BUG-0123).
+ *
+ * The table is the whole classification under the current source and domain,
+ * so "under the filters above" is true exactly when a facet is set — and with
+ * an empty chip bar it was the second sentence on this page asserting a
+ * narrowing nobody performed, beside a window line saying the same
+ * (`M2-usersim-priya.md` §6; LOOK_AND_FEEL bar 13, "no screen claims a mark it
+ * did not draw").
+ *
+ * The narrowed arm is the sentence this page has always rendered, to the byte.
+ * Which arm renders is decided by `isNarrowed` — the SAME predicate that picks
+ * the empty card's words below, over the same filter — so the caption and the
+ * card cannot come to disagree about whether anything is filtered.
+ */
+const BUCKET_CAPTION = {
+  narrowed:
+    "Every bucket the classification view can hold, with the claims in it under the filters above. A bucket with no claims is a real zero.",
+  whole:
+    "Every bucket the classification view can hold, with every claim in it — no filter is set. A bucket with no claims is a real zero.",
+} as const;
 
 /** The h2 above the claim list, per tab. */
 const LIST_TITLE: Record<ClaimsTab, string> = {
@@ -326,6 +354,59 @@ function claimLines(
     sourceHref: sourceHref(claim.source_id),
     provenanceHref: recordHref(claim.domain, claim.entity_id),
   }));
+}
+
+/**
+ * The one line beside the filter bar that says what the URL asked for and this
+ * page did not do (admin-window/BUG-0123).
+ *
+ * Priya typed `?record_id=<event id>` into the address bar, got a 200 and the
+ * same 877 rows under the same sentence: "an unknown filter silently ignored,
+ * with a sentence actively asserting it was applied" (`M2-usersim-priya.md`
+ * §6). Dropping the parameter is right — a URL narrows only by what the page
+ * offers — but a page that drops one says so, because bar 13's clause is about
+ * the whole screen: "no screen claims a mark it did not draw".
+ *
+ * **The NAME is rendered verbatim in mono; the VALUE never is.** Voice bar 5
+ * for the name; LOOK_AND_FEEL bar 3 for the value — `?bucket=in_window` is the
+ * shape this line exists to answer, and echoing what the URL asked for would
+ * put the parked bucket on the screen the rest of this file keeps it off. So
+ * no value reaches the markup by any path, and a parameter whose own NAME is a
+ * word this app may not render is counted rather than spelled
+ * (`droppedParams`' `neverNamed`).
+ *
+ * It stands beside the filter bar rather than inside the sections, because it
+ * is a fact of the URL and not of any read: it renders the same over an `ok`
+ * read, a refusal and a table that is not there.
+ */
+function DroppedParamsLine({ dropped }: { dropped: DroppedParams }) {
+  const total = dropped.named.length + dropped.withheld;
+  if (total === 0) return null;
+  const items: ReactNode[] = dropped.named.map((name) => (
+    <span key={name} data-dropped-param={name} className="type-data text-ink">
+      {name}
+    </span>
+  ));
+  if (dropped.withheld > 0) {
+    // Counted, not named: the word itself is one the app may not put on
+    // screen, and an operator who typed it knows what they typed.
+    items.push(
+      `${counted(dropped.withheld, "parameter")} this page may not name`,
+    );
+  }
+  return (
+    <p data-dropped-params={String(total)} className="type-body text-ink-secondary">
+      The URL carries{" "}
+      {items.flatMap((item, index) =>
+        index === 0
+          ? [item]
+          : [index === items.length - 1 ? " and " : ", ", item],
+      )}
+      {total === 1
+        ? ", which this page did not apply: nothing below is narrowed by it."
+        : ", which this page did not apply: nothing below is narrowed by them."}
+    </p>
+  );
 }
 
 /** The pending-claims gauge (spec §5, gauge 3 of 6) — the buckets tab's. */
@@ -557,6 +638,9 @@ export default async function ClaimsPage({
     <Page title="Claims">
       <ClaimTabs tabs={tabLinks(CLAIMS_PATH, filter, tab)} />
       <FilterBar facets={filterBar(CLAIMS_PATH, filter, tab, options, labelOf)} />
+      <DroppedParamsLine
+        dropped={droppedParams(params, filter, [UNRENDERABLE_BUCKET])}
+      />
 
       {tab === "standing" ? null : (
         <Section title="Buckets" surface={BUCKETS_SURFACE}>
@@ -578,9 +662,9 @@ export default async function ClaimsPage({
                 }
               />
               <p className="type-body text-ink-secondary">
-                Every bucket the classification view can hold, with the claims in
-                it under the filters above. A bucket with no claims is a real
-                zero.
+                {isNarrowed(filter)
+                  ? BUCKET_CAPTION.narrowed
+                  : BUCKET_CAPTION.whole}
               </p>
             </>
           )}
