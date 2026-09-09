@@ -482,15 +482,29 @@ describe("the window the picker states", () => {
     expect(line.attr("data-window-since")).toBeUndefined();
   });
 
-  it("says the window filled its cap when it did, on top of the same sentence", () => {
+  it("says which way the window went, on top of the same sentence", () => {
+    // Both directions, since admin-window/BUG-0109: a window that filled its
+    // cap costs choices later in the alphabet, and one that did not holds
+    // every choice the read found. Each is said ON TOP of the picker's own
+    // sentence, which is the part both states share.
     const open = cheerio.load(panel("", windowOf(OPTIONS, { truncated: false })))(
       "[data-window]",
     ).text();
     const filled = cheerio.load(panel("", windowOf(OPTIONS, { truncated: true })))(
       "[data-window]",
     ).text();
-    expect(filled.startsWith(open)).toBe(true);
-    expect(filled.length).toBeGreaterThan(open.length);
+    let shared = 0;
+    while (
+      shared < open.length &&
+      shared < filled.length &&
+      open[shared] === filled[shared]
+    ) {
+      shared += 1;
+    }
+    expect(shared).toBeGreaterThan(20);
+    expect(open.length).toBeGreaterThan(shared);
+    expect(filled.length).toBeGreaterThan(shared);
+    expect(open).not.toBe(filled);
     expect(
       cheerio.load(panel("", windowOf(OPTIONS, { truncated: true })))(
         "[data-window]",

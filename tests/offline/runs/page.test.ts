@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { RUN_COLUMNS, RUN_COUNTS, RUN_WINDOW } from "@/lib/db/runs";
 import { T } from "@/lib/db/tables";
-import { EM_DASH } from "@/lib/format";
+import { EM_DASH, absoluteUtc } from "@/lib/format";
 import { readNumber } from "../../live/parity";
 import { APPLIES, CYCLES, OBSERVED } from "../cycles/population";
 import { RUN_CELL_HOOK, columnsFromHooks } from "../../fixtures/run-hooks";
@@ -383,6 +383,23 @@ describe("the runs the adapters filed", () => {
     expect(() => readNumber(markup, RUNS_FIGURE)).toThrow();
   });
 
+  it("names the oldest run it holds when the window did not fill", async () => {
+    // The headline of admin-window/BUG-0109, measured on the M2 endgame walk:
+    // five adapter runs against a cap of 200 ARE every run the framework has
+    // recorded, and the line said only "a window of at most 200" — so eight
+    // days of history read like the top of a long list. Under its cap the read
+    // returned everything it matched, so the last row on screen is the TABLE's
+    // own floor and the line states it. The instant is the population's own,
+    // rendered the way this app renders one; no copy is pinned.
+    const markup = await renderCycles(healthyScript());
+    const oldest = NEWEST_FIRST[NEWEST_FIRST.length - 1].started_at;
+    const line = cheerio.load(markup)('[data-window="runs"]');
+
+    expect(line.attr("data-window-held")).toBe(String(RUNS.length));
+    expect(line.attr("data-window-truncated")).toBe("false");
+    expect(line.text().replace(/\s+/g, " ")).toContain(absoluteUtc(oldest));
+  });
+
   it("says so when the window filled its cap", async () => {
     const capped = Array.from({ length: RUN_WINDOW }, (_, index) => ({
       ...SUCCEEDED,
@@ -393,8 +410,13 @@ describe("the runs the adapters filed", () => {
     }));
     const markup = await renderCycles(healthyScript({ [T.runs]: { data: capped } }));
     expect(renderedRuns(markup)).toHaveLength(RUN_WINDOW);
-    expect(cheerio.load(markup)('[data-window="runs"]').attr("data-window-truncated")).toBe(
-      "true",
+    const line = cheerio.load(markup)('[data-window="runs"]');
+    expect(line.attr("data-window-truncated")).toBe("true");
+    // …and its last row is the cap's bottom, not the table's: older runs are
+    // inside the window and were not returned, so the line must not offer that
+    // row as a floor (admin-window/BUG-0109).
+    expect(line.text().replace(/\s+/g, " ")).not.toContain(
+      absoluteUtc(capped[capped.length - 1].started_at),
     );
   });
 });

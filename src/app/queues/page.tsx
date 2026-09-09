@@ -13,7 +13,7 @@ import {
   spreadRows,
   type EmptyWords,
 } from "@/components/gauges";
-import { Empty, Page, Section, StateOf, WindowLine } from "@/components/ui";
+import { Empty, Page, Section, StateOf, WindowLine, oldestIn } from "@/components/ui";
 import { listReviewItems } from "@/lib/db/review-items";
 import type { DbResult } from "@/lib/db/result";
 import {
@@ -461,6 +461,10 @@ function VerdictSection({ log }: { log: DbResult<VerdictLogWindow> }): ReactNode
             held: log.data.rows.length,
             truncated: log.data.truncated,
             over: VERDICTS_OBJECT,
+            // Newest first, so the last row is the oldest verdict the read
+            // came back with — the log's own floor when the window did not
+            // fill (admin-window/BUG-0109).
+            oldest: oldestIn(log.data.rows, (row) => row.created_at),
           }}
           shows={{ of: "newest", lede: VERDICT_LEDE, rows: "verdict rows" }}
         />

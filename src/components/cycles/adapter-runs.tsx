@@ -7,6 +7,7 @@ import {
   StatCard,
   StateOf,
   WindowLine,
+  oldestIn,
 } from "@/components/ui";
 import { RUNS_WINDOW } from "./surfaces";
 import { runColumns } from "./run-columns";
@@ -134,6 +135,12 @@ export function AdapterRuns({
             held: rows.length,
             truncated,
             over,
+            // The read is newest-first, so the LAST row is the oldest run it
+            // came back with. On a window that did not fill, that row is the
+            // object's own floor rather than the window's, and the line says
+            // so — five runs against a cap of 200 are every run recorded, not
+            // the top of a long list (admin-window/BUG-0109).
+            oldest: oldestIn(rows, (row) => row.started_at),
           }}
           shows={{
             of: "newest",

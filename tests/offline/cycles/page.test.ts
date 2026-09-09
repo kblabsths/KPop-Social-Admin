@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { CYCLE_COUNTERS, CYCLE_WINDOW, type ResolutionRunRow } from "@/lib/db/cycles";
 import { T } from "@/lib/db/tables";
-import { CLAMP_LIMIT, ELLIPSIS, EM_DASH } from "@/lib/format";
+import { CLAMP_LIMIT, ELLIPSIS, EM_DASH, absoluteUtc } from "@/lib/format";
 import { readNumber } from "../../live/parity";
 import {
   codeText,
@@ -567,6 +567,21 @@ describe("the cycles the resolver filed", () => {
     expect(line.attr("data-window-truncated")).toBe("false");
   });
 
+  it("names the oldest cycle it holds when the window did not fill", async () => {
+    // Bar 13's other half (admin-window/BUG-0109): under its cap, the read
+    // returned every cycle it matched, so the last row on screen is the
+    // TABLE's own floor and the line says so. The instant is the population's
+    // own, rendered the way this app renders one — no copy is pinned.
+    const markup = await renderCycles(healthyScript());
+    const oldest = [...CYCLES].sort((a, b) =>
+      a.started_at < b.started_at ? -1 : 1,
+    )[0].started_at;
+    const line = cheerio.load(markup)('[data-window="cycles"]');
+
+    expect(line.attr("data-window-held")).toBe(String(CYCLES.length));
+    expect(line.text().replace(/\s+/g, " ")).toContain(absoluteUtc(oldest));
+  });
+
   it("says so when the window filled its cap", async () => {
     // A read that came back with exactly its cap is a floor: older cycles are
     // inside the window and were not returned, so the last row must not read
@@ -582,8 +597,12 @@ describe("the cycles the resolver filed", () => {
       [T.observations]: { data: [...OBSERVED] },
     });
     expect(renderedCycles(markup)).toHaveLength(CYCLE_WINDOW);
-    expect(cheerio.load(markup)('[data-window="cycles"]').attr("data-window-truncated")).toBe(
-      "true",
+    const line = cheerio.load(markup)('[data-window="cycles"]');
+    expect(line.attr("data-window-truncated")).toBe("true");
+    // …and its last row is the CAP's bottom, not the table's, so the line must
+    // not offer that row as a floor (admin-window/BUG-0109).
+    expect(line.text().replace(/\s+/g, " ")).not.toContain(
+      absoluteUtc(capped[capped.length - 1].started_at),
     );
   });
 

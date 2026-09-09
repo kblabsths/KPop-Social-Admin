@@ -7,6 +7,9 @@ import {
   Section,
   StatCard,
   StateOf,
+  WindowLine,
+  drawnWindow,
+  oldestIn,
   type Column,
 } from "@/components/ui";
 import { OUTCOME_BADGE_TONE, outcomeTone } from "@/components/cycles";
@@ -19,6 +22,8 @@ import {
   type DashboardRunRow,
   type LastAppliedCycle,
 } from "@/lib/db/dashboard";
+import { CYCLES_OBJECT } from "@/lib/db/cycles";
+import { RUNS_OBJECT } from "@/lib/db/runs";
 import type { DbResult } from "@/lib/db/result";
 import { count, duration, isAbsent, relativeAge } from "@/lib/format";
 import { RESOLVER_CADENCE_SECONDS } from "@/lib/gauges/gauge";
@@ -116,6 +121,33 @@ const RUN_PARAM = "run";
 const ATTENTION_SURFACE = "attention";
 const CYCLES_SURFACE = "cycles";
 const RUNS_SURFACE = "runs";
+
+/**
+ * The name each of this page's two WINDOWS answers to — `data-window`, the
+ * hook `tests/offline/absence/pages.test.ts` grades the window rule by and the
+ * live oracles read a window back by.
+ *
+ * These two panels were the last windowed lists in the app carrying
+ * hand-written prose and publishing no `data-window-*` hook at all, so the
+ * rule was unenforceable on exactly them: the runs panel said "a window of 6,
+ * not a count. Open Cycles & runs for the rest." over FIVE runs that are every
+ * run the framework has recorded, and `/cycles` then showed the operator the
+ * same five (admin-window/BUG-0109, the gap DEBT-0006 left). They render the
+ * shared `WindowLine` now, like the other nine surfaces.
+ */
+const CYCLES_WINDOW = "cycles";
+const RUNS_WINDOW = "runs";
+
+/**
+ * Where the rest of a list is, for the panel that has one.
+ *
+ * It rides on `more`, so `WindowLine` renders it only where the window's own
+ * `truncated` is true — a page may not promise a remainder its own read says
+ * is not there (admin-window/BUG-0109). Neither panel spells that comparison:
+ * `drawnWindow` makes it from the cap the read carried, in the one place this
+ * app decides whether a drawn window filled.
+ */
+export const THE_REST = "Open Cycles & runs for the rest.";
 
 /**
  * The `micro` label above each count — and the label a parity test reads the
@@ -538,10 +570,31 @@ export default async function DashboardPage() {
       </Section>
 
       <Section title="Cycles" surface={CYCLES_SURFACE}>
-        <p className="type-body text-ink-secondary">
-          The resolver&rsquo;s newest cycles, newest first — a window of{" "}
-          {DASHBOARD_WINDOW}, not a count. Open Cycles &amp; runs for the rest.
-        </p>
+        {/* The window line follows the READ, not the rows (ARCHITECTURE.md
+            §4.3): it stands on an `ok` result — with rows or with none — and
+            on no other state, so its absence means "this read did not happen"
+            here exactly as it does on the nine surfaces that already carried
+            it. The prose it replaces stood in every state and published no
+            hook at all (admin-window/BUG-0109). */}
+        {cycles.kind === "ok" ? (
+          <WindowLine
+            gauge={CYCLES_WINDOW}
+            window={drawnWindow({
+              limit: DASHBOARD_WINDOW,
+              held: cycles.data.length,
+              over: CYCLES_OBJECT,
+              // Newest first, so the last row is the oldest cycle the read
+              // came back with.
+              oldest: oldestIn(cycles.data, (row) => row.started_at),
+            })}
+            shows={{
+              of: "newest",
+              lede: "The resolver’s newest cycles, newest first",
+              rows: "cycles",
+              more: THE_REST,
+            }}
+          />
+        ) : null}
         {lastAppliedLine(lastApplied, now)}
         <LineTable
           result={cycles}
@@ -554,10 +607,24 @@ export default async function DashboardPage() {
       </Section>
 
       <Section title="Runs" surface={RUNS_SURFACE}>
-        <p className="type-body text-ink-secondary">
-          The adapters&rsquo; newest runs, newest first — a window of{" "}
-          {DASHBOARD_WINDOW}, not a count. Open Cycles &amp; runs for the rest.
-        </p>
+        {/* Same rule, same shape, same reason as the cycles panel above. */}
+        {runs.kind === "ok" ? (
+          <WindowLine
+            gauge={RUNS_WINDOW}
+            window={drawnWindow({
+              limit: DASHBOARD_WINDOW,
+              held: runs.data.length,
+              over: RUNS_OBJECT,
+              oldest: oldestIn(runs.data, (row) => row.started_at),
+            })}
+            shows={{
+              of: "newest",
+              lede: "The adapters’ newest runs, newest first",
+              rows: "runs",
+              more: THE_REST,
+            }}
+          />
+        ) : null}
         <LineTable
           result={runs}
           columns={runColumns(now)}

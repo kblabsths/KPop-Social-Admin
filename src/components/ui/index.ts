@@ -20,5 +20,11 @@ export {
   type UnavailableRead,
 } from "./state-of";
 export { StatCard, type StatTone } from "./stat-card";
-export { type ReadWindow, WindowLine } from "./window-line";
+export {
+  type DrawnWindow,
+  type ReadWindow,
+  WindowLine,
+  drawnWindow,
+  oldestIn,
+} from "./window-line";
 export { cx } from "./cx";

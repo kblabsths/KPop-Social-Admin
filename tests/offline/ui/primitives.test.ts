@@ -713,7 +713,28 @@ describe("WindowLine", () => {
     "data-window-truncated",
   ] as const;
 
-  const DRAWN: DrawnWindow = { limit: 50, held: 877, truncated: true, over: "view" };
+  const DRAWN: DrawnWindow = {
+    limit: 50,
+    held: 877,
+    truncated: true,
+    over: "view",
+    oldest: "2026-08-31T04:12:00.000Z",
+  };
+
+  /** The longest text both renderings share — the window's own sentence. */
+  const sharedPrefix = (a: string, b: string): string => {
+    let i = 0;
+    while (i < a.length && i < b.length && a[i] === b[i]) i += 1;
+    return a.slice(0, i);
+  };
+
+  /** Every shape of drawn list the app draws, so no arm is graded alone. */
+  const EVERY_KIND: DrawnSentence[] = [
+    { of: "newest", lede: "The newest cycles, newest first", rows: "cycles" },
+    { of: "matched", lede: "Oldest first.", rows: "claims" },
+    { of: "catalog", rows: "events" },
+    { of: "alphabetical", rows: "venues" },
+  ];
 
   const drawn = (shows: DrawnSentence, window: DrawnWindow = DRAWN) =>
     render(h(WindowLine, { gauge: "claims", window, shows }));
@@ -754,22 +775,95 @@ describe("WindowLine", () => {
     expect(scannedHooks.attr("data-window-since")).toBe(WINDOW.since);
   });
 
-  it("qualifies a filled drawn window by ADDING to its sentence, in every kind", () => {
-    // The same property the scanned line has: truncation is said on top of the
-    // window's own sentence, never in place of it.
-    const kinds: DrawnSentence[] = [
-      { of: "newest", lede: "The newest cycles, newest first", rows: "cycles" },
-      { of: "matched", lede: "Oldest first.", rows: "claims" },
-      // The entity picker's choices (admin-window/TASK-0055): a window read by
-      // NAME, whose truncation costs rows later in the alphabet.
-      { of: "alphabetical", rows: "venues" },
-    ];
-    for (const shows of kinds) {
+  it("qualifies a drawn window by ADDING to its sentence, in every kind and both directions", () => {
+    // The same property the scanned line has: what a window says about its own
+    // bottom is said ON TOP of the window's own sentence, never in place of it
+    // — and now in BOTH directions, because a window that did not fill has
+    // something to say too (admin-window/BUG-0109).
+    for (const shows of EVERY_KIND) {
       const open = textOf(drawn(shows, { ...DRAWN, truncated: false }));
       const filled = textOf(drawn(shows, { ...DRAWN, truncated: true }));
-      expect(filled.startsWith(open), shows.of).toBe(true);
-      expect(filled.length, shows.of).toBeGreaterThan(open.length);
+      const base = sharedPrefix(open, filled);
+      // The window's own sentence really is a sentence, and both states keep it.
+      expect(base.length, shows.of).toBeGreaterThan(20);
+      expect(open.startsWith(base), shows.of).toBe(true);
+      expect(filled.startsWith(base), shows.of).toBe(true);
+      // Each state ADDS its own clause: neither is the bare sentence, and the
+      // two do not say the same thing.
+      expect(open.length, shows.of).toBeGreaterThan(base.length);
+      expect(filled.length, shows.of).toBeGreaterThan(base.length);
+      expect(open, shows.of).not.toBe(filled);
     }
+  });
+
+  it("says a window did not fill by naming the oldest row it holds, in every kind", () => {
+    // Bar 13's other half (admin-window/BUG-0109): five runs against a cap of
+    // 200 are the whole history, so the line states the object's own floor
+    // rather than letting the last row read as the top of a long list. The
+    // stamp is the WINDOW's own fact, rendered the way the app renders an
+    // instant — no copy is pinned here.
+    const held = { ...DRAWN, held: 5, truncated: false };
+    for (const shows of EVERY_KIND) {
+      const open = textOf(drawn(shows, held));
+      expect(open, shows.of).toContain(absoluteUtc(DRAWN.oldest));
+      expect(open, shows.of).toContain(count(5));
+      // A window that filled its cap has no floor to name: its bottom is the
+      // cap's, and the oldest row it holds is not the oldest that exists.
+      expect(textOf(drawn(shows, { ...held, truncated: true })), shows.of).not.toContain(
+        absoluteUtc(DRAWN.oldest),
+      );
+    }
+  });
+
+  it("names no floor for a window whose bottom row is not its oldest", () => {
+    // `/claims` draws its matches longest-waiting FIRST and the picker draws
+    // its choices by name, so neither window's last row is a floor in time.
+    // The read says so by carrying no oldest instant, and the line states the
+    // rest of the sentence without inventing one — no stamp, and no dash
+    // standing in for one (admin-window/BUG-0004: an absence is rendered, and
+    // an instant that was never read is not an absence in a sentence).
+    for (const shows of EVERY_KIND) {
+      const text = textOf(drawn(shows, { ...DRAWN, held: 5, truncated: false, oldest: null }));
+      const dated = textOf(drawn(shows, { ...DRAWN, held: 5, truncated: false }));
+      expect(text, shows.of).not.toContain(absoluteUtc(DRAWN.oldest));
+      expect(text.length, shows.of).toBeLessThan(dated.length);
+      expect(dated.startsWith(text.replace(/\.$/, "")), shows.of).toBe(true);
+      expect(text, shows.of).toContain(count(5));
+    }
+  });
+
+  it("says a window that returned nothing looked, and states no floor", () => {
+    // An empty window is still a window (ARCHITECTURE.md §4.3): the read
+    // happened and found nothing, which is not the same claim as "the window
+    // holds everything below".
+    for (const shows of EVERY_KIND) {
+      const text = textOf(
+        drawn(shows, { ...DRAWN, held: 0, truncated: false, oldest: null }),
+      );
+      expect(text, shows.of).toContain(shows.rows);
+      expect(text, shows.of).not.toContain(absoluteUtc(DRAWN.oldest));
+    }
+  });
+
+  it("points at the rest of a list only when there IS a rest", () => {
+    // admin-window/BUG-0109: the Dashboard's runs panel promised "Open Cycles
+    // & runs for the rest" over five runs that ARE every run recorded, and
+    // /cycles then showed the same five. The pointer is a fact of the window,
+    // so it rides on truncation and not on the page's optimism.
+    // Free of an ampersand on purpose: `textOf` reads the raw markup, where
+    // React has escaped one, and this case is about the clause and not about
+    // entity decoding.
+    const pointer = "Open the Cycles page for the rest.";
+    const shows: DrawnSentence = {
+      of: "newest",
+      lede: "The adapters’ newest runs, newest first",
+      rows: "runs",
+      more: pointer,
+    };
+    expect(textOf(drawn(shows, { ...DRAWN, held: 50, truncated: true }))).toContain(pointer);
+    expect(textOf(drawn(shows, { ...DRAWN, held: 5, truncated: false }))).not.toContain(
+      pointer,
+    );
   });
 
   it("names the object a drawn window was read over from the window, not the caller", () => {
