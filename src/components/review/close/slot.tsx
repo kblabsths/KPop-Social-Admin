@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { StateOf, type UnavailableRead } from "@/components/ui";
+import { Empty, Eyebrow, StateOf, type UnavailableRead } from "@/components/ui";
+import { EM_DASH, clamped, isAbsent, orDash, relativeAge } from "@/lib/format";
 import type { ReviewItemRow, Shape } from "@/lib/review/shapes";
 import type { ActionSpec, ShapeActions, ShapeActionsInput } from "./actions";
 import { conflictActions, conflictNotice } from "./conflict-actions";
@@ -33,6 +34,13 @@ import { dispositionActions } from "./signal-actions";
  * one forbidden move): no queued write, no pending-overrides table, no retry
  * buffer, no flag-guarded direct write. The surface degrades to what M1 ships,
  * with the reason named, and that is the whole of the answer.
+ *
+ * **A SETTLED item's own verdict renders here** (spec F13's second half,
+ * campaign admin-window/TASK-0059), in the place a control would stand: the
+ * investigation ends where the decision was made rather than sending the
+ * operator to the log tab to find out what they themselves decided. It is a
+ * sub-surface of its own (`ITEM_VERDICT_SURFACE`) because its state comes from
+ * a different read, and an UNSETTLED item renders no verdict block at all.
  *
  * **The recommendation slot renders nothing** and is not here at all: its
  * producer is parked (spec §6), so the words `recommend` and `recommendation`
@@ -94,8 +102,10 @@ export const NOTICE_BY_SHAPE: Record<Shape, ShapeNotice> = {
  * A settled item stays browsable (spec §4), so its detail renders like any
  * other — but offering it a settle control would offer an action the function
  * would refuse. The status is the machine's own word and renders verbatim in
- * mono (§11). The verdict this item settled with is the verdict log's to show;
- * this line claims nothing about it.
+ * mono (§11). WHICH verdict settled it stands directly below, rendered by
+ * `SettledVerdict` (campaign admin-window/TASK-0059) — this line claims
+ * nothing about it, so an item whose verdict this app could not read still
+ * reads truthfully.
  */
 function SettledItem({ status }: { status: string }) {
   return (
@@ -107,11 +117,233 @@ function SettledItem({ status }: { status: string }) {
   );
 }
 
+/* ── the verdict a settled item was settled with ─────────────────────────── */
+
+/**
+ * The graded name of the inline verdict — its own `data-surface`, INSIDE the
+ * close (campaign admin-window/TASK-0059).
+ *
+ * It is a sub-surface for the reason `/queues`' `verdict_provenance` and the
+ * evidence view's dial are: its state belongs to a DIFFERENT read from the
+ * close's own. The close's question is "may a settlement be offered at all"
+ * (`readSettlementReadiness`); this one's is "which verdict settled this
+ * item" (`readItemVerdict`), and an item settled with no row on record is not
+ * a close that failed. An oracle grading the close excludes this selector and
+ * grades it on its own, exactly as `tests/live/review-item.live.test.ts`
+ * already excludes `[data-dial]` from the evidence.
+ */
+const ITEM_VERDICT_SURFACE = "item_verdict";
+
+/**
+ * One settled item's verdict, as the detail renders it — the page shapes, this
+ * renders (ARCHITECTURE.md §5).
+ *
+ * Declared structurally rather than imported from `lib/db`, exactly as
+ * `readiness` is: a component never imports the data layer (§4 rule 1).
+ */
+export interface InlineVerdict {
+  /**
+   * `verdicts.action`, verbatim — a machine identifier, in mono, never
+   * prettified and never uppercased (§11, LESSONS 5).
+   */
+  readonly action: string;
+  /** Who decided. */
+  readonly actor: string;
+  /** The admin's why, at their discretion — absent is the ordinary case. */
+  readonly note: string | null;
+  /** When it was decided. */
+  readonly createdAt: string;
+  /** The observation this verdict wrote. Null on a settle-only verdict. */
+  readonly observationId: string | null;
+  /**
+   * The record surface of the fact that observation is about, when this app
+   * could resolve it — the one place a rendered observation already leads
+   * (`components/queues/verdict-log.tsx`, `components/claims/claim-list.tsx`).
+   */
+  readonly observationHref: string | null;
+}
+
+/**
+ * What the detail knows about the verdict, as plain data.
+ *
+ * `ok` with `verdict: null` is the honest gap the log's table is there and
+ * holds no row for this item; the unavailable arms are the read refusing or
+ * the object being absent. They are DIFFERENT states and render differently —
+ * "renders X but not the absence of X" is LESSONS 1, and an empty block on a
+ * settled item would be exactly it.
+ */
+export type CloseVerdict =
+  | {
+      kind: "ok";
+      verdict: InlineVerdict | null;
+      /** The observation leg's own refusal, reported beside the verdict. */
+      factUnavailable: UnavailableRead | null;
+    }
+  | UnavailableRead;
+
+/**
+ * What an em dash means in this block, said once (LESSONS 1: "a column of
+ * dashes carries one line saying what a dash means").
+ *
+ * Both dashes here are the record doing its job rather than data going
+ * missing: a note is at the admin's discretion, and a settle-only verdict
+ * observed nothing. Rendered only when a dash is actually on screen — a
+ * sentence explaining a character the operator cannot see is noise, and the
+ * block is one verdict rather than the log's column of them.
+ */
+const DASH_MEANS =
+  `A ${EM_DASH} here is not missing data: an admin may settle without a ` +
+  "note, and a settle-only verdict writes no observation.";
+
+/** What a settled item with no verdict row on record says, in its own words. */
+const NO_VERDICT_ROW = {
+  holds: "verdict on record for this item",
+  filledBy:
+    "The item is settled, so something settled it — but the log holds no " +
+    "row saying what. The record of this decision is missing, not the log.",
+};
+
+/** One labelled line of the verdict: what it is called, and what it says. */
+function VerdictLine({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <p className="flex flex-wrap items-baseline gap-2">
+      {/* The space between the label and the value is a REAL text node, never
+          the flex gap: everything that reads text — an accessible name, a
+          parity reader, a user-sim — is blind to a gap, which is how
+          `stuck_patterndial` reached a screen (admin-window/BUG-0045). It is
+          an expression container so no JSX transform may drop it, and a
+          whitespace-only anonymous flex item is not laid out, so the rendering
+          is exactly the gap's. */}
+      <Eyebrow label={label} />{" "}
+      <span className="type-body text-ink">{children}</span>
+    </p>
+  );
+}
+
+/**
+ * The verdict itself — the action verbatim in mono, who decided, their note,
+ * when, and where the observation it wrote landed (spec F13).
+ *
+ * Every absence goes through the app's one dash, and every one of them is
+ * asked BEFORE the element is built: a cell body that is an ELEMENT is never
+ * absent to `orDash`, which is the shape that left a blank note in the log
+ * (admin-window/BUG-0085). `isAbsent` — not `=== null` — because it trims: a
+ * note that is present but whitespace is an absence everywhere else here.
+ *
+ * The observation id is rendered VERBATIM and unlinked when this app could not
+ * resolve where it leads: the verdict really does carry it, so a dash there
+ * would claim it observed nothing, which is a different verdict.
+ */
+function ItemVerdictBlock({ verdict }: { verdict: InlineVerdict }) {
+  const when = relativeAge(verdict.createdAt);
+  const actor = isAbsent(verdict.actor) ? null : verdict.actor;
+  const wrote = isAbsent(verdict.note) ? null : (verdict.note as string);
+  const note = wrote === null ? null : clamped(wrote);
+  const observation = isAbsent(verdict.observationId)
+    ? null
+    : (verdict.observationId as string);
+
+  return (
+    <div data-item-verdict={verdict.action} className="flex flex-col gap-2">
+      <VerdictLine label="settled with">
+        <span data-verdict-action={verdict.action} className="type-data text-ink">
+          {verdict.action}
+        </span>
+      </VerdictLine>
+
+      <VerdictLine label="by">
+        <span data-verdict-actor={actor ?? undefined}>{orDash(actor)}</span>
+      </VerdictLine>
+
+      <VerdictLine label="note">
+        <span title={note?.title} data-verdict-note={wrote ?? undefined}>
+          {orDash(note?.text ?? null)}
+        </span>
+      </VerdictLine>
+
+      <VerdictLine label="when">
+        <span title={when.title} data-verdict-when={verdict.createdAt}>
+          {when.text}
+        </span>
+      </VerdictLine>
+
+      <VerdictLine label="observation">
+        {observation === null ? (
+          orDash(null)
+        ) : verdict.observationHref === null ? (
+          <span data-verdict-observation={observation} className="type-data">
+            {observation}
+          </span>
+        ) : (
+          <a
+            href={verdict.observationHref}
+            data-verdict-observation={observation}
+            className="type-data text-accent underline"
+          >
+            {observation}
+          </a>
+        )}
+      </VerdictLine>
+
+      {note !== null && observation !== null ? null : (
+        <p data-absence-note="dash" className="type-body text-ink-secondary">
+          {DASH_MEANS}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The inline verdict, in whichever of its states this database put it
+ * (campaign admin-window/TASK-0059, spec F13's second half).
+ *
+ * The wrapper carries the sub-surface name in EVERY state, so an oracle that
+ * excludes this block from the close's own grading reaches whichever card
+ * rendered rather than only the happy one.
+ *
+ * A read that refused, and a table that is not here, come out as the app's one
+ * pair of cards through `StateOf` — never as a blank slot. `ok` with no row is
+ * the third, different state, and it draws `Empty`: the log answered and holds
+ * nothing for this item, which is a gap in the DATA and not an absent object.
+ * The two are told apart structurally by `data-state`, never by their words
+ * (ARCHITECTURE.md §10, admin-window/TASK-0032).
+ */
+function SettledVerdict({ verdict }: { verdict: CloseVerdict }) {
+  return (
+    <div data-surface={ITEM_VERDICT_SURFACE}>
+      {verdict.kind !== "ok" ? (
+        <StateOf result={verdict} />
+      ) : verdict.verdict === null ? (
+        <Empty holds={NO_VERDICT_ROW.holds} filledBy={NO_VERDICT_ROW.filledBy} />
+      ) : (
+        <>
+          <ItemVerdictBlock verdict={verdict.verdict} />
+          {verdict.factUnavailable === null ? null : (
+            // The observation leg alone refused: the verdict is here and only
+            // the link to where its observation landed is missing, so the
+            // refusal names its own object beside it rather than replacing a
+            // verdict this app read perfectly well (admin-window/BUG-0021).
+            <StateOf result={verdict.factUnavailable} />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function CloseSlot({
   item,
   readiness,
   actions,
   notice = null,
+  verdict,
 }: {
   /** The item being closed — its id addresses the route, its status decides. */
   item: ReviewItemRow;
@@ -133,6 +365,17 @@ export function CloseSlot({
    * them but a conflict on a reference field.
    */
   notice?: ReactNode;
+  /**
+   * The verdict this item was settled with — `readItemVerdict`'s result,
+   * narrowed by the page into plain data (campaign admin-window/TASK-0059).
+   *
+   * `null` (or omitted) means **no such read happened**, and the block renders
+   * nothing at all: an OPEN item was settled by nothing, and a database
+   * without the log has no row to hold one — the close already says so, in one
+   * card, above. An empty verdict block on an open item is the "renders X but
+   * not the absence of X" defect LESSONS 1 is about, from the other side.
+   */
+  verdict?: CloseVerdict | null;
 }) {
   if (readiness.kind !== "ok") {
     // The graded-first state, and the whole of what this slot renders today:
@@ -140,7 +383,16 @@ export function CloseSlot({
     return <StateOf result={readiness} />;
   }
 
-  if (item.status === "settled") return <SettledItem status={item.status} />;
+  if (item.status === "settled") {
+    return (
+      <>
+        <SettledItem status={item.status} />
+        {verdict === undefined || verdict === null ? null : (
+          <SettledVerdict verdict={verdict} />
+        )}
+      </>
+    );
+  }
 
   return (
     <>

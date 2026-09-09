@@ -10,6 +10,7 @@ import {
   oneEach,
   pageStates,
   renderPage,
+  stateOf,
   surfaceHooks,
 } from "./parity";
 
@@ -48,6 +49,8 @@ import {
 type Item = {
   review_item_id: string;
   queue: string;
+  /** `open` or `settled` — which of the close's two shapes this item is in. */
+  status: string;
   source_id: string | null;
   domain: string | null;
   entity_id: string | null;
@@ -94,6 +97,23 @@ const EVIDENCE = '[data-surface="evidence"]';
  * address.
  */
 const CLOSE = '[data-surface="close"]';
+/**
+ * The verdict a SETTLED item was settled with — a sub-surface INSIDE the close
+ * (campaign admin-window/TASK-0059, spec F13's second half).
+ *
+ * Its state is a THIRD read's (`readItemVerdict`), so it is excluded wherever
+ * the close is graded, exactly as `DIAL` below is excluded from the evidence:
+ * an item settled with no row on record is a gap in the log's data, not a
+ * close that failed, and folding the two together would make one look like
+ * the other. On staging today it never renders at all — the one real item is
+ * open and the log's table is absent — and that absence is asserted from THIS
+ * test's own reads of both facts, never inferred from an empty page.
+ */
+const ITEM_VERDICT = '[data-surface="item_verdict"]';
+
+/** The columns every query in this file reads off an item, spelled once. */
+const ITEM_COLUMNS =
+  "review_item_id, queue, status, source_id, domain, entity_id, field, summary, severity, folded_count, evidence" as const;
 
 /**
  * Both hooks, asserted present and UNIQUE before either is graded — so the
@@ -136,7 +156,7 @@ async function anyItem(): Promise<Item | null | "absent"> {
   const { data, error } = await independentClient()
     .from(T.reviewItems)
     .select(
-      "review_item_id, queue, source_id, domain, entity_id, field, summary, severity, folded_count, evidence",
+      ITEM_COLUMNS,
     )
     // Items with evidence first: this test is about resolving it.
     .order("last_evidence_at", { ascending: false })
@@ -163,7 +183,7 @@ async function sourcePatternItem(): Promise<Item | null | "absent"> {
   const { data, error } = await independentClient()
     .from(T.reviewItems)
     .select(
-      "review_item_id, queue, source_id, domain, entity_id, field, summary, severity, folded_count, evidence",
+      ITEM_COLUMNS,
     )
     .not("source_id", "is", null)
     .order("last_evidence_at", { ascending: false })
@@ -173,6 +193,30 @@ async function sourcePatternItem(): Promise<Item | null | "absent"> {
     const code = (error as { code?: string }).code ?? "";
     if (code === "PGRST205" || code === "42P01") return "absent";
     throw new Error(`the source-pattern query failed: ${(error as Error).message}`);
+  }
+  return ((data ?? []) as Item[])[0] ?? null;
+}
+
+/**
+ * An item this database has already SETTLED — the one shape whose detail
+ * carries a verdict inline (campaign admin-window/TASK-0059).
+ *
+ * `null` means the table answered and holds no settled item, which is staging
+ * today and is a state rather than a failure: no verdict block can render, and
+ * the oracle below says so instead of asserting against nothing.
+ */
+async function settledItem(): Promise<Item | null | "absent"> {
+  const { data, error } = await independentClient()
+    .from(T.reviewItems)
+    .select(ITEM_COLUMNS)
+    .eq("status", "settled")
+    .order("last_evidence_at", { ascending: false })
+    .order("review_item_id", { ascending: true })
+    .limit(1);
+  if (error) {
+    const code = (error as { code?: string }).code ?? "";
+    if (code === "PGRST205" || code === "42P01") return "absent";
+    throw new Error(`the settled-item query failed: ${(error as Error).message}`);
   }
   return ((data ?? []) as Item[])[0] ?? null;
 }
@@ -503,8 +547,11 @@ describe("the close against staging", () => {
 
     // Installed: the read answered, so the slot is in its ok state and the
     // note field stands. A settle control only exists once a shape's own
-    // ticket fills its action list.
-    assertState(markup, CLOSE, "ok");
+    // ticket fills its action list. The verdict sub-surface is excluded: a
+    // settled item with no row on record is that BLOCK's emptiness, and
+    // grading it as the close's would report it as a close that failed
+    // (campaign admin-window/TASK-0059).
+    expect(stateOf(markup, CLOSE, ITEM_VERDICT)).toBe("ok");
     expect($(CLOSE).find("[data-close-note]")).toHaveLength(1);
   });
 
@@ -544,8 +591,9 @@ describe("the close against staging", () => {
     }
 
     // Installed: this shape's close offers exactly its two dispositions, in
-    // spec §7's order, with both machine names verbatim (§11).
-    assertState(markup, CLOSE, "ok");
+    // spec §7's order, with both machine names verbatim (§11). Graded with
+    // the verdict sub-surface excluded, for the reason above.
+    expect(stateOf(markup, CLOSE, ITEM_VERDICT)).toBe("ok");
     expect(
       $(CLOSE)
         .find("[data-close-action]")
@@ -631,5 +679,121 @@ describe("the header names its source, against staging", () => {
       .toArray()
       .map((element) => $(element).text().trim());
     for (const said of cells) expect(said).toBe(expected);
+  });
+});
+
+/**
+ * The inline verdict, against staging (campaign admin-window/TASK-0059, spec
+ * F13's second half).
+ *
+ * **The state kind is named before anything is compared** (ARCHITECTURE.md
+ * §10, rule 5, common violation 6), and it is named from THIS test's own
+ * reads of the two facts that decide it: whether the log's table is in this
+ * database at all, and whether the item is settled. Neither is inferred from
+ * what the page rendered, and neither is read off the page's prose.
+ *
+ * Staging today answers both the same way it has all milestone: the log's
+ * table is absent and the one real item is open, so the block renders nowhere
+ * and the close draws its one not-provisioned card. The installed branches are
+ * written out anyway, so the day Ben installs M2's handoff migration this
+ * oracle grades that state instead of going quiet.
+ */
+describe("a settled item's verdict, against staging", () => {
+  it("renders no verdict block on an item this database has not settled", async () => {
+    const item = await anyItem();
+    if (item === "absent" || item === null) return;
+    if (item.status === "settled") return; // graded by the case below
+
+    const markup = await itemMarkup(item.review_item_id);
+    // An OPEN item was settled by nothing, so there is no verdict and no
+    // block — never an empty one, which is the "renders X but not the absence
+    // of X" defect from the other side (LESSONS 1).
+    expect(
+      surfaceHooks(markup, [ITEM_VERDICT]),
+      `${item.review_item_id} is ${item.status}`,
+    ).toEqual({ counts: { [ITEM_VERDICT]: 0 }, nested: [] });
+    expect(cheerio.load(markup)("[data-verdict-action]")).toHaveLength(0);
+    // And the close is still exactly the state its own read put it in.
+    assertState(
+      markup,
+      CLOSE,
+      (await objectIsAbsent(T.verdicts)) ? "not_provisioned" : "ok",
+    );
+  });
+
+  it("carries the row the log holds for a settled item, or says the gap", async () => {
+    const item = await settledItem();
+    if (item === "absent" || item === null) return;
+    expect(item.status).toBe("settled");
+
+    const markup = await itemMarkup(item.review_item_id);
+    const $ = cheerio.load(markup);
+
+    if (await objectIsAbsent(T.verdicts)) {
+      // The log is not in this database: the close draws the one card naming
+      // that object, and no verdict block is rendered beside it.
+      assertState(markup, CLOSE, "not_provisioned");
+      expect($(CLOSE).text()).toContain(T.verdicts);
+      expect($(ITEM_VERDICT)).toHaveLength(0);
+      return;
+    }
+
+    // Installed. The block is a surface of its own and exactly one of it.
+    expect(surfaceHooks(markup, [ITEM_VERDICT])).toEqual({
+      counts: oneEach([ITEM_VERDICT]),
+      nested: [],
+    });
+    // The close is in the state its OWN read put it in, whatever the block is.
+    expect(stateOf(markup, CLOSE, ITEM_VERDICT)).toBe("ok");
+
+    // The expectation, read by this test rather than asked of `lib/db`
+    // (ARCHITECTURE.md §10): the newest verdict this log holds for the item.
+    const { data, error } = await independentClient()
+      .from(T.verdicts)
+      .select("verdict_id, actor, action, observation_id, note, created_at")
+      .eq("review_item_id", item.review_item_id)
+      .order("created_at", { ascending: false })
+      .order("verdict_id", { ascending: false })
+      .limit(1);
+    if (error) throw new Error(`the verdict query failed: ${(error as Error).message}`);
+    const held = ((data ?? []) as {
+      actor: string;
+      action: string;
+      observation_id: string | null;
+      note: string | null;
+      created_at: string;
+    }[])[0];
+
+    if (held === undefined) {
+      // The table is there and holds no row for this settled item: a gap in
+      // the DATA, which is a different state from the absent object and draws
+      // a different card. Read structurally, never from the words on it.
+      expect(stateOf(markup, ITEM_VERDICT)).toBe("empty");
+      expect($(ITEM_VERDICT).text()).not.toContain(T.verdicts);
+      return;
+    }
+
+    expect(stateOf(markup, ITEM_VERDICT)).toBe("ok");
+    // The machine's own name, verbatim — never prettified (§11, LESSONS 5).
+    expect($("[data-verdict-action]").attr("data-verdict-action")).toBe(held.action);
+    expect($("[data-verdict-action]").text().trim()).toBe(held.action);
+    expect($("[data-verdict-when]").attr("data-verdict-when")).toBe(held.created_at);
+
+    // Each nullable column is rendered or dashed, and never blank: the hook
+    // stands exactly where the row carries a value.
+    expect($("[data-verdict-actor]")).toHaveLength(
+      held.actor.trim() === "" ? 0 : 1,
+    );
+    expect($("[data-verdict-note]")).toHaveLength(
+      held.note === null || held.note.trim() === "" ? 0 : 1,
+    );
+    expect($("[data-verdict-observation]")).toHaveLength(
+      held.observation_id === null ? 0 : 1,
+    );
+    if (held.observation_id !== null) {
+      // The id is the verdict's own, rendered verbatim whether or not this app
+      // could resolve where it leads.
+      expect($("[data-verdict-observation]").text().trim()).toBe(held.observation_id);
+    }
   });
 });
