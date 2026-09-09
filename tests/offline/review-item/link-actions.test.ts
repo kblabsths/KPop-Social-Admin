@@ -497,19 +497,30 @@ describe("the close once the verdict log is installed", () => {
 describe("the link control's picker", () => {
   const { link } = controls();
 
-  /** The control with its panel open — the state a click produces. */
-  function opened(query = ""): string {
+  /**
+   * The control with its panel open — the state a click produces. `disabled`
+   * is what `CloseForm` passes: false at rest, true while a settlement of
+   * ANY of the shape's controls is in flight.
+   */
+  function opened(query = "", disabled = false): string {
     return render(
       h(ChosenControl, {
         spec: link,
         open: true,
         query,
-        disabled: false,
+        disabled,
         onToggle: () => {},
         onQuery: () => {},
         onChoose: () => {},
       }),
     );
+  }
+
+  /** The rows that would still ACT if they were clicked. */
+  function liveRows(markup: string): number {
+    const $ = cheerio.load(markup);
+    return $("li button").filter((_, button) => $(button).attr("disabled") === undefined)
+      .length;
   }
 
   it("offers exactly the rows the read returned, each carrying its own id", () => {
@@ -574,6 +585,31 @@ describe("the link control's picker", () => {
     // chosen id becomes a decision.
     expect(render(control)).toContain(VENUE_ID.olympicHall);
     expect(chosen).toEqual([]);
+  });
+
+  it("offers every row at rest, so the claim below cannot pass vacuously", () => {
+    expect(liveRows(opened())).toBe(venueWindow().options.length);
+  });
+
+  /**
+   * QA's pin for campaign admin-window/BUG-0102, written as a plain `it` by
+   * the fix. Before it, `ChosenControl` handed the shared panel a hardcoded
+   * `status: { kind: "idle" }`, so the panel's busy rule
+   * (admin-window/BUG-0097) never fired here: every row stayed live under a
+   * settlement, and the click it was given was dropped in silence at
+   * `settle`'s in-flight guard — no refusal, no status, no note touched.
+   */
+  it("offers no live option while a settlement is in flight", () => {
+    // `open: true, disabled: true` is exactly what `CloseForm` hands this
+    // control while its own state is `settling`.
+    const markup = opened("", true);
+    expect(liveRows(markup)).toBe(0);
+    // Drawn, not gone: the operator keeps the list they were reading and the
+    // panel does not blank itself mid-settlement — going busy is not the same
+    // move as going away (the shared panel's rule, admin-window/BUG-0097).
+    expect(cheerio.load(markup)("li button")).toHaveLength(
+      venueWindow().options.length,
+    );
   });
 
   it("marks nothing as the current row: this item is here because nothing linked", () => {
