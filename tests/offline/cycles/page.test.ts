@@ -1163,6 +1163,64 @@ describe("the cycles the resolver filed", () => {
     },
   );
 
+  /**
+   * QA's strict pin, watched RED on this tree: the hole admin-window/BUG-0146
+   * named as outside its own scope and left open, filed as
+   * admin-window/BUG-0147.
+   *
+   * A `?cycle=` with no canonical form is spelled RAW into the sentence this
+   * page wrote — the arm two tests above pins deliberately. When the raw value
+   * carries an unterminated bidi control, that spelling rewrites the app's own
+   * paragraph: U+202E's scope is the paragraph, not the `<span>` the value sits
+   * in, so everything after it reverses. admin-window/BUG-0137 measured exactly
+   * this harm on `/claims`' dropped-parameter line (in Chromium, both colour
+   * schemes) and answered it with the renderable allowlist ARCHITECTURE.md §7
+   * now states as a rule: foreign text reaches an app-authored sentence through
+   * an ALLOWLIST or in its own BOX, and a `type-data` span is neither.
+   *
+   * BUG-0146 closed the PADDED route here — `?cycle=<U+202E><a real id>` is
+   * canonicalised and the control never reaches the markup — and named this
+   * one, which its criteria excluded, still open.
+   *
+   * Either arm passes: drop the control from what is spelled, or spell nothing
+   * and report `cycle` on the dropped-parameter line. The check is on the TEXT
+   * and not on any styling, because the reversal travels with the sentence when
+   * it is copied out of the page as plain text (BUG-0137's own reasoning).
+   */
+  it.fails(
+    "never lets a URL's bidi control into the sentence the page wrote [admin-window/BUG-0147]",
+    async () => {
+      const CONTROLS = /[\u202A-\u202E\u2066-\u2069]/u;
+      for (const asked of [
+        `${String.fromCodePoint(0x202e)}not-a-uuid`,
+        `ab${String.fromCodePoint(0x202e)}cd`,
+        `x${String.fromCodePoint(0x2066)}y`,
+      ]) {
+        const where = [...asked]
+          .map((c) => "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"))
+          .join(" ");
+        const markup = await renderCycles(healthyScript(), { cycle: asked });
+        const $ = cheerio.load(markup);
+        // The sentence the operator reads is the sentence the page wrote.
+        expect(CONTROLS.test($("[data-cycle-asked]").text()), where).toBe(false);
+      }
+      // Not vacuous, and BUG-0146 stays fixed: a value that DOES have a
+      // canonical form is spelled canonically, so no control from a padded
+      // paste reaches the markup at all.
+      const padded = `${String.fromCodePoint(0x202e)}${FAILED.run_id}`;
+      const found = await renderCycles(healthyScript(), { cycle: padded });
+      expect(cheerio.load(found)("[data-cycle-asked]").attr("data-cycle-asked")).toBe(
+        FAILED.run_id,
+      );
+      // And an ordinary unmatched value is still spelled in full: the pin is
+      // about the control, not about the page going quiet.
+      const plain = await renderCycles(healthyScript(), { cycle: "not-a-uuid" });
+      expect(cheerio.load(plain)("[data-cycle-asked]").attr("data-cycle-asked")).toBe(
+        "not-a-uuid",
+      );
+    },
+  );
+
   it("keeps the window's own limits on screen beside a cycle it could not find", async () => {
     // A full window is the one case where "not here" and "does not exist" come
     // apart: the cap filled, so the asked-for cycle may be older than the

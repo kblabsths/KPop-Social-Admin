@@ -1090,6 +1090,50 @@ describe("the states", () => {
     expect(isRecordId(`⠀${canonical}`)).toBe(false);
   });
 
+  it("weighs each end by CODE POINT, so no astral character is read as half of one [admin-window/BUG-0146]", () => {
+    // QA's attack on the widened strip. `trimPad` walks `Array.from(text)`,
+    // and this is the fixture that makes that a decision rather than a detail.
+    const canonical = WELL_FORMED_IDS[0];
+
+    // U+1D173 MUSICAL SYMBOL BEGIN BEAM is a FORMAT character (Cf) OUTSIDE the
+    // BMP — ink-less by the app's one definition of blank, so it is padding.
+    // Its two UTF-16 halves are not: a lone surrogate is in no ink-less class,
+    // so a guard walking UTF-16 units would ask the ink question of `\ud834`,
+    // get "content", and deny a real id here.
+    const astralPad = String.fromCodePoint(0x1d173);
+    expect(canonicalRecordId(`${astralPad}${canonical}${astralPad}`)).toBe(canonical);
+    expect(isRecordId(`${astralPad}${canonical}`)).toBe(false);
+
+    // The other direction (LESSONS 8's second fixture): an astral character
+    // that DOES put ink on the page is content, exactly as a BMP one is, and
+    // the value it pads names no id at all.
+    for (const inkPoint of [0x10400, 0x1f600, 0x1d7ce]) {
+      const ink = String.fromCodePoint(inkPoint);
+      const where = `U+${inkPoint.toString(16).toUpperCase()}`;
+      expect(canonicalRecordId(`${ink}${canonical}`), where).toBeNull();
+      expect(canonicalRecordId(`${canonical}${ink}`), where).toBeNull();
+    }
+
+    // A LONE surrogate is neither ink-less nor half of anything here: it is
+    // content, the value names no id, and nothing throws on the malformed
+    // string a URL can carry.
+    expect(canonicalRecordId(`${canonical}\ud83d`)).toBeNull();
+    expect(canonicalRecordId(`\udc00${canonical}`)).toBeNull();
+
+    // Where the ink line is drawn, the other half of the braille ruling above:
+    // a lone combining mark is a MARK and stays content
+    // (`lib/verdict/decision.ts`), so an id wearing U+0301 is a different
+    // string on BOTH sides and neither invents an id from it.
+    expect(canonicalRecordId(`${canonical}\u0301`)).toBeNull();
+    expect(canonicalRecordId(`\u0301${canonical}`)).toBeNull();
+    expect(isRecordId(`${canonical}\u0301`)).toBe(false);
+
+    // The strip is not bounded to a few characters: a paste can carry a lot of
+    // padding, and the id is still the id.
+    const long = String.fromCodePoint(0x200b).repeat(5_000);
+    expect(canonicalRecordId(`${long}${canonical}${long}`)).toBe(canonical);
+  });
+
   it("leaves the unknown-id state to a well-formed id that matches no row", async () => {
     for (const table of EDITABLE_TABLES) {
       const markup = await renderRecord(table, missingRowScript(table));
