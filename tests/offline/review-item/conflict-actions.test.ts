@@ -642,3 +642,216 @@ describe("the evidence cards this ticket does not touch", () => {
     expect($("[data-evidence-view]")).toHaveLength(1);
   });
 });
+
+/* ── QA's attack: the seams the criteria do not name ─────────────────────── */
+
+/**
+ * Everything below was written by the QA lane attacking TASK-0050's landed
+ * tree, not by the ticket's builder. It probes three seams the acceptance
+ * criteria leave open: the KIND of the fact the item is about, the totality of
+ * the refusal vocabulary, and whether the one shared `ActionSpec` survives
+ * being submitted twice with two different typed values.
+ */
+describe("the kind of fact the item is about — QA attack", () => {
+  /**
+   * `events.venue` is the app's one REFERENCE field: `EDIT_CONFIG.events`
+   * carries `reference: { field: "venue_id", domain: "venues" }`
+   * (`src/lib/edit/config.ts`), and the resolver escalates a reference fact to
+   * `data_conflict` exactly as it escalates a scalar one (resolver.md §6 steps
+   * 1-2 — step 3 holds a claim only while its reference is UNRESOLVED).
+   *
+   * A reference is not settled with typed text. Spec §8: "a scalar column
+   * edits as a cell, a `kind: reference` field as an entity picker" and "a
+   * reference field's override carries the chosen entity … so the apply links
+   * rows (`venue_id`) instead of writing text"; `decision.ts`'s own
+   * `PAYLOAD_SLOTS` says the same, giving `supply_value` the `value` slot
+   * ALONE — "a reference chosen by an operator arrives as an `override` …
+   * never as a `supply_value`".
+   *
+   * So the reference field must be offered no scalar `supply_value` control at
+   * all. `conflict-actions.tsx` offers one for every whole fact triple,
+   * whatever kind the field is.
+   */
+  // Strict xfail (admin-window/BUG-0087): this is RED against the shipped
+  // tree and `it.fails` keeps the branch green; the day the defect is fixed it
+  // XPASSes, which vitest reports as a FAILURE and sends the reader to the
+  // ticket. Flip it back to `it(` with the fix.
+  it.fails("offers no scalar supply control for a reference field", () => {
+    const item = reviewItemDataConflict({ field: "venue" });
+    const actions = actionsFor(item, twoCards());
+
+    expect(actions.filter((spec) => spec.action === "supply_value")).toEqual([]);
+    // …and no control asks the operator to TYPE one, either.
+    expect(actions.filter((spec) => spec.supplies !== undefined)).toEqual([]);
+    // The other two actions are unaffected: a claimed reference can still be
+    // adopted, and the disagreement can still be left standing.
+    expect(actions.map((spec) => spec.action)).toEqual([
+      "choose_claimed_value",
+      "choose_claimed_value",
+      "keep_current",
+    ]);
+  });
+
+  /**
+   * The same defect stated as the decision that reaches the database: a typed
+   * venue NAME in the scalar slot, for a fact whose canonical column is
+   * `venue_id`, refused by nothing on the way.
+   */
+  // Strict xfail (admin-window/BUG-0087) — see above.
+  it.fails("builds no text-carrying decision for a reference fact", () => {
+    const item = reviewItemDataConflict({ field: "venue" });
+    const supply = actionsFor(item, twoCards()).find(
+      (spec) => spec.action === "supply_value",
+    );
+    if (supply === undefined) return; // fixed: nothing to send
+    const decision = decisionOf(supply, "", "The Forum, Inglewood");
+    // Either the control is gone, or what it sends is refused before the
+    // database sees it. Today it is neither.
+    expect(decisionRefusals(decision)).not.toEqual([]);
+  });
+
+  /** A scalar fact is untouched by the rule above — the control still stands. */
+  it("still offers the supply control for a scalar fact", () => {
+    const scalar = actionsFor(reviewItemDataConflict({ field: "title" }), twoCards());
+    expect(scalar.filter((spec) => spec.action === "supply_value")).toHaveLength(1);
+  });
+});
+
+describe("the refusal vocabulary is total — QA attack", () => {
+  /**
+   * `refusalWords` is a fallback away from printing a raw identifier at an
+   * operator (LESSONS 5). This drives `closeRefusal` over every control this
+   * shape offers, plus the one action that requires a note, and asserts that
+   * every identifier it can actually PRODUCE has words of its own — so a third
+   * local refusal added later without words reddens here rather than shipping.
+   */
+  it("has words for every identifier `closeRefusal` can produce", () => {
+    const wontFix: ActionSpec = { label: "Won’t fix", action: "wont_fix", value: null };
+    const specs = [...actionsFor(), wontFix];
+    const produced = new Set<string>();
+    for (const spec of specs) {
+      for (const note of ["", "   ", "a reason"]) {
+        for (const supplied of [null, "", "   ", "a value"]) {
+          const refusal = closeRefusal(spec, note, supplied);
+          if (refusal !== null) produced.add(refusal);
+        }
+      }
+    }
+    expect([...produced].sort()).toEqual(["note_required", "value_required"]);
+    for (const refusal of produced) {
+      const words = refusalWords(refusal);
+      // No identifier, no snake_case, and a sentence rather than a token.
+      expect(words, refusal).not.toContain(refusal);
+      expect(words, refusal).not.toContain("_");
+      expect(words.length, refusal).toBeGreaterThan(20);
+    }
+  });
+});
+
+describe("one spec, two submissions — QA attack", () => {
+  /**
+   * The `ActionSpec` list is built ONCE on the server and handed to the client
+   * component, so the same object backs every press of that control. A merge
+   * that wrote the operator's value into the spec instead of into a copy would
+   * make the second settlement carry the first one's value — and would leave a
+   * pre-filled cell behind, which the ticket forbids.
+   */
+  it("carries each typed value alone and leaves the spec unfilled", async () => {
+    const supply = actionsFor().find((spec) => spec.action === "supply_value") as ActionSpec;
+    const sent: string[] = [];
+    const fetchImpl = async (
+      _url: string,
+      init: { method: string; headers: Record<string, string>; body: string },
+    ) => {
+      sent.push(init.body);
+      return Response.json({ ok: true });
+    };
+
+    for (const supplied of ["TWICE World Tour", "TWICE 5TH WORLD TOUR"]) {
+      const outcome = await submitSettlement({
+        reviewItemId: ITEM_ID,
+        spec: supply,
+        note: "",
+        supplied,
+        fetchImpl,
+      });
+      expect(outcome.ok, supplied).toBe(true);
+    }
+
+    expect(sent).toHaveLength(2);
+    expect(JSON.parse(sent[0]).value.value).toBe("TWICE World Tour");
+    expect(JSON.parse(sent[1]).value.value).toBe("TWICE 5TH WORLD TOUR");
+    // The shared spec is exactly as the server built it: still no value.
+    expect(supply.value?.value).toBeNull();
+  });
+
+  /**
+   * Three cards, two of which a label alone cannot tell apart (same source,
+   * same value). Positional wiring is the only thing that can carry the right
+   * observation, so re-pointing any control at another card fails here.
+   */
+  it("wires each choose control to its own card, labels or no labels", () => {
+    const evidence = [
+      evidenceRow({ observationId: ID.observationA, source: "ticketmaster", value: "X" }),
+      evidenceRow({ observationId: ID.observationB, source: "ticketmaster", value: "X" }),
+      evidenceRow({ observationId: ID.sourceBandsintown, source: "bandsintown", value: "Y" }),
+    ];
+    const chosen = actionsFor(reviewItemDataConflict(), evidence).filter(
+      (spec) => spec.action === "choose_claimed_value",
+    );
+    const ids = chosen.map((spec) => spec.value?.observation_id);
+    expect(ids).toEqual(evidence.map((row) => row.observationId));
+    // Three cards, three DISTINCT observations: a list that collapsed onto one
+    // card would pass the equality above only by accident, never this.
+    expect(new Set(ids).size).toBe(3);
+  });
+});
+
+describe("the rendered control set, card by card — QA attack", () => {
+  /**
+   * Criterion 1 verbatim, at the DOM rather than at the list, and across the
+   * evidence counts a real item can have. The supply control is a CELL, so the
+   * control SET is `[data-close-action]` and not `button` — a button that
+   * escaped a control would be caught by the existing "no other control" test.
+   */
+  it("renders exactly one choose per card, then supply, then keep current", () => {
+    const cards = [
+      evidenceRow({ observationId: ID.observationA }),
+      evidenceRow({ observationId: ID.observationB, source: "bandsintown" }),
+      evidenceRow({ observationId: ID.sourceTicketmaster, source: "eventbrite" }),
+    ];
+    for (const n of [0, 1, 2, 3]) {
+      const evidence = cards.slice(0, n);
+      const $ = cheerio.load(slotMarkup({ kind: "ok" }, reviewItemDataConflict(), evidence));
+      const rendered = $("[data-close-action]")
+        .toArray()
+        .map((element) => $(element).attr("data-close-action"));
+      expect(rendered, `${n} card(s)`).toEqual([
+        ...Array.from({ length: n }, () => "choose_claimed_value"),
+        "supply_value",
+        "keep_current",
+      ]);
+      expect(rendered, `${n} card(s)`).toHaveLength(n + 2);
+    }
+  });
+
+  /**
+   * The incomplete fact triple, rendered: `keep_current` stands ALONE, and the
+   * slot is not left bare — the note field is still there, so the operator can
+   * say why the disagreement was left standing.
+   */
+  it("renders keep-current alone when the row names no whole fact", () => {
+    for (const missing of [{ domain: null }, { entity_id: null }, { field: null }]) {
+      const $ = cheerio.load(
+        slotMarkup({ kind: "ok" }, reviewItemDataConflict(missing), twoCards()),
+      );
+      expect(
+        $("[data-close-action]")
+          .toArray()
+          .map((element) => $(element).attr("data-close-action")),
+        JSON.stringify(missing),
+      ).toEqual(["keep_current"]);
+      expect($("[data-close-note]"), JSON.stringify(missing)).toHaveLength(1);
+    }
+  });
+});
