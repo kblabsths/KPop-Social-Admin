@@ -9,6 +9,7 @@ import {
   type EvidenceRow,
   type ItemLink,
 } from "@/components/review";
+import { ACTIONS_BY_SHAPE, CloseSlot } from "@/components/review/close/slot";
 import { ARRIVES_WITH, Empty, Page, RETRY, Section, StateOf } from "@/components/ui";
 import { claimsHref, sourceHref } from "@/lib/claims/filters";
 import { readPendingClaims, type PendingClaimRow } from "@/lib/db/claims";
@@ -22,6 +23,7 @@ import {
   type ResolvedClaim,
 } from "@/lib/db/review-item";
 import { T } from "@/lib/db/tables";
+import { readSettlementReadiness } from "@/lib/db/verdict";
 import { count, counted, relativeAge } from "@/lib/format";
 import {
   readAwaitingRowTrend,
@@ -49,10 +51,15 @@ import { sourceLabel } from "@/lib/sources/names";
  *     resolved to its claim (value, source, tier, `observed_at`, payload
  *     pointer) with the fact's current canonical value and provenance beside
  *     them, in the shape's own view (`EVIDENCE_VIEW_BY_SHAPE`);
- *  3. **the close** — spec §7's verdict actions, which are the verdict
- *     slice's and are NOT built here: no action, no settle control, no
- *     fixed/won't-fix, no disabled button, no scaffolding. The slot is this
- *     comment and the end of the page; in M1 it renders nothing at all.
+ *  3. **the close** — spec §7's verdict actions, rendered by
+ *     `CloseSlot` (`src/components/review/close/slot.tsx`, campaign
+ *     admin-window/TASK-0049). What it offers is decided by ONE read,
+ *     `readSettlementReadiness`: with the verdict log absent — the normal case
+ *     for the whole of M2 — it draws the not-provisioned card naming that
+ *     object and offers no control at all, and nothing on this page settles
+ *     anything. Every action it ever offers becomes one typed decision and one
+ *     call to `settle_review_item`, through the route this page never touches
+ *     (`src/app/api/admin/review-items/[reviewItemId]/settle/route.ts`).
  *
  * The recommendation slot sits between 1 and 2 and renders nothing either —
  * its producer is parked (spec §6, "the anatomy's recommendation slot … exists
@@ -169,6 +176,13 @@ const NOT_AN_ID =
  */
 const HEADER_SURFACE = "what_happened";
 const EVIDENCE_SURFACE = "evidence";
+/**
+ * The close is a graded surface of its own, for the reason the two above are:
+ * its state is a different read's (`readSettlementReadiness`), so an oracle
+ * that graded it as part of the evidence would report an unprovisioned verdict
+ * log as unreadable evidence.
+ */
+const CLOSE_SURFACE = "close";
 
 /**
  * The dial's display window, in days.
@@ -508,6 +522,13 @@ export default async function ReviewItemPage({
           filter: { source_id: dialSource },
         });
 
+  // May this surface offer a settlement at all? ONE question, asked through
+  // the one helper that owns it (ARCHITECTURE.md §9.2; a page asking it for
+  // itself is the hand-copied probe common violation 9 forbids). Its absent
+  // answer is the normal one for the whole of M2 and is what the close slot
+  // renders today.
+  const readiness = await readSettlementReadiness();
+
   const EvidenceView = EVIDENCE_VIEW_BY_SHAPE[shape];
   const bucketById = new Map(
     (buckets.kind === "ok" ? buckets.data : []).map((claim) => [
@@ -515,6 +536,14 @@ export default async function ReviewItemPage({
       claim,
     ]),
   );
+
+  // The evidence, shaped once: the view below renders it, and the shape's
+  // action list is built from it — `data_conflict`'s first action is one
+  // control per evidence card (spec §7), so the two must be the same rows.
+  const evidenceRows =
+    evidence.kind === "ok"
+      ? evidence.data.claims.map((claim) => evidenceRow(claim, bucketById))
+      : [];
 
   return (
     <Page title="Review item">
@@ -544,9 +573,7 @@ export default async function ReviewItemPage({
                 or the card that replaced it, and never the legs below. */}
             <div data-surface={EVIDENCE_SURFACE}>
               <EvidenceView
-                rows={evidence.data.claims.map((claim) =>
-                  evidenceRow(claim, bucketById),
-                )}
+                rows={evidenceRows}
                 unresolved={evidence.data.unresolved}
                 empty={emptyWords(evidence.data)}
                 canonical={canonicalCard(evidence.data.canonical)}
@@ -576,10 +603,18 @@ export default async function ReviewItemPage({
         )}
       </Section>
 
-      {/* The close. Spec §7's verdict actions, the note field beside them and
-          the fixed / won't-fix dispositions are the verdict slice's, and
-          nothing settles anything in M1: this slot renders nothing, and there
-          is deliberately no disabled control standing in for it. */}
+      {/* The close (spec §7). Its ONE question — may a settlement be offered
+          at all — is `readiness`; with the verdict log absent, which is the
+          normal case for the whole of M2, the slot renders that state and
+          offers no control. The shape's action list comes from the one map
+          (`ACTIONS_BY_SHAPE`), never from a shape re-derived here. */}
+      <Section title="The close" surface={CLOSE_SURFACE}>
+        <CloseSlot
+          item={row}
+          readiness={readiness}
+          actions={ACTIONS_BY_SHAPE[shape]({ item: row, evidence: evidenceRows })}
+        />
+      </Section>
     </Page>
   );
 }

@@ -257,6 +257,9 @@ describe("the route inventory", () => {
     ]);
     expect(handlers).toEqual([
       "/api/admin/records/[table]/[id]",
+      // The close's one write path (campaign admin-window/TASK-0049): POST
+      // only, gated by the same proxy, and swept below like every other route.
+      "/api/admin/review-items/[reviewItemId]/settle",
       "/api/auth/[...nextauth]",
       "/api/health",
     ]);
@@ -266,9 +269,10 @@ describe("the route inventory", () => {
     expect(publicRoutePrefixes().sort()).toEqual(["/api/auth", "/api/health", "/login"]);
     // …and the sweep therefore covers everything else, the API route included.
     expect(GATED_ROUTES).toContain(`/api/admin/records/events/${SAMPLE_ID}`);
+    expect(GATED_ROUTES).toContain(`/api/admin/review-items/${SAMPLE_ID}/settle`);
     expect(GATED_ROUTES).not.toContain("/login");
-    expect(GATED.filter((route) => route.kind === "handler").length).toBe(1);
-    expect(GATED.length).toBe(9);
+    expect(GATED.filter((route) => route.kind === "handler").length).toBe(2);
+    expect(GATED.length).toBe(10);
   });
 
   it("keeps the gate as an export, never as a wrapped handler", () => {

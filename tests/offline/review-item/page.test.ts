@@ -63,6 +63,21 @@ vi.mock("@/lib/db/claims", async (importActual) => {
   };
 });
 
+/**
+ * The close's own read (campaign admin-window/TASK-0049). It takes no client
+ * from the page — like every other read in `lib/db`, it resolves the app's
+ * own inside its `try` — so the stub is handed in here, and every script in
+ * this file says what this database holds for it.
+ */
+vi.mock("@/lib/db/verdict", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/db/verdict")>();
+  return {
+    ...actual,
+    readSettlementReadiness: () =>
+      actual.readSettlementReadiness(readWith.client as never),
+  };
+});
+
 vi.mock("@/lib/gauges/pending-claims", async (importActual) => {
   const actual =
     await importActual<typeof import("@/lib/gauges/pending-claims")>();
@@ -109,6 +124,24 @@ async function renderItem(script: Script, id: string): Promise<string> {
   return render(await ReviewItemPage({ params: Promise.resolve({ reviewItemId: id }) }));
 }
 
+/**
+ * The close's own read, in the state this database is really in.
+ *
+ * `readSettlementReadiness` reads the presence of the verdict log
+ * (ARCHITECTURE.md §9.2), which is absent on staging and in production and
+ * stays absent for the whole of M2 — so every script below carries that
+ * absence by default and the close slot renders its not-provisioned card.
+ * `withSettlement` is the other half, for the ready state.
+ */
+const SETTLEMENT_ABSENT: Script = {
+  [T.verdicts]: { error: tableNotInSchemaCache(T.verdicts) },
+};
+
+/** The same script against a database where the verdict log IS installed. */
+function withSettlement(script: Script): Script {
+  return { ...script, [T.verdicts]: { data: [], count: 0 } };
+}
+
 /** A healthy script for the `data_conflict` item: both claims, the decision. */
 function conflictScript(overrides: Script = {}): Script {
   const item = reviewItemDataConflict();
@@ -118,6 +151,7 @@ function conflictScript(overrides: Script = {}): Script {
     [T.fieldProvenance]: { data: [DECISION], count: 1 },
     [T.sources]: { data: [TICKETMASTER, BANDSINTOWN] },
     [T.pendingClaims]: { data: [] },
+    ...SETTLEMENT_ABSENT,
     ...overrides,
   };
 }
@@ -138,6 +172,7 @@ function stuckScript(overrides: Script = {}): Script {
         }),
       ],
     },
+    ...SETTLEMENT_ABSENT,
     ...overrides,
   };
 }
@@ -154,6 +189,7 @@ function patternScript(overrides: Script = {}): Script {
     [T.observations]: [{ data: [CLAIM_B] }, { data: [] }],
     [T.sources]: { data: [BANDSINTOWN] },
     [T.pendingClaims]: [{ data: [] }, { data: [] }],
+    ...SETTLEMENT_ABSENT,
     ...overrides,
   };
 }
@@ -168,6 +204,13 @@ function patternScript(overrides: Script = {}): Script {
 const HEADER_HOOK = '[data-surface="what_happened"]';
 const EVIDENCE_HOOK = '[data-surface="evidence"]';
 const HOOKS = [HEADER_HOOK, EVIDENCE_HOOK];
+/**
+ * The close's own `data-surface` name. It is graded separately from the two
+ * above because its state comes from a different read — the settlement
+ * readiness — so an oracle folding it into the evidence would report an
+ * absent verdict log as unreadable evidence.
+ */
+const CLOSE_HOOK = "close";
 
 /* ── reading the markup, structurally ────────────────────────────────────── */
 
@@ -797,30 +840,102 @@ describe("each shape gets its own view", () => {
 
 /* ── the close, and the recommendation slot ──────────────────────────────── */
 
-describe("nothing settles anything in M1", () => {
+/** The three shapes, each with its own healthy script and its own id. */
+const SHAPED = [
+  ["conflict", conflictScript, reviewItemDataConflict().review_item_id],
+  ["stuck", stuckScript, reviewItemEntityLink().review_item_id],
+  ["pattern", patternScript, reviewItemSourcePattern().review_item_id],
+] as const;
+
+describe("the close, with the verdict log absent", () => {
   it("renders no control at all, on any shape", async () => {
-    for (const [name, script, id] of [
-      ["conflict", conflictScript(), reviewItemDataConflict().review_item_id],
-      ["stuck", stuckScript(), reviewItemEntityLink().review_item_id],
-      ["pattern", patternScript(), reviewItemSourcePattern().review_item_id],
-    ] as const) {
-      const $ = cheerio.load(await renderItem(script, id));
-      // No verdict action, no settle control, no note field, and no disabled
-      // button standing in for one (spec §7 is the verdict slice).
+    // The graded-first state and the one `main` deploys against: the function
+    // that settles is not installed, so the slot offers nothing — no verdict
+    // action, no note field, and no disabled button standing in for one
+    // (spec §10's one forbidden move is a workaround; this is the absence of
+    // one).
+    for (const [name, script, id] of SHAPED) {
+      const $ = cheerio.load(await renderItem(script(), id));
       for (const control of ["button", "form", "input", "select", "textarea"]) {
         expect($(control), `${name}: ${control}`).toHaveLength(0);
       }
+      expect($("[data-close-action]"), name).toHaveLength(0);
     }
   });
 
-  it("renders the recommendation and close slots as nothing", async () => {
-    // Both slots exist in the anatomy and render NOTHING in M1, so the page
-    // carries exactly the two sections that do render: what happened, and the
-    // evidence.
+  it("names the absent object in the close slot, as an absence and not a failure", async () => {
+    for (const [name, script, id] of SHAPED) {
+      const markup = await renderItem(script(), id);
+      const $ = cheerio.load(markup);
+      const close = $(`[data-surface="${CLOSE_HOOK}"]`);
+      expect(close, name).toHaveLength(1);
+      expect(close.find('[data-state="not_provisioned"]'), name).toHaveLength(1);
+      // The object, in the spelling the query used, standing alone in its own
+      // element — and never inside a red error line.
+      expect(close.find(`[data-not-provisioned="${T.verdicts}"]`), name).toHaveLength(1);
+      expect(close.find('[role="alert"]'), name).toHaveLength(0);
+      // The rest of the detail is untouched: both M1 surfaces still render.
+      expect(surfaceHooks(markup, HOOKS), name).toEqual({
+        counts: oneEach(HOOKS),
+        nested: [],
+      });
+    }
+  });
+
+  it("renders the close as its own section, and the recommendation slot as nothing", async () => {
+    // The anatomy is three parts now (spec §6): what happened, the evidence,
+    // and the close. The recommendation slot between 1 and 2 still renders
+    // nothing at all — its producer is parked.
     const $ = cheerio.load(
       await renderItem(conflictScript(), reviewItemDataConflict().review_item_id),
     );
-    expect($("h2")).toHaveLength(2);
+    expect($("h2")).toHaveLength(3);
+  });
+});
+
+describe("the close, with the verdict log present", () => {
+  it("renders the note field and no action, on every shape", async () => {
+    // The three shape modules ship an empty action list each and are filled by
+    // their own tickets; with none of them filled, the truthful state is the
+    // note field, no control, and a line saying so.
+    for (const [name, script, id] of SHAPED) {
+      const $ = cheerio.load(await renderItem(withSettlement(script()), id));
+      const close = $(`[data-surface="${CLOSE_HOOK}"]`);
+      expect(close.find("[data-close-note]"), name).toHaveLength(1);
+      expect(close.find("[data-close-action]"), name).toHaveLength(0);
+      expect(close.find("button"), name).toHaveLength(0);
+      // A read that answered is not an emptiness and not an absence.
+      expect(close.find("[data-state]"), name).toHaveLength(0);
+    }
+  });
+
+  it("leaves every other part of the detail exactly as it was", async () => {
+    for (const [name, script, id] of SHAPED) {
+      const markup = await renderItem(withSettlement(script()), id);
+      expect(surfaceHooks(markup, HOOKS), name).toEqual({
+        counts: oneEach(HOOKS),
+        nested: [],
+      });
+      expect(cheerio.load(markup)('[data-state="error"]'), name).toHaveLength(0);
+    }
+  });
+});
+
+describe("the recommendation slot renders nothing", () => {
+  it("says neither word, on any shape, in either state", async () => {
+    // Spec §6: the slot exists in the anatomy and its producer is parked. The
+    // assertion is on the DELIVERED markup, both states of the close, so a
+    // scaffolded heading or hint cannot slip in with the actions later.
+    for (const [name, script, id] of SHAPED) {
+      for (const [state, built] of [
+        ["absent", script()],
+        ["present", withSettlement(script())],
+      ] as const) {
+        const markup = (await renderItem(built, id)).toLowerCase();
+        expect(markup, `${name}/${state}`).not.toContain("recommend");
+        expect(markup, `${name}/${state}`).not.toContain("recommendation");
+      }
+    }
   });
 });
 
@@ -1483,7 +1598,14 @@ describe("a queues address that is not a review-item id", () => {
 
       expect(stub.tablesRead(), "the item is read").toContain(T.reviewItems);
       // ...and what came back is rendered as the item, not as any state card.
-      expect(cheerio.load(markup)("[data-state]").length).toBe(0);
+      // The close is excluded and graded on its own: its state belongs to a
+      // different read (the settlement readiness), which on this database —
+      // and on staging — is the absent one.
+      const $ = cheerio.load(markup);
+      const outsideTheClose = $("[data-state]")
+        .toArray()
+        .filter((element) => $(element).closest(`[data-surface="${CLOSE_HOOK}"]`).length === 0);
+      expect(outsideTheClose.length).toBe(0);
       expect(evidenceIds(markup)).toEqual([ID.observationA, ID.observationB]);
     },
   );

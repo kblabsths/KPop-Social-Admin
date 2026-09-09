@@ -6,6 +6,7 @@ import {
   assertState,
   gradeSurface,
   independentClient,
+  objectIsAbsent,
   oneEach,
   pageStates,
   renderPage,
@@ -85,6 +86,14 @@ const NO_SUCH_ID = "00000000-0000-7000-8000-000000000000";
  */
 const HEADER = '[data-surface="what_happened"]';
 const EVIDENCE = '[data-surface="evidence"]';
+/**
+ * The close (campaign admin-window/TASK-0049, spec §7). Its state is a
+ * different read's — the settlement readiness, which asks whether the verdict
+ * log is in this database at all — so it is graded on its own and is
+ * deliberately not part of `SURFACES` below, whose two hooks the M1 oracles
+ * address.
+ */
+const CLOSE = '[data-surface="close"]';
 
 /**
  * Both hooks, asserted present and UNIQUE before either is graded — so the
@@ -412,10 +421,90 @@ describe("a real review item, rendered", () => {
     expect(textOf(markup)).toContain(item.summary);
     expect($("[data-severity]").attr("data-severity")).toBe(item.severity);
     expect($("[data-folds]").attr("data-folds")).toBe(String(item.folded_count));
-    // Nothing settles anything in M1 (spec §7 is the verdict slice).
-    for (const control of ["button", "form", "input", "select", "textarea"]) {
-      expect($(control), control).toHaveLength(0);
+    // The close is the only part of this page that may ever carry a control,
+    // and only where its own read answered. While the verdict log is absent —
+    // staging today, and `main`'s deploy target for the whole of M2 — the page
+    // offers none at all, which is exactly what M1 shipped. Read from the
+    // database rather than assumed, so installing the log does not turn a
+    // correct page red (campaign admin-window/TASK-0049).
+    if (await objectIsAbsent(T.verdicts)) {
+      for (const control of ["button", "form", "input", "select", "textarea"]) {
+        expect($(control), control).toHaveLength(0);
+      }
     }
+  });
+});
+
+/**
+ * The close, against staging (campaign admin-window/TASK-0049, spec §7,
+ * ARCHITECTURE.md §9.2).
+ *
+ * **The absent answer is the graded-first one**: the verdict log is not in
+ * this database and will not be until Ben installs M2's handoff migrations, so
+ * the slot must draw the not-provisioned card naming that object and offer no
+ * control. The state kind is read STRUCTURALLY from `data-state` (rule 5,
+ * common violation 6) and the absence is established by this test's OWN read
+ * of the same object — never inferred from the words on the card, and never
+ * from "no control rendered".
+ *
+ * The ready branch is written out too, so the day the migration lands this
+ * oracle grades that state instead of going quiet: an `error` fails either
+ * way, which is the one thing this page may never be in.
+ */
+describe("the close against staging", () => {
+  it("offers no control while the verdict log is absent, and names it", async () => {
+    const item = await anyItem();
+    if (item === "absent" || item === null) return;
+
+    const markup = await itemMarkup(item.review_item_id);
+    const $ = cheerio.load(markup);
+
+    // The oracle's own addressing: one close, exactly one.
+    expect(surfaceHooks(markup, [CLOSE])).toEqual({
+      counts: oneEach([CLOSE]),
+      nested: [],
+    });
+
+    if (await objectIsAbsent(T.verdicts)) {
+      assertState(markup, CLOSE, "not_provisioned");
+      // Named in the spelling the query used, and said as an absence: gray,
+      // never the red line (rule 5).
+      expect($(CLOSE).text()).toContain(T.verdicts);
+      expect($(CLOSE).find('[role="alert"]')).toHaveLength(0);
+      for (const control of ["button", "form", "input", "select", "textarea"]) {
+        expect($(CLOSE).find(control), control).toHaveLength(0);
+      }
+      return;
+    }
+
+    // Installed: the read answered, so the slot is in its ok state and the
+    // note field stands. A settle control only exists once a shape's own
+    // ticket fills its action list.
+    assertState(markup, CLOSE, "ok");
+    expect($(CLOSE).find("[data-close-note]")).toHaveLength(1);
+  });
+
+  it("never settles anything by rendering the page", async () => {
+    const item = await anyItem();
+    if (item === "absent" || item === null) return;
+
+    // The page is a READ. Rendering it must not change the item's status —
+    // the one call that settles is behind the POST route, which nothing here
+    // touches (spec §7's one entry point). Read by this test, before and
+    // after, rather than trusted from the render.
+    const statusNow = async (): Promise<string | null> => {
+      const { data, error } = await independentClient()
+        .from(T.reviewItems)
+        .select("status")
+        .eq("review_item_id", item.review_item_id)
+        .maybeSingle();
+      if (error) throw new Error(`the status read failed: ${(error as Error).message}`);
+      return (data as { status: string } | null)?.status ?? null;
+    };
+
+    const before = await statusNow();
+    await itemMarkup(item.review_item_id);
+    expect(await statusNow()).toBe(before);
   });
 });
 

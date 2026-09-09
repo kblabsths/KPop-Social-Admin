@@ -514,6 +514,178 @@ describe("a window line describes a window the page read", () => {
   });
 });
 
+/* ── a control is offered only where the read behind it answered ─────────── */
+
+/**
+ * **No surface offers a control it cannot honour** — the state rule, graded
+ * across every page at once (campaign admin-window/TASK-0049; M2 EC9: "no
+ * control is offered that would call a missing function"; LOOK_AND_FEEL
+ * state 3).
+ *
+ * The window-line rule above says a page may not describe a read that did not
+ * happen. This is the same rule about the other half of a surface: a page may
+ * not offer an ACTION whose read did not happen either. M2's close slot is the
+ * first surface where the two come apart — its controls are backed by a read
+ * of the verdict log, which is absent on staging and in production for the
+ * whole milestone — and the edit surface is the second. A per-page assertion
+ * would leave the third to whoever remembers, which is precisely how the
+ * window-line class reached three bugs (admin-window/BUG-0063/0067/0070).
+ *
+ * Two legs, both derived and neither vacuous:
+ *
+ *   a card that says a read did not happen contains NO control;
+ *   a surface that offers controls on a healthy read offers NONE when every
+ *   object it reads is absent.
+ *
+ * `CONTROLLED` is the floor the second leg is measured against, in the sense
+ * `WINDOWED` above is one: a surface may GROW controls, but one that quietly
+ * stops offering any cannot let both legs pass by rendering nothing in every
+ * state.
+ */
+const CONTROL = "button, input, select, textarea, form";
+
+/** Every control the markup offers, as `tag[hook]` so a failure names it. */
+function controls(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $(CONTROL)
+    .toArray()
+    .map((element) => (element as { tagName?: string }).tagName ?? "?");
+}
+
+/** The controls standing inside a card that says its read did not happen. */
+function controlsInsideRefusals(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $('[data-state="not_provisioned"], [data-state="error"]')
+    .find(CONTROL)
+    .toArray()
+    .map((element) => (element as { tagName?: string }).tagName ?? "?");
+}
+
+/**
+ * Every surface that offers a control when its reads answer, and how many —
+ * measured on this tree 2026-09-09 (admin-window/TASK-0049), against the
+ * populated database:
+ *
+ *   /queues/[reviewItemId]   1   the close slot's note field
+ *   /records/[table]/[id]    5   the walk sandbox's editable cells
+ *
+ * Every other surface of the window offers none in any state: they are reads.
+ */
+const CONTROLLED: ReadonlyArray<readonly [string, number]> = [
+  ["/queues/[reviewItemId]", 1],
+  ["/records/[table]/[id]", 5],
+];
+
+/** The controls a markup offers, counted per tag: `{button: 2, textarea: 1}`. */
+function controlTally(markup: string): Record<string, number> {
+  const tally: Record<string, number> = {};
+  for (const tag of controls(markup)) tally[tag] = (tally[tag] ?? 0) + 1;
+  return tally;
+}
+
+/**
+ * Controls the second markup offers that the first does not — the shape an
+ * absent object must never produce.
+ *
+ * A surface may offer FEWER controls when a read refuses (that is the rule
+ * working); offering one it does not offer when everything is there means the
+ * control is backed by nothing at all.
+ */
+function controlsGained(healthy: string, degraded: string): string[] {
+  const before = controlTally(healthy);
+  const after = controlTally(degraded);
+  return Object.entries(after)
+    .filter(([tag, count]) => count > (before[tag] ?? 0))
+    .map(([tag, count]) => `${tag} x${count - (before[tag] ?? 0)}`);
+}
+
+describe("a surface offers a control only where the read behind it answered", () => {
+  it("puts no control inside a card that says a read did not happen, and gains none", async () => {
+    // Across the whole matrix, not only the all-absent database: the card that
+    // matters is the one a page draws for the ONE object it could not read
+    // while the rest of it rendered — and on several surfaces (this page's
+    // close among them) an object going absent means the page returns before
+    // that part renders at all, so the all-absent database never reaches it.
+    //
+    // Two readings of one rule, because a control OUTSIDE the card is the
+    // same defect as one inside it: a settle button beside a card saying the
+    // verdict log is not here would call a function that is not there either.
+    for (const surface of SURFACES) {
+      const healthy = populatedScript(surface);
+      scriptDatabase(healthy);
+      const whole = await renderSurface(surface);
+
+      for (const missing of TABLE_NAMES) {
+        for (const base of [emptyScript(), healthy]) {
+          scriptDatabase(absentFrom(base, missing, tableNotInSchemaCache(missing)));
+          const markup = await renderSurface(surface);
+          const where = `${surface.route} without ${missing}`;
+          expect(
+            controlsInsideRefusals(markup),
+            `${where} offered a control inside a refused read's card`,
+          ).toEqual([]);
+          expect(
+            controlsGained(whole, markup),
+            `${where} offered a control it does not offer when the read answers`,
+          ).toEqual([]);
+        }
+      }
+    }
+  });
+
+  it("offers nothing at all when every object it reads is absent", async () => {
+    const offers = new Map<string, number>();
+
+    for (const surface of SURFACES) {
+      scriptDatabase(populatedScript(surface));
+      const healthy = controls(await renderSurface(surface)).length;
+      if (healthy > 0) offers.set(surface.route, healthy);
+
+      scriptDatabase(nothingProvisioned());
+      expect(
+        controls(await renderSurface(surface)),
+        `${surface.route} still offered a control with every object it reads absent`,
+      ).toEqual([]);
+    }
+
+    // The floor: the surfaces that DO offer controls still offer them, so the
+    // leg above cannot pass on a window that offers nothing anywhere.
+    for (const [route, atLeast] of CONTROLLED) {
+      expect(offers.get(route), `${route} offers no control on a healthy read`).toBeGreaterThanOrEqual(
+        atLeast,
+      );
+    }
+  });
+
+  it("reads a control inside a card, and one outside it, as different things", () => {
+    // The guard on two fixtures (LESSONS 3): the reader must flag the shape it
+    // forbids and must not flag the one it permits.
+    const card = (inside: string) =>
+      `<div data-state="not_provisioned"><p><span>verdicts</span> isn’t here.</p>${inside}</div>`;
+    expect(controlsInsideRefusals(card("<button>Settle</button>"))).toEqual(["button"]);
+    expect(controlsInsideRefusals(card(""))).toEqual([]);
+    // A control the page offers BESIDE a card it drew for another read is not
+    // this rule's business; the second leg is what grades those.
+    expect(
+      controlsInsideRefusals(`${card("")}<form><textarea></textarea></form>`),
+    ).toEqual([]);
+    expect(controls(`${card("")}<form><textarea></textarea></form>`)).toEqual([
+      "form",
+      "textarea",
+    ]);
+    // …and the second reader catches exactly that one: a control the degraded
+    // markup offers and the healthy markup does not.
+    expect(controlsGained("<textarea></textarea>", `${card("<button></button>")}`)).toEqual([
+      "button x1",
+    ]);
+    expect(controlsGained("<textarea></textarea>", "<textarea></textarea>")).toEqual([]);
+    // Fewer controls is the rule working, never a failure.
+    expect(controlsGained("<button></button><button></button>", "<button></button>")).toEqual(
+      [],
+    );
+  });
+});
+
 /**
  * One read, one sentence — graded across the pages that share it.
  *
