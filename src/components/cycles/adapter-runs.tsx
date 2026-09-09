@@ -11,6 +11,7 @@ import {
   oldestIn,
 } from "@/components/ui";
 import { count } from "@/lib/format";
+import { canSpellUrlValue } from "@/lib/url/spellable";
 import { IN_PAGE_LINK, runAnchorFor } from "./links";
 import { RUNS_WINDOW } from "./surfaces";
 import { runColumns } from "./run-columns";
@@ -69,6 +70,22 @@ function noRunsFrom(source: string): EmptyWords {
  * from the `source` prop beside it: the prop is what the URL asked for, the
  * window carries what actually reached the database, and a line that describes
  * the read must be built from the second.
+ *
+ * **The phrase is BARE TEXT in the app's own paragraph, and it is safe because
+ * of WHAT REACHES IT** (admin-window/BUG-0153; ARCHITECTURE.md §7, common
+ * violations row 15). `WindowLine.scope` is a sentence FRAGMENT, split back
+ * apart by `besides`/`narrows` (`src/components/ui/window-line.tsx`), so no
+ * element can travel through it and no box can isolate the name once
+ * `population()` has interpolated it — `/cycles?source=%E2%80%AEbandsintown`
+ * reversed 87 characters of this page's own words, an unterminated U+202E's
+ * scope being the whole `<p>`. What closes it is the ALLOWLIST arm §7 states
+ * as the rule, asked where the facet becomes a query value: `sourceNarrowing`
+ * admits only a printable-ASCII name carrying ink (`canSpellUrlValue`,
+ * `src/lib/url/spellable.ts`), so `RunWindow.source` is spellable BY
+ * CONSTRUCTION for every caller, and a name outside it never narrowed the read
+ * at all. This function scrubs nothing and must not start — the shape
+ * `SourceScope` (`src/components/queues/source-scope.tsx`) already relies on
+ * for its canonical uuid.
  */
 function runsScope(source: string | null): string | null {
   return source === null ? null : `from ${source}`;
@@ -86,6 +103,19 @@ function runsScope(source: string | null): string | null {
  *
  * The name is rendered VERBATIM, as text: what was asked for is what is shown,
  * and nothing the URL carries reaches the document as markup.
+ *
+ * VERBATIM is bounded by the app's one allowlist for a URL value inside its
+ * own prose (admin-window/BUG-0153): the box here — `Identifier` renders
+ * `<span dir="ltr">`, admin-window/DEBT-0011 — contained a bidi reorder ON
+ * SCREEN, but it travelled nowhere with `data-source-facet` or with the text
+ * an operator COPIES OUT, which is why §7 rules the allowlist and why
+ * BUG-0137 and BUG-0147 chose it before this. Everything that reaches this
+ * component from `/cycles` already passed that allowlist at
+ * `sourceNarrowing`, so the refusal below is unreachable from the only route
+ * that renders it; it is repeated at the seam, as BUG-0147 repeated it in
+ * `AskedCycle`, so the rule is structural where the harm would land rather
+ * than a comment about it — a second caller cannot reintroduce §7's defect by
+ * handing this half a raw parameter.
  */
 function AskedSource({ source }: { source: string }) {
   return (
@@ -249,7 +279,15 @@ export function AdapterRuns({
   const rows = runs.kind === "ok" ? runs.data.rows : [];
   const kind = runs.kind === "ok" && rows.length === 0 ? "empty" : runs.kind;
   const truncated = runs.kind === "ok" && runs.data.truncated;
-  const words = source === undefined ? NO_RUNS_RECORDED : noRunsFrom(source);
+  // ONE derivation of the facet this half may NAME (admin-window/BUG-0153): a
+  // value this app may not spell is a value none of these sentences spells,
+  // rather than one spelled in three of them and refused in the fourth. From
+  // `/cycles` it is the `source` prop unchanged — `sourceNarrowing` admitted
+  // it before the read carried it — so this is the seam gate `AskedSource`
+  // documents, and the window line's own scope still comes from the READ.
+  const facet =
+    source !== undefined && canSpellUrlValue(source) ? source : undefined;
+  const words = facet === undefined ? NO_RUNS_RECORDED : noRunsFrom(facet);
   // One derivation of the asked-for run, read by the sentence AND by the row
   // predicate below, so the row that is drawn as marked is the row the
   // sentence names.
@@ -292,7 +330,7 @@ export function AdapterRuns({
       {/* The facet sentence answers the URL, so it renders whatever the read
           did: an operator who followed a link deserves to know which half it
           addressed even when that half could not be read. */}
-      {source === undefined ? null : <AskedSource source={source} />}
+      {facet === undefined ? null : <AskedSource source={facet} />}
       {/* The run sentence answers the URL the same way, and for the same
           reason: an operator who clicked a run line on the Dashboard is told
           which run they are looking at even when the window could not be
@@ -318,7 +356,7 @@ export function AdapterRuns({
               label={RUNS_IN_WINDOW}
               value={NO_RUNS}
               sub={
-                source === undefined
+                facet === undefined
                   ? "nothing has run yet"
                   : "no run in this window carries that source name"
               }

@@ -3,6 +3,7 @@ import { newestFirst } from "./cycles";
 import type { DashboardRunRow } from "./dashboard";
 import { ROW_CAP, readRows, type DbResponse, type DbResult } from "./result";
 import { objectKindOf, T, type ObjectKind } from "./tables";
+import { canSpellUrlValue } from "@/lib/url/spellable";
 
 /**
  * What this module's window read runs OVER — the word its window line ends
@@ -196,6 +197,36 @@ function windowSize(limit: number): number {
  * `runs.source` is a text identifier, and trimming it would match a row the
  * URL did not ask for.
  *
+ * **A name this app could not SPELL narrows nothing either**
+ * (admin-window/BUG-0153; ARCHITECTURE.md §7, common violations row 15). For
+ * `?source=` the allowlist question and the narrowing question are ONE
+ * question, which `?cycle=` did not have to answer: this facet is not merely
+ * spelled, it is SENT (`.eq("source", source)` below) — and the value that
+ * comes back on `RunWindow.source` is what the runs window line then
+ * interpolates into four clauses of the app's own paragraph, as bare text
+ * (`runsScope` in `src/components/cycles/adapter-runs.tsx`). Until this gate
+ * landed, `/cycles?source=%E2%80%AEbandsintown` reversed 87 characters of that
+ * paragraph and put six bidi controls into the delivered markup (measured in
+ * Chromium, both colour schemes, admin-window/BUG-0153). So the ONE allowlist
+ * (`canSpellUrlValue`, `src/lib/url/spellable.ts` — printable ASCII carrying
+ * ink, the predicate BUG-0147 wrote for `?cycle=`) is asked HERE, where the
+ * facet becomes a query value: a value it refuses reaches neither PostgREST
+ * nor any sentence, `readRuns` returns a `source: null` window, and the page's
+ * shared dropped-parameter line reports `source` as a parameter it did not
+ * apply — the "counted, not spelled" arm §7 rules, and the same answer `?run=`
+ * gives a value that is not a run id.
+ *
+ * **Asking it here is what makes the rendering rule structural.** Every
+ * sentence that names this facet — the runs window line's scope, the facet
+ * paragraph, the lead's row-less line, the empty card's words — is built from
+ * a value that passed through this function, so no call site has to remember
+ * the rule and none can reintroduce §7's defect by forgetting it. It is the
+ * shape `SourceScope` (`src/components/queues/source-scope.tsx`) already
+ * relies on for its canonical uuid: safe inline because of WHAT REACHES IT.
+ * The cost is named rather than hidden: a source name outside printable ASCII
+ * would be unqueryable from a URL. No adapter has ever filed one, and a name
+ * this app cannot put on screen is one it cannot honestly narrow by.
+ *
  * **Named for the job it does** (admin-window/DEBT-0010). It was `narrowedTo`,
  * which is also the name of the window line's scope-PHRASE composer
  * (`narrowedTo` in `src/components/ui/window-line.tsx`, whose inverse is
@@ -205,6 +236,7 @@ function windowSize(limit: number): number {
  */
 export function sourceNarrowing(source: string | undefined): string | null {
   if (source === undefined || source.trim() === "") return null;
+  if (!canSpellUrlValue(source)) return null;
   return source;
 }
 

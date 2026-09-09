@@ -60,7 +60,18 @@ export function LatestRun({
 }: {
   runs: ReadOf<RunsWindow>;
   now: string;
-  /** The `?source=` facet as the URL carried it, or undefined for no facet. */
+  /**
+   * The `?source=` facet as the URL carried it, or undefined for no facet.
+   *
+   * Spelled verbatim, in the row-less arm below, inside the app's own
+   * sentence — and safe there because of WHAT REACHES IT, not because of
+   * anything done to it here (ARCHITECTURE.md §7, common violations row 15;
+   * admin-window/BUG-0153). `/cycles` derives it through `sourceNarrowing`
+   * (`src/lib/db/runs.ts`), which admits only a printable-ASCII name carrying
+   * ink (`canSpellUrlValue`, `src/lib/url/spellable.ts`) and narrows nothing
+   * by any other, so no text this app did not author can reach this
+   * paragraph. This component scrubs nothing and must not start.
+   */
   source: string | undefined;
   /** The nine, in the order the ruling names them (`RUN_COLUMNS`). */
   columns: readonly RunColumnName[];

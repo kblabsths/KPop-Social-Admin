@@ -10,7 +10,6 @@ import {
   LatestRun,
   NOTHING_RECORDED,
   RUNS_ANCHOR,
-  canSpellAskedCycle,
   cycleColumns,
   type AskedCycleState,
 } from "@/components/cycles";
@@ -33,6 +32,7 @@ import {
   type ResolutionRunRow,
 } from "@/lib/db/cycles";
 import { canonicalRecordId } from "@/lib/records/id";
+import { canSpellUrlValue } from "@/lib/url/spellable";
 import type { DbUnavailable } from "@/lib/db/result";
 import {
   RUNS_OBJECT,
@@ -136,8 +136,10 @@ export const dynamic = "force-dynamic";
  * raw value, never the canonical one, is what survives that arm.
  *
  * They CONVERGE, since BUG-0147, on the value this page may not spell:
- * `canSpellAskedCycle` (`src/components/cycles/asked-cycle.tsx`) is the
- * sentence's own allowlist, and a `?cycle=` outside it is answered exactly as
+ * `canSpellUrlValue` (`src/lib/url/spellable.ts`) is the app's one allowlist
+ * for a URL value inside its own prose — declared beside this sentence until
+ * admin-window/BUG-0153 needed the same answer for `?source=` — and a
+ * `?cycle=` outside it is answered exactly as
  * `?run=` answers a non-id — no sentence, no mark, and `cycle` named on the
  * shared dropped-parameter line. ARCHITECTURE.md §7 (common violation 15):
  * foreign text reaches an app-authored sentence through an allowlist or in its
@@ -203,6 +205,22 @@ const RUN_FACET = "run";
  * in one sentence beside the runs table rather than either ignoring the
  * parameter silently — which is what it did until admin-window/TASK-0016 —
  * or pretending the cycles above were narrowed too.
+ *
+ * **A name this page may not SPELL narrows nothing and earns no sentence**
+ * (admin-window/BUG-0153) — the answer `?cycle=` above already gives, applied
+ * to the facet BUG-0147's builder named as the same class left open. It is
+ * decided at ONE edge, `sourceNarrowing` (`src/lib/db/runs.ts`), because for
+ * this facet the allowlist question and the narrowing question are one
+ * question: the value is not merely spelled, it is SENT, and what comes back
+ * on `RunWindow.source` is what the runs window line interpolates into its
+ * own paragraph as bare text. `?source=%E2%80%AEbandsintown` reversed 87
+ * characters of the app's own words there — a `<p>` is not a bidi isolate, so
+ * an unterminated U+202E's scope is the paragraph — while the facet
+ * paragraph's box contained the reorder on screen and still carried the
+ * control in `data-source-facet` and in the text an operator copies out.
+ * Gated at the edge, `askedSource` is `undefined` for such a value, so no
+ * sentence names it, no `.eq` carries it, and the line below reports `source`
+ * as a parameter this page did not apply.
  */
 const SOURCE_FACET = "source";
 
@@ -256,16 +274,20 @@ export default async function CyclesPage({
   const markedCycle = askedRaw === undefined ? null : canonicalRecordId(askedRaw);
   // ...and only when this page may SPELL it (admin-window/BUG-0147): a value
   // with no canonical form reaches the sentence below through the allowlist
-  // `canSpellAskedCycle` or not at all, because a `<span>` is not where a URL's
+  // `canSpellUrlValue` or not at all, because a `<span>` is not where a URL's
   // bidi control stops — the isolation contains the reorder on screen and
   // travels nowhere with the paragraph an operator copies out. Undefined here
   // is the whole of that answer: no sentence, no mark, and `cycle` reported
   // below as a parameter this page did not apply.
   const askedFor =
     markedCycle ??
-    (askedRaw !== undefined && canSpellAskedCycle(askedRaw) ? askedRaw : undefined);
+    (askedRaw !== undefined && canSpellUrlValue(askedRaw) ? askedRaw : undefined);
   // A `?source=` carrying nothing narrows nothing and earns no sentence: it is
-  // half a typed URL, not a request for the runs of the empty name.
+  // half a typed URL, not a request for the runs of the empty name. Nor does a
+  // name this app may not SPELL (admin-window/BUG-0153): `sourceNarrowing`
+  // asks `canSpellUrlValue` where the facet becomes a query value, so ONE
+  // derived value decides the narrowing, all four sentences that name it, and
+  // the dropped-parameter line below — this page adds no second opinion.
   const askedSource = sourceNarrowing(firstValue(params[SOURCE_FACET])) ?? undefined;
   // The run the Dashboard's run line named, in the database's own spelling, or
   // null when the URL carried none and when what it carried is not a run id.
