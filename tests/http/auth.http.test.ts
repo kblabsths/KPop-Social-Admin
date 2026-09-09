@@ -629,6 +629,51 @@ describe("a record URL for a table the edit map does not carry", () => {
   });
 
   /**
+   * PIN — admin-window/BUG-0081 (QA, admin-window/TASK-0040).
+   *
+   * A percent-encoded spelling of a STRUCK table is the same URI as the plain
+   * one (RFC 3986 §6.2.2.2 — the reasoning `next.config.ts` itself carries,
+   * and the reason the block above pins `/records/ev%65nts/<id>` as a working
+   * record surface). The rewrite excludes `%` segments, so these two reach the
+   * page and are refused by the `notFound()` throw instead — which is exactly
+   * the client-rendered error shell admin-window/BUG-0017 exists to remove.
+   *
+   * Measured on a production build, cookie-authed, 2026-09-08:
+   * `/records/gro%75ps/<uuid>` -> 404, len 8006, `id="__next_error__"`, no
+   * `<h1>` and no navigation, where `/records/groups/<uuid>` -> 404, len 9728,
+   * framed, identical in shape to `/analytics`.
+   *
+   * `it.fails` is the strict pin: the body asserts the framed 404 the plain
+   * spelling gets, so this test is GREEN only while the divergence is there
+   * and turns RED the day it is closed, sending the reader to the ticket. The
+   * status assertion runs first and passes today, so a harness that could not
+   * start the server does not satisfy this pin quietly — and if it could not,
+   * the three tests above it in this file are red too.
+   */
+  it.fails(
+    "BUG-0081: serves the framed 404 for a percent-encoded spelling of a struck table",
+    async () => {
+      const { child } = await startServer();
+      try {
+        const cookie = await signedInCookie();
+        for (const route of [
+          "/records/gro%75ps/2f0bc11e",
+          "/records/idol%73/2f0bc11e",
+        ]) {
+          const res = await fetch(`${base}${route}`, {
+            headers: { cookie },
+            redirect: "manual",
+          });
+          expect(res.status, route).toBe(404);
+          expectOurNotFound(route, await res.text());
+        }
+      } finally {
+        await stopServer(child);
+      }
+    },
+  );
+
+  /**
    * The rewrite must not reach past the sign-in gate. A stranger asking for an
    * unmapped record URL gets the sign-in page, exactly as they do for every
    * other route — never a 404, which would confirm what does and does not
