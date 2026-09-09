@@ -1,0 +1,27 @@
+{
+ "id": "BUG-0137",
+ "created": "2026-09-09T18:13:34Z",
+ "green": true,
+ "git_head": "e84c2e3652dfac48ded706b60431b93ce99f0307",
+ "scope": [
+  "src/lib/claims/filters.ts",
+  "src/app/claims/page.tsx",
+  "tests/offline/claims/filters.test.ts",
+  "tests/offline/claims/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "18369f45317fb2ea36e753eb216cf2b12e4ed03ba4c4d8429d6bfd69546bf3e0",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/claims/filters.test.ts tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-10952\n\n \u2713 |offline| tests/offline/claims/filters.test.ts (24 tests) 7ms\n \u2713 |offline| tests/offline/claims/page.test.ts (120 tests) 2763ms\n\n Test Files  2 passed (2)\n      Tests  144 passed (144)\n   Start at  11:13:30\n   Duration  3.65s (transform 340ms, setup 0ms, collect 622ms, tests 2.77s, environment 0ms, prepare 257ms)\n\n(node:11028) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
