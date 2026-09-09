@@ -32,7 +32,7 @@ a newcomer.
   Against a database that lacks the ecosystem tables, every page says so
   honestly and nothing crashes.
 - **The edit surface** driven by one hand-written map of what is editable:
-  groups/idols edit directly within it; events/venues edit only as recorded
+  ~~groups/idols edit directly within it~~ *(struck 2026-09-09 — see Amendments)*; events/venues edit only as recorded
   overrides that the pipeline can see and protect; a reference field links
   rows, never text; provenance is visible at the field.
 - **The verdict slice.** Every spec §7 action settles a review item in one
@@ -66,3 +66,9 @@ a newcomer.
 - **Nothing outside the app**: the mobile app, the scrapers, the pipeline's
   cadence and rules, and the app-user social data are untouched. The old
   Analytics view of app users is not carried over.
+
+## Amendments (human)
+
+The one legal mutation of a frozen vision: the human striking or
+narrowing scope mid-run. Additions still require `/ship revise`.
+- 2026-09-09 STRUCK: "groups/idols edit directly within it" — Removed 2026-09-08: admin edits catalog tables only through the observation pipeline; do not re-implement direct edits. groups/idols stay as test tables until they are removed.
