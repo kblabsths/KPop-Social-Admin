@@ -911,6 +911,12 @@ describe("the client-boundary guard itself", () => {
       "export const FormatDate = { of: (d: string) => d.slice(0, 10) };\n",
       "export const FormatDate = DATE_FORMATS.iso;\n",
       "export const FormatDate = useCallback((d: string) => d.slice(0, 10), []);\n",
+      // A wrapper is unwrapped, not trusted: `memo(x)` is a component only if
+      // `x` is one, and this `x` formats a string (QA, admin-window/BUG-0094
+      // re-check).
+      "const shorten = (d: string) => d.slice(0, 10);\nexport const FormatDate = memo(shorten);\n",
+      // The alias hop is followed to the END of the chain, not one link deep.
+      "const base = (d: string) => d.slice(0, 10);\nconst middle = base;\nexport const FormatDate = middle;\n",
     ]) {
       const client = `"use client";\n${declaration}export function Cell() {\n  return <span />;\n}\n`;
       const found = violations('import { FormatDate } from "./cell";\n', client);
@@ -939,6 +945,12 @@ describe("the client-boundary guard itself", () => {
       "export const Cell = (props: P) => createElement(\"td\", null, props.value);\n",
       "export const Cell = (props: P) => <>{props.value}</>;\n",
       "export const Cell = (props: P) => (props.hidden ? null : <td />);\n",
+      // Generic components: `<T,>` and `<T>` sit between the binding and the
+      // arrow/parameter list, and a discriminator that stopped at the first
+      // `<` would read the whole component as an unverifiable value and redden
+      // legal code (QA, admin-window/BUG-0094 re-check).
+      "export const Cell = <T,>(props: P<T>) => <td>{props.value}</td>;\n",
+      "export function Cell<T>(props: P<T>) {\n  return <td>{props.value}</td>;\n}\n",
     ]) {
       const client = `"use client";\n${declaration}`;
       expect(violations('import { Cell } from "./cell";\n', client), declaration).toEqual([]);
