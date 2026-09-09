@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it } from "vitest";
 import QueuesPage from "@/app/queues/page";
+import { readReviewQueues } from "@/lib/db/review-items";
 import { T } from "@/lib/db/tables";
 import {
   assertParity,
@@ -552,5 +553,89 @@ describe("the verdict log against staging", () => {
     const queues = cheerio.load(await queuesMarkup());
     expect(queues(VERDICT_LOG)).toHaveLength(0);
     expect(queues("[data-queue]").length).toBeGreaterThan(0);
+  });
+});
+
+/* ── each block's whole-queue population (admin-window/BUG-0135) ──────────── */
+
+/**
+ * The COUNT legs, against staging (QA, admin-window/BUG-0135).
+ *
+ * A faceted `/queues` URL reads its rows once and then counts each SHAPE's
+ * whole-table population with a separate query. Nothing offline can grade
+ * those queries: the stub answers whatever the script says regardless of the
+ * chain that was built, so a `.not("source_id", "is", null)` PostgREST will
+ * not accept — or, worse, one it accepts and answers WRONGLY — is green in
+ * `tests/offline/**` either way (LESSONS 4).
+ *
+ * And the fix makes both failures QUIET on the page. A population that refuses
+ * costs the block four words of a sub-line, never a row; a population that
+ * comes back WRONG costs nothing visible at all — it only decides whether an
+ * empty block blames a facet. So the number is compared here, against this
+ * test's own census by `queue` and `source_id IS NULL` — the same independent
+ * spelling every other case in this file counts with, never
+ * `SHAPE_COLUMNS`, which is the declaration the app builds those queries from.
+ */
+describe("the whole-queue population against staging", () => {
+  it("counts each kind's whole-queue population, and it is the census the database holds", async () => {
+    // Whole-queue: what the kind holds with NO url facet, so the census is
+    // unfaceted while the read that produces it is faceted — the case the
+    // count legs exist for, and the only one that issues them.
+    const census = async () => {
+      const held: Record<Kind, number | "absent"> = { decision: "absent", signal: "absent" };
+      for (const kind of KINDS) held[kind] = await countOrAbsent(() => narrowCount(kind));
+      return held;
+    };
+    const { made: read, held: counted } = await whileStill(census, () =>
+      readReviewQueues({ queue: "data_conflict" }),
+    );
+    if (counted.decision === "absent" || counted.signal === "absent") {
+      // `review_items` is not on this database: the page renders its
+      // not-provisioned state and there is no population to count.
+      expect(read.kind).toBe("not_provisioned");
+      return;
+    }
+
+    // The rows leg answered, so the read is `ok` whatever the counts did.
+    expect(read.kind).toBe("ok");
+    if (read.kind !== "ok") return;
+    for (const kind of KINDS) {
+      // `ok` with the number, never a refusal: a count query PostgREST refuses
+      // arrives here as `{ kind: "error" }` carrying its own words, and the
+      // page would render the rows anyway.
+      expect(read.data.population[kind], kind).toEqual({ kind: "ok", data: counted[kind] });
+    }
+
+    // And the two figures EXHAUST the table between them: the shapes they are
+    // summed from are disjoint and exhaustive, so a condition that matched too
+    // much (a `not … is null` PostgREST read differently than intended) shows
+    // up here as a sum larger than the table, even where the per-kind census
+    // spells its own narrowing the same way this one does.
+    const whole = await countRows(() => exactCount(T.reviewItems));
+    expect(
+      (read.data.population.decision as { data: number }).data +
+        (read.data.population.signal as { data: number }).data,
+    ).toBe(whole);
+  });
+
+  it("renders a faceted URL with no block reporting a count it could not make", async () => {
+    // The rendered half of the same fact. Each block's own state is decided by
+    // its own read, so a refused count is a sub-surface INSIDE the block — and
+    // a block holding one is graded `error` by this file's oracle, which is
+    // how a broken count query fails here rather than passing quietly.
+    const markup = await queuesMarkup({ queue: "data_conflict" });
+    for (const kind of KINDS) {
+      const rows = await rowsOf(kind, { column: "queue", value: "data_conflict" });
+      const counted = (await countOrAbsent(() => exactCount(T.reviewItems))) === "absent"
+        ? "absent"
+        : rows.length;
+      await gradeSurface({
+        markup,
+        within: BLOCK[kind],
+        object: T.reviewItems,
+        counted,
+        figure: OPEN_LABEL[kind],
+      });
+    }
   });
 });

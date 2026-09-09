@@ -1444,6 +1444,92 @@ describe("when only the POPULATION leg refuses", () => {
     }
   });
 
+  /**
+   * One kind's count refusing while the other's answered (QA, admin-window/BUG-0135).
+   *
+   * Every case above refuses all THREE count legs at once, where a note in
+   * both blocks is also what a page propagating one kind's refusal to the
+   * other would render. The signal queue is ONE shape and its count is the
+   * LAST leg (spec §6's order), so refusing that leg alone splits the two
+   * blocks — and `?kind=decision` is the URL where the two narrowing rules
+   * DISAGREE: it is structurally narrowing, and it removes no decision row,
+   * so the counted rule says this block is not narrowed while the fallback
+   * says it is (admin-window/BUG-0129, BUG-0131).
+   */
+  it("leaves the kind whose own count answered deciding by that count", async () => {
+    // A table holding data_conflict rows only, read under `?queue=data_conflict`
+    // — the URL where the two rules DISAGREE for the decision block: it is
+    // structurally narrowing and it removes not one decision row, so the
+    // counted rule says this block is not narrowed while the fallback says it
+    // is (admin-window/BUG-0133's own case).
+    const rows = matching({ queue: "data_conflict" });
+    expect(rows.length, "the table this case needs").toBeGreaterThan(0);
+    const script: Script = {
+      [T.reviewItems]: [
+        { data: rows, count: rows.length },
+        { data: rows, count: rows.length },
+        ...SHAPE_NAMES.slice(0, SHAPE_NAMES.length - 1).map((shape) => ({
+          data: null,
+          count: rows.filter((row) => shapeName(row) === shape).length,
+        })),
+        { error: permissionDenied(T.reviewItems) },
+      ],
+    };
+    const markup = await renderQueues(script, CONFLICTS);
+    const $ = cheerio.load(markup);
+
+    // The refusal is reported on the signal block and nowhere else.
+    expect($('[data-queue="signal"] [data-read-failed]')).toHaveLength(1);
+    expect($('[data-queue="decision"] [data-read-failed]')).toHaveLength(0);
+    expect($('[data-queue="decision"] [data-surface]')).toHaveLength(0);
+
+    // The decision block kept its rows, its state and — the point — the words
+    // its OWN count decided: a facet that removed none of its rows scopes
+    // nothing, exactly as the same table reads with no facet at all. The
+    // structural fallback would have scoped them.
+    expect(stateOf(markup, "decision")).toBe("ok");
+    expect(idsIn(markup, "decision")).toEqual(idsOf(inQueueOrder(rows)));
+    const unfaceted = await renderQueues({ [T.reviewItems]: tableHolding(rows) });
+    expect(openSub(markup, "decision")).toBe(openSub(unfaceted, "decision"));
+  });
+
+  /**
+   * A head request whose response carried no count at all — `error: null`,
+   * `count: null`, which is exactly what PostgREST answers a select written
+   * without `{ count: "exact" }` (QA, admin-window/BUG-0135).
+   *
+   * Read as a zero it is the recurring class of BUG-0007 on a new read path:
+   * an empty block would then have `rendered === population` and say its
+   * QUEUE holds nothing, about a table nobody counted. A count the database
+   * did not give is a refusal (ARCHITECTURE.md §4.3), so the rows stand, the
+   * block falls back, and the sub-surface says the count is missing.
+   */
+  it("treats a count the database never gave as a refusal, never as a zero", async () => {
+    const script: Script = {
+      [T.reviewItems]: [
+        { data: POPULATION, count: POPULATION.length },
+        { data: POPULATION, count: POPULATION.length },
+        { data: null, count: null },
+      ],
+    };
+    const markup = await renderQueues(script, CONFLICTS);
+    const $ = cheerio.load(markup);
+
+    expect(new Set(idsIn(markup))).toEqual(
+      new Set(idsOf(matching({ queue: "data_conflict" }))),
+    );
+    for (const kind of KIND_NAMES) {
+      expect(stateOf(markup, kind), kind).not.toBe("error");
+      expect($(`[data-queue="${kind}"] [data-read-failed]`), kind).toHaveLength(1);
+    }
+    // The signal block is emptied by this facet. A population read as 0 would
+    // have made its zero read as an empty QUEUE, unscoped; with no count it
+    // falls back to the structural rule and names the scope.
+    const unscoped = openSub(await renderQueues(EMPTY_TABLE), "signal");
+    expect(openSub(markup, "signal")).toContain(unscoped);
+    expect(openSub(markup, "signal").length).toBeGreaterThan(unscoped.length);
+  });
+
   it("still renders the block's error state when its OWN read is truncated", async () => {
     // The pre-existing refusal, unchanged: a FILTERED leg that came back short
     // means those rows really are unknown, and the block says so.
