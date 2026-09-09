@@ -273,6 +273,29 @@ describe("a choice while a choice is still saving", () => {
     expect(cheerio.load(markup)("li button").length).toBe(OPTIONS.length);
   });
 
+  /**
+   * The busy rule follows the FILTER, not just the resting list — QA,
+   * admin-window/BUG-0097. The operator who typed before choosing is looking
+   * at a subset, and that subset is what their second click would land on;
+   * `busy` reaching only the unfiltered rendering would leave exactly the
+   * buttons that are on screen live.
+   */
+  it("offers no live option while saving even when the search narrowed the list", () => {
+    const markup = renderToStaticMarkup(
+      createElement(PickerPanel, {
+        window: windowOf(),
+        query: "Gocheok",
+        current: null,
+        status: { kind: "saving" } as Status,
+        onQuery: () => {},
+        onChoose: () => {},
+      }),
+    );
+    const $ = cheerio.load(markup);
+    expect($("li button").length).toBe(1); // the filter really did narrow it
+    expect(liveOptions(markup)).toBe(0);
+  });
+
   it("offers them again once the write has answered", () => {
     expect(liveOptions(panelAt({ kind: "saved" }))).toBe(OPTIONS.length);
     expect(liveOptions(panelAt({ kind: "failed", message: "refused" }))).toBe(
