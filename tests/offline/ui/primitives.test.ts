@@ -8,6 +8,7 @@ import { type Column, DataTable } from "@/components/ui/data-table";
 import { Empty } from "@/components/ui/empty";
 import { Eyebrow, microLabelText } from "@/components/ui/micro-label";
 import { ErrorLine } from "@/components/ui/error-line";
+import { Identifier } from "@/components/ui/identifier";
 import { Loading } from "@/components/ui/loading";
 import { NotProvisioned } from "@/components/ui/not-provisioned";
 import { Page, pageTitleText } from "@/components/ui/page";
@@ -25,6 +26,7 @@ import {
 import { DroppedParamsLine } from "@/components/ui/dropped-params";
 import { EM_DASH, absoluteUtc, count, relativeAge } from "@/lib/format";
 import { droppedParams } from "@/lib/url/dropped-params";
+import { codeLinesIn, sourceFiles, sourceText } from "../source-tree";
 
 import {
   classesOf,
@@ -1505,5 +1507,148 @@ describe("DroppedParamsLine", () => {
     expect(html).not.toContain(parked);
     expect(cheerio.load(html)("[data-dropped-param]")).toHaveLength(0);
     expect(cheerio.load(html)("[data-dropped-params]").attr("data-dropped-params")).toBe("1");
+  });
+});
+
+/* ── the identifier, and the face it now owns (admin-window/DEBT-0011) ────── */
+
+/**
+ * The machine identifier's one rendering.
+ *
+ * LOOK_AND_FEEL Voice bar 5 — identifiers "render verbatim in mono and are
+ * never prettified" — was two Tailwind classes hand-typed at 48 call sites in
+ * 26 files, which is how the campaign fixed the same breach three times one
+ * surface at a time (BUG-0112, then BUG-0120 "the face BUG-0112 fixed one
+ * paragraph above", then BUG-0121 "the face BUG-0120 fixed one route over"),
+ * and how two pages grew byte-identical private copies of it.
+ *
+ * Nothing here pins a class literal: the face is read off the primitive's own
+ * render, so a restyle moves these assertions with it. What is pinned is the
+ * behaviour — the text reaches the screen unchanged, the call site's hooks
+ * survive, and the box is bidi-isolated.
+ */
+describe("Identifier", () => {
+  const identifier = (props: Record<string, unknown> = {}) =>
+    render(h(Identifier, { children: "data_conflict", ...props }));
+
+  it("renders the identifier verbatim, in the mono step", () => {
+    const $ = cheerio.load(identifier());
+    const span = $("span");
+    expect(span).toHaveLength(1);
+    // Verbatim: same case, same underscore, nothing added and nothing removed.
+    expect(span.text()).toBe("data_conflict");
+    expect(classesOf(identifier())).toContain("type-data");
+    // ...and no ancestor of it uppercases, which is the defect BUG-0049/0073
+    // fixed one label at a time.
+    expect(uppercasedIdentifiers(identifier())).toEqual([]);
+  });
+
+  it("takes secondary ink where the surface has already said it louder", () => {
+    const loud = classesOf(identifier());
+    const quiet = classesOf(identifier({ muted: true }));
+    // The same type step either way — only the ink job differs, and both are
+    // tokens (the palette rules are swept in `tokens.test.ts`).
+    expect(quiet).toContain("type-data");
+    expect(quiet).not.toEqual(loud);
+  });
+
+  it("carries the call site's hooks, which is how oracles address it", () => {
+    const $ = cheerio.load(
+      identifier({ "data-run-failure-class": "adapter_timeout", id: "run-1" }),
+    );
+    expect($("[data-run-failure-class]").attr("data-run-failure-class")).toBe(
+      "adapter_timeout",
+    );
+    expect($("#run-1").text()).toBe("data_conflict");
+  });
+
+  /**
+   * The bidi isolation, on two fixtures (ARCHITECTURE §7, promoted from Common
+   * violations row 15; admin-window/BUG-0137). Foreign text reaches prose
+   * through an allowlist or inside its own isolated box — and an identifier
+   * span is exactly where foreign text lands. Hanging it off the primitive is
+   * the rule applied once instead of at 48 call sites.
+   *
+   * Fixture 1: an identifier carrying an unterminated RIGHT-TO-LEFT OVERRIDE,
+   * which before this could reorder the rest of the app's own sentence.
+   * Fixture 2: the app's own label beside it, which is not foreign text and
+   * must be left exactly as the page wrote it — a component that isolated
+   * everything would pass fixture 1 and say nothing.
+   */
+  it("isolates the identifier, and leaves an ordinary label alone", () => {
+    const RLO = "‮";
+    const $ = cheerio.load(
+      render(
+        h(
+          "p",
+          { className: "type-body" },
+          h(Eyebrow, { label: "failure class" }),
+          h(Identifier, { children: `adapter${RLO}timeout` }),
+          " says whose problem a failure is.",
+        ),
+      ),
+    );
+    const isolated = $("[dir]")
+      .toArray()
+      .map((element) => $(element).text());
+    expect(isolated).toEqual([`adapter${RLO}timeout`]);
+    // The override is still there — isolation reorders nothing and removes
+    // nothing, which is why it is the answer here and a blocklist is not.
+    expect($("[dir]").text()).toBe(`adapter${RLO}timeout`);
+    expect($("[dir]").attr("dir")).toBe("ltr");
+    // ...and the app's own words next to it were not touched.
+    expect($("p").text()).toContain(" says whose problem a failure is.");
+  });
+});
+
+/**
+ * One owner for the face (ARCHITECTURE §11 and Common violations row 16).
+ *
+ * The class pair is derived by RENDERING the primitive rather than typed here,
+ * so restyling the identifier moves this guard with it and no literal is
+ * pinned; what the guard forbids is a SECOND place in `src/` that spells
+ * whatever the primitive spells.
+ */
+describe("the identifier face has one owner", () => {
+  const OWNER = "src/components/ui/identifier.tsx";
+  const FACE = classesOf(render(h(Identifier, { children: "x" }))).join(" ");
+  const MUTED = classesOf(render(h(Identifier, { children: "x", muted: true }))).join(" ");
+
+  /** Every code line of `text` that spells the face itself. */
+  function handSpellingsIn(text: string): string[] {
+    return codeLinesIn(text)
+      .filter((line) => line.includes(FACE) || line.includes(MUTED))
+      .map((line) => line.trim());
+  }
+
+  it("flags a hand-spelled face and clears the primitive's own call", () => {
+    // Must flag: what `TableName` and `ReviewItems` were, and what 48 call
+    // sites spelled.
+    expect(
+      handSpellingsIn('  return <span className="type-data text-ink">{config.table}</span>;'),
+    ).toEqual(['return <span className="type-data text-ink">{config.table}</span>;']);
+    // Must NOT flag — or the sweep below is a formality: the primitive's own
+    // call, and a comment that names the rule while documenting it.
+    for (const clean of [
+      "  return <Identifier>{config.table}</Identifier>;",
+      "  <Identifier muted data-review-item={reviewItemId}>{reviewItemId}</Identifier>",
+      ' * the `type-data text-ink` span this primitive replaced',
+    ]) {
+      expect(handSpellingsIn(clean), clean).toEqual([]);
+    }
+  });
+
+  it("leaves no file under src/ but the primitive spelling the face", () => {
+    const files = sourceFiles();
+    // Non-vacuous on both sides: the walk is plainly the real tree, and the
+    // scanner really does see the spelling where it legitimately lives.
+    expect(files.length).toBeGreaterThan(50);
+    expect(files).toContain(OWNER);
+    expect(handSpellingsIn(sourceText(OWNER)).length).toBeGreaterThan(0);
+    expect(
+      files
+        .filter((file) => file !== OWNER)
+        .flatMap((file) => handSpellingsIn(sourceText(file)).map((line) => `${file}: ${line}`)),
+    ).toEqual([]);
   });
 });

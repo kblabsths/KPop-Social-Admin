@@ -4,6 +4,7 @@ import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from 
 import { orDash } from "@/lib/format";
 import { hasVisibleContent } from "@/lib/verdict/decision";
 import { cx } from "@/components/ui/cx";
+import { DATA_MUTED } from "@/components/ui/identifier";
 import { refusalFix } from "@/components/edit-refusal";
 import {
   type HintSide,
@@ -784,7 +785,7 @@ export function EditStatus({
   switch (status.kind) {
     case "saving":
       return (
-        <span ref={boxRef} className={cx(box, "type-data text-ink-secondary")} role="status">
+        <span ref={boxRef} className={cx(box, DATA_MUTED)} role="status">
           saving…
         </span>
       );

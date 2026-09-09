@@ -1,3 +1,4 @@
+import { Identifier } from "@/components/ui";
 import { count } from "@/lib/format";
 import { IN_PAGE_LINK, anchorFor } from "./links";
 
@@ -54,9 +55,9 @@ export function AskedCycle({
         data-cycle-unchecked={state.reading}
         className="type-body text-ink-secondary"
       >
-        Whether cycle <span className="type-data text-ink">{askedFor}</span>{" "}
+        Whether cycle <Identifier>{askedFor}</Identifier>{" "}
         is in this window is not something this page can say: the read of{" "}
-        <span className="type-data text-ink">{state.reading}</span>{" "}
+        <Identifier>{state.reading}</Identifier>{" "}
         returned no window to look in. What is below says why.
       </p>
     );
@@ -71,7 +72,7 @@ export function AskedCycle({
     </p>
   ) : (
     <p data-cycle-asked={askedFor} data-cycle-found="false" className="type-body text-ink-secondary">
-      Cycle <span className="type-data text-ink">{askedFor}</span>{" "}
+      Cycle <Identifier>{askedFor}</Identifier>{" "}
       is not among the {count(limit)} newest cycles, so it is not in this
       window — it ran
       earlier, or no cycle carries that id.

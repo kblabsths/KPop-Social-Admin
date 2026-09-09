@@ -17,6 +17,7 @@ import {
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { cx } from "@/components/ui/cx";
 import { Empty } from "@/components/ui/empty";
+import { Identifier } from "@/components/ui/identifier";
 import { WindowLine, type WindowObject } from "@/components/ui/window-line";
 import { orDash } from "@/lib/format";
 import { recordHref } from "@/lib/records/routes";
@@ -328,7 +329,7 @@ export function PickerOptions({
             )}
           >
             {orDash(option.name)}{" "}
-            <span className="type-data text-ink-secondary">{option.id}</span>
+            <Identifier muted>{option.id}</Identifier>
           </button>
         </li>
       ))}
@@ -444,7 +445,7 @@ export function PickerValue({
         {name ?? id}
       </a>
       {name === null ? null : (
-        <span className="type-data text-ink-secondary">{id}</span>
+        <Identifier muted>{id}</Identifier>
       )}
     </span>
   );

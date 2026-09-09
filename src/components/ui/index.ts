@@ -9,6 +9,7 @@ export { DroppedParamsLine } from "./dropped-params";
 export { type Column, DataTable, type SortDirection } from "./data-table";
 export { Empty } from "./empty";
 export { ErrorLine } from "./error-line";
+export { DATA_MUTED, Identifier } from "./identifier";
 export { Loading } from "./loading";
 export { Eyebrow, type MicroLabel, microLabelText } from "./micro-label";
 export { NotProvisioned } from "./not-provisioned";

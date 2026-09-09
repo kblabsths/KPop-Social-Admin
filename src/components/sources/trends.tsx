@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { GaugeCard, TrendTable, type TrendMeasure } from "@/components/gauges";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
-import { WindowLine } from "@/components/ui";
+import { Identifier, WindowLine } from "@/components/ui";
 import { count, counted, pluralise } from "@/lib/format";
 import { sourcesHref, type SourceNarrowing } from "@/lib/sources/routes";
 import type {
@@ -175,7 +175,7 @@ export function AwaitingRowTrendSection({
       {dialled.length === 0 ? (
         <p className="type-body text-ink-secondary">
           No threshold line is drawn. The per-source{" "}
-          <span className="type-data text-ink">stuck_pattern</span>{" "}
+          <Identifier>stuck_pattern</Identifier>{" "}
           dial lives only in the scraper repo&rsquo;s source registry, and where
           Admin may read it is an open question — so no default is substituted
           here.

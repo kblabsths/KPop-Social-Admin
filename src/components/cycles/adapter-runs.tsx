@@ -3,6 +3,7 @@ import type { EmptyWords } from "@/components/gauges";
 import {
   DataTable,
   Empty,
+  Identifier,
   Section,
   StatCard,
   StateOf,
@@ -94,7 +95,7 @@ function AskedSource({ source }: { source: string }) {
       className="type-body text-ink-secondary"
     >
       Narrowed to the runs whose source is{" "}
-      <span className="type-data text-ink">{source}</span>, matched by name.
+      <Identifier>{source}</Identifier>, matched by name.
       This facet narrows the runs below and nothing else: the resolver&rsquo;s
       cycles carry no source, so they are the same cycles with it or without it.
     </p>
@@ -168,9 +169,9 @@ function AskedRun({
         className="type-body text-ink-secondary"
       >
         Whether run{" "}
-        <span className="type-data text-ink">{run}</span>{" "}
+        <Identifier>{run}</Identifier>{" "}
         is in this window is not something this page can say: the read of{" "}
-        <span className="type-data text-ink">{state.reading}</span>{" "}
+        <Identifier>{state.reading}</Identifier>{" "}
         returned no window to look in. What is below says why.
       </p>
     );
@@ -197,7 +198,7 @@ function AskedRun({
       className="type-body text-ink-secondary"
     >
       Run{" "}
-      <span className="type-data text-ink">{run}</span>{" "}
+      <Identifier>{run}</Identifier>{" "}
       is not among the {count(limit)} newest runs{scope === null ? "" : ` ${scope}`}, so
       it is not in this window — it ran earlier
       {scope === null ? "" : ", it was filed under another source"}, or no run
@@ -349,9 +350,9 @@ export function AdapterRuns({
         <p className="type-body text-ink-secondary">
           A run with no end is still going: the row is written when the adapter
           wakes and nothing rewrites it, so no completion is guessed.{" "}
-          <span className="type-data text-ink">failure_class</span>{" "}
+          <Identifier>failure_class</Identifier>{" "}
           says whose problem a failure is, and{" "}
-          <span className="type-data text-ink">source</span>{" "}
+          <Identifier>source</Identifier>{" "}
           is the run&rsquo;s own text — a run filed under a name the registry
           does not carry still appears here.
         </p>

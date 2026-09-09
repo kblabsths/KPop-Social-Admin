@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { count, orDash } from "@/lib/format";
 import { cx } from "./cx";
+import { DATA_MUTED } from "./identifier";
 import { Eyebrow, type MicroLabel } from "./micro-label";
 
 /**
@@ -72,7 +73,7 @@ export function StatCard({
       ) : (
         figure
       )}
-      {sub ? <span className="type-data text-ink-secondary">{sub}</span> : null}
+      {sub ? <span className={DATA_MUTED}>{sub}</span> : null}
     </>
   );
 

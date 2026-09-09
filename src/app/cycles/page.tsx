@@ -17,6 +17,7 @@ import {
   DataTable,
   DroppedParamsLine,
   Empty,
+  Identifier,
   Page,
   Section,
   StateOf,
@@ -405,7 +406,7 @@ export default async function CyclesPage({
           older than the resolver&rsquo;s{" "}
           {duration(RESOLVER_CADENCE_SECONDS)} cadence, at which point it is a
           cycle that died: nothing rewrites its row and no completion is
-          guessed. <span className="type-data text-ink">skipped</span>{" "}
+          guessed. <Identifier>skipped</Identifier>{" "}
           means the cycle found the advisory lock held and did nothing, which is
           a healthy
           outcome, not a failure.

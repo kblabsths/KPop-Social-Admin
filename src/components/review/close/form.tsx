@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { EditableCell, type SaveOutcome } from "@/components/EditableCell";
 import { PickerPanel, optionFor } from "@/components/records/entity-picker";
-import { Button } from "@/components/ui";
+import { Button, DATA_MUTED, Identifier } from "@/components/ui";
 import type { VerdictAction } from "@/lib/verdict/decision";
 import {
   closeRefusal,
@@ -131,7 +131,7 @@ export function CloseStatus({ state }: { state: CloseState }) {
   switch (state.kind) {
     case "settling":
       return (
-        <span className="type-data text-ink-secondary" role="status">
+        <span className={DATA_MUTED} role="status">
           settling…
         </span>
       );
@@ -165,7 +165,7 @@ export function SettledNotice({
   return (
     <p className="type-body text-ink" role="status" data-close-settled={action}>
       Settled: {label}{" "}
-      <span className="type-data text-ink-secondary">{action}</span>
+      <Identifier muted>{action}</Identifier>
     </p>
   );
 }
@@ -207,7 +207,7 @@ export function SuppliedControl({
       className="inline-flex flex-wrap items-baseline gap-2"
     >
       <span className="type-body text-ink">{spec.label} for</span>{" "}
-      <span className="type-data text-ink-secondary">{spec.supplies}</span>{" "}
+      <Identifier muted>{spec.supplies}</Identifier>{" "}
       <EditableCell value={null} label={spec.supplies ?? spec.label} onSave={onSupply} />
     </span>
   );

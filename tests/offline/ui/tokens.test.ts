@@ -8,6 +8,7 @@ import { Chip } from "@/components/ui/chip";
 import { DataTable } from "@/components/ui/data-table";
 import { Empty } from "@/components/ui/empty";
 import { ErrorLine } from "@/components/ui/error-line";
+import { Identifier } from "@/components/ui/identifier";
 import { Loading } from "@/components/ui/loading";
 import { NotProvisioned } from "@/components/ui/not-provisioned";
 import { Page } from "@/components/ui/page";
@@ -96,6 +97,14 @@ const SAMPLES: Sample[] = [
       html: render(h(Button, { variant, disabled }, "Save override")),
     })),
   ),
+  // Both inks of the identifier (admin-window/DEBT-0011). It is the face 48
+  // call sites used to spell by hand, so a raw colour or a raw font value in
+  // it would now reach every page at once.
+  { name: "Identifier", html: render(h(Identifier, { children: "data_conflict" })) },
+  {
+    name: "Identifier/muted",
+    html: render(h(Identifier, { children: "data_conflict", muted: true })),
+  },
   { name: "Loading", html: render(h(Loading, { what: "cycles" })) },
   { name: "Empty", html: render(h(Empty, { holds: "open decisions", filledBy: "the resolver files one here" })) },
   {

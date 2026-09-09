@@ -1,3 +1,4 @@
+import { Identifier } from "./identifier";
 import { Eyebrow, type MicroLabel } from "./micro-label";
 
 /**
@@ -35,7 +36,7 @@ export function NotProvisioned({
         <Eyebrow label={eyebrow} className="block" />
       )}
       <p className="type-body text-ink-secondary">
-        <span className="type-data text-ink">{missing}</span>{" "}
+        <Identifier>{missing}</Identifier>{" "}
         isn&rsquo;t in this database yet — it arrives with {arrivesWith}.
       </p>
     </div>

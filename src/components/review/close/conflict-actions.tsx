@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { EvidenceRow } from "@/components/review";
+import { Identifier } from "@/components/ui";
 import { EM_DASH } from "@/lib/format";
 import type { ReviewItemRow } from "@/lib/review/shapes";
 import { factKey, isReferenceField, type VerdictValue } from "@/lib/verdict/decision";
@@ -171,7 +172,7 @@ export function conflictNotice({ item }: ShapeActionsInput): ReactNode {
   const name = factKey(fact.domain, fact.field);
   return (
     <p className="type-body text-ink-secondary" data-close-notice={name}>
-      <span className="type-data text-ink">{name}</span>{" "}
+      <Identifier>{name}</Identifier>{" "}
       names another record rather than holding a value, so there is nothing to
       type here. Adopt one of the claims above, or keep the current value;
       choosing a different record needs the entity picker, which is not built

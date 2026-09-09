@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { DataTable, Section } from "@/components/ui";
+import { DataTable, Identifier, Section } from "@/components/ui";
 import { IN_PAGE_LINK, RUNS_ANCHOR } from "./links";
 import { runColumns } from "./run-columns";
 import type { ReadOf, RunColumnName, RunCountName, RunTableRow, RunsWindow } from "./rows";
@@ -81,7 +81,7 @@ export function LatestRun({
           {runs.kind === "not_provisioned" ? (
             <>
               No newest run to show: the read named{" "}
-              <span className="type-data text-ink">{runs.missing}</span>, and
+              <Identifier>{runs.missing}</Identifier>, and
               this database holds no such object —{" "}
               <a href={`#${RUNS_ANCHOR}`} className={IN_PAGE_LINK}>
                 what creates it is below
@@ -91,7 +91,7 @@ export function LatestRun({
           ) : runs.kind === "error" ? (
             <>
               No newest run to show: the read of{" "}
-              <span className="type-data text-ink">{runs.reading}</span>{" "}
+              <Identifier>{runs.reading}</Identifier>{" "}
               failed —{" "}
               <a href={`#${RUNS_ANCHOR}`} className={IN_PAGE_LINK}>
                 what the database said is below
@@ -110,7 +110,7 @@ export function LatestRun({
           ) : (
             <>
               No run in this window carries the source name{" "}
-              <span className="type-data text-ink">{source}</span>, so there is
+              <Identifier>{source}</Identifier>, so there is
               no newest run to lead with under it —{" "}
               <a href={`#${RUNS_ANCHOR}`} className={IN_PAGE_LINK}>
                 the runs window is below

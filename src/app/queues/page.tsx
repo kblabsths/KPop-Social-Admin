@@ -18,6 +18,7 @@ import {
 import {
   DroppedParamsLine,
   Empty,
+  Identifier,
   Page,
   Section,
   StateOf,
@@ -432,7 +433,7 @@ function QueueGauge({
   const oldest = relativeAge(stats.oldestOpenedAt);
   return (
     <div data-gauge-queue={stats.queue} className="flex flex-col gap-2">
-      <p className="type-data text-ink">{stats.queue}</p>
+      <Identifier>{stats.queue}</Identifier>
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
           label={{ identifier: stats.queue, words: "open" }}

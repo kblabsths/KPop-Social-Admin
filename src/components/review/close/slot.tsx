@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
-import { Empty, Eyebrow, StateOf, type UnavailableRead } from "@/components/ui";
+import { Empty, Eyebrow, Identifier, StateOf, type UnavailableRead } from "@/components/ui";
 import { EM_DASH, clamped, isAbsent, orDash, relativeAge } from "@/lib/format";
 import type { ReviewItemRow, Shape } from "@/lib/review/shapes";
 import type { ActionSpec, ShapeActions, ShapeActionsInput } from "./actions";
@@ -115,7 +115,7 @@ function SettledItem({ status }: { status: string }) {
   return (
     <p className="type-body text-ink-secondary" data-close-item-status={status}>
       This item is already{" "}
-      <span className="type-data text-ink">{status}</span>. There is nothing
+      <Identifier>{status}</Identifier>. There is nothing
       left to close.
     </p>
   );
@@ -278,9 +278,9 @@ function ItemVerdictBlock({ verdict }: { verdict: InlineVerdict }) {
   return (
     <div data-item-verdict={verdict.action} className="flex flex-col gap-2">
       <VerdictLine label="settled with">
-        <span data-verdict-action={verdict.action} className="type-data text-ink">
+        <Identifier data-verdict-action={verdict.action}>
           {verdict.action}
-        </span>
+        </Identifier>
       </VerdictLine>
 
       <VerdictLine label="by">

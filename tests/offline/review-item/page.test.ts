@@ -3168,7 +3168,10 @@ describe("a queues address that is not a review-item id", () => {
  * `text-ink-secondary` paragraph — and pinning ink here would pin a colour.
  *
  * Landed as `it.fails` while the divergence stood; the wrap arrived with
- * admin-window/BUG-0121 and these are ordinary tests as of 2026-09-09.
+ * admin-window/BUG-0121 and these are ordinary tests as of 2026-09-09. The
+ * file-local `ReviewItems` those two tickets wrote is gone as of
+ * admin-window/DEBT-0011: both sides of the comparison now come from the one
+ * `Identifier` primitive, which is what stops a fourth route re-spelling it.
  */
 describe("a table name in a queues empty state card", () => {
   /** The face this page gives a word the machine produced: the id it echoes. */

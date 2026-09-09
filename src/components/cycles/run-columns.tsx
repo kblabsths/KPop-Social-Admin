@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Badge, type Column } from "@/components/ui";
+import { Badge, type Column, Identifier } from "@/components/ui";
 import { CLAMP_LIMIT, clamped, count, isAbsent, relativeAge } from "@/lib/format";
 import { runAnchorFor } from "./links";
 import { OUTCOME_BADGE_TONE, outcomeTone } from "./outcome";
@@ -70,17 +70,16 @@ function runCells(
       // asked-for run. The DRAWN mark is the row's, from `DataTable`'s
       // `marked`; the same predicate decides both, so the mark the operator
       // sees and the one a screen reader hears can never name different rows.
-      <span
+      <Identifier
         id={lead ? undefined : runAnchorFor(row.run_id)}
         data-run={lead ? undefined : row.run_id}
         data-run-source={lead ? undefined : row.source}
         data-latest-run={lead ? row.run_id : undefined}
         data-latest-run-source={lead ? row.source : undefined}
         aria-current={!lead && row.run_id === asked ? "true" : undefined}
-        className="type-data text-ink"
       >
         {row.source}
-      </span>
+      </Identifier>
     ),
     started_at: (row) => {
       const age = relativeAge(row.started_at, now);
@@ -183,9 +182,9 @@ function runCells(
       // failure is, so a run that named none shows the dash and not a word of
       // ours.
       isAbsent(row.failure_class) ? null : (
-        <span data-run-failure-class={row.failure_class ?? undefined} className="type-data text-ink">
+        <Identifier data-run-failure-class={row.failure_class ?? undefined}>
           {row.failure_class}
-        </span>
+        </Identifier>
       ),
   };
 }
