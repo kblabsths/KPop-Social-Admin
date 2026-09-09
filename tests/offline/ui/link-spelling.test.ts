@@ -1,8 +1,10 @@
+import { renderToStaticMarkup } from "react-dom/server";
 import * as cheerio from "cheerio";
 import type { CheerioAPI } from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import NotFound from "@/app/not-found";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { codeLinesIn, sourceFiles, sourceText } from "../source-tree";
 import { stubClient, type Script } from "../../fixtures/stub-client";
@@ -485,5 +487,56 @@ describe("no anchor anywhere in the window breaks the app's link spelling", () =
     }
     expect(routesWithLinks.length).toBeGreaterThan(1);
     expect(wrapping).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The link-bearing surface the whole-window sweep structurally CANNOT reach
+ * (QA's attack on admin-window/BUG-0117, 2026-09-09).
+ *
+ * `SURFACES` is built from `pageRoutes()`, which is every `page.tsx` on disk —
+ * so `src/app/not-found.tsx` is outside the sweep by construction rather than
+ * by oversight, and no amount of pages added later brings it in. Measured on
+ * the landed tree: the sweep renders eight routes and finds inked anchors on
+ * seven of them; not one is the 404's, and `shell/shell.test.ts`'s not-found
+ * block grades that surface's hrefs and type steps and never its link
+ * spelling. BUG-0117 criterion 4 makes this anchor a subject of this rule, so
+ * the rule asserts it here — the source guard above only forbids RETYPING the
+ * spelling, and a file that imported `IN_PAGE_LINK` and then stopped using it
+ * would satisfy every other check this ticket left behind.
+ */
+describe("the link-bearing surface the window sweep cannot reach", () => {
+  const markup = renderToStaticMarkup(NotFound());
+
+  it("draws the 404's way back as this app's link, at rest and all the way through", () => {
+    const $ = cheerio.load(markup);
+    const anchors = $("a")
+      .toArray()
+      .map((anchor) => $(anchor));
+    // Non-vacuity: the surface's whole job is to offer a way back.
+    expect(anchors.length, "the 404 offers a way back").toBeGreaterThan(0);
+    for (const anchor of anchors) {
+      expectLinkSpellingReachesTheGlyphs(
+        classesOf(anchor),
+        anchor
+          .find("*")
+          .toArray()
+          .map((element) => classesOf($(element))),
+        `the 404's "${anchor.text().trim()}"`,
+      );
+    }
+  });
+
+  it("has teeth: the same claim fails on that anchor with the spelling taken off it", () => {
+    // The assertion above is only worth its runtime if it would notice the
+    // spelling leaving. Fed the SAME anchor with the published classes
+    // removed — which is exactly what an unused import renders — it throws.
+    const $ = cheerio.load(markup);
+    const stripped = classesOf($("a").first()).filter(
+      (className) => !PUBLISHED_CLASSES.includes(className),
+    );
+    expect(() =>
+      expectLinkSpellingReachesTheGlyphs(stripped, [], "a 404 link that lost the spelling"),
+    ).toThrow();
   });
 });

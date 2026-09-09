@@ -17,6 +17,7 @@ import {
   tableNotInSchemaCache,
   type Script,
 } from "../../fixtures/stub-client";
+import { classesOf, expectDrawnAsLinkAtRest } from "../../fixtures/link-spelling";
 import { oneEach, stateOf, surfaceHooks } from "../../live/parity";
 
 /**
@@ -463,6 +464,37 @@ describe("a settled item renders the verdict that settled it", () => {
     expect(link).toHaveLength(1);
     expect(link.attr("href")).toBe(`/records/${CLAIM.domain}/${CLAIM.entity_id}`);
     expect(link.text().trim()).toBe(row.observation_id);
+  });
+
+  it("draws that observation as this app's link, at rest", async () => {
+    /*
+     * QA's attack on admin-window/BUG-0117, 2026-09-09. Criterion 4 moved this
+     * anchor (`review/close/slot.tsx`) onto the imported `IN_PAGE_LINK`, and
+     * NOTHING would have noticed it leaving again: the whole-window sweep in
+     * `ui/link-spelling.test.ts` renders the eight `page.tsx` routes with
+     * `populatedScript`, and measured on the landed tree not one of them
+     * produces an `a[data-verdict-observation]` — the verdict block only
+     * renders for a SETTLED item with a log row, which no swept fixture is.
+     * The assertion above graded the href and the words; the classes were
+     * ungraded, so `className={"type-data"}` alone would have shipped green.
+     *
+     * The claim is the app's one link spelling, read from `IN_PAGE_LINK` — no
+     * class literal is written here, so a restyle moves the constant and this
+     * follows. The mono FACE is a separate, deliberate class and stays.
+     */
+    const row = verdictLogEntry({ review_item_id: SETTLED.review_item_id });
+    const $ = cheerio.load(await renderItem(withVerdict({ note: row.note })));
+    const link = $("a[data-verdict-observation]");
+    expect(link, "the settled verdict names its observation as a link").toHaveLength(1);
+
+    const classes = classesOf(link);
+    expectDrawnAsLinkAtRest(classes, "the verdict's observation id");
+    // ARCHITECTURE §7: mono carries every value the database produced, and the
+    // observation id is one. The spelling is added to that face, not swapped
+    // for it.
+    expect(classes, "the observation id keeps its mono face").toContain("type-data");
+    // Nothing inside it can re-ink the link's own words: it wraps none.
+    expect(link.find("*").toArray()).toEqual([]);
   });
 
   it("is in its ok state and offers no control", async () => {
