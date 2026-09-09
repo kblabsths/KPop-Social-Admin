@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import * as cheerio from "cheerio";
+
 import { EvidencePair, type EvidenceClaim } from "@/components/evidence/evidence-pair";
 import { Button } from "@/components/ui/button";
+import { Identifier } from "@/components/ui/identifier";
 import { EM_DASH, absoluteUtc } from "@/lib/format";
 
 import { classesOf, h, render, textOf } from "./markup";
@@ -95,6 +98,37 @@ describe("EvidencePair", () => {
     const html = pair({ claims: [{ ...CLAIMS[0], value: null }] });
     expect(html).toContain(EM_DASH);
     expect(html).toContain("text-ink-disabled");
+  });
+
+
+  /**
+   * The claim line's SOURCE is a machine identifier, and the primitive says so
+   * itself: `src/components/ui/identifier.tsx` names "a source's own name"
+   * among the foreign text an identifier span is where it lands, and its
+   * `DATA_MUTED` doc says "a machine identifier takes `<Identifier muted>`
+   * instead — never this". The card hands the whole line `DATA_MUTED` and
+   * leaves the source a bare text node inside it, so the value is not
+   * isolated and the app's own words share its bidi paragraph.
+   *
+   * The expectation is READ OFF the primitive rather than typed here: whatever
+   * `<Identifier muted>` renders for `dir` is what the source must carry, so
+   * this pins the behaviour and not a literal.
+   *
+   * PINNED `it.fails` for admin-window/BUG-0151 (open). Watched red as a plain
+   * `it` first — 1 failed | 10 passed, so the failure is this assertion and not
+   * a broken fixture. When the source goes through the primitive, this file
+   * reddens as an XPASS and the pin comes off (plain `it`).
+   */
+  it.fails("gives the claim's source the isolation the identifier primitive gives an identifier — admin-window/BUG-0151", () => {
+    const source = "ticketmaster";
+    const $primitive = cheerio.load(render(h(Identifier, { muted: true, children: source })));
+    const isolation = $primitive("span").attr("dir");
+
+    const $ = cheerio.load(pair({ claims: [{ ...CLAIMS[0], source }] }));
+    const own = $("*").toArray().filter((element) => $(element).text() === source);
+
+    expect(own).toHaveLength(1);
+    expect($(own[0]).attr("dir")).toBe(isolation);
   });
 
   it("renders with no contenders at all and draws no dangling separator", () => {
