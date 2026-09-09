@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T22:06:26Z — do not edit)
+# Tracker index (regenerated 2026-09-09T22:06:37Z — do not edit)
 
 ## open
 - BUG-0147 [P3][bug][M2] /cycles spells a raw ?cycle= into the app's own sentence, so a bidi control in the URL reverses the page's paragraph  (scope:src/components/cycles/asked-cycle.tsx,src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts from:BUG-0146)
