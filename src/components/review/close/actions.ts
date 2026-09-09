@@ -1,5 +1,6 @@
-import type { ButtonVariant } from "@/components/ui";
+import type { ButtonVariant, UnavailableRead } from "@/components/ui";
 import type { EvidenceRow } from "@/components/review";
+import type { PickerWindow } from "@/components/records/entity-picker";
 import type { ReviewItemRow } from "@/lib/review/shapes";
 import {
   hasVisibleContent,
@@ -80,6 +81,48 @@ export interface ActionSpec {
    * same words the page shows.
    */
   readonly supplies?: string;
+  /**
+   * The window of EXISTING rows this control's payload is CHOSEN from —
+   * present ONLY on a control the operator picks a record with, absent on
+   * every other (campaign admin-window/TASK-0056, spec §7's "link to an
+   * existing entity").
+   *
+   * The sibling of `supplies`, and deliberately its opposite in one respect:
+   * `supplies` carries a NAME because the operator's scalar does not exist
+   * until it is typed, while this carries the ROWS because the operator's
+   * choice must be one that already exists. The picker offers what the read
+   * returned and creates nothing (`components/records/entity-picker.tsx`,
+   * SPEC F12), so the window has to cross the server/client boundary with the
+   * spec — it is plain data, which is what makes that possible.
+   *
+   * Its presence routes the operator's contribution into the `ref` slot rather
+   * than `value` (`decisionValue` below): a reference is observed as a ref and
+   * resolved through `confirmed_matches`, never written as text
+   * (ARCHITECTURE.md §9.2, `PAYLOAD_SLOTS` in the leaf). A spec carrying BOTH
+   * `supplies` and `chooses` is malformed — one control, one payload — and no
+   * builder produces one.
+   */
+  readonly chooses?: PickerWindow;
+}
+
+/**
+ * What a shape's builder is handed about the rows a link may point at: the
+ * window, and the read's own account of why there is none.
+ *
+ * Two fields rather than one, for the reason every leg on this window is
+ * reported separately: a REFUSED read and a fact that has nothing to link are
+ * different states and must not share a rendering (LESSONS 1). `window` null
+ * with `note` null means no read was made at all — this item names no
+ * linkable reference — and `note` non-null means one was made and refused.
+ *
+ * Declared structurally rather than imported from `lib/db`, exactly as
+ * `UnavailableRead` is: a component imports nothing that can reach a database
+ * (ARCHITECTURE.md §4 rule 1). `ReferenceChoices` satisfies it, so the page
+ * hands one straight over.
+ */
+export interface ShapeChoices {
+  readonly window: PickerWindow | null;
+  readonly note: UnavailableRead | null;
 }
 
 /**
@@ -93,6 +136,14 @@ export interface ActionSpec {
 export interface ShapeActionsInput {
   readonly item: ReviewItemRow;
   readonly evidence: readonly EvidenceRow[];
+  /**
+   * The rows this item's fact may be LINKED to, when the page read any
+   * (campaign admin-window/TASK-0056). Absent or null on every shape that
+   * links nothing, which is every shape but the `entity_link` fact item — a
+   * builder that needs none ignores it, exactly as one that needs no evidence
+   * ignores that.
+   */
+  readonly choices?: ShapeChoices | null;
 }
 
 /** Every shape module's one export: the actions this shape offers, in order. */
@@ -146,8 +197,15 @@ export function decisionValue(
   spec: ActionSpec,
   supplied: string | null,
 ): VerdictValue | null {
-  if (spec.supplies === undefined || spec.value === null) return spec.value;
-  return { ...spec.value, value: supplied };
+  if (spec.value === null) return null;
+  // A CHOSEN row travels in `ref`, a TYPED value in `value`, and which slot is
+  // filled is the whole difference between linking a row and writing text over
+  // one (`PAYLOAD_SLOTS`, ARCHITECTURE.md §9.2). The discriminator is the
+  // spec's, so no call site decides it twice and a control cannot fill the
+  // slot its action may not (admin-window/TASK-0056).
+  if (spec.chooses !== undefined) return { ...spec.value, ref: supplied };
+  if (spec.supplies !== undefined) return { ...spec.value, value: supplied };
+  return spec.value;
 }
 
 /**
@@ -206,6 +264,14 @@ export function closeRefusal(
   if (spec.supplies !== undefined && !hasVisibleContent(supplied)) {
     return "value_required";
   }
+  // A control that LINKS a row and was handed no row. Its own identifier
+  // rather than `value_required`'s, because the two are different acts: one
+  // asks for a value nobody typed, this one for a record nobody picked, and
+  // `decisionRefusals` would grade the empty one `value_payload_missing`
+  // (invariant 5) one round trip later (admin-window/TASK-0056).
+  if (spec.chooses !== undefined && !hasVisibleContent(supplied)) {
+    return "ref_required";
+  }
   return null;
 }
 
@@ -232,6 +298,18 @@ export const REFERENCE_REFUSAL_WORDS =
   "This fact points at another record, so it is chosen rather than typed — pick the record it should point at.";
 
 /**
+ * The words for a link control that was submitted with nothing chosen
+ * (campaign admin-window/TASK-0056).
+ *
+ * Its own sentence rather than `REFERENCE_REFUSAL_WORDS` above, which answers a
+ * different question: that one explains why there is no field to TYPE in, this
+ * one says the picker was left empty. Name what failed, then what to do, with
+ * no apology (LOOK_AND_FEEL copy bar 3).
+ */
+export const REF_REFUSAL_WORDS =
+  "Nothing is chosen yet — pick the record this fact should point at, then link it.";
+
+/**
  * The refusal an identifier reads as. The map is TOTAL over the identifiers
  * this form produces, so no raw identifier reaches operator copy through the
  * fallback (LESSONS 5).
@@ -239,6 +317,7 @@ export const REFERENCE_REFUSAL_WORDS =
 export function refusalWords(refusal: string): string {
   if (refusal === "note_required") return NOTE_REFUSAL_WORDS;
   if (refusal === "value_required") return VALUE_REFUSAL_WORDS;
+  if (refusal === "ref_required") return REF_REFUSAL_WORDS;
   if (refusal === "reference_field_not_scalar") return REFERENCE_REFUSAL_WORDS;
   return `The close was refused: ${refusal}.`;
 }

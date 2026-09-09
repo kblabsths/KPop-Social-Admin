@@ -1,4 +1,8 @@
 import type {
+  PickerOption,
+  PickerWindow,
+} from "@/components/records/entity-picker";
+import type {
   VerdictDecision,
   VerdictValue,
 } from "@/lib/verdict/decision";
@@ -753,6 +757,46 @@ export function verdictDecision(
     actor: "admin@kspace.local",
     note: null,
     value: null,
+    ...overrides,
+  };
+}
+
+/* ── the rows a reference may be pointed at ───────────────────────────────── */
+
+/**
+ * The venues an entity picker may choose from — the window shape the record
+ * surface's picker and the review item's link control BOTH take
+ * (`PickerWindow`, campaign admin-window/TASK-0055 and TASK-0056).
+ *
+ * Here rather than in either test file because two surfaces now choose from
+ * one window, and two hand-built copies of it would agree only by accident
+ * (ARCHITECTURE.md §13.7). The nameless row is deliberate and is never
+ * dropped: it exists, it can be linked, and its label is the app's own dash.
+ */
+export const VENUE_ID = {
+  olympicHall: "01920000-0000-7000-8000-0000000000a4",
+  skyDome: "01920000-0000-7000-8000-0000000000b1",
+  nameless: "01920000-0000-7000-8000-0000000000b2",
+} as const;
+
+export function venueOptions(): PickerOption[] {
+  return [
+    { id: VENUE_ID.olympicHall, name: "Olympic Hall" },
+    { id: VENUE_ID.skyDome, name: "Gocheok Sky Dome" },
+    { id: VENUE_ID.nameless, name: null },
+  ];
+}
+
+/** A window over those rows, with the facts of the read that produced them. */
+export function venueWindow(overrides: Override<PickerWindow> = {}): PickerWindow {
+  const options = overrides.options ?? venueOptions();
+  return {
+    options,
+    limit: 1000,
+    held: options.length,
+    truncated: false,
+    over: "table",
+    domain: "venues",
     ...overrides,
   };
 }

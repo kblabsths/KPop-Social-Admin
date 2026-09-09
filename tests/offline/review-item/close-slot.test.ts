@@ -22,6 +22,7 @@ import {
   settlePath,
   submitSettlement,
   type ActionSpec,
+  type ShapeActionsInput,
 } from "@/components/review/close/actions";
 import { SHAPES, type ReviewItemRow, type Shape } from "@/lib/review/shapes";
 import { h, render } from "../ui/markup";
@@ -30,6 +31,7 @@ import {
   reviewItemDataConflict,
   reviewItemEntityLink,
   reviewItemSourcePattern,
+  venueWindow,
   verdictLogEntry,
   verdictValue,
 } from "../../fixtures/rows";
@@ -308,13 +310,20 @@ describe("the shape's action list", () => {
    * SIGNAL is filled too (campaign admin-window/TASK-0051): it takes no
    * verdict and closes with a disposition, the same two whatever it folded, so
    * its row does not move with the evidence either
-   * (`tests/offline/review-item/signal-actions.test.ts`). The remaining shape
-   * ships an empty list until its ticket fills it, and this table is what that
-   * ticket amends — one place, rather than a claim repeated per shape.
+   * (`tests/offline/review-item/signal-actions.test.ts`). The `entity_link`
+   * FACT item is filled too (campaign admin-window/TASK-0056), and it is the
+   * one shape whose row depends on more than the shape: its picker needs a
+   * whole reference fact AND a window of rows to choose from, and the fixture
+   * here has neither — `reviewItemEntityLink` carries a null `entity_id`,
+   * which is the ordinary state of an item opened before its canonical row
+   * exists, and this call passes no choices. So the list is the settle control
+   * alone, which is exactly what an operator gets on such an item; the picker
+   * beside it is graded on a linkable fixture in
+   * `tests/offline/review-item/link-actions.test.ts`.
    */
   const OFFERED: Readonly<Record<Shape, readonly VerdictAction[]>> = {
     data_conflict_fact: ["supply_value", "keep_current"],
-    entity_link_fact: [],
+    entity_link_fact: ["settle"],
     entity_link_source_pattern: ["fixed", "wont_fix"],
   };
 
@@ -350,20 +359,34 @@ describe("the shape's action list", () => {
    * into covering different shapes.
    */
   it("has a withheld-line answer for every shape the action map answers for", () => {
-    const items: Record<string, ReviewItemRow> = {
-      data_conflict_fact: reviewItemDataConflict(),
-      entity_link_fact: reviewItemEntityLink(),
-      entity_link_source_pattern: reviewItemSourcePattern(),
+    // One input per shape, each chosen so that the shape withholds NOTHING —
+    // the `entity_link` fact item needs its whole reference fact and a window
+    // to choose from, or its picker is withheld and its line says so
+    // (campaign admin-window/TASK-0056).
+    const inputs: Record<Shape, ShapeActionsInput> = {
+      data_conflict_fact: { item: reviewItemDataConflict(), evidence: [] },
+      entity_link_fact: {
+        item: reviewItemEntityLink({ entity_id: ID.eventEntity }),
+        evidence: [],
+        choices: { window: venueWindow(), note: null },
+      },
+      entity_link_source_pattern: { item: reviewItemSourcePattern(), evidence: [] },
     };
     expect(Object.keys(NOTICE_BY_SHAPE).sort()).toEqual([...SHAPES].sort());
     for (const shape of SHAPES) {
       // Every entry is callable and answers something a slot can render — and
       // on these items, which withhold nothing, that answer is null.
-      expect(
-        NOTICE_BY_SHAPE[shape]({ item: items[shape], evidence: [] }),
-        shape,
-      ).toBeNull();
+      expect(NOTICE_BY_SHAPE[shape](inputs[shape]), shape).toBeNull();
     }
+    // Never vacuous: the same map DOES answer a line where something really is
+    // withheld, so the nulls above are a fact about these inputs and not about
+    // a map that answers null to everything (LESSONS 3).
+    expect(
+      NOTICE_BY_SHAPE.entity_link_fact({
+        item: reviewItemEntityLink(),
+        evidence: [],
+      }),
+    ).not.toBeNull();
   });
 });
 

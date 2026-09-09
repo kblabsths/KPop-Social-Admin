@@ -5,7 +5,7 @@ import type { ReviewItemRow, Shape } from "@/lib/review/shapes";
 import type { ActionSpec, ShapeActions, ShapeActionsInput } from "./actions";
 import { conflictActions, conflictNotice } from "./conflict-actions";
 import { CloseForm } from "./form";
-import { linkActions } from "./link-actions";
+import { linkActions, linkNotice } from "./link-actions";
 import { dispositionActions } from "./signal-actions";
 
 /**
@@ -83,15 +83,18 @@ export const ACTIONS_BY_SHAPE: Record<Shape, ShapeActions> = {
  *
  * A `Record<Shape, …>` for the reason `ACTIONS_BY_SHAPE` is one: a fourth
  * shape fails to COMPILE rather than falling through to another shape's line.
- * The other two shapes answer null, and their nulls are not placeholders — an
- * `entity_link` fact item HAS its picker action (`link_entity`), and a signal
- * item names no fact at all, so neither withholds anything.
+ * The `entity_link` FACT item answers one too (`linkNotice`, campaign
+ * admin-window/TASK-0056): its picker is withheld wherever the item names no
+ * whole reference or the rows behind it could not be read, which is the
+ * ordinary state of an item opened before the canonical row exists. The signal
+ * item names no fact at all and withholds nothing, so its null is the one that
+ * is not a placeholder.
  */
 export type ShapeNotice = (input: ShapeActionsInput) => ReactNode;
 
 export const NOTICE_BY_SHAPE: Record<Shape, ShapeNotice> = {
   data_conflict_fact: conflictNotice,
-  entity_link_fact: () => null,
+  entity_link_fact: linkNotice,
   entity_link_source_pattern: () => null,
 };
 

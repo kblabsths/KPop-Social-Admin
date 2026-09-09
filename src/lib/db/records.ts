@@ -21,6 +21,7 @@ import {
 import {
   columnOfRegistryField,
   decideEdit,
+  editConfigFor,
   mappedColumns,
   mappedRegistryFields,
   writePathFor,
@@ -511,6 +512,36 @@ export async function readReferenceChoices(
     },
     note: null,
   };
+}
+
+/**
+ * The rows one REVIEW ITEM's reference fact may be linked to — the close
+ * slot's picker's whole database side (campaign admin-window/TASK-0056, spec
+ * §7's "link to an existing entity").
+ *
+ * The same read as `readReferenceChoices` above and deliberately not a second
+ * one; what it adds is the lookup from a FACT to the table that holds it. A
+ * review item names `events.venue` — a registry domain and a registry FIELD —
+ * while the map is keyed by table and spells the reference's COLUMN
+ * (`venue_id`), so `registryField` is what the field is compared against
+ * (`lib/edit/config.ts`, admin-window/BUG-0090). Comparing the column would
+ * match nothing the queue ever holds.
+ *
+ * It lives HERE and not in the page for the reason every other read does: the
+ * one map is declared in `lib/edit/config.ts` and read by the write path and
+ * the data layer, and a page reaching for it directly is the second allowlist
+ * `tests/offline/edit/config.test.ts` refuses to let grow. A domain with no
+ * entry, or whose entry calls that field something other than its reference,
+ * answers with nothing to show and nothing to report — and makes no query.
+ */
+export async function readLinkChoices(
+  domain: string,
+  field: string,
+  db?: SupabaseClient,
+): Promise<ReferenceChoices> {
+  const config = editConfigFor(domain);
+  if (config === null || config.reference?.registryField !== field) return NO_CHOICES;
+  return readReferenceChoices(config, db);
 }
 
 /* ── per-field provenance ─────────────────────────────────────────────────── */
