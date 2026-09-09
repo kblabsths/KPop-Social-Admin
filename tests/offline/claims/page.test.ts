@@ -1643,6 +1643,114 @@ describe("absence and failure", () => {
   });
 });
 
+/**
+ * QA's pins on the same caption (admin-window/BUG-0144), on the two clauses
+ * the fix's own pin grades only as "one of the two arms":
+ *
+ * 1. **Which arm a bucket facet takes.** The criterion says the UNNARROWED
+ *    arm stands "over a facet that removes no row of that table", and the
+ *    bucket facet is exactly that facet — `bucketStats` drops it on purpose,
+ *    so `?bucket=escalated` removes not one row of this table. A regression
+ *    that decided the arm from the URL again (`hasNarrowingFacet`, what
+ *    admin-window/DEBT-0008 replaced) still puts one of the two arms on the
+ *    page and passes a membership check; it fails this one, on every bucket.
+ * 2. **A source or domain facet the WHOLE VIEW carries.** The caption's own
+ *    contract (`BUCKET_CAPTION`'s docstring, "a source or domain the whole
+ *    view carries anyway does not [narrow] — so the unnarrowed arm is what
+ *    stands") is the row fact, never the chip. Over a view whose every claim
+ *    carries the facet's value, the chip is active, the page dropped nothing,
+ *    and the figures are identical to the bare page's — so the sentence that
+ *    blames the filters above would be false.
+ *
+ * Copy-independent throughout: every expectation is the BARE page's own
+ * caption, read off the app, never a sentence typed here.
+ */
+describe("which arm the bucket caption takes", () => {
+  it("does not blame the bucket facet, which removes no row of that table", async () => {
+    const bare = await renderClaims(healthyScript());
+    const bareCaption = bucketCaption(bare);
+    const bareCounts = bucketRows(bare).map((row) => row.claims);
+    expect(bareCaption).not.toBe("");
+    expect(bareCounts.reduce((total, held) => total + held, 0)).toBeGreaterThan(0);
+
+    for (const bucket of RENDERED_BUCKETS) {
+      const markup = await renderClaims(healthyScript(), { bucket });
+      // The page really applied it: the chip is the current one and nothing
+      // was reported dropped, so the sentence is not being spared a facet the
+      // page threw away.
+      expect(chipsOf(markup, "bucket").filter((chip) => chip.active), bucket).toHaveLength(1);
+      expect(droppedLine(markup).lines, bucket).toBe(0);
+      // ...and this table's figures did not move, so nothing above narrowed
+      // these counts and the caption may not say otherwise.
+      expect(bucketRows(markup).map((row) => row.claims), bucket).toEqual(bareCounts);
+      expect(bucketCaption(markup), bucket).toBe(bareCaption);
+    }
+  });
+
+  it("blames a source or domain only when it removed a row of this table", async () => {
+    /** The same view with every claim moved onto one value of `facet`. */
+    const allOn = (facet: "source_id" | "domain", value: string): Script => {
+      const rows = CLAIMS.map((claim) => ({ ...claim, [facet]: value }));
+      return healthyScript({ [T.pendingClaims]: { data: rows, count: rows.length } });
+    };
+
+    for (const [facet, value] of [
+      ["source_id", SOURCE.first],
+      ["domain", "events"],
+    ] as ["source_id" | "domain", string][]) {
+      const script = allOn(facet, value);
+      const bare = await renderClaims(script);
+      const markup = await renderClaims(script, { [facet]: value });
+      const label = `${facet}=${value}`;
+
+      // Applied, and current: the chip bar shows the facet, nothing dropped.
+      expect(chipsOf(markup, facet).filter((chip) => chip.active), label).toHaveLength(1);
+      expect(droppedLine(markup).lines, label).toBe(0);
+      // It removed nothing, so the caption is the bare page's.
+      expect(bucketRows(markup).map((row) => row.claims), label).toEqual(
+        bucketRows(bare).map((row) => row.claims),
+      );
+      expect(bucketCaption(markup), label).toBe(bucketCaption(bare));
+    }
+
+    // Non-vacuous, the other direction: over the real population the same
+    // shape of facet DOES remove rows, and there the caption moves.
+    const plain = await renderClaims(healthyScript());
+    const removed = await renderClaims(healthyScript(), { source_id: SOURCE.first });
+    expect(bucketRows(removed).map((row) => row.claims)).not.toEqual(
+      bucketRows(plain).map((row) => row.claims),
+    );
+    expect(bucketCaption(removed)).not.toBe(bucketCaption(plain));
+  });
+
+  it("carries neither arm over a read that came back without a count", async () => {
+    // `readComplete`'s fifth refusal (`lib/db/result.ts`: a null count is a
+    // refusal, never a zero — admin-window/BUG-0007's rule). It reaches the
+    // page as the same `error` kind the other four do, and this pins that the
+    // caption's gate is the READ's outcome rather than a list of messages.
+    const whole = bucketCaption(await renderClaims(healthyScript()));
+    const narrowed = bucketCaption(
+      await renderClaims(healthyScript(), { source_id: SOURCE.first }),
+    );
+    for (const params of [{}, { bucket: "escalated" }] as Record<string, string>[]) {
+      const markup = await renderClaims(
+        healthyScript({ [T.pendingClaims]: { data: [...CLAIMS], count: null } }),
+        params,
+      );
+      const label = JSON.stringify(params);
+      const $ = cheerio.load(markup);
+      // Non-vacuous: the surface really refused, and drew no figure.
+      expect($('[data-surface="buckets"] [data-state]').attr("data-state"), label).toBe("error");
+      expect($("[data-bucket-claims]").length, label).toBe(0);
+      const said = $('[data-surface="buckets"] p')
+        .toArray()
+        .map((element) => $(element).text().replace(/\s+/g, " ").trim());
+      expect(said, label).not.toContain(whole);
+      expect(said, label).not.toContain(narrowed);
+    }
+  });
+});
+
 /* ── an empty surface is explained from TWO facts (DEBT-0008) ────────────── */
 
 /**
@@ -2055,10 +2163,30 @@ function droppedLine(markup: string) {
   };
 }
 
-/** What the bucket table's caption says, read out of the bucket surface itself. */
+/**
+ * What the bucket table's caption says, read out of the bucket surface itself.
+ *
+ * It reads the LAST paragraph of the surface, which is the caption only while
+ * the read behind the table RETURNED: over a refusal the last paragraph is the
+ * state card's own text, and a pin asserting `!== whole` there passes without
+ * grading anything (the trap admin-window/BUG-0144's fix leaves behind, since
+ * that state now renders no caption at all). So asking is an error rather than
+ * an answer, and the caption's ABSENCE is asserted over EVERY paragraph of the
+ * surface instead — what the BUG-0144 pins above do.
+ */
 function bucketCaption(markup: string): string {
-  return cheerio
-    .load(markup)('[data-surface="buckets"] p')
+  const $ = cheerio.load(markup);
+  const surface = $('[data-surface="buckets"]');
+  const state = surface.find("[data-state]").attr("data-state");
+  if (state !== undefined) {
+    throw new Error(
+      "bucketCaption() was asked what the caption says on a surface whose read " +
+        `did not happen (data-state="${state}"), where the page renders none. ` +
+        "Assert its ABSENCE across every paragraph of the surface instead.",
+    );
+  }
+  return surface
+    .find("p")
     .last()
     .text()
     .replace(/\s+/g, " ")
