@@ -14459,3 +14459,14 @@
 2026-09-09T04:53:45Z	qa-adversary	BUG-0093	spawned
 # STRANDED	2026-09-09T04:53:49Z	agent	8 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0091d7/, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0090.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0093.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0094.md
 2026-09-09T04:53:49Z	agent	-	-	-	-
+# STRANDED	2026-09-09T04:53:53Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0091d7/, agenticflow/DIGEST.md, tests/offline/edit/config.test.ts
+2026-09-09T04:53:53Z	agent	-	-	-	-
+# STRANDED	2026-09-09T04:54:00Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0091d7/, agenticflow/DIGEST.md, tests/offline/edit/config.test.ts
+2026-09-09T04:54:00Z	agent	-	-	-	-
+# STRANDED	2026-09-09T04:54:03Z	agent	5 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0091d7/, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0089.json, tests/offline/edit/config.test.ts
+2026-09-09T04:54:03Z	agent	-	-	-	-
+# STRANDED	2026-09-09T04:54:04Z	agent	6 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0091d7/, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0089.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0093.md, tests/offline/edit/config.test.ts
+2026-09-09T04:54:04Z	agent	-	-	-	-
+2026-09-09T04:54:07Z	builder	BUG-0095	spawned
+# STRANDED	2026-09-09T04:54:12Z	agent	6 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0091d7/, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0089.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0093.md, tests/offline/edit/config.test.ts
+2026-09-09T04:54:12Z	agent	-	-	-	-
