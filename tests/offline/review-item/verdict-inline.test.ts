@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { T } from "@/lib/db/tables";
 import { readItemVerdict } from "@/lib/db/verdict";
 import { EM_DASH } from "@/lib/format";
-import { render, runTogetherWords, uppercasedIdentifiers } from "../ui/markup";
+import { Identifier } from "@/components/ui/identifier";
+import { h, render, runTogetherWords, uppercasedIdentifiers } from "../ui/markup";
 import {
   ID,
   observationRow,
@@ -562,6 +563,48 @@ describe("a settled item renders the verdict that settled it", () => {
     expect(shown).toHaveLength(1);
     expect(shown.is("a")).toBe(false);
     expect(shown.text().trim()).toBe(ID.observationA);
+  });
+
+  /**
+   * ...and it is the SAME identifier rendering as everything else the machine
+   * produced — campaign admin-window/BUG-0148, the one call site DEBT-0011's
+   * sweep left behind. Landed as a STRICT pin (`it.fails`) while the
+   * divergence stands: the day the site goes through the primitive this XPASSes
+   * and turns the file red, which is the reader's pointer back to the ticket.
+   *
+   * DEBT-0011 criterion 2 is the rule, which put the mono
+   * identifier face behind one primitive so a rule about foreign text (the
+   * bidi isolation of criterion 4, ARCHITECTURE §7 / row 15) can be applied
+   * once instead of at every call site.
+   *
+   * The action two lines above this id in the same block already comes from
+   * the primitive, which is what makes the comparison below fair rather than
+   * aspirational.
+   *
+   * No class literal and no attribute value is typed here: both are read off
+   * the primitive's own render, so restyling the identifier moves this
+   * assertion with it. What is pinned is only that the two agree.
+   */
+  it.fails("renders the observation id through the one identifier primitive, like the action beside it", async () => {
+    const markup = await renderItem(withVerdict({}, []));
+    const $ = cheerio.load(markup);
+
+    const primitive = cheerio.load(render(h(Identifier, { children: ID.observationA })))("span");
+
+    // Non-vacuous: the verdict's ACTION, in this same block, is an identifier
+    // that already goes through the primitive.
+    expect($("[data-verdict-action]").attr("dir"), "the action is isolated").toBe(
+      primitive.attr("dir"),
+    );
+
+    const shown = $(`[data-verdict-observation="${ID.observationA}"]`);
+    expect(shown.is("a"), "the unlinked arm is the one under test").toBe(false);
+    expect(shown.attr("dir"), "an id the database produced is isolated too").toBe(
+      primitive.attr("dir"),
+    );
+    expect(shown.attr("class"), "and wears the identifier's one face").toBe(
+      primitive.attr("class"),
+    );
   });
 
   it("reports a refused observation leg beside the verdict, not instead of it", async () => {
