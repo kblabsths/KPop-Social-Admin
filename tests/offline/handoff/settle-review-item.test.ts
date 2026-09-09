@@ -682,6 +682,60 @@ describe("the settle_review_item migration", () => {
   });
 
   /**
+   * QA attack on admin-window/BUG-0088 — the code allocation itself.
+   *
+   * The test above, and the note's own citation table, take "free next door"
+   * from a grep of `kspace Scraper/supabase/migrations/` alone. That is not
+   * where the sibling's codes all live: `tools/staging/harness_objects.sql` is
+   * SQL applied to the staging project by `tools/staging/bootstrap_staging.sh`,
+   * it is never a migration, and it raises two codes of its own. The sibling
+   * keeps a witness for exactly this mistake —
+   * `tests/live_safety/test_codes_named_once.py`, whose `HARNESS_DOORS`
+   * docstring says a comparison reading the migrations alone "would call a live
+   * code an unraised one (resolver/BUG-0044's two lease codes were the first)".
+   *
+   * Measured in the sibling on 2026-09-08 (read-only): `KS027` is raised at
+   * `tools/staging/harness_objects.sql:2026` and named `LEASE_HELD_BY_ANOTHER`
+   * at `tests/helpers/ks_codes.py:122`; `KS028` is raised at `:2121` and named
+   * `LEASE_NOT_LIVE` at `:128`; and `tests/live_safety/test_codes_named_once.py`
+   * pins that registry at `KS001`–`KS028`.
+   *
+   * So the codes this artifact allocates are asserted against what the sibling
+   * ALREADY holds, captured here as a dated constant rather than by reading a
+   * path outside this repo (the offline suite reads nothing it does not own).
+   * Landed as `it.fails` (strict xfail, the house convention — cf.
+   * admin-window/BUG-0087, BUG-0088): watched RED as a plain `it` first, on
+   * HEAD 9043b72 of run/admin-window, reporting
+   * `expected [ 'KS027', 'KS028' ] to deeply equal []`. It goes RED again the
+   * day the file renumbers into free codes, which is the signal to flip it
+   * back to `it`.
+   */
+  it.fails("allocates codes the sibling has not already taken", () => {
+    // Every KS code in use next door on 2026-09-08, across BOTH SQL worlds:
+    // `supabase/migrations/` (KS001–KS026) and the staging harness doors in
+    // `tools/staging/` (KS027, KS028) — the set `tests/helpers/ks_codes.py`
+    // names one meaning each and `test_codes_named_once.py` enforces.
+    const TAKEN_NEXT_DOOR = Array.from(
+      { length: 28 },
+      (_, index) => `KS${String(index + 1).padStart(3, "0")}`,
+    );
+    // The codes the note itself declares it ALLOCATES, read off §3's citation
+    // row rather than hardcoded, so renumbering the file moves this test with
+    // it. A code raised but not allocated is a code reused with the sibling's
+    // own meaning (KS001, the gate's unregistered domain), which is fine.
+    const row = /\|([^|]*)\|[^|]*SQLSTATEs this file allocates/.exec(noteText);
+    expect(row).not.toBeNull();
+    const allocated = [...(row?.[1] ?? "").matchAll(/KS\d{3}/g)].map((match) => match[0]);
+    expect(allocated.length).toBeGreaterThan(0);
+    expect(allocated.filter((code) => TAKEN_NEXT_DOOR.includes(code))).toEqual([]);
+    // And nothing is raised that is neither allocated here nor already the
+    // sibling's own.
+    for (const code of new Set(errcodes(shipped))) {
+      expect(allocated.includes(code) || TAKEN_NEXT_DOOR.includes(code), code).toBe(true);
+    }
+  });
+
+  /**
    * admin-window/BUG-0082, on the function side. On this project a newly
    * created function is BORN with EXECUTE granted to `public`, `anon`,
    * `authenticated` and `service_role` by an `ALTER DEFAULT PRIVILEGES` nobody
