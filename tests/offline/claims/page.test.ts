@@ -2030,6 +2030,104 @@ describe("a source id in another spelling", () => {
     expect(chipsOf(markup, "source_id").filter((chip) => chip.active).map((chip) => chip.label))
       .toEqual([ANY_LABEL]);
   });
+
+  /**
+   * The whole PAGE, and not an enumerated list of its parts (QA,
+   * admin-window/DEBT-0009).
+   *
+   * The pins above grade four surfaces a spelling could move — the claim ids,
+   * the bucket rows, the chip bar, the dropped line — each chosen by hand. The
+   * property the canonicalising facet reader actually owes is stronger and
+   * cheaper to state: a spelling of one id renders THE SAME RENDER. Every
+   * caption, count, state card, window line and href on this page is then
+   * covered at once, including the ones nobody thought to enumerate, and a
+   * spelling that leaks into any of them fails HERE naming the spelling
+   * instead of shipping under four green assertions that never looked at it.
+   *
+   * **`Date` is frozen for the pair, and that is the assertion's own doing,
+   * not the page's.** The gauge window line carries the instants the read was
+   * made over (`data-window-since` / `data-window-until`, to the millisecond),
+   * so two renders a few milliseconds apart differ in four digits and nothing
+   * else — measured before this was frozen, on all three spellings. Faking
+   * `Date` alone (`toFake: ["Date"]`, as `tests/offline/absence/pages.test.ts`
+   * does) leaves every real promise in the render resolving normally, so what
+   * is held still is the clock and not the page.
+   */
+  it.each(SPELLINGS)("renders the page the canonical spelling renders, for %o", async (spelling) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-09T12:00:00.000Z"));
+    try {
+      const asked = await renderClaims(healthyScript(), { source_id: spelling });
+      const canonical = await renderClaims(healthyScript(), { source_id: CANONICAL });
+      expect(asked).toBe(canonical);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/* ── a parameter this page has no facet for ──────────────────────────────── */
+
+/**
+ * `record_id` narrows nothing here, in every spelling, and the page SAYS so
+ * (QA, admin-window/DEBT-0009).
+ *
+ * DEBT-0009's own text asserted that `/claims` "takes `record_id` as a raw
+ * string facet" and asked for that facet to be canonicalised. It does not and
+ * never did: `CLAIM_FACETS` is `[bucket, source_id, domain]`, `pending_claims`
+ * keys an entity by `entity_id`, and `?record_id=` is the usersim's example of
+ * a parameter this page DROPS (`M2-usersim-priya.md` §6, cited by
+ * `lib/url/dropped-params.ts`). The correction is worth a test rather than a
+ * sentence in a ticket, because the tempting repair is to invent the facet —
+ * an id facet nobody designed, with no column behind it and no bounded chip
+ * vocabulary — and nothing on this page would have reddened if someone had.
+ *
+ * The rule is graded at the leaf (`tests/offline/claims/filters.test.ts`) and
+ * on `/queues`' page; the one place it was NOT graded is the page this ticket
+ * changed, whose facet reader now canonicalises. So: a `record_id` that is a
+ * real id, one that is no id at all, and one that is the id of a source this
+ * page really does narrow by, all reach the same answer — the unnarrowed page,
+ * under a line that names the parameter.
+ */
+describe("a record_id asked of /claims", () => {
+  it.each([
+    ["a well-formed id, which a source on this page really has", SOURCE.first],
+    ["a well-formed id nothing here carries", "01920000-0000-7000-8000-0000000009f9"],
+    ["a value that is no id at all", "not-a-uuid"],
+  ])("narrows nothing and is reported, for %s", async (_label, asked) => {
+    const markup = await renderClaims(healthyScript(), { record_id: asked });
+    const bare = await renderClaims(healthyScript());
+
+    // Both of the page's sets are the unnarrowed ones...
+    expect(claimIds(markup)).toEqual(claimIds(bare));
+    expect(bucketRows(markup)).toEqual(bucketRows(bare));
+    // ...no facet is on...
+    expect(chipsOf(markup, "source_id").filter((chip) => chip.active).map((chip) => chip.label))
+      .toEqual([ANY_LABEL]);
+    // ...and the page says what it did not do, by name.
+    expect(droppedLine(markup).names).toEqual(["record_id"]);
+    expect(droppedLine(markup).total).toBe(1);
+  });
+
+  it("is still reported beside a source_id that DID narrow, in another spelling", async () => {
+    const params = {
+      source_id: SOURCE.first.replace(/-/g, ""),
+      record_id: SOURCE.first,
+    };
+    const markup = await renderClaims(healthyScript(), params);
+
+    // The one that narrowed, narrowed — and spells itself back canonically.
+    const active = chipsOf(markup, "source_id").filter((chip) => chip.active);
+    expect(active.map((chip) => chip.label)).toEqual([nameOf(SOURCE.first)]);
+    expect(active[0].href).toContain(encodeURIComponent(SOURCE.first));
+    expect(claimIds(markup)).toEqual(
+      claimIds(await renderClaims(healthyScript(), { source_id: SOURCE.first })),
+    );
+    // The one that did not, is named — and it is the ONLY one named, so the
+    // canonicalised facet is not swept into the same sentence.
+    expect(droppedLine(markup).names).toEqual(["record_id"]);
+    expect(droppedLine(markup).total).toBe(1);
+  });
 });
 
 /* ── what a source is called ─────────────────────────────────────────────── */
