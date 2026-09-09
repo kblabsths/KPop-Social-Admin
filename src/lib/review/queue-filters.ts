@@ -308,6 +308,53 @@ export function isNarrowed(
   );
 }
 
+/**
+ * **Is THIS queue block's rendering scoped by the URL?** The one question the
+ * four states turn on, from TWO facts and nothing else (admin-window/BUG-0133).
+ *
+ * `isNarrowed` above answers the STRUCTURAL half — can a facet of this URL
+ * remove a row of this kind at all, whatever the table holds. It is derived
+ * from the shape registry, so it can never answer the other half: **whether
+ * the table holds any row of this kind in the first place.** When a block's
+ * own queue is empty, no facet has removed anything from it — every URL leaves
+ * exactly the rows the bare `/queues` shows, which is none — and a block that
+ * said a filter emptied it would be blaming a filter for its own zero and
+ * telling the reader to widen a filter that hides nothing. That is the state
+ * staging is in today (0 decision items), and "a table with no rows" and "a
+ * filter that matched nothing" never share a rendering (LOOK_AND_FEEL, the
+ * four states).
+ *
+ * So the second fact is the block's own POPULATION — the size of the set it
+ * renders with no URL facet at all (`readReviewQueues` in
+ * `src/lib/db/review-items.ts`) — against the size of what it is rendering
+ * now. The rendered set is a subset of the population, so equal sizes mean the
+ * SAME SET: the facet removed nothing and there is no scope to claim.
+ *
+ * Both facts are required and neither is weakened:
+ * - `?status=settled` on a decision queue holding open rows: structurally
+ *   narrowing AND fewer rows than its population — still names its scope.
+ * - `?kind=signal` on a decision queue holding decisions: same — still names it.
+ * - `?kind=decision` on the decision block: not structurally narrowing at all
+ *   (admin-window/BUG-0129, admin-window/BUG-0131) — never named.
+ * - any facet on a decision queue holding NOTHING: population 0, rendered 0 —
+ *   no longer named (admin-window/BUG-0133).
+ *
+ * Pure, and decided here rather than in the page, for the same reason
+ * `isNarrowed` is: it is one rule about a narrowing, and the page renders.
+ */
+export function isBlockNarrowed(
+  filter: ReviewItemFilter,
+  within: ReviewItemFilter,
+  block: {
+    /** How many rows this block is rendering under the URL's filter. */
+    rendered: number;
+    /** How many rows its kind holds with no URL facet at all. */
+    population: number;
+  },
+): boolean {
+  return isNarrowed(filter, within) && block.rendered !== block.population;
+}
+
 /* ── writing the URL ─────────────────────────────────────────────────────── */
 
 /**

@@ -2,9 +2,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { readComplete, type DbCountedResponse, type DbResult } from "./result";
 import { T } from "./tables";
 import {
+  KINDS,
   queueOrder,
   selectItems,
   summarizeByKind,
+  type Kind,
   type ReviewAttention,
   type ReviewItemFilter,
   type ReviewItemRow,
@@ -115,6 +117,81 @@ export async function listReviewItems(
   );
   if (result.kind !== "ok") return result;
   return { kind: "ok", data: queueOrder(selectItems(result.data, filter)) };
+}
+
+/**
+ * What ONE queue block needs to tell its four states apart: the rows the URL
+ * left it, and how many rows its kind holds when NOTHING is filtered
+ * (campaign admin-window/BUG-0133).
+ *
+ * `listReviewItems` narrows at the database, so its `ok` array never contains
+ * the rows a facet removed — from it alone a block cannot tell "my queue is
+ * empty" from "the filter matched nothing", and staging (0 decision items)
+ * renders the second for the first. The population is the missing fact and it
+ * is a COUNT, never rows to render: nothing below is displayed.
+ */
+export interface ReviewQueues {
+  /** The items matching the URL filter, in queue order — what the page renders. */
+  items: ReviewItemRow[];
+  /**
+   * Per kind, the rows the table holds with NO url facet at all: the size of
+   * the set that block would render on the bare `/queues`. Both kinds are
+   * always present, so an empty queue is a real `0` and never a gap.
+   */
+  population: Record<Kind, number>;
+}
+
+/** Every kind's whole-table row count, by the app's one predicate. */
+function populationByKind(items: ReviewItemRow[]): Record<Kind, number> {
+  const population = {} as Record<Kind, number>;
+  // Not `summarizeByKind`: that counts OPEN items (attention), and a block's
+  // unfiltered set is every row of its kind, settled ones included.
+  for (const kind of KINDS) population[kind] = selectItems(items, { kind }).length;
+  return population;
+}
+
+/**
+ * Does this filter ask the database for anything less than the whole table?
+ *
+ * Read off `ReviewItemFilter`'s own values rather than off `FACETS` in
+ * `lib/review/queue-filters.ts`: the arrow runs `app/** -> lib/db/**` and
+ * `app/** -> lib/review/**`, and a `lib/db` module importing the URL layer
+ * would invert it. An explicitly-`undefined` facet is no narrowing, which is
+ * exactly how `matchesFilter` reads it.
+ */
+function narrows(filter: ReviewItemFilter): boolean {
+  return Object.values(filter).some((value) => value !== undefined);
+}
+
+/**
+ * The Queues page's read: both facts, or one refusal.
+ *
+ * TWO COMPLETE READS (ARCHITECTURE.md §4.3 kind 1), and only when the URL
+ * carries a facet — the bare `/queues` reads once and IS its own population,
+ * so the common case costs exactly what it costs today. Neither read is
+ * partial and neither is a window: an `ok` here means both answered in full,
+ * and if either refused the caller gets that refusal and renders no figure at
+ * all rather than a population the app never counted (LESSONS 2: a null count
+ * is a refusal, never a zero).
+ *
+ * The population read is deliberately the SAME query with an empty filter, so
+ * the two legs cannot come to disagree about columns, order or completeness.
+ */
+export async function readReviewQueues(
+  filter: ReviewItemFilter = {},
+  db?: SupabaseClient,
+): Promise<DbResult<ReviewQueues>> {
+  const [filtered, whole] = await Promise.all([
+    listReviewItems(filter, db),
+    narrows(filter) ? listReviewItems({}, db) : null,
+  ]);
+  if (filtered.kind !== "ok") return filtered;
+  const population = whole ?? filtered;
+  if (population.kind !== "ok") return population;
+  return {
+    kind: "ok",
+    data: { items: filtered.data, population: populationByKind(population.data) },
+  };
 }
 
 /**

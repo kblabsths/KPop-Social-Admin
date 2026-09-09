@@ -54,6 +54,10 @@ vi.mock("@/lib/db/review-items", async (importActual) => {
     ...actual,
     listReviewItems: (filter?: unknown) =>
       actual.listReviewItems(filter as never, readWith.client as never),
+    // The page's own read since admin-window/BUG-0133: the filtered rows AND
+    // each block's unfiltered population, from the same module boundary.
+    readReviewQueues: (filter?: unknown) =>
+      actual.readReviewQueues(filter as never, readWith.client as never),
   };
 });
 
@@ -982,16 +986,25 @@ describe("a zero that a filter produced", () => {
     expect(openSub(filtered, "decision").length).toBeGreaterThan(unscoped.length);
   });
 
-  it("blames the filters on an empty table when a facet beside the kind is set", async () => {
-    // Same seam, the other state: with nothing in the table, `status` is a
-    // reason the block is empty and the card may say so — where `kind` alone
-    // (the test above) may not.
+  it("blames NO filter on an empty table, whatever facet is beside the kind", async () => {
+    // Same seam, the other state — and the assertion INVERTED by
+    // admin-window/BUG-0133, which is the ticket that owns this state. It used
+    // to read "`status` is a reason the block is empty and the card may say
+    // so": it is not. With nothing in the table there was no row for `status`
+    // to remove, the block renders exactly what the bare `/queues` renders, and
+    // "Widen a filter above" is advice that leads to the same zero. A table
+    // with no rows and a filter that matched nothing never share a rendering
+    // (LOOK_AND_FEEL, the four states).
+    //
+    // The true half of the rule — a facet that really DID remove rows still
+    // names its scope — is pinned on the POPULATED table by the two siblings
+    // above and below, so this pair still proves itself both ways.
     const rowsOf = (markup: string) =>
       squash(cheerio.load(markup)(`[data-queue="decision"] [data-rows]`).text());
     const filtered = await renderQueues(EMPTY_TABLE, paramsOf("kind=decision&status=settled"));
 
     expect(stateOf(filtered, "decision")).toBe("empty");
-    expect(rowsOf(filtered)).not.toBe(rowsOf(await renderQueues(EMPTY_TABLE)));
+    expect(rowsOf(filtered)).toBe(rowsOf(await renderQueues(EMPTY_TABLE)));
     // and it is the SAME card the facet draws without the kind beside it
     expect(rowsOf(filtered)).toBe(
       rowsOf(await renderQueues(EMPTY_TABLE, paramsOf("status=settled"))),
@@ -1173,7 +1186,15 @@ describe("a zero that a filter produced", () => {
         ] as const) {
           const own = blockHtml(await renderQueues(script, params), kind);
           const plain = blockHtml(await renderQueues(script), kind);
-          if (implied) expect(own, `${where}/${name}`).toBe(plain);
+          // On the POPULATED table the structural rule decides: a block is
+          // identical to its unfiltered self under a value its kind implies,
+          // and different under every value that really removes rows from it.
+          // On the EMPTY table nothing was there for ANY facet to remove, so
+          // every block renders identically under every URL — the empty half
+          // of this sweep asserted the opposite until admin-window/BUG-0133,
+          // and that was the defect (LOOK_AND_FEEL, the four states).
+          const identical = name === "empty" || implied;
+          if (identical) expect(own, `${where}/${name}`).toBe(plain);
           else expect(own, `${where}/${name}`).not.toBe(plain);
         }
       }
@@ -1211,9 +1232,10 @@ describe("a zero that a filter produced", () => {
     }
   });
 
-  // STRICT pin, landed red by QA (admin-window/BUG-0133). Drop `.fails` the day
-  // the block stops blaming a filter for a zero its own queue produced.
-  it.fails(
+  // Landed red by QA as a strict `it.fails` pin (admin-window/BUG-0133) and
+  // flipped to `it` by the fix: a block whose own queue is empty no longer
+  // blames a filter for the zero that emptiness produced.
+  it(
     "does not blame a filter for a zero on a queue that holds nothing anyway (admin-window/BUG-0133)",
     async () => {
       // The trigger BUG-0131's structural rule does not reach, and the state

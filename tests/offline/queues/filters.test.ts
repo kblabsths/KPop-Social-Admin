@@ -9,6 +9,7 @@ import {
   facetChips,
   filterBar,
   filterFrom,
+  isBlockNarrowed,
   isNarrowed,
   narrowingOfKind,
   queuesHref,
@@ -322,6 +323,124 @@ describe("writing the URL", () => {
     // "everything" — an absent parameter is how "no narrowing" is spelled.
     expect(withFacet(filter, "kind", undefined)).toEqual({ status: "open" });
     expect(filter).toEqual({ kind: "signal", status: "open" });
+  });
+});
+
+describe("the narrowing ONE BLOCK is actually under", () => {
+  /**
+   * `isBlockNarrowed(filter, within, { rendered, population })` — the whole
+   * four-state decision, from two facts (admin-window/BUG-0133).
+   *
+   * `isNarrowed`/`narrowingOfKind` above answer only what a KIND implies:
+   * whether a facet CAN remove a row of that kind. They cannot answer whether
+   * the table holds any row of that kind at all — so on staging's 0 decision
+   * items every facet outside the kind's implied set flipped the decision
+   * block into the filtered rendering, blaming a filter for a zero the empty
+   * queue produced. The population is the second fact, and the rendered set is
+   * a subset of it, so equal sizes mean the same set and no scope to claim.
+   *
+   * Pinned BOTH ways: every case below is asserted true where the filter
+   * really did narrow the block and false where it did not.
+   */
+
+  /**
+   * The values each kind implies, spelled from spec §6 as the sibling describe
+   * spells them — asking `narrowingOfKind` what to expect would only prove
+   * this module agrees with itself.
+   */
+  const IMPLIES: Record<Kind, Partial<Record<string, string>>> = {
+    decision: { kind: "decision" },
+    signal: {
+      kind: "signal",
+      shape: "entity_link_source_pattern",
+      queue: "entity_link",
+    },
+  };
+
+  it("answers false for EVERY url when the block's own queue is empty", () => {
+    // The reported state. No facet, and no combination of facets, may be given
+    // as the reason a block that holds nothing holds nothing.
+    for (const kind of KINDS) {
+      const within = narrowingOfKind(kind);
+      for (const facet of FACETS) {
+        for (const value of FACET_VALUES[facet] as readonly string[]) {
+          expect(
+            isBlockNarrowed(filterFrom({ [facet]: value }), within, {
+              rendered: 0,
+              population: 0,
+            }),
+            `${facet}=${value} on an empty ${kind} queue`,
+          ).toBe(false);
+        }
+      }
+      for (const query of [
+        "kind=signal&status=settled",
+        "queue=data_conflict&shape=data_conflict_fact&status=open",
+      ]) {
+        expect(
+          isBlockNarrowed(filterFrom(paramsOf(`/queues?${query}`)), within, {
+            rendered: 0,
+            population: 0,
+          }),
+          `${query} on an empty ${kind} queue`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("answers true when a facet really did remove rows from a populated block", () => {
+    // The half that may not be weakened: a block that HOLDS rows and is
+    // rendering fewer of them is scoped, and says so.
+    for (const kind of KINDS) {
+      const within = narrowingOfKind(kind);
+      for (const facet of FACETS) {
+        for (const value of FACET_VALUES[facet] as readonly string[]) {
+          const implied = IMPLIES[kind][facet] === value;
+          expect(
+            isBlockNarrowed(filterFrom({ [facet]: value }), within, {
+              rendered: implied ? 4 : 0,
+              population: 4,
+            }),
+            `${facet}=${value} on a populated ${kind} queue`,
+          ).toBe(!implied);
+        }
+      }
+    }
+  });
+
+  it("answers false when the facet left every row of a populated block in place", () => {
+    // Equal sizes mean the same set: a scope claim over a set the URL did not
+    // change is a claim the read does not support, however narrow the URL
+    // looks. `?status=settled` on a block whose rows are all settled renders
+    // exactly the unfiltered block.
+    const within = narrowingOfKind("decision");
+    expect(
+      isBlockNarrowed(filterFrom({ status: "settled" }), within, {
+        rendered: 3,
+        population: 3,
+      }),
+    ).toBe(false);
+    expect(
+      isBlockNarrowed(filterFrom({ status: "settled" }), within, {
+        rendered: 2,
+        population: 3,
+      }),
+    ).toBe(true);
+  });
+
+  it("never claims a scope the structural rule already refused", () => {
+    // A facet the kind implies stays discounted whatever the counts say — the
+    // second fact may only ever REMOVE a scope claim, never add one.
+    const within = narrowingOfKind("signal");
+    for (const [facet, value] of Object.entries(IMPLIES.signal)) {
+      expect(
+        isBlockNarrowed(filterFrom({ [facet]: value }), within, {
+          rendered: 1,
+          population: 7,
+        }),
+        `${facet}=${value}`,
+      ).toBe(false);
+    }
   });
 });
 

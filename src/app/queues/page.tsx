@@ -15,7 +15,7 @@ import {
   type EmptyWords,
 } from "@/components/gauges";
 import { Empty, Page, Section, StateOf, WindowLine, oldestIn } from "@/components/ui";
-import { listReviewItems } from "@/lib/db/review-items";
+import { readReviewQueues, type ReviewQueues } from "@/lib/db/review-items";
 import type { DbResult } from "@/lib/db/result";
 import {
   VERDICTS_OBJECT,
@@ -32,7 +32,7 @@ import { recordHref } from "@/lib/records/routes";
 import {
   filterBar,
   filterFrom,
-  isNarrowed,
+  isBlockNarrowed,
   narrowingOfKind,
   tabFrom,
   tabLinks,
@@ -68,7 +68,7 @@ import {
  * **Nothing here classifies, orders or filters anything itself.** `shapeOf`,
  * `selectItems` and `queueOrder` in `src/lib/review/shapes.ts` are the one
  * predicate and the one display order in the app (acceptance test 4 is only
- * true because there is one of each), and `listReviewItems` applies them to a
+ * true because there is one of each), and `readReviewQueues` applies them to a
  * COMPLETE read (ARCHITECTURE.md §4.3): an `ok` array is the WHOLE matching
  * set, so there is no paging UI, no "showing N of M" line and no local
  * `.limit`/`.slice`/re-sort anywhere below. A read that could not answer
@@ -217,10 +217,10 @@ function OpenDetail({
    * set and not the queue. `?status=settled` renders a real zero here, and a
    * zero that did not name its scope would read as "nothing is open" about a
    * database that holds plenty. Decided by
-   * `isNarrowed(filter, narrowingOfKind(kind))`, so a facet that cannot remove
-   * a row from this block — its own kind, or any value that kind implies — is
-   * not counted and the zero stays unscoped (admin-window/BUG-0129,
-   * admin-window/BUG-0131).
+   * `isBlockNarrowed`, so a facet that removed no row from this block — one
+   * its own kind implies (admin-window/BUG-0129, admin-window/BUG-0131), or
+   * any facet at all when the block's own queue is empty
+   * (admin-window/BUG-0133) — is not counted and the zero stays unscoped.
    */
   narrowed: boolean;
 }) {
@@ -249,7 +249,7 @@ function Queue({
   filter,
 }: {
   kind: Kind;
-  result: DbResult<ReviewItemRow[]>;
+  result: DbResult<ReviewQueues>;
   filter: ReviewItemFilter;
 }): ReactNode {
   const shared = {
@@ -289,7 +289,7 @@ function Queue({
   // hand-written `filter(i => …)` here would be a second one (acceptance
   // test 4), and the order is `queueOrder`'s, untouched.
   const ownNarrowing = narrowingOfKind(kind);
-  const items = selectItems(result.data, ownNarrowing);
+  const items = selectItems(result.data.items, ownNarrowing);
   // Narrowed BY WHAT THIS BLOCK RENDERS, not by the URL: the same object the
   // selection above ran with is what the predicate discounts, so the two
   // cannot come to disagree about what this block already excludes. That
@@ -302,7 +302,17 @@ function Queue({
   // does empty a block (`?kind=signal` on the decisions, `?queue=data_conflict`
   // on the signals) still makes it name its scope (admin-window/BUG-0129,
   // admin-window/BUG-0131).
-  const narrowed = isNarrowed(filter, ownNarrowing);
+  //
+  // The second fact the structural one cannot reach: what this block's kind
+  // holds with no URL facet at all. A block whose own queue is EMPTY had no row
+  // for any facet to remove, so no facet may be given as the reason it is empty
+  // — the state staging is in today, with 0 decision items
+  // (admin-window/BUG-0133). The read supplies the population beside the rows
+  // so the two facts come from one refusal-or-answer.
+  const narrowed = isBlockNarrowed(filter, ownNarrowing, {
+    rendered: items.length,
+    population: result.data.population[kind],
+  });
   // The read succeeded either way, so it produced a figure either way. An
   // empty queue differs from a full one ONLY in the rows region, where its
   // card says what the queue holds and what fills it: the counted zero keeps
@@ -551,11 +561,14 @@ export default async function QueuesPage({
     );
   }
 
-  // One complete read for both queues, and the gauge's own bounded window.
+  // One complete read for both queues — plus, when the URL carries a facet, the
+  // same read unfiltered, so each block knows its own population and an empty
+  // queue's zero is never dressed as a filtered one (admin-window/BUG-0133).
+  // And the gauge's own bounded window.
   // Reported separately: with the gauge's window unreadable the lists still
   // render, and each surface names the read that refused.
   const [items, health] = await Promise.all([
-    listReviewItems(filter),
+    readReviewQueues(filter),
     readQueueHealth(),
   ]);
 
