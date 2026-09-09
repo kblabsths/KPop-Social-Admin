@@ -466,6 +466,47 @@ describe("the four data-surface states", () => {
     expect(html).toContain("the resolver files one here");
   });
 
+  /**
+   * `holds` and `filledBy` widened from `string` to `ReactNode` so that a
+   * caller whose sentence contains a machine identifier can set that one word
+   * in the app's identifier-in-prose spelling (admin-window/BUG-0120). Both
+   * halves of that are asserted here: the widening changed nothing for the
+   * callers that pass a string, and it really does carry a caller's element.
+   */
+  it("adds no element of its own around a string caller's two lines", () => {
+    const holds = "open decisions";
+    const filledBy = "the resolver files one here";
+    const $ = cheerio.load(render(h(Empty, { holds, filledBy })));
+    const lines = $("p").toArray();
+    expect(lines).toHaveLength(2);
+    expect($(lines[0]).text()).toBe(`No ${holds}`);
+    expect($(lines[1]).text()).toBe(filledBy);
+    // The card wraps nothing: what a string caller renders is text, and the
+    // 16 call sites that pass strings render exactly what they did before.
+    for (const line of lines) expect($(line).children().toArray()).toHaveLength(0);
+  });
+
+  it("renders an element a caller puts inside a line, unchanged and in place", () => {
+    const $ = cheerio.load(
+      render(
+        h(Empty, {
+          holds: h("span", { "data-probe": "held" }, "verdicts"),
+          filledBy: h("em", { "data-probe": "fills" }, "a resolver run"),
+        }),
+      ),
+    );
+    // Each line carries the caller's own element, with its tag and attribute
+    // intact — the card neither drops it nor re-wraps its words.
+    const held = $('p [data-probe="held"]');
+    expect(held).toHaveLength(1);
+    expect(held.text()).toBe("verdicts");
+    expect(held.parent().text()).toBe("No verdicts");
+    const fills = $('p [data-probe="fills"]');
+    expect(fills).toHaveLength(1);
+    expect(fills[0].tagName).toBe("em");
+    expect(fills.text()).toBe("a resolver run");
+  });
+
   it("names the missing table in mono and stays gray — unavailable is not broken", () => {
     const html = render(h(NotProvisioned, { missing: "verdicts", arrivesWith: "the scraper repo's migration" }));
     expect(html).toMatch(/class="type-data[^"]*"[^>]*>verdicts</);

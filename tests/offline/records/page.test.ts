@@ -2026,10 +2026,10 @@ describe("a table name in an empty state card", () => {
     };
   }
 
-  // xfail, strict: passes only while the divergence stands. The day the card
-  // wraps its name, this XPASSes, vitest turns it red, and whoever reads it is
-  // sent to admin-window/BUG-0120 to take the `.fails` off.
-  it.fails("sets the name in the face the heading above it uses, on a mistyped id (admin-window/BUG-0120)", async () => {
+  // Was a strict xfail while the divergence stood; the wrap landed in
+  // admin-window/BUG-0120 and these are ordinary tests now, so the card going
+  // back to the page's prose face is a failure and not an XPASS.
+  it("sets the name in the face the heading above it uses, on a mistyped id", async () => {
     const table = DIRECT_WRITE_TABLE;
     const { headingFace, lines } = namesInTheCard(
       await renderRecord(table, defaultScript(table), "not-an-id"),
@@ -2043,7 +2043,7 @@ describe("a table name in an empty state card", () => {
     }
   });
 
-  it.fails("sets the name in the face the heading above it uses, on an id no row has (admin-window/BUG-0120)", async () => {
+  it("sets the name in the face the heading above it uses, on an id no row has", async () => {
     const table = DIRECT_WRITE_TABLE;
     const { headingFace, lines } = namesInTheCard(
       await renderRecord(table, { ...defaultScript(table), [table]: { data: null } }),
@@ -2055,4 +2055,44 @@ describe("a table name in an empty state card", () => {
       for (const face of line.drawn) expect(face).toEqual(headingFace);
     }
   });
+
+  /**
+   * The fixture the rule above must NOT flag (LESSONS 3, ARCHITECTURE §10).
+   *
+   * `events` is both a table and the app's own plural noun, and the mistyped-id
+   * card says it twice: once as the machine's word (the id sentence) and once
+   * as English (the sentence that sends the operator to Browse). A fix that
+   * wrapped every occurrence of the string would satisfy the two tests above
+   * and set an English word in mono — the prettifying the type split exists to
+   * prevent. So this asks for exactly one wrap, and asks that it be the FIRST
+   * occurrence, which is the identifier: nothing before the wrapped element
+   * says the name.
+   */
+  it("leaves an English word that happens to match a table name in the app's own face", async () => {
+    const table = "events";
+    expect(EDITABLE_TABLES, `${table} is a table of this map`).toContain(table);
+    const $ = cheerio.load(
+      await renderRecord(table, defaultScript(table), "not-an-id"),
+    );
+    const card = $('[data-state="empty"]');
+    expect(card.length).toBe(1);
+    const filler = card.find("p").last();
+    // Non-vacuous: the line really does say the name more than once.
+    expect(
+      filler.text().split(table).length - 1,
+      "the line no longer says the name twice, so this guard proves nothing",
+    ).toBe(2);
+    // ...and only one of them is the machine's word.
+    const drawn = namesTheTable($, filler, table);
+    expect(drawn.length, "an English word was set in the identifier's face").toBe(1);
+    // The wrapped one is the first: everything the operator reads before it is
+    // the app's own words, and none of them is the name.
+    const before: string[] = [];
+    for (const node of filler.contents().toArray()) {
+      if (node === drawn[0]) break;
+      before.push($(node).text());
+    }
+    expect(before.join("").includes(table)).toBe(false);
+  });
 });
+

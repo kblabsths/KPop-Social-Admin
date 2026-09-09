@@ -197,6 +197,28 @@ function ProvenanceLegend() {
 }
 
 /**
+ * The table's name, drawn as the machine's word — campaign
+ * admin-window/BUG-0120.
+ *
+ * One spelling, in one place, for every sentence on this route that says the
+ * name: the heading gets it from `Page`, and the regime note and both empty
+ * cards get it from here. It is the app's EXISTING identifier-in-prose span
+ * (`NotProvisioned`, `src/components/ui/not-provisioned.tsx`) and not a new
+ * one — mono at the data step, primary ink, verbatim, case and underscore
+ * intact — so a name reads the same whichever of the four data-surface states
+ * happens to be drawing it (LOOK_AND_FEEL Voice bar 5). Before this, the
+ * heading and the note wrapped it and the two empty cards said it in the
+ * app's own prose face, four times on one screen.
+ *
+ * Only the IDENTIFIER is wrapped. "Browse lists recent events, and an event's
+ * record links to its venue" says `events` as the app's own plural noun —
+ * prose, not a machine word — and stays sans.
+ */
+function TableName({ config }: { config: TableEditConfig }) {
+  return <span className="type-data text-ink">{config.table}</span>;
+}
+
+/**
  * What actually fills a record page the operator asked for by id and did not
  * get — campaign admin-window/BUG-0052.
  *
@@ -222,13 +244,19 @@ function ProvenanceLegend() {
  * already answers how a table is written, and the answer is what decides
  * whether a listing can exist for it.
  */
-function foundBy(config: TableEditConfig): string {
-  return writePathFor(config.regime) === "direct"
-    ? `Admin has no ${config.table} listing: such a record is reached by its ` +
+function foundBy(config: TableEditConfig): ReactNode {
+  return writePathFor(config.regime) === "direct" ? (
+    <>
+      {`Admin has no `}
+      <TableName config={config} />
+      {` listing: such a record is reached by its ` +
         `id alone. Check the id in the address bar, or take one from the ` +
-        `database.`
-    : `Browse lists recent events, and an event's record links to its venue. ` +
-        `Check the id in the address bar.`;
+        `database.`}
+    </>
+  ) : (
+    `Browse lists recent events, and an event's record links to its venue. ` +
+    `Check the id in the address bar.`
+  );
 }
 
 /**
@@ -271,11 +299,15 @@ function foundBy(config: TableEditConfig): string {
  * already above the section, verbatim in mono, and a trailing space quoted
  * mid-sentence is invisible exactly where it matters.
  */
-function notAnId(config: TableEditConfig): string {
+function notAnId(config: TableEditConfig): ReactNode {
   return (
-    `The address bar does not hold an id: ${config.table} ids are uuids, 32 ` +
-    `hexadecimal digits usually written in five hyphenated groups. ` +
-    foundBy(config)
+    <>
+      {`The address bar does not hold an id: `}
+      <TableName config={config} />
+      {` ids are uuids, 32 ` +
+        `hexadecimal digits usually written in five hyphenated groups. `}
+      {foundBy(config)}
+    </>
   );
 }
 
@@ -324,12 +356,12 @@ function RecordFrame({
             word, so it is set in the app's identifier-in-prose spelling —
             mono at the data step, verbatim, case and underscore intact — while
             everything the app wrote about it stays body sans in secondary ink.
-            Three names of the same kind stand on this screen (this one, the
-            heading's and the not-provisioned card's) and they now read alike
+            Every name of that kind on this screen — this one, the heading's,
+            the not-provisioned card's and, since admin-window/BUG-0120, both
+            empty cards' — now reads alike, from `TableName`
             (LOOK_AND_FEEL Voice bar 5; admin-window/BUG-0112). */}
         <p data-note="regime" className="type-body text-ink-secondary">
-          <span className="type-data text-ink">{config.table}</span>{" "}
-          {regimeNote(config)}
+          <TableName config={config} /> {regimeNote(config)}
         </p>
         {children}
       </Section>
@@ -364,7 +396,12 @@ export default async function RecordPage({
     return (
       <RecordFrame config={config} id={id}>
         <Empty
-          holds={`${config.table} record at this address`}
+          holds={
+            <>
+              <TableName config={config} />
+              {` record at this address`}
+            </>
+          }
           filledBy={notAnId(config)}
         />
       </RecordFrame>
@@ -426,7 +463,12 @@ export default async function RecordPage({
     // table being absent, and the two never share a rendering.
     body = (
       <Empty
-        holds={`${config.table} record with that id`}
+        holds={
+          <>
+            <TableName config={config} />
+            {` record with that id`}
+          </>
+        }
         filledBy={foundBy(config)}
       />
     );

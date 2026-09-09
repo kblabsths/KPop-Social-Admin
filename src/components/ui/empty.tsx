@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Eyebrow, type MicroLabel } from "./micro-label";
 
 /**
@@ -17,10 +18,20 @@ export function Empty({
   filledBy,
   eyebrow,
 }: {
-  /** What the surface would hold, as a plural noun: "open decisions". */
-  holds: string;
-  /** The one thing that fills it: "the resolver files one here when…". */
-  filledBy: string;
+  /**
+   * What the surface would hold, as a plural noun: "open decisions".
+   *
+   * A NODE and not a string, so that a caller whose sentence contains a
+   * machine identifier can set that one word in the app's identifier-in-prose
+   * spelling — the same wrapping `NotProvisioned` does for the table it names
+   * (LOOK_AND_FEEL Voice bar 5; admin-window/BUG-0120). A plain string is
+   * still a node, so a caller with nothing to wrap passes one and this card
+   * renders exactly the text it rendered before the widening: the card adds no
+   * element of its own around either line.
+   */
+  holds: ReactNode;
+  /** The one thing that fills it: "the resolver files one here when…". A node, for the reason `holds` is. */
+  filledBy: ReactNode;
   /**
    * The `micro` label of the surface this card stands in for, in the position
    * `StatCard` gives it. Optional: a page renders this under a `Section`
