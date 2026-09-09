@@ -7,8 +7,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   IDLE_EDIT_STATE,
   armConfirmationClock,
+  armRetire,
   confirmationDelayMs,
   reduceEdit,
+  retiresRefusal,
+  takeRefusalSlot,
+  type EditState,
+  type RetireHost,
+  type RetireMove,
+  type RetireSignal,
+  type SaveOutcome,
   type Status,
 } from "@/components/EditableCell";
 import {
@@ -677,12 +685,12 @@ describe("the picker's confirmation, on the click-to-edit cell's own clock", () 
   });
 
   /**
-   * Escape ends a refusal, which is BUG-0107's rule reaching this widget —
-   * the picker owns that key already (its panel's `onKeyDown`), so the move it
-   * can see is dispatched through the same `abandoned` event and decided by
-   * the same `retiresRefusal`. The page-wide moves the cell also listens for
-   * (a press outside, focus landing elsewhere) are NOT armed here; see the
-   * ticket's handoff note.
+   * Escape ends a refusal, which is BUG-0107's rule reaching this widget: the
+   * move is dispatched through the same `abandoned` event and decided by the
+   * same `retiresRefusal`, whichever listener saw it. Where the moves now come
+   * from — three page-wide listeners and the page's one slot, not the open
+   * panel's `onKeyDown` (admin-window/BUG-0119) — is graded in the block after
+   * this describe.
    */
   it("ends a refusal on Escape, and speaks over nothing else", () => {
     const escape = { kind: "abandoned", edit: 1, move: { kind: "escape" } } as const;
@@ -793,12 +801,12 @@ describe("the picker's confirmation, on the click-to-edit cell's own clock", () 
   });
 
   /**
-   * `abandoned` is delegated whole, so every BUG-0107 move already decides
-   * correctly through `retiresRefusal` — including the two the component does
-   * not yet feed it (a press outside, focus landing elsewhere) and the page's
-   * `superseded`. The reducer being ready is what makes BUG-0119 a wiring
-   * ticket rather than a state-machine one; the retirement also must not
-   * un-say the row an EARLIER successful write linked.
+   * `abandoned` is delegated whole, so every BUG-0107 move decides correctly
+   * through `retiresRefusal` — a press outside, focus landing elsewhere,
+   * Escape, and the page's `superseded`. The reducer being ready is what made
+   * admin-window/BUG-0119 a wiring ticket rather than a state-machine one; the
+   * retirement also must not un-say the row an EARLIER successful write
+   * linked.
    */
   it("hands every BUG-0107 move to the one decision, and un-links nothing", () => {
     const picker = mountPick();
@@ -831,15 +839,14 @@ describe("the picker's confirmation, on the click-to-edit cell's own clock", () 
   });
 
   /**
-   * PIN — admin-window/BUG-0119, strict: this is red today and `it.fails` is
-   * the marker. The clock came over from the cell; BUG-0107's page-wide half
-   * did not, so a picker refusal ends only on an Escape pressed while focus is
-   * still inside the open panel, and it never takes the page's one refusal
-   * slot — a picker refusal and a cell refusal can stand stacked. Flipping
-   * this to `it` is part of BUG-0119's fix; leaving `it.fails` on a fixed
-   * picker turns the file red, which is the point.
+   * PIN — QA's, for admin-window/BUG-0119, flipped from `it.fails` to `it` by
+   * the fix. It was red because the clock came over from the cell and
+   * BUG-0107's page-wide half did not: a picker refusal ended only on an
+   * Escape pressed while focus was still inside the open panel, and it never
+   * took the page's one refusal slot, so it could stand stacked with a cell's.
+   * The block below this describe grades what those two names now do.
    */
-  it.fails(
+  it(
     "arms the page-wide retire rule for a refusal the open panel cannot end (BUG-0119)",
     () => {
       const picker = sourceText("src/components/records/entity-picker.tsx");
@@ -849,6 +856,343 @@ describe("the picker's confirmation, on the click-to-edit cell's own clock", () 
       expect(picker, "and the page's one refusal slot").toContain("takeRefusalSlot");
     },
   );
+});
+
+/* ── the page-wide retire, and the page's one refusal slot ────────────────── */
+
+/**
+ * A record page's widgets — the picker and the cells beside it — driven
+ * through the units the components arm, campaign admin-window/BUG-0119.
+ *
+ * The picker's refusal used to end on exactly one move (Escape pressed while
+ * focus was still inside the OPEN panel, its only listener) and it never took
+ * the page's one refusal slot, so it outlived every other move an operator
+ * makes and could stand stacked with a cell's.
+ *
+ * Each widget here is its own reducer's state — `reducePick` for the picker,
+ * `reduceEdit` for a cell — and the harness stands in for the one effect each
+ * component runs: while a widget shows a refusal it holds `armRetire`'s three
+ * page-wide listeners and `takeRefusalSlot`, and it drops both the moment the
+ * refusal goes. Every verb below is one thing an operator does, delivered to
+ * every armed widget exactly as a document-level listener would deliver it —
+ * which is how "at most ONE refusal is on screen at any moment, on any record
+ * page" (admin-window/BUG-0107 criterion 2) becomes a claim about two widgets
+ * sharing one slot rather than about one widget's model of itself.
+ *
+ * What no test here can drive is the adapter from a real element and its owner
+ * document to `RetireHost` (`domRetireHost`) or React's effect scheduling —
+ * browser facts, and `tests/offline` is environment node with no jsdom
+ * (STACK.md §4). That the picker arms THIS rule rather than a second copy of
+ * it is graded as structure, in the test that closes the block.
+ */
+const CHOICE: PickerOption = { id: VENUE, name: "Olympic Hall" };
+
+function refusalPage(widgets: readonly { name: string; kind: "picker" | "cell" }[]) {
+  const names = widgets.map((widget) => widget.name);
+  /** A stand-in for each widget's box, so `contains` has something to answer. */
+  const boxes = new Map(names.map((name) => [name, {} as EventTarget]));
+  const picks = new Map<string, PickState>();
+  const cells = new Map<string, EditState>();
+  for (const widget of widgets) {
+    if (widget.kind === "picker") picks.set(widget.name, IDLE_PICK_STATE);
+    else cells.set(widget.name, IDLE_EDIT_STATE);
+  }
+  const ordinals = new Map<string, number>(names.map((name) => [name, 0]));
+  const armed = new Map<
+    string,
+    { handlers: Map<string, (signal: RetireSignal) => void>; teardown: () => void }
+  >();
+  const peak = { alerts: 0 };
+
+  const stateOf = (name: string): EditState =>
+    picks.get(name) ?? cells.get(name) ?? IDLE_EDIT_STATE;
+  const refusing = () => names.filter((name) => stateOf(name).status.kind === "failed");
+  const alerts = () => refusing().length;
+
+  /** The operator chose (picker) or committed an edit (cell); one ordinal each. */
+  function commit(name: string) {
+    const edit = (ordinals.get(name) ?? 0) + 1;
+    ordinals.set(name, edit);
+    const pick = picks.get(name);
+    if (pick !== undefined) {
+      picks.set(name, reducePick(pick, { kind: "choosing", edit, option: CHOICE }));
+    } else {
+      const opened = reduceEdit(stateOf(name), { kind: "editing", edit });
+      cells.set(name, reduceEdit(opened, { kind: "committed", edit }));
+    }
+    syncArming();
+    return page;
+  }
+
+  /** That write answered — and a refusal then takes the page's one slot. */
+  function answer(name: string, outcome: SaveOutcome) {
+    const edit = ordinals.get(name) ?? 0;
+    const pick = picks.get(name);
+    if (pick !== undefined) {
+      picks.set(name, reducePick(pick, { kind: "settled", edit, option: CHOICE, outcome }));
+    } else {
+      cells.set(name, reduceEdit(stateOf(name), { kind: "settled", edit, outcome }));
+    }
+    syncArming();
+    return page;
+  }
+
+  function abandon(name: string, edit: number, move: RetireMove) {
+    const pick = picks.get(name);
+    if (pick !== undefined) {
+      picks.set(name, reducePick(pick, { kind: "abandoned", edit, move }));
+    } else {
+      cells.set(name, reduceEdit(stateOf(name), { kind: "abandoned", edit, move }));
+    }
+  }
+
+  /** The effect: armed while, and only while, this widget shows a refusal. */
+  function syncArming() {
+    for (const name of names) {
+      const showing = stateOf(name).status.kind === "failed";
+      const running = armed.get(name);
+      if (showing && running === undefined) {
+        const edit = stateOf(name).edit;
+        const handlers = new Map<string, (signal: RetireSignal) => void>();
+        const retire = (move: RetireMove) => {
+          abandon(name, edit, move);
+          syncArming();
+        };
+        const host: RetireHost = {
+          contains: (target) => target === boxes.get(name),
+          listen: (type, handler) => {
+            handlers.set(type, handler);
+            return () => handlers.delete(type);
+          },
+        };
+        const disarm = armRetire(host, retire);
+        // registered BEFORE the slot is taken, so a displaced holder that
+        // retires itself re-enters this function and finds its own entry.
+        armed.set(name, { handlers, teardown: () => disarm() });
+        const release = takeRefusalSlot(() => retire({ kind: "superseded" }));
+        const entry = armed.get(name);
+        if (entry !== undefined) {
+          entry.teardown = () => {
+            release();
+            disarm();
+          };
+        }
+      } else if (!showing && running !== undefined) {
+        armed.delete(name);
+        running.teardown();
+      }
+    }
+    peak.alerts = Math.max(peak.alerts, alerts());
+  }
+
+  /** One page-wide signal, seen by every widget that is listening for it. */
+  function broadcast(type: string, signal: RetireSignal) {
+    for (const entry of [...armed.values()]) entry.handlers.get(type)?.(signal);
+    syncArming();
+  }
+
+  const page = {
+    commit,
+    answer,
+    /** Focus landed in `name` — a Tab, or the field an opening widget focuses. */
+    focusOn(name: string) {
+      broadcast("focusin", { target: boxes.get(name) ?? null });
+      return page;
+    },
+    /** A pointer press landed in `name`, or on the page itself (`null`). */
+    pressOn(name: string | null) {
+      broadcast("pointerdown", {
+        target: name === null ? null : (boxes.get(name) ?? null),
+      });
+      return page;
+    },
+    escape() {
+      broadcast("keydown", { target: null, key: "Escape" });
+      return page;
+    },
+    /** What `document.querySelectorAll('[role=alert]').length` would read. */
+    alerts,
+    refusing,
+    statusOf: (name: string) => stateOf(name).status,
+    chosenBy: (name: string) => picks.get(name)?.chosen ?? null,
+    /** The most alerts that were ever on screen at one moment. */
+    peakAlerts: () => peak.alerts,
+    /** What the open panel draws for a picker — the operator's own evidence. */
+    panelOf: (name: string): cheerio.CheerioAPI =>
+      cheerio.load(
+        renderToStaticMarkup(
+          createElement(PickerPanel, {
+            window: windowOf(),
+            query: "",
+            current: picks.get(name)?.chosen?.id ?? null,
+            status: stateOf(name).status,
+            onQuery: () => {},
+            onChoose: () => {},
+          }),
+        ),
+      ),
+    /** Release everything this page still holds — the page navigating away. */
+    close() {
+      for (const [name, entry] of [...armed.entries()]) {
+        armed.delete(name);
+        entry.teardown();
+      }
+    },
+  };
+  return page;
+}
+
+const VENUE_REFUSED: SaveOutcome = {
+  ok: false,
+  message: 'insert or update on table "events" violates foreign key constraint (23503)',
+};
+const NOTE_REFUSED: SaveOutcome = {
+  ok: false,
+  message: 'null value in column "note" violates not-null constraint (23502)',
+};
+
+/** Both widgets, so the page's one slot has two claimants — the whole point. */
+const PAGE = [
+  { name: "venue_id", kind: "picker" },
+  { name: "note", kind: "cell" },
+] as const;
+
+describe("a refused choice ends on the moves that end a refused edit", () => {
+  it("stands where it arrived, so nothing below is vacuous", () => {
+    // A refused choice is REPORTED, never swallowed: it is on no clock and it
+    // stands until the operator moves (campaign admin-window/BUG-0107).
+    const page = refusalPage(PAGE).commit("venue_id").answer("venue_id", VENUE_REFUSED);
+    expect(page.statusOf("venue_id")).toEqual({
+      kind: "failed",
+      message: VENUE_REFUSED.message,
+    });
+    expect(page.alerts()).toEqual(1);
+    expect(page.panelOf("venue_id")('[role="alert"]')).toHaveLength(1);
+    page.close();
+  });
+
+  it("ends on a press outside the widget, on focus landing elsewhere, and on Escape", () => {
+    // The three page-wide moves the picker armed none of: its only listener
+    // was the OPEN panel's `onKeyDown`, so a press anywhere else, a Tab, and an
+    // Escape from anywhere but inside the panel all left the red line standing.
+    const moves: Record<string, (page: ReturnType<typeof refusalPage>) => unknown> = {
+      "a press outside": (page) => page.pressOn(null),
+      "focus landing on another field": (page) => page.focusOn("note"),
+      "Escape from wherever focus is": (page) => page.escape(),
+    };
+    for (const [move, make] of Object.entries(moves)) {
+      const page = refusalPage(PAGE).commit("venue_id").answer("venue_id", VENUE_REFUSED);
+      make(page);
+      expect(page.statusOf("venue_id").kind, move).toEqual("idle");
+      expect(page.alerts(), move).toEqual(0);
+      expect(page.panelOf("venue_id")('[role="alert"]'), `${move}, on screen`).toHaveLength(
+        0,
+      );
+      page.close();
+    }
+  });
+
+  it("keeps it while the operator is still inside the widget", () => {
+    // The negative fixture the rule is bought on (LESSONS 3): a picker that
+    // retired on every move would pass every test above and delete the
+    // sentence under the operator reaching back into the list to choose again.
+    const page = refusalPage(PAGE).commit("venue_id").answer("venue_id", VENUE_REFUSED);
+    page.pressOn("venue_id");
+    expect(page.alerts(), "a press on the panel is not walking away").toEqual(1);
+    page.focusOn("venue_id");
+    expect(page.alerts(), "nor is the search box taking focus").toEqual(1);
+    expect(page.panelOf("venue_id")('[role="alert"]')).toHaveLength(1);
+    page.pressOn(null);
+    expect(page.alerts(), "a press outside it is").toEqual(0);
+    page.close();
+  });
+
+  it("never retires a choice whose write is still in flight", () => {
+    // admin-window/BUG-0107 criterion 3, on this widget: Escape does not
+    // cancel a PATCH, and retiring here would hide a failed write rather than
+    // report it. Nothing is even armed while a choice is saving.
+    const saving = reducePick(IDLE_PICK_STATE, {
+      kind: "choosing",
+      edit: 1,
+      option: CHOICE,
+    });
+    for (const move of [
+      { kind: "press", inside: false },
+      { kind: "press", inside: true },
+      { kind: "focus", inside: false },
+      { kind: "focus", inside: true },
+      { kind: "escape" },
+      { kind: "superseded" },
+    ] as const) {
+      expect(retiresRefusal(saving.status, move), `${move.kind} on a saving choice`).toBe(
+        false,
+      );
+      expect(
+        reducePick(saving, { kind: "abandoned", edit: 1, move }),
+        `${move.kind} on a saving choice`,
+      ).toBe(saving);
+    }
+    const page = refusalPage(PAGE).commit("venue_id");
+    page.pressOn(null).focusOn("note").escape();
+    expect(page.statusOf("venue_id").kind, "the write is still running").toEqual("saving");
+    page.answer("venue_id", VENUE_REFUSED);
+    expect(page.alerts(), "and its answer still reaches the screen").toEqual(1);
+    page.close();
+  });
+
+  it("never stands beside a cell's refusal, in either arrival order", () => {
+    // admin-window/BUG-0107 criterion 2, across the two widgets: both writes
+    // are committed before either answers, so NO move of the operator's falls
+    // between the two answers and only the page's one slot can decide. The
+    // measured cost of two panels was one painted over the other, 273x28px.
+    for (const [first, second] of [
+      ["venue_id", "note"],
+      ["note", "venue_id"],
+    ]) {
+      const page = refusalPage(PAGE);
+      // an earlier choice that DID land, so the retirement below has a linked
+      // row it must not un-say
+      page.commit("venue_id").answer("venue_id", { ok: true });
+      expect(page.chosenBy("venue_id")).toBe(CHOICE);
+
+      page.commit(first);
+      page.commit(second);
+      page.answer(first, first === "note" ? NOTE_REFUSED : VENUE_REFUSED);
+      expect(page.refusing(), `${first} answered first`).toEqual([first]);
+      page.answer(second, second === "note" ? NOTE_REFUSED : VENUE_REFUSED);
+      expect(page.refusing(), `${second} took the page's one slot`).toEqual([second]);
+      expect(page.peakAlerts(), "at every moment of the sequence").toEqual(1);
+      expect(page.chosenBy("venue_id"), "and the linked row is not un-said").toBe(CHOICE);
+      page.close();
+    }
+  });
+
+  /**
+   * Criterion 3: ONE adapter, shared — not a second copy of the listener
+   * wiring, which is the defect this ticket is about one level up. The picker
+   * names the cell's exported units and owns no listener of its own; the DOM
+   * adapter is exported from the cell, where it used to be inline.
+   */
+  it("arms the page-wide rule through the cell's own adapter, copying no listener", () => {
+    const listening = (text: string) =>
+      codeLinesIn(text).filter((line) => /\.(?:add|remove)EventListener\s*\(/.test(line));
+    const picker = sourceText("src/components/records/entity-picker.tsx");
+    expect(picker, "the one DOM adapter, the cell's").toContain("domRetireHost");
+    expect(listening(picker), "and no listener wiring of its own").toEqual([]);
+
+    // The two fixtures the guard is proved on: one it MUST flag, and one it
+    // must not (a comment naming the mechanism is not a listener).
+    expect(listening("owner.addEventListener(type, wrapped, true);\n")).toHaveLength(1);
+    expect(
+      listening("/** The moves reach it by addEventListener(...) — the cell's. */\n"),
+    ).toEqual([]);
+
+    // ...and the adapter is exported from the cell, so the two cannot drift.
+    expect(
+      sourceText("src/components/EditableCell.tsx"),
+      "extracted from the cell's effect, not copied out of it",
+    ).toContain("export function domRetireHost");
+  });
 });
 
 /* ── absence renders honestly ─────────────────────────────────────────────── */

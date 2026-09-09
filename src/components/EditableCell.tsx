@@ -391,6 +391,47 @@ export function armRetire(
 }
 
 /**
+ * A real element and its document, as `armRetire` needs to see them — campaign
+ * admin-window/BUG-0119.
+ *
+ * The adapter used to be four lines inside this file's own effect, which is
+ * why the entity picker (`records/entity-picker.tsx`) had none: it renders the
+ * same `Status` from the same reducer, and a refused choice stood until the
+ * operator toggled that one picker open again, because the widget's only
+ * retire listener was the OPEN panel's `onKeyDown`. Extracting it is the same
+ * move `armConfirmationClock` was (admin-window/BUG-0111): the two widgets
+ * share the mechanism rather than each keeping a copy of the listener wiring
+ * to be kept in step.
+ *
+ * `contains` is the widget's own box — a press or a focus landing inside it is
+ * the operator reaching for the thing they have to fix, never walking away —
+ * and `listen` binds on the box's OWNER document in the CAPTURE phase, so a
+ * handler on the way up cannot swallow the move and a widget rendered into
+ * another document (a portal, a test frame) still hears its own page.
+ *
+ * Not unit-testable offline and deliberately empty of decisions for that
+ * reason: `tests/offline` is environment node with no jsdom (STACK.md §4), so
+ * every question worth grading — what is listened for, what each signal means,
+ * when it stops — lives in `armRetire` over a `RetireHost` a recorder can be.
+ * This function narrows two DOM objects to that interface and decides nothing.
+ */
+export function domRetireHost(box: Element): RetireHost {
+  const owner = box.ownerDocument;
+  return {
+    contains: (target) => target instanceof Node && box.contains(target),
+    listen: (type, handler) => {
+      const wrapped = (event: Event) =>
+        handler({
+          target: event.target,
+          key: "key" in event ? (event as KeyboardEvent).key : undefined,
+        });
+      owner.addEventListener(type, wrapped, true);
+      return () => owner.removeEventListener(type, wrapped, true);
+    },
+  };
+}
+
+/**
  * The page's ONE refusal slot — campaign admin-window/BUG-0107, criterion 2
  * read literally.
  *
@@ -1247,26 +1288,13 @@ export function EditableCell({
     const edit = cell.edit;
     const box = root.current;
     if (box === null) return;
-    const owner = box.ownerDocument;
     const retire = (move: RetireMove) => dispatch({ kind: "abandoned", edit, move });
 
-    // The two-line adapter from this cell's box and its document to the two
-    // questions `armRetire` asks (`RetireHost`).
-    const disarm = armRetire(
-      {
-        contains: (target) => target instanceof Node && box.contains(target),
-        listen: (type, handler) => {
-          const wrapped = (event: Event) =>
-            handler({
-              target: event.target,
-              key: "key" in event ? (event as KeyboardEvent).key : undefined,
-            });
-          owner.addEventListener(type, wrapped, true);
-          return () => owner.removeEventListener(type, wrapped, true);
-        },
-      },
-      retire,
-    );
+    // The adapter from this cell's box and its document to the two questions
+    // `armRetire` asks is `domRetireHost`'s, shared with the entity picker so
+    // this app has ONE set of retire listeners rather than one per widget
+    // (campaign admin-window/BUG-0119).
+    const disarm = armRetire(domRetireHost(box), retire);
     const release = takeRefusalSlot(() => retire({ kind: "superseded" }));
 
     return () => {
