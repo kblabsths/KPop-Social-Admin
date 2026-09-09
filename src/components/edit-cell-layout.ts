@@ -207,3 +207,83 @@ export type StatusGrowth =
 export function statusGrowth(row: number, rows: number): StatusGrowth {
   return lastOfSeveral(row, rows) ? "up" : "down";
 }
+
+/**
+ * The vertical geometry a status box is fitted into, in viewport pixels —
+ * everything `statusShift` needs and nothing else.
+ *
+ * `box*` are the box's OWN edges, as it would be drawn with no correction at
+ * all (`statusGrowth`'s anchor and nothing more). `clip*` are the content
+ * edges of the nearest ancestor that clips it — on the record surface,
+ * `DataTable`'s `overflow-x-auto`, whose other axis computes to `auto`.
+ */
+export interface StatusBounds {
+  /** The box's top edge, uncorrected. */
+  readonly boxTop: number;
+  /** The box's bottom edge, uncorrected. */
+  readonly boxBottom: number;
+  /** The clipping container's content top edge. */
+  readonly clipTop: number;
+  /** The clipping container's content bottom edge. */
+  readonly clipBottom: number;
+}
+
+/**
+ * How far to move the status box, in pixels, so that ALL of it is inside the
+ * container that clips it — campaign admin-window/BUG-0104.
+ *
+ * `statusGrowth` is ORDINAL: it asks which line this is, and answers `up` only
+ * for the last of several. That rescues exactly one line, and the box does not
+ * overflow because of its ordinal — it overflows because it is TALLER THAN THE
+ * ROOM BELOW ITS OWN ROW. QA measured the same defect undiminished one line up
+ * (2026-09-08, production build against staging, 1440x900, both themes,
+ * `walk_sandbox` row …0001): clearing `is_flagged`, the second-to-last of six
+ * fields, drew the 23502 refusal from y 304 to y 424 against a container of
+ * y 143 → 363 — the mono half cut 39px mid-word at `A note a`, the app-voice
+ * half (404 → 422) painted nowhere at all. Row 5 was told `down` before
+ * BUG-0101 and after it, so nothing about that fix reached this.
+ *
+ * No ordinal rule can: the box's height is the DATABASE's sentence (the box is
+ * `max-w-xs`, and this surface's 23502 measures 120px against 62px of room),
+ * so which lines overflow is a fact about the refusal, not about the record's
+ * shape. Hence a MEASURED correction, applied over whatever `statusGrowth`
+ * anchored — the two rules do not compete: the anchor decides which way the
+ * box grows by default (and `hintSide` stays in step with it, one predicate
+ * for both), and this decides how far it must move when that default still
+ * leaves it outside. A box already inside gets `0` and is drawn exactly where
+ * it has always been drawn, which is what keeps every refusal QA measured
+ * inside at the pixel it was measured at (`label` 205 → 325, `tally`
+ * 271 → 327, `observed_on` 301 → 357).
+ *
+ * The correction is applied as a TRANSFORM by the caller, never as a layout
+ * property: a translated box changes no one's flow, so BUG-0086's invariant —
+ * nothing this cell draws may move another row's control — survives the fix
+ * by construction.
+ *
+ * Preference order, when both edges cannot be honoured (a refusal taller than
+ * the whole container, which no refusal this surface produces today at six
+ * fields): the TOP wins, so the box starts at the container's first pixel and
+ * the operator reads the refusal from its beginning, with the container's own
+ * scroll — which exists, since it is what clips — reaching the rest.
+ *
+ * Pure and exported for `hintSide`'s and `statusGrowth`'s reason: a bounding
+ * box is a browser fact and `tests/offline` is environment node with
+ * `renderToStaticMarkup` and no jsdom (STACK.md §4). The rule is pinned
+ * offline on the measured numbers; the boxes themselves are measured in a walk.
+ */
+export function statusShift({
+  boxTop,
+  boxBottom,
+  clipTop,
+  clipBottom,
+}: StatusBounds): number {
+  // Below the container's floor: lift it by exactly the overflow, never more —
+  // a box that already fits must not move at all.
+  const below = boxBottom - clipBottom;
+  let shift = below > 0 ? -below : 0;
+  // Above its ceiling — either where it was drawn, or where lifting it just
+  // put it. The top wins: the refusal reads from its first word.
+  const above = clipTop - (boxTop + shift);
+  if (above > 0) shift += above;
+  return shift;
+}
