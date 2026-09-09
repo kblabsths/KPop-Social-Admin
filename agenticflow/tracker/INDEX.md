@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T05:11:59Z — do not edit)
+# Tracker index (regenerated 2026-09-09T05:12:31Z — do not edit)
 
 ## open
 - FEAT-0010 [P1][feat][M2] The verdict UI: every spec 7 action as one typed decision, one call, one transaction  (deps:FEAT-0009 scope:src/app/queues,src/components,src/lib/db,src/lib/review,tests/offline,tests/live)
