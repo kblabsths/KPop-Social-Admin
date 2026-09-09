@@ -114,6 +114,21 @@ export const dynamic = "force-dynamic";
  * The facet this page consumes: the Dashboard links a cycle line to
  * `/cycles?cycle=<run_id>` (`lineHref` in `src/app/page.tsx`), so the URL
  * names the row the operator came to read and this page marks it.
+ *
+ * The value is CANONICALISED where it is derived from the request, exactly as
+ * `?run=` is below (`canonicalRecordId`, `lib/db/records.ts` — the app's one
+ * uuid grammar, admin-window/BUG-0139/BUG-0140/BUG-0143). Postgres compares a
+ * uuid by VALUE and this page compares it by STRING, so until that landed an
+ * uppercased or unhyphenated paste of a real cycle id was told the cycle "is
+ * not among the 200 newest cycles" — by the page that was rendering its row
+ * three elements below (LESSONS 2 and 4).
+ *
+ * Where the two facets deliberately DIVERGE is a value that is not a record id
+ * at all. `?run=` routes such a value to the dropped-parameter line and says
+ * nothing about a run; `?cycle=` keeps naming it in `AskedCycle`'s absent
+ * sentence, which is this page's own walked behaviour and what its tests pin.
+ * Converging them is a design question, out of scope for BUG-0143, which is
+ * why the raw value — never the canonical one — is what survives that arm.
  */
 const CYCLE_FACET = "cycle";
 
@@ -195,7 +210,15 @@ export default async function CyclesPage({
   searchParams?: Promise<SearchParams>;
 } = {}) {
   const params = (await searchParams) ?? {};
-  const askedFor = firstValue(params[CYCLE_FACET]);
+  // The cycle the Dashboard's cycle line named. Canonical when the URL spelled
+  // a record id in ANY of the spellings Postgres itself would have matched, and
+  // the raw value otherwise — which matches no row and is named verbatim, the
+  // page's existing answer to half a hand-typed URL (admin-window/BUG-0143).
+  // ONE derived value: the row predicate, the row's `aria-current` and the
+  // sentence all read this, so the mark and the id on screen cannot disagree.
+  const askedRaw = firstValue(params[CYCLE_FACET]);
+  const markedCycle = askedRaw === undefined ? null : canonicalRecordId(askedRaw);
+  const askedFor = markedCycle ?? askedRaw;
   // A `?source=` carrying nothing narrows nothing and earns no sentence: it is
   // half a typed URL, not a request for the runs of the empty name.
   const askedSource = narrowedTo(firstValue(params[SOURCE_FACET])) ?? undefined;
@@ -255,7 +278,15 @@ export default async function CyclesPage({
         dropped={droppedParams(
           params,
           {
-            [CYCLE_FACET]: askedFor,
+            // Applied whenever the URL carried a value at all — id or not —
+            // because `AskedCycle` below answers it either way, unlike
+            // `?run=`, which reports a value with no canonical form HERE
+            // instead. So this entry is the RAW value, and canonicalisation
+            // (admin-window/BUG-0143) moved nothing on this line: a
+            // `markedCycle ?? undefined` here would make the page both answer
+            // a parameter and report it as dropped, which the non-id case in
+            // `tests/offline/cycles/page.test.ts` pins against.
+            [CYCLE_FACET]: askedRaw,
             [SOURCE_FACET]: askedSource,
             [RUN_FACET]: markedRun ?? undefined,
           },

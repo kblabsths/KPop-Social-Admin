@@ -844,33 +844,42 @@ describe("the cycles the resolver filed", () => {
       expect($("[data-cycle][aria-current]").length, nonsense).toBe(0);
       expect(renderedCycles(markup).length, nonsense).toBe(CYCLES.length);
       expect(markup, nonsense).not.toContain("<script>x");
+      // Canonicalising the facet (admin-window/BUG-0143) left THIS arm exactly
+      // where it was: a value with no canonical form keeps the RAW spelling in
+      // the page's own sentence, and the page acted on it, so the shared
+      // dropped-parameter line has nothing to report. That is where `?cycle=`
+      // and `?run=` deliberately part company — converging them is a design
+      // question the ticket declined, and this is the pin that catches a
+      // silent convergence.
+      expect($('[data-cycle-found="false"]').attr("data-cycle-asked"), nonsense).toBe(
+        nonsense,
+      );
+      expect($("[data-dropped-params]").length, nonsense).toBe(0);
     }
   });
 
   /**
-   * QA pin, admin-window/BUG-0143 — strict (`it.fails`): it passes the day the
-   * `?cycle=` facet is canonicalised, and the XPASS sends the reader to the
-   * ticket.
+   * Was QA's strict `it.fails` pin, flipped to a plain `it(...)` — assertions
+   * unchanged — by admin-window/BUG-0143, which canonicalised `?cycle=`.
    *
    * `?run=` was canonicalised at the edge by admin-window/BUG-0142
    * (`canonicalRecordId`, `src/app/cycles/page.tsx`), because Postgres
    * compares a uuid by VALUE and this page compares it by STRING — so an
    * uppercased or unhyphenated spelling of a real id marks its row. Its twin
-   * `?cycle=`, in the same page function two lines above, still goes to the
-   * row predicate raw. The result is not silence: the page states, of a cycle
-   * whose row it is rendering three elements below, that it is "not among the
-   * 200 newest cycles" — a false claim about the very window it just read
-   * (LESSONS 2 and 4, and the class BUG-0140 settled for `/sources`).
-   *
-   * The assertions are the same three the paragraph above makes for the
-   * canonical spelling, so this pin flips to a plain `it(...)` unchanged.
+   * `?cycle=`, in the same page function two lines above, still went to the
+   * row predicate raw. The result was not silence: the page stated, of a
+   * cycle whose row it was rendering three elements below, that it is "not
+   * among the 200 newest cycles" — a false claim about the very window it had
+   * just read (LESSONS 2 and 4, and the class BUG-0140 settled for
+   * `/sources`).
    */
-  it.fails(
+  it(
     "marks the cycle a non-canonical spelling of a real id names [admin-window/BUG-0143]",
     async () => {
       for (const spelling of [
         FAILED.run_id.toUpperCase(),
         FAILED.run_id.replace(/-/g, ""),
+        FAILED.run_id.replace(/-/g, "").toUpperCase(),
       ]) {
         const markup = await renderCycles(healthyScript(), { cycle: spelling });
         const $ = cheerio.load(markup);
@@ -880,6 +889,21 @@ describe("the cycles the resolver filed", () => {
         expect($("[data-cycle-found]").attr("data-cycle-found"), spelling).toBe("true");
         expect(cycleRow(markup, FAILED.run_id).marked, spelling).toBe("true");
         expect(cycleRow(markup, FAILED.run_id).current, spelling).toBe("true");
+        // Exactly one row, and one accessible marking, on the whole page.
+        expect($("tr[data-row-marked]").length, spelling).toBe(1);
+        expect($("[data-cycle][aria-current]").length, spelling).toBe(1);
+        // Named in the database's own spelling — the id that reaches the row,
+        // and the id the in-page link lands on — never the paste's spelling.
+        expect($("[data-cycle-asked]").attr("data-cycle-asked"), spelling).toBe(
+          FAILED.run_id,
+        );
+        expect($("[data-cycle-asked]").text(), spelling).toContain(FAILED.run_id);
+        expect(markup, spelling).not.toContain(spelling);
+        expect($('[data-cycle-found="true"] a').attr("href"), spelling).toBe(
+          `#${cycleRow(markup, FAILED.run_id).anchor}`,
+        );
+        // A facet the page APPLIED is not one it dropped.
+        expect($("[data-dropped-params]").length, spelling).toBe(0);
       }
     },
   );
