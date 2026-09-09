@@ -39,15 +39,21 @@ import {
  * nothing) and on doctored notes it must flag: a `create policy` line, a ninth
  * action in the CHECK, a `jsonb` column, a `commit;`, a service_role write
  * grant, the pre-BUG-0082 block that carried the grant with no revoke, a
- * missing client revoke, and a privilege statement the reader cannot model —
- * plus the other half of that lesson, a note that only TALKS about those
- * constructs in a comment and a string literal, which must grade clean.
+ * missing client revoke, a privilege statement the reader cannot model, a write
+ * handed to the PUBLIC pseudo-role, the table's ownership handed to
+ * service_role, and a role tail naming `granted by` or `with grant option` —
+ * plus the other half of that lesson: a note that only TALKS about those
+ * constructs in a comment and a string literal, and a grant to PUBLIC that is
+ * revoked from PUBLIC again, all of which must grade clean.
  *
  * **The grants are graded as an ACL, never as statements** (admin-window/BUG-0082).
  * A new public table on this project is born holding everything, so `grant
  * select … to service_role` narrows nothing; `tableAclAfter` replays the block's
  * grants and revokes onto that birth state and the grader asks what each role is
- * left holding.
+ * left holding. **And the ACL is more than the grants** (admin-window/BUG-0084):
+ * PUBLIC's grants are held by every role, and the table's owner holds everything
+ * whatever the revokes below it say, so both reach the answer `privilegesHeld`
+ * gives and the owner gets a finding of its own.
  */
 
 const NOTE = "M2-handoff-verdicts.md";
@@ -235,6 +241,14 @@ function gradeVerdicts(artifact: SqlArtifact): string[] {
   // (admin-window/BUG-0082).
   const acl = tableAclAfter(artifact, "public.verdicts");
   for (const statement of acl.unreadable) findings.push(`unreadable_privilege:${statement}`);
+
+  // The owner is named in its own finding as well as in what it is credited
+  // with holding: `alter table … owner to <role>` is the one line that makes
+  // every revoke under it decorative, and a reader of the red should see that
+  // sentence rather than infer it from a privilege list
+  // (admin-window/BUG-0084). `postgres` is what the block ships and what
+  // `supabase db push` would give it anyway.
+  if (acl.owner !== "postgres") findings.push(`table_owner:${acl.owner}`);
 
   for (const role of ["anon", "authenticated"]) {
     const held = privilegesHeld(acl, role);
@@ -467,30 +481,71 @@ describe("the grader proves itself on doctored blocks", () => {
   });
 
   /**
-   * admin-window/BUG-0084 — TWO statement forms change who may write this table
-   * and the replay neither models nor reports either, so `gradeVerdicts` returns
+   * admin-window/BUG-0084 — two statement forms change who may write this table
+   * without granting anything to the role that ends up holding it, and the
+   * replay used to neither model nor report either, so `gradeVerdicts` returned
    * `[]` on both. Same class as BUG-0082, one level down: a grader certifying an
-   * ACL it never read. `it.fails` until BUG-0084 lands — then delete the
-   * `.fails`, and the day the grader starts flagging these the pin goes red and
-   * sends the reader here.
+   * ACL it never read. Each asserts the named finding, not merely a non-empty
+   * list, so the pin cannot go green again on some unrelated red.
    */
-  it.fails("does not certify a block that hands the write to the PUBLIC pseudo-role", () => {
+  it("does not certify a block that hands the write to the PUBLIC pseudo-role", () => {
     const doctored = doctoredNote(
       "grant select on table public.verdicts to service_role;",
       "grant select on table public.verdicts to service_role;\ngrant insert, update, delete on table public.verdicts to public;",
     );
-    // Every role is a member of PUBLIC, so all three hold the write this grants.
-    expect(gradeVerdicts(doctored)).not.toEqual([]);
+    // Every role is a member of PUBLIC, so all three hold the write this grants
+    // — including the two the block revoked everything from a line earlier.
+    const findings = gradeVerdicts(doctored);
+    expect(findings).toContain("client_privilege:anon:insert+update+delete");
+    expect(findings).toContain("client_privilege:authenticated:insert+update+delete");
+    expect(findings).toContain("service_role_write:insert+update+delete");
   });
 
-  it.fails("does not certify a block that hands the table's ownership to service_role", () => {
+  it("grades clean when a grant to PUBLIC is taken back from PUBLIC", () => {
+    // The other half of LESSONS 3 for the fold above: PUBLIC's reach is real,
+    // but a revoke from PUBLIC ends it, and the grader must not fire on a block
+    // that leaves the pseudo-role holding nothing.
+    const doctored = doctoredNote(
+      "grant select on table public.verdicts to service_role;",
+      "grant insert on table public.verdicts to public;\nrevoke insert on table public.verdicts from public;\ngrant select on table public.verdicts to service_role;",
+    );
+    expect(gradeVerdicts(doctored)).toEqual([]);
+  });
+
+  it("does not certify a block that hands the table's ownership to service_role", () => {
     const doctored = doctoredNote(
       "alter table public.verdicts owner to postgres;",
       "alter table public.verdicts owner to service_role;",
     );
-    // An owner holds everything on its table and may re-grant it, so the revoke
-    // below this line narrows nothing.
-    expect(gradeVerdicts(doctored)).not.toEqual([]);
+    // An owner holds everything on its own table and may grant it straight back,
+    // so the revoke below this line narrows nothing at all: the write privileges
+    // it names are still held, and TRUNCATE with them.
+    const findings = gradeVerdicts(doctored);
+    expect(findings).toContain("table_owner:service_role");
+    expect(findings).toContain(
+      "service_role_write:insert+update+delete+truncate+references+trigger+maintain",
+    );
+  });
+
+  it("refuses a role tail it cannot resolve to plain role names", () => {
+    // `granted by` is the trap: the old split produced one non-role string,
+    // `service_role granted by postgres`, which matched no assertion's role and
+    // so dropped a write grant in silence. `with grant option` is the other —
+    // readable as privileges, but it also hands the grantee the power to
+    // re-grant them to anyone, a write path this model cannot follow.
+    for (const tail of ["to service_role granted by postgres", "to service_role with grant option"]) {
+      const doctored = doctoredNote(
+        "grant select on table public.verdicts to service_role;",
+        `grant select on table public.verdicts to service_role;\ngrant insert on table public.verdicts ${tail};`,
+      );
+      const findings = gradeVerdicts(doctored);
+      expect(
+        findings.filter(
+          (finding) => finding.startsWith("unreadable_privilege:") && finding.includes("grant insert"),
+        ),
+      ).toHaveLength(1);
+    }
+    expect(gradeVerdicts(shipped)).toEqual([]);
   });
 
   it("reads a banned word in a comment or a string as prose, not as a construct", () => {
