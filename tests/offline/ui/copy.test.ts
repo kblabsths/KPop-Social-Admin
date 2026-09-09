@@ -357,6 +357,40 @@ describe("the glossary's pinned nouns in every string the app renders", () => {
     ]);
   });
 
+  /**
+   * QA (admin-window/BUG-0100): the rule's blind spot, pinned as it stands.
+   *
+   * A run of rendered text is only read when it holds two English words —
+   * `words = /[A-Za-z]\s+[A-Za-z]/` — because a one-word STRING LITERAL is
+   * usually a React key or a column key, not copy. That reasoning does not
+   * carry to the two shapes below, and both are shapes this app already
+   * writes:
+   *
+   *  - a **JSX text node** is rendered by definition and is never a key.
+   *    `src/` ships four of them today (`>source<` twice, `>skipped<`,
+   *    `>current<`, `>contender<`), so a fifth reading `>Observations<` — a
+   *    column heading, an eyebrow — would pass this rule silently;
+   *  - a **template literal whose only English word follows the
+   *    interpolation** — `` `${n} observations` `` — is the app's own idiom
+   *    for a counted noun (`micro-label.tsx` documents `` `${stats.queue}
+   *    open` ``; `cycle-health.tsx` and `latency.tsx` build subtitles that
+   *    way). One word after `${…}` leaves no letter-space-letter in the raw
+   *    text, so the run is dropped before the glossary is consulted.
+   *    `` `${n} resolutions pending` `` IS caught, which is the same string
+   *    with one more word.
+   *
+   * No string under `src/` reaches either blind spot today — the rule is
+   * green on the real corpus, which is why this is a pin and not a bug. It
+   * fails on purpose so the day someone widens the rule, the XPASS sends
+   * them here instead of leaving the gap uncharted.
+   */
+  it.fails("does not yet read a one-word run of rendered text (QA residual)", () => {
+    const jsxHeading = "export function H() { return <h2>Observations</h2>; }";
+    const countedNoun = "const sub = `${count} observations`;";
+    expect(glossaryViolationsIn(jsxHeading)).not.toEqual([]);
+    expect(glossaryViolationsIn(countedNoun)).not.toEqual([]);
+  });
+
   it("leaves no string under src/ calling a claim an observation or a verdict a resolution", () => {
     const files = sourceFiles();
     // Non-vacuous: the surface the walk found the defect on, and a tree that
