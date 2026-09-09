@@ -24,7 +24,10 @@
  *     inside the FUNCTION; a version number spelled here is scraper registry
  *     knowledge re-encoded by hand, which spec §10 calls a flagged gap rather
  *     than a silent copy;
- *   - no source name, no tier, no `rejected_by` — the function's own branches;
+ *   - no source name, no tier, no `rejected_by` — the function's own branches.
+ *     `ADMIN_SOURCE` below is the NAME of the admin voice, spelled once here
+ *     so the handoff artifact's test can pin the SQL's literal to it; it is
+ *     not a field, and `VerdictDecision` gains none;
  *   - no canonical column name distinct from the registry field: the registry's
  *     field names ARE the canonical columns' names, with `events.venue` (field)
  *     -> `events.venue_id` (column) the one exception, which is what makes it a
@@ -59,6 +62,19 @@ export type VerdictAction =
   | "wont_fix"
   /** Item-less, from the record surface: `review_item_id` is null. */
   | "override";
+
+/**
+ * The registered `sources` row every admin-tier observation is written under —
+ * the admin voice (Ben's answer of 2026-09-08, ARCHITECTURE.md §9.2).
+ *
+ * A NAME, not an envelope field. Nothing in `src/` sends it: the gate refuses an
+ * unregistered source (KS007), so the `settle_review_item` artifact both
+ * registers this row and names it in its own constant, and
+ * `tests/offline/handoff/settle-review-item.test.ts` asserts the artifact's two
+ * literals equal this one. It lives in the leaf because the leaf is the one
+ * module both a surface and that test may import (§4 rule 7).
+ */
+export const ADMIN_SOURCE = "admin";
 
 /** The eight, in the order §9.2 states them. */
 export const VERDICT_ACTIONS: readonly VerdictAction[] = [
@@ -122,6 +138,45 @@ export interface VerdictDecision {
    */
   readonly value: VerdictValue | null;
 }
+
+/**
+ * The keys of `VerdictDecision`, and of its `value` envelope — the exact key
+ * sets `settle_review_item` accepts and refuses anything outside of.
+ *
+ * Neither list is hand-written: each is the keys of a `Record<keyof T, true>`,
+ * so `tsc` refuses a missing or an extra entry and the two cannot drift from
+ * the interfaces above. `tests/offline/handoff/settle-review-item.test.ts`
+ * compares the artifact's own `c_decision_keys` / `c_value_keys` arrays against
+ * them, which is how the shape F9 authors stays the shape F10 calls (SPEC
+ * named gap 6).
+ *
+ * Note what is in neither: no `schema_version`, no source name, no tier, no
+ * `rejected_by`, no canonical column — the database knows all five.
+ */
+const DECISION_KEY_SET: Record<keyof VerdictDecision, true> = {
+  action: true,
+  review_item_id: true,
+  actor: true,
+  note: true,
+  value: true,
+};
+
+const VALUE_KEY_SET: Record<keyof VerdictValue, true> = {
+  domain: true,
+  entity_id: true,
+  field: true,
+  observation_id: true,
+  value: true,
+  ref: true,
+};
+
+export const DECISION_KEYS: readonly (keyof VerdictDecision)[] = Object.keys(
+  DECISION_KEY_SET,
+) as (keyof VerdictDecision)[];
+
+export const DECISION_VALUE_KEYS: readonly (keyof VerdictValue)[] = Object.keys(
+  VALUE_KEY_SET,
+) as (keyof VerdictValue)[];
 
 /**
  * Does this action REQUIRE a note?
