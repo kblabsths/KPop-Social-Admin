@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { Badge, type Column, DataTable } from "@/components/ui";
-import { relativeAge } from "@/lib/format";
+import { isAbsent, orDash, relativeAge } from "@/lib/format";
 import { factKey } from "@/lib/verdict/decision";
 
 /**
@@ -19,7 +19,11 @@ import { factKey } from "@/lib/verdict/decision";
  * cell says `ticketmaster` while its link still narrows by `source_id`, so one
  * screen never carries two labels for one destination. An id the registry has
  * no row for stays on screen verbatim, in the table's own mono `data` cell —
- * the id is then the only true thing the app can say.
+ * the id is then the only true thing the app can say. That fallback is
+ * `sourceLabel`'s and only `sourceLabel`'s (`lib/sources/names.ts`), and since
+ * admin-window/BUG-0154 it answers a row whose name has no INK the same way;
+ * a label that arrives unreadable anyway draws the app's dash here rather than
+ * an anchor with nothing to click.
  *
  * **Every claim leads somewhere twice** (LOOK_AND_FEEL bar 10): to its SOURCE,
  * and to the record where its fact's provenance is shown — each one click,
@@ -48,8 +52,9 @@ export interface ClaimLine {
   /**
    * What that source is CALLED: the registry's `sources.source`, which is the
    * name `/sources`, `/browse` and every provenance line already show — or the
-   * id verbatim when the registry holds no row for it
-   * (admin-window/BUG-0043; `sourceLabel` in `lib/sources/names.ts`).
+   * id verbatim when the registry names nothing readable for it: no row, or a
+   * row whose name has no ink in it (admin-window/BUG-0043, BUG-0154;
+   * `sourceLabel` in `lib/sources/names.ts`).
    */
   source: string;
   /** When the claim was made — `observations.observed_at`; null if unknown. */
@@ -167,15 +172,26 @@ export function ClaimList({
     {
       key: "source",
       label: "source",
-      cell: (row) => (
-        <a
-          href={row.sourceHref}
-          data-claim-source={row.sourceId}
-          className={IN_PAGE_LINK}
-        >
-          {row.source}
-        </a>
-      ),
+      // **No anchor around nothing** (admin-window/BUG-0154). `sourceLabel` is
+      // what decides that an unnamed source is said as its id, and it is the
+      // only place that decides it — so this cell does not re-derive the label
+      // from `sourceId`; it only refuses to draw a link with nothing to read,
+      // and draws `lib/format.ts`'s one absence element inside the hook the
+      // suite addresses the row's source by. The same guard, spelled the same
+      // way, sits on the review item's own source cell
+      // (`components/review/evidence-cells.tsx`).
+      cell: (row) =>
+        isAbsent(row.source) ? (
+          <span data-claim-source={row.sourceId}>{orDash(row.source)}</span>
+        ) : (
+          <a
+            href={row.sourceHref}
+            data-claim-source={row.sourceId}
+            className={IN_PAGE_LINK}
+          >
+            {row.source}
+          </a>
+        ),
     },
     {
       key: "waiting",

@@ -14,18 +14,45 @@
  *
  *  - `sourceNamesOf` — the id→name lookup a read's registry rows give;
  *  - `sourceLabel` — name it, or render the id VERBATIM when the registry
- *    holds no row for it (LOOK_AND_FEEL Voice bar 5: the id is then genuinely
- *    the only thing known, and a blank or a guess would be worse than a uuid).
+ *    NAMES NOTHING (LOOK_AND_FEEL Voice bar 5: the id is then genuinely the
+ *    only thing known, and a blank or a guess would be worse than a uuid).
  *
- * A PURE DOMAIN LEAF (ARCHITECTURE.md §4 rule 7): it imports nothing, reaches
- * no database, and takes the registry rows a caller already read. The row type
- * is structural on purpose — `lib/db/sources.ts`'s `SourceRow`, the review
- * item's narrow one and the two `SourceNameRow`s in `lib/browse/rows.ts` and
- * `lib/records/provenance.ts` all satisfy it, so nothing here adds a fifth
- * name for `{ source_id, source }`.
+ * **"Names nothing" is decided by INK, not by `null`** (admin-window/BUG-0154).
+ * The fallback was `??`, which catches `null` and `undefined` only, so a
+ * registry row that EXISTED with a blank name took neither branch: the lookup
+ * found it, `??` saw a string, and whitespace reached the screen as an evidence
+ * cell with nothing in it and an anchor with nothing to read or click, beside a
+ * sibling row that named its own source. The question "is there anything here a
+ * person could read" is the app's, answered in ONE place — `hasVisibleContent`
+ * in `lib/verdict/decision.ts` — and asked here rather than answered a fifth
+ * time (BUG-0089/BUG-0136/BUG-0146 are that question answered twice).
+ *
+ * A name with ink travels BYTE-IDENTICAL: not trimmed, not rewritten, not
+ * swapped for the id. That includes a name this app finds odd — an em dash is
+ * a character with ink, and `isAbsent`'s dash branch (`lib/format.ts`)
+ * recognises the string the app's OWN formatters return, not a producer's
+ * value. The registry is the scraper repo's to vet (`CHECK (source ~
+ * '^[a-z0-9_]+$')`), so this app states the rule instead of assuming it holds.
+ *
+ * A PURE DOMAIN LEAF (ARCHITECTURE.md §4 rule 7): it reaches nothing that can
+ * reach a database — not `lib/db/**`, not `@supabase/supabase-js`, not
+ * `process.env`, not React — and takes the registry rows a caller already
+ * read. Its ONE import is another LEAF, which rule 7 ¶2 permits for exactly
+ * this reason. The row type is structural on purpose — `lib/db/sources.ts`'s
+ * `SourceRow`, the review item's narrow one and the two `SourceNameRow`s in
+ * `lib/browse/rows.ts` and `lib/records/provenance.ts` all satisfy it, so
+ * nothing here adds a fifth name for `{ source_id, source }`.
  */
+import { hasVisibleContent } from "@/lib/verdict/decision";
 
-/** The lookup a surface labels its source ids by. Later rows win a repeat id. */
+/**
+ * The lookup a surface labels its source ids by. Later rows win a repeat id.
+ *
+ * A faithful record of what the registry ANSWERED, blank names included: what
+ * to say when a name is unreadable is `sourceLabel`'s rule and lives there
+ * alone, so a caller that reads this map for another purpose still sees the
+ * row as it is.
+ */
 export function sourceNamesOf(
   rows: readonly { source_id: string; source: string }[],
 ): ReadonlyMap<string, string> {
@@ -40,11 +67,20 @@ export function sourceNamesOf(
  * The fallback is not a failure mode to be hidden — a source the registry has
  * no row for is a real thing an operator may see (a retired row, a claim from
  * a source registered after this read, a registry leg that refused), and its
- * id is the only true thing the app can say about it.
+ * id is the only true thing the app can say about it. A row that exists and
+ * names nothing READABLE is the same situation and gets the same answer
+ * (admin-window/BUG-0154): there are two ways for the registry to name no
+ * source and only one thing to say about either.
+ *
+ * **The one owner of this rule.** Every surface that labels a source id calls
+ * here — the review item's header link, its evidence rows and its canonical
+ * side, `/claims`, `/sources`' dial. A retyped `?? sourceId` beside it is the
+ * defect this ticket removed from `lib/db/review-item.ts` (LESSONS 5).
  */
 export function sourceLabel(
   names: ReadonlyMap<string, string>,
   sourceId: string,
 ): string {
-  return names.get(sourceId) ?? sourceId;
+  const name = names.get(sourceId);
+  return name !== undefined && hasVisibleContent(name) ? name : sourceId;
 }

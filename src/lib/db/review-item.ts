@@ -12,7 +12,7 @@ import { REVIEW_ITEM_COLUMNS } from "./review-items";
 import { T } from "./tables";
 import { currentDecisions, type EventProvenanceRow } from "../browse/rows";
 import type { ReviewItemRow } from "../review/shapes";
-import { sourceNamesOf } from "../sources/names";
+import { sourceLabel, sourceNamesOf } from "../sources/names";
 
 /**
  * The review-item DETAIL reads — campaign admin-window/TASK-0011.
@@ -301,7 +301,12 @@ function readFactProvenance(
  */
 export interface ResolvedClaim {
   observation: ObservationRow;
-  /** `sources.source`, or the id verbatim when the registry row is missing. */
+  /**
+   * `sources.source`, or the id verbatim when the registry names nothing
+   * readable for it — no row, or a row whose name has no ink in it. One rule,
+   * `sourceLabel` (`lib/sources/names.ts`); never a `??` spelled here
+   * (admin-window/BUG-0154).
+   */
   source: string;
   /** `sources.tier` — the source's CURRENT tier. Null when unknown. */
   tier: string | null;
@@ -316,7 +321,11 @@ export interface ResolvedClaim {
  */
 export interface CanonicalDecision {
   decision: ProvenanceRow;
-  /** The winning source's name, or its id verbatim; null on an unset. */
+  /**
+   * The winning source's name, or its id verbatim when the registry names
+   * nothing readable for it (`sourceLabel`); null on an unset, which names no
+   * source at all.
+   */
   source: string | null;
   /** The observation the decision named; null on an unset or when it is gone. */
   observation: ObservationRow | null;
@@ -386,8 +395,10 @@ export interface ItemEvidence {
    * the dial cannot disagree about the name of one source: the header link
    * `Its source` and the evidence cells below it point at the SAME href, and
    * a walk found them printing two different labels for it — the uuid above,
-   * `ticketmaster` below. An id the map has no entry for renders verbatim
-   * (`sourceLabel` in `lib/sources/names.ts`).
+   * `ticketmaster` below. An id the map names nothing READABLE for — no entry
+   * at all, or an entry with no ink in it — renders verbatim (`sourceLabel` in
+   * `lib/sources/names.ts`, which every reader of this map asks;
+   * admin-window/BUG-0154).
    */
   sourceNames: ReadonlyMap<string, string>;
   /**
@@ -479,35 +490,47 @@ export async function readItemEvidence(
   const sourceById = new Map(
     (sources.kind === "ok" ? sources.data : []).map((row) => [row.source_id, row]),
   );
+  // ONE registry map for everything this read labels, and ONE rule over it:
+  // `sourceLabel` (`lib/sources/names.ts`). Both places below spelled their own
+  // `?? id` fallback, so a registry row whose name held no ink reached the
+  // evidence table blank while the page's other renderings of it did not
+  // (admin-window/BUG-0154, LESSONS 5).
+  const sourceNames = sourceNamesOf([...sourceById.values()]);
 
   return {
     kind: "ok",
     data: {
       ids: { stored: item.evidence.length, distinct: evidenceIds.length },
       sourcesUnavailable: sources.kind === "ok" ? null : sources,
-      sourceNames: sourceNamesOf([...sourceById.values()]),
+      sourceNames,
       claims: claims.map((id) => {
         const observation = byId.get(id) as ObservationRow;
-        const source = sourceById.get(observation.source_id);
         return {
           observation,
-          source: source?.source ?? observation.source_id,
-          tier: source?.tier ?? null,
+          source: sourceLabel(sourceNames, observation.source_id),
+          tier: sourceById.get(observation.source_id)?.tier ?? null,
         };
       }),
       unresolved,
-      canonical: canonicalSideOf(item, fact, decision, byId, sourceById),
+      canonical: canonicalSideOf(item, fact, decision, byId, sourceNames),
     },
   };
 }
 
-/** Which of the four canonical states this item is in, and its decision. */
+/**
+ * Which of the four canonical states this item is in, and its decision.
+ *
+ * It takes the registry NAMES rather than the rows, because the only thing it
+ * asks of the registry is what the deciding source is called — and that is
+ * `sourceLabel`'s question, asked here instead of retyped
+ * (admin-window/BUG-0154).
+ */
 function canonicalSideOf(
   item: ReviewItemRow,
   fact: FactKey | null,
   decision: ProvenanceRow | null,
   observations: ReadonlyMap<string, ObservationRow>,
-  sources: ReadonlyMap<string, SourceRow>,
+  sourceNames: ReadonlyMap<string, string>,
 ): CanonicalSide {
   if (fact === null) {
     // A per-source item names no fact column at all; a per-fact item whose
@@ -530,7 +553,7 @@ function canonicalSideOf(
       source:
         decision.source_id === null
           ? null
-          : sources.get(decision.source_id)?.source ?? decision.source_id,
+          : sourceLabel(sourceNames, decision.source_id),
       observation,
       live: observation !== null && isLive(observation),
     },

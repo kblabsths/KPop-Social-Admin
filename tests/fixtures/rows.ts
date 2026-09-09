@@ -1,3 +1,4 @@
+import type { EvidenceRow } from "@/components/review";
 import type {
   PickerOption,
   PickerWindow,
@@ -797,6 +798,39 @@ export function venueWindow(overrides: Override<PickerWindow> = {}): PickerWindo
     truncated: false,
     over: "table",
     domain: "venues",
+    ...overrides,
+  };
+}
+
+/* ── one resolved claim, as the review item's views render it ─────────────── */
+
+/**
+ * One resolved claim, as the page hands it to an evidence view and to the
+ * shape's action builder — the same rows, which is what makes "one control per
+ * evidence card" checkable at all.
+ *
+ * It lived in `tests/offline/review-item/conflict-actions.test.ts` (whose own
+ * note said no builder for `EvidenceRow` existed in `tests/fixtures/`) until a
+ * second file needed one; copies drift, so there is one copy, here, beside the
+ * database rows its ids and values come from (admin-window/BUG-0154).
+ */
+export function evidenceRow(overrides: Override<EvidenceRow> = {}): EvidenceRow {
+  return {
+    observationId: ID.observationA,
+    value: "TWICE 5TH WORLD TOUR",
+    source: "ticketmaster",
+    sourceHref: `/sources/${ID.sourceTicketmaster}`,
+    tier: "official",
+    observedAt: "2026-08-31T22:10:00Z",
+    status: "pending",
+    payloadRef: "ticketmaster/2026-08-31/G5vYZ9d1.json",
+    fact: "events.title",
+    // Both halves of the record identity a row carries
+    // (admin-window/BUG-0122): the canonical id, and the source's own ref.
+    entityId: ID.eventEntity,
+    externalRef: "tm-G5vYZ9d1",
+    recordHref: `/records/events/${ID.eventEntity}`,
+    held: null,
     ...overrides,
   };
 }

@@ -35,7 +35,13 @@ export interface EvidenceRow {
    * renders as the app's dash.
    */
   value: string | null;
-  /** `sources.source`, or the source id verbatim when the registry row is absent. */
+  /**
+   * `sources.source`, or the source id verbatim when the registry names nothing
+   * readable for it (`sourceLabel` in `lib/sources/names.ts` — no row, or a row
+   * whose name has no ink in it). A caller that hands this an unreadable label
+   * anyway gets the app's dash rather than an anchor with nothing to click
+   * (admin-window/BUG-0154).
+   */
   source: string;
   /** That source's own page. */
   sourceHref: string;
@@ -88,8 +94,18 @@ export interface EvidenceRow {
  * `value` is the SAME accessor the cell reads, exposed so the block around the
  * table can ask whether a dash reaches the screen without a second spelling of
  * which columns can be absent — two spellings is how a rule and its rendering
- * drift apart. A column with no `value` carries nothing nullable (`source`,
- * `observed`, `status`, `fact`) and can never dash.
+ * drift apart. A column with no `value` carries nothing nullable (`observed`,
+ * `status`, `fact`) and can never dash.
+ *
+ * **`source` was on that list and did not belong there** (admin-window/BUG-0154).
+ * Its cell drew whatever label reached it inside an anchor, so a registry row
+ * with a blank name rendered an EMPTY cell — a link with nothing to read and
+ * nothing visible to click — while this sentence said the column could never
+ * dash. The label rule (`sourceLabel`) now answers the id for a name with no
+ * ink, so the cell's own guard fires only for a caller that hands it an
+ * unreadable label anyway; it carries a `value` accessor so that if it ever
+ * does, the dash it draws is counted by `drawsDash` and explained like every
+ * other one.
  */
 export type EvidenceColumn = Column<EvidenceRow> & {
   value?: (row: EvidenceRow) => string | null;
@@ -201,14 +217,28 @@ export const valueColumn: EvidenceColumn = nullableColumn({
  * rows of mono values, and a route out that only the pointer reveals is one
  * the reader scanning the column never finds (admin-window/BUG-0099).
  */
-export const sourceColumn: Column<EvidenceRow> = {
+export const sourceColumn: EvidenceColumn = {
   key: "source",
   label: "source",
-  cell: (row) => (
-    <a href={row.sourceHref} data-claim-source={row.source} className={IN_PAGE_LINK}>
-      {row.source}
-    </a>
-  ),
+  // A label with no ink is no label: the value the cell draws is `null` then,
+  // so the dash-meaning line counts this column too (admin-window/BUG-0154,
+  // the rule `nullableColumn` above already carries).
+  value: (row) => (isAbsent(row.source) ? null : row.source),
+  cell: (row) =>
+    // **No anchor around nothing.** The app links nothing whose words it does
+    // not hold — the same ruling `recordColumn` below makes for a record with
+    // no address — so an unreadable label draws `lib/format.ts`'s one absence
+    // element, labelled `no value`, inside the hook the suite addresses this
+    // cell by. It does NOT invent the id here: what a source is CALLED is
+    // `sourceLabel`'s one rule (`lib/sources/names.ts`), and a second owner of
+    // that fallback is the drift this ticket removed (LESSONS 5).
+    isAbsent(row.source) ? (
+      <span data-claim-source="">{orDash(row.source)}</span>
+    ) : (
+      <a href={row.sourceHref} data-claim-source={row.source} className={IN_PAGE_LINK}>
+        {row.source}
+      </a>
+    ),
 };
 
 /** The source's CURRENT tier — the header states which tier this is, once. */
