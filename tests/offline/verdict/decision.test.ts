@@ -78,6 +78,22 @@ const WELL_FORMED: Readonly<Record<VerdictAction, VerdictDecision>> = {
   }),
 };
 
+/**
+ * The four actions that carry a `VerdictValue`; the other four are settle-only.
+ * Module-scope because two blocks read it — invariant 4 and the absent-key
+ * bodies below — and a ninth action must not be judged by two hand-lists.
+ */
+const VALUE_CARRYING: readonly VerdictAction[] = [
+  "choose_claimed_value",
+  "supply_value",
+  "override",
+  "link_entity",
+];
+
+const SETTLE_ONLY: readonly VerdictAction[] = VERDICT_ACTIONS.filter(
+  (action) => !VALUE_CARRYING.includes(action),
+);
+
 /** The one fixture that is not keyed by action: an override of a REFERENCE. */
 const REFERENCE_OVERRIDE: VerdictDecision = decisionOf({
   action: "override",
@@ -234,13 +250,6 @@ describe("invariant 3 — the note wont_fix cannot settle without", () => {
 });
 
 describe("invariant 4 — which actions carry a value at all", () => {
-  const VALUE_CARRYING: readonly VerdictAction[] = [
-    "choose_claimed_value",
-    "supply_value",
-    "override",
-    "link_entity",
-  ];
-
   it("flags a null value on every value-carrying action", () => {
     for (const action of VALUE_CARRYING) {
       const decision = decisionOf({ ...WELL_FORMED[action], value: null });
@@ -249,7 +258,7 @@ describe("invariant 4 — which actions carry a value at all", () => {
   });
 
   it("flags a value on every settle-only action", () => {
-    for (const action of VERDICT_ACTIONS.filter((one) => !VALUE_CARRYING.includes(one))) {
+    for (const action of SETTLE_ONLY) {
       const decision = decisionOf({
         ...WELL_FORMED[action],
         value: valueOf({ value: "smuggled in" }),
@@ -374,16 +383,27 @@ function bodyAsDecision(body: Record<string, unknown>): VerdictDecision {
   return body as unknown as VerdictDecision;
 }
 
+/**
+ * The same decision with one key DELETED — `request.json()`'s rendering of a key
+ * the client simply did not send, which is a different value (`undefined`) from
+ * the explicit `null` every fixture above carries.
+ */
+function withoutKey(decision: VerdictDecision, key: keyof VerdictDecision): VerdictDecision {
+  const body: Record<string, unknown> = { ...decision };
+  delete body[key];
+  return bodyAsDecision(body);
+}
+
 /*
- * The three `it.fails` below are STRICT xfails on admin-window/BUG-0079: they
- * record the divergence without reddening the branch, and the day the guard is
- * fixed they XPASS — vitest turns an `it.fails` that passes into a FAILURE,
- * which sends the next reader to the ticket. The fix removes `.fails`.
+ * These three were QA's strict xfails on admin-window/BUG-0079 (a crash and two
+ * false refusals). The guard now grades an absent key exactly as it grades an
+ * explicit null, so they are plain `it` and must stay green: an absent optional
+ * key is the ORDINARY body for the decision it describes, not a malformation.
  */
 describe("a body whose optional keys are absent, not null", () => {
   const ITEM = "22222222-2222-4222-8222-222222222222";
 
-  it.fails("grades a supply_value body that omits `value` as value_required [admin-window/BUG-0079]", () => {
+  it("grades a supply_value body that omits `value` as value_required [admin-window/BUG-0079]", () => {
     // Currently throws `TypeError: Cannot read properties of undefined`
     // instead of refusing — a crash where the campaign's one pre-database
     // guard owes a named refusal.
@@ -396,7 +416,7 @@ describe("a body whose optional keys are absent, not null", () => {
     expect(decisionRefusals(body)).toEqual(["value_required"]);
   });
 
-  it.fails("refuses nothing for a settle body that omits `value` [admin-window/BUG-0079]", () => {
+  it("refuses nothing for a settle body that omits `value` [admin-window/BUG-0079]", () => {
     // `settle` carries no value at all; omitting the key is the ordinary
     // JSON for it, and it is currently refused as `value_forbidden`.
     const body = bodyAsDecision({
@@ -408,7 +428,7 @@ describe("a body whose optional keys are absent, not null", () => {
     expect(decisionRefusals(body)).toEqual([]);
   });
 
-  it.fails("refuses nothing for an override body that omits `review_item_id` [admin-window/BUG-0079]", () => {
+  it("refuses nothing for an override body that omits `review_item_id` [admin-window/BUG-0079]", () => {
     // The one item-less action: a client that leaves the key out is saying
     // exactly what an explicit null says, and is currently refused as
     // `review_item_forbidden` — the refusal for carrying an item.
@@ -448,5 +468,94 @@ describe("a body whose optional keys are absent, not null", () => {
       value: valueOf({ value: "z".repeat(500_000) }),
     });
     expect(decisionRefusals(decision)).toEqual([]);
+  });
+  it("grades an absent `value` as value_required on every value-carrying action", () => {
+    // Criterion 1, iterated over the set rather than the three names the ticket
+    // spells: a ninth value-carrying action gets the same grading for free.
+    for (const action of VALUE_CARRYING) {
+      const body = withoutKey(WELL_FORMED[action], "value");
+      expect(decisionRefusals(body), action).toEqual(["value_required"]);
+    }
+  });
+
+  it("refuses nothing for an absent `value` on every settle-only action", () => {
+    // Criterion 2: omitting the key IS the ordinary JSON for these four.
+    for (const action of SETTLE_ONLY) {
+      const body = withoutKey(WELL_FORMED[action], "value");
+      expect(decisionRefusals(body), action).toEqual([]);
+    }
+  });
+
+  it("still flags a value that IS present on every settle-only action", () => {
+    // The second fixture of the pair (LESSONS 3): loosening `!== null` to
+    // `!= null` must not stop `value_forbidden` from firing on a real value.
+    for (const action of SETTLE_ONLY) {
+      const body = bodyAsDecision({
+        ...WELL_FORMED[action],
+        value: valueOf({ value: "smuggled in" }),
+      });
+      expect(decisionRefusals(body), action).toContain("value_forbidden");
+    }
+  });
+
+  it("still flags an override that carries an item, absent key or not", () => {
+    // The pair for criterion 3: absence is accepted, a carried id is refused.
+    const carried = bodyAsDecision({
+      ...WELL_FORMED.override,
+      review_item_id: "22222222-2222-4222-8222-222222222222",
+    });
+    expect(decisionRefusals(carried)).toEqual(["review_item_forbidden"]);
+  });
+
+  it("grades every other key absent, on every action, without throwing", () => {
+    // The whole body reduced to its action: nothing throws, everything that is
+    // missing is NAMED. `note` is only owed by wont_fix; `value` only by the
+    // value-carrying four.
+    for (const action of VERDICT_ACTIONS) {
+      const expected = [
+        ...(action === "override" ? [] : ["review_item_required"]),
+        ...(action === "wont_fix" ? ["note_required"] : []),
+        ...(VALUE_CARRYING.includes(action) ? ["value_required"] : []),
+        "actor_required",
+      ];
+      expect(decisionRefusals(bodyAsDecision({ action })), action).toEqual(expected);
+    }
+  });
+
+  it("grades a `value` of the wrong type as value_required, never a crash", () => {
+    // A parsed body can carry anything in the slot. A non-object is not a
+    // `VerdictValue`, so invariant 4 owns it (invariant 5 reads slots, and a
+    // scalar has none); the settle-only actions still see it as a carried value.
+    for (const wrong of ["a string", 7, true, []]) {
+      const carrying = bodyAsDecision({ ...WELL_FORMED.supply_value, value: wrong });
+      expect(decisionRefusals(carrying), JSON.stringify(wrong)).toEqual(["value_required"]);
+      const settleOnly = bodyAsDecision({ ...WELL_FORMED.settle, value: wrong });
+      expect(decisionRefusals(settleOnly), JSON.stringify(wrong)).toEqual(["value_forbidden"]);
+    }
+  });
+
+  it("grades a body that is not an object at all, never a crash", () => {
+    // `request.json()` yields these for the bodies `null`, `[]`, `"x"` and `4`.
+    for (const body of [null, undefined, [], "x", 4]) {
+      expect(decisionRefusals(body as unknown as VerdictDecision), JSON.stringify(body)).toEqual([
+        "unknown_action",
+        "actor_required",
+      ]);
+    }
+  });
+
+  it("reads the payload slots as OWN keys, so a prototype cannot fill one", () => {
+    // The object-literal twin of QA's JSON.parse case: here `__proto__` really
+    // does set the prototype, and an inherited `ref` must not read as a second
+    // filled slot (which would refuse a well-formed supply_value as ambiguous).
+    const value = {
+      __proto__: { ref: "inherited-not-sent" },
+      domain: "events",
+      entity_id: "11111111-1111-4111-8111-111111111111",
+      field: "title",
+      observation_id: null,
+      value: "a supplied name",
+    } as unknown as VerdictValue;
+    expect(decisionRefusals(decisionOf({ action: "supply_value", value }))).toEqual([]);
   });
 });

@@ -107,13 +107,19 @@ export interface VerdictValue {
 /** One decision, the whole argument `settle_review_item` takes. */
 export interface VerdictDecision {
   readonly action: VerdictAction;
-  /** Null on `override` and ONLY on `override` (spec §7's item-less row). */
+  /**
+   * Null on `override` and ONLY on `override` (spec §7's item-less row). A body
+   * that omits the key says the same thing as an explicit null.
+   */
   readonly review_item_id: string | null;
   /** The signed-in admin's identity. */
   readonly actor: string;
   /** The admin's "why" — at their discretion, except on `wont_fix`. */
   readonly note: string | null;
-  /** Null on the settle-only actions; see `decisionRefusals` invariant 4. */
+  /**
+   * Null on the settle-only actions; see `decisionRefusals` invariant 4. Their
+   * ordinary JSON omits the key entirely, which grades the same as null.
+   */
   readonly value: VerdictValue | null;
 }
 
@@ -159,13 +165,41 @@ const PAYLOAD_SLOTS: Readonly<Record<VerdictAction, readonly PayloadSlot[]>> = {
 /** Every slot, in the order a refusal reports them. */
 const ALL_SLOTS: readonly PayloadSlot[] = ["observation_id", "value", "ref"];
 
-/** A slot is FILLED when it holds anything but null. `false` and `0` fill it. */
-function filled(value: VerdictValue, slot: PayloadSlot): boolean {
-  return value[slot] !== null && value[slot] !== undefined;
+/**
+ * A JSON body is an object only when it IS one: `request.json()` answers `null`,
+ * an array or a scalar for the bodies `null`, `[]` and `"x"`, and a client that
+ * omits a key sends `undefined`, never an explicit null. Everything this module
+ * grades therefore arrives as `unknown`, and a missing or wrongly-typed part is
+ * graded into a NAMED refusal rather than indexed into a TypeError
+ * (admin-window/BUG-0079).
+ */
+function asRecord(input: unknown): Record<string, unknown> {
+  return typeof input === "object" && input !== null && !Array.isArray(input)
+    ? (input as Record<string, unknown>)
+    : {};
 }
 
-/** Non-blank after trim — the test a required text field actually has to pass. */
-function present(text: string | null): boolean {
+/** Is this a `VerdictValue`-shaped envelope at all — an object, not a scalar? */
+function isValueObject(value: unknown): boolean {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A slot is FILLED when it holds anything but null or undefined; `false` and `0`
+ * fill it. Read as an OWN key: a `__proto__` in a body must be data, never a
+ * fourth way to fill a slot.
+ */
+function filled(value: unknown, slot: PayloadSlot): boolean {
+  const holder = asRecord(value);
+  if (!Object.prototype.hasOwnProperty.call(holder, slot)) return false;
+  return holder[slot] !== null && holder[slot] !== undefined;
+}
+
+/**
+ * Non-blank after trim — the test a required text field actually has to pass.
+ * Takes `unknown` because the caller's field may be absent or not a string.
+ */
+function present(text: unknown): boolean {
   return typeof text === "string" && text.trim().length > 0;
 }
 
@@ -176,6 +210,16 @@ function present(text: string | null): boolean {
  * The names are identifiers for a caller to branch on, in the manner of
  * `EditRefusal.kind` (`lib/edit/config.ts`); the words an operator reads are
  * the surface's, never one of these strings rendered raw (LESSONS 5).
+ *
+ * **It never throws — a malformed body is refusals, not an exception.** This is
+ * the campaign's one pre-database guard, and the route that calls it parses an
+ * arbitrary JSON body first, so an ABSENT key (`request.json()` never invents an
+ * explicit null for a key the client omitted), a wrongly-typed field, a
+ * `__proto__` key, or a body that is not an object at all must all come back as
+ * NAMED refusals: a crash here turns the settle route's 400 into a 500
+ * (admin-window/BUG-0079). Absent and null are the same fact throughout —
+ * omitting `value` on a settle, or `review_item_id` on an override, is the
+ * ordinary JSON for that decision and refuses nothing.
  *
  * The six invariants, in the order they are checked:
  *
@@ -193,7 +237,10 @@ function present(text: string | null): boolean {
  *     `noteRequired(action)`. A present-but-blank note is exactly the shape a
  *     form alone lets through, and the function would RAISE on it.
  *  4. `value_required` / `value_forbidden` — a `VerdictValue` is present on the
- *     value-carrying actions and null on the settle-only ones.
+ *     value-carrying actions and absent (or null) on the settle-only ones. A
+ *     `value` that is present but not an envelope — a string, a number, an
+ *     array — is `value_required` too: it is not a `VerdictValue`, and invariant
+ *     5 only reads the slots of one that is.
  *  5. `value_payload_missing` / `value_payload_ambiguous` /
  *     `value_payload_not_allowed` — exactly one payload slot is filled, and it
  *     is one this action may fill (`PAYLOAD_SLOTS`).
@@ -205,30 +252,38 @@ function present(text: string | null): boolean {
  */
 export function decisionRefusals(decision: VerdictDecision): readonly string[] {
   const refusals: string[] = [];
-  const action = decision.action;
+  // Graded as a parsed body, not as a built object: the type is what a caller
+  // MEANT to hand over, and the one seam that calls this hands it whatever the
+  // client sent. An absent key reads as `undefined` and is graded exactly as an
+  // explicit `null` — `== null` throughout (admin-window/BUG-0079).
+  const body = asRecord(decision);
+  const action = body.action as VerdictAction;
   const known = VERDICT_ACTIONS.includes(action);
 
   if (!known) refusals.push("unknown_action");
 
   if (known) {
-    // 2. The item, and the one action that goes without it.
+    // 2. The item, and the one action that goes without it. A client omitting
+    //    the key on an override says exactly what an explicit null says.
     if (action === "override") {
-      if (decision.review_item_id !== null) refusals.push("review_item_forbidden");
-    } else if (!present(decision.review_item_id)) {
+      if (body.review_item_id != null) refusals.push("review_item_forbidden");
+    } else if (!present(body.review_item_id)) {
       refusals.push("review_item_required");
     }
 
     // 3. The note `wont_fix` cannot settle without.
-    if (noteRequired(action) && !present(decision.note)) {
+    if (noteRequired(action) && !present(body.note)) {
       refusals.push("note_required");
     }
 
-    // 4 and 5. The payload.
+    // 4 and 5. The payload. A value that is absent, null, or not an envelope at
+    //    all is refused by invariant 4 — invariant 5 reads slots, and a scalar
+    //    has none — so `filled()` is never reached with a non-object.
     const slots = PAYLOAD_SLOTS[action];
-    const value = decision.value;
+    const value = body.value;
     if (slots.length === 0) {
-      if (value !== null) refusals.push("value_forbidden");
-    } else if (value === null) {
+      if (value != null) refusals.push("value_forbidden");
+    } else if (!isValueObject(value)) {
       refusals.push("value_required");
     } else {
       const usedSlots = ALL_SLOTS.filter((slot) => filled(value, slot));
@@ -239,7 +294,7 @@ export function decisionRefusals(decision: VerdictDecision): readonly string[] {
   }
 
   // 6. Who decided. Independent of the action, so it is checked either way.
-  if (!present(decision.actor)) refusals.push("actor_required");
+  if (!present(body.actor)) refusals.push("actor_required");
 
   return refusals;
 }
