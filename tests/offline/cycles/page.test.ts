@@ -2423,6 +2423,69 @@ describe("a ?source= link arriving from the Sources page", () => {
       expect($("img").length).toBe(0);
     },
   );
+
+  /**
+   * QA's strict pin for admin-window/BUG-0155 — the other half of "may this app
+   * spell it": a `?source=` the allowlist ADMITS, whose spelling on screen is
+   * not the name the read used.
+   *
+   * Expected — this page's OWN ruling on a padded paste, applied to `?cycle=`
+   * and `?run=` by admin-window/BUG-0145 and BUG-0146 ("answers a padded paste
+   * of a run id the way its twin answers one": `canonicalRecordId` strips the
+   * padding by INK, so a stray space around an id changes no page): whatever
+   * `?source=` carries, the name the page SHOWS is the name the page QUERIED.
+   *
+   * Found — `sourceNarrowing` (`src/lib/db/runs.ts:237`) admits a padded value
+   * verbatim, and a browser collapses the padding out of every sentence that
+   * names it, so the page shows one name and read another. MEASURED in Chromium
+   * (playwright, `agenticflow/.venv-tools`) on a production build of the landed
+   * tree against staging, both colour schemes, byte-identical:
+   * `/cycles?source=ticketmaster` drew 5 runs; `/cycles?source=%20ticketmaster`
+   * drew 0, over the visible words "found no runs from ticketmaster at all" and
+   * an empty card reading "No runs from ticketmaster", with NOTHING on the
+   * dropped-parameter line — a false statement about a registered source whose
+   * runs the same page draws one invisible character away.
+   *
+   * Both honest arms pass this: canonicalise the value (what is shown then IS
+   * what was queried), or refuse it and report `source` as dropped. The
+   * assertion is on the TEXT and on the value hook, never on copy or styling;
+   * whitespace is collapsed the way a browser collapses it, which is what the
+   * measurement above observed.
+   */
+  it.fails(
+    "shows the ?source= name it queried, not one the browser collapsed [admin-window/BUG-0155]",
+    async () => {
+      for (const asked of [
+        ` ${RUN_SOURCE.bandsintown}`,
+        `${RUN_SOURCE.bandsintown} `,
+        `  ${RUN_SOURCE.bandsintown}  `,
+        "bands  intown",
+      ]) {
+        const markup = await renderCycles(
+          healthyScript({ [T.runs]: { data: [...RUNS] } }),
+          { source: asked },
+        );
+        const $ = cheerio.load(markup);
+        const facet = $("[data-source-facet]");
+        if (facet.length === 0) {
+          // The refusing arm: no sentence names it, and the page says so.
+          expect(
+            $("[data-dropped-param]")
+              .toArray()
+              .map((element) => $(element).attr("data-dropped-param")),
+            JSON.stringify(asked),
+          ).toContain("source");
+          continue;
+        }
+        // What the read was narrowed BY, verbatim — `sourceNarrowing`'s return
+        // value reaches both this hook and the `.eq` (`tests/offline/runs/`).
+        const queried = facet.attr("data-source-facet") ?? "";
+        // …and the name an operator READS, as a browser lays a paragraph out.
+        const shown = facet.find('[dir="ltr"]').text().replace(/\s+/g, " ").trim();
+        expect(shown, `queried ${JSON.stringify(queried)}`).toBe(queried);
+      }
+    },
+  );
 });
 
 /* ── the run a Dashboard link asked for (admin-window/BUG-0142) ──────────── */
