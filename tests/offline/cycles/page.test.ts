@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
-import { CYCLE_COUNTERS, CYCLE_WINDOW } from "@/lib/db/cycles";
+import { CYCLE_COUNTERS, CYCLE_WINDOW, type ResolutionRunRow } from "@/lib/db/cycles";
 import { T } from "@/lib/db/tables";
 import { CLAMP_LIMIT, ELLIPSIS, EM_DASH } from "@/lib/format";
 import { readNumber } from "../../live/parity";
@@ -173,6 +173,8 @@ function cycleRow(markup: string, runId: string) {
      *  against a literal, so restyling the mark does not redden this file. */
     rendering: row.attr("class"),
     anchor: marker.attr("id"),
+    /** The reading the app arrived at for this row's outcome word, if any. */
+    tone: row.find("[data-outcome-tone]").attr("data-outcome-tone"),
     startedAt: row.find("[data-cycle-started]").attr("data-cycle-started"),
     duration: row.find("[data-cycle-duration]").text().trim(),
     error: row.find("[data-cycle-error]").text().trim(),
@@ -792,6 +794,126 @@ describe("the cycles the resolver filed", () => {
     expect(renderedCycles(markup)).toEqual([]);
     expect(cheerio.load(markup)('[data-empty="cycles"]').length).toBe(1);
     expect(notProvisioned(markup)).toEqual([]);
+  });
+});
+
+/* ── green is for a cycle with nothing left to answer for ────────────────── */
+
+/**
+ * The row the walk measured and the shared fixture cannot express: the
+ * producer wrote `succeeded`, and the row's OWN errors column says 108
+ * (campaign admin-window/BUG-0106).
+ *
+ * It is `SUCCEEDED` with a second identity and an error count, so the pair
+ * below differs in the ONE fact under test — an assertion over a row built
+ * from scratch would also pass if `succeeded` had simply stopped being green.
+ */
+const ERRORED: ResolutionRunRow = {
+  ...SUCCEEDED,
+  run_id: "0192f0c1-0000-7000-8000-0000000000e1",
+  errors: 108,
+  error_summary: 'column "venue" of relation "events" does not exist',
+};
+
+/** The whole population plus that row, in both reads of `resolution_runs`. */
+function withErroredSuccess(): Script {
+  const population = [...CYCLES, ERRORED];
+  return healthyScript({
+    [T.resolutionRuns]: [{ data: population }, { data: population }],
+  });
+}
+
+/** The error count the row itself shows, read out of its own errors cell. */
+function errorsShown(row: { counts: Record<string, string> }): number {
+  return Number((row.counts.errors ?? "").replace(/[^0-9-]/g, ""));
+}
+
+/**
+ * LOOK_AND_FEEL, Palette: **healthy is green only when nothing needs a human**
+ * — an outcome whose own row carries a non-zero error count renders in
+ * attention amber, whatever word its producer wrote, and the word itself stays
+ * verbatim.
+ *
+ * admin-window/BUG-0106 measured seventeen `/cycles` rows saying `succeeded`
+ * in `--color-healthy` with 108 errors in the same row, two cells left of the
+ * failure they had recorded verbatim. What is asserted here is the TONE the
+ * row earned, published on `data-outcome-tone` — never a class name and never
+ * a colour value, which belong to the palette and the walk.
+ */
+describe("the tone a cycle's outcome earns", () => {
+  it("does not paint a succeeded cycle green when its own row reports errors [admin-window/BUG-0106]", async () => {
+    const markup = await renderCycles(withErroredSuccess());
+
+    const errored = cycleRow(markup, ERRORED.run_id);
+    const clean = cycleRow(markup, SUCCEEDED.run_id);
+
+    // The two rows really are the pair this claims: same word, and the error
+    // count is the difference between them.
+    expect(errored.outcome).toBe(clean.outcome);
+    expect(errorsShown(errored)).toBeGreaterThan(0);
+    expect(errorsShown(clean)).toBe(0);
+
+    expect(errored.tone).toBe("attention");
+    expect(clean.tone).toBe("healthy");
+  });
+
+  it("leaves the word itself untouched — only the colour is the app's reading", async () => {
+    const markup = await renderCycles(withErroredSuccess());
+
+    const errored = cycleRow(markup, ERRORED.run_id);
+    const clean = cycleRow(markup, SUCCEEDED.run_id);
+
+    // The producer's word, verbatim, and the same word the clean row shows:
+    // the outcome cell of the two rows reads identically.
+    expect(errored.cells[2]).toBe(ERRORED.outcome);
+    expect(errored.cells[2]).toBe(clean.cells[2]);
+    // …and the row still states its failure verbatim beside it.
+    expect(errored.error).toBe(ERRORED.error_summary);
+  });
+
+  it("keeps a failed cycle broken, and a state that is not an outcome unchanged", async () => {
+    const markup = await renderCycles(withErroredSuccess());
+
+    // `failed` carries errors too; red already says a human is needed, and
+    // amber would be a quieter reading of a louder fact.
+    expect(errorsShown(cycleRow(markup, FAILED.run_id))).toBeGreaterThan(0);
+    expect(cycleRow(markup, FAILED.run_id).tone).toBe("broken");
+    // A clean outcome with no health reading is still uncoloured.
+    expect(cycleRow(markup, SKIPPED.run_id).tone).toBe("neutral");
+    // The three states that are not an outcome read exactly as before: no
+    // outcome word, so no tone for one.
+    for (const row of [RUNNING, DIED, UNRECORDED]) {
+      const rendered = cycleRow(markup, row.run_id);
+      expect(rendered.tone, row.run_id).toBeUndefined();
+      expect(rendered.outcome, row.run_id).toBeUndefined();
+    }
+    expect(cycleRow(markup, DIED.run_id).state).toBe("died");
+  });
+
+  it("leaves no row on the page showing errors and a healthy word", async () => {
+    const markup = await renderCycles(withErroredSuccess());
+
+    // The walkable form of the bar, over every row the page rendered: read
+    // each row's own errors cell and its own tone, and let no row hold both a
+    // count and the green.
+    const ids = renderedCycles(markup);
+    expect(ids.length).toBe(CYCLES.length + 1);
+
+    const green: string[] = [];
+    let errored = 0;
+    for (const id of ids) {
+      const row = cycleRow(markup, id);
+      // Every row carrying an outcome word states the reading it earned, so a
+      // page that published no reading at all cannot pass this vacuously.
+      if (row.state === "outcome") expect(row.tone, id).toBeDefined();
+      if (errorsShown(row) <= 0) continue;
+      errored += 1;
+      if (row.tone === "healthy") green.push(id);
+    }
+    // The population really did put errored rows on screen, so the emptiness
+    // below is a finding and not an empty loop.
+    expect(errored).toBeGreaterThan(1);
+    expect(green).toEqual([]);
   });
 });
 

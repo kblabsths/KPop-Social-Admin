@@ -224,6 +224,25 @@ function cycles(): ResolutionRunRow[] {
   ];
 }
 
+/**
+ * The row admin-window/BUG-0106 was filed about, in the shape this page shows
+ * it: the producer wrote `succeeded` and the cycle's own errors column says
+ * 108, with its failure recorded verbatim beside it.
+ *
+ * Built from the window's newest row so the pair under test differs in the ONE
+ * fact — the error count — and never in its word.
+ */
+const CYCLE_ERRORED: ResolutionRunRow = resolutionRunRow({
+  run_id: CYCLE_NEWEST,
+  started_at: minutesAgo(4),
+  ended_at: secondsAfter(minutesAgo(4), 45),
+  outcome: "succeeded",
+  applied: 0,
+  escalated: 0,
+  errors: 108,
+  error_summary: CYCLE_ERROR,
+});
+
 function runs(): RunRow[] {
   return [
     runRow({
@@ -333,6 +352,25 @@ function outcomesOf(markup: string, table: string): (string | undefined)[] {
   return $(`table[aria-label="${table}"] tbody tr`)
     .toArray()
     .map((tr) => $(tr).find("[data-outcome]").first().attr("data-outcome"));
+}
+
+/**
+ * The `data-outcome-tone` of each row of the named table, in row order.
+ *
+ * The tone is the app's own READING of an outcome — the palette's four words,
+ * published as a hook so a test never has to read a class name or a colour
+ * value (those belong to the palette and the walk).
+ */
+function tonesOf(markup: string, table: string): (string | undefined)[] {
+  const $ = cheerio.load(markup);
+  return $(`table[aria-label="${table}"] tbody tr`)
+    .toArray()
+    .map((tr) => $(tr).find("[data-outcome-tone]").first().attr("data-outcome-tone"));
+}
+
+/** The figure a rendered row shows in the named column, as a number. */
+function readCell(row: Record<string, string>, column: string): number {
+  return Number((row[column] ?? "").replace(/[^0-9-]/g, ""));
 }
 
 /** Every error line's text and the row it links to, in the named table. */
@@ -508,6 +546,70 @@ describe("last night's cycles and runs", () => {
     expect(outcomesOf(markup, "cycles")).toEqual(["running", "skipped", "failed"]);
     // The producer's own word, rendered verbatim.
     expect(rowsOf(markup, "cycles")[1].outcome).toBe("skipped");
+  });
+
+  /**
+   * LOOK_AND_FEEL, Palette: **healthy is green only when nothing needs a
+   * human** — an outcome whose own row carries a non-zero error count renders
+   * in attention amber, whatever word its producer wrote.
+   *
+   * admin-window/BUG-0106 measured that on `/cycles` and found the same defect
+   * waiting here: this page kept its own copy of the tone map, so the day one
+   * of the six newest cycles errors, it would have said `succeeded` in green
+   * over its own 108. The rule is `components/cycles/outcome.tsx`'s, called
+   * from here rather than copied — which is what "the same map" means.
+   */
+  it("does not paint a succeeded cycle green when its own row reports errors [admin-window/BUG-0106]", async () => {
+    const markup = await renderDashboard(
+      healthyScript({
+        [T.resolutionRuns]: { data: [CYCLE_ERRORED, ...cycles().slice(1)] },
+      }),
+    );
+
+    const rows = rowsOf(markup, "cycles");
+    const tones = tonesOf(markup, "cycles");
+    // The pair under test: one `succeeded` row with errors, one without.
+    expect(rows[0].outcome).toBe("succeeded");
+    expect(readCell(rows[0], "errors")).toBeGreaterThan(0);
+    expect(tones[0]).toBe("attention");
+
+    const cleanMarkup = await renderDashboard(
+      healthyScript({
+        [T.resolutionRuns]: {
+          data: [resolutionRunRow({ ...CYCLE_ERRORED, errors: 0, error_summary: null })],
+        },
+      }),
+    );
+    const cleanRows = rowsOf(cleanMarkup, "cycles");
+    // Same word, same row, no errors — and green is what it earns.
+    expect(cleanRows[0].outcome).toBe(rows[0].outcome);
+    expect(readCell(cleanRows[0], "errors")).toBe(0);
+    expect(tonesOf(cleanMarkup, "cycles")[0]).toBe("healthy");
+  });
+
+  it("keeps a failed cycle broken and an adapter run's tone unchanged [admin-window/BUG-0106]", async () => {
+    const markup = await renderDashboard(healthyScript());
+
+    // `failed` carries errors of its own; red already says a human is needed.
+    const rows = rowsOf(markup, "cycles");
+    const failed = rows.findIndex((row) => row.outcome === "failed");
+    expect(failed).toBeGreaterThanOrEqual(0);
+    expect(readCell(rows[failed], "errors")).toBeGreaterThan(0);
+    expect(tonesOf(markup, "cycles")[failed]).toBe("broken");
+
+    // A run keeps no error count of its own, so the word alone decides: the
+    // adapter half renders exactly as it did before the rule existed.
+    expect(outcomesOf(markup, "runs")).toEqual(["running", "failed"]);
+    expect(tonesOf(markup, "runs")).toEqual([undefined, "broken"]);
+
+    const succeededRun = await renderDashboard(
+      healthyScript({
+        [T.runs]: {
+          data: [runRow({ run_id: RUN_OLDEST, outcome: "succeeded", error_summary: null })],
+        },
+      }),
+    );
+    expect(tonesOf(succeededRun, "runs")).toEqual(["healthy"]);
   });
 
   it("shows a run's source, when, outcome and error — and no other run column", async () => {
@@ -1355,15 +1457,53 @@ describe("one word per cycle, on every surface", () => {
     return words;
   }
 
+  /**
+   * The reading each surface arrived at for each cycle's outcome, keyed by
+   * `run_id` — the app's own word for the tone, off the row's hook, never a
+   * class name.
+   */
+  function tonesByCycle(
+    markup: string,
+    table: cheerio.Cheerio<never>,
+    idOf: (row: cheerio.Cheerio<never>) => string | undefined,
+  ): Record<string, string> {
+    const $ = cheerio.load(markup);
+    const tones: Record<string, string> = {};
+    table.find("tbody tr").each((_, tr) => {
+      const row = $(tr) as unknown as cheerio.Cheerio<never>;
+      const id = idOf(row);
+      if (id === undefined) throw new Error("a cycle row carries no cycle id");
+      tones[id] =
+        row.find("[data-outcome-tone]").first().attr("data-outcome-tone") ?? "";
+    });
+    return tones;
+  }
+
+  /** The Dashboard's cycle table, and how it names a row: its `cycle=` link. */
+  function dashboardCycleTable(markup: string): {
+    table: cheerio.Cheerio<never>;
+    idOf: (row: cheerio.Cheerio<never>) => string | undefined;
+  } {
+    const $ = cheerio.load(markup);
+    return {
+      table: $('table[aria-label="cycles"]') as unknown as cheerio.Cheerio<never>,
+      idOf: (row) => {
+        const href = row.find('a[href*="cycle="]').first().attr("href");
+        if (href === undefined) return undefined;
+        return new URL(href, "http://dashboard.test").searchParams.get("cycle") ?? undefined;
+      },
+    };
+  }
+
   /** The Dashboard names the row in the link its started cell carries. */
   function dashboardWords(markup: string): Record<string, string> {
-    const $ = cheerio.load(markup);
-    const table = $('table[aria-label="cycles"]') as unknown as cheerio.Cheerio<never>;
-    return wordsByCycle(markup, table, (row) => {
-      const href = row.find('a[href*="cycle="]').first().attr("href");
-      if (href === undefined) return undefined;
-      return new URL(href, "http://dashboard.test").searchParams.get("cycle") ?? undefined;
-    });
+    const { table, idOf } = dashboardCycleTable(markup);
+    return wordsByCycle(markup, table, idOf);
+  }
+
+  function dashboardTones(markup: string): Record<string, string> {
+    const { table, idOf } = dashboardCycleTable(markup);
+    return tonesByCycle(markup, table, idOf);
   }
 
   /**
@@ -1372,13 +1512,24 @@ describe("one word per cycle, on every surface", () => {
    * accessible name.
    */
   function cyclesPageWords(markup: string): Record<string, string> {
+    const { table, idOf } = cyclesPageCycleTable(markup);
+    return wordsByCycle(markup, table, idOf);
+  }
+
+  function cyclesPageTones(markup: string): Record<string, string> {
+    const { table, idOf } = cyclesPageCycleTable(markup);
+    return tonesByCycle(markup, table, idOf);
+  }
+
+  function cyclesPageCycleTable(markup: string): {
+    table: cheerio.Cheerio<never>;
+    idOf: (row: cheerio.Cheerio<never>) => string | undefined;
+  } {
     const $ = cheerio.load(markup);
-    const table = $("[data-cycle]")
-      .first()
-      .closest("table") as unknown as cheerio.Cheerio<never>;
-    return wordsByCycle(markup, table, (row) =>
-      row.find("[data-cycle]").first().attr("data-cycle"),
-    );
+    return {
+      table: $("[data-cycle]").first().closest("table") as unknown as cheerio.Cheerio<never>,
+      idOf: (row) => row.find("[data-cycle]").first().attr("data-cycle"),
+    };
   }
 
   async function renderCyclesPage(
@@ -1393,6 +1544,50 @@ describe("one word per cycle, on every surface", () => {
     }).asSupabaseClient();
     return render(await CyclesPage({ searchParams: Promise.resolve({}) }));
   }
+
+  /**
+   * The same property, one layer down: **the tone the Dashboard gives a cycle
+   * is the tone /cycles gives the same row** (admin-window/BUG-0106).
+   *
+   * The population is the shared six plus the row the bug was filed about — a
+   * `succeeded` cycle whose own errors column says 108. Both surfaces are
+   * rendered against it and compared row by row, so a second copy of the tone
+   * decision on either page reddens this, which is what having ONE decision
+   * means. The tones are also checked to be more than one value: two surfaces
+   * that painted everything alike would agree perfectly and say nothing.
+   */
+  const ERRORED_SUCCESS: ResolutionRunRow = resolutionRunRow({
+    run_id: "01920000-0000-7000-8000-0000000006ee",
+    started_at: minutesAgo(6),
+    ended_at: secondsAfter(minutesAgo(6), 45),
+    outcome: "succeeded",
+    errors: 108,
+    error_summary: CYCLE_ERROR,
+  });
+
+  it("gives every cycle the same tone the Cycles & runs page gives it [admin-window/BUG-0106]", async () => {
+    const population = [...CYCLE_POPULATION, ERRORED_SUCCESS];
+    const dashboard = dashboardTones(
+      await renderDashboard(healthyScript({ [T.resolutionRuns]: { data: population } })),
+    );
+    const cyclesPage = cyclesPageTones(await renderCyclesPage(population));
+
+    const ids = population.map((row) => row.run_id).sort();
+    expect(Object.keys(dashboard).sort()).toEqual(ids);
+    expect(Object.keys(cyclesPage).sort()).toEqual(ids);
+    expect(dashboard).toEqual(cyclesPage);
+
+    // The comparison is over a real spread of readings, and the errored row's
+    // is the one the palette bar names — on both surfaces.
+    expect(new Set(Object.values(dashboard)).size).toBeGreaterThan(2);
+    expect(dashboard[ERRORED_SUCCESS.run_id]).toBe("attention");
+    // …while the clean `succeeded` row of the same population keeps its green.
+    const clean = CYCLE_POPULATION.find(
+      (row) => row.outcome === "succeeded" && row.errors === 0,
+    );
+    expect(clean, "the shared population has no clean succeeded cycle").toBeDefined();
+    expect(dashboard[clean!.run_id]).toBe("healthy");
+  });
 
   it("gives every cycle the same word the Cycles & runs page gives it", async () => {
     const dashboard = dashboardWords(

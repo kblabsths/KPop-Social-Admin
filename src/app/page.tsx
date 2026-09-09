@@ -9,6 +9,7 @@ import {
   StateOf,
   type Column,
 } from "@/components/ui";
+import { OUTCOME_BADGE_TONE, outcomeTone } from "@/components/cycles";
 import { STATE_WORD, cycleState, type CycleState } from "@/lib/cycles/state";
 import {
   DASHBOARD_WINDOW,
@@ -177,17 +178,22 @@ function AttentionDetail({ summary, now }: { summary: KindSummary; now: string }
  * cell BLANK — the one rendering LOOK_AND_FEEL forbids. Returning the `null`
  * ITSELF is what puts the shared em dash in the cell. Absence is `isAbsent`,
  * the app's single definition (admin-window/BUG-0004).
+ *
+ * **The tone is not decided here.** It is `outcomeTone`'s, imported from the
+ * module that owns the decision (`components/cycles/outcome.tsx`), so this
+ * table and the two on `/cycles` read one rule: coloured only where health
+ * says so, and healthy only where the row has nothing left to answer for.
+ * This page used to declare its own copy of the tone map, and
+ * admin-window/BUG-0106 is what that cost — the palette rule that an errored
+ * outcome is not green was built into that module while this table, drawn from
+ * the same producer's rows, went on painting the same word green. `errors` is
+ * the row's own count, or `null` for a producer that keeps none.
  */
-const OUTCOME_TONE: Record<string, "healthy" | "broken" | "neutral"> = {
-  succeeded: "healthy",
-  failed: "broken",
-};
-
-/** The producer's own word, verbatim, coloured only where health says so. */
-function outcomeBadge(outcome: string): ReactNode {
+function outcomeBadge(outcome: string, errors: number | null): ReactNode {
+  const tone = outcomeTone(outcome, errors);
   return (
-    <span data-outcome={outcome}>
-      <Badge tone={OUTCOME_TONE[outcome] ?? "neutral"}>{outcome}</Badge>
+    <span data-outcome={outcome} data-outcome-tone={tone}>
+      <Badge tone={OUTCOME_BADGE_TONE[tone]}>{outcome}</Badge>
     </span>
   );
 }
@@ -215,7 +221,7 @@ function cycleOutcomeCell(row: DashboardCycleRow, now: string): ReactNode {
     now,
     cadenceSeconds: RESOLVER_CADENCE_SECONDS,
   });
-  if (state.kind === "outcome") return outcomeBadge(state.outcome);
+  if (state.kind === "outcome") return outcomeBadge(state.outcome, row.errors);
   if (state.kind === "running") {
     return (
       <span data-outcome="running" className="type-body text-ink-secondary">
@@ -248,7 +254,10 @@ function cycleOutcomeCell(row: DashboardCycleRow, now: string): ReactNode {
  * page cannot come to spell one state two ways either.
  */
 function runOutcomeCell(outcome: string | null, endedAt: string | null): ReactNode {
-  if (outcome !== null && !isAbsent(outcome)) return outcomeBadge(outcome);
+  // `null`, not `0`: a run has no error count of its own, so its word alone
+  // decides its tone (admin-window/BUG-0106). A counted zero and an uncounted
+  // absence are not the same fact.
+  if (outcome !== null && !isAbsent(outcome)) return outcomeBadge(outcome, null);
   if (endedAt === null) {
     return (
       <span data-outcome="running" className="type-body text-ink-secondary">

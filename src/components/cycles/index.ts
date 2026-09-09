@@ -16,7 +16,12 @@ export { NOTHING_RECORDED, cycleColumns } from "./cycle-table";
 export { LatestRun } from "./latest-run";
 export { LatencySection } from "./latency";
 export { IN_PAGE_LINK, RUNS_ANCHOR, anchorFor } from "./links";
-export { OUTCOME_TONE, stateCell } from "./outcome";
+export {
+  OUTCOME_BADGE_TONE,
+  outcomeTone,
+  stateCell,
+  type OutcomeTone,
+} from "./outcome";
 export {
   type CycleCounterName,
   type CycleTableRow,

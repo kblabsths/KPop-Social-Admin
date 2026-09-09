@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Badge, type Column } from "@/components/ui";
 import { CLAMP_LIMIT, clamped, count, isAbsent, relativeAge } from "@/lib/format";
-import { OUTCOME_TONE } from "./outcome";
+import { OUTCOME_BADGE_TONE, outcomeTone } from "./outcome";
 import type { RunColumnName, RunCountName, RunTableRow } from "./rows";
 
 /**
@@ -101,7 +101,14 @@ function runCells(
       // outcome and carries no colour, not a failure.
       isAbsent(row.outcome) ? null : (
         <span data-run-outcome={row.outcome ?? undefined}>
-          <Badge tone={OUTCOME_TONE[row.outcome ?? ""] ?? "neutral"}>{row.outcome}</Badge>
+          {/* A run carries no error count of its own (`runs` has none), so the
+              word alone decides its tone and this table renders exactly as it
+              did before admin-window/BUG-0106 — the errored-outcome rule reads
+              a count, and there is none here. A failed run is already broken
+              red and states its `error_summary` two columns right. */}
+          <Badge tone={OUTCOME_BADGE_TONE[outcomeTone(row.outcome ?? "", null)]}>
+            {row.outcome}
+          </Badge>
         </span>
       ),
     error_summary: (row) => {

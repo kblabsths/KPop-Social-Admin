@@ -138,7 +138,11 @@ export function cycleColumns({
     {
       key: "outcome",
       label: "outcome",
-      cell: (row) => stateCell(cycleState(row, { now, cadenceSeconds })),
+      // The row's own `errors` goes with its word: a cycle that reports
+      // errors has something left to answer for, so its outcome cannot read
+      // healthy however confident the producer's word was
+      // (admin-window/BUG-0106; the tone decision itself is `outcome.tsx`'s).
+      cell: (row) => stateCell(cycleState(row, { now, cadenceSeconds }), row.errors),
     },
     {
       key: "duration",
