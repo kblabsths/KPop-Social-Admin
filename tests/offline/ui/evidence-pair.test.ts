@@ -9,7 +9,7 @@ import {
 } from "@/components/evidence/evidence-pair";
 import { Button } from "@/components/ui/button";
 import { Identifier } from "@/components/ui/identifier";
-import { EM_DASH, absoluteUtc, relativeAge } from "@/lib/format";
+import { EM_DASH, absoluteUtc, orDash, relativeAge } from "@/lib/format";
 
 import { classesOf, h, render, textOf } from "./markup";
 
@@ -422,6 +422,111 @@ describe("EvidencePair", () => {
     ).join(separator);
     expect(healthy.text).toBe(assembled);
   });
+
+  /**
+   * The two provenance arms whose APP-AUTHORED WORDS SIT AFTER THE VALUE — the
+   * only positions where an unterminated override in a machine value can reach
+   * them at all, since a control reorders what follows it and not what precedes
+   * it (admin-window/DEBT-0011 criterion 4, QA attack).
+   *
+   * The hostile-source fixture above cannot see either of them: the source is
+   * the FIRST segment, graded by the words that follow the whole line, while
+   * `{identifier: tier, after: "at apply"}` puts two app words immediately
+   * behind one value, and the not-live arm
+   * (`{before: "the claim it applied is now", identifier: status}`) is the arm
+   * criterion 2 names outright ("a status … value") and no test rendered at all
+   * — `canonicalCard` builds it only when the decision's claim has stopped
+   * being live (`src/app/queues/[reviewItemId]/page.tsx`).
+   */
+  it("keeps the app's words beside a hostile tier and a hostile status out of their boxes", () => {
+    const RLO = "‮";
+    const notLive: ProvenanceSegment[] = [
+      ...PROVENANCE,
+      { before: "the claim it applied is now", identifier: "superseded" },
+    ];
+
+    function provenance(segments: ProvenanceSegment[]) {
+      const $ = cheerio.load(pair({ canonical: { ...CANONICAL, provenance: segments } }));
+      const element = $("div").first().children("div").last().children("span").last();
+      return {
+        isolated: element.find("[dir]").toArray().map((node) => $(node).text()),
+        appWords: element
+          .contents()
+          .toArray()
+          .filter((node) => !("attribs" in node && node.attribs?.dir !== undefined))
+          .map((node) => $(node).text())
+          .join(""),
+      };
+    }
+
+    const healthy = provenance(notLive);
+
+    // The TIER, with the app's "at apply" one text node behind it.
+    const hostileTier = provenance(
+      notLive.map((segment, index) =>
+        index === 1 ? { identifier: `off${RLO}icial`, after: "at apply" } : segment,
+      ),
+    );
+    expect(hostileTier.isolated[1]).toBe(`off${RLO}icial`);
+    expect(hostileTier.appWords).not.toContain(RLO);
+    expect(hostileTier.appWords).toBe(healthy.appWords);
+
+    // The not-live STATUS, with the app's whole clause beside it.
+    const hostileStatus = provenance(
+      notLive.map((segment, index) =>
+        index === notLive.length - 1
+          ? { before: "the claim it applied is now", identifier: `sup${RLO}erseded` }
+          : segment,
+      ),
+    );
+    expect(hostileStatus.isolated.at(-1)).toBe(`sup${RLO}erseded`);
+    expect(hostileStatus.appWords).not.toContain(RLO);
+    expect(hostileStatus.appWords).toBe(healthy.appWords);
+  });
+
+  /**
+   * A provenance value with nothing visible in it draws an EMPTY isolated box
+   * and announces no absence — while the claim line one card to its LEFT, for
+   * the same class of value (`sources.source`, reached through
+   * `canonicalSideOf`'s `sources.get(id)?.source`), draws the app's own absence
+   * element (`ClaimValue`; admin-window/BUG-0151, BUG-0134).
+   *
+   * Expected: the absence element the claim line draws for the same value, so a
+   * reader is told the winning source is missing. Found:
+   * `<span dir="ltr" class="…"></span>` and a line reading
+   * " ·  at apply · applied 3d ago" with a silent gap where the source belongs
+   * — `ProvenancePart` (`src/components/evidence/evidence-pair.tsx`) wraps
+   * `segment.identifier` with no absence guard.
+   *
+   * The expectation is read off `orDash` rather than typed here, so this pins
+   * the behaviour and not a literal.
+   *
+   * Pinned as an expected failure for admin-window/BUG-0152: the day the guard
+   * lands this file goes red and sends the reader to the ticket.
+   */
+  it.fails.each([["empty", ""], ["blank", "   "], ["ink-less", "​‮"]])(
+    "draws a %s provenance value as the app's absence element, not an empty isolated box — admin-window/BUG-0152",
+    (_name, value) => {
+      const absence = cheerio.load(render(orDash("")))("[aria-label]").first();
+
+      const $ = cheerio.load(
+        pair({
+          canonical: {
+            ...CANONICAL,
+            provenance: [{ identifier: value }, ...PROVENANCE.slice(1)],
+          },
+        }),
+      );
+      const line = $("div").first().children("div").last().children("span").last();
+
+      const boxes = line.find("[dir]").toArray().map((node) => $(node).text());
+      expect(boxes, "no identifier box is left standing empty").not.toContain(value);
+      expect(
+        line.find(`[aria-label="${absence.attr("aria-label")}"]`),
+        "the app's absence element stands in for the missing source",
+      ).toHaveLength(1);
+    },
+  );
 
   it("renders with no contenders at all and draws no dangling separator", () => {
     const html = pair({ claims: [] });
