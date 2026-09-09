@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T11:55:11Z — do not edit)
+# Tracker index (regenerated 2026-09-09T11:55:21Z — do not edit)
 
 ## open
 - BUG-0119 [P3][bug][M2] A refused choice in the entity picker outlives every operator move but Escape-inside-the-panel, and never yields the page's one refusal slot  (scope:src/components/records/entity-picker.tsx,src/components/EditableCell.tsx,tests/offline/records/entity-picker.test.ts from:BUG-0111)
