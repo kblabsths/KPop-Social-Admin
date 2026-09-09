@@ -16536,3 +16536,49 @@
 2026-09-09T08:24:37Z	builder	BUG-0106	spawned
 # STRANDED	2026-09-09T08:25:09Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0106.md
 2026-09-09T08:25:09Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:25:40Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:25:40Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:26:41Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:26:41Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:27:13Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:27:13Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:27:45Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:27:45Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:28:16Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:28:16Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:29:17Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:29:17Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:29:49Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:29:49Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:30:20Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:30:20Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:30:52Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:30:52Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:31:23Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:31:23Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:31:54Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:31:54Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:32:26Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:32:26Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:32:58Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:32:58Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:33:29Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:33:29Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:34:02Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:34:02Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:34:33Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:34:33Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:35:05Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:35:05Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:35:36Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:35:36Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:36:37Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:36:37Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:37:09Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:37:09Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:37:41Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:37:41Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:38:12Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T08:38:12Z	agent	-	-	-	-
+# STRANDED	2026-09-09T08:39:09Z	builder	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0106.md
+2026-09-09T08:39:09Z	builder	BUG-0106	18887	871	153997

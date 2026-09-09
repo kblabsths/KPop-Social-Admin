@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T08:25:30Z — do not edit)
+# Tracker index (regenerated 2026-09-09T08:39:19Z — do not edit)
 
 ## open
 - BUG-0107 [P2][bug][M2] A refused inline save outlives its edit — Escape, blur and a later successful save all leave the red line standing, and two of them stack over the values beneath  (scope:src/components/EditableCell.tsx,src/components/edit-cell-layout.ts,tests/offline/ui/editable-cell.test.ts,tests/offline/records/page.test.ts from:designer:endgame-walk)
@@ -8,7 +8,7 @@
 - BUG-0111 [P3][bug][M2] The entity picker's saved confirmation never retires — the 1.5s clock lives in EditableCell alone, and the picker renders the same status without one  (scope:src/components/records/entity-picker.tsx,tests/offline/records/entity-picker.test.ts from:designer:endgame-walk)
 - BUG-0112 [P3][bug][M2] The record page's regime note sets its table name in sans — three table names on one screen, two in mono and the one in the prose not  (scope:src/components/records/record-fields.tsx,tests/offline/records/page.test.ts from:designer:endgame-walk)
 
-## claimed
+## built
 - BUG-0106 [P2][bug][M2] Seventeen cycles report errors and still say succeeded in healthy green — the palette bar TASK-0038 wrote and nothing built  (scope:src/components/cycles/outcome.tsx,src/app/page.tsx,tests/offline/cycles/page.test.ts,tests/offline/dashboard/page.test.ts @builder-174 from:designer:endgame-walk)
 
-Totals — claimed:1, done:61, open:6, wont_fix:1. Archived: 124.
+Totals — built:1, done:61, open:6, wont_fix:1. Archived: 124.
