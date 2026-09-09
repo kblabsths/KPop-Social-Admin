@@ -1,6 +1,6 @@
-# Tracker index (regenerated 2026-09-09T12:37:01Z — do not edit)
+# Tracker index (regenerated 2026-09-09T12:47:34Z — do not edit)
 
-## qa
-- BUG-0120 [P3][bug][M2] The record page's empty state cards set their table name in sans — the face BUG-0112 fixed one paragraph above  (scope:src/components/ui/empty.tsx,src/app/records/[table]/[id]/page.tsx,tests/offline/records/page.test.ts @builder-188 from:BUG-0112)
+## open
+- BUG-0121 [P3][bug][M2] The queues detail page's empty state cards set review_items in sans — the face BUG-0120 fixed one route over  (scope:src/app/queues/[reviewItemId]/page.tsx,tests/offline/review-item/page.test.ts from:BUG-0120)
 
-Totals — done:75, qa:1, wont_fix:1. Archived: 124.
+Totals — done:76, open:1, wont_fix:1. Archived: 124.
