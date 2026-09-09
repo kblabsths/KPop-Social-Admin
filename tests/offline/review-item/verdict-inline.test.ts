@@ -661,15 +661,16 @@ function dashAccounting(markup: string): {
 
 describe("the dashes the block draws", () => {
   /**
-   * The invariant both pins below assert, and neither prescribes a fix: the
-   * block may stop dashing these values or may explain every dash it draws,
-   * and either shape satisfies it. `it.fails` is the strict pin — the day the
-   * block stops diverging these turn RED and send the reader to BUG-0092,
-   * rather than passing silently on a fix nobody noticed.
+   * The invariant both cases below assert, filed as admin-window/BUG-0092 and
+   * fixed in admin-window/TASK-0059: every dash the block puts on screen is
+   * the app's one dash element, and a dash on screen carries exactly one
+   * dash-meaning line — on all four of its absent-able lines, actor and when
+   * included. Neither prescribes a shape: the block may stop dashing these
+   * values or may explain every dash it draws, and either satisfies them.
    */
 
-  it.fails(
-    "admin-window/BUG-0092: explains the dash it draws for a blank actor",
+  it(
+    "explains the dash it draws for a blank actor",
     async () => {
       // Every other line carries a value, so the actor's dash is the only one
       // on screen — and it stands there with nothing saying what it means.
@@ -686,8 +687,8 @@ describe("the dashes the block draws", () => {
     },
   );
 
-  it.fails(
-    "admin-window/BUG-0092: draws an unparseable instant with the app's own dash",
+  it(
+    "draws an unparseable instant with the app's own dash",
     async () => {
       // `relativeAge` answers `{ text: EM_DASH, title: "" }` for an instant it
       // cannot read, and this block renders that text directly — where the
