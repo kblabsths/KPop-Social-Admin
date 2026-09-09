@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T03:37:12Z — do not edit)
+# Tracker index (regenerated 2026-09-09T03:43:35Z — do not edit)
 
 ## open
 - FEAT-0009 [P1][feat][M2] The two schema handoff artifacts, authored complete for Ben to install  (scope:agenticflow/tracker/for-human,agenticflow/docs/vision/SPEC.md)
@@ -13,11 +13,13 @@
 
 ## claimed
 - TASK-0046 [P1][task][M2] settle_review_item, authored complete against the installed apply_resolution and gate  (deps:TASK-0042,TASK-0045 scope:agenticflow/tracker/for-human/M2-handoff-settle-review-item.md,tests/offline/handoff/settle-review-item.test.ts,src/lib/verdict/decision.ts @builder-142)
-- TASK-0050 [P1][task][M2] The data_conflict item's three verdict actions, one typed decision each  (deps:TASK-0049 scope:src/components/review/close/conflict-actions.tsx,tests/offline/review-item/conflict-actions.test.ts @builder-139)
 - TASK-0051 [P1][task][M2] The signal item's two dispositions: fixed, and wont_fix with its required note  (deps:TASK-0049 scope:src/components/review/close/signal-actions.tsx,tests/offline/review-item/signal-actions.test.ts @builder-140)
 - TASK-0054 [P1][task][M2] The override write path: events and venues edit only as recorded admin-tier observations  (deps:TASK-0048,TASK-0052,TASK-0040 scope:src/lib/edit/config.ts,src/app/api/admin/records/[table]/[id]/route.ts,src/app/records/[table]/[id]/page.tsx,src/components/records/record-fields.tsx,src/components/records/field-editor.tsx,tests/offline/edit/config.test.ts,tests/offline/edit/route.test.ts,tests/offline/records/page.test.ts,tests/http/edit.http.test.ts @builder-143)
 
 ## built
+- TASK-0050 [P1][task][M2] The data_conflict item's three verdict actions, one typed decision each  (deps:TASK-0049 scope:src/components/review/close/conflict-actions.tsx,tests/offline/review-item/conflict-actions.test.ts @builder-139)
+
+## qa
 - BUG-0085 [P2][bug][M2] the verdict log renders a present-but-blank note as an empty cell, not the mandated dash  (@builder-141 from:TASK-0058)
 
-Totals — built:1, claimed:4, done:27, open:9, wont_fix:1. Archived: 124.
+Totals — built:1, claimed:3, done:27, open:9, qa:1, wont_fix:1. Archived: 124.
