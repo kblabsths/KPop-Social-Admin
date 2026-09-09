@@ -1297,8 +1297,25 @@ function pickerShell() {
     }
   }
 
+  /**
+   * What the focus effect was last RUN for. The shipped effect is keyed
+   * `[open, status]` (entity-picker.tsx), so React runs it when one of those
+   * two changes and on no other move — a press that focuses nothing, a Tab,
+   * a keystroke in the search box all leave it asleep. Modelling it as "after
+   * every move" would let the rule re-decide focus at moments the browser
+   * never asks it to, and hide what it does with the moments it is asked
+   * (admin-window/BUG-0149).
+   */
+  let ranForOpen: boolean | null = null;
+  let ranForStatus: Status | null = null;
+
   /** The focus effect: the shipped rule, and the one line of browser it buys. */
   function runFocus() {
+    if (ranForStatus !== null && open === ranForOpen && pick.status === ranForStatus) {
+      return;
+    }
+    ranForOpen = open;
+    ranForStatus = pick.status;
     const verdict = pickerFocus({
       open,
       was,
@@ -1362,6 +1379,19 @@ function pickerShell() {
     /** A pointer press on a part of the page that is not this widget. */
     pressAway() {
       broadcast("pointerdown", { target: away });
+      settle();
+      return shell;
+    },
+    /**
+     * A pointer press INSIDE the widget that lands on nothing focusable — the
+     * panel's own hint line, its window line, the gap between two rows. The
+     * browser blurs whatever held focus and leaves it on `document.body`; the
+     * press is inside the box, so it is not the operator walking away and
+     * `retiresRefusal` is right to make nothing of it.
+     */
+    pressInsideOnNothing() {
+      where = "nowhere";
+      broadcast("pointerdown", { target: box });
       settle();
       return shell;
     },
@@ -1569,6 +1599,59 @@ describe("where the picker leaves focus", () => {
       expect(shell.focus(), `${path}, at rest`).not.toEqual("nowhere");
       shell.close();
     }
+  });
+
+  // Pinned RED by admin-window/BUG-0149 — `it.fails` is strict: the day the
+  // rule places focus, this turns red and sends the reader to that ticket.
+  it.fails("puts focus back on a live control when an answer lands on a panel focus has slipped out of (admin-window/BUG-0149)", () => {
+    // admin-window/BUG-0149. Criterion 3 names three moments at which focus
+    // must be on a real focusable element of this widget: after a refusal,
+    // after a save that lands, and after a save another widget supersedes.
+    // `pickerFocus`'s no-transition branch rescues focus for exactly ONE
+    // status — `open && status.kind === "saving"` — so a panel that is still
+    // open when the answer arrives is left with focus wherever it was, and
+    // "wherever it was" includes `document.body`. Nothing about that is
+    // hypothetical: the operator presses the panel's own hint line, or the
+    // gap between two rows, while the write runs. That press focuses nothing,
+    // so the browser leaves focus on the body; it is INSIDE the widget, so it
+    // is not the operator walking away and no rule reads it as a choice.
+    const shell = pickerShell().chooseButton().pickRow();
+    expect(shell.focus(), "the write parked it on the search field").toEqual("search");
+    shell.pressInsideOnNothing();
+    expect(shell.focus(), "and the press blurred it to the document").toEqual("nowhere");
+    expect(shell.status().kind, "the write is still in flight").toEqual("saving");
+
+    shell.answer(VENUE_REFUSED);
+    expect(shell.status().kind, "the choice is refused").toEqual("failed");
+    expect(shell.isOpen(), "and a refusal keeps the panel open").toBe(true);
+    expect(
+      shell.focus(),
+      "criterion 3: after a refusal, focus is on a real control of this widget",
+    ).not.toEqual("nowhere");
+    shell.close();
+  });
+
+  // Pinned RED by admin-window/BUG-0149 — `it.fails` is strict: the day the
+  // rule places focus, this turns red and sends the reader to that ticket.
+  it.fails("puts focus back on a live control when another widget supersedes a refusal it is holding (admin-window/BUG-0149)", () => {
+    // admin-window/BUG-0149, the same branch and criterion 3's third moment:
+    // the page's one refusal slot changes hands, this picker's statement goes
+    // `idle` with the panel still open, and the no-transition branch has no
+    // answer for `idle` either.
+    const shell = pickerShell().chooseButton().pickRow();
+    shell.pressInsideOnNothing();
+    shell.answer(VENUE_REFUSED);
+    const other = shell.otherWidgetRefuses();
+    expect(shell.status().kind, "the older refusal yielded the page's slot").toEqual(
+      "idle",
+    );
+    expect(shell.isOpen(), "and the panel the operator is reading stayed open").toBe(true);
+    expect(
+      shell.focus(),
+      "criterion 3: after a superseded save, focus is on a real control of this widget",
+    ).not.toEqual("nowhere");
+    other.release();
+    shell.close();
   });
 
   it("waits for the Choose button to be real before handing focus back", () => {
