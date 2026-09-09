@@ -1,10 +1,13 @@
 import { requireAdmin } from "@/lib/admin";
-import { decideEdit, type EditRefusal } from "@/lib/edit/config";
+import { decideEdit, type AllowedEdit, type EditRefusal } from "@/lib/edit/config";
 import {
   isRecordId,
   updateRecordField,
   type EditableValue,
 } from "@/lib/db/records";
+import { settleReviewItem } from "@/lib/db/verdict";
+import { decisionRefusals, type VerdictDecision } from "@/lib/verdict/decision";
+import type { DbResult } from "@/lib/db/result";
 
 /**
  * The ONE write path of the edit surface — campaign admin-window/TASK-0017.
@@ -22,16 +25,45 @@ import {
  *    `noSuchRecord` below for why a segment that is not an id is an answer and
  *    not a database call.
  *  - **Then the map**: `decideEdit()` in `src/lib/edit/config.ts`. A column
- *    absent from the map, a resolver-owned table and a table the map does not
- *    carry are all refused HERE, server-side, with the row unchanged and the
- *    refusal naming the field or the table — hiding a widget is not a refusal
- *    (acceptance test 7). There is no allowlist in this file; there is no
- *    second allowlist anywhere in the repo.
+ *    absent from the map and a table the map does not carry are both refused
+ *    HERE, server-side, with the row unchanged and the refusal naming the
+ *    field or the table — hiding a widget is not a refusal (acceptance test
+ *    7). There is no allowlist in this file; there is no second allowlist
+ *    anywhere in the repo.
+ *  - **Then the PATH, and the path alone**: the decision carries
+ *    `edit.path` — `writePathFor(regime)`'s answer, resolved in the map
+ *    (ARCHITECTURE §9, campaign admin-window/TASK-0054). `direct` writes the
+ *    row; `override` records an admin-tier observation through the settlement
+ *    function. **This file branches on that value and never on a table name or
+ *    a config key**: configuration says WHICH columns, the regime says HOW, and
+ *    a route re-deriving the second from the first is how the two drift apart.
  *  - **PATCH only.** No GET, no POST, no DELETE: no catalog row is inserted or
  *    deleted from Admin, and nothing here reads a record (the page does that
  *    through `lib/db/records.ts`). Next answers any other method with 405.
  *    Having no GET also means `next build` never invokes this file, so it is
  *    not a build-time database read.
+ *
+ * **The override path, in one call** (spec §7/§8, ARCHITECTURE §9.2). A
+ * resolver-owned column's edit is ONE call to the settlement seam carrying
+ * `action: "override"`, a null review item — spec §7's "an override is the
+ * same row without the item" — the admin's own identity from the gate, and the
+ * value the operator typed. Admin performs none of the steps behind it: the
+ * function writes the observation through the gate, applies it, stamps the
+ * fact `admin_locked` and logs the verdict. There is no second write here, no
+ * provenance insert, no lock update.
+ *
+ * **The absent function is the normal answer** for the whole of M2, and it is
+ * not an error: the seam comes back `not_provisioned` naming what it called,
+ * and this route answers 503 naming the same object. Nothing queues, buffers,
+ * retries or writes around it (spec §10's one forbidden move) — the surface
+ * degrades to the read-only page M1 already shipped.
+ *
+ * **A refusal the GATE makes is the database's own** — the registry patterns
+ * on `venues.country` and `events.poster_url` are enforced there, and this app
+ * holds no copy of them. Such a refusal arrives as an `error` carrying the
+ * function's words and is answered 500 with those words unchanged, exactly as
+ * a `23502` from the direct path already is (LOOK_AND_FEEL state 4). Never a
+ * 2xx, never a silent success, and the row is whatever the database left it.
  *
  * The request body carries a SCALAR value or null, and the `value` key must be
  * PRESENT: an object or an array is refused, so is a body that omits `value`
@@ -48,8 +80,7 @@ function statusFor(refusal: EditRefusal): number {
     // No such editable record surface at this path.
     case "unknown_table":
       return 404;
-    // The table exists and is understood; policy refuses the write.
-    case "resolver_owned":
+    // The table exists and is understood; the map refuses this column of it.
     case "field_not_editable":
       return 403;
   }
@@ -165,6 +196,103 @@ async function parseBody(request: Request): Promise<ParsedBody> {
   return { ok: true, field, value };
 }
 
+/**
+ * The one call the override path makes — campaign admin-window/TASK-0054.
+ *
+ * The envelope is `VerdictDecision` and nothing else is added to it: no source
+ * name, no tier, no schema version, no canonical column distinct from the
+ * registry field — the function knows all of that, and a copy of it here would
+ * be scraper registry knowledge re-encoded by hand (ARCHITECTURE §9.2).
+ *
+ * Two fields are the SERVER's, never the caller's: the item is null because an
+ * override has none, and the actor is the signed-in admin from the gate — a
+ * verdict log anyone past the gate could sign in another name is not a log.
+ *
+ * `decisionRefusals` runs before the call, as it does on the settle route: a
+ * malformed decision is a NAMED 400 that never reaches the database. The one
+ * shape a cell can produce that lands here is a CLEAR — an override carries
+ * exactly one filled payload slot, and a null value fills none — so clearing a
+ * resolver-owned field is refused `value_payload_missing` rather than being
+ * quietly turned into something the envelope cannot say.
+ */
+async function overrideField(
+  edit: AllowedEdit,
+  id: string,
+  value: EditableValue,
+  actor: string,
+): Promise<Response> {
+  const decision: VerdictDecision = {
+    action: "override",
+    review_item_id: null,
+    actor,
+    note: null,
+    value: {
+      domain: edit.config.table,
+      entity_id: id,
+      field: edit.field,
+      observation_id: null,
+      value,
+      ref: null,
+    },
+  };
+
+  const refusals = decisionRefusals(decision);
+  if (refusals.length > 0) {
+    return Response.json(
+      {
+        error: `the decision was refused: ${refusals.join(", ")}`,
+        // The identifiers, so a surface can branch on them and say its own
+        // words (LESSONS 5) instead of parsing the sentence above.
+        refusals,
+      },
+      { status: 400 },
+    );
+  }
+
+  const result = await settleReviewItem(undefined, decision);
+  if (result.kind === "not_provisioned") {
+    return Response.json(
+      {
+        error: `${result.missing} is not present in this database`,
+        missing: result.missing,
+      },
+      { status: 503 },
+    );
+  }
+  if (result.kind === "error") {
+    // The function's own refusal, unchanged — including the gate's, which is
+    // where a registry pattern is enforced.
+    return Response.json({ error: result.message }, { status: 500 });
+  }
+
+  // No record comes back: the value the operator typed became an observation,
+  // and what the canonical row now holds is the pipeline's answer, read on the
+  // next render. Reporting the request as the stored value would be the fake
+  // success this milestone forbids.
+  return Response.json({ ok: true, verdict: result.data });
+}
+
+/** What the DIRECT path makes of each writer outcome — the M1 answers, unchanged. */
+function directAnswer(
+  table: string,
+  result: DbResult<Record<string, unknown> | null>,
+): Response {
+  if (result.kind === "not_provisioned") {
+    return Response.json(
+      { error: `${result.missing} is not present in this database` },
+      { status: 503 },
+    );
+  }
+  if (result.kind === "error") {
+    // The database's own words, unchanged (LOOK_AND_FEEL: "the app shows what
+    // the database said").
+    return Response.json({ error: result.message }, { status: 500 });
+  }
+  if (result.data === null) return noSuchRecord(table);
+
+  return Response.json({ ok: true, record: result.data });
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ table: string; id: string }> },
@@ -193,20 +321,12 @@ export async function PATCH(
   // asked AFTER `decideEdit` so the map's refusals above keep their statuses.
   if (!isRecordId(id)) return noSuchRecord(table);
 
-  const result = await updateRecordField(decision.edit, id, body.value);
-
-  if (result.kind === "not_provisioned") {
-    return Response.json(
-      { error: `${result.missing} is not present in this database` },
-      { status: 503 },
-    );
+  // THE branch, and it reads one value: the path the map resolved from the
+  // regime. Adding a table to the map cannot move it between these two arms —
+  // only its regime can (ARCHITECTURE §9).
+  if (decision.edit.path === "override") {
+    return overrideField(decision.edit, id, body.value, gate.user?.email ?? "");
   }
-  if (result.kind === "error") {
-    // The database's own words, unchanged (LOOK_AND_FEEL: "the app shows what
-    // the database said").
-    return Response.json({ error: result.message }, { status: 500 });
-  }
-  if (result.data === null) return noSuchRecord(table);
 
-  return Response.json({ ok: true, record: result.data });
+  return directAnswer(table, await updateRecordField(decision.edit, id, body.value));
 }

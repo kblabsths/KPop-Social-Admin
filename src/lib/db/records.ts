@@ -19,6 +19,7 @@ import {
 import {
   decideEdit,
   mappedColumns,
+  writePathFor,
   type AllowedEdit,
   type TableEditConfig,
 } from "../edit/config";
@@ -179,12 +180,12 @@ function updateField(
 }
 
 /**
- * Write one allowlisted field of one record whose regime says `direct`.
+ * Write one allowlisted field of one record whose write path is `direct`.
  *
- * That regime is `sandbox` and its only member is the staging walk sandbox
- * (ARCHITECTURE §9): no catalog table has a direct write path since Ben's
- * strike of 2026-09-08, and giving one back would take a new arm of
- * `writePathFor`, which is exactly where the teeth were put.
+ * That path belongs to the `sandbox` regime and its only member is the staging
+ * walk sandbox (ARCHITECTURE §9): no catalog table has a direct write path
+ * since Ben's strike of 2026-09-08, and giving one back would take a new arm
+ * of `writePathFor`, which is exactly where the teeth were put.
  *
  * The `AllowedEdit` argument can only come from `decideEdit()`, so a caller
  * cannot reach this function without having consulted the map — and the map is
@@ -192,6 +193,14 @@ function updateField(
  * redundant: it is what makes "the row is unchanged" true of the data layer
  * itself and not merely of the route, so a future second caller cannot
  * reintroduce the hole. **A refused edit issues no query at all.**
+ *
+ * **The path is checked here too, and that check is the one that matters now**
+ * (FEAT-0011 criterion 4). Since the override path landed, `decideEdit` allows
+ * a mapped column of `events` and `venues` — allowed is no longer the same
+ * question as "writes directly" — so a caller handing this an override-path
+ * edit would `.update()` a resolver-owned catalog row through the one write
+ * verb in this repo. It refuses instead, issuing no query, whatever the map
+ * says about the column.
  *
  * `ok` carrying `null` means no row matched the id — nothing was written.
  * `ok` carrying a record is the row AS STORED after the write, which is what
@@ -210,6 +219,16 @@ export async function updateRecordField(
       kind: "error",
       reading: config.table,
       message: decision.refusal.message,
+    };
+  }
+
+  if (writePathFor(config.regime) !== "direct") {
+    return {
+      kind: "error",
+      reading: config.table,
+      message:
+        `${config.table} is not written directly from Admin; its values ` +
+        `change through the resolution pipeline`,
     };
   }
 
@@ -368,6 +387,14 @@ const SOURCE_COLUMNS = "source_id, source";
  * with the table name the map carries — the same string every other query for
  * this record uses. The order is the decision order and ends in the primary
  * key, which is what lets `readComplete` tell a whole set from a truncated one.
+ *
+ * The FIELDS are `mappedColumns` — the same one helper the value read and the
+ * drawn order use — and not `display` alone. Since the override path landed,
+ * the columns an operator edits are the ones an admin override stamps
+ * `admin_locked`, so a filter on `display` would drop the provenance of every
+ * field that has any (FEAT-0011 criterion 6). Asking for the primary key too
+ * costs one name in an `in` list and keeps this a question about the map's
+ * columns rather than a second list of them.
  */
 function provenanceFor(
   db: SupabaseClient,
@@ -380,7 +407,7 @@ function provenanceFor(
     .select(PROVENANCE_COLUMNS, { count: "exact" })
     .eq("entity_type", config.table)
     .eq("entity_id", id)
-    .in("field", [...config.display])
+    .in("field", [...mappedColumns(config)])
     .order("field", { ascending: true })
     .order("applied_at", { ascending: true })
     .order("provenance_id", { ascending: true })
@@ -406,16 +433,21 @@ function sourcesFor(
 }
 
 /**
- * The current provenance of one record's displayed fields.
+ * The current provenance of one record's mapped fields.
  *
- * **A table with no `display` columns issues no query at all** and answers
- * with nothing to show and nothing to report. That is the walk sandbox's
- * case: `field_provenance` carries rows for resolver-owned entities, a staging
- * fixture table is unprovenanced by construction, and its record page says so
- * once in words rather than per field (Ben's ruling on
+ * **A table Admin does not write through the pipeline issues no query at all**
+ * and answers with nothing to show and nothing to report. That is the walk
+ * sandbox's case: `field_provenance` carries rows for resolver-owned entities,
+ * a staging fixture table is unprovenanced by construction, and its record
+ * page says so once in words rather than per field (Ben's ruling on
  * admin-window/TASK-0025). Reading the log for it would be a round trip whose
  * only possible answer is "no rows" — or a not-provisioned card on a page that
  * has no provenance to miss.
+ *
+ * It keys on the WRITE PATH, not on the `display` list being empty: after the
+ * override path landed, `venues` shows every column it has through `editable`
+ * and displays none — and it is exactly the table whose per-field provenance
+ * an operator needs (FEAT-0011 criterion 6).
  *
  * Two legs, one note: the source-name lookup answers the same question the
  * log does ("who is behind this value"), so a failure of either is one note,
@@ -426,7 +458,7 @@ export async function readRecordProvenance(
   id: string,
   db?: SupabaseClient,
 ): Promise<RecordProvenance> {
-  if (config.display.length === 0) return NO_PROVENANCE;
+  if (writePathFor(config.regime) !== "override") return NO_PROVENANCE;
 
   const log = await readComplete<FieldDecisionRow>(
     T.fieldProvenance,

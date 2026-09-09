@@ -28,6 +28,26 @@ import { isEditableValue, scalarText } from "./values";
 export type FieldWidget = "cell" | "read_only";
 
 /**
+ * Is the table's write path OPEN — the second half of "may this line offer a
+ * control", and a fact about the DATABASE rather than about the map
+ * (campaign admin-window/TASK-0054, FEAT-0011 criterion 2).
+ *
+ * The map says which columns may be written; whether the path that writes them
+ * exists is a different question, and for the override path the answer is
+ * usually NO — the settlement function is not installed on staging or in
+ * production, and absence is the graded normal case of this milestone
+ * (ARCHITECTURE §9.2). A closed path draws no control at all: not a disabled
+ * input, which could be re-enabled from a console, and never a button toward a
+ * write path that does not exist. The page names the reason once, above the
+ * table.
+ *
+ * The direct path is always open — its table is either there or the read
+ * already failed — so `walk_sandbox` passes `true` and nothing about it
+ * changes.
+ */
+export type WriteAccess = "open" | "closed";
+
+/**
  * The linked entity behind a reference column — what the line shows INSTEAD of
  * the raw id (campaign admin-window/BUG-0034).
  *
@@ -123,20 +143,30 @@ function orderedNames(
  * than per field (Ben's ruling on admin-window/TASK-0025). A field the map
  * carries and the log says nothing about keeps its line and gets `null`, which
  * the surface draws as the app's absence.
+ *
+ * `access` is the write path's own state, which this function does not and
+ * cannot read: the page asks the seam and hands the answer down. Both halves
+ * must hold for a control to be drawn — the map allows the column AND the path
+ * that writes it exists.
  */
 export function recordFields(
   config: TableEditConfig,
   record: Record<string, unknown>,
   provenance: ReadonlyMap<string, FieldProvenance> = new Map(),
   referenceName: string | null = null,
+  access: WriteAccess = "closed",
 ): RecordField[] {
   return orderedNames(config, record).map((name) => {
     const raw = record[name];
     const value = scalarText(raw);
     const decision = decideEdit(config.table, name);
     // A non-scalar could never be sent back through the write path, so it is
-    // shown and not offered — whatever the map says about the column.
-    const editable = decision.allowed && isEditableValue(raw);
+    // shown and not offered — whatever the map says about the column. A closed
+    // write path draws none either: the default is `closed` on purpose, so a
+    // caller that says nothing gets the read-only surface rather than a
+    // control over a path it never established.
+    const editable =
+      decision.allowed && isEditableValue(raw) && access === "open";
     return {
       name,
       value: value ?? (raw === null || raw === undefined ? null : JSON.stringify(raw)),
