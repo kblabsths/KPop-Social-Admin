@@ -19101,3 +19101,77 @@
 2026-09-09T15:06:32Z	qa-adversary	BUG-0129	21835	837	116826
 # STRANDED	2026-09-09T15:06:40Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130/
 2026-09-09T15:06:40Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:06:52Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130/
+2026-09-09T15:06:52Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:07:12Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130/
+2026-09-09T15:07:12Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:07:23Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130/
+2026-09-09T15:07:23Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:07:44Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130/
+2026-09-09T15:07:44Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:07:55Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130/
+2026-09-09T15:07:55Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:08:16Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130/
+2026-09-09T15:08:16Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:08:26Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130/
+2026-09-09T15:08:26Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:08:48Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130/
+2026-09-09T15:08:48Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:08:57Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130/
+2026-09-09T15:08:57Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:09:19Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130/
+2026-09-09T15:09:19Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:09:29Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130/
+2026-09-09T15:09:29Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:09:51Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130/
+2026-09-09T15:09:51Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:10:01Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/
+2026-09-09T15:10:01Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:10:23Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/
+2026-09-09T15:10:23Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:10:32Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/
+2026-09-09T15:10:32Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:10:55Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/
+2026-09-09T15:10:55Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:11:04Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/
+2026-09-09T15:11:04Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:11:27Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/
+2026-09-09T15:11:27Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:11:35Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/
+2026-09-09T15:11:35Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:11:59Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/
+2026-09-09T15:11:59Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:12:07Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/
+2026-09-09T15:12:07Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:12:31Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/
+2026-09-09T15:12:31Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:12:38Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/
+2026-09-09T15:12:38Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:13:03Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/
+2026-09-09T15:13:03Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:13:35Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/
+2026-09-09T15:13:35Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:13:40Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/
+2026-09-09T15:13:40Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:14:07Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/, agenticflow/visions/admin-window/tracker/tickets/BUG-0132.md
+2026-09-09T15:14:07Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:14:11Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/, agenticflow/visions/admin-window/tracker/tickets/BUG-0132.md
+2026-09-09T15:14:11Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:14:39Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/, agenticflow/visions/admin-window/tracker/tickets/BUG-0132.md
+2026-09-09T15:14:39Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:15:13Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/, agenticflow/visions/admin-window/tracker/tickets/BUG-0132.md
+2026-09-09T15:15:13Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:15:41Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/, agenticflow/visions/admin-window/tracker/tickets/BUG-0132.md
+2026-09-09T15:15:41Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:15:44Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/, agenticflow/visions/admin-window/tracker/tickets/BUG-0132.md
+2026-09-09T15:15:44Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:16:15Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/, agenticflow/visions/admin-window/tracker/tickets/BUG-0132.md
+2026-09-09T15:16:15Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:16:42Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/, agenticflow/visions/admin-window/tracker/tickets/BUG-0132.md
+2026-09-09T15:16:42Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:16:47Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/, agenticflow/visions/admin-window/tracker/tickets/BUG-0132.md
+2026-09-09T15:16:47Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:17:14Z	agent	5 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/, agenticflow/visions/admin-window/tracker/receipts/BUG-0130.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0132.md
+2026-09-09T15:17:14Z	agent	-	-	-	-
+# STRANDED	2026-09-09T15:17:19Z	agent	6 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0130-pre/, .worktrees/_receipt-qa0130/, agenticflow/visions/admin-window/tracker/receipts/BUG-0130.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0130.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0132.md
+2026-09-09T15:17:19Z	agent	-	-	-	-
