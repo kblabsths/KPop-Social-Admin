@@ -279,10 +279,20 @@ export function ChosenControl({
           // Nothing is linked yet — this item exists BECAUSE the reference did
           // not resolve — so no row is the current one and none is marked.
           current={null}
-          // The close states its own work once, below the controls
-          // (`CloseStatus`): a second live region inside the panel would
-          // announce one settlement twice.
-          status={{ kind: "idle" }}
+          // The status the panel takes a parameter for, not a hardcoded
+          // `idle` — campaign admin-window/BUG-0102. `saving` is what makes
+          // the panel's own busy rule fire (admin-window/BUG-0097,
+          // `entity-picker.tsx`): while a settlement is in flight every row
+          // is DRAWN and readable but none can act, so a click on one cannot
+          // be dropped in silence at `settle`'s in-flight guard.
+          //
+          // The close still states its own work once, below the controls
+          // (`CloseStatus`), and the panel is not a second voice for it:
+          // `CloseForm` closes the picker as a settlement goes in flight, so
+          // the two live regions are never on screen together. This state —
+          // open AND settling — is the contract for any other caller, and the
+          // guard is what makes it safe rather than a convention.
+          status={disabled ? { kind: "saving" } : { kind: "idle" }}
           onQuery={onQuery}
           onChoose={onChoose}
         />
@@ -348,6 +358,13 @@ export function CloseForm({
       return { ok: false as const, message };
     }
 
+    // The settlement is now really in flight, so the open picker (if any)
+    // goes away rather than sitting there disabled under the form's
+    // "settling…" line — campaign admin-window/BUG-0102. It closes HERE and
+    // not on the control's click, so a refusal that never reached the network
+    // leaves the operator's list exactly as they left it. Batched with the
+    // state below, so no render ever shows an open panel mid-settlement.
+    setChoosing(null);
     setState({ kind: "settling", action: spec.action });
     const outcome = await submitSettlement({
       reviewItemId,

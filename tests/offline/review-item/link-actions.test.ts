@@ -596,12 +596,15 @@ describe("the link control's picker", () => {
    * guard, which returns without setting any state, so the choice is dropped
    * with nothing said.
    *
-   * A STRICT pin (`it.fails`) on admin-window/BUG-0102, observed red as a
-   * plain `it` against the landed tree at 6a93776 before it was pinned: the
-   * day the divergence goes, this reddens as an XPASS and sends the reader
-   * to the ticket. The fix flips it back to `it`.
+   * Landed as a STRICT pin (`it.fails`) on admin-window/BUG-0102, observed red
+   * as a plain `it` against the landed tree at 6a93776; the fix flipped it
+   * back to a plain `it`, having first watched the strict pin redden as an
+   * XPASS against the fixed tree. It now holds the rule for this surface the
+   * way `tests/offline/records/entity-picker.test.ts` holds it for the record
+   * surface: `ChosenControl` hands the shared panel the real status
+   * (`saving` while it is disabled), so the rows go busy and stay drawn.
    */
-  it.fails(
+  it(
     "offers no live option while a settlement is in flight (admin-window/BUG-0102)",
     () => {
       const $ = cheerio.load(
