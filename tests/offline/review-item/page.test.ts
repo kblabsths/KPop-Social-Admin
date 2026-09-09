@@ -2676,6 +2676,65 @@ describe("an evidence cell with nothing in it", () => {
     ).toHaveLength(0);
   });
 
+  /**
+   * Both readings in ONE render, side by side (QA, admin-window/BUG-0134).
+   *
+   * The pin above proves the parity across two SEPARATE renders — a starved
+   * registry and a healthy one — so a card that dashed unconditionally and a
+   * card that never dashed would each satisfy one of them. The registry that
+   * ANSWERED but holds no row for one of the two claims
+   * (`readItemEvidence`'s ordinary subset fallback, already graded at the
+   * table row by "labels only the claims the registry answered for") puts the
+   * two readings in the same pair, one card apart: whatever renders an absent
+   * tier has to render a present one differently, in the same pass, over the
+   * same component.
+   *
+   * Graded on the accessible name, never on ink: exactly one card announces
+   * `no value`, the other announces the registry's own word, and the table
+   * cell for THAT claim announces the same thing its card does.
+   */
+  it("puts a labelled absence and a real tier in one pair when the registry answered for only one source", async () => {
+    /** The pair's contender cards, in rendered order. */
+    function contenderCards(markup: string) {
+      const $ = cheerio.load(markup);
+      return $("[data-pair]")
+        .find("div")
+        .toArray()
+        .map((node) => $(node))
+        .filter((card) => card.children("span").first().text().trim() === "contender");
+    }
+
+    const markup = await renderItem(
+      conflictScript({ [T.sources]: { data: [TICKETMASTER] } }),
+      reviewItemDataConflict().review_item_id,
+    );
+    const cards = contenderCards(markup);
+    expect(cards, "one card per contending claim").toHaveLength(2);
+
+    // The claim the registry answered for: its tier verbatim, nothing absent.
+    expect(cards[0].text()).toContain(TICKETMASTER.tier);
+    expect(
+      cards[0].find('[aria-label="no value"]'),
+      "the labelled claim's card",
+    ).toHaveLength(0);
+
+    // Its sibling, whose source has no registry row: the app's absence
+    // element — not a character the caller typed, and not nothing at all.
+    expect(
+      cards[1].find('[aria-label="no value"]'),
+      "the unlabelled claim's card",
+    ).toHaveLength(1);
+    expect(cards[1].text(), "no tier is invented for it").not.toContain(
+      TICKETMASTER.tier,
+    );
+
+    // And the table cell for that SAME claim says it the same way.
+    expect(
+      cellOf(markup, "[data-tier-now]").find('[aria-label="no value"]'),
+      "the table cell for the unlabelled claim",
+    ).toHaveLength(1);
+  });
+
   it("leaves a cell whose value the app does hold exactly as it is", async () => {
     // The other fixture (LESSONS 3): a fix that dashed everything would pass
     // every assertion above.
