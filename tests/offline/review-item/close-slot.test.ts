@@ -6,6 +6,7 @@ import { FN, T } from "@/lib/db/tables";
 import {
   CloseSlot,
   ACTIONS_BY_SHAPE,
+  NOTICE_BY_SHAPE,
 } from "@/components/review/close/slot";
 import {
   CloseStatus,
@@ -337,6 +338,32 @@ describe("the shape's action list", () => {
     // Total by construction: every shape has an entry, so a fourth shape is a
     // compile error rather than a missing action list.
     expect(Object.keys(ACTIONS_BY_SHAPE).sort()).toEqual([...SHAPES].sort());
+  });
+
+  /**
+   * The map's companion — what a shape WITHHOLDS and why
+   * (campaign admin-window/BUG-0087). QA attack: `ACTIONS_BY_SHAPE`'s totality
+   * is pinned at runtime above, `NOTICE_BY_SHAPE`'s was pinned only by the
+   * compiler, so a fourth shape added with an action list and no notice entry
+   * would be caught but a map quietly re-typed to a partial record would not.
+   * It is asked over the SAME `SHAPES` array, so the two maps cannot drift
+   * into covering different shapes.
+   */
+  it("has a withheld-line answer for every shape the action map answers for", () => {
+    const items: Record<string, ReviewItemRow> = {
+      data_conflict_fact: reviewItemDataConflict(),
+      entity_link_fact: reviewItemEntityLink(),
+      entity_link_source_pattern: reviewItemSourcePattern(),
+    };
+    expect(Object.keys(NOTICE_BY_SHAPE).sort()).toEqual([...SHAPES].sort());
+    for (const shape of SHAPES) {
+      // Every entry is callable and answers something a slot can render — and
+      // on these items, which withhold nothing, that answer is null.
+      expect(
+        NOTICE_BY_SHAPE[shape]({ item: items[shape], evidence: [] }),
+        shape,
+      ).toBeNull();
+    }
   });
 });
 

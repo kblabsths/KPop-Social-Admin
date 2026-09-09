@@ -997,3 +997,136 @@ describe("the rendered control set, card by card — QA attack", () => {
     }
   });
 });
+
+/**
+ * Written by the QA lane attacking admin-window/BUG-0087's landed tree.
+ *
+ * The fix withholds the free-text control by the field's kind. These probe the
+ * two things that follows from and the acceptance criteria do not state: the
+ * SIZE of the control set the operator actually gets on a reference conflict —
+ * one per card plus keep-current, for every card count, not just for two — and
+ * whether the withholding survives being gone around.
+ */
+describe("a reference conflict's control set, card by card — QA attack", () => {
+  /**
+   * A scalar conflict renders N+2 controls (`renders exactly one choose per
+   * card, then supply, then keep current`, above). A reference conflict must
+   * render N+1: the free-text control is the one that goes, and the per-card
+   * adoptions are NOT collateral of withholding it. Driven over both fields
+   * the registry calls a reference and over the card counts the resolver can
+   * actually produce, INCLUDING zero — an item whose claims all rejected.
+   */
+  it("renders N+1 controls and the withheld line, for every card count", () => {
+    for (const spelling of REFERENCE_FIELDS) {
+      for (const n of [0, 1, 2, 3]) {
+        const evidence = Array.from({ length: n }, (_unused, index) =>
+          evidenceRow({
+            observationId: `01920000-0000-7000-8000-00000000090${index}`,
+            value: `venue ${index}`,
+            fact: spelling,
+          }),
+        );
+        const $ = cheerio.load(
+          slotMarkup({ kind: "ok" }, referenceItem(spelling), evidence),
+        );
+        const rendered = $("[data-close-action]")
+          .toArray()
+          .map((element) => $(element).attr("data-close-action"));
+        const where = `${spelling} / ${n} card(s)`;
+
+        expect(rendered, where).toEqual([
+          ...Array.from({ length: n }, () => "choose_claimed_value"),
+          "keep_current",
+        ]);
+        expect(rendered, where).toHaveLength(n + 1);
+        // Nothing to type into, at any card count — the whole point of the fix.
+        expect($("input"), where).toHaveLength(0);
+        // …and the shorter list always carries its reason, naming the fact.
+        expect($("[data-close-notice]"), where).toHaveLength(1);
+        expect($("[data-close-notice]").attr("data-close-notice"), where).toBe(
+          spelling,
+        );
+      }
+    }
+  });
+
+  /**
+   * The scalar counterpart at the same card counts, so "N+1" is a statement
+   * about the KIND and not about this fixture: the same item with a scalar
+   * field keeps its free-text control, and its list is one longer.
+   */
+  it("is exactly one control shorter than the same conflict on a scalar field", () => {
+    for (const n of [0, 1, 2, 3]) {
+      const evidence = Array.from({ length: n }, (_unused, index) =>
+        evidenceRow({ observationId: `01920000-0000-7000-8000-00000000090${index}` }),
+      );
+      const scalar = actionsFor(reviewItemDataConflict({ field: "title" }), evidence);
+      const reference = actionsFor(referenceItem("events.venue"), evidence);
+      expect(scalar, `${n} card(s)`).toHaveLength(n + 2);
+      expect(reference, `${n} card(s)`).toHaveLength(n + 1);
+      expect(
+        scalar.filter((spec) => spec.supplies !== undefined),
+        `${n} card(s)`,
+      ).toHaveLength(1);
+      expect(
+        reference.filter((spec) => spec.supplies !== undefined),
+        `${n} card(s)`,
+      ).toHaveLength(0);
+    }
+  });
+});
+
+describe("the guard behind the withheld control — QA attack", () => {
+  /**
+   * The close slot no longer OFFERS a free-text control for a reference fact.
+   * The decision it would have built is still accepted by everything behind
+   * it: `decisionRefusals` — the campaign's one pre-database guard, and the
+   * module that owns both `PAYLOAD_SLOTS` ("a reference … never as a
+   * `supply_value`") and `isReferenceField` — grades a `supply_value` whose
+   * fact is `events.venue` as well-formed, so the settle route sends it to
+   * `settle_review_item` instead of answering 400.
+   *
+   * FEAT-0010's own contract is that the reference rule is guarded twice:
+   * "the form is courtesy, the function is the contract". Today it is guarded
+   * ONCE, in the courtesy layer, by the list of controls a page chose to
+   * render.
+   */
+  /** The reference fact, carrying the text the withheld cell would have taken. */
+  const referenceValue = {
+    domain: "events",
+    entity_id: ID.eventEntity,
+    field: "venue",
+    observation_id: null,
+    value: "The Forum, Inglewood",
+    ref: null,
+  };
+
+  const forgedSupply = {
+    action: "supply_value",
+    note: null,
+    value: referenceValue,
+  };
+
+  // Strict xfail: it goes RED the day the guard learns the field's kind, which
+  // is the signal to flip it back to a plain `it` (admin-window/BUG-0091).
+  it.fails("refuses a text-carrying supply_value for a reference fact", () => {
+    expect(
+      decisionRefusals({
+        action: "supply_value",
+        review_item_id: ITEM_ID,
+        actor: ACTOR,
+        note: null,
+        value: referenceValue,
+      } as unknown as VerdictDecision),
+    ).not.toEqual([]);
+  });
+
+  // Strict xfail, admin-window/BUG-0091 — the same defect stated as the write
+  // that reaches the database: today this answers 200 and calls the function.
+  it.fails("sends no venue NAME to the settle function", async () => {
+    const stub = scriptDatabase(functionInstalled("supply_value"));
+    const { status } = await post(forgedSupply);
+    expect(status).toBe(400);
+    expect(stub.functionsCalled()).toEqual([]);
+  });
+});
