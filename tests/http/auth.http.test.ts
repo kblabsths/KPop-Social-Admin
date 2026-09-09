@@ -515,6 +515,24 @@ describe("the gate over the whole window", () => {
 });
 
 /**
+ * The same table name, spelled with EVERY character percent-encoded —
+ * `events` as `%65%76%65%6e%74%73`.
+ *
+ * `encodeURIComponent` is no use here: it leaves an unreserved character
+ * alone, and an unreserved character is all a table name is. This is the
+ * maximal spelling of the same URI (RFC 3986 §6.2.2.2), which is what makes it
+ * the honest probe of the rewrite's encoding behaviour
+ * (admin-window/BUG-0081) — deliberately written out here rather than shared
+ * with `next.config.ts`, so the test and the thing it tests do not agree by
+ * construction.
+ */
+function percentEncoded(table: string): string {
+  return [...new TextEncoder().encode(table)]
+    .map((byte) => `%${byte.toString(16).padStart(2, "0")}`)
+    .join("");
+}
+
+/**
  * A record URL for a table the edit map does not carry must reach the operator
  * as the SAME served page an unmatched URL does (campaign
  * admin-window/BUG-0017).
@@ -550,6 +568,13 @@ describe("a record URL for a table the edit map does not carry", () => {
         // alone. This is the inversion of the 200 this file used to assert.
         "/records/groups/2f0bc11e",
         "/records/idols/2f0bc11e",
+        // A percent-encoded spelling is the SAME URI as the plain one
+        // (RFC 3986 §6.2.2.2), so it gets the same answer — the framed 404,
+        // not the client-rendered error shell (admin-window/BUG-0081). Loop 3
+        // below is the other half: encoding a table the map DOES carry still
+        // renders its record surface.
+        "/records/no-such-%74able/2f0bc11e",
+        `/records/${percentEncoded("scraped_events")}/2f0bc11e`,
       ];
       for (const route of unmapped) {
         const res = await fetch(`${base}${route}`, { headers: { cookie }, redirect: "manual" });
@@ -572,13 +597,14 @@ describe("a record URL for a table the edit map does not carry", () => {
       expect(caseVariant.status).toBe(404);
       expect(await caseVariant.text()).not.toContain("events record");
 
-      // 1c. The other half of that trade, and the one with a user behind it:
-      //     the rewrite excludes percent-encoded table segments BECAUSE a
+      // 1c. The other half of that trade, and the one with a user behind it: a
       //     percent-encoded spelling of a configured table is the SAME URI as
-      //     the plain one (RFC 3986 §6.2.2.2) and serves a real record. Closing
-      //     the case-variant gap by claiming `%` segments would 404 a working
-      //     bookmark, so this pins the working URL rather than the gap: the
-      //     rewrite must never swallow a URI that names a table the map holds.
+      //     the plain one (RFC 3986 §6.2.2.2) and serves a real record, so the
+      //     rewrite must never swallow it — even though it now claims encoded
+      //     segments in general (admin-window/BUG-0081), which is what gives
+      //     an encoded spelling of an UNMAPPED table the framed 404 loop 1
+      //     asserts. Those two are one pattern and can only be pinned
+      //     together: widen the rewrite carelessly and this line goes red.
       //     The read fails here (dead port), so this asserts the surface
       //     RENDERED, framed and not-404 — the same bar as loop 3 below.
       const encodedConfigured = await fetch(`${base}/records/ev%65nts/2f0bc11e`, {
@@ -604,15 +630,22 @@ describe("a record URL for a table the edit map does not carry", () => {
       //    has a record surface. Reads fail here (the harness points the app
       //    at a dead port), so these render their error or empty state — the
       //    point is that they render, framed, and are not 404.
+      //    Each is asked for twice: as its plain name, and with EVERY
+      //    character percent-encoded — the same URI, and the strongest
+      //    spelling of it, so the rewrite is proved to leave the map's own
+      //    surfaces alone under encoding rather than only for one hand-picked
+      //    letter (admin-window/BUG-0081).
       for (const table of EDITABLE_TABLES) {
-        const route = `/records/${table}/2f0bc11e`;
-        const res = await fetch(`${base}${route}`, { headers: { cookie }, redirect: "manual" });
-        expect(res.status, route).toBe(200);
-        const body = await res.text();
-        expect(body, route).toMatch(/<h1[\s>]/);
-        expect(body, `${route} served the client-render error shell`).not.toContain(
-          'id="__next_error__"',
-        );
+        for (const spelling of [table, percentEncoded(table)]) {
+          const route = `/records/${spelling}/2f0bc11e`;
+          const res = await fetch(`${base}${route}`, { headers: { cookie }, redirect: "manual" });
+          expect(res.status, route).toBe(200);
+          const body = await res.text();
+          expect(body, route).toMatch(/<h1[\s>]/);
+          expect(body, `${route} served the client-render error shell`).not.toContain(
+            'id="__next_error__"',
+          );
+        }
       }
 
       // 4. The API surface under a similar path is not swept up by the rewrite:
@@ -629,28 +662,22 @@ describe("a record URL for a table the edit map does not carry", () => {
   });
 
   /**
-   * PIN — admin-window/BUG-0081 (QA, admin-window/TASK-0040).
+   * admin-window/BUG-0081, closed — kept as the regression it was filed as.
    *
    * A percent-encoded spelling of a STRUCK table is the same URI as the plain
    * one (RFC 3986 §6.2.2.2 — the reasoning `next.config.ts` itself carries,
-   * and the reason the block above pins `/records/ev%65nts/<id>` as a working
-   * record surface). The rewrite excludes `%` segments, so these two reach the
-   * page and are refused by the `notFound()` throw instead — which is exactly
+   * and the reason block 1c above pins `/records/ev%65nts/<id>` as a working
+   * record surface), so it must get the same answer: the app's framed 404, not
    * the client-rendered error shell admin-window/BUG-0017 exists to remove.
    *
-   * Measured on a production build, cookie-authed, 2026-09-08:
-   * `/records/gro%75ps/<uuid>` -> 404, len 8006, `id="__next_error__"`, no
-   * `<h1>` and no navigation, where `/records/groups/<uuid>` -> 404, len 9728,
-   * framed, identical in shape to `/analytics`.
-   *
-   * `it.fails` is the strict pin: the body asserts the framed 404 the plain
-   * spelling gets, so this test is GREEN only while the divergence is there
-   * and turns RED the day it is closed, sending the reader to the ticket. The
-   * status assertion runs first and passes today, so a harness that could not
-   * start the server does not satisfy this pin quietly — and if it could not,
-   * the three tests above it in this file are red too.
+   * Measured on a production build, cookie-authed: before the fix
+   * `/records/gro%75ps/<uuid>` answered 404 with `id="__next_error__"`, no
+   * `<h1>` and no navigation, where `/records/groups/<uuid>` answered 404
+   * framed. This was QA's `it.fails` pin until the rewrite's exclusion became
+   * encoding-aware; it is a plain `it` now, and it fails the day the rewrite
+   * goes back to reading `%` as "leave it to the page".
    */
-  it.fails(
+  it(
     "BUG-0081: serves the framed 404 for a percent-encoded spelling of a struck table",
     async () => {
       const { child } = await startServer();
@@ -682,7 +709,15 @@ describe("a record URL for a table the edit map does not carry", () => {
   it("still sends a stranger to the sign-in page", async () => {
     const { child } = await startServer();
     try {
-      for (const route of ["/records/no-such-table/2f0bc11e", "/__no-record-surface__"]) {
+      for (const route of [
+        "/records/no-such-table/2f0bc11e",
+        // The encoded spelling the rewrite started claiming in
+        // admin-window/BUG-0081: widening what a `beforeFiles` rewrite claims
+        // must not reach past the gate, which runs before it. A 404 here would
+        // tell a stranger which record surfaces exist.
+        "/records/gro%75ps/2f0bc11e",
+        "/__no-record-surface__",
+      ]) {
         const res = await fetch(`${base}${route}`, { redirect: "manual" });
         expect(res.status, route).toBeGreaterThanOrEqual(300);
         expect(res.status, route).toBeLessThan(400);
