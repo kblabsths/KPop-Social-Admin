@@ -9,7 +9,7 @@ import {
 } from "@/lib/edit/config";
 import { T } from "@/lib/db/tables";
 import { EM_DASH, counted, isAbsent } from "@/lib/format";
-import { isRecordId } from "@/lib/db/records";
+import { canonicalRecordId, isRecordId } from "@/lib/db/records";
 import {
   invalidUuidSyntax,
   permissionDenied,
@@ -865,6 +865,44 @@ describe("the states", () => {
       }
     },
   );
+
+  /**
+   * The other half of that grammar: one id, one SPELLING (campaign
+   * admin-window/BUG-0140).
+   *
+   * `/records` needs no such thing — it hands the segment to Postgres, which
+   * compares uuids by value — but a surface that also compares the id in
+   * JavaScript (`/sources` narrows at the query AND in `selectSources`) has
+   * two comparisons that agree only on one spelling. `canonicalRecordId` is
+   * where that spelling is made, built on the predicate above so there is one
+   * grammar and not two.
+   */
+  it("reduces every spelling of one id to the spelling Postgres prints", () => {
+    const canonical = WELL_FORMED_IDS[0];
+    // The fixture is the canonical form itself, and the other spellings really
+    // are other strings — without that this loop would prove nothing.
+    expect(canonicalRecordId(canonical)).toBe(canonical);
+    for (const spelling of WELL_FORMED_IDS.slice(1)) {
+      expect(spelling).not.toBe(canonical);
+      expect(canonicalRecordId(spelling), spelling).toBe(canonical);
+    }
+    // Hyphen-less AND uppercased at once, and mixed: neither is a spelling
+    // Postgres refuses, so neither may be a spelling this refuses.
+    expect(canonicalRecordId(canonical.replace(/-/g, "").toUpperCase())).toBe(canonical);
+    expect(canonicalRecordId(`${canonical.slice(0, 24)}${canonical.slice(24).toUpperCase()}`)).toBe(
+      canonical,
+    );
+    // What it returns is an id by the same grammar, so it can be asked again.
+    expect(isRecordId(canonical)).toBe(true);
+  });
+
+  it.each(MISTYPED_IDS)("has no canonical spelling for %o, which is no id", (id) => {
+    // Exactly what `isRecordId` refuses, and nothing else: a value with no
+    // canonical form is `null` rather than a string a query would carry to
+    // Postgres, where it is `22P02` and an error card advising a reload.
+    expect(canonicalRecordId(id)).toBeNull();
+    expect(isRecordId(id)).toBe(false);
+  });
 
   it("leaves the unknown-id state to a well-formed id that matches no row", async () => {
     for (const table of EDITABLE_TABLES) {

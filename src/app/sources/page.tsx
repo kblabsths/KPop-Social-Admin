@@ -12,7 +12,7 @@ import {
   sourceColumns,
 } from "@/components/sources";
 import { DataTable, Empty, Page, Section, StateOf } from "@/components/ui";
-import { isRecordId } from "@/lib/db/records";
+import { canonicalRecordId } from "@/lib/db/records";
 import {
   listSources,
   selectSources,
@@ -111,18 +111,31 @@ function firstValue(value: ParamValue): string | undefined {
  * input syntax for type uuid`), which every surface then renders as "the read
  * failed, reload" — advice that can never work, because reloading re-sends the
  * same malformed URL. That is admin-window/BUG-0065's ruling on `/records`,
- * and `isRecordId` is its one grammar; a second uuid pattern here would be a
- * second answer to one question. So a hand-typed `?source_id=nobody` narrows
- * NOTHING and the page renders the whole registry, exactly as it always has.
+ * and `canonicalRecordId` answers it with `isRecordId`'s one grammar; a second
+ * uuid pattern here would be a second answer to one question. So a hand-typed
+ * `?source_id=nobody` narrows NOTHING and the page renders the whole registry,
+ * exactly as it always has.
  *
- * A well-formed id the registry turns out not to hold DOES narrow: the page
- * renders `data-empty="narrowing"` — "nothing matched", told apart from the
- * registry that holds nothing — and the gauges answer the same narrowing the
- * table renders, which is the property a figure on this page rests on.
+ * It asks for the value CANONICALISED, in one call, because the narrowing it
+ * returns is then compared two ways: by Postgres, which matches every spelling
+ * of one uuid, at the awaiting-row gauge's query — and by JavaScript, which
+ * matches exactly one, in `selectSources` and `selectClaims`. Handed the URL's
+ * raw value both comparisons disagree, and a source the database matched was
+ * denied by the page (admin-window/BUG-0140). Canonicalised HERE, where the
+ * narrowing is made and nowhere else, every spelling `isRecordId` accepts —
+ * uppercased, hyphen-less, mixed — selects the row PostgREST would, and the
+ * chips and row links spell the narrowing back as that one id.
+ *
+ * A well-formed id the registry turns out not to hold DOES narrow, in every
+ * spelling: the page renders `data-empty="narrowing"` — "nothing matched",
+ * told apart from the registry that holds nothing — and the gauges answer the
+ * same narrowing the table renders, which is the property a figure on this
+ * page rests on.
  */
 function filterFrom(params: SearchParams): SourcesFilter {
   const asked = firstValue(params[SOURCE_FACET]);
-  return asked !== undefined && isRecordId(asked) ? { source_id: asked } : {};
+  const narrowing = asked === undefined ? null : canonicalRecordId(asked);
+  return narrowing === null ? {} : { source_id: narrowing };
 }
 
 /* ── the page ────────────────────────────────────────────────────────────── */
