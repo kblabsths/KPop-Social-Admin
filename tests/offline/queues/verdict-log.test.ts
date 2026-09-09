@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { T } from "@/lib/db/tables";
 import { CLAMP_LIMIT, ELLIPSIS, EM_DASH } from "@/lib/format";
 import { VERDICT_ACTIONS } from "@/lib/verdict/decision";
-import { render } from "../ui/markup";
+import { Identifier } from "@/components/ui/identifier";
+import { h, render } from "../ui/markup";
 import {
   classesOf,
   expectDrawnAsLinkAtRest,
@@ -726,6 +727,55 @@ describe("the observation leg", () => {
     expect(row.observationHref).toBeUndefined();
     expect(surfaceStateOf(markup, LOG)).toBe("ok");
   });
+
+  /**
+   * STRICT PIN — QA, filed as admin-window/BUG-0149 while attacking BUG-0148.
+   *
+   * BUG-0148 put the review-item block's unlinked observation id through the
+   * shared `Identifier` primitive (DEBT-0011 criterion 2: "every call site
+   * that renders a machine identifier — ... an id — imports the primitive",
+   * and criterion 4, which hangs the ARCHITECTURE §7 bidi isolation off that
+   * one place). The verdict LOG renders the same two machine values — the
+   * action and the same `verdicts.observation_id` column, unlinked — as bare
+   * spans, taking the mono face from `DataTable`'s own `td` and the isolation
+   * from nowhere.
+   *
+   * That the table is not a boundary is not an argument, it is measured:
+   * `components/cycles/run-columns.tsx` renders two of ITS cells (`source`,
+   * `failure_class`) through the primitive already.
+   *
+   * Landed as `it.fails` while the divergence stands — the day both cells go
+   * through the primitive this XPASSes, turns the file red, and sends the
+   * reader to the ticket. No class literal and no attribute value is typed
+   * here: the isolation marker is read off the primitive's own render.
+   */
+  it.fails(
+    "renders the log's machine values through the one identifier primitive, like the run table's cells",
+    async () => {
+      const markup = await renderQueues(scriptOf([SETTLEMENT], []));
+      const $ = cheerio.load(markup);
+      const primitive = cheerio.load(
+        render(h(Identifier, { children: SETTLEMENT.action })),
+      )("span");
+
+      // Non-vacuous: the primitive really does mark the box it renders.
+      expect(primitive.attr("dir"), "the primitive isolates its own box").toBeDefined();
+
+      const observation = $(`${LOG} [data-verdict-observation]`);
+      expect(observation, "the unlinked id is the cell under test").toHaveLength(1);
+      expect(observation.is("a"), "unlinked, so no anchor exception covers it").toBe(
+        false,
+      );
+      expect(
+        observation.attr("dir"),
+        "an id the database produced is isolated here too",
+      ).toBe(primitive.attr("dir"));
+      expect(
+        $(`${LOG} [data-verdict-action]`).attr("dir"),
+        "and so is the action beside it",
+      ).toBe(primitive.attr("dir"));
+    },
+  );
 
   it("keeps every verdict, and names its own object, when observations refuses", async () => {
     const markup = await renderQueues({

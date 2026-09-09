@@ -607,6 +607,59 @@ describe("a settled item renders the verdict that settled it", () => {
     );
   });
 
+  /**
+   * ...and the isolation the swap bought is graded on the input it exists for
+   * (QA's attack on admin-window/BUG-0148).
+   *
+   * The id is text this app did not author: `verdicts.observation_id` is
+   * whatever the database holds, and ARCHITECTURE §7 (Common violations row
+   * 15) says such text reaches the app's prose inside its own bidi-isolated
+   * box, never by scrubbing. The test above pins that the arm goes THROUGH the
+   * primitive; this one pins what that has to mean when the value fights back:
+   * an unterminated RIGHT-TO-LEFT OVERRIDE arrives on the id and
+   *
+   *  - the id still reaches the screen and the hook VERBATIM — isolation
+   *    reorders nothing and removes nothing, so a value the operator must be
+   *    able to paste into a query is not silently rewritten by this app; and
+   *  - the ONLY isolated boxes in the block are the two machine values the
+   *    verdict row carries. The block's own words — every label it writes and
+   *    the dash-meaning line — sit outside them, which is the half a component
+   *    that isolated everything would also pass.
+   *
+   * Both machine values are read off the fixture and the app's isolation
+   * marker off the primitive's own render: no literal is typed here.
+   */
+  it("holds a bidi-override observation id inside its own box, verbatim, and isolates none of the block's own words", async () => {
+    const RLO = "\u202E";
+    const hostile = `01920000-0000-7000-8000${RLO}-000000000501`;
+    const row = verdictLogEntry({ review_item_id: SETTLED.review_item_id });
+    // Observed rows empty: the leg resolves nothing, so this is the UNLINKED
+    // arm — the one the fix changed.
+    const markup = await renderItem(withVerdict({ observation_id: hostile }, []));
+    const $ = cheerio.load(markup);
+    const primitive = cheerio.load(render(h(Identifier, { children: hostile })))("span");
+
+    const shown = $(`${VERDICT} [data-verdict-observation]`);
+    expect(shown, "the hostile id is on screen at all").toHaveLength(1);
+    expect(shown.is("a"), "and unlinked, which is the arm under test").toBe(false);
+    // Verbatim on screen and on the hook an oracle addresses it by.
+    expect(shown.text()).toBe(hostile);
+    expect(shown.attr("data-verdict-observation")).toBe(hostile);
+    // Isolated — non-vacuously: the primitive really does mark its box.
+    expect(primitive.attr("dir"), "the primitive isolates its own box").toBeDefined();
+    expect(shown.attr("dir"), "so the id the database produced is isolated").toBe(
+      primitive.attr("dir"),
+    );
+
+    // ...and nothing the APP wrote is inside an isolated box: the isolated set
+    // is exactly the block's two machine values.
+    const isolated = $(VERDICT)
+      .find("[dir]")
+      .toArray()
+      .map((element) => $(element).text());
+    expect(isolated.slice().sort()).toEqual([row.action, hostile].sort());
+  });
+
   it("reports a refused observation leg beside the verdict, not instead of it", async () => {
     const markup = await renderItem(
       itemScript(SETTLED, {
