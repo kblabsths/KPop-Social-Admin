@@ -1,0 +1,26 @@
+{
+ "id": "BUG-0126",
+ "created": "2026-09-09T14:51:14Z",
+ "green": true,
+ "git_head": "29db49f71e51347a623bc7571aa99dff2e8b5ac3",
+ "scope": [
+  "src/app/records/[table]/[id]/page.tsx",
+  "src/components/records/record-fields.tsx",
+  "tests/offline/records/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "1c45b4233bc19875b7099c7704b18097ab21e8786382c44333c50c050d3cb622",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/records/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-25543\n\n \u2713 |offline| tests/offline/records/page.test.ts (118 tests) 836ms\n\n Test Files  1 passed (1)\n      Tests  118 passed (118)\n   Start at  07:51:12\n   Duration  2.14s (transform 385ms, setup 0ms, collect 659ms, tests 836ms, environment 0ms, prepare 238ms)\n\n(node:26090) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
