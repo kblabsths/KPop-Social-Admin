@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T05:08:08Z — do not edit)
+# Tracker index (regenerated 2026-09-09T05:09:45Z — do not edit)
 
 ## open
 - FEAT-0010 [P1][feat][M2] The verdict UI: every spec 7 action as one typed decision, one call, one transaction  (deps:FEAT-0009 scope:src/app/queues,src/components,src/lib/db,src/lib/review,tests/offline,tests/live)
@@ -7,11 +7,11 @@
 - FEAT-0012 [P2][feat][M2] The reference field: a picker that links rows, and a reference that renders as a link  (deps:FEAT-0011(unmet:1) scope:src/lib/edit,src/app/records,src/components,src/lib/db,src/lib/records,tests/offline,tests/live)
 
 ## claimed
-- BUG-0094 [P2][bug][M2] A server component importing a value from a "use client" module 500s the record page, and every automated tier stays green  (scope:tests/offline/shell/client-boundary.test.ts,tests/http/records.http.test.ts @builder-157 from:BUG-0086)
 - BUG-0095 [P2][bug][M2] An invisible-only cell value is stored as content while every surface draws it as an absence  (scope:src/app/api/admin/records/[table]/[id]/route.ts,src/components/EditableCell.tsx,tests/offline/edit/route.test.ts @builder-158 from:qa:BUG-0089)
-- TASK-0055 [P2][task][M2] The reference field edits as an entity picker whose choice carries its confirmed match  (deps:TASK-0042,TASK-0048,TASK-0054 scope:src/components/records/entity-picker.tsx,src/lib/db/records.ts,tests/offline/records/entity-picker.test.ts,tests/offline/records/records-read.test.ts @builder-152)
 
 ## built
 - BUG-0086 [P2][bug][M2] Edit cell: opening one cell reflows the record table, so the next single click on another editable value is swallowed and the operator must click twice  (scope:src/components/EditableCell.tsx,src/components/records/record-fields.tsx,tests/offline/ui/editable-cell.test.ts @builder-156 from:TASK-0053)
+- BUG-0094 [P2][bug][M2] A server component importing a value from a "use client" module 500s the record page, and every automated tier stays green  (scope:tests/offline/shell/client-boundary.test.ts,tests/http/records.http.test.ts @builder-157 from:BUG-0086)
+- TASK-0055 [P2][task][M2] The reference field edits as an entity picker whose choice carries its confirmed match  (deps:TASK-0042,TASK-0048,TASK-0054 scope:src/components/records/entity-picker.tsx,src/lib/db/records.ts,tests/offline/records/entity-picker.test.ts,tests/offline/records/records-read.test.ts @builder-152)
 
-Totals — built:1, claimed:3, done:43, open:4, wont_fix:1. Archived: 124.
+Totals — built:3, claimed:1, done:43, open:4, wont_fix:1. Archived: 124.
