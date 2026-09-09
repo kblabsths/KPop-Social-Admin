@@ -1779,16 +1779,20 @@ describe("every figure says what it counts", () => {
   });
 });
 
-describe("the lede claims only what the read supports", () => {
-  /**
-   * The retired sentence, kept here as the input the guard below MUST flag
-   * (LESSONS 3: a guard that never saw a failing spelling passes vacuously).
-   * It is the string the source-pattern lede carried until this ticket, and
-   * `! grep -q` over `shape-views.tsx` is the other half of the same check.
-   */
-  const RETIRED_CLAIM = "Every record folded into this signal is listed here";
-  const CLAIMS_A_TOTAL = /\b(every|all|complete|entire)\b/i;
+/**
+ * The retired sentence, kept as the input the guard below MUST flag
+ * (LESSONS 3: a guard that never saw a failing spelling passes vacuously).
+ * It is the string the source-pattern lede carried until admin-window/BUG-0124,
+ * and `! grep -q` over `shape-views.tsx` is the other half of the same check.
+ *
+ * Module scope so the rule has ONE spelling in this file: the shape whose lede
+ * this ticket rewrote and the two shapes it did not are graded by the same
+ * regex (QA, admin-window/BUG-0124).
+ */
+const RETIRED_CLAIM = "Every record folded into this signal is listed here";
+const CLAIMS_A_TOTAL = /\b(every|all|complete|entire)\b/i;
 
+describe("the lede claims only what the read supports", () => {
   it("flags the claim it is banning", () => {
     expect(RETIRED_CLAIM).toMatch(CLAIMS_A_TOTAL);
   });
@@ -1824,6 +1828,145 @@ describe("the lede claims only what the read supports", () => {
     expect(cheerio.load(markup)('[data-dial] [data-window="awaiting_row"]')).toHaveLength(
       1,
     );
+  });
+});
+
+/* ── QA attack (admin-window/BUG-0124) ───────────────────────────────────────
+ *
+ * The three arms of the fold sentence the fix's own fixtures do not reach, and
+ * the completeness rule read across ALL THREE shapes rather than the one whose
+ * lede was rewritten. Each assertion is about a POPULATION the markup itself
+ * carries — the ids the block lists, the figures the sentence prints — never
+ * about the words chosen to carry them.
+ */
+
+/** The item's evidence array, and how many DISTINCT ids are in it. */
+function patternWith(ids: readonly string[], folds: number) {
+  return reviewItemSourcePattern({ evidence: [...ids], folded_count: folds });
+}
+
+describe("the fold sentence over reads the fix's fixtures do not reach", () => {
+  it("publishes a real 0 and invents no second figure when the item carries no evidence id", async () => {
+    // The read HAPPENED and found nothing — §4.3's distinction between an
+    // empty window and an unmade one. The hook must say `0`, not vanish the
+    // way it does on a refused read, and the sentence may print no figure the
+    // page did not read.
+    const item = patternWith([], 700);
+    const markup = await renderItem(
+      patternScript({
+        [T.reviewItems]: { data: item },
+        [T.observations]: [{ data: [] }, { data: [] }],
+      }),
+      item.review_item_id,
+    );
+    const scope = foldScopeOf(markup);
+
+    expect(idsListed(markup)).toBe(0);
+    expect(scope.evidenceIds).toBe("0");
+    expect(scope.text).toContain(counted(700, "fold"));
+    // Whatever spelling the absence takes, every figure in the sentence is one
+    // of the two counts this page actually holds.
+    for (const figure of scope.figures) expect([700, 0]).toContain(figure);
+    expect(accountingOfBlock(markup)).toEqual([0, 0]);
+  });
+
+  it("counts what the block LISTS, never what the evidence array stores", async () => {
+    // The array appends an id every time a claim folds in again, so `stored`
+    // and `distinct` come apart — 4 stored, 2 listed. The header's second
+    // figure is the population below it; the stored count is the accounting
+    // sentence's to state, and it does.
+    const listed = FOLDED.slice(0, 2);
+    const item = patternWith(
+      listed.flatMap((claim) => [claim.observation_id, claim.observation_id]),
+      700,
+    );
+    const markup = await renderItem(
+      patternScript({
+        [T.reviewItems]: { data: item },
+        [T.observations]: [{ data: listed }, { data: [] }],
+      }),
+      item.review_item_id,
+    );
+    const scope = foldScopeOf(markup);
+
+    expect(idsListed(markup)).toBe(2);
+    expect(scope.evidenceIds).toBe("2");
+    expect(scope.text).toContain(counted(2, "evidence id"));
+    // The stored 4 is not smuggled into the header as a third population.
+    expect(scope.figures).not.toContain(4);
+    expect([...new Set(scope.figures)].sort((a, b) => a - b)).toEqual([2, 700]);
+    expect(accountingOfBlock(markup)).toEqual([2, 2]);
+  });
+
+  it("states both figures where the folds are FEWER than the ids listed", async () => {
+    // The staging signal folds far more often than it lists; the opposite
+    // order must read as two counts too, not as one narrowing the other.
+    const listed = FOLDED.slice(0, 3);
+    const item = patternWith(listed.map((claim) => claim.observation_id), 2);
+    const markup = await renderItem(
+      patternScript({
+        [T.reviewItems]: { data: item },
+        [T.observations]: [{ data: listed }, { data: [] }],
+      }),
+      item.review_item_id,
+    );
+    const scope = foldScopeOf(markup);
+
+    expect(idsListed(markup)).toBe(3);
+    expect(scope.evidenceIds).toBe("3");
+    expect(scope.text).toContain(counted(2, "fold"));
+    expect(scope.text).toContain(counted(3, "evidence id"));
+    expect([...new Set(scope.figures)].sort((a, b) => a - b)).toEqual([2, 3]);
+  });
+});
+
+describe("no shape's lede claims a completeness its read cannot support", () => {
+  /** Every lede the shape's evidence view renders, as text. */
+  async function ledesOf(script: Script, id: string): Promise<string[]> {
+    const $ = cheerio.load(await renderItem(script, id));
+    return $("[data-lede]")
+      .toArray()
+      .map((element) => $(element).text().replace(/\s+/g, " ").trim());
+  }
+
+  it("holds on the conflict and source-pattern shapes", async () => {
+    for (const [name, script, id] of SHAPED.filter(([shape]) => shape !== "stuck")) {
+      const ledes = await ledesOf(script(), id);
+      expect(ledes.length, name).toBeGreaterThan(0);
+      for (const text of ledes) expect(text, name).not.toMatch(CLAIMS_A_TOTAL);
+    }
+  });
+
+  /**
+   * **STRICT PIN — admin-window/BUG-0128.** The `entity_link` FACT shape keeps
+   * the claim this ticket retired one shape over: its lede asserts that every
+   * claim the record holds is below, over a block whose own accounting says
+   * one of the item's two evidence ids resolved to no claim at all. Admin
+   * never reads a record's claims — it reads the ids in `review_items.evidence`
+   * — so the completeness is unknowable here for exactly the reason it was
+   * unknowable on the source-pattern lede.
+   *
+   * When this goes green the pin turns red: fold the shape into the test above
+   * and delete this one.
+   */
+  it.fails("does not hold on the entity_link fact shape (BUG-0128)", async () => {
+    const orphan = "01920000-0000-7000-8000-000000000999";
+    const item = reviewItemEntityLink({
+      evidence: [ID.observationB, orphan],
+      folded_count: 700,
+    });
+    const script = stuckScript({ [T.reviewItems]: { data: item } });
+    const markup = await renderItem(script, item.review_item_id);
+    const $ = cheerio.load(markup);
+
+    // The page's own read, stated on the page: two ids, one claim, one id
+    // naming nothing this database holds.
+    expect(accountingIn(markup)).toEqual([1, 2]);
+    expect(attrsOf(markup, "[data-unresolved]")).toEqual([orphan]);
+
+    const ledes = await ledesOf(script, item.review_item_id);
+    expect(ledes.length).toBeGreaterThan(0);
+    for (const text of ledes) expect(text).not.toMatch(CLAIMS_A_TOTAL);
   });
 });
 
