@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useReducer, useRef, useState } from "react";
 import { orDash } from "@/lib/format";
+import { hasVisibleContent } from "@/lib/verdict/decision";
 import { cx } from "@/components/ui/cx";
 import { type HintSide, cellLayout } from "@/components/edit-cell-layout";
 
@@ -463,6 +464,38 @@ export function selectOnOpen(
 }
 
 /**
+ * What an edit COMMITS: the draft, or `null` when there is nothing in it to
+ * read — campaign admin-window/BUG-0095.
+ *
+ * Blank is the app's ONE definition of it (`hasVisibleContent`,
+ * `lib/verdict/decision.ts`) and not `draft.trim() === ""`. The two disagree
+ * on exactly the characters a paste out of a web page or a PDF carries: U+200B
+ * ZERO WIDTH SPACE, U+2060 WORD JOINER, U+00AD SOFT HYPHEN, U+FEFF and the
+ * hangul fillers are not `White_Space`, so `trim()` kept them and the cell
+ * committed them as CONTENT — while `isAbsent` (which asks the same one
+ * definition) drew the value as the em dash. The operator emptied a field by
+ * pasting an invisible character, was told the save landed, and the column
+ * held a character the page then rendered as no value at all; on a `not null`
+ * column that faked the clear the database exists to refuse (23502).
+ *
+ * It is a blankness TEST, never a sanitiser — the same rule `settleBody`
+ * (`components/review/close/actions.ts`) follows for a note. A draft with
+ * anything visible in it commits as the operator wrote it, trimmed at the ends
+ * and otherwise byte-identical: `"\u200bBLACKPINK\u200b"` keeps its zero
+ * width spaces, and `"\u2800"` (BRAILLE PATTERN BLANK, an assigned printable
+ * character) is content.
+ *
+ * Exported as a unit because the offline tier renders with
+ * `renderToStaticMarkup` and cannot type into a field (STACK.md §4), so the
+ * commit path is reachable there only through this seam. The ROUTE asks the
+ * same question of every body it is handed, forged or not — the route is the
+ * contract, this is the courtesy (admin-window/BUG-0089's thesis).
+ */
+export function committedValue(draft: string): string | null {
+  return hasVisibleContent(draft) ? draft.trim() : null;
+}
+
+/**
  * The cell in edit mode: the field, and the line that says how the edit ends.
  *
  * Pure over its props and exported so the offline suite can render edit mode
@@ -607,8 +640,7 @@ export function EditableCell({
     if (reverting.current) return;
     setEditing(false);
 
-    const trimmed = draft.trim();
-    const next = trimmed === "" ? null : trimmed;
+    const next = committedValue(draft);
     if (next === shown) return; // nothing changed; no call, no confirmation
 
     const edit = edits.current;

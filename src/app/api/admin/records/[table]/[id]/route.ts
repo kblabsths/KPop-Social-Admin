@@ -14,6 +14,7 @@ import {
 import { settleReviewItem } from "@/lib/db/verdict";
 import {
   decisionRefusals,
+  hasVisibleContent,
   type VerdictDecision,
   type VerdictValue,
 } from "@/lib/verdict/decision";
@@ -80,8 +81,10 @@ import type { DbResult } from "@/lib/db/result";
  * entirely, and so is a number that is not finite (it cannot survive the
  * JSON round trip to PostgREST — campaign admin-window/BUG-0013). The
  * catalog's editable columns are typed scalars, no json column is written from
- * here (root CLAUDE.md, AGENTS.md), and only an explicit `null` or `""` clears
- * a column.
+ * here (root CLAUDE.md, AGENTS.md), and a column is cleared by exactly one
+ * thing: a value with nothing in it a person could READ — a literal `null`, or
+ * a string the app's one definition of blank calls blank (`hasVisibleContent`,
+ * `lib/verdict/decision.ts`; campaign admin-window/BUG-0095).
  */
 
 /** The HTTP status each refusal deserves. */
@@ -146,11 +149,12 @@ type ParsedBody =
  * Read `{ field, value }` off the request — the shape the retired per-table
  * routes used and the shape `EditableCell` produces, carried over unchanged.
  *
- * Clearing is EXPLICIT and requires the key to be there: an empty string or a
- * literal `null` sets the column to `null`, which is what a cleared input
- * means; that normalisation belongs here, at the HTTP edge, and not in the
- * data layer. A body carrying NO `value` key states no intent at all and is
- * refused — see the guard below (campaign admin-window/BUG-0011).
+ * Clearing is EXPLICIT and requires the key to be there: a literal `null`, or
+ * a string with nothing VISIBLE in it, sets the column to `null` — which is
+ * what a cleared input means; that normalisation belongs here, at the HTTP
+ * edge, and not in the data layer. A body carrying NO `value` key states no
+ * intent at all and is refused — see the guard below (campaign
+ * admin-window/BUG-0011).
  */
 async function parseBody(request: Request): Promise<ParsedBody> {
   let body: unknown;
@@ -215,7 +219,30 @@ async function parseBody(request: Request): Promise<ParsedBody> {
   }
   const { value } = body as { value?: unknown };
 
-  if (value === null || value === "") {
+  // BLANK IS THE APP'S ONE DEFINITION OF IT, never `=== ""` — campaign
+  // admin-window/BUG-0095. `hasVisibleContent` (`lib/verdict/decision.ts`) is
+  // the same question `isAbsent` asks before it draws the em dash, so a value
+  // every surface renders as an absence is stored as one: it can no longer be
+  // written to a column as content nobody can read.
+  //
+  // What that closes, and it is a forged body's hole as much as a paste's: the
+  // Cf characters a paste out of a web page or a PDF carries (U+200B ZERO
+  // WIDTH SPACE, U+2060 WORD JOINER, U+00AD SOFT HYPHEN, U+FEFF), the hangul
+  // fillers, and plain whitespace ("   ") — which `EditableCell` never sends
+  // but a hand-written PATCH does. Each used to reach PostgREST as content, so
+  // the record page drew a confident dash over a column that held a character;
+  // on a `not null` column it also FAKED the clear the database exists to
+  // refuse (Postgres 23502), answering 200 where an ordinary clear answers the
+  // violation. Now every one of them takes the clearing branch and meets that
+  // same refusal.
+  //
+  // It is a blankness TEST and never a sanitiser: a value with anything
+  // visible in it — `"\u200bBLACKPINK\u200b"`, `"\u2800"`, `"0"` — travels
+  // to the column byte-identical, because an operator's words are theirs.
+  if (
+    value === null ||
+    (typeof value === "string" && !hasVisibleContent(value))
+  ) {
     return { ok: true, kind: "value", field, value: null };
   }
   if (
