@@ -901,8 +901,14 @@ What it closes, and how the closure is kept:
   surface no operator can reach; the reference-as-link mechanism is fully
   carried by `events.venue_id`, which is what acceptance test 8 grades, so F12
   loses nothing it is measured on; and "stay as test tables" is satisfied by the
-  DATABASE — `lib/db/tables.ts` keeps both names and the residue sweep still
-  reads all their columns. Ben expects to drop both tables soon, and every line
+  DATABASE — `lib/db/tables.ts` keeps both names and the schema description
+  still describes both tables. [**Corrected 2026-09-08**: this sentence read
+  "and the residue sweep still reads all their columns", which stopped being
+  true in the same ticket it was written for — TASK-0040 narrowed the sweep to
+  the MAPPED tables (`tests/live/residue.live.test.ts` iterates
+  `EDITABLE_TABLES`), so no column of `groups` or `idols` is swept any more.
+  The ruling is unchanged: what satisfies "test tables" is the table registry,
+  not the sweep.] Ben expects to drop both tables soon, and every line
   kept for them is a line to delete then. Restoring an entry is two objects in
   one file if he ever wants the page back. **F12's display half is cut, not
   deferred** — no flag, no scaffold, no link to either table anywhere in `src`.
@@ -1050,3 +1056,81 @@ naming `walk_sandbox.note: 1 row(s)`, and the reset made it pass again.
 is under by reading a doc's age, and no future ticket may re-derive a
 catalog-row write path from the sandbox being unreachable: an unreachable
 sandbox narrows the walk, it does not widen the target.
+
+## 2026-09-08 — the admin voice is a registered sources row named `admin`, and the artifact registers it
+
+Ben answered `ADMIN_SOURCE_IDENTITY` (admin-window/TASK-0043): **the admin voice
+is a `sources` row named `admin`, tier `admin`, lifecycle `active`, kind
+`registered`.** Staging holds no such row today — read-only census 2026-09-08:
+`ticketmaster` plus two test-harness sources, nothing else — and he took the
+second of the two shapes the ASK offered: **the `settle_review_item` handoff
+artifact carries an idempotent insert for the row**, so he installs the
+registration and the function in one paste rather than typing SQL from two
+notes.
+
+**Why the row could not be chosen here.** The gate refuses an unregistered
+source (`ingest_observation`, KS007), the `sources` row is a registry fact owned
+by the scraper repo, and inventing a name is the one move SPEC F9 forbids. The
+insert is legal against what is INSTALLED, read 2026-09-08 from
+`kspace Scraper/supabase/migrations/20260818000000_the_schema_arrives_as_one_snapshot.sql`:
+`sources_source_key UNIQUE (source)` is what `on conflict (source) do nothing`
+needs; `source_kind` carries `registered`, `source_lifecycle` carries `active`,
+`source_tier` carries `admin`; and the `sources_source_shape` CHECK
+`^[a-z0-9_]+$` admits the name. `on conflict … do nothing` is the sibling's own
+idiom (`20260901000005`, `20260901000006`), and `do nothing` rather than
+`do update` is deliberate: applying the paste twice, or applying it after Ben
+has inserted the row himself, must never rewrite a registry row's lifecycle or
+tier from Admin's copy of it.
+
+**The name is spelled once**: `ADMIN_SOURCE = "admin"` in the pure leaf
+`src/lib/verdict/decision.ts`, which both a surface and the artifact's offline
+test may import (§4 rule 7). The artifact's test asserts the SQL's source
+literal against that constant, exactly as it asserts the `action` CHECK against
+`VERDICT_ACTIONS`. The same test now also pins the SQL's PARAMETER name to
+`SETTLE_ARGUMENT` in `src/lib/db/verdict.ts` — QA measured on 2026-09-08 that a
+sabotaged spelling (`p_decisions`) left the entire offline suite green while
+PostgREST would have answered `PGRST202`, rendering an installed function
+permanently and silently absent.
+
+**The doors this closes.** No agent may invent, rename or "temporarily" pick an
+admin source name: the string lives in one constant and one SQL literal, coupled
+by a test. Nothing in Admin ever WRITES the `sources` row — the registration
+travels as SQL in a handoff Ben applies, and the sibling repo stays untouched.
+And the decision envelope still carries no source name: this is a name the
+FUNCTION uses in its own branches, not a field Admin sends (§9.2).
+
+
+## 2026-09-08 — the editable columns of `events` and `venues`, and the one-edit rule for widening them
+
+Ben answered `EDIT_ALLOWLIST_EVENTS_VENUES` (admin-window/TASK-0044), SPEC named
+gap 7: **events — `title`, `description`, `poster_url`, `starts_at`; venues —
+`name`, `city`, `country`, `address`.** These are the columns he ruled VISIBLE on
+2026-09-02, now writable through the override path and through nothing else.
+`event_type`, `status` and `time_precision` stay OUT: all three are
+CHECK-constrained, so a free-text cell can produce a refusal the operator cannot
+predict, and the fixed choice list that would fix that is a widget this campaign
+has not costed. He noted the list can be updated later.
+
+**"Later" is one edit, and this paragraph is what keeps it one.** The two
+`EDIT_CONFIG` entries are the whole mechanism; adding a column is adding a string
+to one of them. No second allowlist, no per-column flag, no "future columns"
+scaffold, and no widening to a link or a non-scalar (performers and venues are
+`event_performers` / `venues` ROWS, not fields of `events` — AGENTS.md).
+`venue_id` remains the map's `reference`, the F12 picker's field, and never a
+cell.
+
+**A column MOVES from `display` into `editable`; it never stands in both.**
+`display` is the read-only half of the ONE map and `decideEdit` reads `editable`
+alone, so a column named in both would be writable while the map called it
+read-only. So `events.display` becomes `["venue_id"]` (the reference alone) and
+`venues.display` becomes empty. Because `mappedColumns` orders pk → editable →
+display, the record pages draw the same lines in the same order they draw today:
+the move is invisible except for the controls appearing.
+
+**The doors this closes.** A builder never picks an editable column: the answer
+is a closed list, and a column outside it is refused server-side by the one code
+path (hiding a widget is not a refusal). A CHECK-constrained column does not
+enter the map by the back door of "it is registry-declared" — registry
+declaration was the CANDIDATE bar; Ben's ruling is the editable bar. And the
+override path is still the only way a catalog value changes from Admin: this
+ruling widens what may be overridden, never how (2026-09-08, the strike).

@@ -675,11 +675,31 @@ export const EDIT_CONFIG: Readonly<Record<string, TableEditConfig>>;
   `lib/db/tables.ts` the only file in `src/` that spells one.
 - `events` and `venues` carry `regime: "resolver_owned"`. In **M1** they
   rendered read-only with an empty `editable` and no write path of any kind. In
-  **M2** they gain an `editable` set — **Ben's answer, never a builder's pick**
-  (SPEC named gap 7; the ASK carries the candidate list) — and that set is
-  written through §9.2's override path and through nothing else. Every column
-  of them still refuses through the one code path when it is absent from the
-  map, and no `.update()` on either table exists anywhere in `src/`.
+  **M2** they gain an `editable` set — **Ben's answer of 2026-09-08, never a
+  builder's pick** (SPEC named gap 7; DECISIONS 2026-09-08) — written through
+  §9.2's override path and through nothing else:
+  - events: `title`, `description`, `poster_url`, `starts_at`
+  - venues: `name`, `city`, `country`, `address`
+
+  `event_type`, `status` and `time_precision` are ruled OUT and stay out: all
+  three are CHECK-constrained, so a free-text cell can produce a refusal the
+  operator cannot predict, and the fixed choice list that would fix that is a
+  widget this campaign has not costed. `ends_at`, `ticket_url` and every
+  unlisted `venues` column are out for want of a ruling, not for want of a
+  candidate — both lists are registry-declared, so the gate would accept them
+  and taste did not.
+  **A column MOVES from `display` into `editable`; it never stands in both.**
+  `display` is the read-only half of the one map and `decideEdit` reads
+  `editable` alone, so a column in both would be writable while the map called
+  it read-only. After the move `events.display` is `["venue_id"]` — the
+  reference alone — and `venues.display` is empty; because `mappedColumns`
+  orders pk → editable → display, both record pages draw the same lines in the
+  same order they draw today.
+  **Widening the list later is ONE edit to those two entries** (Ben, 2026-09-08:
+  the list can be updated later) — never a second list, never a per-column
+  flag, never a "future columns" scaffold. Every column of them still refuses
+  through the one code path when it is absent from the map, and no `.update()`
+  on either table exists anywhere in `src/`.
 - **A column absent from `editable` is refused server-side**, by the route,
   with the row unchanged — hiding the widget is not the refusal (acceptance
   test 7). The route reads the same `EDIT_CONFIG`; there is no second
@@ -892,6 +912,18 @@ one call site is `settleReviewItem` in `src/lib/db/verdict.ts`; a second `.rpc(`
 anywhere in `src/` is a defect, pinned by
 `tests/offline/edit/config.test.ts` and `tests/offline/review/one-place.test.ts`.
 
+**The parameter name is part of that contract, and it is coupled by a test.**
+PostgREST resolves an RPC by name AND by argument names, and answers `PGRST202`
+for a wrong one — the same code it answers for a function that is not installed
+at all — so a spelling drift renders a provisioned function permanently and
+silently absent. Measured 2026-09-08 (QA on admin-window/TASK-0048): with the
+constant sabotaged to `p_decisions`, the whole offline suite stayed green. It is
+spelled once, `SETTLE_ARGUMENT` in `src/lib/db/verdict.ts`, and **the handoff
+artifact's offline test asserts the artifact's parameter name against that
+constant**, the way it already asserts the `action` CHECK against
+`VERDICT_ACTIONS` — on both fixtures (§13.4): red on a sabotaged spelling, green
+on the shipped artifact.
+
 **The decision envelope is a pure leaf**, `src/lib/verdict/decision.ts`
 (ARCHITECTURE §4 rule 7: it imports nothing). It is the SAME shape the §9
 handoff artifact's SQL reads, and the handoff's own offline test imports
@@ -928,11 +960,23 @@ Admin-side adaptation (SPEC F9).
 here is a re-read, not a guess):
 
 1. **The gate refuses an unregistered source** (`ingest_observation`, KS007:
-   "source \"%\" is not registered"). An admin-tier observation therefore needs
-   a `sources` row whose tier is `admin` — `source_tier` already has the value.
-   **Whether that row exists on staging, and what it is called, is Ben's**: it
-   is a registry fact owned by the scraper repo, so it is an ASK, and the
-   function's value-carrying branches cannot be authored without it.
+   "source \"%\" is not registered"), so an admin-tier observation needs a
+   registered `sources` row. **Ben's answer, 2026-09-08** (DECISIONS
+   2026-09-08): the admin voice is the row `source = 'admin'`, `tier = 'admin'`,
+   `lifecycle = 'active'`, `kind = 'registered'`. Staging holds no such row
+   today — read-only census 2026-09-08: `ticketmaster` and two test-harness
+   sources, nothing else — so **the `settle_review_item` artifact carries an
+   idempotent `insert … on conflict (source) do nothing` for it inside its own
+   fenced block**, and Ben installs the row and the function in one paste
+   (admin-window/TASK-0046 carries the exact shape, checked against the
+   installed `sources`: `sources_source_key UNIQUE (source)`, the
+   `source_kind` / `source_lifecycle` / `source_tier` enums, and the
+   `sources_source_shape` CHECK `^[a-z0-9_]+$`). **The name is spelled once**,
+   `ADMIN_SOURCE = "admin"` in the pure leaf `src/lib/verdict/decision.ts`: the
+   artifact's own offline test asserts the SQL's source literal against that
+   constant, and any surface naming the admin voice imports the same one. It is
+   a NAME, not an envelope field — `VerdictDecision` still carries no source
+   name and Admin still sends none.
 2. **A reference is observed as a ref, not as an id.** Events v3 declares
    `venue` as `{"ref": "<the source's own id for the venue>"}`, and the link
    stage resolves `(source, 'venues', external_ref)` through
@@ -1108,32 +1152,30 @@ Each carries a marker. **A question is closed only when its marker leaves this
 list** — that is the structural bar its ASK ticket checks, and the architect is
 the only one who removes a marker.
 
-**Two questions are open, both filed 2026-09-08 at the M2 decomposition.**
-Neither may be resolved by choosing; each is a blocked ticket for Ben, and each
-is closed only when the architect removes its marker from this list.
+**No question is open.** The two filed at the M2 decomposition on 2026-09-08
+were answered by Ben the same day and their markers left this list for that
+reason — they are not spelled here, because each ASK ticket's structural check
+is its marker's ABSENCE from this file and quoting one would re-open the
+question on a grep. In one line each, with the door each closes in its dated
+`DECISIONS.md` paragraph:
 
-- **`EDIT_ALLOWLIST_EVENTS_VENUES`** — *which columns of `events` and `venues`
-  are editable at all* (SPEC named gap 7). Spec §8 says the map is hand-written
-  and says no more. What the M2 decomposition ADDED to the question, so Ben
-  answers a closed list rather than an open one: the gate validates every claim
-  against the registry, so an editable column must be **declared in the
-  registry** as well as being a vetted scalar of the table. Read 2026-09-08
-  from the sibling's `domain_schema` (events v3, venues v2), the candidates are
-  exactly — events: `title`, `event_type`, `status`, `starts_at`, `ends_at`,
-  `time_precision`, `description`, `poster_url`, `ticket_url`; venues: `name`,
-  `address`, `city`, `country`, `latitude`, `longitude`, `timezone`, `website`,
-  `image_url`. Anything outside those two lists is refused by the gate before
-  it is refused by taste. `venue` is the reference (§9.2), never a cell.
-- **`ADMIN_SOURCE_IDENTITY`** — *which registered `sources` row is the admin
-  voice, and does it exist on staging?* The gate refuses an unregistered source
-  (KS007), so a value-carrying verdict and every override need one; the row and
-  its registry entry are the scraper repo's, which makes creating one a handoff
-  and naming one a question. `source_tier` already carries `'admin'`; nothing
-  else about the row is knowable from here.
+- **The admin voice is a registered source row of its own** — `source = 'admin'`,
+  `tier = 'admin'`, `lifecycle = 'active'`, `kind = 'registered'`. Staging holds
+  no such row, so the `settle_review_item` handoff artifact carries an idempotent
+  insert for it and Ben installs the row and the function in one paste; the name
+  is spelled once as `ADMIN_SOURCE` in `lib/verdict/decision.ts` (§9.2;
+  admin-window/TASK-0043 → TASK-0046).
+- **The editable columns are** events `title`, `description`, `poster_url`,
+  `starts_at`, and venues `name`, `city`, `country`, `address` — the columns Ben
+  ruled visible on 2026-09-02, now writable through the override path.
+  `event_type`, `status` and `time_precision` stay out as CHECK-constrained, and
+  the list may be widened later by ONE edit to the two map entries, never by a
+  second list (§9; admin-window/TASK-0044 → TASK-0054).
 
-An empty list is a state this section is allowed to be in, and a full one is not
-an invitation to invent a third: a new silence is a new blocked ASK ticket with
-its own marker.
+An empty list is the state this section is now in, and it is a state it is
+allowed to be in — it is not an invitation to invent a third question: a new
+silence is a new blocked ASK ticket with its own marker, never a choice made in
+code.
 
 **The sixth question — the claims-cost one — was settled 2026-09-03**, and its
 marker left this list for that reason (it is not spelled here: the ticket's
@@ -1265,6 +1307,22 @@ this table from here.)*
 
 ## History
 
+- **2026-09-08, M2 contract answers (architect).** Ben answered both open
+  questions and §12 is empty again. (1) **The admin voice** is the registered
+  `sources` row `admin` (tier `admin`, lifecycle `active`, kind `registered`);
+  staging has none, so the `settle_review_item` artifact carries the idempotent
+  insert and Ben applies row and function in one paste — §9.2 fact 1 rewritten
+  from a question into the answer, with the name spelled ONCE as `ADMIN_SOURCE`
+  in the pure leaf and asserted from there by the artifact's own test. (2) **The
+  editable columns** are events `title`/`description`/`poster_url`/`starts_at`
+  and venues `name`/`city`/`country`/`address`; the CHECK-constrained three stay
+  out; §9 gains the move-from-`display` rule (a column never stands in both
+  halves of the one map) and the one-edit widening rule. (3) §9.2 gains the
+  **parameter-name coupling** QA measured on TASK-0048: the artifact's test
+  pins the SQL's argument name to `SETTLE_ARGUMENT`, because a drift makes an
+  installed function read as permanently absent. Both marker strings are gone
+  from this file, History included — that absence is what closes an ASK.
+
 - **2026-09-08, M2 decomposition (architect).** Three amendments, all traceable
   to one human ruling and one read of the sibling's installed schema.
   (1) **§9's regimes are now `sandbox` / `resolver_owned`**, and `pre_cutover`
@@ -1286,9 +1344,12 @@ this table from here.)*
   reference is observed as a `ref` and resolved through `confirmed_matches`),
   and the ruling that a surface reads the presence of the `verdicts` TABLE
   rather than probing a function PostgREST cannot introspect. (3) **§12 is no
-  longer empty**: `EDIT_ALLOWLIST_EVENTS_VENUES` and `ADMIN_SOURCE_IDENTITY`,
+  longer empty**: the edit-allowlist question and the admin-source question,
   both blocked for Ben, the first now framed as a closed candidate list read
-  from the registry rather than an open invitation. Common violations gains row
+  from the registry rather than an open invitation. (Their two marker strings
+  were removed from this History line on 2026-09-08 when the questions closed:
+  each ASK's structural check is its marker's absence from this FILE, so a
+  mention here would have held the question open.) Common violations gains row
   12, promoted at count 1 because a human ruling closed the class, and §13 gains
   rules 8 and 9.
 - **2026-09-04, key-shape ruling + residual pass (architect).**
