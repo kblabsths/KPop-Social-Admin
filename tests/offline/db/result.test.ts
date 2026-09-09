@@ -2,11 +2,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 import {
   ROW_CAP,
+  callFunction,
   classify,
   readComplete,
   readCount,
   readOne,
   readRows,
+  type AskedObject,
   type DbResult,
 } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
@@ -62,15 +64,33 @@ const SETTLE_FUNCTION = "settle_review_item";
  * object kind it is about. Six, since admin-window/TASK-0047 added the two
  * FUNCTION codes to the four about a table, a view or a column
  * (ARCHITECTURE.md §4.1).
+ *
+ * The fourth column is the read a caller must have ASKED for before the code
+ * can mean an absence AT ALL (admin-window/BUG-0080): a column is a column OF
+ * the table that was read, and the two function codes say nothing about a
+ * table. Every row is graded in both directions below — an absence when its
+ * own kind was asked for, an error when the other kind was (LESSONS 3).
  */
-const ABSENCE_CODES: ReadonlyArray<readonly [string, string, unknown]> = [
-  ["PGRST205", "table", tableNotInSchemaCache(T.verdicts)],
-  ["42P01", "table", undefinedTable(T.verdicts)],
-  ["PGRST204", "column", columnNotInSchemaCache(T.reviewItems, "severity")],
-  ["42703", "column", undefinedColumn("severity")],
-  ["PGRST202", "function", functionNotInSchemaCache(SETTLE_FUNCTION)],
-  ["42883", "function", undefinedFunction(SETTLE_FUNCTION)],
+const ABSENCE_CODES: ReadonlyArray<
+  readonly [string, string, unknown, AskedObject]
+> = [
+  ["PGRST205", "table", tableNotInSchemaCache(T.verdicts), "table"],
+  ["42P01", "table", undefinedTable(T.verdicts), "table"],
+  ["PGRST204", "column", columnNotInSchemaCache(T.reviewItems, "severity"), "table"],
+  ["42703", "column", undefinedColumn("severity"), "table"],
+  ["PGRST202", "function", functionNotInSchemaCache(SETTLE_FUNCTION), "function"],
+  ["42883", "function", undefinedFunction(SETTLE_FUNCTION), "function"],
 ];
+
+/** The name a caller of each kind passes — a table it read, a function it called. */
+const ASKED_NAME: Readonly<Record<AskedObject, string>> = {
+  table: T.reviewItems,
+  function: SETTLE_FUNCTION,
+};
+
+/** The kind the caller did NOT ask for. */
+const otherThan = (asked: AskedObject): AskedObject =>
+  asked === "table" ? "function" : "table";
 
 /**
  * Codes that look nothing like an absence and must never be read as one — the
@@ -191,7 +211,7 @@ describe("classify", () => {
       functionNotInSchemaCache(SETTLE_FUNCTION),
       undefinedFunction(SETTLE_FUNCTION),
     ]) {
-      expect(classify(error, SETTLE_FUNCTION)).toEqual({
+      expect(classify(error, SETTLE_FUNCTION, "function")).toEqual({
         kind: "not_provisioned",
         missing: SETTLE_FUNCTION,
       });
@@ -199,10 +219,28 @@ describe("classify", () => {
   });
 
   it.each(ABSENCE_CODES)(
-    "reads %s (an absent %s) as not_provisioned",
-    (_code, _kind, error) => {
-      const result = classify(error, T.reviewItems);
+    "reads %s (an absent %s) as not_provisioned for a caller that asked for one",
+    (_code, _kind, error, asked) => {
+      const result = classify(error, ASKED_NAME[asked], asked);
       expect(result.kind).toBe("not_provisioned");
+      expect(result).toMatchObject({ missing: expect.stringContaining(ASKED_NAME[asked]) });
+    },
+  );
+
+  it.each(ABSENCE_CODES)(
+    "leaves %s (an absent %s) an ERROR for a caller that asked for the other kind",
+    (_code, _kind, error, asked) => {
+      // The other half of the guard, and the whole of admin-window/BUG-0080:
+      // the database names the object IT could not find; `missing` is the
+      // object WE named. When those are different kinds of thing, the app has
+      // learned nothing about what it asked for, so it may not claim it absent.
+      const asking = otherThan(asked);
+      const result = classify(error, ASKED_NAME[asking], asking);
+      expect(result.kind).toBe("error");
+      expect(result).not.toHaveProperty("missing");
+      if (result.kind !== "error") return;
+      expect(result.reading).toBe(ASKED_NAME[asking]);
+      expect(result.message).toContain((error as { message: string }).message);
     },
   );
 
@@ -211,7 +249,7 @@ describe("classify", () => {
     // which `settle_review_item`'s body calls. The card still names what the
     // app asked for, in the app's own spelling (ARCHITECTURE.md §4.1).
     expect(
-      classify(undefinedFunction("apply_resolution"), SETTLE_FUNCTION),
+      classify(undefinedFunction("apply_resolution"), SETTLE_FUNCTION, "function"),
     ).toEqual({ kind: "not_provisioned", missing: SETTLE_FUNCTION });
   });
 
@@ -231,11 +269,10 @@ describe("classify", () => {
   );
 
   /**
-   * PINNED `it.fails` (strict) for admin-window/BUG-0080 — green only while
-   * the divergence stands, RED the day it is fixed. The fix flips it back to
-   * a plain `it(...)`; nothing else about the case changes.
+   * QA's strict pin for admin-window/BUG-0080, flipped back to a plain
+   * `it(...)` by the fix. Nothing else about the case changed.
    */
-  it.fails("never calls a PROVISIONED table absent because a TABLE read raised 42883", () => {
+  it("never calls a PROVISIONED table absent because a TABLE read raised 42883", () => {
     // MEASURED read-only on the declared staging target 2026-09-08
     // (admin-window/TASK-0047 QA): `db.from("groups").select("id")
     // .filter("created_at", "fts", "x")` answers 42883 "function
@@ -251,21 +288,64 @@ describe("classify", () => {
     expect(result.message).toContain("to_tsvector");
   });
 
-  it("tells the two 42883s apart: the absent function, and the absent operator", () => {
-    // Same code, opposite verdicts, and the only thing separating them is the
-    // database's own sentence. Both are asserted together so a later
-    // simplification of either arm reddens here rather than silently turning a
-    // provisioned table into an absence.
-    expect(classify(undefinedFunction(SETTLE_FUNCTION), SETTLE_FUNCTION).kind).toBe(
-      "not_provisioned",
-    );
+  it("tells the 42883s apart by what the caller asked for", () => {
+    // Same code, opposite verdicts, and what separates them is what was ASKED
+    // — not the database's prose (admin-window/BUG-0080). Asserted together so
+    // a later simplification of either arm reddens here rather than silently
+    // turning a provisioned table into an absence.
+    expect(
+      classify(undefinedFunction(SETTLE_FUNCTION), SETTLE_FUNCTION, "function").kind,
+    ).toBe("not_provisioned");
     expect(classify(missingOperator(), T.groups).kind).toBe("error");
-    // A 42883 that explains nothing is still an absent function: the CODE
-    // classifies, and the operator sentence is the one named exception.
-    expect(classify({ code: "42883" }, SETTLE_FUNCTION)).toEqual({
+    // A 42883 that explains nothing is still an absent function TO A CALLER
+    // THAT ASKED FOR ONE: the code plus the question classifies, and the
+    // database is never required to explain itself.
+    expect(classify({ code: "42883" }, SETTLE_FUNCTION, "function")).toEqual({
       kind: "not_provisioned",
       missing: SETTLE_FUNCTION,
     });
+    // The same silent code reaching a TABLE read claims nothing at all.
+    expect(classify({ code: "42883" }, T.groups).kind).toBe("error");
+    // And a function's own body can still raise the missing OPERATOR, which is
+    // not the function being absent either.
+    expect(classify(missingOperator(), SETTLE_FUNCTION, "function").kind).toBe("error");
+  });
+
+  it("keeps every 42883 a TABLE read can raise red, not just the operator one", () => {
+    // The pin above, widened past the one shape it measured (BUG-0080): a
+    // `groups` read carrying an `fts`/`plfts` filter raises 42883 saying
+    // `function to_tsvector(<type>) does not exist` — a missing OVERLOAD of a
+    // function the app never named, from a table that is right there holding
+    // rows. Every 42883 a table read can raise is graded here, because the
+    // operator sentence was only the first shape anyone had met.
+    const shapes: ReadonlyArray<readonly [string, unknown]> = [
+      ["a missing function overload", missingFunctionOnTableRead()],
+      ["a missing overload on another type", missingFunctionOnTableRead("uuid")],
+      ["the missing operator", missingOperator()],
+      ["a 42883 that explains nothing", { code: "42883", message: "" }],
+      ["PGRST202, which a table read cannot mean", functionNotInSchemaCache("to_tsvector")],
+    ];
+    for (const [label, error] of shapes) {
+      const result = classify(error, T.groups);
+      expect(result.kind, label).toBe("error");
+      // Nothing here may reach a card as a claim about `groups`.
+      expect(result, label).not.toHaveProperty("missing");
+      if (result.kind !== "error") continue;
+      expect(result.reading, label).toBe(T.groups);
+    }
+  });
+
+  it("cannot claim a function absence for a caller that did not ask for one", () => {
+    // The default is the safe one: a caller that says nothing asked for a
+    // TABLE, so a helper or a call site that forgets to say so gets an honest
+    // error rather than a confident false absence.
+    for (const error of [
+      functionNotInSchemaCache(SETTLE_FUNCTION),
+      undefinedFunction(SETTLE_FUNCTION),
+    ]) {
+      expect(classify(error, T.groups).kind).toBe("error");
+      expect(classify(error, T.groups, "table").kind).toBe("error");
+    }
   });
 });
 
@@ -701,16 +781,62 @@ describe("reads against a scripted PostgREST response", () => {
     ).resolves.toEqual({ kind: "not_provisioned", missing: T.resolutionRuns });
   });
 
+  it("keeps a TABLE read that raised 42883 red, and reads the same table again", async () => {
+    // admin-window/BUG-0080, through the helper a page actually uses rather
+    // than through `classify` alone: the filter Postgres could not build
+    // (`fts` on a timestamptz) raises 42883, and `groups` is provisioned and
+    // full of rows. Anything but an error here is the card telling an operator
+    // to install a table that is right there.
+    const stub = stubClient({
+      [T.groups]: [{ error: missingFunctionOnTableRead() }, { data: [{ group_id: "g1" }] }],
+    });
+    const client = stub.asSupabaseClient();
+    const search = await readRows(
+      T.groups,
+      (db) => db.from(T.groups).select("group_id").filter("created_at", "fts", "x"),
+      client,
+    );
+
+    expect(search.kind).toBe("error");
+    expect(search).not.toHaveProperty("missing");
+    if (search.kind !== "error") return;
+    expect(search.reading).toBe(T.groups);
+    // The database's own words, not a sentence of ours.
+    expect(search.message).toContain(missingFunctionOnTableRead().message);
+
+    // And the table really is readable — the refusal was about the QUERY.
+    await expect(
+      readRows(T.groups, (db) => db.from(T.groups).select("group_id"), client),
+    ).resolves.toEqual({ kind: "ok", data: [{ group_id: "g1" }] });
+  });
+
+  it("keeps an absent-FUNCTION code on a COUNT of a table an error, never a zero", async () => {
+    // The two ways a count can go wrong meet here: a 42883 from a table read
+    // is an error (BUG-0080) — and, like every refusal, it carries no number
+    // (LESSONS 2, ARCHITECTURE.md §4.3).
+    const stub = stubClient({
+      [T.groups]: { error: functionNotInSchemaCache("to_tsvector") },
+    });
+    const result = await readCount(
+      T.groups,
+      (db) => db.from(T.groups).select("*", { count: "exact", head: true }),
+      stub.asSupabaseClient(),
+    );
+    expect(result.kind).toBe("error");
+    expect(result).not.toHaveProperty("data");
+    expect(result).not.toHaveProperty("missing");
+  });
+
   /* ── the absent FUNCTION, through the read path (admin-window/TASK-0047) ── */
 
   it("returns not_provisioned when the FUNCTION is not in the schema cache", async () => {
-    // The whole M2 path in miniature: a real call, through the same helper a
-    // page read uses, against a PostgREST that answers PGRST202 — and what
-    // comes back is the absence card's input, not an exception.
+    // The whole M2 path in miniature: a real call, through the seam that says
+    // a FUNCTION was asked for, against a PostgREST that answers PGRST202 —
+    // and what comes back is the absence card's input, not an exception.
     const stub = stubClient({
       [SETTLE_FUNCTION]: { error: functionNotInSchemaCache(SETTLE_FUNCTION) },
     });
-    const result = await readOne(
+    const result = await callFunction(
       SETTLE_FUNCTION,
       (db) => db.rpc(SETTLE_FUNCTION, { p_decision: { action: "keep_current" } }),
       stub.asSupabaseClient(),
@@ -738,7 +864,7 @@ describe("reads against a scripted PostgREST response", () => {
     const absent = stubClient({
       [SETTLE_FUNCTION]: { error: undefinedFunction(SETTLE_FUNCTION) },
     });
-    const refusedAbsent = await readCount(
+    const refusedAbsent = await callFunction(
       SETTLE_FUNCTION,
       (db) => db.rpc(SETTLE_FUNCTION, { p_decision: {} }),
       absent.asSupabaseClient(),
@@ -759,7 +885,7 @@ describe("reads against a scripted PostgREST response", () => {
     expect(refusedSilent).not.toHaveProperty("data");
   });
 
-  it("keeps a rows read of an absent function an absence, and a refused one red", async () => {
+  it("keeps a CALL to an absent function an absence, and a refused call red", async () => {
     // The two verdicts a caller must be able to tell apart, through the same
     // helper: the function is not installed (absence), and the function is
     // there but the call was refused (error, in the database's own words).
@@ -767,7 +893,7 @@ describe("reads against a scripted PostgREST response", () => {
       [SETTLE_FUNCTION]: { error: functionNotInSchemaCache(SETTLE_FUNCTION) },
     });
     await expect(
-      readRows(
+      callFunction(
         SETTLE_FUNCTION,
         (db) => db.rpc(SETTLE_FUNCTION, { p_decision: {} }),
         absent.asSupabaseClient(),
@@ -777,7 +903,7 @@ describe("reads against a scripted PostgREST response", () => {
     const refused = stubClient({
       [SETTLE_FUNCTION]: { error: permissionDenied(SETTLE_FUNCTION) },
     });
-    const result = await readRows(
+    const result = await callFunction(
       SETTLE_FUNCTION,
       (db) => db.rpc(SETTLE_FUNCTION, { p_decision: {} }),
       refused.asSupabaseClient(),

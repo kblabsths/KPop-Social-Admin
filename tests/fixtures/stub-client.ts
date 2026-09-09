@@ -301,6 +301,10 @@ export function missingOperator(left = "timestamp with time zone", operator = "~
  * not the object the query asked for: `groups` is right there holding rows.
  * The operator sentence is therefore not the only 42883 a provisioned table
  * can raise, which is what `missingOperator` alone does not cover.
+ *
+ * It is what proves the classifier's absence claim follows what was ASKED
+ * rather than the database's prose (admin-window/BUG-0080): no sentence match
+ * stays one shape ahead of Postgres.
  */
 export function missingFunctionOnTableRead(argumentType = "timestamp with time zone") {
   return {

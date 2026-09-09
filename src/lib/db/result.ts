@@ -76,25 +76,60 @@ const COLUMN_ABSENT_CODES: ReadonlySet<string> = new Set(["PGRST204", "42703"]);
  * NORMAL case for the whole milestone and must reach a page as the same
  * not-provisioned state a missing table does — never as an error, never as a
  * throw (ARCHITECTURE.md §4.1, §4.3).
+ *
+ * These two codes only ever mean an absence to a caller that ASKED for a
+ * function; see `AskedObject`.
  */
 const FUNCTION_ABSENT_CODES: ReadonlySet<string> = new Set(["PGRST202", "42883"]);
 
 /**
- * The one `42883` that is NOT an absent function.
+ * What the caller asked the database for — the thing an absence code is
+ * allowed to be an absence OF.
+ *
+ * A table read and a function call do not share a vocabulary of absence, and
+ * the same code means different things to each (`42883` most of all). So the
+ * classifier is told what was asked instead of guessing it from the database's
+ * prose, and `"table"` is the default because that is what every read in this
+ * module does: a caller that says nothing can never claim a function absence.
+ */
+export type AskedObject = "table" | "function";
+
+/**
+ * The absence codes each kind of caller may read as an absence of the object
+ * it named. Nothing else is an absence — a code outside its own row is a
+ * failure the database is reporting ABOUT something else, and it stays
+ * `kind: "error"` carrying the database's own words.
+ */
+const ABSENCE_CODES: Readonly<Record<AskedObject, ReadonlySet<string>>> = {
+  // Plus the column codes, which name a column OF the table that was asked
+  // for; they are handled separately because they mine the column's name.
+  table: TABLE_ABSENT_CODES,
+  function: FUNCTION_ABSENT_CODES,
+};
+
+/**
+ * A `42883` that is NOT an absent function even when a function WAS asked for.
  *
  * Postgres raises `undefined_function` for a missing OPERATOR as well as for a
  * missing function — `operator does not exist: timestamp with time zone ~~*
  * unknown` is the shape, measured on this project's own staging when an
  * `ilike` was aimed at a non-text column (admin-window/BUG-0058, pinned in
  * `tests/live/residue.live.test.ts`). That is a query this app got WRONG, not
- * an object the database is missing, and "the object is not provisioned" is
- * the one thing it must not be reported as: a false absence is a confident
- * claim about a table that is right there. It stays `kind: "error"` carrying
- * the database's own words, like every other failure.
+ * an object the database is missing.
  *
- * A `42883` that says nothing at all is still an absent function: the code is
- * what classifies, and this is a single named exception to it, not a
- * requirement that the database explain itself.
+ * It is no longer what keeps a TABLE read honest — the kind of object the
+ * caller asked for is (admin-window/BUG-0080: `42883` also arrives from a
+ * table read as `function to_tsvector(timestamp with time zone) does not
+ * exist`, a missing OVERLOAD of a function the caller never named, and no
+ * sentence match stays one shape ahead of Postgres). It survives as the
+ * narrower guard on the function arm alone, where a function's own body can
+ * raise it. It can only ever REFUSE an absence claim, never make one, which is
+ * the only direction a prose match is safe in.
+ *
+ * A `42883` that says nothing at all is still an absent function to a caller
+ * that asked for one: the code plus what was asked is what classifies, and
+ * this is a single named exception to it, not a requirement that the database
+ * explain itself.
  */
 const MISSING_OPERATOR = /\boperator does not exist\b/i;
 
@@ -309,25 +344,46 @@ function columnFromMessage(message: string): string | null {
  * A function-absent code names nothing further: `missing` is the name the
  * caller passed, which is the name it called (admin-window/TASK-0047).
  *
- * Everything that is not one of the six absence codes is `kind: "error"`
+ * **An absence claim is about the object the caller ASKED for** (`asked`,
+ * default `"table"`; ARCHITECTURE.md §4.3, §10). A table read may never claim
+ * an absent function and a function call may never claim an absent table: the
+ * database reports a missing object it names ITSELF, and `missing` is the
+ * object WE named, so a code outside the caller's own vocabulary is a failure
+ * about some third thing and stays an error. Postgres raises `42883` at a
+ * plain table read for a missing OVERLOAD of a function nobody asked for
+ * (`function to_tsvector(timestamp with time zone) does not exist`, measured
+ * on staging 2026-09-08) — reading that as an absence told an operator to
+ * install a table that is right there, holding rows (admin-window/BUG-0080).
+ *
+ * Everything that is not an absence code OF WHAT WAS ASKED is `kind: "error"`
  * carrying the database's message verbatim.
  */
-export function classify(error: unknown, missing: string): DbResult<never> {
+export function classify(
+  error: unknown,
+  missing: string,
+  asked: AskedObject = "table",
+): DbResult<never> {
   const code = errorCode(error);
+  const refuse = (): DbResult<never> => ({
+    kind: "error",
+    reading: missing,
+    message: errorMessage(error),
+  });
+  if (code === null) return refuse();
 
-  if (code !== null && TABLE_ABSENT_CODES.has(code)) {
+  if (ABSENCE_CODES[asked].has(code)) {
+    // The absent OPERATOR shares `42883` with the absent function, and a
+    // function's own body can raise it; it is not an absence of what was
+    // asked for, so it falls through to `error`.
+    if (asked === "function" && MISSING_OPERATOR.test(messageOf(error))) {
+      return refuse();
+    }
     return { kind: "not_provisioned", missing };
   }
 
-  if (code !== null && FUNCTION_ABSENT_CODES.has(code)) {
-    // The absent OPERATOR shares `42883` with the absent function and is not
-    // an absence of anything the app asked for; it falls through to `error`.
-    if (!MISSING_OPERATOR.test(messageOf(error))) {
-      return { kind: "not_provisioned", missing };
-    }
-  }
-
-  if (code !== null && COLUMN_ABSENT_CODES.has(code)) {
+  // A column is absent OF the table that was asked for, so it is an absence
+  // only for a table read — the column codes cannot describe a function call.
+  if (asked === "table" && COLUMN_ABSENT_CODES.has(code)) {
     const column = columnFromMessage(messageOf(error));
     if (column === null || column === missing || missing.endsWith(`.${column}`)) {
       return { kind: "not_provisioned", missing };
@@ -335,7 +391,7 @@ export function classify(error: unknown, missing: string): DbResult<never> {
     return { kind: "not_provisioned", missing: `${missing}.${column}` };
   }
 
-  return { kind: "error", reading: missing, message: errorMessage(error) };
+  return refuse();
 }
 
 /**
@@ -350,14 +406,15 @@ async function runQuery<T>(
   missing: string,
   run: (db: SupabaseClient) => PromiseLike<DbResponse<T>>,
   db?: SupabaseClient,
+  asked: AskedObject = "table",
 ): Promise<DbResult<T | null>> {
   try {
     const client = db ?? getDbClient();
     const { data, error } = await run(client);
-    if (error !== null && error !== undefined) return classify(error, missing);
+    if (error !== null && error !== undefined) return classify(error, missing, asked);
     return { kind: "ok", data: data ?? null };
   } catch (thrown) {
-    return classify(thrown, missing);
+    return classify(thrown, missing, asked);
   }
 }
 
@@ -441,6 +498,35 @@ export async function readOne<Row>(
   db?: SupabaseClient,
 ): Promise<DbResult<Row | null>> {
   return runQuery<Row>(missing, run, db);
+}
+
+/**
+ * A call to a database FUNCTION — the one read kind whose caller may be told
+ * the function itself is absent.
+ *
+ * The `run` callback is what actually calls the function through the client's
+ * procedure seam — spelled at the CALL SITE, never here, because no module
+ * under `src/` may carry that call today (`tests/offline/browse/views.test.ts`,
+ * "has no SQL-executing route and no whole-table browser"). `fn` is the name the
+ * call used, so the not-provisioned card names what the app asked for. Which
+ * is the whole reason this exists as its own seam rather than as a table read
+ * with a function's name in it: absence is claimed about what was ASKED, and
+ * only a caller that came through here asked for a function
+ * (admin-window/TASK-0047 established the absence, admin-window/BUG-0080
+ * narrowed it to this seam).
+ *
+ * M2's normal case: the resolver procedure is not installed until the handoff
+ * migration is, so `not_provisioned` naming it is what the close slot renders,
+ * every time, until it is (ARCHITECTURE.md §4.1, §4.3). It never throws, and
+ * `ok` carries whatever the function returned — `null` when it returned
+ * nothing.
+ */
+export async function callFunction<T>(
+  fn: string,
+  run: (db: SupabaseClient) => PromiseLike<DbResponse<T>>,
+  db?: SupabaseClient,
+): Promise<DbResult<T | null>> {
+  return runQuery<T>(fn, run, db, "function");
 }
 
 /**
