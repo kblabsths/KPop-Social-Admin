@@ -33,6 +33,7 @@ import {
 } from "../ui/markup";
 import {
   ID,
+  evidenceRow,
   reviewItemDataConflict,
   reviewItemEntityLink,
   reviewItemSourcePattern,
@@ -141,36 +142,6 @@ beforeEach(() => {
 });
 
 /* ── the evidence this item is about ─────────────────────────────────────── */
-
-/**
- * One resolved claim, as the page hands it to both the evidence view and the
- * shape's action builder — the same rows, which is what makes "one control per
- * evidence card" checkable at all.
- *
- * Local to this file because no builder for `EvidenceRow` exists anywhere in
- * `tests/fixtures/` (grepped); its ids and values come from the shared row
- * fixtures so a failure names a recognisable claim.
- */
-function evidenceRow(overrides: Partial<EvidenceRow> = {}): EvidenceRow {
-  return {
-    observationId: ID.observationA,
-    value: "TWICE 5TH WORLD TOUR",
-    source: "ticketmaster",
-    sourceHref: `/sources/${ID.sourceTicketmaster}`,
-    tier: "official",
-    observedAt: "2026-08-31T22:10:00Z",
-    status: "pending",
-    payloadRef: "ticketmaster/2026-08-31/G5vYZ9d1.json",
-    fact: "events.title",
-    // Both halves of the record identity a row now carries
-    // (admin-window/BUG-0122): the canonical id, and the source's own ref.
-    entityId: ID.eventEntity,
-    externalRef: "tm-G5vYZ9d1",
-    recordHref: `/records/events/${ID.eventEntity}`,
-    held: null,
-    ...overrides,
-  };
-}
 
 /** The TWO cards spec §7's first action needs one control each for. */
 function twoCards(): EvidenceRow[] {

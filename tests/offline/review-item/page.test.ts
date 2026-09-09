@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { ClaimList, type ClaimLine } from "@/components/claims/claim-list";
+import { EVIDENCE_VIEW_BY_SHAPE } from "@/components/review";
 import { isRecordId } from "@/lib/records/id";
 import { SHAPES, shapeOf } from "@/lib/review/shapes";
 import { EM_DASH, counted } from "@/lib/format";
@@ -8,6 +9,7 @@ import { T } from "@/lib/db/tables";
 import { h, render, uppercasedIdentifiers } from "../ui/markup";
 import {
   ID,
+  evidenceRow,
   fieldProvenanceRow,
   observationRow,
   pendingClaimRow,
@@ -2557,10 +2559,12 @@ describe("an evidence cell with nothing in it", () => {
    * the dash for this very value (admin-window/BUG-0152) — this cell is the
    * third rendering of one row's absence.
    *
-   * admin-window/BUG-0154. Landed `it.fails` (strict) while the divergence
-   * stands; the fix flips it to a plain `it`.
+   * admin-window/BUG-0154 (this was QA's strict `it.fails` pin until the fix
+   * landed): `sourceLabel` now states the rule on INK rather than on `null`, so
+   * the row reads the source's id verbatim — the same thing the page already
+   * said when the registry held no row for it at all.
    */
-  it.fails(
+  it(
     "renders no blank cell for a source whose registry name is blank",
     async () => {
       const item = reviewItemDataConflict();
@@ -2582,6 +2586,132 @@ describe("an evidence cell with nothing in it", () => {
       expect(cells.filter((cell) => cell === ""), "blank cells").toEqual([]);
     },
   );
+
+  /**
+   * WHAT it says instead, and that one page now says it ONCE
+   * (admin-window/BUG-0154).
+   *
+   * The blank name reached three renderings of one row on this page: the
+   * evidence cell (blank, an anchor with nothing to click), and the pair's
+   * claim and provenance lines, which drew the app's dash (BUG-0152's guard).
+   * The label rule is upstream of all three, so fixing it converges them: the
+   * id is the only true thing the app can say about that source, and every
+   * rendering of the row now says it — the same answer the page already gave
+   * when the registry held no row at all ("keeps the id verbatim when the
+   * registry named nothing", two describes up).
+   */
+  it("says the source's id verbatim wherever the row names its source", async () => {
+    const item = reviewItemDataConflict();
+    const markup = await renderItem(
+      conflictScript({
+        [T.sources]: { data: [sourceRow({ source: "   " }), BANDSINTOWN] },
+      }),
+      item.review_item_id,
+    );
+    const $ = cheerio.load(markup);
+
+    // 1. The table cell: the id, in the row's one route to that source, which
+    //    still GOES where it always went.
+    const cell = $(`a[data-claim-source][href="/sources?source_id=${CLAIM_A.source_id}"]`);
+    expect(cell).toHaveLength(1);
+    expect(cell.text().trim()).toBe(CLAIM_A.source_id);
+    // Non-vacuity: the sibling row, whose source IS named, still reads its name
+    // and never the uuid.
+    const sibling = $(`a[data-claim-source][href="/sources?source_id=${CLAIM_B.source_id}"]`);
+    expect(sibling.text().trim()).toBe(BANDSINTOWN.source);
+
+    // 2. The pair beside it, stating the same claim as `source · tier · age`:
+    //    the same word, so the operator is not left comparing a dash with a
+    //    uuid for one row.
+    const pairLines = $(EVIDENCE_HOOK)
+      .find("span")
+      .toArray()
+      .map((node) => $(node).text().replace(/\s+/g, " ").trim())
+      .filter((text) => / · .* · /.test(text));
+    expect(pairLines.length, "the pair renders the claims").toBeGreaterThan(0);
+    const sources = pairLines.map((line) => line.split(" · ")[0]);
+    expect(sources, "the pair's source term").toContain(CLAIM_A.source_id);
+    expect(sources, "the pair still names the sibling").toContain(BANDSINTOWN.source);
+    // The row is not announced as an absence anywhere: it has an identity.
+    expect(sources).not.toContain(EM_DASH);
+  });
+
+  /**
+   * The CELL's own half of the rule — an anchor is never drawn around nothing
+   * (admin-window/BUG-0154).
+   *
+   * The page can no longer hand either surface an unreadable label, because
+   * `sourceLabel` owns that fallback and answers the id; this grades what the
+   * two components do if some later caller does it anyway. Both source cells
+   * are graded TOGETHER because they are one rule on two screens (LESSONS 5):
+   * the app's one absence element, labelled for a reader who cannot see the
+   * ink, and no link with nothing to read. Neither cell re-derives the id — a
+   * second owner of the fallback is what this ticket removed.
+   */
+  it("draws the app's absence element and no anchor in either source cell handed an unreadable label", () => {
+    // Ink-less, and not merely whitespace: the class `visibleContent` knows
+    // (`lib/verdict/decision.ts`) and `trim()` does not.
+    const unreadable = "\u200b \u2060";
+    const ConflictEvidence = EVIDENCE_VIEW_BY_SHAPE.data_conflict_fact;
+    const evidence = cheerio.load(
+      render(
+        h(ConflictEvidence, {
+          rows: [evidenceRow({ source: unreadable })],
+          unresolved: [],
+          empty: { holds: "claims on this item", filledBy: "The resolver folds them." },
+          canonical: null,
+          dial: null,
+        }),
+      ),
+    );
+    const claims = cheerio.load(
+      render(
+        h(ClaimList, {
+          rows: [{ ...CLAIMS_PAGE_LINE, source: unreadable }],
+          label: "Claims",
+        }),
+      ),
+    );
+
+    for (const [surface, $] of [
+      ["the review item's evidence table", evidence],
+      ["/claims", claims],
+    ] as const) {
+      const cell = $("[data-claim-source]");
+      expect(cell, surface).toHaveLength(1);
+      // The hook the suite addresses this cell by survives the absence.
+      expect(cell.closest("td"), surface).toHaveLength(1);
+      expect(cell.is("a"), `${surface}: an anchor around nothing`).toBe(false);
+      expect(cell.closest("td").find("a"), `${surface}: any anchor`).toHaveLength(0);
+      // The app's one absence element, announced to a reader who cannot see it.
+      expect(cell.find('[aria-label="no value"]'), surface).toHaveLength(1);
+      expect(cell.text().trim(), surface).toBe(EM_DASH);
+    }
+
+    // The other fixture (LESSONS 8): a label the app CAN read is still a link
+    // that says it, on both surfaces.
+    for (const [surface, markup] of [
+      [
+        "the review item's evidence table",
+        render(
+          h(ConflictEvidence, {
+            rows: [evidenceRow()],
+            unresolved: [],
+            empty: { holds: "claims on this item", filledBy: "The resolver folds them." },
+            canonical: null,
+            dial: null,
+          }),
+        ),
+      ],
+      ["/claims", render(h(ClaimList, { rows: [CLAIMS_PAGE_LINE], label: "Claims" }))],
+    ] as const) {
+      const $ = cheerio.load(markup);
+      const cell = $("[data-claim-source]");
+      expect(cell.is("a"), `${surface}: the named source's link`).toBe(true);
+      expect(cell.text().trim(), surface).toBe(TICKETMASTER.source);
+      expect(cell.find('[aria-label="no value"]'), surface).toHaveLength(0);
+    }
+  });
 
   /* ── the four columns, one absent and one present (LESSONS 3) ─────────── */
 
