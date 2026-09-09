@@ -1413,6 +1413,17 @@ function pickerShell() {
       settle();
       return shell;
     },
+    /**
+     * The confirmation's own 1.5s clock fires — `armConfirmationClock`'s
+     * `elapsed`, carrying the edit that armed it (admin-window/BUG-0111). It
+     * is the one status edge no control of this widget moved for, and it
+     * arrives on a timer rather than under the operator's hands.
+     */
+    elapsed() {
+      pick = reducePick(pick, { kind: "elapsed", edit: pick.edit });
+      settle();
+      return shell;
+    },
     /** Another widget on the page states a refusal and takes the page's slot. */
     otherWidgetRefuses() {
       const release = takeRefusalSlot(() => {});
@@ -1862,6 +1873,112 @@ describe("where the picker leaves focus", () => {
     );
     // Nothing that acts is a div wearing a click handler.
     expect($("[onclick]")).toHaveLength(0);
+  });
+
+  it("rescues focus for the SECOND refusal too, not just the first", () => {
+    // QA, admin-window/BUG-0149. The fix keeps `focusedForStatus` in a ref and
+    // spends it whenever a verdict is taken, so the question the table cannot
+    // answer is whether the bookkeeping survives a whole write CYCLE: the
+    // operator is refused, chooses again from the panel the refusal left open
+    // (admin-window/BUG-0119), blurs focus inside the panel again, and is
+    // refused again. A rule that read `failed` as "no edge, leave" on the
+    // second answer -- the `wasStatus === status` row of the table -- would
+    // drop focus to the document at exactly the moment the first fix was
+    // opened for, and every walk that only ever refuses ONCE would stay green.
+    const shell = pickerShell().chooseButton().pickRow();
+    shell.pressInsideOnNothing();
+    shell.answer(VENUE_REFUSED);
+    expect(shell.focus(), "the first refusal put focus back").toEqual("search");
+
+    shell.pressInsideOnNothing();
+    expect(shell.focus(), "and the operator blurred it again").toEqual("nowhere");
+    shell.pickRow(SECOND);
+    expect(shell.status().kind, "the second choice is in flight").toEqual("saving");
+    shell.pressInsideOnNothing();
+    expect(shell.focus(), "blurred once more while it runs").toEqual("nowhere");
+
+    shell.answer(VENUE_REFUSED, SECOND);
+    expect(shell.status().kind, "and it is refused as well").toEqual("failed");
+    expect(shell.isOpen(), "the panel is still the one they are reading").toBe(true);
+    expect(
+      shell.focus(),
+      "criterion 3 holds on the second refusal exactly as on the first",
+    ).toEqual("search");
+    shell.close();
+  });
+
+  it("does not chase focus a confirmation's clock takes a word off the screen for", () => {
+    // QA, admin-window/BUG-0149, the negative the fix is bought on -- walked
+    // rather than asserted on the rule, because what makes the two cases
+    // differ is the REF: `saved` spent the edge when the answer landed, so the
+    // `idle` the clock leaves 1.5s later has none. Both walks below end at the
+    // same place -- panel closed, `idle`, focus on nothing at all -- and the
+    // rule must answer them differently, which is the whole reason `wasStatus`
+    // exists rather than a dropped clause.
+    const landed = pickerShell().chooseButton().pickRow();
+    landed.answer({ ok: true });
+    expect(landed.status().kind, "the choice landed").toEqual("saved");
+    expect(landed.isOpen(), "and a landed choice closes the panel").toBe(false);
+    expect(landed.focus(), "the answer put focus back on the Choose button").toEqual(
+      "toggle",
+    );
+    landed.pressInsideOnNothing();
+    expect(landed.focus(), "the operator then blurs it themselves").toEqual("nowhere");
+    landed.elapsed();
+    expect(landed.status().kind, "the confirmation retired on its own clock").toEqual(
+      "idle",
+    );
+    expect(
+      landed.focus(),
+      "a focus jump on a timer is a steal, so nothing moved",
+    ).toEqual("nowhere");
+    landed.close();
+
+    // Same end state, different history: the `idle` here is a refusal another
+    // widget superseded -- an edge that ENDED a write, under the operator's
+    // hands -- and criterion 3 names it.
+    const superseded = pickerShell().chooseButton().pickRow();
+    superseded.answer(VENUE_REFUSED);
+    superseded.escape();
+    expect(superseded.isOpen(), "Escape closed the panel").toBe(false);
+    expect(superseded.status().kind, "and retired the red line with it").toEqual("idle");
+    superseded.pickRow(SECOND);
+    superseded.answer(VENUE_REFUSED, SECOND);
+    superseded.pressInsideOnNothing();
+    expect(superseded.focus(), "focus is on nothing at all").toEqual("nowhere");
+    const other = superseded.otherWidgetRefuses();
+    expect(superseded.status().kind, "the page's one slot changed hands").toEqual("idle");
+    expect(
+      superseded.focus(),
+      "criterion 3: the same `idle`, and this one IS an edge that ended a write",
+    ).not.toEqual("nowhere");
+    other.release();
+    superseded.close();
+  });
+
+  it("takes focus once per edge and never chases it between edges", () => {
+    // QA, admin-window/BUG-0149. The ref is spent when a verdict is taken, so
+    // the widget answers for an edge ONCE. An implementation that re-decided
+    // focus whenever anything re-rendered -- a keystroke in the search box, a
+    // parent re-render, a press that focuses nothing -- would pass every
+    // criterion above and fight the operator for focus while at rest.
+    const shell = pickerShell().chooseButton().pickRow();
+    shell.pressInsideOnNothing();
+    shell.answer(VENUE_REFUSED);
+    expect(shell.focus(), "the refusal's edge was answered").toEqual("search");
+    for (let press = 0; press < 3; press += 1) {
+      shell.pressInsideOnNothing();
+      expect(
+        shell.focus(),
+        `press ${press + 1}: no edge, so the widget does not grab focus back`,
+      ).toEqual("nowhere");
+    }
+    // ...and it is not deaf either: the next real edge still answers.
+    const other = shell.otherWidgetRefuses();
+    expect(shell.status().kind, "the refusal was superseded").toEqual("idle");
+    expect(shell.focus(), "which is an edge, so focus comes back").toEqual("search");
+    other.release();
+    shell.close();
   });
 });
 
