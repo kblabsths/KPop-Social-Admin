@@ -187,6 +187,30 @@ function cellsOf(markup: string, verdictAction: string) {
   };
 }
 
+/**
+ * Two of the log's columns by POSITION, named once — `cellsOf` returns the
+ * row's cells in render order, and an index spelled at a call site is a number
+ * a reader has to count out. Order is §7's: actor, action, item, observation,
+ * note, when.
+ */
+const ACTOR = 0;
+const NOTE = 4;
+
+/**
+ * How many of the APP's dashes a given cell holds — `nullDash`'s marked
+ * element (`lib/format.ts`), not the character. A cell that spells an em dash
+ * itself would satisfy a text assertion and still be a surface writing its own
+ * absence rendering; this asks for the one the whole app draws.
+ */
+function dashesIn(markup: string, verdictAction: string, at: number): number {
+  const $ = cheerio.load(markup);
+  return $(`${LOG} [data-verdict-action="${verdictAction}"]`)
+    .closest("tr")
+    .find("td")
+    .eq(at)
+    .find('[aria-label="no value"]').length;
+}
+
 function windowHooks(markup: string): Record<string, string | undefined> {
   const line = cheerio.load(markup)('[data-window="verdict_log"]');
   return {
@@ -402,11 +426,11 @@ describe("the nulls that are structure, not missing data", () => {
    * A note that is PRESENT but blank — `""` or all whitespace — is an absence
    * everywhere else in this app: `isAbsent` (`lib/format.ts`) trims before it
    * decides, and `DataTable` passes every cell body through `orDash` for
-   * exactly that reason. The log escapes that rule because its note column
-   * returns an ELEMENT (`<span title=...>`), which `isAbsent` never looks
-   * inside — the shape `tests/offline/absence/blank-cells.test.ts` was written
-   * to sweep, and which that sweep cannot reach here because it renders one
-   * view per route and this surface is a TAB.
+   * exactly that reason. The log used to escape that rule because its note
+   * column returned an ELEMENT (`<span title=...>`), which `isAbsent` never
+   * looks inside — the shape `tests/offline/absence/blank-cells.test.ts` was
+   * written to sweep, and which that sweep cannot reach here because it
+   * renders one view per route and this surface is a TAB.
    *
    * The value is reachable: `src/app/api/admin/review-items/[reviewItemId]/settle/route.ts`
    * forwards `body.note` verbatim (the app's own control nulls a blank in
@@ -415,13 +439,17 @@ describe("the nulls that are structure, not missing data", () => {
    * carrying `"note": ""` reaches `settle_review_item` and `verdicts.note` —
    * a nullable `text` with no CHECK (`for-human/M2-handoff-verdicts.md`).
    *
-   * STRICT xfail for admin-window/BUG-0085 (QA of admin-window/TASK-0058):
-   * `it.fails` passes only while the defect stands, so the day the note cell
-   * dashes, this XPASSes, reddens, and sends the reader to the ticket. Flip it
-   * back to a plain `it(...)` in the fixing commit — the way
-   * admin-window/BUG-0067's pin was flipped in `tests/offline/cycles/page.test.ts`.
+   * Fixed by admin-window/BUG-0085 in the column itself — it hands the `null`
+   * over and lets the table draw the one dash, the way `/cycles`, `/sources`,
+   * `/claims` and `/browse` all do. Was QA's strict `it.fails`; flipped in the
+   * fixing commit, the way admin-window/BUG-0067's pin was flipped in
+   * `tests/offline/cycles/page.test.ts`.
+   *
+   * All four shapes of the column at once, because the fix must not buy the
+   * blank cell by eating a real note.
    */
-  it.fails("dashes a note that is present but blank [admin-window/BUG-0085]", async () => {
+  it("dashes a note that is present but blank [admin-window/BUG-0085]", async () => {
+    const REAL = "The venue confirmed the reschedule.";
     const EMPTY_NOTE = verdictLogEntry({
       verdict_id: "01920000-0000-7000-8000-000000000811",
       action: "settle",
@@ -432,14 +460,65 @@ describe("the nulls that are structure, not missing data", () => {
     const SPACES_NOTE = verdictLogEntry({
       verdict_id: "01920000-0000-7000-8000-000000000812",
       action: "fixed",
-      note: "   ",
+      // Whitespace of more than one kind: a tab and a newline are as blank on
+      // screen as three spaces, and `isAbsent` trims all of them.
+      note: " \t\n ",
       observation_id: null,
       created_at: "2026-09-08T09:00:00Z",
     });
-    const markup = await renderQueues(scriptOf([EMPTY_NOTE, SPACES_NOTE], []));
+    const NULL_NOTE = verdictLogEntry({
+      verdict_id: "01920000-0000-7000-8000-000000000813",
+      action: "keep_current",
+      note: null,
+      observation_id: null,
+      created_at: "2026-09-08T08:00:00Z",
+    });
+    const REAL_NOTE = verdictLogEntry({
+      verdict_id: "01920000-0000-7000-8000-000000000814",
+      action: "supply_value",
+      note: REAL,
+      observation_id: null,
+      created_at: "2026-09-08T07:00:00Z",
+    });
+    const markup = await renderQueues(
+      scriptOf([EMPTY_NOTE, SPACES_NOTE, NULL_NOTE, REAL_NOTE], []),
+    );
 
-    expect(cellsOf(markup, "settle").cells[4]).toBe(EM_DASH);
-    expect(cellsOf(markup, "fixed").cells[4]).toBe(EM_DASH);
+    // A present-but-blank note reads exactly as a null one does, and it is the
+    // APP's dash — `nullDash`'s marked element — not a character some cell
+    // drew for itself, so the three absences are indistinguishable to a reader
+    // and to a screen reader.
+    for (const action of ["settle", "fixed", "keep_current"] as const) {
+      expect(cellsOf(markup, action).cells[NOTE]).toBe(EM_DASH);
+      expect(dashesIn(markup, action, NOTE)).toBe(1);
+    }
+    // …and a note that says something still says it, unmarked and whole.
+    expect(cellsOf(markup, "supply_value").cells[NOTE]).toBe(REAL);
+    expect(dashesIn(markup, "supply_value", NOTE)).toBe(0);
+    // Nothing was bought by leaving an empty element behind, either.
+    expect(markup).not.toMatch(/<td[^>]*>\s*<\/td>/);
+  });
+
+  /**
+   * The same shape one column to the left. `verdicts.actor` is `not null` and
+   * its column comment says "never blank", but the settle route's fallback is
+   * `gate.user?.email ?? ""` (line ~124), so an empty actor is reachable — and
+   * it wrapped in an element exactly as the note did. Guarded in the same
+   * commit as admin-window/BUG-0085, in the same file and the same way.
+   */
+  it("dashes an actor that is present but blank", async () => {
+    const BLANK_ACTOR = verdictLogEntry({
+      verdict_id: "01920000-0000-7000-8000-000000000815",
+      action: "link_entity",
+      actor: "  ",
+      observation_id: null,
+      created_at: "2026-09-08T06:00:00Z",
+    });
+    const markup = await renderQueues(scriptOf([BLANK_ACTOR], []));
+
+    expect(cellsOf(markup, "link_entity").cells[ACTOR]).toBe(EM_DASH);
+    expect(dashesIn(markup, "link_entity", ACTOR)).toBe(1);
+    expect(markup).not.toMatch(/<td[^>]*>\s*<\/td>/);
   });
 });
 
