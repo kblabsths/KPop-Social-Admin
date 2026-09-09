@@ -1293,6 +1293,83 @@ describe("the cycle-health gauge", () => {
     }
   });
 
+  /*
+   * admin-window/BUG-0116. The clause admin-window/BUG-0110 added is built
+   * from `duration.unmeasurable` — EVERY row the over-cadence figure could
+   * not be computed over — and says of all of them that they never finished.
+   * That set is wider than the dead. A cycle is inserted at start and its end
+   * is written at completion (scraper migration `20260901000001`: `ended_at`
+   * is "null while the cycle is still running"), so a cycle in flight right
+   * now is in the excluded set too, and the page's own outcome panel counts
+   * it on the same screen under the word the app pins for that state. One row,
+   * two states, two surfaces — the property admin-window/BUG-0055 pinned from
+   * the rows' side.
+   *
+   * What is guarded is a CLASS of claim, never a spelling: the line may say
+   * the figure leaves rows out, and how many, and it may call them unfinished.
+   * It may not say they never finish while the page itself is saying one of
+   * them is still going.
+   */
+  const NEVER_ENDS =
+    /\bnever\b[^.;]*\b(finish|finishes|finished|complete|completes|completed|end|ends|ended)\b/i;
+
+  /** A cycle with no end, younger than one cadence: still in flight. */
+  function stillRunning(suffix: string): ResolutionRunRow {
+    return {
+      ...BARE_CYCLE,
+      run_id: `0192f0c1-0000-7000-8000-3000000000${suffix}`,
+      started_at: minutesAgo(2),
+      ended_at: null,
+      outcome: null,
+    };
+  }
+
+  const RUNNING_NOW = stillRunning("01");
+
+  it("guards the claim a cycle never ends, in any spelling, and nothing weaker", () => {
+    // What the bar forbids...
+    expect(NEVER_ENDS.test("0 of 3 finished cycles ran long; 1 never finished")).toBe(true);
+    expect(NEVER_ENDS.test("0 of 3 finished cycles ran long; 1 never completed")).toBe(true);
+    expect(NEVER_ENDS.test("0 of 3 finished cycles ran long; 1 never ends")).toBe(true);
+    // ...and what it must leave alone: naming the excluded set without
+    // pronouncing it dead, and the bare line of an empty excluded set.
+    expect(NEVER_ENDS.test("0 of 3 finished cycles ran long; 1 recorded no end")).toBe(false);
+    expect(NEVER_ENDS.test("0 of 3 finished cycles ran long; 1 has not finished")).toBe(false);
+    expect(NEVER_ENDS.test("0 of 3 finished cycles ran long; 1 died")).toBe(false);
+    expect(NEVER_ENDS.test("0 ran longer than the 15m cadence")).toBe(false);
+  });
+
+  it("excludes the cycle that is still in flight, and counts it once", async () => {
+    const markup = await renderCycles(scriptOf([...FINISHED, RUNNING_NOW]));
+
+    // The setup this fixture asserts about, established from the page's own
+    // surfaces: the running cycle renders no duration, so it is exactly the
+    // one row the over-cadence figure leaves out...
+    expect(cyclesWithoutDuration(markup)).toEqual([RUNNING_NOW.run_id]);
+    expect(countsIn(cardSubLine(markup, "Cycles in this window"))).toEqual([
+      0,
+      FINISHED.length,
+      1,
+    ]);
+    // ...and nothing on this page died. The word comes from the row and is
+    // looked up in the panel, so no literal state word is pinned here.
+    const outcomes = new Map(
+      tableRows(markup, OUTCOMES).map((cells) => [cells[0], cells[1]]),
+    );
+    expect(outcomes.get(cycleRow(markup, RUNNING_NOW.run_id).cells[2])).toBe("1");
+  });
+
+  it.fails(
+    "does not pronounce a cycle it is rendering as in-flight one that never finished (admin-window/BUG-0116)",
+    async () => {
+      const sub = cardSubLine(
+        await renderCycles(scriptOf([...FINISHED, RUNNING_NOW])),
+        "Cycles in this window",
+      );
+      expect(NEVER_ENDS.test(sub), sub).toBe(false);
+    },
+  );
+
   it("names the newest cycle carrying errors, and links to its row", async () => {
     const markup = await renderCycles(healthyScript());
     const $ = cheerio.load(markup);
