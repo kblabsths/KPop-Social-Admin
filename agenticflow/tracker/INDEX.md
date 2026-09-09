@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T08:40:42Z — do not edit)
+# Tracker index (regenerated 2026-09-09T08:54:49Z — do not edit)
 
 ## open
 - BUG-0108 [P2][bug][M2] The rest of BUG-0099's sweep: 132 links on Dashboard, Claims, Sources, Browse and the verdict log still announce themselves only under the pointer  (scope:src/app/page.tsx,src/app/claims/page.tsx,src/components/browse/browse-table.tsx,src/components/claims/bucket-table.tsx,src/components/claims/claim-list.tsx,src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/components/queues/verdict-log.tsx,tests/offline/browse/page.test.ts,tests/offline/claims/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/dashboard/page.test.ts from:designer:endgame-walk)
@@ -10,7 +10,4 @@
 ## claimed
 - BUG-0107 [P2][bug][M2] A refused inline save outlives its edit — Escape, blur and a later successful save all leave the red line standing, and two of them stack over the values beneath  (scope:src/components/EditableCell.tsx,src/components/edit-cell-layout.ts,tests/offline/ui/editable-cell.test.ts,tests/offline/records/page.test.ts @builder-175 from:designer:endgame-walk)
 
-## qa
-- BUG-0106 [P2][bug][M2] Seventeen cycles report errors and still say succeeded in healthy green — the palette bar TASK-0038 wrote and nothing built  (scope:src/components/cycles/outcome.tsx,src/app/page.tsx,tests/offline/cycles/page.test.ts,tests/offline/dashboard/page.test.ts @builder-174 from:designer:endgame-walk)
-
-Totals — claimed:1, done:61, open:5, qa:1, wont_fix:1. Archived: 124.
+Totals — claimed:1, done:62, open:5, wont_fix:1. Archived: 124.
