@@ -15,7 +15,7 @@
  * It writes nothing, so it needs no sweep.
  */
 import { describe, expect, it } from "vitest";
-import { readCount, readOne } from "@/lib/db/result";
+import { callFunction, readCount, readRows } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
 import { codeOf, countRows, exactCount, independentClient } from "./parity";
 import { APP_URL_ENV_NAME, declaredTarget, stagingHost } from "./setup";
@@ -155,14 +155,46 @@ describe("a function this database does not have", () => {
         `code ${codeOf(error)}`,
     ).toContain(codeOf(error));
 
-    // …and the APP's own path — the helper every `lib/db` read returns
-    // through — turns that into the state the close slot renders.
-    const result = await readOne(SETTLE_FUNCTION, (db) =>
+    // …and the APP's own path — the seam a function call goes through — turns
+    // that into the state the close slot renders.
+    const result = await callFunction(SETTLE_FUNCTION, (db) =>
       db.rpc(SETTLE_FUNCTION, { p_decision: { action: "keep_current" } }),
     );
     expect(result).toEqual({
       kind: "not_provisioned",
       missing: SETTLE_FUNCTION,
     });
+  });
+
+  it("does not let a table read borrow that absence (admin-window/BUG-0080)", async () => {
+    // The same database, the same absence code, asked a different question: a
+    // TABLE read that raises 42883 must stay an error naming the table it
+    // read. Measured read-only on staging — `fts` on a timestamptz column
+    // makes Postgres look for a `to_tsvector` overload that does not exist,
+    // and `groups` is provisioned and holds rows, so an absence claim here
+    // would tell an operator to install a table that is right there.
+    const readable = await readRows(T.groups, (db) =>
+      db.from(T.groups).select("id").limit(1),
+    );
+    expect(readable.kind, `${stagingHost} could not read ${T.groups}`).toBe("ok");
+
+    const { error } = await independentClient()
+      .from(T.groups)
+      .select("id")
+      .filter("created_at", "fts", "x")
+      .limit(1);
+    expect(
+      codeOf(error),
+      `${stagingHost} answered an fts filter on a timestamptz with ` +
+        `${codeOf(error)}, not the 42883 this case is about`,
+    ).toBe("42883");
+
+    const refused = await readRows(T.groups, (db) =>
+      db.from(T.groups).select("id").filter("created_at", "fts", "x").limit(1),
+    );
+    expect(refused.kind).toBe("error");
+    expect(refused).not.toHaveProperty("missing");
+    if (refused.kind !== "error") return;
+    expect(refused.reading).toBe(T.groups);
   });
 });
