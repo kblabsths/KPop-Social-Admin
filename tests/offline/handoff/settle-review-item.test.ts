@@ -183,6 +183,23 @@ function adoptedClaimGuard(artifact: SqlArtifact): string | null {
   return read === null ? null : read[1];
 }
 
+/**
+ * The refusal that guards the adoption read: the text between `v_claim is null`
+ * and the errcode its raise carries, plus that code (admin-window/BUG-0088).
+ * Read as CODE, because the message and its detail are literals.
+ */
+function adoptedClaimRefusal(
+  artifact: SqlArtifact,
+): { body: string; errcode: string | null } | null {
+  // The WHOLE refusal, from the test to its `end if` — the message, the detail
+  // and the hint alike, because what a reader needs in order to act is spread
+  // across all three.
+  const refusal = /if\s+v_claim\s+is\s+null\s+then([\s\S]*?)end\s+if\s*;/.exec(artifact.code);
+  if (refusal === null) return null;
+  const raised = /errcode\s*=\s*'(KS\d+)'/.exec(refusal[1]);
+  return { body: refusal[1], errcode: raised === null ? null : raised[1] };
+}
+
 /** How many times the artifact's code matches `pattern`. */
 function occurrences(artifact: SqlArtifact, pattern: RegExp): number {
   return (artifact.scan.match(pattern) ?? []).length;
@@ -374,6 +391,33 @@ function gradeSettle(artifact: SqlArtifact): string[] {
     findings.push("gate_missing");
   }
 
+  // ── the adopted claim is one of the item's own (admin-window/BUG-0088) ────
+  // Read by primary key alone this arm adopts ANY observation in the ledger and
+  // re-asserts it admin-locked, which no later claim can displace. The read is
+  // bound to the item's evidence AND to the fact the decision writes, and a
+  // miss is refused in the file's own KS grammar rather than falling through.
+  const adopted = adoptedClaimGuard(artifact);
+  if (adopted === null) findings.push("no_adoption_read");
+  else {
+    if (!/claim\.observation_id\s*=\s*any\s*\(\s*v_item\.evidence\s*\)/.test(adopted)) {
+      findings.push("adopted_claim_unbound:evidence");
+    }
+    for (const [part, pattern] of [
+      ["domain", /claim\.domain\s*=\s*v_domain/],
+      ["entity_id", /claim\.entity_id\s*=\s*v_entity_id/],
+      ["field", /claim\.field\s*=\s*v_field/],
+    ] as ReadonlyArray<readonly [string, RegExp]>) {
+      if (!pattern.test(adopted)) findings.push(`adopted_claim_unbound:${part}`);
+    }
+  }
+
+  const adoptionRefusal = adoptedClaimRefusal(artifact);
+  if (adoptionRefusal === null) findings.push("adoption_miss_unrefused");
+  else {
+    if (adoptionRefusal.errcode === null) findings.push("adoption_refusal_uncoded");
+    if (!/evidence/.test(adoptionRefusal.body)) findings.push("adoption_refusal_unnamed");
+  }
+
   // ── the one refusal the contract names ────────────────────────────────────
   const guard = wontFixGuard(artifact);
   if (guard === null) findings.push("wont_fix_raise_missing");
@@ -557,7 +601,7 @@ describe("the settle_review_item migration", () => {
   });
 
   /**
-   * QA attack on TASK-0046 — admin-window/BUG-0088.
+   * QA attack on TASK-0046 — admin-window/BUG-0088, now bound and live.
    *
    * `contracts/admin-observability.md` §7 states the `data_conflict` answer as
    * "**choose a claimed value** (one tap per evidence card)", and the artifact's
@@ -565,24 +609,50 @@ describe("the settle_review_item migration", () => {
    * re-sent by the dashboard, so the two cannot differ". Both sentences describe
    * a claim BOUND to the item and to the fact being settled.
    *
-   * The arm reads the observation by primary key alone. Any `observation_id` in
-   * the ledger is adopted: its value is re-ingested under the admin source for
-   * the DECISION's `domain`/`entity_id`/`field` and applied with
-   * `tier_at_apply = 'admin'` and `admin_locked = true`, which the resolver can
-   * never correct. `v_item.evidence` — the exact binding the contract names — is
-   * already in hand three statements later, where the rejection set uses it.
+   * Read by primary key alone, the arm adopted ANY `observation_id` in the
+   * ledger: its value re-ingested under the admin source for the DECISION's
+   * `domain`/`entity_id`/`field` and applied with `tier_at_apply = 'admin'` and
+   * `admin_locked = true`, which the resolver can never correct.
    *
-   * Either binding satisfies this: membership in the item's own `evidence`, or
-   * the adopted claim's own fact triple matching the decision's.
-   * Landed as `it.fails` (strict xfail): it goes RED the day the arm is
-   * bound, which is the signal to flip it back to `it`. Watched red as a
-   * plain `it` on c9b8133 before pinning — the WHERE clause it reported is
+   * The arm now binds the read TWICE, and this asks for both, because neither
+   * alone closes it:
+   *
+   *  - membership in `v_item.evidence` — the contract's own "evidence card" —
+   *    which is what stops a stranger's claim being adopted;
+   *  - the claim's own fact identity against the decision's, because a
+   *    per-source item's subject is a SOURCE and its evidence spans fields
+   *    (`review_items`, the sibling's 20260901000002), so membership alone
+   *    would still let one field's value be adopted into another.
+   *
+   * Landed by QA as `it.fails`; flipped back to `it` here. Watched red as a
+   * plain `it` against the unbound arm first — the WHERE clause it reported was
    * `claim.observation_id = (v_value ->> 'observation_id')::uuid`, entire.
    */
-  it.fails("adopts a claimed value only from a claim bound to the fact being settled", () => {
+  it("adopts a claimed value only from a claim bound to the fact being settled", () => {
     const guard = adoptedClaimGuard(shipped);
     expect(guard).not.toBeNull();
-    expect(guard).toMatch(/v_item\.evidence|claim\.domain|claim\.entity_id|claim\.field/);
+    expect(guard).toMatch(/claim\.observation_id\s*=\s*any\s*\(\s*v_item\.evidence\s*\)/);
+    expect(guard).toMatch(/claim\.domain\s*=\s*v_domain/);
+    expect(guard).toMatch(/claim\.entity_id\s*=\s*v_entity_id/);
+    expect(guard).toMatch(/claim\.field\s*=\s*v_field/);
+  });
+
+  /**
+   * The other half of the same defect (admin-window/BUG-0088): a bound read
+   * whose miss is not refused would fall through with `v_claim` null, and the
+   * gate would answer about a null value instead of the function naming what it
+   * refused. The refusal is the arm's own, in the grammar its neighbours use,
+   * and it says what binding was missed rather than "no observation".
+   */
+  it("refuses an observation that is not this item's evidence for this fact", () => {
+    const refusal = adoptedClaimRefusal(shipped);
+    expect(refusal).not.toBeNull();
+    expect(refusal?.errcode).toMatch(/^KS\d{3}$/);
+    expect(refusal?.body).toMatch(/evidence/);
+    // The refusal names the two things a reader needs to act: which claim was
+    // named, and which item it was named for.
+    expect(refusal?.body).toContain("observation_id");
+    expect(refusal?.body).toContain("review_item_id");
   });
 
   it("is one transaction: no commit, no dblink, no autonomous transaction", () => {
@@ -741,6 +811,51 @@ describe("the grader proves itself on doctored blocks", () => {
       "'domain', 'entity_id', 'field', 'observation_id', 'value', 'reference'",
     );
     expect(gradeSettle(renamed).some((finding) => finding.startsWith("value_keys:"))).toBe(true);
+  });
+
+  /**
+   * admin-window/BUG-0088, both fixtures. The defect this replaces read the
+   * observation by PRIMARY KEY ALONE, so any claim in the ledger could be
+   * adopted and re-asserted admin-locked; the grader has to flag exactly that
+   * block, and must not flag a binding spelled another legal way.
+   */
+  it("flags an adoption read bound to nothing but the observation's own id", () => {
+    const doctored = doctoredNote(
+      "::uuid\n         and claim.observation_id = any (v_item.evidence)\n" +
+        "         and claim.domain = v_domain\n" +
+        "         and claim.entity_id = v_entity_id\n" +
+        "         and claim.field = v_field;",
+      "::uuid;",
+    );
+    const findings = gradeSettle(doctored);
+    for (const part of ["evidence", "domain", "entity_id", "field"]) {
+      expect(findings, part).toContain(`adopted_claim_unbound:${part}`);
+    }
+    expect(gradeSettle(shipped)).toEqual([]);
+  });
+
+  it("flags an adoption read whose miss is not refused", () => {
+    // The guard's test removed: the read misses, `v_claim` stays null, and the
+    // gate answers about a null value instead of the function naming what it
+    // refused and why.
+    const doctored = doctoredNote("      if v_claim is null then", "      if false then");
+    expect(gradeSettle(doctored)).toContain("adoption_miss_unrefused");
+  });
+
+  it("grades clean when the adoption binding is spelled in another order", () => {
+    // LESSONS 3's other half for this rule: the four predicates are a set, not
+    // a sequence, and `any(...)` without the space is the same call.
+    const doctored = doctoredNote(
+      "         and claim.observation_id = any (v_item.evidence)\n" +
+        "         and claim.domain = v_domain\n" +
+        "         and claim.entity_id = v_entity_id\n" +
+        "         and claim.field = v_field;",
+      "         and claim.field = v_field\n" +
+        "         and claim.domain = v_domain\n" +
+        "         and claim.entity_id = v_entity_id\n" +
+        "         and claim.observation_id = any(v_item.evidence);",
+    );
+    expect(gradeSettle(doctored)).toEqual([]);
   });
 
   it("flags an artifact that stopped calling apply_resolution", () => {

@@ -534,18 +534,49 @@ begin
                 hint    = 'name the claim being adopted by its uuid';
       end if;
 
+      -- AND THE CLAIM ADOPTED IS ONE OF THIS ITEM'S OWN, about the very fact
+      -- being settled. Read by primary key alone, ANY observation in the ledger
+      -- would be adopted - its value re-asserted in the admin voice for the
+      -- DECISION's domain, row and field, and applied admin_locked, which no
+      -- later claim can displace (contracts/resolver.md section 8). The gate is
+      -- no backstop: it validates the adopted value against the TARGET field's
+      -- declaration alone, so any same-shaped foreign value passes it.
+      --
+      -- So the read is bound twice, because neither binding alone closes it:
+      -- to the item's own evidence, which is what section 7's "one tap per
+      -- evidence card" names; and to the claim's own fact identity, because a
+      -- per-source item's subject is a SOURCE and its evidence spans fields
+      -- (review_items, 20260901000002), so membership alone would still let one
+      -- field's value be adopted into another. entity_id is compared strictly:
+      -- a claim with no canonical row yet has no fact identity and is nothing
+      -- this arm may adopt into one.
       select claim.value
         into v_claim
         from public.observations as claim
-       where claim.observation_id = (v_value ->> 'observation_id')::uuid;
+       where claim.observation_id = (v_value ->> 'observation_id')::uuid
+         and claim.observation_id = any (v_item.evidence)
+         and claim.domain = v_domain
+         and claim.entity_id = v_entity_id
+         and claim.field = v_field;
 
+      -- A miss is one refusal, not two: an observation that is absent and one
+      -- that is a stranger to this item are the same answer to the only
+      -- question this arm asks - is this value one the item put in front of the
+      -- operator.
       if v_claim is null then
-        raise exception 'verdict refused: no observation %',
-                        v_value ->> 'observation_id'
+        raise exception 'verdict refused: observation % is not one of the '
+                        'claims item % holds as evidence for %.% of %',
+                        v_value ->> 'observation_id', v_item_id, v_domain,
+                        v_field, v_entity_id
           using errcode = 'KS027',
-                detail  = format('action=%s observation_id=%s', v_action,
-                                 v_value ->> 'observation_id'),
-                hint    = 'choose a claim the evidence names';
+                detail  = format('action=%s observation_id=%s review_item_id=%s '
+                                 'decision=%s.%s/%s', v_action,
+                                 v_value ->> 'observation_id',
+                                 coalesce(v_item_id::text, '<none>'), v_domain,
+                                 v_field, v_entity_id),
+                hint    = 'adopt one of the claims this item names as evidence '
+                          'for this fact; a value from anywhere else is a '
+                          'supply_value';
       end if;
 
     else
@@ -814,7 +845,7 @@ question for you rather than a line in this block.
 | `public`, `anon`, `authenticated`, `service_role` | Supabase's managed roles. This project's `ALTER DEFAULT PRIVILEGES` hands a newly created function EXECUTE to all four (measured on staging 2026-09-01 and recorded in `20260901000006`'s header), which is why §3 is written as a revoke with one grant after it — the same pair `apply_resolution` carries | `20260818000000_the_schema_arrives_as_one_snapshot.sql`; the pair is copied from `20260901000006` |
 | `KS027`, `KS028`, `KS029`, `KS030` | the four SQLSTATEs this file allocates, in the sibling's own grammar. A grep of that directory on 2026-09-08 shows `KS001`–`KS026` in use and nothing above it, so these collide with none; **if the resolver campaign has since taken them, renumber here** | allocated by this file; the grammar is `20260821000003`'s and `20260901000005`'s |
 
-## 4. The four things worth a second look before you paste
+## 4. The five things worth a second look before you paste
 
 1. **The schema version is resolved by search, not by a number.** The envelope
    may not carry one (ARCHITECTURE §9.2), and nothing installed answers "what
@@ -856,6 +887,28 @@ question for you rather than a line in this block.
    alone**, delete the `reference_entity_id` line and the apply for that one
    action; nothing else moves.
 
+5. **A claimed value is adopted only from this item's own evidence, and only
+   about the fact being settled.** The `choose_claimed_value` read carries four
+   predicates rather than one: the id you sent, membership in the item's
+   `evidence`, and the claim's own `domain`/`entity_id`/`field` equal to the
+   decision's. By primary key alone — how this file read it until
+   `admin-window/BUG-0088` — **any** observation in the ledger could be adopted:
+   its value re-asserted in the admin voice for the DECISION's fact and applied
+   `admin_locked`, which no scraper claim ever displaces
+   (`contracts/resolver.md` §8). The gate is not the backstop, because it
+   validates the adopted value against the TARGET field's declaration alone: on
+   the installed events v3 / venues v2 schemas a `venues.name` claim (string,
+   1..200) adopted into `events.title` (string, 1..300) validates and applies.
+   Both bindings are deliberate — evidence membership is §7's "one tap per
+   evidence card", and the fact triple is what a PER-SOURCE item needs, whose
+   subject is a source and whose evidence spans fields
+   (`20260901000002_the_review_item_opens_once_per_subject.sql`). A miss is one
+   `KS027` naming the claim and the item. **If you want it looser**, drop the
+   three `claim.domain` / `claim.entity_id` / `claim.field` lines and keep the
+   evidence one; **if you want it stricter still**, that is a status filter on
+   the claim, which this file deliberately does not carry — a claim already
+   stamped out is still one the operator was shown.
+
 ## 5. How this file is graded before it reaches you
 
 No database, no `psql`, no dry run (SPEC F9: the bar is your review).
@@ -864,8 +917,9 @@ above and asserts its structure — one `create function`, the declared paramete
 name against `SETTLE_ARGUMENT`, the action array against `VERDICT_ACTIONS`, both
 key arrays against `VerdictDecision` and `VerdictValue`, both source literals
 against `ADMIN_SOURCE`, the `wont_fix` guard keyed on a note that is null OR
-blank, exactly one writer of `verdicts` and one setter of `review_items.status`,
-the idempotent `sources` insert, no `commit` / `dblink` / autonomous
+blank, the adoption read bound to the item's `evidence` and to the fact being
+settled with its miss refused, exactly one writer of `verdicts` and one setter
+of `review_items.status`, the idempotent `sources` insert, no `commit` / `dblink` / autonomous
 transaction, balanced `$$` and `begin`/`end`, no table privilege touched, and
 the EXECUTE the revoke pair leaves each role holding. Each of those is proved on
 a doctored copy of this block that must go red as well as on the block itself.
