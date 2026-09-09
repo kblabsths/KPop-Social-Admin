@@ -50,9 +50,11 @@ export type EvidenceClaim = {
  * admin-window/BUG-0137; campaign admin-window/DEBT-0011 criteria 2 and 4).
  *
  * So the caller hands over the PARTS and this file renders them: every
- * `identifier` goes through `<Identifier muted>`, which renders the very class
- * pair `DATA_MUTED` spells — the face is unchanged and the added property is the
- * isolation. The app's own words stay text, and the SEPARATOR between segments
+ * `identifier` goes through `MachineValue`, which puts a present value in
+ * `<Identifier muted>` — the very class pair `DATA_MUTED` spells, so the face
+ * is unchanged and the added property is the isolation — and an absent one
+ * through the app's own absence element instead (admin-window/BUG-0152). The
+ * app's own words stay text, and the SEPARATOR between segments
  * is this component's, never the caller's, for the reason `MicroLabel` splits an
  * eyebrow the same way (`src/components/ui/micro-label.tsx`): a value the app
  * concatenated into a string can no longer be treated as a value.
@@ -66,7 +68,12 @@ export type ProvenanceSegment =
   | {
       /** The app's own words BEFORE the value: "the claim it applied is now". */
       before?: string;
-      /** The machine value itself — a source name, a tier, a claim status. Verbatim. */
+      /**
+       * The machine value itself — a source name, a tier, a claim status.
+       * Verbatim when it has anything visible in it; when it has not, the line
+       * draws the app's absence element in its place, exactly as the claim line
+       * does (admin-window/BUG-0152).
+       */
       identifier: string;
       /** The app's own words AFTER it: "at apply". */
       after?: string;
@@ -89,12 +96,15 @@ function CardValue({ value }: { value: string | null }) {
 }
 
 /**
- * One machine value on the claim line — the source's own name, the source's
- * tier — in the identifier primitive's isolated box
- * (admin-window/BUG-0151, DEBT-0011 criteria 2 and 4).
+ * One machine value on a card's secondary line, in the identifier primitive's
+ * isolated box — the claim line's source and tier, and every `identifier`
+ * segment of the canonical card's provenance line
+ * (admin-window/BUG-0151, BUG-0152, DEBT-0011 criteria 2 and 4).
  *
- * Both are foreign text: `claim.source` is the source's own name straight out
- * of the pipeline and `claim.tier` is `sources.tier`, and
+ * All of them are foreign text: `claim.source` is the source's own name
+ * straight out of the pipeline, `claim.tier` is `sources.tier`, and the
+ * provenance line's parts are that same name, the tier frozen at the apply and
+ * the status the applied claim now carries — and
  * `src/components/ui/identifier.tsx` names exactly that class of value as what
  * the primitive is for ("a source's own name"). Hand-facing them with
  * `DATA_MUTED` left them un-isolated inside the line's own bidi paragraph, so
@@ -106,9 +116,16 @@ function CardValue({ value }: { value: string | null }) {
  *
  * An ABSENT value is not a machine value at all: it is the app's own absence
  * element (`orDash`, admin-window/BUG-0134), so it is returned unwrapped —
- * isolating the app's own dash would be the same category error in reverse.
+ * isolating the app's own dash would be the same category error in reverse,
+ * and wrapping it anyway draws an EMPTY box that announces no absence at all.
+ *
+ * Both lines of the canonical card ask THIS function rather than each writing
+ * the guard again: the provenance line wrapped its parts unconditionally and so
+ * drew that empty box while the claim line beside it drew the dash
+ * (admin-window/BUG-0152) — one helper is what keeps the two lines on one card
+ * answering "nothing here" the same way (LESSONS 5, 7).
  */
-function ClaimValue({ value }: { value: string | null }) {
+function MachineValue({ value }: { value: string | null }) {
   if (isAbsent(value)) return <>{orDash(value)}</>;
   return <Identifier muted>{value}</Identifier>;
 }
@@ -134,6 +151,11 @@ const SEPARATOR = " · ";
  * the same split `Eyebrow` makes for an eyebrow — so an unterminated bidi
  * control in the value can reorder the value and nothing else, and the app's
  * sentence reads in the order it was written.
+ *
+ * The value goes through `MachineValue`, the same guard the claim line uses, so
+ * a segment whose identifier has nothing visible in it draws the app's absence
+ * element instead of an empty isolated box (admin-window/BUG-0152). The app's
+ * own words beside it are still the app's, and are still rendered.
  */
 function ProvenancePart({ segment }: { segment: ProvenanceSegment }) {
   if (typeof segment === "string") return <>{segment}</>;
@@ -145,7 +167,7 @@ function ProvenancePart({ segment }: { segment: ProvenanceSegment }) {
           {" "}
         </>
       )}
-      <Identifier muted>{segment.identifier}</Identifier>
+      <MachineValue value={segment.identifier} />
       {segment.after === undefined ? null : (
         <>
           {" "}
@@ -210,9 +232,9 @@ export function EvidencePair({
               * this line wears the class.
               */}
             <span className={DATA_MUTED}>
-              <ClaimValue value={claim.source} />
+              <MachineValue value={claim.source} />
               {SEPARATOR}
-              <ClaimValue value={claim.tier} />
+              <MachineValue value={claim.tier} />
               {SEPARATOR}
               <span title={age.title || undefined}>{orDash(age.text)}</span>
             </span>
