@@ -307,9 +307,9 @@ function ItemVerdictBlock({ verdict }: { verdict: InlineVerdict }) {
         {observation === null ? (
           orDash(null)
         ) : verdict.observationHref === null ? (
-          <span data-verdict-observation={observation} className="type-data">
+          <Identifier data-verdict-observation={observation}>
             {observation}
-          </span>
+          </Identifier>
         ) : (
           <a
             href={verdict.observationHref}
