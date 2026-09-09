@@ -1,12 +1,14 @@
-# Tracker index (regenerated 2026-09-09T11:10:32Z — do not edit)
+# Tracker index (regenerated 2026-09-09T11:11:54Z — do not edit)
 
 ## open
-- BUG-0118 [P2][bug][M2] The claim list's FILLED window counts one bucket and calls it 'these filters': /claims?tab=standing states its held count over a narrowing the sentence never names  (scope:src/components/ui/window-line.tsx,src/app/claims/page.tsx,tests/offline/claims/page.test.ts from:BUG-0109)
 - BUG-0111 [P3][bug][M2] The entity picker's saved confirmation never retires — the 1.5s clock lives in EditableCell alone, and the picker renders the same status without one  (scope:src/components/records/entity-picker.tsx,tests/offline/records/entity-picker.test.ts from:designer:endgame-walk)
 - BUG-0112 [P3][bug][M2] The record page's regime note sets its table name in sans — three table names on one screen, two in mono and the one in the prose not  (scope:src/components/records/record-fields.tsx,tests/offline/records/page.test.ts from:designer:endgame-walk)
 - BUG-0117 [P3][bug][M2] The review header's out-links draw half their own words in secondary ink, and three files retype the app's one link spelling instead of importing it  (deps:BUG-0115(unmet:1) scope:src/components/review/item-header.tsx,src/components/review/close/slot.tsx,src/app/not-found.tsx,tests/offline/ui/link-spelling.test.ts,tests/offline/review-item/page.test.ts from:BUG-0113)
 
-## built
+## claimed
+- BUG-0118 [P2][bug][M2] The claim list's FILLED window counts one bucket and calls it 'these filters': /claims?tab=standing states its held count over a narrowing the sentence never names  (scope:src/components/ui/window-line.tsx,src/app/claims/page.tsx,tests/offline/claims/page.test.ts @builder-183 from:BUG-0109)
+
+## qa
 - BUG-0115 [P2][bug][M2] The Dashboard's attention cards put a chip inside the link: the severity badge dissolves into the card under the pointer  (scope:src/app/page.tsx,src/components/ui/stat-card.tsx,src/components/ui/badge.tsx,tests/offline/dashboard/page.test.ts,tests/offline/ui/link-spelling.test.ts,tests/offline/ui/primitives.test.ts @builder-182 from:BUG-0113)
 
 ## blocked
@@ -15,4 +17,4 @@
 ## reopened
 - BUG-0110 [P3][bug][M2] '0 ran longer than the 15m cadence' stands bare beside four cycles that never finished — the Zeroes bar, on the card the doc quotes  (scope:src/components/cycles/cycle-health.tsx,tests/offline/cycles/page.test.ts from:designer:endgame-walk)
 
-Totals — blocked:1, built:1, done:67, open:4, reopened:1, wont_fix:1. Archived: 124.
+Totals — blocked:1, claimed:1, done:67, open:3, qa:1, reopened:1, wont_fix:1. Archived: 124.
