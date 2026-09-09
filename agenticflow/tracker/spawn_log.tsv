@@ -18159,3 +18159,7 @@
 2026-09-09T12:44:56Z	agent	-	-	-	-
 # STRANDED	2026-09-09T12:45:28Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0121.md
 2026-09-09T12:45:28Z	agent	-	-	-	-
+# STRANDED	2026-09-09T12:46:00Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T12:46:00Z	agent	-	-	-	-
+# STRANDED	2026-09-09T12:46:31Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0120.json
+2026-09-09T12:46:31Z	agent	-	-	-	-
