@@ -1,7 +1,12 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { NAV_ITEMS, isNavItemActive } from "@/components/shell/nav-items";
-import { EDITABLE_TABLES, EDIT_CONFIG, mappedColumns } from "@/lib/edit/config";
+import {
+  EDITABLE_TABLES,
+  EDIT_CONFIG,
+  mappedColumns,
+  writePathFor,
+} from "@/lib/edit/config";
 import { T } from "@/lib/db/tables";
 import { EM_DASH, isAbsent } from "@/lib/format";
 import { isRecordId } from "@/lib/db/records";
@@ -1849,5 +1854,107 @@ describe("a resolver-owned record", () => {
         ).toBeGreaterThan(0);
       }
     });
+  });
+});
+
+/* ── the regime note: whose words are whose ───────────────────────────────── */
+
+/**
+ * The note above the field table names the table, and a table name is the
+ * machine's word — campaign admin-window/BUG-0112, designer's M2 endgame walk.
+ *
+ * LOOK_AND_FEEL's type split is the whole typographic idea: mono carries every
+ * value the database produced, sans carries every word the app wrote, "so the
+ * operator can always see which words are the machine's" (Voice bar 5: machine
+ * identifiers "render verbatim in mono"). The walk read THREE table names on
+ * one record screen — the heading's, the not-provisioned card's and the regime
+ * note's — and only the note's was set in the app's own voice, in the same face
+ * as the prose around it, underscore and all (`walk_sandbox` was the loudest).
+ *
+ * These assertions take their yardstick off the page itself rather than naming
+ * a face: the note's identifier must read in whatever face the HEADING above it
+ * gives the same name, and the words around it must read in whatever the page's
+ * other prose note is drawn in. No literal class, no pinned sentence — a later
+ * restyle of either face moves both sides of the comparison together, and the
+ * only way to go red is to make one of the three names on the screen disagree
+ * with the others again.
+ */
+describe("the regime note", () => {
+  /** The note, addressed by name like this page's other two (ARCHITECTURE §10). */
+  function note($: cheerio.CheerioAPI, table: string) {
+    const found = $('[data-note="regime"]');
+    expect(found.length, `${table} draws one regime note`).toBe(1);
+    return found;
+  }
+
+  /** The span inside `scope` whose whole text is the table's name, verbatim. */
+  function namesTheTable(
+    $: cheerio.CheerioAPI,
+    scope: ReturnType<cheerio.CheerioAPI>,
+    table: string,
+    what: string,
+  ) {
+    const found = scope
+      .find("span")
+      .toArray()
+      .filter((element) => $(element).text() === table);
+    expect(found.length, `${what} sets ${table} in one element of its own`).toBe(1);
+    return $(found[0]);
+  }
+
+  it("sets the table's name in the face the heading above it uses, in both regimes", async () => {
+    // Both write paths are represented, so this is not one regime's guard
+    // wearing a loop (LESSONS 3): `walk_sandbox` is the underscored name the
+    // walk called loudest, `events`/`venues` the pair either side of it.
+    expect(
+      new Set(EDITABLE_TABLES.map((table) => writePathFor(EDIT_CONFIG[table].regime))).size,
+    ).toBeGreaterThan(1);
+    for (const table of EDITABLE_TABLES) {
+      const $ = cheerio.load(await renderRecord(table));
+      const paragraph = note($, table);
+      const inTheNote = namesTheTable($, paragraph, table, "the note");
+      const inTheHeading = namesTheTable($, $("h1"), table, "the heading");
+      // The defect: the note's name in the paragraph's own prose face, on a
+      // page whose heading sets the same name as the machine's word.
+      expect(
+        faceOf(classesOf(inTheNote)),
+        `${table} reads differently in the note than in the heading above it`,
+      ).toEqual(faceOf(classesOf(inTheHeading)));
+      // ...and that agreement is not reached by the heading drifting into the
+      // prose face: the identifier is drawn in something the paragraph is not.
+      expect(faceOf(classesOf(inTheNote)), table).not.toEqual(
+        faceOf(classesOf(paragraph)),
+      );
+      // Verbatim, which is the other half of Voice bar 5 — the case and the
+      // underscore survive the wrapping.
+      expect(inTheNote.text(), table).toBe(table);
+    }
+  });
+
+  it("leaves the words the app wrote around it exactly as the page's other prose", async () => {
+    // The yardstick is the page's own second note, so this pins no face, no
+    // type step and no ink of its own: the regime note must be drawn in
+    // whatever the provenance legend beside it is drawn in, which is what
+    // "only the face of one word changed" means here.
+    const $ = cheerio.load(await renderRecord("events"));
+    const legend = $('[data-note="provenance-absence"]');
+    expect(legend.length).toBe(1);
+    expect(classesOf(note($, "events"))).toEqual(classesOf(legend));
+  });
+
+  it("keeps the sentence whole: the name leads it once, with the app's words after", async () => {
+    for (const table of EDITABLE_TABLES) {
+      const $ = cheerio.load(await renderRecord(table));
+      const text = note($, table).text().replace(/\s+/g, " ").trim();
+      // Wrapping a word is not rewriting a sentence: the name still opens the
+      // note, separated by one space from the words that follow it, and it is
+      // not repeated by a wrap that left the old copy behind.
+      expect(text.startsWith(`${table} `), `${table} no longer opens its note`).toBe(
+        true,
+      );
+      expect(text.split(table).length - 1, `${table} is said more than once`).toBe(1);
+      // ...and the app's own sentence is still there after it.
+      expect(text.slice(table.length).trim().length, table).toBeGreaterThan(40);
+    }
   });
 });

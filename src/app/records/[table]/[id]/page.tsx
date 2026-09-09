@@ -102,14 +102,22 @@ import { EM_DASH } from "@/lib/format";
  * ecosystem domain: a value written there reaches no catalog and never did,
  * and the old wording was an inaccuracy the regime name was carrying. Since
  * Ben's strike, no catalog table has a direct write path at all.
+ *
+ * **The table's NAME is not in this string** (admin-window/BUG-0112). A table
+ * name is a value the database produced, not a word the app wrote, so it is
+ * drawn by the caller in the app's one identifier-in-prose spelling — the same
+ * one `NotProvisioned` gives the table it names and `Page` gives this page's
+ * own heading — and what this function returns is only the words the app wrote
+ * about it. The sentence on screen is unchanged: it still opens with the name,
+ * followed by these words.
  */
 function regimeNote(config: TableEditConfig): string {
   return writePathFor(config.regime) === "direct"
-    ? `${config.table} is a staging fixture table, edited directly: a value ` +
+    ? `is a staging fixture table, edited directly: a value ` +
         `changed here is written to it as it stands and reaches no catalog ` +
         `record. No field provenance is recorded for it, so no source is ` +
         `shown beside a value.`
-    : `${config.table} is resolver-owned: its values change through the ` +
+    : `is resolver-owned: its values change through the ` +
         `resolution pipeline, never by a direct edit. An edit here is ` +
         `recorded as an admin override — a claim at the admin tier, ` +
         `applied through the pipeline and logged — and the pipeline then ` +
@@ -311,7 +319,18 @@ function RecordFrame({
           emptiness, a leg's error line — renders inside it, so the name
           addresses the whole read (admin-window/TASK-0052). */}
       <Section title="Fields" surface="fields">
-        <p className="type-body text-ink-secondary">{regimeNote(config)}</p>
+        {/* The regime note, addressed by name like this page's other two
+            (ARCHITECTURE §10). The table's name opens it and is the machine's
+            word, so it is set in the app's identifier-in-prose spelling —
+            mono at the data step, verbatim, case and underscore intact — while
+            everything the app wrote about it stays body sans in secondary ink.
+            Three names of the same kind stand on this screen (this one, the
+            heading's and the not-provisioned card's) and they now read alike
+            (LOOK_AND_FEEL Voice bar 5; admin-window/BUG-0112). */}
+        <p data-note="regime" className="type-body text-ink-secondary">
+          <span className="type-data text-ink">{config.table}</span>{" "}
+          {regimeNote(config)}
+        </p>
         {children}
       </Section>
     </Page>
