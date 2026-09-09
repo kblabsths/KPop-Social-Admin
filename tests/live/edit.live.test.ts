@@ -2,8 +2,16 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { EDIT_CONFIG, type TableEditConfig } from "@/lib/edit/config";
 import { EM_DASH } from "@/lib/format";
-import { independentClient, renderPage } from "./parity";
+import { codeOf, independentClient, renderPage } from "./parity";
 import { withSweep } from "./sweep";
+import { resetSandbox } from "../walk/reset-sandbox.mjs";
+import {
+  SANDBOX_COLUMNS,
+  SANDBOX_FIXTURE,
+  SANDBOX_PK,
+  SANDBOX_TABLE,
+  SANDBOX_WALK_KEY,
+} from "../walk/sandbox-fixture";
 
 /**
  * The edit surface against staging (campaign admin-window/TASK-0018) —
@@ -13,7 +21,10 @@ import { withSweep } from "./sweep";
  * recorded before it happens and undone in a `finally` by `withSweep`, so a
  * failing assertion — the case that actually leaves residue — still restores
  * the row. Each edit is then read back a THIRD time, after the sweep, to prove
- * the restore landed rather than merely being attempted.
+ * the restore landed rather than merely being attempted. The walk-sandbox
+ * block at the foot varies the MECHANISM and not the rule: its undo is
+ * `resetSandbox` in the same `finally`, which puts every row of that table
+ * back rather than the one column that was written.
  *
  * Two paths to one answer (ARCHITECTURE.md §10): the write goes through the
  * app — the PATCH route, then the record page's own read for the reload — and
@@ -344,5 +355,126 @@ describe("a resolver-owned record page", () => {
         );
       }
     }
+  });
+});
+
+/* ── the walk sandbox: the write path's own table ─────────────────────────── */
+
+/**
+ * `public.walk_sandbox` against the real PostgREST (campaign
+ * admin-window/TASK-0037).
+ *
+ * The offline suite proves the reset tool's DML shape against a stub client
+ * and its refusals against the real binary, and says in its own docstring what
+ * it cannot prove: "the present-case round trip against a real PostgREST",
+ * because the table did not exist when it was written. Ben pasted the DDL onto
+ * staging on 2026-09-08 and it does, so this is that missing half — and with
+ * `groups`/`idols` gone from the direct-write side, it is the live suite's
+ * ONLY proof that a mapped column can be written at all.
+ *
+ * It is also the automated form of the walk's own discipline (STACK.md §5
+ * step 3): reset, edit through the surface, reset again, and read the rows
+ * back to show the second reset restored the checked-in fixture exactly. The
+ * `finally` is the reset, not `withSweep` — the sandbox's undo IS its reset,
+ * which restores every row rather than the one column that was touched, so a
+ * failure part-way through still leaves the next walk the state it expects.
+ *
+ * The probe value carries the campaign marker like every other write here, so
+ * `residue.live.test.ts` — which now finds the table present and sweeps its
+ * text columns instead of skipping it — would catch a reset that did not run.
+ */
+describe("the walk sandbox", () => {
+  /** This block's own stamp, so residue here names the ticket that wrote it. */
+  const SANDBOX_PROBE = "admin-window/TASK-0037 probe";
+
+  /** The fixture's columns of a row PostgREST returned, and nothing else. */
+  function projected(row: Row): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const column of SANDBOX_COLUMNS) out[column] = row[column];
+    return out;
+  }
+
+  /** Every sandbox row, in key order, projected onto the fixture's columns. */
+  async function sandboxRows(): Promise<Record<string, unknown>[]> {
+    const { data, error } = await independentClient()
+      .from(SANDBOX_TABLE)
+      .select(SANDBOX_COLUMNS.join(","))
+      .order(SANDBOX_PK, { ascending: true });
+    if (error) {
+      throw new Error(
+        `reading ${SANDBOX_TABLE} failed (${codeOf(error)}): ${error.message}. ` +
+          `If the code is an absence code the table is not on this project — ` +
+          `it is created BY HAND from the SQL in ` +
+          `agenticflow/tracker/for-human/TASK-0034.md, and without it this ` +
+          `suite has no write surface at all.`,
+      );
+    }
+    return (data ?? []).map((row) => projected(row as unknown as Row));
+  }
+
+  /** The checked-in fixture, in the same shape `sandboxRows` returns. */
+  function fixtureRows(): Record<string, unknown>[] {
+    return [...SANDBOX_FIXTURE]
+      .sort((left, right) => left.sandbox_id.localeCompare(right.sandbox_id))
+      .map((row) => projected(row as unknown as Row));
+  }
+
+  it("edits a mapped column through the surface, and a reset restores the fixture", async () => {
+    const config = EDIT_CONFIG[SANDBOX_TABLE];
+    const id = SANDBOX_WALK_KEY;
+    // `note` is nullable text: the column the walk recipe's absence-then-fill
+    // path uses, and one the residue sweep can actually scan.
+    const field = "note";
+    expect(config.editable).toContain(field);
+    const probe = `${SANDBOX_PROBE} ${field} ${Date.now()}`;
+
+    await resetSandbox(independentClient());
+    expect(await sandboxRows()).toEqual(fixtureRows());
+
+    try {
+      const written = await patch(SANDBOX_TABLE, id, { field, value: probe });
+      expect(written.status, JSON.stringify(written.body)).toBe(200);
+
+      // Reload 1: the database, read by this test's own client.
+      expect((await wholeRow(config, id))[field]).toBe(probe);
+
+      // Reload 2: the surface an operator comes back to — and it is the OK
+      // state with a control on that field, not the not-provisioned card and
+      // not the not-an-id empty state.
+      const markup = await renderPage(RecordPage, {
+        params: Promise.resolve({ table: SANDBOX_TABLE, id }),
+      });
+      expect(markup).toContain(probe);
+      expect(drawnFields(markup)).toContain(field);
+      const $ = cheerio.load(markup);
+      for (const editable of config.editable) {
+        expect(
+          $(`[aria-label="${editable} of ${SANDBOX_TABLE}"]`).length,
+          `${editable} drew no edit control, so this page is not the OK state`,
+        ).toBeGreaterThan(0);
+      }
+    } finally {
+      await resetSandbox(independentClient());
+    }
+
+    // The point of the sandbox: two consecutive walks start from identical
+    // rows, however thoroughly the first one edited them.
+    expect(await sandboxRows()).toEqual(fixtureRows());
+  });
+
+  it("refuses a column the map does not carry, and changes nothing", async () => {
+    const config = EDIT_CONFIG[SANDBOX_TABLE];
+    const id = SANDBOX_WALK_KEY;
+    const before = await wholeRow(config, id);
+
+    for (const field of [SANDBOX_PK, "created_at"]) {
+      const { status, body } = await patch(SANDBOX_TABLE, id, {
+        field,
+        value: `${SANDBOX_PROBE} forged`,
+      });
+      expect(status, `${SANDBOX_TABLE}.${field}: ${JSON.stringify(body)}`).toBe(403);
+    }
+
+    expect(await wholeRow(config, id)).toEqual(before);
   });
 });

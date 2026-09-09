@@ -1009,3 +1009,44 @@ Door closed: no `.rpc()` call made for the purpose of discovery, and no
 "pending overrides" queue, retry buffer, or flag-guarded direct write standing in
 for the absent function — spec §10's one forbidden move, which this campaign
 treats as its brightest line.
+
+## 2026-09-08 — the walk sandbox is real: the reset round trip is measured on staging, and the sandbox is the only write surface a walk has
+
+Ben pasted the DDL into the staging SQL editor, so `public.walk_sandbox` and its
+three seed rows exist on `ubfjjqlvnpnoborczbdb.supabase.co`. What had never been
+measured before — the offline suite says so in its own docstring — is the
+present-case round trip against a real PostgREST; it has been now
+(admin-window/TASK-0037), and the recipe in STACK.md §5 step 3 carries the
+numbers.
+
+**What was measured.** The launch block in step 3, pasted into a fresh shell,
+exits 0: `deleted 3, seeded 3, read back and verified`. On a production build of
+this tree, `/records/walk_sandbox/00000000-0000-4000-8000-000000000001` renders
+the OK state — six field lines, an edit control on each of the five mapped
+editable columns and none on `sandbox_id` — not the not-provisioned card and not
+the not-an-id empty state. `note` was rewritten through the cell, survived a
+reload, and a second reset put all three rows back byte-identical to
+`tests/walk/sandbox-fixture.ts` over `SANDBOX_COLUMNS`. Both refusals still exit
+1 having touched nothing: the two names unset, and a host `SERVICES.md` does not
+declare. The deliberate `23502` path works too — clearing `label` shows the
+database's own refusal, reverts the cell, and leaves the stored value intact.
+
+**The cadence is unchanged and is now cheap to keep.** Reset immediately before
+every walk, mandatory; again after a walk that wrote, optional. Nothing about
+that turns on a date: step 3's own exit code is still the test.
+
+**What this decides.** The sandbox is the **only** write surface a walk has, and
+a save-path walk that cannot reach it is a narrowed walk that says so in its
+report — never a write somewhere else. The round trip is pinned by the
+walk-sandbox block of `tests/live/edit.live.test.ts`, which is the live suite's
+only remaining proof that a mapped column can be written at all, and its undo is
+`resetSandbox` in a `finally` rather than `withSweep`: the sandbox's undo
+restores every row, not the one column that was touched. The residue sweep now
+scans the table (`5 of 5 mapped table(s)`) instead of skipping it, and was
+observed on both fixtures — a marker written into `walk_sandbox.note` failed it
+naming `walk_sandbox.note: 1 row(s)`, and the reset made it pass again.
+
+**The door this closes.** No walker needs to establish which walk-write rule it
+is under by reading a doc's age, and no future ticket may re-derive a
+catalog-row write path from the sandbox being unreachable: an unreachable
+sandbox narrows the walk, it does not widen the target.

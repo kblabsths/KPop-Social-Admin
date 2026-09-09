@@ -265,8 +265,9 @@ empty or whitespace-only, the CLI exits non-zero naming that one name and mints
 nothing — there is no fallback to invent.
 
 **3. Reset the walk sandbox — immediately before every walk, mandatory.**
-`public.walk_sandbox` is the ONLY table a walk WRITES to once it exists (see the
-caveats below), and running this is also how you find out whether it does. It
+`public.walk_sandbox` is the ONLY table a walk WRITES to, and it **is on
+staging** — Ben pasted the DDL on 2026-09-08 (see the caveats below). Running
+this is still how you confirm that for yourself before you plan a save. It
 exists on staging only, and this puts it back to its three seed rows so the
 walk you are about to run starts from the same state the last one did:
 
@@ -283,6 +284,30 @@ uses (a host that is not the target declared in `agenticflow/docs/SERVICES.md`
 is a non-zero refusal that writes nothing). Run it **before** every walk, not
 just after one: a before-reset is the only one a crashed or abandoned walk
 cannot skip. Running it again after a walk that wrote is welcome but optional.
+
+**Measured 2026-09-08 on `ubfjjqlvnpnoborczbdb.supabase.co`
+(admin-window/TASK-0037), by pasting the block above into a fresh shell:** it
+exits **0** and prints `walk_sandbox reset on ubfjjqlvnpnoborczbdb.supabase.co
+(declared staging target "ubfjjqlvnpnoborczbdb"): deleted 3, seeded 3, read back
+and verified against tests/walk/sandbox-fixture.ts.` The cadence above was then
+exercised end to end on a production build of this tree: reset, then `note` of
+row `…0001` rewritten from `A note a walker may rewrite.` to a probe **through
+the cell on the record page** (200, and the value survived a reload), then the
+same block again — after which all three rows read back byte-identical to
+`tests/walk/sandbox-fixture.ts`, compared column by column. `created_at` is the
+one column two resets do not leave identical: it is re-set by the column default
+on every insert and is outside the map, which is why the comparison is over
+`SANDBOX_COLUMNS` and not `select("*")`. Both refusals were re-run the same day
+and both still exit **1**, having read and written nothing: the two names unset
+(`env -u SUPABASE_URL -u SUPABASE_SERVICE_ROLE_KEY node
+tests/walk/reset-sandbox.mts`) names those two names, and a `SUPABASE_URL`
+pointing at a host `SERVICES.md` does not declare names the host and the
+declared target. The round trip is now automated too, as the walk-sandbox block
+of `tests/live/edit.live.test.ts`, and `npm run test:live --
+tests/live/residue.live.test.ts` now SWEEPS the sandbox rather than reporting it
+absent — `5 of 5 mapped table(s)`, `walk_sandbox: scanned 2 text column(s) …
+[label=0, note=0]` — so a walk that leaves a stamped value in `label` or `note`
+is caught by the same sweep everything else is.
 
 Four things about that command, so nothing below is a surprise:
 
@@ -308,9 +333,15 @@ Four things about that command, so nothing below is a surprise:
     `tests/walk/reset-sandbox.mts`, raised from the database's own absence code
     (`PGRST205` / `42P01`) on a real read. **Every other non-zero exit is a
     refusal that says nothing about the table** — see the next branch — and
-    none of them puts you here. Measured 2026-09-04: this is the branch staging
-    is on (`ubfjjqlvnpnoborczbdb.supabase.co`, sweep agrees: `walk_sandbox: not
-    present`).
+    none of them puts you here. **Staging is no longer on this branch.** It was
+    when that was measured on 2026-09-04; Ben has since pasted the DDL, and on
+    2026-09-08 the same block succeeded on `ubfjjqlvnpnoborczbdb.supabase.co`
+    (`deleted 3, seeded 3`) while the residue sweep scanned the table instead
+    of reporting it absent (admin-window/TASK-0037). The branch is kept because
+    the refusal, not a date and not this paragraph, is still the only test
+    worth trusting — a project without the paste lands here — but a walker who
+    meets it on staging today has hit a refusal about the RUN, and should read
+    the next branch.
 
     **RETIRED 2026-09-08 — what this branch used to say.** Until that date it
     told a save-path walk to edit one field of one existing `groups`/`idols`
