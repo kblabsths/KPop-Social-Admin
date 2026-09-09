@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T20:23:03Z — do not edit)
+# Tracker index (regenerated 2026-09-09T20:23:56Z — do not edit)
 
 ## open
 - DEBT-0009 [P2][debt][M2] The app's one uuid grammar (isRecordId/canonicalRecordId) is pure but lives in lib/db/records.ts, so no leaf may import it and /claims never got it  (deps:DEBT-0008 scope:src/lib/db/records.ts,src/lib/records/id.ts,src/app/sources/page.tsx,src/app/claims/page.tsx,src/app/records/[table]/[id]/page.tsx,src/app/queues/[reviewItemId]/page.tsx,src/app/api/admin/review-items/[reviewItemId]/settle/route.ts,tests/offline/db/records.test.ts,tests/offline/claims/page.test.ts)
