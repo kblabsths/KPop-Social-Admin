@@ -381,3 +381,127 @@ describe("the credential guard itself", () => {
     expect(filesWhereCodeMatches(SUPABASE_CREDENTIAL_READ)).toContain(CLIENT);
   });
 });
+
+/**
+ * The import scanner, over CODE lines only (`codeText` drops commentary), so a
+ * docstring explaining what the leaf may not import stays documentation.
+ *
+ * Four spellings reach a module: a top-level `import`, a `require(` call, a
+ * dynamic `import(…)`, and any clause naming a module specifier after `from` —
+ * which is what catches a re-export (`export { x } from "./y"`).
+ */
+const IMPORT_LINE = /^\s*import\b|\brequire\s*\(|\bimport\s*\(|\bfrom\s+["']/;
+
+/** The import lines of one file, as the leaf rule reads them. */
+function importLines(file: string): string[] {
+  return codeText(file)
+    .split("\n")
+    .filter((line) => IMPORT_LINE.test(line));
+}
+
+/**
+ * ARCHITECTURE §4 rule 7 — **the pure domain leaves import NOTHING**, asserted
+ * over the LEAF SET rather than one file at a time (campaign
+ * admin-window/TASK-0042).
+ *
+ * A leaf holds the vocabulary and pure functions over it, and `lib/db/**`
+ * imports the leaf. The leaf importing back — even a type-only import, which
+ * erases at runtime — writes a directory-level cycle into this contract, and
+ * the day someone widens it to a value import the cycle is real with nothing
+ * to catch it.
+ *
+ * `tests/offline/edit/config.test.ts` keeps its own copy of this assertion for
+ * `lib/edit/config.ts` alone, and it stays: §4 rule 8 names that test by name
+ * as what pins the BUILD HOST's one arrow (`next.config.ts` imports the leaf,
+ * outside the app's module graph and outside the `@/` alias, so it only holds
+ * while that file imports nothing). This block is the rule for the leaf SET,
+ * which is what a new leaf joins.
+ */
+describe("the pure domain leaves", () => {
+  const LEAF_MODULES = [
+    "src/lib/edit/config.ts",
+    // The verdict decision envelope: the one shape `settle_review_item` reads,
+    // built by every M2 surface (ARCHITECTURE §9.2, admin-window/TASK-0042).
+    "src/lib/verdict/decision.ts",
+  ];
+
+  it("still contains every file the leaf set names", () => {
+    // The same ratchet the exemptions take, for the opposite reason: a leaf
+    // that has been renamed or deleted has no import lines either, so without
+    // this the rule below would pass vacuously on a file that is gone.
+    for (const leaf of LEAF_MODULES) {
+      expect(fs.existsSync(path.join(repoRoot, leaf)), `${leaf} is gone — fix the leaf set`).toBe(
+        true,
+      );
+    }
+  });
+
+  it("imports nothing, in any leaf", () => {
+    for (const leaf of LEAF_MODULES) {
+      expect(importLines(leaf), leaf).toEqual([]);
+    }
+  });
+});
+
+/**
+ * The guard guarding itself, in the manner of the credential guard above: the
+ * leaf rule is only as good as the spelling it recognises, so each case writes
+ * a probe under `src/` and asserts what the SAME reader the rule uses reports
+ * about it. Two fixtures, always — one the guard must flag, one it must not
+ * (LESSONS 3).
+ */
+describe("the leaf-import guard itself", () => {
+  /** Dot-hidden, for the reasons the credential probe above states. */
+  const PROBE = "src/.probes/__leaf_import_probe__.ts";
+  const probePath = path.join(repoRoot, PROBE);
+  const probeDir = path.dirname(probePath);
+
+  /** What the leaf rule reports while `source` sits under `src/` as PROBE. */
+  function scanLeafProbe(source: string): string[] {
+    fs.mkdirSync(probeDir, { recursive: true });
+    fs.writeFileSync(probePath, source, "utf8");
+    try {
+      return importLines(PROBE);
+    } finally {
+      fs.rmSync(probeDir, { force: true, recursive: true });
+    }
+  }
+
+  it("reddens the leaf assertion when an import is added, in every spelling", () => {
+    for (const source of [
+      'import { T } from "@/lib/db/tables";\nexport const x = T;\n',
+      'import type { DbResult } from "@/lib/db/result";\nexport type R = DbResult<number>;\n',
+      'import "@/lib/db/client";\n',
+      '\timport { createClient } from "@supabase/supabase-js";\n',
+      'const { T } = require("@/lib/db/tables");\n',
+      'export { T } from "@/lib/db/tables";\n',
+      'export const late = async () => await import("@/lib/db/client");\n',
+    ]) {
+      expect(scanLeafProbe(source), source).not.toEqual([]);
+    }
+  });
+
+  it("says nothing about a leaf that imports nothing, and leaves nothing behind", () => {
+    // The fixture the guard must NOT flag: a real leaf's shape — a docstring
+    // naming the imports it forbids, a word containing "import", and a string
+    // holding the word — none of which is an import.
+    const source =
+      "/**\n" +
+      " * A leaf: it must not import from `lib/db/**`, and a `require(` here is\n" +
+      ' * documentation. Nor `export { x } from "./y"`.\n' +
+      " */\n" +
+      'export const IMPORTANT = "important";\n' +
+      "export function importantly(n: number): number {\n" +
+      "  return n + 1;\n" +
+      "}\n";
+    expect(scanLeafProbe(source)).toEqual([]);
+    expect(fs.existsSync(probeDir)).toBe(false);
+  });
+
+  it("reads the leaf set through the same scanner, on the real files", () => {
+    // Non-vacuous the other way: the scanner reaches the actual leaves rather
+    // than only a probe, and a file it cannot read would report [] forever.
+    expect(codeText("src/lib/edit/config.ts").length).toBeGreaterThan(0);
+    expect(codeText("src/lib/verdict/decision.ts").length).toBeGreaterThan(0);
+  });
+});

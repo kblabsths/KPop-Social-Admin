@@ -1,0 +1,357 @@
+import { describe, expect, it } from "vitest";
+import {
+  VERDICT_ACTIONS,
+  decisionRefusals,
+  noteRequired,
+  type VerdictAction,
+  type VerdictDecision,
+  type VerdictValue,
+} from "@/lib/verdict/decision";
+
+/**
+ * The verdict decision envelope — campaign admin-window/TASK-0042, the leaf
+ * every other M2 surface builds and the §9 handoff artifact's SQL reads.
+ *
+ * The bar this file holds: one WELL-FORMED decision per action refuses
+ * nothing, and each of the six invariants of `decisionRefusals` has an input
+ * it MUST flag beside one it must NOT (LESSONS 3 — a guard proved on one
+ * fixture can be vacuous). The action set is iterated, never hand-listed, so a
+ * ninth action cannot arrive unseen.
+ */
+
+/** A `VerdictValue` with every payload slot empty; each fixture fills one. */
+function valueOf(overrides: Partial<VerdictValue> = {}): VerdictValue {
+  return {
+    domain: "events",
+    entity_id: "11111111-1111-4111-8111-111111111111",
+    field: "title",
+    observation_id: null,
+    value: null,
+    ref: null,
+    ...overrides,
+  };
+}
+
+function decisionOf(overrides: Partial<VerdictDecision> = {}): VerdictDecision {
+  return {
+    action: "keep_current",
+    review_item_id: "22222222-2222-4222-8222-222222222222",
+    actor: "admin@example.test",
+    note: null,
+    value: null,
+    ...overrides,
+  };
+}
+
+/**
+ * One WELL-FORMED decision per action — the eight fixtures of acceptance
+ * criterion 3, keyed by action so the iteration below cannot silently skip one.
+ */
+const WELL_FORMED: Readonly<Record<VerdictAction, VerdictDecision>> = {
+  choose_claimed_value: decisionOf({
+    action: "choose_claimed_value",
+    value: valueOf({ observation_id: "33333333-3333-4333-8333-333333333333" }),
+  }),
+  supply_value: decisionOf({
+    action: "supply_value",
+    value: valueOf({ value: "BLACKPINK at the Forum" }),
+  }),
+  keep_current: decisionOf({ action: "keep_current" }),
+  link_entity: decisionOf({
+    action: "link_entity",
+    value: valueOf({
+      domain: "venues",
+      field: "venue",
+      ref: "44444444-4444-4444-8444-444444444444",
+    }),
+  }),
+  settle: decisionOf({ action: "settle" }),
+  fixed: decisionOf({ action: "fixed" }),
+  wont_fix: decisionOf({
+    action: "wont_fix",
+    note: "the source has been paused; the condition stands until it returns",
+  }),
+  override: decisionOf({
+    action: "override",
+    review_item_id: null,
+    value: valueOf({ value: "Seoul Olympic Stadium" }),
+  }),
+};
+
+/** The one fixture that is not keyed by action: an override of a REFERENCE. */
+const REFERENCE_OVERRIDE: VerdictDecision = decisionOf({
+  action: "override",
+  review_item_id: null,
+  value: valueOf({
+    field: "venue",
+    ref: "55555555-5555-4555-8555-555555555555",
+  }),
+});
+
+describe("the action set", () => {
+  it("carries the eight names, in the order §9.2 states them", () => {
+    expect(VERDICT_ACTIONS).toEqual([
+      "choose_claimed_value",
+      "supply_value",
+      "keep_current",
+      "link_entity",
+      "settle",
+      "fixed",
+      "wont_fix",
+      "override",
+    ]);
+  });
+
+  it("has a well-formed fixture for every action it carries", () => {
+    // The ratchet under every iteration below: a ninth action lands here
+    // first, as a missing fixture, rather than passing untested.
+    expect(Object.keys(WELL_FORMED).sort()).toEqual([...VERDICT_ACTIONS].sort());
+  });
+});
+
+describe("noteRequired", () => {
+  it("is true for wont_fix and false for every other action", () => {
+    // Iterated, never hand-listed (acceptance criterion 4).
+    for (const action of VERDICT_ACTIONS) {
+      expect(noteRequired(action), action).toBe(action === "wont_fix");
+    }
+  });
+
+  it("names exactly one action across the whole set", () => {
+    expect(VERDICT_ACTIONS.filter(noteRequired)).toEqual(["wont_fix"]);
+  });
+});
+
+describe("a well-formed decision", () => {
+  it("refuses nothing, for every one of the eight actions", () => {
+    for (const action of VERDICT_ACTIONS) {
+      expect(decisionRefusals(WELL_FORMED[action]), action).toEqual([]);
+    }
+  });
+
+  it("refuses nothing for an override of a reference field", () => {
+    // §9.2: a reference is chosen as a ref, not as a scalar — the second legal
+    // payload shape of the one action that has two.
+    expect(decisionRefusals(REFERENCE_OVERRIDE)).toEqual([]);
+  });
+
+  it("accepts a false and a zero as supplied values", () => {
+    // A filled slot is "not null", so the two falsy scalars a form can produce
+    // are values, not absences.
+    for (const supplied of [false, 0]) {
+      const decision = decisionOf({
+        action: "supply_value",
+        value: valueOf({ field: "is_flagged", value: supplied }),
+      });
+      expect(decisionRefusals(decision), String(supplied)).toEqual([]);
+    }
+  });
+
+  it("accepts an optional note on an action that does not require one", () => {
+    expect(
+      decisionRefusals(decisionOf({ action: "settle", note: "held for the next cycle" })),
+    ).toEqual([]);
+  });
+});
+
+/*
+ * Invariant by invariant. Each block carries the input the guard MUST flag and
+ * the input it must NOT — the two fixtures of LESSONS 3.
+ */
+
+describe("invariant 1 — the action is one of the eight", () => {
+  it("flags an action outside the set", () => {
+    // The cast is the point: a form posts a string, and the type erases.
+    const decision = decisionOf({ action: "approve" as VerdictAction });
+    expect(decisionRefusals(decision)).toContain("unknown_action");
+  });
+
+  it("does not flag any action inside the set", () => {
+    for (const action of VERDICT_ACTIONS) {
+      expect(decisionRefusals(WELL_FORMED[action]), action).not.toContain("unknown_action");
+    }
+  });
+
+  it("still checks the actor, and no action-dependent invariant, on an unknown action", () => {
+    // There is no rule to judge 2-5 against once the action is unknown; the
+    // actor does not depend on the action, so it is still judged.
+    const decision = decisionOf({ action: "approve" as VerdictAction, actor: "  " });
+    expect(decisionRefusals(decision)).toEqual(["unknown_action", "actor_required"]);
+  });
+});
+
+describe("invariant 2 — the item, and the one action without it", () => {
+  it("flags a null review_item_id on every non-override action", () => {
+    for (const action of VERDICT_ACTIONS.filter((one) => one !== "override")) {
+      const decision = decisionOf({ ...WELL_FORMED[action], review_item_id: null });
+      expect(decisionRefusals(decision), action).toContain("review_item_required");
+    }
+  });
+
+  it("flags an all-whitespace review_item_id, which a form alone would let through", () => {
+    const decision = decisionOf({ ...WELL_FORMED.fixed, review_item_id: "   " });
+    expect(decisionRefusals(decision)).toContain("review_item_required");
+  });
+
+  it("flags an override that carries an item", () => {
+    const decision = decisionOf({
+      ...WELL_FORMED.override,
+      review_item_id: "22222222-2222-4222-8222-222222222222",
+    });
+    expect(decisionRefusals(decision)).toContain("review_item_forbidden");
+  });
+
+  it("does not flag the item as present or absent on the eight well-formed decisions", () => {
+    for (const action of VERDICT_ACTIONS) {
+      const refusals = decisionRefusals(WELL_FORMED[action]);
+      expect(refusals, action).not.toContain("review_item_required");
+      expect(refusals, action).not.toContain("review_item_forbidden");
+    }
+  });
+});
+
+describe("invariant 3 — the note wont_fix cannot settle without", () => {
+  it("flags a null note on wont_fix", () => {
+    const decision = decisionOf({ ...WELL_FORMED.wont_fix, note: null });
+    expect(decisionRefusals(decision)).toContain("note_required");
+  });
+
+  it("flags a present-but-blank note on wont_fix", () => {
+    // The second shape a form alone lets through (acceptance criterion 5): the
+    // field was filled in, with nothing.
+    for (const blank of ["", "   ", "\n\t "]) {
+      const decision = decisionOf({ ...WELL_FORMED.wont_fix, note: blank });
+      expect(decisionRefusals(decision), JSON.stringify(blank)).toContain("note_required");
+    }
+  });
+
+  it("does not flag a missing note on any action that does not require one", () => {
+    for (const action of VERDICT_ACTIONS.filter((one) => !noteRequired(one))) {
+      const decision = decisionOf({ ...WELL_FORMED[action], note: null });
+      expect(decisionRefusals(decision), action).not.toContain("note_required");
+    }
+  });
+});
+
+describe("invariant 4 — which actions carry a value at all", () => {
+  const VALUE_CARRYING: readonly VerdictAction[] = [
+    "choose_claimed_value",
+    "supply_value",
+    "override",
+    "link_entity",
+  ];
+
+  it("flags a null value on every value-carrying action", () => {
+    for (const action of VALUE_CARRYING) {
+      const decision = decisionOf({ ...WELL_FORMED[action], value: null });
+      expect(decisionRefusals(decision), action).toContain("value_required");
+    }
+  });
+
+  it("flags a value on every settle-only action", () => {
+    for (const action of VERDICT_ACTIONS.filter((one) => !VALUE_CARRYING.includes(one))) {
+      const decision = decisionOf({
+        ...WELL_FORMED[action],
+        value: valueOf({ value: "smuggled in" }),
+      });
+      expect(decisionRefusals(decision), action).toContain("value_forbidden");
+    }
+  });
+
+  it("does not flag the value as required or forbidden on the well-formed eight", () => {
+    for (const action of VERDICT_ACTIONS) {
+      const refusals = decisionRefusals(WELL_FORMED[action]);
+      expect(refusals, action).not.toContain("value_required");
+      expect(refusals, action).not.toContain("value_forbidden");
+    }
+  });
+});
+
+describe("invariant 5 — exactly one payload slot, and one this action may fill", () => {
+  it("flags a value carrying no payload at all", () => {
+    const decision = decisionOf({ action: "supply_value", value: valueOf() });
+    expect(decisionRefusals(decision)).toContain("value_payload_missing");
+  });
+
+  it("flags two payload slots filled at once", () => {
+    const decision = decisionOf({
+      action: "choose_claimed_value",
+      value: valueOf({
+        observation_id: "33333333-3333-4333-8333-333333333333",
+        value: "and also this",
+      }),
+    });
+    expect(decisionRefusals(decision)).toContain("value_payload_ambiguous");
+  });
+
+  it("flags an override that fills both of its two legal slots", () => {
+    const decision = decisionOf({
+      ...WELL_FORMED.override,
+      value: valueOf({ value: "a name", ref: "55555555-5555-4555-8555-555555555555" }),
+    });
+    expect(decisionRefusals(decision)).toContain("value_payload_ambiguous");
+  });
+
+  it("flags a slot the action may not fill", () => {
+    // choose_claimed_value adopts an observation, never a scalar; supply_value
+    // supplies a scalar, never an observation or (in M2) a ref; link_entity
+    // confirms a match, never a scalar.
+    const wrongSlot: readonly VerdictDecision[] = [
+      decisionOf({ action: "choose_claimed_value", value: valueOf({ value: "typed by hand" }) }),
+      decisionOf({
+        action: "supply_value",
+        value: valueOf({ observation_id: "33333333-3333-4333-8333-333333333333" }),
+      }),
+      decisionOf({
+        action: "supply_value",
+        value: valueOf({ ref: "55555555-5555-4555-8555-555555555555" }),
+      }),
+      decisionOf({ action: "link_entity", value: valueOf({ value: "The Forum" }) }),
+    ];
+    for (const decision of wrongSlot) {
+      expect(decisionRefusals(decision), decision.action).toContain("value_payload_not_allowed");
+    }
+  });
+
+  it("does not flag the payload of any well-formed decision", () => {
+    for (const decision of [...Object.values(WELL_FORMED), REFERENCE_OVERRIDE]) {
+      const refusals = decisionRefusals(decision);
+      expect(refusals, decision.action).not.toContain("value_payload_missing");
+      expect(refusals, decision.action).not.toContain("value_payload_ambiguous");
+      expect(refusals, decision.action).not.toContain("value_payload_not_allowed");
+    }
+  });
+});
+
+describe("invariant 6 — who decided", () => {
+  it("flags a blank actor", () => {
+    for (const blank of ["", "   ", "\n"]) {
+      const decision = decisionOf({ ...WELL_FORMED.settle, actor: blank });
+      expect(decisionRefusals(decision), JSON.stringify(blank)).toContain("actor_required");
+    }
+  });
+
+  it("does not flag an actor on any well-formed decision", () => {
+    for (const action of VERDICT_ACTIONS) {
+      expect(decisionRefusals(WELL_FORMED[action]), action).not.toContain("actor_required");
+    }
+  });
+});
+
+describe("a decision with several problems at once", () => {
+  it("names every refusal that applies, so a caller sees them in one pass", () => {
+    const decision = decisionOf({
+      action: "wont_fix",
+      review_item_id: null,
+      actor: " ",
+      note: "   ",
+      value: valueOf({ value: "not allowed here" }),
+    });
+    expect(decisionRefusals(decision)).toEqual([
+      "review_item_required",
+      "note_required",
+      "value_forbidden",
+      "actor_required",
+    ]);
+  });
+});
