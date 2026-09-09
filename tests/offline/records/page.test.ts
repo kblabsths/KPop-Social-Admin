@@ -892,6 +892,24 @@ describe("the states", () => {
     expect(canonicalRecordId(`${canonical.slice(0, 24)}${canonical.slice(24).toUpperCase()}`)).toBe(
       canonical,
     );
+    // The grammar's other arm — a hyphen after ANY group of four, which is
+    // what `-?` between all eight groups allows and what Postgres documents
+    // itself as accepting. Measured read-only on staging 2026-09-09
+    // (`agenticflow/tracker/evidence/BUG-0139/qa/spelling-probe.mjs`): a
+    // registered `sources.source_id` filtered `eq` by its every-four,
+    // first-group-only and last-group-only hyphenations each returns count=1
+    // and prints the row back in the canonical spelling, so none of these may
+    // be a spelling this refuses either.
+    const hex = canonical.replace(/-/g, "");
+    for (const spelling of [
+      (hex.match(/.{4}/g) ?? []).join("-"),
+      `${hex.slice(0, 4)}-${hex.slice(4)}`,
+      `${hex.slice(0, 28)}-${hex.slice(28)}`,
+    ]) {
+      expect(spelling).not.toBe(canonical);
+      expect(isRecordId(spelling), spelling).toBe(true);
+      expect(canonicalRecordId(spelling), spelling).toBe(canonical);
+    }
     // What it returns is an id by the same grammar, so it can be asked again.
     expect(isRecordId(canonical)).toBe(true);
   });

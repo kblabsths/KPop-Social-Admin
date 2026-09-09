@@ -44,6 +44,7 @@ import {
   stubClient,
   tableNotInSchemaCache,
   type Script,
+  type StubClient,
 } from "../../fixtures/stub-client";
 
 /**
@@ -181,12 +182,34 @@ function healthyScript(overrides: Script = {}): Script {
   };
 }
 
+/**
+ * The stub behind the LAST render, kept so a case can read the query chain a
+ * narrowing built and not only the markup it produced. The stub answers from
+ * its script and ignores the chain by design ("the script decides the answer,
+ * not the chain", `tests/fixtures/stub-client.ts`), so what a read asked the
+ * database FOR is invisible in the rendering and visible only here.
+ */
+let lastStub: StubClient | undefined;
+
 async function renderSources(
   script: Script,
   params: Record<string, string | string[]> = {},
 ): Promise<string> {
-  readWith.client = stubClient(script).asSupabaseClient();
+  const stub = stubClient(script);
+  lastStub = stub;
+  readWith.client = stub.asSupabaseClient();
   return render(await SourcesPage({ searchParams: Promise.resolve(params) }));
+}
+
+/** Every value this render asked the database to match `source_id` against. */
+function sourceIdsAskedFor(): unknown[] {
+  const stub = lastStub;
+  if (stub === undefined) throw new Error("no render recorded");
+  return stub.calls.flatMap((call) =>
+    call.steps
+      .filter((step) => step.method === "eq" && step.args[0] === "source_id")
+      .map((step) => step.args[1]),
+  );
 }
 
 /* ── reading the markup, structurally ────────────────────────────────────── */
@@ -587,6 +610,14 @@ describe("a source's links", () => {
       canonical.replace(/-/g, "").toUpperCase(),
       // Mixed: the last group uppercased, the rest left alone.
       `${canonical.slice(0, 24)}${canonical.slice(24).toUpperCase()}`,
+      // A hyphen after EVERY group of four, which is the other arm of
+      // `isRecordId`'s grammar (`-?` between all eight groups) and the one no
+      // case had reached. Postgres accepts it: measured read-only on staging
+      // 2026-09-09, `sources` filtered `eq source_id` by
+      // 01a0-1808-8c6f-78aa-b7a7-b07d-db3b-057a returns count=1 and the row
+      // prints back as 01a01808-8c6f-78aa-b7a7-b07ddb3b057a
+      // (`agenticflow/tracker/evidence/BUG-0139/qa/spelling-probe.mjs`).
+      (canonical.replace(/-/g, "").match(/.{4}/g) ?? []).join("-"),
     ];
     for (const spelling of spellings.slice(1)) {
       expect(
@@ -686,6 +717,18 @@ describe("a source's links", () => {
         spelling,
       ).toEqual([`/sources?source_id=${only.source_id}`]);
       expect(sourceRowOf(markup, only.source_id).narrowHref, spelling).toBe("/sources");
+      // The half of the defect the RENDERING cannot show. Postgres compares a
+      // uuid by VALUE, so the awaiting-row gauge's query matches every
+      // spelling and its rows come back whatever the URL spelled; the fold
+      // then compares the same value as a STRING. The two agree only if the
+      // query was given the canonical spelling too, and the stub — which
+      // ignores the chain and answers from its script — renders identically
+      // either way. So this is asserted off the recorded call log: every
+      // `source_id` this render put in front of the database is the one
+      // spelling, whichever spelling the URL carried.
+      const asked = sourceIdsAskedFor();
+      expect(asked.length, spelling).toBeGreaterThan(0);
+      expect([...new Set(asked)], spelling).toEqual([only.source_id]);
     }
   });
 
