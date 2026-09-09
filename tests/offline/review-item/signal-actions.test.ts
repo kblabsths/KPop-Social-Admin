@@ -388,6 +388,25 @@ describe("the signal's close once the verdict log is installed", () => {
 
 /* ── the first guard: the form refuses, and sends nothing ────────────────── */
 
+/**
+ * Notes with NOTHING VISIBLE in them (admin-window/BUG-0089): the whitespace
+ * `String.prototype.trim()` did remove, beside the Cf format characters it did
+ * not — what an operator gets by PASTING out of a web page, a PDF or a
+ * spreadsheet export. The same list `tests/offline/verdict/decision.test.ts`
+ * grades the second guard on, because the two guards must agree about which
+ * notes are blank.
+ */
+const INVISIBLE_ONLY: readonly string[] = [
+  "\u200b", // zero-width space
+  "\u2060", // word joiner
+  "\u00ad", // soft hyphen
+  "\ufeff", // byte-order mark
+  "\u00a0", // non-breaking space
+  "\u3164", // hangul filler
+  "  \u200b  ",
+  "\u200b\u2060\u00ad\ufeff\u00a0\t\n",
+];
+
 describe("a won’t-fix with no note", () => {
   const [fixed, wontFix] = signalActions();
 
@@ -423,32 +442,69 @@ describe("a won’t-fix with no note", () => {
    * These are the ones it does not: the Cf format characters an operator gets
    * by PASTING (a zero-width space out of a web page, a soft hyphen out of a
    * PDF). Every one of them is a note with nothing in it to read, and
-   * `wont_fix` is the one action whose note IS the contract — so the form's
-   * courtesy guard lets it through, `submitSettlement` puts it on the wire,
-   * `decisionRefusals` passes it, and the item settles with an unreadable
-   * reason that the verdict log draws as a blank cell with no dash.
+   * `wont_fix` is the one action whose note IS the contract — so until
+   * admin-window/BUG-0089 the form's courtesy guard let it through,
+   * `submitSettlement` put it on the wire, `decisionRefusals` passed it, and
+   * the item settled with an unreadable reason the verdict log drew as a blank
+   * cell with no dash.
    *
-   * Strict `it.fails` for admin-window/BUG-0089.
+   * All three guards now ask `hasVisibleContent` in `lib/verdict/decision.ts`
+   * — one definition of blank rather than three spellings of `trim()`.
    */
-  it.fails("refuses a note whose every character is invisible", () => {
-    for (const invisible of ["\u200b", "\u2060", "\u00ad", "  \u200b  "]) {
+  it("refuses a note whose every character is invisible", () => {
+    for (const invisible of INVISIBLE_ONLY) {
       expect(closeRefusal(wontFix, invisible), JSON.stringify(invisible)).toBe(
         "note_required",
       );
     }
   });
 
-  it.fails("puts no invisible-only note on the wire", async () => {
-    const { calls, fetchImpl } = recordingFetch(
-      Response.json({ ok: true, verdict: verdictLogEntry({ action: "wont_fix" }) }),
+  it("accepts a note that has anything visible in it, however it is padded", () => {
+    // The fixture the guard must NOT flag, or the one above is vacuous
+    // (LESSONS 3): the characters are refused for being all there is, not for
+    // being there. And an invisible note on the OTHER disposition is still no
+    // refusal — `fixed` takes a note at the admin's discretion.
+    for (const written of ["\u200bthe source is retired; the pattern stands\u200b", "\u2800", "0"]) {
+      expect(closeRefusal(wontFix, written), JSON.stringify(written)).toBeNull();
+    }
+    for (const invisible of INVISIBLE_ONLY) {
+      expect(closeRefusal(fixed, invisible), JSON.stringify(invisible)).toBeNull();
+    }
+  });
+
+  it("puts no invisible-only note on the wire, in any spelling", async () => {
+    for (const invisible of INVISIBLE_ONLY) {
+      const { calls, fetchImpl } = recordingFetch(
+        Response.json({ ok: true, verdict: verdictLogEntry({ action: "wont_fix" }) }),
+      );
+      const outcome = await submitSettlement({
+        reviewItemId: SIGNAL_ID,
+        spec: wontFix,
+        note: invisible,
+        fetchImpl,
+      });
+      expect(calls, JSON.stringify(invisible)).toEqual([]);
+      expect(outcome, JSON.stringify(invisible)).toEqual({
+        ok: false,
+        message: refusalWords("note_required"),
+      });
+    }
+  });
+
+  /**
+   * The second half of the same fact, on the disposition that takes a note at
+   * the admin's discretion: an invisible-only note is not refused there, but
+   * it is not CONTENT either — it reaches `verdicts.note` as the null it reads
+   * as, so the log dashes it rather than drawing an empty cell.
+   */
+  it("sends an invisible-only optional note as null, and a written one whole", async () => {
+    for (const invisible of INVISIBLE_ONLY) {
+      expect(settleBody(fixed, invisible).note, JSON.stringify(invisible)).toBeNull();
+    }
+    expect(settleBody(fixed, "  addressed in the source's own surface  ").note).toBe(
+      "addressed in the source's own surface",
     );
-    await submitSettlement({
-      reviewItemId: SIGNAL_ID,
-      spec: wontFix,
-      note: "\u200b",
-      fetchImpl,
-    });
-    expect(calls).toEqual([]);
+    expect(settleBody(fixed, "\u200bhalf visible\u200b").note).toBe("\u200bhalf visible\u200b");
   });
 
   it("sends nothing at all: the payload never reaches the network", async () => {

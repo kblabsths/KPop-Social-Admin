@@ -536,12 +536,14 @@ describe("the nulls that are structure, not missing data", () => {
   });
 
   /**
-   * The blanks that are not the space bar. `isAbsent` decides on
-   * `String.prototype.trim()`, which strips U+00A0 (a non-breaking space, what
-   * a paste out of a rendered page yields) and U+FEFF (a byte-order mark, what
-   * a paste out of a spreadsheet export yields) along with the ASCII
-   * whitespace the case above covers. Both look blank on screen, so both must
-   * read as the one dash.
+   * The blanks that are not the space bar. `isAbsent` asks `visibleContent`
+   * (`lib/verdict/decision.ts`), so U+00A0 (a non-breaking space, what a paste
+   * out of a rendered page yields), U+FEFF (a byte-order mark, out of a
+   * spreadsheet export) and the Cf format characters U+200B / U+2060 / U+00AD
+   * (out of a web page or a PDF) all read as the one dash. The last three did
+   * NOT until admin-window/BUG-0089: `trim()` left them, so the cell took the
+   * content branch and drew an empty `td` with no dash at all — this row is
+   * that defect, at the surface it was visible on.
    *
    * It also grades what the absence guard COSTS: the dashed row's other five
    * columns are asserted whole in the same breath, because a cell that returns
@@ -551,6 +553,9 @@ describe("the nulls that are structure, not missing data", () => {
     const blanks = [
       ["settle", "\u00a0"],
       ["fixed", "\ufeff\u00a0\ufeff"],
+      // The Cf class: a zero-width space, a word joiner and a soft hyphen —
+      // nothing `trim()` removes, and nothing a reader can see.
+      ["keep_current", "\u200b\u2060\u00ad"],
     ] as const;
     const markup = await renderQueues(
       scriptOf(

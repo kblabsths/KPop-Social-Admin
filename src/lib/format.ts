@@ -11,6 +11,7 @@
  * disabled-gray — never blank, never `null`, `N/A` or `none`.
  */
 import { createElement, type ReactElement, type ReactNode } from "react";
+import { visibleContent } from "@/lib/verdict/decision";
 
 /** The one character that stands for "no value", everywhere in the app. */
 export const EM_DASH = "—";
@@ -226,20 +227,30 @@ export function nullDash(): ReactElement {
  * `x === null || x === ""` guard, because three hand-written guards disagreed.
  *
  * Absent is anything React would draw as nothing (`null`, `undefined`, either
- * boolean — the `flag && "yes"` idiom yields `false` — an empty or
- * whitespace-only string, an empty array), anything that would draw as
- * nonsense (a non-finite number renders the literal `NaN`), and the bare em
- * dash a formatting helper returns: `count(null)`, `absoluteUtc(null)` and
+ * boolean — the `flag && "yes"` idiom yields `false` — a string with nothing
+ * VISIBLE in it, an empty array), anything that would draw as nonsense (a
+ * non-finite number renders the literal `NaN`), and the bare em dash a
+ * formatting helper returns: `count(null)`, `absoluteUtc(null)` and
  * `relativeAge(null).text` are strings, so they must be recognised here to be
  * coloured like a raw null.
+ *
+ * "Nothing visible" is `visibleContent` in `lib/verdict/decision.ts` — the
+ * app's ONE definition of blank, shared with the two guards that decide
+ * whether a note may be written at all (admin-window/BUG-0089). It removes the
+ * ink-less characters ANYWHERE in the string rather than only at its ends,
+ * which is what `trim()` did: a note of zero-width spaces used to reach this
+ * branch as content and draw an empty cell with no dash — the rendering
+ * admin-window/BUG-0085 was filed to remove. A string with any visible
+ * character is untouched and renders as itself, dash included: `— —` is two
+ * dashes, not an absence.
  */
 export function isAbsent(value: ReactNode): boolean {
   if (value === null || value === undefined) return true;
   if (typeof value === "boolean") return true;
   if (typeof value === "number") return !Number.isFinite(value);
   if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed === "" || trimmed === EM_DASH;
+    const visible = visibleContent(value);
+    return visible === "" || visible === EM_DASH;
   }
   if (Array.isArray(value)) return value.length === 0;
   return false;

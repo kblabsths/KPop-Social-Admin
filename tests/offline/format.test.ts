@@ -298,6 +298,44 @@ describe("isAbsent and orDash", () => {
     }
   });
 
+  /**
+   * The blanks that are not the space bar (admin-window/BUG-0089). `isAbsent`
+   * decided on `String.prototype.trim()`, which strips the Unicode WhiteSpace
+   * set and U+FEFF but NOT the Cf format characters — so a value of zero-width
+   * spaces, word joiners or soft hyphens took the "it is content" branch and
+   * drew an empty cell with no dash, which is the rendering
+   * admin-window/BUG-0085 exists to remove. It now asks `visibleContent` in
+   * `lib/verdict/decision.ts`, the one definition of blank the two note guards
+   * read as well, and it removes ink-less characters anywhere in the string
+   * rather than only at its ends.
+   */
+  it("calls absent a string with nothing visible in it, wherever the invisible sits", () => {
+    for (const missing of [
+      "\u200b", // zero-width space — a paste out of a rendered web page
+      "\u2060", // word joiner
+      "\u00ad", // soft hyphen — a paste out of a PDF
+      "\ufeff", // byte-order mark
+      "\u00a0", // non-breaking space
+      "\u3164", // hangul filler
+      "  \u200b  ",
+      "\u200b\u2060\u00ad\ufeff\u00a0\t\n",
+      `\u200b${EM_DASH}\u200b`, // the helper's own dash, invisibly padded
+    ]) {
+      expect(isAbsent(missing), JSON.stringify(missing)).toBe(true);
+    }
+  });
+
+  it("keeps a value present when the invisible characters merely surround it", () => {
+    // The fixture the widened guard must NOT swallow, or a real note would
+    // vanish into a dash: the ink-less characters are an absence only when
+    // they are ALL there is. U+2800 BRAILLE PATTERN BLANK is an assigned
+    // printable character and stays content, which is the boundary the leaf's
+    // own docstring draws.
+    for (const present of ["\u200bwhy it stands\u200b", "\u00ad-\u00ad", "\u2800", `${EM_DASH}\u200b${EM_DASH}`]) {
+      expect(isAbsent(present), JSON.stringify(present)).toBe(false);
+    }
+  });
+
   it("calls absent a figure that is not a finite number, so no cell reads NaN", () => {
     for (const missing of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
       expect(isAbsent(missing)).toBe(true);

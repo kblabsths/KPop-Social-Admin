@@ -2,6 +2,7 @@ import type { ButtonVariant } from "@/components/ui";
 import type { EvidenceRow } from "@/components/review";
 import type { ReviewItemRow } from "@/lib/review/shapes";
 import {
+  hasVisibleContent,
   noteRequired,
   type VerdictAction,
   type VerdictValue,
@@ -149,7 +150,16 @@ export function decisionValue(
   return { ...spec.value, value: supplied };
 }
 
-/** The body for this control and this note; a blank note is null, not `""`. */
+/**
+ * The body for this control and this note; a blank note is null, not `""`.
+ *
+ * Blank is the app's one definition of it (`hasVisibleContent`), so a note of
+ * nothing but invisible characters travels as the null it reads as rather than
+ * as content nobody can see (admin-window/BUG-0089). A note that HAS visible
+ * content is sent as the operator wrote it, trimmed at the ends and otherwise
+ * byte-identical: this is a blankness test, never a sanitiser, and an
+ * operator's words are not ours to rewrite.
+ */
 export function settleBody(
   spec: ActionSpec,
   note: string,
@@ -158,7 +168,7 @@ export function settleBody(
   const trimmed = note.trim();
   return {
     action: spec.action,
-    note: trimmed === "" ? null : trimmed,
+    note: hasVisibleContent(note) ? trimmed : null,
     value: decisionValue(spec, supplied),
   };
 }
@@ -181,11 +191,19 @@ export function closeRefusal(
   note: string,
   supplied: string | null = null,
 ): string | null {
-  if (noteRequired(spec.action) && note.trim() === "") return "note_required";
+  // Blank by VISIBLE CONTENT, not by `trim()`: a note of zero-width spaces or
+  // soft hyphens — what a paste out of a web page or a PDF yields — is a note
+  // with nothing in it to read, and `wont_fix` is the one action whose note is
+  // the contract (admin-window/BUG-0089). The same one definition
+  // `decisionRefusals` and `isAbsent` read, so no two guards can disagree
+  // about which notes are blank.
+  if (noteRequired(spec.action) && !hasVisibleContent(note)) return "note_required";
   // A control that takes a value and was given none. `decisionRefusals`
   // invariant 4 spells that same case `value_required`, and this borrows the
-  // identifier rather than inventing a second name for one fact.
-  if (spec.supplies !== undefined && (supplied === null || supplied.trim() === "")) {
+  // identifier rather than inventing a second name for one fact. A supplied
+  // value of invisible characters is "none" for the same reason a note is: it
+  // would otherwise be written to canonical as a value nobody can see.
+  if (spec.supplies !== undefined && !hasVisibleContent(supplied)) {
     return "value_required";
   }
   return null;
