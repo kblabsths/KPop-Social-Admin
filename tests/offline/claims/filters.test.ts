@@ -252,4 +252,107 @@ describe("what the URL asked for and the page did not do", () => {
       withheld: 0,
     });
   });
+
+  /**
+   * The same rule, on the half `String.prototype.trim` cannot see
+   * (admin-window/BUG-0136).
+   *
+   * `trim()` strips the Unicode `White_Space` set and nothing else, so
+   * `?%E2%80%8B=1` (ZERO WIDTH SPACE), `?%00=1`, `?%C2%AD=1` (SOFT HYPHEN),
+   * `?%E2%81%A0=1` (WORD JOINER), `?%E2%80%8E=1` (LEFT-TO-RIGHT MARK) and
+   * `?%7F=1` (DELETE) all reached `named` and were spelled into the mono span,
+   * where Chromium laid every one of them out at 0px — the same hole
+   * admin-window/BUG-0127 closed for `?=x`, reached through a codepoint
+   * instead of a space. `droppedParams` now asks the app's ONE definition of
+   * blank (`hasVisibleContent`, `lib/verdict/decision.ts`,
+   * admin-window/BUG-0089) rather than `trim()`, so both halves get the same
+   * answer from the same rule.
+   */
+  it("ignores a key with no visible content, whatever its codepoints", () => {
+    // Ink-less by category: controls (Cc), format characters (Cf) and a
+    // Hangul filler — none of which `trim()` removes.
+    const inkLess = [
+      "\u0000", // NULL
+      "\u200B", // ZERO WIDTH SPACE
+      "\u00AD", // SOFT HYPHEN
+      "\u2060", // WORD JOINER
+      "\u3164", // HANGUL FILLER
+      "\u200E", // LEFT-TO-RIGHT MARK
+      "\u007F", // DELETE
+      "\u00A0", // NO-BREAK SPACE — whitespace, so trim() saw this one too
+      "\uFEFF", // ZERO WIDTH NO-BREAK SPACE (BOM)
+      "\u200B\u00AD\u2060", // a key made of nothing else
+      " \u200B ", // mixed with the whitespace half
+    ];
+    for (const key of inkLess) {
+      const where = [...key]
+        .map(
+          (c) =>
+            "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"),
+        )
+        .join(" ");
+      expect(droppedParams({ [key]: "1" }, {}), where).toEqual({
+        named: [],
+        withheld: 0,
+      });
+    }
+  });
+
+  it("names a key that puts any ink on the page, however little", () => {
+    // The other direction, so the rule above cannot pass by dropping every
+    // dropped parameter. One printable character is a name an operator can
+    // read back, in any script.
+    //
+    // U+2800 BRAILLE PATTERN BLANK is in this list deliberately:
+    // `visibleContent` (`lib/verdict/decision.ts`) rules an assigned printable
+    // character CONTENT even when it looks unhelpful — "renders nothing", not
+    // "says nothing worth saying" — and this file does not hold a second
+    // opinion about blankness.
+    for (const key of [".", "-", "_", "0", "\u8A18\u9332", "\u2800"]) {
+      expect(droppedParams({ [key]: "1" }, {}), JSON.stringify(key)).toEqual({
+        named: [key],
+        withheld: 0,
+      });
+    }
+
+    // A key carrying ink AND ink-less codepoints keeps both: it is named, and
+    // it is named VERBATIM (spec §11), never scrubbed on the way to the page.
+    // `visibleContent` is only ever asked a question of.
+    expect(droppedParams({ "record_id\u200B": "1" }, {})).toEqual({
+      named: ["record_id\u200B"],
+      withheld: 0,
+    });
+  });
+
+  it("still counts, and still refuses to spell, a name the app may not render", () => {
+    // LOOK_AND_FEEL bar 3 through the ink-less half: `in_window` must appear
+    // nowhere, and a key that READS as `in_window` because its extra
+    // codepoints draw nothing would put it on screen just as surely. The
+    // withheld test therefore asks what a reader would SEE of the key,
+    // through the same one definition (admin-window/BUG-0136).
+    const parked = "in_" + "window";
+    expect(droppedParams({ [parked]: "1" }, {}, [parked])).toEqual({
+      named: [],
+      withheld: 1,
+    });
+    expect(droppedParams({ [parked + "\u200B"]: "1" }, {}, [parked])).toEqual({
+      named: [],
+      withheld: 1,
+    });
+    expect(droppedParams({ "in\u200B_window": "1" }, {}, [parked])).toEqual({
+      named: [],
+      withheld: 1,
+    });
+    // A key with no visible content at all is ignored BEFORE the withheld
+    // test: there is no name to withhold, so nothing is counted either.
+    expect(droppedParams({ "\u200B": "1" }, {}, [parked])).toEqual({
+      named: [],
+      withheld: 0,
+    });
+    // And an ordinary neighbour of the parked word is still named in full.
+    expect(droppedParams({ in_windows: "1" }, {}, [parked])).toEqual({
+      named: ["in_windows"],
+      withheld: 0,
+    });
+  });
 });

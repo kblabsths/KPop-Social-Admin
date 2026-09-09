@@ -1977,13 +1977,28 @@ describe("a parameter the page did not apply", () => {
     }
   });
 
-  it("ignores a blank key the way it ignores an empty value, and moves nothing else", async () => {
+  it("ignores a key with no visible content the way it ignores an empty value, and moves nothing else", async () => {
     // admin-window/BUG-0127, criterion 2: `?=x` and `?%20%20=1` name no
     // facet, so they are the URL saying nothing rather than the page
     // dropping a narrowing — no line, and the page underneath is the
     // unnarrowed one it was before.
+    //
+    // admin-window/BUG-0136, criterion 2: the six keys below are the same
+    // sentence reached through codepoints `trim()` cannot see, so they get
+    // the same answer and move the page just as little — the rows, the bucket
+    // figures, the caption and every chip href are the bare page's.
     const plain = await renderClaims(healthyScript());
-    for (const params of [{ "": "x" }, { "  ": "1" }] as Record<string, string>[]) {
+    const blankOrInkLess = [
+      { "": "x" },
+      { "  ": "1" },
+      { "\u0000": "1" },
+      { "\u200B": "1" },
+      { "\u00AD": "1" },
+      { "\u2060": "1" },
+      { "\u200E": "1" },
+      { "\u007F": "1" },
+    ] as Record<string, string>[];
+    for (const params of blankOrInkLess) {
       const markup = await renderClaims(healthyScript(), params);
       const line = droppedLine(markup);
       expect(line.lines, JSON.stringify(params)).toBe(0);
@@ -2022,11 +2037,16 @@ describe("a parameter the page did not apply", () => {
    * ignore such a key (no name to hole) or spell something readable. What it
    * refuses is a name with no renderable glyph in it.
    *
-   * STRICT PIN for admin-window/BUG-0136 — `it.fails`, so the day the
-   * divergence is fixed this turns RED and sends the reader to that ticket
-   * (flip it to `it` there, which is that ticket's criterion 4).
+   * FIXED by admin-window/BUG-0136, the same arm BUG-0127 chose: the
+   * whitespace-only test in `droppedParams` is now the app's ONE definition of
+   * blank (`hasVisibleContent`, `lib/verdict/decision.ts`,
+   * admin-window/BUG-0089), which knows the format characters, the controls
+   * and the Hangul fillers that `trim()` does not. A key a reader would see
+   * nothing of names nothing, so none of these URLs renders the line at all —
+   * and the pin below, which was `it.fails` while the divergence stood, is a
+   * plain `it`.
    */
-  it.fails("names a parameter an operator can read back, whatever the key's codepoints", async () => {
+  it("names a parameter an operator can read back, whatever the key's codepoints", async () => {
     const invisible = ["\u0000", "\u200B", "\u00AD", "\u2060", "\u200E", "\u007F"];
     for (const key of invisible) {
       const where = `U+${key.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`;
