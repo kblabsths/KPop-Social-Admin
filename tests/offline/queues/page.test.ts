@@ -907,6 +907,47 @@ describe("a zero that a filter produced", () => {
     expect(scoped.length).toBeGreaterThan(unscoped.length);
   });
 
+  // STRICT PIN — admin-window/BUG-0129. The assertion below is the RULE; it
+  // fails on this tree, so it is landed as `it.fails` and the suite stays
+  // green. Fix the scoping and this turns red: drop `.fails` and keep it.
+  it.fails(
+    "does not scope a block by the one facet that cannot narrow it (BUG-0129)",
+    async () => {
+      // SEAM, and the URL the Dashboard's own zero attention card links to
+      // (`/queues?kind=decision`, `src/app/page.tsx` `queueHref`): each block
+      // is ALREADY narrowed to its own kind (`selectItems(result.data,
+      // { kind })`), so `?kind=decision` removes not one row from the decision
+      // block. Its rendered set is identical with and without the facet —
+      // asserted below, not assumed — and a scope claim about a filter that
+      // changed nothing is a claim the page's own read does not support:
+      // "empty" and "nothing matched your filters" are two different states
+      // and never share a rendering (LOOK_AND_FEEL, the four states).
+      //
+      // The sibling test above pins the TRUE half of the same rule —
+      // `?kind=signal` really does empty the decision block, and that zero
+      // must say so.
+      for (const kind of KIND_NAMES) {
+        const params = paramsOf(`kind=${kind}`);
+
+        // 1. the rows are the same rows, so nothing about this block was filtered
+        const populated = await renderQueues(healthyScript(), params);
+        const plain = await renderQueues(healthyScript());
+        expect(idsIn(populated, kind), kind).toEqual(idsIn(plain, kind));
+        expect(idsIn(populated, kind).length, kind).toBeGreaterThan(0);
+        expect(openSub(populated, kind), `${kind} sub-line`).toBe(openSub(plain, kind));
+
+        // 2. and with the table empty, the card still says what fills this
+        //    queue rather than blaming a filter that removed nothing
+        const empty = await renderQueues(EMPTY_TABLE, params);
+        const emptyPlain = await renderQueues(EMPTY_TABLE);
+        const rowsOf = (markup: string) =>
+          squash(cheerio.load(markup)(`[data-queue="${kind}"] [data-rows]`).text());
+        expect(stateOf(empty, kind), kind).toBe("empty");
+        expect(rowsOf(empty), `${kind} empty card`).toBe(rowsOf(emptyPlain));
+      }
+    },
+  );
+
   it("scopes the zero of a queue that has rows but nothing open, too", async () => {
     // `?status=settled` leaves rows on screen and a real zero above them.
     const markup = await renderQueues(healthyScript(), { status: "settled" });
