@@ -5,7 +5,7 @@ import { DASHBOARD_WINDOW } from "@/lib/db/dashboard";
 import { RESOLVER_CADENCE_SECONDS } from "@/lib/gauges/gauge";
 import { T } from "@/lib/db/tables";
 import { absoluteUtc } from "@/lib/format";
-import { TONE_INK, type BadgeTone } from "@/components/ui/badge";
+import { TONE_INK } from "@/components/ui/badge";
 import { render } from "../ui/markup";
 import {
   BROKEN_INK,
@@ -526,22 +526,43 @@ describe("the attention summary", () => {
     expect(chipsInsideLinks($, $.root())).toEqual([]);
   });
 
+  /*
+   * BOTH severities, on BOTH cards, and each read against the population that
+   * produced it rather than against the attribute the page itself wrote (QA,
+   * admin-window/BUG-0115).
+   *
+   * The healthy population's max is `high` on both kinds, so a page that
+   * hard-coded the attention ink — or that read its severity from the wrong
+   * place — rendered green here while `low` was the one severity no test on
+   * this surface ever rendered. Staging cannot close that gap either: it held
+   * 0 open decisions on 2026-09-09, so the walk could only ever see the signal
+   * card, and only at `high`. This is where `low` gets driven.
+   */
   it("keeps the severity's colour on the word after taking its chip away", async () => {
-    const markup = await renderDashboard(healthyScript());
-    const $ = cheerio.load(markup);
+    for (const severity of ["high", "low"] as const) {
+      const open = reviewItems()
+        .filter((item) => item.status === "open")
+        .map((item) => ({ ...item, severity }));
+      const markup = await renderDashboard(
+        healthyScript({ [T.reviewItems]: { data: open, count: open.length } }),
+      );
+      const $ = cheerio.load(markup);
 
-    for (const kind of ["decision", "signal"] as const) {
-      const word = $(`a[href*="kind=${kind}"]`).find("[data-severity]");
-      expect(word.length, `${kind} publishes no severity hook`).toBe(1);
-      const severity = word.attr("data-severity") as BadgeTone;
-      // The word IS the severity, and the ink is the one map that decides what
-      // colour a severity is (`ui/badge.tsx`) — read from there, never a class
-      // literal repeated here, so a repalette moves both together.
-      expect(word.text().trim()).toBe(severity);
-      expect(classesOf(word), `${kind}'s severity ink`).toContain(TONE_INK[severity]);
-      // A value, not a link: it must not borrow the affordance of the card it
-      // sits on (LESSONS 3's second fixture, on the same element).
-      expectNotDrawnAsLink(classesOf(word), `the ${kind} card's severity word`);
+      for (const kind of ["decision", "signal"] as const) {
+        const word = $(`a[href*="kind=${kind}"]`).find("[data-severity]");
+        expect(word.length, `${kind} publishes no severity hook`).toBe(1);
+        // The population holds nothing but this severity, so this severity is
+        // the max — the word and its hook are the registry's word, verbatim.
+        expect(word.attr("data-severity"), `${kind}'s severity hook`).toBe(severity);
+        expect(word.text().trim(), `${kind}'s severity word`).toBe(severity);
+        // The ink is the one map that decides what colour a severity is
+        // (`ui/badge.tsx`) — read from there, never a class literal repeated
+        // here, so a repalette moves both together.
+        expect(classesOf(word), `${kind}'s ${severity} ink`).toContain(TONE_INK[severity]);
+        // A value, not a link: it must not borrow the affordance of the card it
+        // sits on (LESSONS 3's second fixture, on the same element).
+        expectNotDrawnAsLink(classesOf(word), `the ${kind} card's ${severity} word`);
+      }
     }
   });
 
