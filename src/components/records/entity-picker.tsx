@@ -335,7 +335,9 @@ export type PickerFocus =
  * — "an edit the operator ends with Enter or Escape puts focus back on that
  * button" — are one rule, and this is the picker keeping it.
  *
- * Three orderings are the whole of it:
+ * Four orderings are the whole of it, and every one is an EDGE — the panel
+ * opening or closing, or the status changing — never a state the widget is
+ * merely sitting in:
  *
  *  - **Opening focuses the panel, unconditionally.** The only way `open` turns
  *    true is the Choose button, so focus is on that button and moving it into
@@ -353,6 +355,23 @@ export type PickerFocus =
  *    able to hold focus, which is where the activated option's focus goes.
  *    That keeps focus inside the widget's own box, so the move cannot read as
  *    the operator walking away from a refusal (`retiresRefusal`).
+ *  - **An answer arriving takes the same care as the write starting** —
+ *    campaign admin-window/BUG-0149. The `saving` leg above parks focus on the
+ *    search field, but the operator can blur it again with one press on a part
+ *    of the panel that focuses nothing (the hint line, the window line, the gap
+ *    between two rows): the press is inside the widget, so nothing retires it,
+ *    and neither `open` nor `status` moved, so this rule is not even asked.
+ *    Focus is then on `<body>` when the answer lands — the panel stays open on
+ *    a refusal (admin-window/BUG-0119) and on a supersession, so the opening
+ *    ordering does not fire either, and the operator's next Tab restarts at the
+ *    top of the document at the moment they most need to act on the sentence
+ *    they are being shown. So EVERY status edge that ends a write — `failed`,
+ *    `saved`, and the `idle` a retirement leaves behind — puts adrift focus
+ *    back on this widget's live focusable element: the search field while the
+ *    panel is open, the Choose button once it is closed and real. The one
+ *    status edge that moves nothing is a confirmation elapsing on its own
+ *    clock (`saved` → `idle`): no control changed, and a focus jump on a timer
+ *    is a steal.
  *  - **Anything the operator has since focused is left alone.** `adrift` is
  *    the caller's reading of `document.activeElement` (`focusIsAdrift`, the
  *    cell's own), true only when focus is on nothing at all — so a seconds-long
@@ -368,6 +387,7 @@ export function pickerFocus({
   open,
   was,
   status,
+  wasStatus,
   adrift,
 }: {
   /** Is the panel drawn now? */
@@ -376,6 +396,16 @@ export function pickerFocus({
   was: boolean;
   /** What this field's choice is doing, or did. */
   status: Status;
+  /**
+   * What it was doing when focus was last settled — so is this an answer
+   * ARRIVING, or a widget at rest? The second transition edge, and required
+   * for the reason `was` is: the same four other inputs describe both an
+   * operator sitting in an open panel whose focus drifted for their own
+   * reasons (leave it alone) and a refusal that has just landed on a panel
+   * their focus had slipped out of (put it back) — campaign
+   * admin-window/BUG-0149.
+   */
+  wasStatus: Status["kind"];
   /** Is focus on nothing the operator chose? Read from `document`. */
   adrift: boolean;
 }): PickerFocus {
@@ -384,10 +414,25 @@ export function pickerFocus({
     if (status.kind === "saving") return "wait";
     return adrift ? "toggle" : "leave";
   }
-  // No transition, so the only thing that moves focus is a control going away
-  // under the operator's hands: the option they activated, going `disabled`.
-  if (open && status.kind === "saving") return adrift ? "search" : "leave";
-  return "leave";
+  // The panel did not open or close, so the widget moves focus only when its
+  // own controls change under the operator's hands — which is a STATUS edge,
+  // not the status itself. At rest there is nothing to answer for.
+  if (status.kind === wasStatus) return "leave";
+  // A confirmation retiring on its own clock (`saved` → `idle`,
+  // admin-window/BUG-0111) is the one status edge no control moves for: it
+  // takes a WORD off the screen seconds after the fact, and a focus jump on a
+  // timer is a steal even when focus is adrift.
+  if (status.kind === "idle" && wasStatus !== "failed") return "leave";
+  // Anything the operator has since focused is theirs; only focus on nothing
+  // at all is rescued (`focusIsAdrift`, the cell's own reading).
+  if (!adrift) return "leave";
+  // Adrift, with an edge to answer for: focus goes to this widget's live
+  // focusable element. The search field while the panel is open — it is never
+  // disabled, so it holds focus through a write and through the refusal that
+  // ends one — else the Choose button, unless the write still has it disabled,
+  // in which case the verdict waits for it to be real.
+  if (open) return "search";
+  return status.kind === "saving" ? "wait" : "toggle";
 }
 
 const SEARCH_CLASS =
@@ -625,6 +670,13 @@ export function EntityPicker({
    * DONE about focus, and nothing renders from it.
    */
   const focusedFor = useRef(false);
+  /**
+   * And what the STATUS was when focus was last settled, so `pickerFocus` acts
+   * on an answer ARRIVING rather than on the status a widget is resting in
+   * (campaign admin-window/BUG-0149). Starts at the status the reducer starts
+   * in, so a record page that merely DRAWS a picker has no edge to answer for.
+   */
+  const focusedForStatus = useRef<Status["kind"]>(IDLE_PICK_STATE.status.kind);
   const [pick, dispatch] = useReducer(reducePick, undefined, () => ({
     ...IDLE_PICK_STATE,
     chosen:
@@ -763,12 +815,17 @@ export function EntityPicker({
       open,
       was: focusedFor.current,
       status,
+      wasStatus: focusedForStatus.current,
       adrift: focusIsAdrift(root.current),
     });
+    // `wait` is the verdict NOT taken — nothing of this widget can hold focus
+    // yet — so neither edge is spent and both are decided again the moment the
+    // disabled control is real.
     if (verdict === "wait") return;
     // Decided: this transition is spent either way, so a later status change
     // cannot re-fire it at whatever the operator has focused by then.
     focusedFor.current = open;
+    focusedForStatus.current = status.kind;
     if (verdict === "search") search.current?.focus();
     else if (verdict === "toggle") toggle.current?.focus();
   }, [open, status]);

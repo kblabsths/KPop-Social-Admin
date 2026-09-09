@@ -1234,6 +1234,8 @@ function pickerShell() {
   let open = false;
   /** What the focus effect last settled for — `pickerFocus`'s `was`. */
   let was = false;
+  /** And the status it settled for — `pickerFocus`'s `wasStatus`. */
+  let wasStatus: Status["kind"] = IDLE_PICK_STATE.status.kind;
   let pick: PickState = IDLE_PICK_STATE;
   let picks = 0;
   /** The operator arrived on this page and is somewhere on it, not here. */
@@ -1320,6 +1322,7 @@ function pickerShell() {
       open,
       was,
       status: pick.status,
+      wasStatus,
       // `focusIsAdrift(root.current)` reads exactly this: the widget's root is
       // a `div` no browser makes `activeElement`, so the answer is the plain
       // page-level one — focus is on nothing at all.
@@ -1327,6 +1330,7 @@ function pickerShell() {
     });
     if (verdict === "wait") return;
     was = open;
+    wasStatus = pick.status.kind;
     if (verdict === "search") where = "search";
     else if (verdict === "toggle") where = "toggle";
   }
@@ -1601,15 +1605,16 @@ describe("where the picker leaves focus", () => {
     }
   });
 
-  // Pinned RED by admin-window/BUG-0149 — `it.fails` is strict: the day the
-  // rule places focus, this turns red and sends the reader to that ticket.
-  it.fails("puts focus back on a live control when an answer lands on a panel focus has slipped out of (admin-window/BUG-0149)", () => {
+  // QA's pin for admin-window/BUG-0149, flipped from `it.fails` to a plain
+  // `it` by the fix: `pickerFocus` now acts on the status EDGE, so the answer
+  // arriving is a moment it has something to say about.
+  it("puts focus back on a live control when an answer lands on a panel focus has slipped out of (admin-window/BUG-0149)", () => {
     // admin-window/BUG-0149. Criterion 3 names three moments at which focus
     // must be on a real focusable element of this widget: after a refusal,
     // after a save that lands, and after a save another widget supersedes.
-    // `pickerFocus`'s no-transition branch rescues focus for exactly ONE
-    // status — `open && status.kind === "saving"` — so a panel that is still
-    // open when the answer arrives is left with focus wherever it was, and
+    // `pickerFocus`'s no-transition branch used to rescue focus for exactly
+    // ONE status — `open && status.kind === "saving"` — so a panel still open
+    // when the answer arrived was left with focus wherever it was, and
     // "wherever it was" includes `document.body`. Nothing about that is
     // hypothetical: the operator presses the panel's own hint line, or the
     // gap between two rows, while the write runs. That press focuses nothing,
@@ -1631,13 +1636,13 @@ describe("where the picker leaves focus", () => {
     shell.close();
   });
 
-  // Pinned RED by admin-window/BUG-0149 — `it.fails` is strict: the day the
-  // rule places focus, this turns red and sends the reader to that ticket.
-  it.fails("puts focus back on a live control when another widget supersedes a refusal it is holding (admin-window/BUG-0149)", () => {
+  // QA's pin for admin-window/BUG-0149, flipped from `it.fails` to a plain
+  // `it` by the fix: the `idle` a retirement leaves behind is an edge too.
+  it("puts focus back on a live control when another widget supersedes a refusal it is holding (admin-window/BUG-0149)", () => {
     // admin-window/BUG-0149, the same branch and criterion 3's third moment:
-    // the page's one refusal slot changes hands, this picker's statement goes
-    // `idle` with the panel still open, and the no-transition branch has no
-    // answer for `idle` either.
+    // the page's one refusal slot changes hands and this picker's statement
+    // goes `idle` with the panel still open — an edge the no-transition branch
+    // had no answer for either.
     const shell = pickerShell().chooseButton().pickRow();
     shell.pressInsideOnNothing();
     shell.answer(VENUE_REFUSED);
@@ -1654,6 +1659,105 @@ describe("where the picker leaves focus", () => {
     shell.close();
   });
 
+  it("puts adrift focus on a live control at every edge that ends a write", () => {
+    // admin-window/BUG-0149, the whole transition table rather than the two
+    // moments that were measured. An edge that ends a write is `failed` or
+    // `saved` arriving from the write, and the `idle` a retirement leaves
+    // behind; the panel is open or closed; focus is adrift or the operator's.
+    // Every arm is pinned BOTH ways, because a rule that only ever moved focus
+    // would pass the criterion and yank it out of wherever the operator went.
+    const ends: Record<string, { status: Status; wasStatus: Status["kind"] }> = {
+      "a refusal": { status: { kind: "failed", message: "no" }, wasStatus: "saving" },
+      "a save that landed": { status: { kind: "saved" }, wasStatus: "saving" },
+      "a refusal another widget superseded": {
+        status: { kind: "idle" },
+        wasStatus: "failed",
+      },
+    };
+    for (const [end, { status, wasStatus }] of Object.entries(ends)) {
+      for (const open of [true, false]) {
+        expect(
+          pickerFocus({ open, was: open, status, wasStatus, adrift: true }),
+          `${end}, panel ${open ? "open" : "closed"}, focus on nothing at all`,
+        ).toEqual(open ? "search" : "toggle");
+        expect(
+          pickerFocus({ open, was: open, status, wasStatus, adrift: false }),
+          `${end}, panel ${open ? "open" : "closed"}, focus where they put it`,
+        ).toEqual("leave");
+      }
+    }
+  });
+
+  it("moves focus for no edge a control did not move for", () => {
+    // The negative half of the rule above, and what keeps it from being the
+    // one-line fix (dropping `&& status.kind === "saving"`), which would yank
+    // an operator sitting in an open panel into the search box for a status
+    // they were never shown changing.
+    for (const open of [true, false]) {
+      for (const kind of ["idle", "saved", "failed"] as const) {
+        const status: Status = kind === "failed" ? { kind, message: "no" } : { kind };
+        expect(
+          pickerFocus({ open, was: open, status, wasStatus: kind, adrift: true }),
+          `${kind} still ${kind}, panel ${open ? "open" : "closed"}: nothing happened`,
+        ).toEqual("leave");
+      }
+    }
+    // A confirmation retiring on its own 1.5s clock (admin-window/BUG-0111) is
+    // a status edge that moves no control: it takes a word off the screen
+    // seconds after the fact, so focus is not jumped for it even when adrift.
+    for (const open of [true, false]) {
+      expect(
+        pickerFocus({
+          open,
+          was: open,
+          status: { kind: "idle" },
+          wasStatus: "saved",
+          adrift: true,
+        }),
+        `a confirmation elapsing, panel ${open ? "open" : "closed"}`,
+      ).toEqual("leave");
+    }
+    // And a write STARTING is still the one edge with nowhere to aim once the
+    // panel is closed: the Choose button is disabled for the whole of it, so
+    // the verdict waits rather than spending itself on a no-op.
+    expect(
+      pickerFocus({
+        open: false,
+        was: false,
+        status: { kind: "saving" },
+        wasStatus: "idle",
+        adrift: true,
+      }),
+      "a write in flight with the panel closed: nothing can hold focus yet",
+    ).toEqual("wait");
+  });
+
+  it("puts focus back on the Choose button when a closed panel's refusal is superseded", () => {
+    // admin-window/BUG-0149's closed arm, walked rather than asserted on the
+    // rule: Escape during the write closes the panel (it does not cancel the
+    // PATCH), the refusal arrives on the button, the operator presses a part
+    // of the row that focuses nothing, and then another widget takes the
+    // page's one refusal slot.
+    const shell = pickerShell().chooseButton().pickRow().escape();
+    shell.answer(VENUE_REFUSED);
+    expect(shell.isOpen(), "Escape closed the panel mid-write").toBe(false);
+    expect(shell.focus(), "the refusal landed focus on the button").toEqual("toggle");
+    shell.pressInsideOnNothing();
+    expect(shell.focus(), "and a press on nothing blurred it to the document").toEqual(
+      "nowhere",
+    );
+    const other = shell.otherWidgetRefuses();
+    expect(shell.status().kind, "the older refusal yielded the page's slot").toEqual(
+      "idle",
+    );
+    expect(
+      shell.focus(),
+      "criterion 3: the widget's live control with the panel closed is the button",
+    ).toEqual("toggle");
+    other.release();
+    shell.close();
+  });
+
   it("waits for the Choose button to be real before handing focus back", () => {
     // The ordering that makes this a rule rather than a `.focus()` at the end
     // of `choose()` (admin-window/BUG-0069): Escape does not cancel a PATCH,
@@ -1665,6 +1769,7 @@ describe("where the picker leaves focus", () => {
         open: false,
         was: true,
         status: { kind: "saving" },
+        wasStatus: "saving",
         adrift: true,
       }),
     ).toEqual("wait");
@@ -1688,12 +1793,18 @@ describe("where the picker leaves focus", () => {
     // whatever the operator walked to during a seconds-long write.
     for (const status of [{ kind: "saved" }, { kind: "failed", message: "no" }] as const) {
       expect(
-        pickerFocus({ open: false, was: true, status, adrift: false }),
+        pickerFocus({ open: false, was: true, status, wasStatus: "saving", adrift: false }),
         `${status.kind}: the panel closed while they were elsewhere`,
       ).toEqual("leave");
     }
     expect(
-      pickerFocus({ open: true, was: true, status: { kind: "saving" }, adrift: false }),
+      pickerFocus({
+        open: true,
+        was: true,
+        status: { kind: "saving" },
+        wasStatus: "idle",
+        adrift: false,
+      }),
       "the write disabled the options while they were elsewhere",
     ).toEqual("leave");
 
@@ -1712,15 +1823,27 @@ describe("where the picker leaves focus", () => {
     // every other one on the page.
     for (const adrift of [true, false]) {
       expect(
-        pickerFocus({ open: false, was: false, status: { kind: "idle" }, adrift }),
+        pickerFocus({
+          open: false,
+          was: false,
+          status: { kind: "idle" },
+          wasStatus: "idle",
+          adrift,
+        }),
         `adrift=${adrift}`,
       ).toEqual("leave");
     }
     // ...and an operator who deliberately shift-tabs back to the Choose button
     // with the panel open is not bounced forward into the list again.
     expect(
-      pickerFocus({ open: true, was: true, status: { kind: "idle" }, adrift: true }),
-      "no transition, no write: focus is the operator's",
+      pickerFocus({
+        open: true,
+        was: true,
+        status: { kind: "idle" },
+        wasStatus: "idle",
+        adrift: true,
+      }),
+      "no edge at all — no panel move, no answer: focus is the operator's",
     ).toEqual("leave");
   });
 
