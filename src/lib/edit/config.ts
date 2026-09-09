@@ -41,9 +41,10 @@ export type Regime =
   /**
    * Produced by the resolver (`events`, `venues`). Their values change through
    * the resolution pipeline: an admin edit lands as an admin-tier observation
-   * through the gate (ARCHITECTURE §9.2), never as a direct write, and that
-   * override path is FEAT-0011's. Until it lands they carry an empty
-   * `editable` list and every column of them refuses.
+   * through the gate (ARCHITECTURE §9.2), applied through `apply_resolution`,
+   * stamped `admin_locked` and logged as an item-less `override` verdict —
+   * never as a direct write. That is the ONLY way a catalog value changes from
+   * Admin, and `writePathFor` is what says so.
    */
   | "resolver_owned";
 
@@ -112,7 +113,12 @@ export interface TableEditConfig {
    * The user-facing scalar columns that may be edited. **Never an id, a key
    * or a timestamp**, and never a link or a non-scalar: performers and venues
    * are `event_performers` / `venues` ROWS, not fields of `events`
-   * (AGENTS.md). A `resolver_owned` table carries an empty list in M1.
+   * (AGENTS.md).
+   *
+   * It says WHICH columns, never HOW they are written: the regime decides that
+   * (`writePathFor`), so this one list serves the direct path and the override
+   * path alike. **Widening it later is one edit to one entry** (Ben,
+   * 2026-09-08) — never a second list, never a per-column flag.
    */
   readonly editable: readonly string[];
   /**
@@ -123,13 +129,18 @@ export interface TableEditConfig {
    * each."
    *
    * **Listing a column here can never make it writable.** `decideEdit` below
-   * reads `regime` and `editable` and nothing else, so a `display` column of a
-   * resolver-owned table refuses through the same one code path every other
-   * column refuses through, and the surface draws it with no control at all.
-   * That is why a LINK column may stand here (`events.venue_id`) though it may
-   * never stand in `editable`: showing which venue a resolver-owned event
-   * points at is a read, and AGENTS.md's rule bans WIDENING AN EDIT set to a
-   * link, not looking at one.
+   * reads `editable` and nothing else, so a `display` column refuses through
+   * the same one code path every unmapped column refuses through, and the
+   * surface draws it with no control at all. That is why a LINK column may
+   * stand here (`events.venue_id`) though it may never stand in `editable`:
+   * showing which venue a resolver-owned event points at is a read, and
+   * AGENTS.md's rule bans WIDENING AN EDIT set to a link, not looking at one.
+   *
+   * **A column MOVES here or into `editable`, and never stands in both**
+   * (Ben, 2026-09-08; DECISIONS 2026-09-08): a column in both would be
+   * writable while this half of the map called it read-only. `mappedColumns`
+   * orders pk -> editable -> display, so moving a column between the two lists
+   * cannot reorder the lines a record page draws.
    *
    * The walk sandbox carries an empty list: its columns are already on screen
    * through `editable`, and a column named in both would be drawn once either
@@ -157,22 +168,21 @@ export interface TableEditConfig {
  * through `next.config.ts`, and a PATCH is refused `unknown_table`. The
  * allowlist those two carried until then is gone with them; restoring an entry
  * would be re-implementing what was struck (ARCHITECTURE §9, DECISIONS
- * 2026-09-08). The TABLES themselves are untouched — `lib/db/tables.ts` still
- * spells both, the schema description still describes them, and the residue
- * sweep still reads every column of both.
+ * 2026-09-08). The TABLES themselves are untouched — the table registry
+ * (`lib/db/tables.ts`) keeps both names and the schema description still
+ * describes both tables. The residue sweep does NOT read them: it iterates the
+ * MAPPED tables (`tests/live/residue.live.test.ts` over `EDITABLE_TABLES`), so
+ * no column of either is swept any more (DECISIONS 2026-09-08, corrected the
+ * same day).
  */
 const ENTRIES: readonly TableEditConfig[] = [
-  // Resolver-owned. Present in the map so the surface knows they exist and
-  // renders them READ-ONLY — with an empty `editable` list, which is what
-  // makes every column of theirs refuse through the same one code path, and a
-  // `display` list carrying what an operator came to see.
-  //
-  // The columns are Ben's ruling of 2026-09-02 (events: title, description,
-  // poster, starts_at, venue; venues: name, city, country, address), spelled
-  // as the DATABASE spells them — the map's names are the names the query
-  // uses, and `tests/offline/edit/config.test.ts` asserts every one against
-  // the scraper's canonical-storage migration. Two of Ben's five are shorthand
-  // for the real column and are resolved the only way they can be:
+  // Resolver-owned. The columns are Ben's ruling of 2026-09-02 (events: title,
+  // description, poster, starts_at, venue; venues: name, city, country,
+  // address), spelled as the DATABASE spells them — the map's names are the
+  // names the query uses, and `tests/offline/edit/config.test.ts` asserts
+  // every one against the scraper's canonical-storage migration. Two of Ben's
+  // five are shorthand for the real column and are resolved the only way they
+  // can be:
   //   poster -> poster_url  (the events column holding the poster art)
   //   venue  -> venue_id    (the only venue-bearing column of `events`; the
   //                          venue's own name/city/country/address are the
@@ -180,24 +190,43 @@ const ENTRIES: readonly TableEditConfig[] = [
   //                          a claim this file made before the click existed,
   //                          which is what `reference` below now carries
   //                          (admin-window/BUG-0034))
+  //
+  // WHICH of them may be WRITTEN is Ben's second answer, of 2026-09-08
+  // (`EDIT_ALLOWLIST_EVENTS_VENUES`, SPEC named gap 7; DECISIONS 2026-09-08):
+  // the four scalars of each below. They MOVED out of `display` rather than
+  // being copied into `editable`, so `events.display` is the reference alone
+  // and `venues.display` is empty, and the record pages draw the same lines in
+  // the same order they drew before. `event_type`, `status` and
+  // `time_precision` stay out because all three are CHECK-constrained;
+  // `ends_at`, `ticket_url` and every unlisted `venues` column stay out for
+  // want of a ruling. Neither exclusion is a builder's judgment, and adding one
+  // later is one string in one array here.
+  //
+  // Two of the eight carry a registry PATTERN the gate enforces on the way in —
+  // `venues.country` is `^[A-Z]{2}$` and `events.poster_url` is `^https://`
+  // (the scraper's own registration migrations) — and this file states no copy
+  // of either. The gate is the authority: a value it refuses comes back as the
+  // database's own words at the field, which is why there is no client-side
+  // validator anywhere in this repo (admin-window/TASK-0044 QA, 2026-09-08).
   {
     table: "events",
     pk: "event_id",
     regime: "resolver_owned",
-    editable: [],
-    display: ["title", "description", "poster_url", "starts_at", "venue_id"],
+    editable: ["title", "description", "poster_url", "starts_at"],
+    display: ["venue_id"],
     // The one link on this surface: `venue_id` is drawn as the venue itself —
     // its name, and a route to its own record — never as the bare uuid that
     // told the operator less than the Browse row they clicked
-    // (admin-window/BUG-0034).
+    // (admin-window/BUG-0034). It is a LINK, so it stays read-only: a
+    // reference is F12's picker, never a cell (AGENTS.md).
     reference: { field: "venue_id", domain: "venues" },
   },
   {
     table: "venues",
     pk: "venue_id",
     regime: "resolver_owned",
-    editable: [],
-    display: ["name", "city", "country", "address"],
+    editable: ["name", "city", "country", "address"],
+    display: [],
     reference: null,
   },
   // The walk sandbox: a STAGING-ONLY table an agent walking the edit surface
@@ -278,10 +307,19 @@ export function editConfigFor(table: string): TableEditConfig | null {
     : null;
 }
 
-/** Why an edit was refused. Each carries the words the caller is given. */
+/**
+ * Why an edit was refused. Each carries the words the caller is given.
+ *
+ * TWO refusals, since the override path landed (FEAT-0011): the table is not
+ * in the map, or the column is not in that table's `editable`. There is no
+ * arm for "this table is read-only from Admin" any more — a resolver-owned
+ * table is written through the override path, and a column of it the map does
+ * not carry is refused for the ordinary reason, NAMING THE FIELD, exactly as
+ * an unmapped column of the sandbox is (ARCHITECTURE §9; FEAT-0011 criterion
+ * 5). One vocabulary for both regimes.
+ */
 export type EditRefusal =
   | { readonly kind: "unknown_table"; readonly table: string; readonly message: string }
-  | { readonly kind: "resolver_owned"; readonly table: string; readonly message: string }
   | {
       readonly kind: "field_not_editable";
       readonly table: string;
@@ -291,11 +329,21 @@ export type EditRefusal =
 
 /**
  * An edit the map allows. Only `decideEdit` produces one, so no caller can
- * reach the write path without having consulted the map.
+ * reach a write path without having consulted the map.
  */
 export interface AllowedEdit {
   readonly config: TableEditConfig;
   readonly field: string;
+  /**
+   * HOW this edit is written, carried on the decision itself — the regime's
+   * answer through `writePathFor`, resolved once, here.
+   *
+   * The caller branches on THIS and never on the table name or a config key
+   * (ARCHITECTURE §9, FEAT-0011 criterion 1): a route reading `config.table`
+   * to pick a path would be the map's answer re-derived by hand, and the day
+   * a table changed regime the two would disagree.
+   */
+  readonly path: WritePath;
 }
 
 export type EditDecision =
@@ -303,7 +351,8 @@ export type EditDecision =
   | { readonly allowed: false; readonly refusal: EditRefusal };
 
 /**
- * **The single decision**: may this table's this column be written from Admin?
+ * **The single decision**: may this table's this column be written from Admin,
+ * and by which path?
  *
  * Pure, so the map's semantics are provable without a database, and shared, so
  * the route and the data layer cannot drift apart. A refusal names the field
@@ -314,6 +363,12 @@ export type EditDecision =
  * `display` column: this function does not read `display` at all, which is
  * what makes the read-only half of the map read-only by construction rather
  * than by the surface remembering to hide a control (admin-window/TASK-0029).
+ *
+ * It answers nothing about whether the path is OPEN. A resolver-owned column
+ * is allowed here and still refuses at the write when the settlement function
+ * is absent, which is the graded normal case of this whole milestone: the
+ * surface asks the seam, and the refusal names what is missing rather than
+ * this map pretending to know (ARCHITECTURE §9.2).
  */
 export function decideEdit(table: string, field: string): EditDecision {
   const config = editConfigFor(table);
@@ -324,18 +379,6 @@ export function decideEdit(table: string, field: string): EditDecision {
         kind: "unknown_table",
         table,
         message: `${table} is not an editable table`,
-      },
-    };
-  }
-  if (writePathFor(config.regime) !== "direct") {
-    return {
-      allowed: false,
-      refusal: {
-        kind: "resolver_owned",
-        table,
-        message:
-          `${table} is resolver-owned and read-only from Admin; its values ` +
-          `change through the resolution pipeline, not by a direct edit`,
       },
     };
   }
@@ -350,7 +393,12 @@ export function decideEdit(table: string, field: string): EditDecision {
       },
     };
   }
-  return { allowed: true, edit: { config, field } };
+  // The map allows it; the REGIME says how it is written. The two questions are
+  // answered in one place so no caller re-derives the second one.
+  return {
+    allowed: true,
+    edit: { config, field, path: writePathFor(config.regime) },
+  };
 }
 
 /** Shorthand for the decision above when only the yes/no is wanted. */

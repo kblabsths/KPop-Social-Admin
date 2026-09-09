@@ -20,10 +20,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const updateRecordField = vi.fn();
+/**
+ * The settlement seam, spied — the override path's whole database side
+ * (campaign admin-window/TASK-0054). Spied rather than exercised for the same
+ * reason the writer is: "no write was even attempted" has to be observable,
+ * and so does "exactly one call, carrying exactly this".
+ */
+const settleReviewItem = vi.fn();
 
 vi.mock("@/lib/admin", () => ({
-  requireAdmin: vi.fn(async () => ({ user: { email: "qa@example.invalid" } })),
+  requireAdmin: vi.fn(async () => ({ user: { email: ADMIN_EMAIL } })),
 }));
+
+vi.mock("@/lib/db/verdict", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db/verdict")>();
+  return {
+    ...actual,
+    settleReviewItem: (...args: unknown[]) => settleReviewItem(...args),
+  };
+});
 
 // The writer alone is replaced by the spy; every other export stays REAL —
 // `isRecordId` above all, because the route must ask the record page's own id
@@ -40,6 +55,18 @@ vi.mock("@/lib/db/records", async (importOriginal) => {
 const { PATCH } = await import("@/app/api/admin/records/[table]/[id]/route");
 
 const RECORD_ID = "2f0bc11e-0000-4000-8000-000000000001";
+
+/** The signed-in admin the stubbed gate hands the handler. */
+const ADMIN_EMAIL = "qa@example.invalid";
+
+/** A receipt shaped like the one the settlement function returns. */
+const RECEIPT = {
+  verdict_id: "01920000-0000-7000-8000-000000000901",
+  review_item_id: null,
+  action: "override",
+  observation_id: "01920000-0000-7000-8000-000000000902",
+  created_at: "2026-09-08T12:00:00Z",
+};
 
 /** Drive the handler the way the network would: a Request and route params. */
 async function patch(table: string, body: unknown, id = RECORD_ID) {
@@ -64,6 +91,8 @@ beforeEach(() => {
     kind: "ok",
     data: { sandbox_id: RECORD_ID, label: "written" },
   });
+  settleReviewItem.mockReset();
+  settleReviewItem.mockResolvedValue({ kind: "ok", data: RECEIPT });
 });
 
 /* ── the one edit that is allowed ─────────────────────────────────────────── */
@@ -99,6 +128,219 @@ describe("a mapped column of the one directly-written table", () => {
   });
 });
 
+/* ── the override path: one call, and nothing else ────────────────────────── */
+
+/**
+ * The resolver-owned half of the route — campaign admin-window/TASK-0054,
+ * FEAT-0011 criteria 1 and 3.
+ *
+ * A mapped column of `events` or `venues` is written as ONE admin-tier
+ * observation through the settlement seam, and Admin performs none of the
+ * steps behind it: no second write, no provenance insert, no lock update. The
+ * writer spy is what makes "and never the direct path" observable.
+ */
+describe("a mapped column of a resolver-owned table", () => {
+  it("makes exactly one settlement call, and no direct write", async () => {
+    const { status } = await patch("events", { field: "title", value: "A new title" });
+    expect(status).toBe(200);
+    expect(settleReviewItem).toHaveBeenCalledTimes(1);
+    expect(updateRecordField).not.toHaveBeenCalled();
+  });
+
+  it("carries the override envelope exactly, and nothing else", async () => {
+    await patch("venues", { field: "city", value: "Seoul" });
+    const [client, decision] = settleReviewItem.mock.calls[0] as [
+      unknown,
+      Record<string, unknown>,
+    ];
+    // The seam resolves the app's own client (§4.1): a route that built one
+    // would throw outside the try that classifies every failure.
+    expect(client).toBeUndefined();
+    // The whole envelope, key for key — a field the function does not read is
+    // scraper registry knowledge re-encoded by hand (ARCHITECTURE §9.2), and
+    // an extra one would be exactly that.
+    expect(decision).toEqual({
+      action: "override",
+      // Item-less: spec §7's "an override is the same row without the item".
+      review_item_id: null,
+      // The signed-in admin, from the gate — never from the body.
+      actor: ADMIN_EMAIL,
+      note: null,
+      value: {
+        domain: "venues",
+        entity_id: RECORD_ID,
+        field: "city",
+        observation_id: null,
+        value: "Seoul",
+        ref: null,
+      },
+    });
+  });
+
+  it("takes the actor from the gate, whatever the body claims", async () => {
+    await patch("events", {
+      field: "title",
+      value: "A new title",
+      actor: "someone.else@example.invalid",
+      action: "keep_current",
+      review_item_id: "01920000-0000-7000-8000-000000000999",
+    });
+    const [, decision] = settleReviewItem.mock.calls[0] as [
+      unknown,
+      Record<string, unknown>,
+    ];
+    expect(decision.actor).toBe(ADMIN_EMAIL);
+    expect(decision.action).toBe("override");
+    expect(decision.review_item_id).toBeNull();
+  });
+
+  it("carries a number and a boolean as themselves, not as text", async () => {
+    // The envelope's `value` is the scalar the operator typed; the coercion is
+    // the database's, as it is on the direct path.
+    await patch("events", { field: "starts_at", value: "2026-10-01T19:00:00Z" });
+    let [, decision] = settleReviewItem.mock.calls[0] as [unknown, { value: { value: unknown } }];
+    expect(decision.value.value).toBe("2026-10-01T19:00:00Z");
+    settleReviewItem.mockClear();
+
+    await patch("venues", { field: "name", value: 12 });
+    [, decision] = settleReviewItem.mock.calls[0] as [unknown, { value: { value: unknown } }];
+    expect(decision.value.value).toBe(12);
+  });
+
+  it("answers 503 naming what is absent, which is the normal case", async () => {
+    // `settle_review_item` is on no database this app deploys against yet, so
+    // this is the graded-first answer (ARCHITECTURE §9.2). Never a fake
+    // success, and never a direct write instead.
+    settleReviewItem.mockResolvedValue({
+      kind: "not_provisioned",
+      missing: "settle_review_item",
+    });
+    const { status, text } = await patch("events", { field: "title", value: "x" });
+    expect(status).toBe(503);
+    const body = JSON.parse(text);
+    expect(body.error).toContain("settle_review_item");
+    expect(body.missing).toBe("settle_review_item");
+    expect(body.ok).toBeUndefined();
+    expect(updateRecordField).not.toHaveBeenCalled();
+  });
+
+  it("hands the gate's own refusal back in its words, and claims nothing", async () => {
+    // Two of Ben's eight columns carry a registry PATTERN the gate enforces —
+    // `venues.country` is `^[A-Z]{2}$`, `events.poster_url` is `^https://` —
+    // and this app holds no copy of either rule (admin-window/TASK-0044 QA).
+    // What comes back is the database's own refusal, verbatim, with the row
+    // unchanged: the same shape the direct path already gives a `23502`.
+    const REFUSALS: ReadonlyArray<readonly [string, string, unknown, string]> = [
+      [
+        "venues",
+        "country",
+        "USA",
+        'KS004: value for field "country" fails the registered pattern ^[A-Z]{2}$',
+      ],
+      [
+        "events",
+        "poster_url",
+        "http://example.invalid/poster.jpg",
+        'KS004: value for field "poster_url" fails the registered pattern ^https://',
+      ],
+    ];
+    for (const [table, field, value, said] of REFUSALS) {
+      settleReviewItem.mockResolvedValue({
+        kind: "error",
+        reading: "settle_review_item",
+        message: said,
+      });
+      const { status, text } = await patch(table, { field, value });
+      const where = `${table}.${field}`;
+      expect(status, where).toBe(500);
+      // Verbatim — the app never paraphrases what the database said.
+      expect(JSON.parse(text).error, where).toBe(said);
+      expect(JSON.parse(text).ok, where).toBeUndefined();
+      expect(updateRecordField, where).not.toHaveBeenCalled();
+      expect(settleReviewItem, where).toHaveBeenCalledTimes(1);
+      settleReviewItem.mockClear();
+    }
+  });
+
+  it("refuses a clear rather than sending an override that says nothing", async () => {
+    // An override carries exactly one filled payload slot and a null value
+    // fills none (`decisionRefusals`, invariant 5). Clearing a resolver-owned
+    // field is therefore not expressible as an override, and the route says so
+    // — named, 400, before the database — instead of sending a decision the
+    // function would raise on.
+    for (const value of [null, ""]) {
+      const { status, text } = await patch("events", { field: "title", value });
+      expect(status, JSON.stringify(value)).toBe(400);
+      expect(JSON.parse(text).refusals, JSON.stringify(value)).toContain(
+        "value_payload_missing",
+      );
+      expect(settleReviewItem, JSON.stringify(value)).not.toHaveBeenCalled();
+      expect(updateRecordField, JSON.stringify(value)).not.toHaveBeenCalled();
+    }
+  });
+
+  it("answers a malformed id without settling anything", async () => {
+    const { status } = await patch("events", { field: "title", value: "x" }, "walk-1");
+    expect(status).toBe(404);
+    expect(settleReviewItem).not.toHaveBeenCalled();
+  });
+
+  it("returns the verdict receipt, and no record it did not read", async () => {
+    // The value the operator typed became an OBSERVATION; what the canonical
+    // row holds now is the pipeline's answer, read on the next render.
+    // Reporting the request back as the stored value would be a fake success.
+    const { status, text } = await patch("events", { field: "title", value: "x" });
+    expect(status).toBe(200);
+    expect(JSON.parse(text)).toEqual({ ok: true, verdict: RECEIPT });
+  });
+});
+
+/* ── the branch is the PATH, never the table name ─────────────────────────── */
+
+describe("the route branches on the write path alone", () => {
+  it("sends each regime down its own path, on two fixtures", async () => {
+    // FEAT-0011 criterion 1: one table per path, and the route's choice is
+    // `writePathFor`'s answer carried on the decision — not a table name, not
+    // a config key.
+    const { EDIT_CONFIG, decideEdit, writePathFor } = await import("@/lib/edit/config");
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      ["walk_sandbox", "label"],
+      ["events", "title"],
+    ];
+    for (const [table, field] of cases) {
+      const decision = decideEdit(table, field);
+      expect(decision.allowed, table).toBe(true);
+      if (!decision.allowed) continue;
+      expect(decision.edit.path, table).toBe(
+        writePathFor(EDIT_CONFIG[table].regime),
+      );
+
+      await patch(table, { field, value: "x" });
+      const direct = decision.edit.path === "direct";
+      expect(updateRecordField.mock.calls.length, table).toBe(direct ? 1 : 0);
+      expect(settleReviewItem.mock.calls.length, table).toBe(direct ? 0 : 1);
+      updateRecordField.mockReset();
+      updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
+      settleReviewItem.mockReset();
+      settleReviewItem.mockResolvedValue({ kind: "ok", data: RECEIPT });
+    }
+  });
+
+  it("spells no table name of its own, so no name can choose a path", async () => {
+    const { codeLines } = await import("../source-tree");
+    const route = codeLines("src/app/api/admin/records/[table]/[id]/route.ts");
+    for (const table of ["events", "venues", "walk_sandbox", "groups", "idols"]) {
+      expect(
+        route.filter((line) => line.includes(`"${table}"`)),
+        table,
+      ).toEqual([]);
+    }
+    // ...and it does read the path off the decision, so the negative above is
+    // not green by the branch having gone missing.
+    expect(route.some((line) => line.includes("edit.path"))).toBe(true);
+  });
+});
+
 /* ── the refusals: 4xx, and the writer never called ───────────────────────── */
 
 /** Every refusal asserts BOTH halves: a non-2xx, and no write attempted. */
@@ -107,6 +349,9 @@ async function refused(table: string, body: unknown, where: string) {
   expect(status, where).toBeGreaterThanOrEqual(400);
   expect(status, where).toBeLessThan(500);
   expect(updateRecordField, where).not.toHaveBeenCalled();
+  // Both paths, every time: a refusal that reached the settlement function
+  // would have written an observation, which is a write like any other.
+  expect(settleReviewItem, where).not.toHaveBeenCalled();
 }
 
 describe("the handler refuses a forged edit and attempts no write", () => {
@@ -130,16 +375,33 @@ describe("the handler refuses a forged edit and attempts no write", () => {
     }
   });
 
-  it("refuses every column of a resolver-owned table", async () => {
+  it("refuses a column of a resolver-owned table the map does not carry, 403, naming the field", async () => {
+    // FEAT-0011 criterion 5, server-side and at the ROUTE: the reference
+    // column, the CHECK-constrained three, the unruled ones and a key. Each is
+    // refused exactly as an unmapped column of the sandbox is — hiding a
+    // widget is not a refusal.
     for (const [table, field] of [
-      ["events", "title"],
-      ["events", "starts_at"],
       ["events", "venue_id"],
-      ["venues", "name"],
-      ["venues", "city"],
+      ["events", "event_type"],
+      ["events", "status"],
+      ["events", "time_precision"],
+      ["events", "ends_at"],
+      ["events", "ticket_url"],
+      ["events", "created_at"],
+      ["venues", "timezone"],
+      ["venues", "website"],
+      ["venues", "latitude"],
     ] as const) {
-      await refused(table, { field, value: "forged" }, `${table}.${field}`);
+      const { status, text } = await patch(table, { field, value: "forged" });
+      expect(status, `${table}.${field}`).toBe(403);
+      expect(JSON.parse(text).error, `${table}.${field}`).toBe(
+        `${field} is not an editable field of ${table}`,
+      );
+      expect(updateRecordField, `${table}.${field}`).not.toHaveBeenCalled();
+      expect(settleReviewItem, `${table}.${field}`).not.toHaveBeenCalled();
       updateRecordField.mockReset();
+      settleReviewItem.mockReset();
+      settleReviewItem.mockResolvedValue({ kind: "ok", data: RECEIPT });
     }
   });
 
@@ -493,7 +755,7 @@ describe("a segment that is not a record id", () => {
     const bad = "walk-1";
     const cases: readonly [string, unknown, number, RegExp][] = [
       ["nosuchtable", { field: "name", value: "x" }, 404, /not an editable table/],
-      ["events", { field: "title", value: "x" }, 403, /resolver-owned/],
+      ["events", { field: "event_type", value: "x" }, 403, /event_type/],
       ["walk_sandbox", { field: "spotify_id", value: "x" }, 403, /spotify_id/],
       ["walk_sandbox", { field: "label" }, 400, /value/i],
     ];
@@ -627,7 +889,7 @@ describe("the id gate, attacked (QA, admin-window/BUG-0068)", () => {
     // the gate added exactly one answer, it did not relabel the others.
     const cases: ReadonlyArray<readonly [string, string, unknown, number]> = [
       ["a".repeat(8000), "nosuchtable", { field: "name", value: "x" }, 404],
-      [`{${RECORD_ID}}`, "events", { field: "title", value: "x" }, 403],
+      [`{${RECORD_ID}}`, "events", { field: "event_type", value: "x" }, 403],
       ["٢f0b", "walk_sandbox", { field: "spotify_id", value: "x" }, 403],
       [`${RECORD_ID}\n`, "walk_sandbox", { field: "label" }, 400],
       [`${RECORD_ID}\u0000`, "walk_sandbox", "not json at all", 400],

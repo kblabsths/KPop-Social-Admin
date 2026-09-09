@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
-import { recordFields } from "@/components/records/fields";
+import { recordFields, type WriteAccess } from "@/components/records/fields";
 import { RecordFields } from "@/components/records/record-fields";
 import { Empty, Page, Section, StateOf } from "@/components/ui";
 import {
@@ -9,6 +9,7 @@ import {
   readRecordProvenance,
   readRecordReference,
 } from "@/lib/db/records";
+import { readSettlementReadiness } from "@/lib/db/verdict";
 import {
   editConfigFor,
   writePathFor,
@@ -41,9 +42,15 @@ import { EM_DASH } from "@/lib/format";
  *    `src/components/` because components do (ARCHITECTURE.md §4 rule 6) and
  *    because a server component cannot hand a callback to a client one; the
  *    page renders no input of its own and never will;
- *  - `events` and `venues` are resolver-owned and render READ-ONLY: no widget,
- *    no disabled input, no button toward a write path that does not exist —
- *    their override path is FEAT-0011's (ARCHITECTURE §9.2);
+ *  - `events` and `venues` are resolver-owned, so a column their allowlist
+ *    carries edits as the SAME cell — through the override path, which records
+ *    the edit as an admin-tier observation rather than writing the row
+ *    (ARCHITECTURE §9.2, campaign admin-window/TASK-0054). Whether that path
+ *    is open is a question about the DATABASE and is asked here, once, of the
+ *    one seam (`readSettlementReadiness`): closed, the page renders read-only
+ *    with the reason named and draws no control at all — no widget, no
+ *    disabled input, no button toward a write path that does not exist. That
+ *    is the graded normal case, and it is exactly the surface M1 shipped;
  *  - `groups` and `idols` have no record surface at all. Ben struck the direct
  *    catalog edit on 2026-09-08 and they left the map with it, so this page
  *    never renders either one; the URL is a routed 404 (ARCHITECTURE §9,
@@ -101,9 +108,32 @@ function regimeNote(config: TableEditConfig): string {
         `changed here is written to it as it stands and reaches no catalog ` +
         `record. No field provenance is recorded for it, so no source is ` +
         `shown beside a value.`
-    : `${config.table} is resolver-owned and read-only from Admin: its values ` +
-        `change through the resolution pipeline, not by a direct edit.`;
+    : `${config.table} is resolver-owned: its values change through the ` +
+        `resolution pipeline, never by a direct edit. An edit here is ` +
+        `recorded as an admin override — an observation at the admin tier, ` +
+        `applied through the pipeline and logged — and the pipeline then ` +
+        `leaves that field alone.`;
 }
+
+/**
+ * What stands in for the controls when the override path is CLOSED — campaign
+ * admin-window/TASK-0054, FEAT-0011 criterion 2.
+ *
+ * It says the consequence in the app's voice; the card beneath it names the
+ * object that is missing, in the object's own spelling, because that is the
+ * one thing an operator (or an oracle) can act on. Two lines rather than one
+ * for the reason the four states already separate: what the surface can do is
+ * the app's business, and what the database is missing is the database's
+ * (LOOK_AND_FEEL state 3, Voice bar 4).
+ *
+ * It is a statement about the PATH, so it never varies with the record's data,
+ * and it is said once per record — never per line, and never in place of a
+ * value.
+ */
+const OVERRIDE_UNAVAILABLE =
+  "No field here can be edited: an edit is recorded through the resolution " +
+  "pipeline, and what records it is not present in this database. Every " +
+  "value below is read-only until it is.";
 
 /**
  * What an EMPTY provenance cell means, said once above the table — campaign
@@ -322,9 +352,9 @@ export default async function RecordPage({
   }
 
   // Two reads, reported separately: the record's values, then the per-field
-  // provenance behind them. A table with no `display` columns issues no
-  // provenance query at all (`readRecordProvenance`), which is why the walk
-  // sandbox still makes exactly one read.
+  // provenance behind them. A table Admin writes directly issues no provenance
+  // query at all (`readRecordProvenance`), which is why the walk sandbox still
+  // makes exactly one read.
   const result = await readRecord(config, id);
   const provenance = await readRecordProvenance(config, id);
   // The third leg, and the narrowest: the NAME of the record this one's
@@ -334,6 +364,21 @@ export default async function RecordPage({
   // value.
   const record = result.kind === "ok" ? result.data : null;
   const reference = await readRecordReference(config, id, record);
+
+  // The FOURTH leg, and the narrowest of all: may this table's write path be
+  // offered at all? Asked of the one seam, never of a copy (common violation
+  // 9), and only where the answer can change anything — an override-path table
+  // that really has a record on screen. The direct path needs no asking: its
+  // table answered the read above, and a refusal of the write itself is the
+  // database's to make.
+  const settlement =
+    record !== null && writePathFor(config.regime) === "override"
+      ? await readSettlementReadiness()
+      : null;
+  const access: WriteAccess =
+    writePathFor(config.regime) === "direct" || settlement?.kind === "ok"
+      ? "open"
+      : "closed";
 
   let body;
   if (result.kind !== "ok") {
@@ -363,6 +408,7 @@ export default async function RecordPage({
           result.data,
           provenance.fields,
           reference.name,
+          access,
         )}
       />
     );
@@ -376,6 +422,17 @@ export default async function RecordPage({
 
   return (
     <RecordFrame config={config} id={id}>
+      {settlement !== null && settlement.kind !== "ok" ? (
+        <>
+          <p
+            data-note="override-unavailable"
+            className="type-body text-ink-secondary"
+          >
+            {OVERRIDE_UNAVAILABLE}
+          </p>
+          <StateOf result={settlement} />
+        </>
+      ) : null}
       {provenanceLegend ? <ProvenanceLegend /> : null}
       {provenance.note ? <StateOf result={provenance.note} /> : null}
       {reference.note ? <StateOf result={reference.note} /> : null}

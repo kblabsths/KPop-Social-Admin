@@ -190,8 +190,14 @@ describe("updateRecordField refuses, and issues no query at all", () => {
       idols: { data: { id: ROW_ID } },
     });
     const config = EDIT_CONFIG[table] ?? EDIT_CONFIG.walk_sandbox;
+    // `path: "direct"` is the FORGERY, and after the override path landed it
+    // is the one that matters: `decideEdit` allows a mapped column of
+    // `events`/`venues` now, so the only thing standing between a caller and
+    // an `.update()` on a catalog row is the data layer re-deriving the path
+    // from the config's own regime (admin-window/TASK-0054, FEAT-0011
+    // criterion 4).
     const result = await updateRecordField(
-      { config, field },
+      { config, field, path: "direct" },
       ROW_ID,
       "forged",
       db.asSupabaseClient(),
@@ -244,6 +250,7 @@ describe("updateRecordField refuses, and issues no query at all", () => {
             reference: null,
           },
           field,
+          path: "direct",
         },
         ROW_ID,
         "forged",
@@ -257,17 +264,60 @@ describe("updateRecordField refuses, and issues no query at all", () => {
     expect(db.calls).toEqual([]);
   });
 
-  it("refuses every column of a resolver-owned table", async () => {
+  it("refuses every column of a resolver-owned table, mapped or not", async () => {
+    // Both halves, because they refuse for different reasons and BOTH have to
+    // hold: `venue_id` and `event_type` are not in `editable` at all, while
+    // `title`, `starts_at` and `venues.name` ARE — they are exactly what the
+    // override path writes — and a direct write of them is what this layer
+    // must never build (FEAT-0011 criterion 4). The stub scripts all three
+    // tables, so an empty call list is a real negative: had a query been
+    // built, it would have been answered.
     for (const [table, field] of [
       ["events", "title"],
+      ["events", "starts_at"],
       ["events", "venue_id"],
+      ["events", "event_type"],
       ["venues", "name"],
+      ["venues", "country"],
+      ["venues", "timezone"],
     ] as const) {
       const { result, calls } = await refuse(table, field);
-      expect(result.kind, table).toBe("error");
-      if (result.kind === "error") expect(result.message).toContain(table);
-      expect(calls, table).toEqual([]);
+      expect(result.kind, `${table}.${field}`).toBe("error");
+      if (result.kind === "error") {
+        expect(result.message, `${table}.${field}`).toContain(table);
+      }
+      expect(calls, `${table}.${field}`).toEqual([]);
     }
+  });
+
+  it("refuses the map's own config for a resolver-owned table, obtained honestly", async () => {
+    // Not a forgery at all: `decideEdit("events", "title")` ALLOWS the edit —
+    // that is the override path — and its `AllowedEdit` carries
+    // `path: "override"`. Handing it here must still write nothing, so that
+    // "no `.update()` targets a catalog table on any path" is a property of
+    // the data layer and not of the route's branch (FEAT-0011 criterion 4).
+    const db = stubClient({
+      events: { data: { event_id: ROW_ID } },
+      venues: { data: { venue_id: ROW_ID } },
+    });
+    for (const [table, field] of [
+      ["events", "title"],
+      ["venues", "city"],
+    ] as const) {
+      const edit = allowed(table, field);
+      expect(edit.path, `${table}.${field}`).toBe("override");
+      const result = await updateRecordField(
+        edit,
+        ROW_ID,
+        "forged",
+        db.asSupabaseClient(),
+      );
+      expect(result.kind, `${table}.${field}`).toBe("error");
+      if (result.kind === "error") {
+        expect(result.message, `${table}.${field}`).toContain(table);
+      }
+    }
+    expect(db.calls).toEqual([]);
   });
 
   it("refuses a forged config whose table the map does not carry", async () => {
@@ -292,6 +342,7 @@ describe("updateRecordField refuses, and issues no query at all", () => {
             reference: null,
           },
           field: "name",
+          path: "direct",
         },
         ROW_ID,
         "forged",
@@ -317,6 +368,7 @@ describe("updateRecordField refuses, and issues no query at all", () => {
           reference: null,
         },
         field: "created_at",
+        path: "direct",
       },
       ROW_ID,
       "forged",
@@ -339,6 +391,7 @@ describe("updateRecordField refuses, and issues no query at all", () => {
           reference: null,
         },
         field: "label",
+        path: "direct",
       },
       ROW_ID,
       "a forged key",
@@ -426,11 +479,12 @@ describe("readRecordProvenance", () => {
     return { data: rows, count: rows.length };
   }
 
-  it("issues no query at all for a table with no display columns", async () => {
+  it("issues no query at all for a table Admin writes directly", async () => {
     // The walk sandbox's case. `field_provenance` carries rows for
     // resolver-owned entities; reading it for a staging fixture could only
     // ever answer "no rows" — or hand a page with no provenance to miss a
-    // not-provisioned card.
+    // not-provisioned card. It keys on the WRITE PATH: `venues` displays no
+    // column at all now and is exactly the table whose provenance is wanted.
     const db = stubClient({});
     const result = await readRecordProvenance(
       EDIT_CONFIG.walk_sandbox,
@@ -442,7 +496,7 @@ describe("readRecordProvenance", () => {
     expect(result.fields.size).toBe(0);
   });
 
-  it("reads the log for this entity and this row's displayed fields", async () => {
+  it("reads the log for this entity and this row's mapped fields", async () => {
     const db = stubClient({
       field_provenance: complete([
         fieldProvenanceRow({ entity_id: EVENT_ID, field: "title" }),
@@ -459,7 +513,14 @@ describe("readRecordProvenance", () => {
     expect(
       log.steps.filter((s) => s.method === "eq").map((s) => s.args),
     ).toContainEqual(["entity_id", EVENT_ID]);
-    expect(step(log, "in")?.args).toEqual(["field", [...EDIT_CONFIG.events.display]]);
+    // The MAP's columns, not `display` alone: the columns an operator
+    // overrides are the ones an admin decision stamps, and a filter on
+    // `display` would drop every one of them (FEAT-0011 criterion 6).
+    expect(step(log, "in")?.args).toEqual([
+      "field",
+      [...mappedColumns(EDIT_CONFIG.events)],
+    ]);
+    expect(step(log, "in")?.args[1]).toContain("title");
   });
 
   it("is a complete read: exact count, total order, capped range", async () => {

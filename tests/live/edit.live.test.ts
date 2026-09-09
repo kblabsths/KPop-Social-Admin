@@ -2,7 +2,8 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import type { SaveOutcome } from "@/components/EditableCell";
 import { submitFieldEdit, type FetchLike } from "@/components/records/submit";
-import { EDITABLE_TABLES, EDIT_CONFIG } from "@/lib/edit/config";
+import { EDITABLE_TABLES, EDIT_CONFIG, mappedColumns } from "@/lib/edit/config";
+import { FN } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
 import {
   ABSENCE_CODES,
@@ -264,16 +265,21 @@ describe("a forged edit", () => {
   // a column the map does not carry" at the foot of this file
   // (admin-window/TASK-0037). It is not repeated here.
 
-  it("is refused on a resolver-owned table, which has no write path at all", async () => {
+  it("is refused on a column of a resolver-owned table the map does not carry", async () => {
     for (const table of ["events", "venues"]) {
       const config = EDIT_CONFIG[table];
       expect(config.regime).toBe("resolver_owned");
       const { id, row } = await subject(config);
 
-      // A REAL column of the table, and its identity column: neither is
-      // writable from Admin, because no write path to this table exists.
-      const real = Object.keys(row).find((name) => name !== config.pk);
-      const fields = real ? [real, config.pk] : [config.pk];
+      // A REAL column of the table that the map leaves out, and its identity
+      // column: 403 naming the field, with nothing written (FEAT-0011
+      // criterion 5). `mappedColumns` is what the map DOES carry, so this
+      // picks a column outside it from the row staging actually returned.
+      const mapped = mappedColumns(config);
+      const unmapped = Object.keys(row).find(
+        (name) => !mapped.includes(name) && name !== config.pk,
+      );
+      const fields = unmapped ? [unmapped, config.pk] : [config.pk];
       for (const field of fields) {
         const { status, body } = await patch(config.table, id, {
           field,
@@ -283,6 +289,45 @@ describe("a forged edit", () => {
       }
 
       expect(await wholeRow(config, id)).toEqual(row);
+    }
+  });
+
+  /**
+   * The override path against staging, where the function is ABSENT — the
+   * graded normal case of the whole milestone (campaign
+   * admin-window/TASK-0054, FEAT-0011 criterion 2; ARCHITECTURE §9.2).
+   *
+   * A MAPPED column of `events` and of `venues`, edited through the app's one
+   * write route, with a real service-role client behind it. The answer must be
+   * the honest one — not provisioned, naming what is missing — and the row
+   * must be byte-identical afterwards, read back independently. Neither a fake
+   * success nor a direct write, which is the pair this ticket exists to
+   * prevent.
+   *
+   * It writes nothing on any path, so it needs no sweep: if it ever did write,
+   * the row comparison below is what would say so.
+   */
+  it("answers a mapped column's override with the absence, and changes nothing", async () => {
+    for (const table of ["events", "venues"]) {
+      const config = EDIT_CONFIG[table];
+      const field = config.editable[0];
+      expect(field, `${table} has no editable column`).toBeTypeOf("string");
+      const { id, row } = await subject(config);
+
+      const { status, body } = await patch(config.table, id, {
+        field,
+        value: `${PROBE} override`,
+      });
+      const where = `${config.table}.${field}: ${JSON.stringify(body)}`;
+      // 503, naming the object the seam called — never 200, never 500.
+      expect(status, where).toBe(503);
+      const answered = body as { error?: string; missing?: string; ok?: unknown };
+      expect(answered.ok, where).toBeUndefined();
+      expect(answered.missing, where).toBe(FN.settleReviewItem);
+      expect(String(answered.error), where).toContain(FN.settleReviewItem);
+
+      // The row staging holds, read again, column for column.
+      expect(await wholeRow(config, id), where).toEqual(row);
     }
   });
 });
@@ -307,7 +352,13 @@ function provenanceOf(markup: string, field: string): string | null {
 }
 
 describe("a resolver-owned record page", () => {
-  it("renders from staging with no editable widget on it", async () => {
+  it("renders from staging with no editable widget on it, and names why", async () => {
+    // The override path's own absence, at the surface: with nothing on staging
+    // to record an override, the page degrades to the read-only surface M1
+    // shipped — no control at all — and says so once, above the table
+    // (FEAT-0011 criterion 2). The two halves are asserted together because
+    // either alone is passable: a page with no controls and no reason is the
+    // regression this ticket must not ship.
     for (const table of ["events", "venues"]) {
       const { id } = await subject(EDIT_CONFIG[table]);
       const markup = await renderPage(RecordPage, {
@@ -315,6 +366,9 @@ describe("a resolver-owned record page", () => {
       });
       expect(markup, table).toContain(id);
       expect(markup, table).not.toMatch(/<(button|input|textarea|select)[\s>]/);
+      const $ = cheerio.load(markup);
+      expect($('[data-note="override-unavailable"]').length, table).toBe(1);
+      expect($('[data-state="not_provisioned"]').length, table).toBeGreaterThan(0);
     }
   });
 
@@ -338,7 +392,7 @@ describe("a resolver-owned record page", () => {
 
       const drawn = drawnFields(markup);
       expect(drawn, table).toContain(config.pk);
-      for (const column of config.display) {
+      for (const column of mappedColumns(config).filter((name) => name !== config.pk)) {
         // The column exists on staging's row at all — the map and the schema
         // have not drifted apart.
         expect(Object.keys(row), `${table}.${column}`).toContain(column);
@@ -376,7 +430,7 @@ describe("a resolver-owned record page", () => {
       .select("field, source_id, applied_at, admin_locked, provenance_id")
       .eq("entity_type", config.table)
       .eq("entity_id", id)
-      .in("field", [...config.display])
+      .in("field", [...mappedColumns(config)])
       .order("applied_at", { ascending: true })
       .order("provenance_id", { ascending: true });
     if (error) throw new Error(`reading field_provenance failed: ${error.message}`);
@@ -406,7 +460,7 @@ describe("a resolver-owned record page", () => {
       params: Promise.resolve({ table: config.table, id }),
     });
 
-    for (const column of config.display) {
+    for (const column of mappedColumns(config)) {
       const line = provenanceOf(markup, column);
       expect(line, column).not.toBeNull();
       const decision = latest.get(column);

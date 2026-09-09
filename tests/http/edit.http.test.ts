@@ -18,7 +18,10 @@ import {
  * claim: these requests never touch a browser, a widget or a client bundle —
  * they are raw PATCHes at the route — and none of them is answered 2xx. The
  * route's method surface is asserted here too: only PATCH exists, so there is
- * no read, insert or delete path at this URL.
+ * no read, insert or delete path at this URL. Both write paths are driven —
+ * the direct one at `walk_sandbox`, the override one at `events`/`venues`
+ * (campaign admin-window/TASK-0054) — and neither answers 2xx from a server
+ * that can reach no database.
  *
  * **What this tier cannot prove, and where it is proved instead.** The harness
  * hands the server DB sentinels (a loopback address on a reserved port), so
@@ -66,9 +69,17 @@ const FORGED_EDITS: ReadonlyArray<readonly [string, string, string, unknown]> = 
   ["its number column", "groups", "member_count", 9],
   ["the other struck table", "idols", "stage_name", "forged"],
   ["a provenance column of a struck table", "idols", "last_synced_at", "2026-01-01T00:00:00Z"],
+  // The resolver-owned pair, on both sides of their map entry. A column the
+  // map does not carry is refused by the map (403 naming the field); a column
+  // it DOES carry is refused because the override path cannot be reached on a
+  // server that can reach no database at all — never written directly, and
+  // never answered 2xx (campaign admin-window/TASK-0054).
   ["a link column of a resolver-owned table", "events", "venue_id", RECORD_ID],
-  ["a real column of a resolver-owned table", "events", "title", "forged"],
-  ["a column of the other resolver-owned table", "venues", "name", "forged"],
+  ["a CHECK-constrained column left out of the map", "events", "event_type", "forged"],
+  ["an unruled column of the other one", "venues", "timezone", "forged"],
+  ["a mapped column of a resolver-owned table", "events", "title", "forged"],
+  ["a mapped column of the other resolver-owned table", "venues", "name", "forged"],
+  ["a mapped column whose value the gate would refuse", "venues", "country", "USA"],
   ["a table the map does not carry", "event_performers", "role", "forged"],
   ["the raw-payload archive", "scraped_events", "payload", "forged"],
   ["a legacy table", "events_legacy", "title", "forged"],

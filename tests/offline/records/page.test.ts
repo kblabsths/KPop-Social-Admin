@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { NAV_ITEMS, isNavItemActive } from "@/components/shell/nav-items";
-import { EDITABLE_TABLES, EDIT_CONFIG } from "@/lib/edit/config";
+import { EDITABLE_TABLES, EDIT_CONFIG, mappedColumns } from "@/lib/edit/config";
 import { T } from "@/lib/db/tables";
 import { EM_DASH, isAbsent } from "@/lib/format";
 import { isRecordId } from "@/lib/db/records";
@@ -54,6 +54,19 @@ vi.mock("@/lib/db/records", async (importActual) => {
       record: Parameters<typeof actual.readRecordReference>[2],
     ) =>
       actual.readRecordReference(config, id, record, readWith.client as never),
+  };
+});
+
+// The page's FOURTH leg (campaign admin-window/TASK-0054): may the override
+// path be offered at all? Through the same stub, so a test scripts one client
+// and gets every answer — and so an unscripted readiness is a failed read
+// rather than a quiet "yes".
+vi.mock("@/lib/db/verdict", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/db/verdict")>();
+  return {
+    ...actual,
+    readSettlementReadiness: () =>
+      actual.readSettlementReadiness(readWith.client as never),
   };
 });
 
@@ -160,13 +173,28 @@ function defaultScript(table: string): Script {
  */
 let lastStub: StubClient | null = null;
 
+/**
+ * The readiness leg's answer when a test does not say: the settlement table is
+ * THERE, so the override path is open and a mapped column draws its cell.
+ *
+ * Spread FIRST below, so a script naming it wins — the absent case is the one
+ * this milestone is graded on first, and it is scripted explicitly wherever it
+ * is asserted (`OVERRIDE_ABSENT`).
+ */
+const OVERRIDE_READY: Script = { verdicts: { data: [] } };
+
+/** The graded normal case: the object that records an override is not there. */
+const OVERRIDE_ABSENT: Script = {
+  verdicts: { error: tableNotInSchemaCache("verdicts") },
+};
+
 async function renderRecord(
   table: string,
   script?: Script,
   id = IDS[table],
 ): Promise<string> {
   const { renderToStaticMarkup } = await import("react-dom/server");
-  const stub = stubClient(script ?? defaultScript(table));
+  const stub = stubClient({ ...OVERRIDE_READY, ...(script ?? defaultScript(table)) });
   lastStub = stub;
   readWith.client = stub.asSupabaseClient();
   return renderToStaticMarkup(
@@ -296,14 +324,93 @@ describe("which fields edit", () => {
     }
   });
 
-  it("renders a resolver-owned table with no editable field anywhere on the page", async () => {
+  it("renders a resolver-owned table read-only when the override path is absent", async () => {
+    // THE graded normal case (FEAT-0011 criterion 2): with nothing to record
+    // an override, `events` and `venues` render exactly the read-only page M1
+    // shipped. Not "no enabled control" — no control at all: nothing to
+    // re-enable from a console, and no button toward a write path that does
+    // not exist.
     for (const table of ["events", "venues"]) {
       expect(EDIT_CONFIG[table].regime, table).toBe("resolver_owned");
-      const markup = await renderRecord(table);
-      // Not "no enabled control" — no control at all: nothing to re-enable
-      // from a console, and no button toward a write path that does not exist.
+      const markup = await renderRecord(table, {
+        ...defaultScript(table),
+        ...OVERRIDE_ABSENT,
+      });
+      const $ = cheerio.load(markup);
       expect(controlCount(markup), table).toBe(0);
+      expect($("input, textarea, select, form").length, table).toBe(0);
+      // ...and every mapped column still DRAWS, with its value: read-only is
+      // not hidden.
+      for (const column of EDIT_CONFIG[table].editable) {
+        expect(lineFor(markup, column).editable, `${table}.${column}`).toBe(false);
+        expect(lineFor(markup, column).value, `${table}.${column}`).toContain(
+          `stored ${column}`,
+        );
+      }
     }
+  });
+
+  it("names the reason, in the app's voice and in the database's own word", async () => {
+    for (const table of ["events", "venues"]) {
+      const markup = await renderRecord(table, {
+        ...defaultScript(table),
+        ...OVERRIDE_ABSENT,
+      });
+      const $ = cheerio.load(markup);
+      // Said once, above the table, never per line.
+      const note = $('[data-note="override-unavailable"]');
+      expect(note.length, table).toBe(1);
+      expect($('tbody [data-note="override-unavailable"]').length, table).toBe(0);
+      // The delivered HTML, whitespace-normalised: the consequence in words,
+      // with no two of them run together.
+      const said = note.text().replace(/\s+/g, " ").trim();
+      expect(said, table).toContain("read-only");
+      expect(said, table).toContain("resolution pipeline");
+      expect(said, table).not.toMatch(/[a-z][A-Z]/);
+      // ...and the card beside it names the object that is missing, in the
+      // spelling the query used (LOOK_AND_FEEL state 3).
+      expect($('[data-state="not_provisioned"]').length, table).toBeGreaterThan(0);
+      expect($('[data-not-provisioned="verdicts"]').length, table).toBe(1);
+    }
+  });
+
+  it("offers the cell on every mapped column once the path is open", async () => {
+    // The other fixture of the pair above: the same page, the same map, one
+    // different answer from the database.
+    for (const table of ["events", "venues"]) {
+      const markup = await renderRecord(table);
+      const editable = EDIT_CONFIG[table].editable;
+      expect(editable.length, table).toBeGreaterThan(0);
+      for (const column of editable) {
+        expect(lineFor(markup, column).editable, `${table}.${column}`).toBe(true);
+      }
+      // The key never edits, the reference never edits, and no unmapped
+      // column the read happened to return does either.
+      expect(lineFor(markup, EDIT_CONFIG[table].pk).editable, table).toBe(false);
+      expect(lineFor(markup, UNMAPPED_COLUMN).editable, table).toBe(false);
+      for (const column of EDIT_CONFIG[table].display) {
+        expect(lineFor(markup, column).editable, `${table}.${column}`).toBe(false);
+      }
+      // Nothing is said about an absent path when the path is there.
+      expect(
+        cheerio.load(markup)('[data-note="override-unavailable"]').length,
+        table,
+      ).toBe(0);
+    }
+  });
+
+  it("asks the settlement question once, and only where it can change anything", async () => {
+    // The directly-written table needs no asking — its own read already
+    // answered — so the sandbox still makes exactly one read, and the
+    // resolver-owned pair asks the one seam once.
+    for (const table of ["events", "venues"]) {
+      await renderRecord(table);
+      expect(tablesRead().filter((name) => name === "verdicts"), table).toEqual([
+        "verdicts",
+      ]);
+    }
+    await renderRecord(DIRECT_WRITE_TABLE);
+    expect(tablesRead()).toEqual([DIRECT_WRITE_TABLE]);
   });
 
   it("proves that negative is not vacuous: the sandbox does draw controls", async () => {
@@ -881,16 +988,28 @@ describe("a resolver-owned record", () => {
     };
   }
 
-  it("draws a line per displayed column, with the value the read returned", async () => {
+  it("draws a line per mapped column, with the value the read returned", async () => {
+    // Over `mappedColumns` rather than `display`: after Ben's allowlist of
+    // 2026-09-08 the columns an operator came to see are mostly EDITABLE ones,
+    // and `venues` displays none at all. What the page owes is a line per
+    // column the map names, whichever half names it.
     for (const table of ["events", "venues"]) {
       const markup = await renderRecord(table);
-      const display = EDIT_CONFIG[table].display;
-      expect(display.length, table).toBeGreaterThan(0);
-      for (const column of display) {
+      const columns = mappedColumns(EDIT_CONFIG[table]).filter(
+        (column) => column !== EDIT_CONFIG[table].pk,
+      );
+      expect(columns.length, table).toBeGreaterThan(0);
+      for (const column of columns) {
         expect(lineFor(markup, column).value, `${table}.${column}`).toContain(
           `stored ${column}`,
         );
       }
+      // ...and in the map's own order, so the move between the lists cannot
+      // silently reorder a page (FEAT-0011 criterion 8).
+      expect(
+        lines(markup).map((line) => line.name).slice(0, mappedColumns(EDIT_CONFIG[table]).length),
+        table,
+      ).toEqual([...mappedColumns(EDIT_CONFIG[table])]);
     }
   });
 
@@ -903,15 +1022,19 @@ describe("a resolver-owned record", () => {
     expect(drawn.length).toBeGreaterThan(1);
   });
 
-  it("offers no control on any of them, however the map lists them", async () => {
+  it("offers no control on a displayed column, however the map lists it", async () => {
+    // `display` is the read-only half of the map and cannot become writable by
+    // being listed — with the write path OPEN, which is the only state in
+    // which this claim can fail.
     for (const table of ["events", "venues"]) {
       const markup = await renderRecord(table);
-      // Not "no enabled control" — none at all: `display` is the read-only
-      // half of the map and cannot become writable by being listed.
-      expect(controlCount(markup), table).toBe(0);
       for (const column of EDIT_CONFIG[table].display) {
         expect(lineFor(markup, column).editable, `${table}.${column}`).toBe(false);
       }
+      // The pk is never a control either, and the page draws some control —
+      // otherwise the loop above is green over a read-only page.
+      expect(lineFor(markup, EDIT_CONFIG[table].pk).editable, table).toBe(false);
+      expect(controlCount(markup), table).toBeGreaterThan(0);
     }
   });
 
@@ -1116,7 +1239,9 @@ describe("a resolver-owned record", () => {
     // The leg answers for itself, naming the view, and every other value stays.
     expect(markup).toContain("event_listings");
     expect(lineFor(markup, "title").value).toContain("stored title");
-    expect(controlCount(markup)).toBe(0);
+    // A failed name read costs the NAME and nothing else: the reference line
+    // is still a link and still not a control, whatever the write path is.
+    expect(line.editable).toBe(false);
   });
 
   it("still links the venue when the name read is refused", async () => {
@@ -1228,13 +1353,15 @@ describe("a resolver-owned record", () => {
       field_provenance: { error: tableNotInSchemaCache("field_provenance") },
     });
     // The values leg answered, so the record still renders in full...
-    for (const column of EDIT_CONFIG.events.display) {
+    for (const column of mappedColumns(EDIT_CONFIG.events).slice(1)) {
       expect(lineFor(markup, column).value, column).toContain(`stored ${column}`);
       expect(lineFor(markup, column).provenanceAbsent, column).toBe(true);
     }
     // ...and the provenance leg says for itself what is missing, by name.
     expect(markup).toContain("field_provenance");
-    expect(controlCount(markup)).toBe(0);
+    // Every leg answers for itself: a provenance leg that failed says nothing
+    // about the WRITE path, so the cells the map allows are still cells.
+    expect(lineFor(markup, "title").editable).toBe(true);
   });
 
   it("keeps every value on screen when the provenance read is refused", async () => {
