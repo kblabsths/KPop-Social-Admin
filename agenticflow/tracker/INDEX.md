@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T18:33:25Z — do not edit)
+# Tracker index (regenerated 2026-09-09T18:33:31Z — do not edit)
 
 ## open
 - BUG-0141 [P1][bug][M2] /queues ignores the source_id the Sources page links it with: another source's item renders as that source's review items  (scope:src/app/queues/page.tsx,src/lib/review/queue-filters.ts,src/lib/sources/routes.ts,tests/offline/queues/page.test.ts,tests/offline/queues/filters.test.ts,tests/live/queues.live.test.ts from:verifier)
