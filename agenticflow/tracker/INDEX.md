@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T11:34:27Z — do not edit)
+# Tracker index (regenerated 2026-09-09T11:38:02Z — do not edit)
 
 ## open
 - BUG-0112 [P3][bug][M2] The record page's regime note sets its table name in sans — three table names on one screen, two in mono and the one in the prose not  (scope:src/components/records/record-fields.tsx,tests/offline/records/page.test.ts from:designer:endgame-walk)
@@ -8,10 +8,9 @@
 - BUG-0111 [P3][bug][M2] The entity picker's saved confirmation never retires — the 1.5s clock lives in EditableCell alone, and the picker renders the same status without one  (scope:src/components/records/entity-picker.tsx,tests/offline/records/entity-picker.test.ts @builder-184 from:designer:endgame-walk)
 
 ## qa
-- BUG-0118 [P2][bug][M2] The claim list's FILLED window counts one bucket and calls it 'these filters': /claims?tab=standing states its held count over a narrowing the sentence never names  (scope:src/components/ui/window-line.tsx,src/app/claims/page.tsx,tests/offline/claims/page.test.ts @builder-183 from:BUG-0109)
 - BUG-0110 [P3][bug][M2] '0 ran longer than the 15m cadence' stands bare beside four cycles that never finished — the Zeroes bar, on the card the doc quotes  (scope:src/components/cycles/cycle-health.tsx,tests/offline/cycles/page.test.ts @builder-180 from:designer:endgame-walk)
 
 ## blocked
 - BUG-0116 [P3][bug][M2] The over-cadence line says 'never finished' of a cycle the same page renders as still running  (scope:src/components/cycles/cycle-health.tsx,src/lib/gauges/cycle-health.ts,tests/offline/cycles/page.test.ts from:BUG-0110)
 
-Totals — blocked:1, claimed:1, done:68, open:2, qa:2, wont_fix:1. Archived: 124.
+Totals — blocked:1, claimed:1, done:69, open:2, qa:1, wont_fix:1. Archived: 124.
