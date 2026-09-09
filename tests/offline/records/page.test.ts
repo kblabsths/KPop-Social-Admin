@@ -54,6 +54,13 @@ vi.mock("@/lib/db/records", async (importActual) => {
       record: Parameters<typeof actual.readRecordReference>[2],
     ) =>
       actual.readRecordReference(config, id, record, readWith.client as never),
+    // The page's FIFTH read (admin-window/TASK-0055): the rows a reference
+    // field may be pointed at. Through the same stub, so a script that leaves
+    // `venues` out is a FAILED leg — which draws the read-only link — rather
+    // than a real read of a real database.
+    readReferenceChoices: (
+      config: Parameters<typeof actual.readReferenceChoices>[0],
+    ) => actual.readReferenceChoices(config, readWith.client as never),
   };
 });
 
@@ -188,13 +195,41 @@ const OVERRIDE_ABSENT: Script = {
   verdicts: { error: tableNotInSchemaCache("verdicts") },
 };
 
+/**
+ * The rows the entity picker's window read comes back with — the `venues` a
+ * reference field may be pointed at (campaign admin-window/TASK-0055).
+ *
+ * A row with a NULL name is in here on purpose: it exists, so it is offered,
+ * and its label is the app's absence marker (LESSONS 1). Scripted for every
+ * render below rather than per test, so the picker is actually reachable
+ * wherever the override path is open — an unscripted `venues` reads as a
+ * FAILED leg, which draws the read-only link and would leave every assertion
+ * about the picker passing against a page that never drew one.
+ *
+ * The `venues` record page overrides this with its own row: it has no
+ * reference, so it makes no choices read at all.
+ */
+const VENUE_CHOICES: Script = {
+  venues: {
+    data: [
+      { venue_id: "01920000-0000-7000-8000-0000000000a4", name: "Olympic Hall" },
+      { venue_id: "01920000-0000-7000-8000-0000000000b1", name: "Gocheok Sky Dome" },
+      { venue_id: "01920000-0000-7000-8000-0000000000b2", name: null },
+    ],
+  },
+};
+
 async function renderRecord(
   table: string,
   script?: Script,
   id = IDS[table],
 ): Promise<string> {
   const { renderToStaticMarkup } = await import("react-dom/server");
-  const stub = stubClient({ ...OVERRIDE_READY, ...(script ?? defaultScript(table)) });
+  const stub = stubClient({
+    ...OVERRIDE_READY,
+    ...VENUE_CHOICES,
+    ...(script ?? defaultScript(table)),
+  });
   lastStub = stub;
   readWith.client = stub.asSupabaseClient();
   return renderToStaticMarkup(
@@ -216,6 +251,13 @@ interface Line {
   name: string;
   /** Does the value cell offer an interactive control at all? */
   editable: boolean;
+  /**
+   * WHICH widget it offers, when the widget names itself: `picker` for the
+   * entity picker (admin-window/TASK-0055), `undefined` for the click-to-edit
+   * cell and for a line with no control. "A control" and "a text cell" are
+   * different claims, and `editable` alone cannot tell them apart.
+   */
+  widget: string | undefined;
   value: string;
   /** Every route out of the value cell, in document order. */
   valueHrefs: (string | undefined)[];
@@ -238,6 +280,7 @@ function lines(markup: string): Line[] {
         name: cells.eq(0).text().trim(),
         editable:
           value.find("button, input, textarea, select, [contenteditable]").length > 0,
+        widget: value.find("[data-widget]").first().attr("data-widget"),
         value: value.text().trim(),
         valueHrefs: value
           .find("a")
@@ -347,7 +390,63 @@ describe("which fields edit", () => {
           `stored ${column}`,
         );
       }
+      // ...including the reference line, which is where the PICKER would have
+      // stood (admin-window/TASK-0055, criterion 6): no picker, no search box,
+      // no window line, and the link the operator came for still there.
+      const reference = EDIT_CONFIG[table].reference;
+      if (reference !== null) {
+        const line = lineFor(markup, reference.field);
+        expect(line.widget, `${table}.${reference.field}`).toBeUndefined();
+        expect(line.editable, `${table}.${reference.field}`).toBe(false);
+        expect(line.valueHrefs.length, `${table}.${reference.field}`).toBe(1);
+      }
+      expect($("[data-window]").length, table).toBe(0);
     }
+  });
+
+  it("reads no choices for a picker it is not going to draw", async () => {
+    // The read is as narrow as the readiness one: the rows a reference may be
+    // pointed at are only worth a round trip where a control could be drawn
+    // over them. With the override path closed, the graded normal case makes
+    // no `venues` read and shows no card for one (admin-window/TASK-0055).
+    await renderRecord("events", { ...defaultScript("events"), ...OVERRIDE_ABSENT });
+    expect(tablesRead()).not.toContain("venues");
+    // The second fixture, so the negative is not green by the read having
+    // gone missing altogether: with the path OPEN, the same page reads them.
+    await renderRecord("events");
+    expect(tablesRead()).toContain("venues");
+  });
+
+  it("draws the picker over the rows the choices read returned, and states its window", async () => {
+    const markup = await renderRecord("events");
+    const line = lineFor(markup, "venue_id");
+    expect(line.widget).toBe("picker");
+    // The window line follows the LIST, which is inside the panel the operator
+    // opens — so at rest the page states no window for it and claims nothing
+    // about how many venues exist. What it does carry at rest is the current
+    // link and the one control that opens the picker.
+    expect(line.valueHrefs.length).toBe(1);
+    // ...and nothing on the resting page is a text field for this line.
+    const $ = cheerio.load(markup);
+    expect($('td [data-widget="picker"] input, td [data-widget="picker"] textarea').length).toBe(0);
+  });
+
+  it("falls back to the read-only link when the choices read did not answer", async () => {
+    // A refused or absent `venues` costs the PICKER and nothing else: every
+    // value stays, the reference still links, and the leg says for itself what
+    // happened (the same rule the name relation and the provenance log follow).
+    const markup = await renderRecord("events", {
+      ...defaultScript("events"),
+      venues: { error: tableNotInSchemaCache("venues") },
+    });
+    const line = lineFor(markup, "venue_id");
+    expect(line.widget).toBeUndefined();
+    expect(line.editable).toBe(false);
+    expect(line.valueHrefs.length).toBe(1);
+    expect(markup).toContain("venues");
+    expect(lineFor(markup, "title").value).toContain("stored title");
+    // The cells of the editable columns are untouched by it.
+    expect(lineFor(markup, "title").editable).toBe(true);
   });
 
   it("names the reason, in the app's voice and in the database's own word", async () => {
@@ -384,12 +483,28 @@ describe("which fields edit", () => {
       for (const column of editable) {
         expect(lineFor(markup, column).editable, `${table}.${column}`).toBe(true);
       }
-      // The key never edits, the reference never edits, and no unmapped
-      // column the read happened to return does either.
+      // Every column that edits as a CELL is a column the map calls editable:
+      // no picker stands where a cell should, and no cell where a picker
+      // should (admin-window/TASK-0055).
+      for (const column of editable) {
+        expect(lineFor(markup, column).widget, `${table}.${column}`).toBeUndefined();
+      }
+      // The key never edits, and no unmapped column the read happened to
+      // return does either.
       expect(lineFor(markup, EDIT_CONFIG[table].pk).editable, table).toBe(false);
       expect(lineFor(markup, UNMAPPED_COLUMN).editable, table).toBe(false);
       for (const column of EDIT_CONFIG[table].display) {
-        expect(lineFor(markup, column).editable, `${table}.${column}`).toBe(false);
+        const line = lineFor(markup, column);
+        // A displayed column offers no CELL. The one displayed column the map
+        // calls a reference offers the picker instead — never a text cell,
+        // because a reference names a row and a cell can only send text
+        // (SPEC F12, admin-window/TASK-0055). Every other displayed column
+        // offers nothing at all.
+        const isReference = EDIT_CONFIG[table].reference?.field === column;
+        expect(line.widget, `${table}.${column}`).toBe(
+          isReference ? "picker" : undefined,
+        );
+        expect(line.editable, `${table}.${column}`).toBe(isReference);
       }
       // Nothing is said about an absent path when the path is there.
       expect(
@@ -1022,14 +1137,27 @@ describe("a resolver-owned record", () => {
     expect(drawn.length).toBeGreaterThan(1);
   });
 
-  it("offers no control on a displayed column, however the map lists it", async () => {
+  it("offers no cell on a displayed column, however the map lists it", async () => {
     // `display` is the read-only half of the map and cannot become writable by
     // being listed — with the write path OPEN, which is the only state in
     // which this claim can fail.
+    //
+    // What "writable" means here is the CELL: a displayed column is never
+    // handed to the click-to-edit widget, so nothing on this page submits its
+    // value as text (admin-window/TASK-0055). The one displayed column the map
+    // calls a reference offers the picker instead, which submits an entity's
+    // id and never a value — a different widget answering a different
+    // question, and `decideEdit` still refuses the column
+    // (`tests/offline/edit/config.test.ts`, "refuses every displayed column").
     for (const table of ["events", "venues"]) {
       const markup = await renderRecord(table);
       for (const column of EDIT_CONFIG[table].display) {
-        expect(lineFor(markup, column).editable, `${table}.${column}`).toBe(false);
+        const line = lineFor(markup, column);
+        const isReference = EDIT_CONFIG[table].reference?.field === column;
+        expect(line.widget, `${table}.${column}`).toBe(
+          isReference ? "picker" : undefined,
+        );
+        expect(line.editable, `${table}.${column}`).toBe(isReference);
       }
       // The pk is never a control either, and the page draws some control —
       // otherwise the loop above is green over a read-only page.
@@ -1196,8 +1324,11 @@ describe("a resolver-owned record", () => {
     // ...and the id stays on screen: it is the machine's word for the row.
     expect(line.value).toContain(venueId);
     expect(line.valueHrefs).toEqual([`/records/venues/${venueId}`]);
-    // A route out is not a write path: the line still offers no control.
-    expect(line.editable).toBe(false);
+    // A route out is not a write path — and the control this line now offers
+    // is not one either: it is the picker, which links a row
+    // (admin-window/TASK-0055). The link the operator came for is unchanged
+    // beside it, which is the whole of what BUG-0034 asked for.
+    expect(line.widget).toBe("picker");
   });
 
   it("resolves that name from the same view Browse reads, keyed by the event", async () => {
@@ -1240,8 +1371,9 @@ describe("a resolver-owned record", () => {
     expect(markup).toContain("event_listings");
     expect(lineFor(markup, "title").value).toContain("stored title");
     // A failed name read costs the NAME and nothing else: the reference line
-    // is still a link and still not a control, whatever the write path is.
-    expect(line.editable).toBe(false);
+    // still links, and the picker over it is unaffected — the name relation
+    // and the choices read are different legs (admin-window/TASK-0055).
+    expect(line.widget).toBe("picker");
   });
 
   it("still links the venue when the name read is refused", async () => {

@@ -8,9 +8,11 @@ import {
 import {
   readRecord,
   readRecordProvenance,
+  readReferenceChoices,
   recordColumns,
   updateRecordField,
 } from "@/lib/db/records";
+import { ROW_CAP } from "@/lib/db/result";
 import { fieldProvenanceRow } from "../../fixtures/rows";
 import {
   permissionDenied,
@@ -465,6 +467,166 @@ describe("updateRecordField surfaces what the database said", () => {
       exploding,
     );
     expect(result.kind).toBe("error");
+  });
+});
+
+/* ── the entity picker's choices leg ──────────────────────────────────────── */
+
+/**
+ * `readReferenceChoices` (campaign admin-window/TASK-0055): the rows a
+ * reference field may be pointed at.
+ *
+ * A WINDOW read (ARCHITECTURE §4.3, read kind 2), so what is graded is that it
+ * is one: an explicit order, an explicit limit, and a result carrying the
+ * facts the surface's window line states. It never claims to be the whole
+ * table, and it never creates a row.
+ */
+describe("readReferenceChoices", () => {
+  const VENUE = "01920000-0000-7000-8000-0000000000a4";
+  const DOME = "01920000-0000-7000-8000-0000000000b1";
+
+  const VENUE_ROWS = [
+    { venue_id: VENUE, name: "Olympic Hall" },
+    { venue_id: DOME, name: "Gocheok Sky Dome" },
+  ];
+
+  it("issues no query at all for a table the map gives no reference", async () => {
+    for (const table of ["venues", "walk_sandbox"]) {
+      expect(EDIT_CONFIG[table].reference, table).toBeNull();
+      const db = stubClient({});
+      const choices = await readReferenceChoices(
+        EDIT_CONFIG[table],
+        db.asSupabaseClient(),
+      );
+      expect(db.calls, table).toEqual([]);
+      expect(choices.window, table).toBeNull();
+      expect(choices.note, table).toBeNull();
+    }
+  });
+
+  it("reads the referenced table, by name, with an explicit order and limit", async () => {
+    const db = stubClient({ venues: { data: VENUE_ROWS } });
+    await readReferenceChoices(EDIT_CONFIG.events, db.asSupabaseClient());
+
+    expect(db.tablesRead()).toEqual(["venues"]);
+    const read = db.calls[0];
+    // The columns explicitly (§4.2): the key that travels in the decision, and
+    // the name an operator reads.
+    expect(step(read, "select")?.args).toEqual(["venue_id, name"]);
+    // A TOTAL order — name, then key — so the window's edge is the same edge
+    // on every read and two venues sharing a name cannot swap places.
+    expect(
+      read.steps.filter((s) => s.method === "order").map((s) => s.args),
+    ).toEqual([
+      ["name", { ascending: true }],
+      ["venue_id", { ascending: true }],
+    ]);
+    // An explicit limit is what makes it a named window rather than a set.
+    expect(step(read, "limit")?.args).toEqual([ROW_CAP]);
+    // It is a READ: no insert, no upsert, no update anywhere in the chain.
+    for (const forbidden of ["insert", "upsert", "update", "delete"]) {
+      expect(
+        read.steps.map((s) => s.method),
+        forbidden,
+      ).not.toContain(forbidden);
+    }
+  });
+
+  it("returns the rows with the window's own facts, claiming no total", async () => {
+    const db = stubClient({ venues: { data: VENUE_ROWS } });
+    const choices = await readReferenceChoices(
+      EDIT_CONFIG.events,
+      db.asSupabaseClient(),
+    );
+    expect(choices.note).toBeNull();
+    expect(choices.window).toEqual({
+      options: [
+        { id: VENUE, name: "Olympic Hall" },
+        { id: DOME, name: "Gocheok Sky Dome" },
+      ],
+      limit: ROW_CAP,
+      held: 2,
+      truncated: false,
+      over: "table",
+      domain: "venues",
+    });
+  });
+
+  it("calls a window that filled its cap truncated, so the surface can say so", async () => {
+    const full = Array.from({ length: ROW_CAP }, (_, index) => ({
+      venue_id: `01920000-0000-7000-8000-${String(index).padStart(12, "0")}`,
+      name: `Venue ${index}`,
+    }));
+    const db = stubClient({ venues: { data: full } });
+    const choices = await readReferenceChoices(
+      EDIT_CONFIG.events,
+      db.asSupabaseClient(),
+    );
+    expect(choices.window?.truncated).toBe(true);
+    expect(choices.window?.held).toBe(ROW_CAP);
+  });
+
+  it("offers a row whose name is null, and drops a row with no key", async () => {
+    const db = stubClient({
+      venues: {
+        data: [
+          { venue_id: VENUE, name: null },
+          { venue_id: VENUE, name: "" },
+          // Nothing could be pointed at this, so it is not a choice.
+          { venue_id: null, name: "A venue with no key" },
+        ],
+      },
+    });
+    const choices = await readReferenceChoices(
+      EDIT_CONFIG.events,
+      db.asSupabaseClient(),
+    );
+    expect(choices.window?.options).toEqual([
+      { id: VENUE, name: null },
+      { id: VENUE, name: null },
+    ]);
+    // `held` is what the READ came back with, not what survived shaping: it is
+    // a fact of the window, and the window really did hold three rows.
+    expect(choices.window?.held).toBe(3);
+  });
+
+  it("answers with an empty window when the table holds nothing", async () => {
+    const db = stubClient({ venues: { data: [] } });
+    const choices = await readReferenceChoices(
+      EDIT_CONFIG.events,
+      db.asSupabaseClient(),
+    );
+    expect(choices.note).toBeNull();
+    expect(choices.window?.options).toEqual([]);
+    expect(choices.window?.held).toBe(0);
+  });
+
+  it("reports an absent table as not_provisioned, naming it, and shows no window", async () => {
+    const db = stubClient({ venues: { error: tableNotInSchemaCache("venues") } });
+    const choices = await readReferenceChoices(
+      EDIT_CONFIG.events,
+      db.asSupabaseClient(),
+    );
+    expect(choices.window).toBeNull();
+    expect(choices.note?.kind).toBe("not_provisioned");
+    if (choices.note?.kind === "not_provisioned") {
+      expect(choices.note.missing).toBe("venues");
+    }
+  });
+
+  it("reports a refused read for itself, in the database's own words", async () => {
+    const refusal = permissionDenied("venues");
+    const db = stubClient({ venues: { error: refusal } });
+    const choices = await readReferenceChoices(
+      EDIT_CONFIG.events,
+      db.asSupabaseClient(),
+    );
+    expect(choices.window).toBeNull();
+    expect(choices.note?.kind).toBe("error");
+    if (choices.note?.kind === "error") {
+      expect(choices.note.message).toContain(refusal.message);
+      expect(choices.note.reading).toBe("venues");
+    }
   });
 });
 

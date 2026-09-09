@@ -760,6 +760,9 @@ describe("WindowLine", () => {
     const kinds: DrawnSentence[] = [
       { of: "newest", lede: "The newest cycles, newest first", rows: "cycles" },
       { of: "matched", lede: "Oldest first.", rows: "claims" },
+      // The entity picker's choices (admin-window/TASK-0055): a window read by
+      // NAME, whose truncation costs rows later in the alphabet.
+      { of: "alphabetical", rows: "venues" },
     ];
     for (const shows of kinds) {
       const open = textOf(drawn(shows, { ...DRAWN, truncated: false }));
@@ -775,14 +778,16 @@ describe("WindowLine", () => {
     // asked about it.
     for (const over of ["table", "view"] as const) {
       const other = over === "table" ? "view" : "table";
-      const text = textOf(
-        drawn({ of: "matched", lede: "Oldest first.", rows: "claims" }, {
-          ...DRAWN,
-          over,
-        }),
-      );
-      expect(text, over).toContain(`not the whole ${over}.`);
-      expect(text, over).not.toContain(`not the whole ${other}.`);
+      for (const shows of [
+        { of: "matched", lede: "Oldest first.", rows: "claims" },
+        { of: "alphabetical", rows: "venues" },
+      ] as DrawnSentence[]) {
+        const text = textOf(drawn(shows, { ...DRAWN, over }));
+        expect(text, `${shows.of} ${over}`).toContain(`not the whole ${over}.`);
+        expect(text, `${shows.of} ${over}`).not.toContain(
+          `not the whole ${other}.`,
+        );
+      }
     }
   });
 
@@ -807,6 +812,7 @@ describe("WindowLine", () => {
       { of: "newest", lede: "The newest cycles", rows: "cycles" },
       { of: "matched", lede: "Oldest first.", rows: "claims" },
       { of: "catalog", rows: "events" },
+      { of: "alphabetical", rows: "venues" },
     ] as DrawnSentence[]) {
       const html = drawn(shows);
       expect(tagsOf(html), shows.of).toEqual(["p"]);

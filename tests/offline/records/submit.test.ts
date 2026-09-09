@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   recordFieldApiPath,
   submitFieldEdit,
+  submitReferenceEdit,
   type FetchLike,
 } from "@/components/records/submit";
 
@@ -92,6 +93,62 @@ describe("the body it sends", () => {
     const { impl, calls } = scriptedFetch({ status: 200, body: { ok: true } });
     await submitFieldEdit("groups", ID, "bio", "hello", impl);
     expect(Object.keys(bodyOf(calls)).sort()).toEqual(["field", "value"]);
+  });
+});
+
+/* ── the picker's body: a ref, and no value ───────────────────────────────── */
+
+/**
+ * The entity picker's submitter (campaign admin-window/TASK-0055, SPEC F12).
+ *
+ * Same route, same URL, a different SHAPE — and the shape is the claim: the
+ * chosen entity's id in `ref`, with no `value` key at all, so nothing this
+ * function can send is a reference field's value as text. What the route
+ * builds out of it is graded against the settlement spy
+ * (`tests/offline/edit/route.test.ts`, "the picker's choice").
+ */
+describe("the body the picker sends", () => {
+  const VENUE = "01920000-0000-7000-8000-0000000000a4";
+
+  it("carries the chosen row's id as ref, and no value key at all", async () => {
+    const { impl, calls } = scriptedFetch({ status: 200, body: { ok: true } });
+    await submitReferenceEdit("events", ID, "venue_id", VENUE, impl);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].init.method).toBe("PATCH");
+    const body = bodyOf(calls);
+    expect(Object.keys(body).sort()).toEqual(["field", "ref"]);
+    expect(body.field).toBe("venue_id");
+    expect(body.ref).toBe(VENUE);
+    // The key that would make this a text submission is absent, not null.
+    expect(Object.prototype.hasOwnProperty.call(body, "value")).toBe(false);
+  });
+
+  it("writes to the same one route the cell does", async () => {
+    const { impl, calls } = scriptedFetch({ status: 200, body: { ok: true } });
+    await submitReferenceEdit("events", ID, "venue_id", VENUE, impl);
+    expect(calls[0].url).toBe(recordFieldApiPath("events", ID));
+  });
+
+  it("hands the route's refusal back in its own words", async () => {
+    const { impl } = scriptedFetch({
+      status: 503,
+      body: { error: "settle_review_item is not present in this database" },
+    });
+    const outcome = await submitReferenceEdit("events", ID, "venue_id", VENUE, impl);
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.message).toBe(
+        "settle_review_item is not present in this database",
+      );
+    }
+  });
+
+  it("claims no stored value on success, because none came back", async () => {
+    // The chosen id became an observation; what the canonical row holds is the
+    // pipeline's answer, read on the next render.
+    const { impl } = scriptedFetch({ status: 200, body: { ok: true, verdict: {} } });
+    const outcome = await submitReferenceEdit("events", ID, "venue_id", VENUE, impl);
+    expect(outcome).toEqual({ ok: true });
   });
 });
 
