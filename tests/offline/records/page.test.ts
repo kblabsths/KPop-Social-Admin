@@ -2143,6 +2143,164 @@ describe("the scope of the field table", () => {
   });
 });
 
+/* ── the scope line, on the shapes a real read hands back ─────────────────── */
+
+/**
+ * The scope line above the field table, driven on the row shapes the app
+ * actually serves — campaign admin-window/BUG-0126, QA pass 2026-09-09.
+ *
+ * Every assertion the fix landed with renders the one offline fixture, whose
+ * row carries a column outside the map (`spotify_id`) on purpose. That shape is
+ * deliberate and it is the shape NO operator meets: `readRecord` selects
+ * `mappedColumns` explicitly (`lib/db/records.ts`), so the row Priya and Devin
+ * were reading carried the mapped columns and nothing else, and the figure on
+ * their screen was the map's own length — 6 on `events`, 5 on `venues`, 6 on
+ * `walk_sandbox`. Nothing pinned that number against a reading of the map, and
+ * an off-by-one there is invisible to a fixture that is off-map by exactly one.
+ *
+ * The map is read HERE from `pk` / `editable` / `display` rather than through
+ * `mappedColumns`, so the page's helper and the yardstick are two readings and
+ * not one: a change to what that helper returns must move the rows on screen to
+ * pass, not merely agree with itself.
+ *
+ * Two more shapes the landed guard leaves open, both of them states the app
+ * really serves: the override path CLOSED (the graded normal case — every
+ * assertion above renders with `verdicts` present, so the read-only page M1
+ * ships is unpinned), and the no-table states of the two RESOLVER-OWNED
+ * tables, where the landed guard loops the sandbox alone and the extra legs a
+ * resolver-owned record reads do not run at all.
+ *
+ * Behaviour only: a figure against the rows an operator can count in `tbody`,
+ * and the line's presence or absence. No wording is asserted here.
+ */
+describe("the scope line on the shapes a real read hands back", () => {
+  /** The map's columns for `table`, read from the entry and not from `mappedColumns`. */
+  function mapColumns(table: string): string[] {
+    const config = EDIT_CONFIG[table];
+    return [config.pk, ...config.editable, ...config.display];
+  }
+
+  /** A row exactly as the read serves it: the map's columns, and nothing else. */
+  function servedRow(table: string): Record<string, unknown> {
+    const config = EDIT_CONFIG[table];
+    const row: Record<string, unknown> = {};
+    for (const column of mapColumns(table)) row[column] = `stored ${column}`;
+    row[config.pk] = IDS[table];
+    if (config.editable.includes("tally")) row.tally = 4;
+    if (config.editable.includes("note")) row.note = null;
+    return row;
+  }
+
+  /** The default script with the served row in place of the off-map fixture. */
+  function servedScript(table: string, extra: Script = {}): Script {
+    return {
+      ...defaultScript(table),
+      [table]: { data: servedRow(table) },
+      ...extra,
+    };
+  }
+
+  /** The one figure the scope line states, or a failure saying why there is not one. */
+  function statedFigure(markup: string, table: string): number {
+    const $ = cheerio.load(markup);
+    const note = $('[data-note="drawn-columns"]');
+    expect(note.length, `${table} says its scope once`).toBe(1);
+    const figures = note.text().replace(/\s+/g, " ").match(/\d+/g) ?? [];
+    expect(figures.length, `${table} states one figure`).toBe(1);
+    return Number(figures[0]);
+  }
+
+  /** The rows an operator can count in the field table. */
+  function drawnRows(markup: string): number {
+    return cheerio.load(markup)("tbody tr").length;
+  }
+
+  it("states the map's own column count on the row the read actually serves", async () => {
+    const stated: Record<string, number> = {};
+    for (const table of EDITABLE_TABLES) {
+      const markup = await renderRecord(table, servedScript(table));
+      // The rows on screen are the map's columns: nothing extra came back.
+      expect(drawnRows(markup), table).toBe(mapColumns(table).length);
+      stated[table] = statedFigure(markup, table);
+      expect(stated[table], table).toBe(mapColumns(table).length);
+    }
+    // ...and the figure is read per table, not a constant that happens to fit:
+    // the map's entries are not all the same length.
+    expect(new Set(Object.values(stated)).size).toBeGreaterThan(1);
+  });
+
+  it("counts the extra lines when the read hands back more than the map", async () => {
+    const table = "events";
+    const markup = await renderRecord(
+      table,
+      servedScript(table, {
+        [table]: {
+          data: {
+            ...servedRow(table),
+            spotify_id: "not in the map",
+            setlist_url: "not in the map either",
+            ends_at: "2027-05-01T22:00:00+00:00",
+          },
+        },
+      }),
+    );
+    expect(drawnRows(markup)).toBe(mapColumns(table).length + 3);
+    expect(statedFigure(markup, table)).toBe(drawnRows(markup));
+  });
+
+  it("counts every mapped line when the read hands back fewer", async () => {
+    // A row that came back with the key alone still draws a line per mapped
+    // column — absence is a state, not a reason to drop the line — so the
+    // figure follows the rows, not the row's keys.
+    const table = "venues";
+    const markup = await renderRecord(
+      table,
+      servedScript(table, { [table]: { data: { venue_id: IDS[table] } } }),
+    );
+    expect(drawnRows(markup)).toBe(mapColumns(table).length);
+    expect(statedFigure(markup, table)).toBe(mapColumns(table).length);
+  });
+
+  it("says the same figure when the override path is closed and nothing edits", async () => {
+    // The graded normal case: `verdicts` is not in this database, every line is
+    // read-only, and the scope of the table is the same scope it had when the
+    // path was open. What the page can WRITE and what it DRAWS are two answers.
+    const table = "events";
+    const open = await renderRecord(table, servedScript(table));
+    const closed = await renderRecord(table, servedScript(table, OVERRIDE_ABSENT));
+    expect(lines(open).some((line) => line.editable)).toBe(true);
+    expect(lines(closed).some((line) => line.editable)).toBe(false);
+    expect(drawnRows(closed)).toBe(drawnRows(open));
+    expect(statedFigure(closed, table)).toBe(statedFigure(open, table));
+  });
+
+  it("says nothing on any mapped table where no field table was drawn", async () => {
+    // The landed guard loops the sandbox alone here, and a resolver-owned
+    // record reads three more legs before it decides what to draw.
+    for (const table of EDITABLE_TABLES) {
+      const drawnNothing: [string, string][] = [];
+      const notAnId = await renderRecord(table, servedScript(table), "not-an-id");
+      drawnNothing.push([`${table} at a malformed address`, notAnId]);
+      drawnNothing.push([
+        `${table} with no such row`,
+        await renderRecord(table, servedScript(table, { [table]: { data: null } })),
+      ]);
+      drawnNothing.push([
+        `${table} refused`,
+        await renderRecord(table, servedScript(table, { [table]: { error: permissionDenied(table) } })),
+      ]);
+      drawnNothing.push([
+        `${table} not in the database`,
+        await renderRecord(table, servedScript(table, { [table]: { error: tableNotInSchemaCache(table) } })),
+      ]);
+      for (const [what, markup] of drawnNothing) {
+        expect(drawnRows(markup), what).toBe(0);
+        expect(cheerio.load(markup)('[data-note="drawn-columns"]').length, what).toBe(0);
+      }
+    }
+  });
+});
+
 /* ── the same table name, one card lower ──────────────────────────────────── */
 
 /**
