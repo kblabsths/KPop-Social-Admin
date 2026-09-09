@@ -13670,3 +13670,12 @@
 2026-09-09T04:17:47Z	agent	-	-	-	-
 # STRANDED	2026-09-09T04:17:56Z	agent	8 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0054.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0086.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0087.md
 2026-09-09T04:17:56Z	agent	-	-	-	-
+# STRANDED	2026-09-09T04:18:08Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md
+2026-09-09T04:18:08Z	agent	-	-	-	-
+# STRANDED	2026-09-09T04:18:13Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md
+2026-09-09T04:18:13Z	agent	-	-	-	-
+2026-09-09T04:18:15Z	builder	BUG-0090	spawned
+# STRANDED	2026-09-09T04:18:17Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md
+2026-09-09T04:18:17Z	agent	-	-	-	-
+# STRANDED	2026-09-09T04:18:19Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa0087/, agenticflow/DIGEST.md
+2026-09-09T04:18:19Z	agent	-	-	-	-
