@@ -37,10 +37,28 @@ import { EDITABLE_TABLES } from "./src/lib/edit/config";
  * route matches; the http suite asserts it stays that way.
  *
  * THE SIGN-IN GATE IS UNTOUCHED. Proxy runs at step 3 of Next's routing order
- * and `beforeFiles` rewrites at step 4 (`proxy.md`, Execution order), so the
- * gate still sees the original path and an anonymous visitor is still sent to
- * `/login` — never a 404 that would disclose which record surfaces exist. The
- * http suite asserts that too.
+ * and every rewrite after it — `beforeFiles` at step 4, `afterFiles` at step 6
+ * (`rewrites.md`, "The order Next.js routes are checked is"; `proxy.md`,
+ * Execution order) — so the gate still sees the original path and an anonymous
+ * visitor is still sent to `/login`, never a 404 that would disclose which
+ * record surfaces exist. The http suite asserts that too, on the spellings
+ * this rule claims.
+ *
+ * WHY `afterFiles` AND NOT `beforeFiles` (campaign admin-window/BUG-0083). The
+ * rule needs a CASE-SENSITIVE matcher, and `experimental.caseSensitiveRoutes`
+ * — the only thing in Next that supplies one — does not reach a `beforeFiles`
+ * rewrite: `setupFsCheck` passes the flag to headers, redirects, `afterFiles`
+ * and `fallback`, and calls `buildCustomRoute('before_files_rewrite', item)`
+ * with neither `basePath` nor the flag
+ * (`node_modules/next/dist/server/lib/router-utils/filesystem.js:293-300`,
+ * read on 16.2.2 — and measured: with the flag set and the rule in
+ * `beforeFiles`, `/records/EVENTS/<id>` still reached the page and still
+ * served the error shell). `afterFiles` runs after static files and
+ * non-dynamic pages but BEFORE dynamic routes, and `/records/[table]/[id]` is
+ * a dynamic route — so the rule still decides the miss before the page is
+ * reached, which is the only property `beforeFiles` was chosen for. Nothing
+ * under `/records/` is a static file or a non-dynamic page, so the steps
+ * between the two positions are empty for this source.
  *
  * The table list is derived from the ONE map in `src/lib/edit/config.ts`, so
  * adding a table to `EDIT_CONFIG` is still the only edit that surface needs.
@@ -56,9 +74,11 @@ function forPattern(literal: string): string {
  * the literal (`e`), or its percent-encoded form (`%65`) — RFC 3986 §2.1, and
  * §6.2.2.2 says the two are the same URI.
  *
- * The hex digits are written as explicit two-case classes (`%6[eE]`) rather
- * than leaning on the matcher's own case-folding, so this pattern means the
- * same thing whether or not Next compiles a rewrite source case-insensitively.
+ * The hex digits are written as explicit two-case classes (`%6[eE]`) because
+ * a percent-encoding's hex digits ARE case-insensitive (RFC 3986 §6.2.2.1)
+ * while the name they spell is not — and since admin-window/BUG-0083 the
+ * matcher no longer folds case for us, so these classes carry that one
+ * equivalence alone, and carry it whichever way the source is compiled.
  * Multi-byte characters are encoded byte by byte, as a URI path must be;
  * today every table name is ASCII, and this does not have to be re-thought
  * the day one is not.
@@ -115,18 +135,36 @@ const knownTables = EDITABLE_TABLES.map(anySpellingOf).join("|");
  * the map carries still renders, an encoded name it does not carry is
  * rewritten to the backstop and answers exactly as its plain spelling does.
  *
- * THE CASE-VARIANT GAP IS UNCHANGED AND STILL OPEN. A rewrite source is
- * matched case-insensitively while `editConfigFor` is exact (the map's keys
- * are the database's own spelling), so `/records/EVENTS/<id>` is read as a
- * configured table here, is not claimed, reaches the page and is refused there
- * with the same client-rendered document (measured cookie-authed on
- * `next start`: 404, len 7917). This change neither widens nor narrows that:
- * the exclusion above matches a superset of the spellings the old one did, so
- * the direction of the remaining gap is still the safe one — a table the map
- * DOES carry can never be rewritten away, only an unclaimed URL can fall
- * through to the backstop. The http suite asserts the case variant is a 404
- * and is not a record surface, without pinning the shape of the document it
- * gets.
+ * CASE IS THE OTHER HALF, AND IT IS THE MATCHER'S FLAG, NOT THE PATTERN'S
+ * (campaign admin-window/BUG-0083). Next compiles a rewrite `source` with
+ * path-to-regexp's `sensitive` option, which defaults to FALSE — an `i`-flagged
+ * regex (`node_modules/next/dist/shared/lib/router/utils/path-match.js`). Under
+ * that flag `events` also matches `EVENTS`, so the exclusion above read a case
+ * variant as a configured table, did not claim it, and let it reach the page —
+ * where `editConfigFor("EVENTS")` is null (the map's keys are the database's
+ * own spelling, exact) and `notFound()` threw the client-rendered error shell
+ * this whole file exists to remove. A URI path is case-SENSITIVE (RFC 3986
+ * §6.2.2.1), so `EVENTS` correctly has no record surface; only the document it
+ * was refused with was wrong.
+ *
+ * No pattern can fix that, which is why the fix is the matcher's flag
+ * (`experimental.caseSensitiveRoutes` below) and the move to `afterFiles` that
+ * lets the flag reach this rule: under an `i`-flagged regex, case folding
+ * applies to every literal and every character class, so `[e]`, `[^E]` and a
+ * lookahead alike fold — exactness is simply not expressible in the source
+ * string. (ES2025's `(?-i:…)` modifier group would express it, and Next's
+ * path-to-regexp passes it through — verified — but it is a SyntaxError on any
+ * engine below V8 12.5, and this package's `engines.node` is `>=20.0.0` with
+ * Railway resolving the runtime from it, so the pattern would take the deploy
+ * down on a Node the app is declared to support. Rejected for that, not for
+ * taste.)
+ *
+ * So both halves of "the same table name" are now decided in ONE place and by
+ * the same list: encoding by the spellings above, case by
+ * `experimental.caseSensitiveRoutes`. Every segment that is not EXACTLY a
+ * mapped name — any case variant, `EVENTS`, `Events`, `WALK_SANDBOX`,
+ * `EV%65NTS` — is claimed and gets the framed 404, and every spelling that IS
+ * one still renders its record surface.
  */
 const UNMAPPED_TABLE = `((?!(?:${knownTables})/)[^/]+)`;
 
@@ -139,15 +177,45 @@ const UNMAPPED_TABLE = `((?!(?:${knownTables})/)[^/]+)`;
 const NO_RECORD_SURFACE = "/__no-record-surface__";
 
 const nextConfig: NextConfig = {
+  /**
+   * The rewrite above is matched CASE-SENSITIVELY, so its notion of "a
+   * configured table" is the same one `editConfigFor` has: exact
+   * (admin-window/BUG-0083, and the block on `UNMAPPED_TABLE` for why this is
+   * a flag rather than a pattern).
+   *
+   * What it reaches, read in `next/dist` rather than assumed: it is the
+   * `sensitive` argument path-to-regexp is given for CUSTOM routes — headers,
+   * redirects, `afterFiles` and `fallback` rewrites
+   * (`server/lib/router-utils/filesystem.js` `buildCustomRoute`, lines 293-300;
+   * `setup-dev-bundler.js` for dev; `base-server.js` for the re-match of a
+   * rewritten dynamic route) — and NOT `beforeFiles`, which is built without
+   * it, which is why the rule above moved. It is not the app's own routes
+   * either: `getRouteRegex` (`shared/lib/router/utils/route-regex.js`) builds
+   * `new RegExp` with no flags, so a filesystem route was always
+   * case-sensitive and `/Login` already 404s; middleware matchers do not read
+   * it. This repo has exactly ONE custom route — the rewrite above — so the
+   * blast radius is that rule, and a future case-INsensitive rule would now be
+   * a deliberate choice rather than a default nobody picked.
+   *
+   * It is an `experimental` key on Next 16.2.2 (`server/config-schema.js`,
+   * `config-shared.js` default `false`). The behaviour it buys is pinned from
+   * the outside by `tests/http/auth.http.test.ts` — the case-variant block
+   * there goes red the day an upgrade drops or renames it, which is the whole
+   * reason that test is a plain `it` now.
+   */
+  experimental: {
+    caseSensitiveRoutes: true,
+  },
+
   async rewrites() {
     return {
-      beforeFiles: [
+      beforeFiles: [],
+      afterFiles: [
         {
           source: `/records/:table${UNMAPPED_TABLE}/:id`,
           destination: NO_RECORD_SURFACE,
         },
       ],
-      afterFiles: [],
       fallback: [],
     };
   },
