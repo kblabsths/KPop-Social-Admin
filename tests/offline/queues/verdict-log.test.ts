@@ -202,6 +202,7 @@ function cellsOf(markup: string, verdictAction: string) {
  * note, when.
  */
 const ACTOR = 0;
+const ACTION = 1;
 const ITEM = 2;
 const OBSERVATION = 3;
 const NOTE = 4;
@@ -231,6 +232,21 @@ function noteTitle(markup: string, verdictAction: string): string | undefined {
     .eq(NOTE)
     .find("span")
     .attr("title");
+}
+
+/**
+ * The cell texts of a log rendered with exactly ONE verdict, in render order —
+ * `cellsOf` selects its row by the action's own value, which a hostile action
+ * would have to be escaped into a selector to reach.
+ */
+function soleRowCells(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  const rows = $(`${LOG} tbody tr`);
+  if (rows.length !== 1) throw new Error(`expected one row, drew ${rows.length}`);
+  return rows
+    .find("td")
+    .toArray()
+    .map((td) => $(td).text().trim());
 }
 
 function windowHooks(markup: string): Record<string, string | undefined> {
@@ -871,5 +887,227 @@ describe("the observation leg", () => {
     // The log's own state is `ok`: the refusal belongs to its own sub-surface,
     // exactly as the gauge's per-queue slices belong to theirs.
     expect(surfaceStateOf(markup, LOG, PROVENANCE)).toBe("ok");
+  });
+});
+
+/* ── the primitive's BOUNDARY in this log — QA, admin-window/BUG-0150 ────── */
+
+/**
+ * BUG-0150 put two of the log's cells through `Identifier` and left two alone.
+ * The builder graded the two it converted; this block grades the LINE between
+ * them, and the half of the conversion its own pin did not drive.
+ *
+ * Nothing here types a class literal or an attribute value: the isolation
+ * marker is read off `Identifier`'s own render, the ids and actions off the
+ * fixtures, the href off the route parts.
+ */
+describe("what the identifier primitive does and does not reach in the log", () => {
+  /** The `dir` value `Identifier` marks its own box with, whatever it is. */
+  function isolationMarker(text: string): string | undefined {
+    return cheerio.load(render(h(Identifier, { children: text })))("span").attr("dir");
+  }
+
+  /**
+   * DEBT-0011's sanctioned exception is the ANCHOR, and an exception has to be
+   * a boundary rather than a shrug: the resolved arm stays exactly one anchor
+   * carrying the hook, with nothing nested inside it.
+   *
+   * The failure this pins is not cosmetic. Every reader of this column —
+   * `cellsOf` here, the live oracle's `[data-verdict-action]` map
+   * (`tests/live/queues.live.test.ts`), a future one — does
+   * `row.find(hook).attr(...)`, which silently answers from the FIRST match. An
+   * arm that carried the hook twice (an `Identifier` nested inside the anchor,
+   * the shape a next sweep would reach for) would answer that read from the
+   * wrapper and go unnoticed. So: one element per hook per row, and the linked
+   * one holds the id as its own text.
+   *
+   * Non-vacuous by construction: the same render carries an UNLINKED arm one
+   * row down, and it is asserted to be the other thing — no anchor, isolated.
+   */
+  it("leaves the resolved observation as one bare anchor while the unresolved one is isolated", async () => {
+    // Exactly one of the two observations resolves, so both arms render in ONE
+    // markup and the boundary is a difference this test can see.
+    const markup = await renderQueues(
+      scriptOf(POPULATION, [
+        observationRow({
+          observation_id: ID.observationA,
+          domain: "events",
+          entity_id: ID.eventEntity,
+        }),
+      ]),
+    );
+    const $ = cheerio.load(markup);
+
+    const linked = $(`${LOG} [data-verdict-action="${SETTLEMENT.action}"]`)
+      .closest("tr")
+      .find("[data-verdict-observation]");
+    expect(linked, "the resolved arm carries the hook exactly once").toHaveLength(1);
+    expect(linked.is("a"), "the resolved arm is the anchor exception itself").toBe(true);
+    expect(
+      linked.children().toArray(),
+      "nothing is nested inside the anchor — the id is the anchor's own text",
+    ).toEqual([]);
+    expect(linked.text()).toBe(SETTLEMENT.observation_id);
+    expect(linked.attr("href")).toBe(
+      ["", "records", "events", ID.eventEntity].join("/"),
+    );
+
+    // ...and the arm that is NOT an anchor took the primitive, in the same
+    // render: the boundary discriminates instead of exempting everything.
+    const unlinked = $(`${LOG} [data-verdict-action="${OVERRIDE.action}"]`)
+      .closest("tr")
+      .find("[data-verdict-observation]");
+    expect(unlinked, "the unresolved arm carries the hook exactly once").toHaveLength(1);
+    expect(unlinked.is("a")).toBe(false);
+    expect(unlinked.text()).toBe(OVERRIDE.observation_id);
+    const marker = isolationMarker(OVERRIDE.observation_id ?? "");
+    expect(marker, "the primitive marks its own box").toBeDefined();
+    expect(unlinked.attr("dir"), "so the unresolved id is isolated").toBe(marker);
+  });
+
+  /**
+   * Every one of the log's four hooks resolves to at most one element per row,
+   * across every row shape §7 admits. The reads above all depend on it and
+   * none of them would fail if it stopped being true.
+   */
+  it("carries each of its hooks at most once per row, in every row shape", async () => {
+    const markup = await renderQueues(scriptOf(POPULATION, OBSERVATIONS));
+    const $ = cheerio.load(markup);
+    const rows = $(`${LOG} tbody tr`).toArray();
+    expect(rows).toHaveLength(POPULATION.length);
+
+    for (const tr of rows) {
+      // The two columns every row of §7's table carries: exactly one element
+      // each, so `toBeLessThanOrEqual` below cannot pass by finding nothing.
+      for (const hook of ["[data-verdict-actor]", "[data-verdict-action]"]) {
+        expect($(tr).find(hook).length, `${hook} is not one element here`).toBe(1);
+      }
+      // The two structurally-nullable ones: absent or one, never two.
+      for (const hook of ["[data-verdict-item]", "[data-verdict-observation]"]) {
+        expect(
+          $(tr).find(hook).length,
+          `${hook} answers a per-row read ambiguously`,
+        ).toBeLessThanOrEqual(1);
+      }
+    }
+    // ...and both nullable hooks do render somewhere in this population, so the
+    // loop above is grading elements that exist.
+    for (const hook of ["[data-verdict-item]", "[data-verdict-observation]"]) {
+      expect($(`${LOG} ${hook}`).length, `${hook} rendered nowhere`).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * The anchor arm is the one DEBT-0011 exempts from the primitive, so the
+   * containment it does NOT get from isolation is worth asserting where it does
+   * come from: a `td` is a block box, and a control inside one cell cannot
+   * reach another. Stated as containment rather than as `dir` being absent —
+   * the day the anchor exception is revisited, this pin should still hold.
+   */
+  it("keeps a bidi-override in the LINKED observation id inside its own cell too", async () => {
+    const RLO = "\u202E";
+    const hostile = `${ID.observationA}${RLO}`;
+    const linkedHostile = verdictLogEntry({
+      verdict_id: "0192eeee-0000-7000-8000-000000000001",
+      observation_id: hostile,
+      note: "a note the override must not reach",
+    });
+    const resolves = [
+      observationRow({
+        observation_id: hostile,
+        domain: "events",
+        entity_id: ID.eventEntity,
+      }),
+    ];
+
+    const markup = await renderQueues(scriptOf([linkedHostile], resolves));
+    const $ = cheerio.load(markup);
+    const shown = $(`${LOG} [data-verdict-observation]`);
+    expect(shown, "the hostile id is on screen once").toHaveLength(1);
+    expect(shown.is("a"), "resolved, so this is the anchor arm").toBe(true);
+    expect(shown.text(), "verbatim: isolation removes nothing and nor does this").toBe(
+      hostile,
+    );
+
+    const cells = shown.closest("tr").find("td");
+    const carrying = cells
+      .toArray()
+      .map((td, index) => ($(td).html()?.includes(RLO) === true ? index : -1))
+      .filter((index) => index !== -1);
+    expect(carrying, "the override is in the observation cell and nowhere else").toEqual(
+      [OBSERVATION],
+    );
+    const before = soleRowCells(
+      await renderQueues(scriptOf([{ ...linkedHostile, observation_id: ID.observationA }], [
+        observationRow({
+          observation_id: ID.observationA,
+          domain: "events",
+          entity_id: ID.eventEntity,
+        }),
+      ])),
+    );
+    const after = soleRowCells(markup);
+    expect(after).toHaveLength(before.length);
+    for (const [index, text] of before.entries()) {
+      if (index === OBSERVATION) continue;
+      expect(after[index], `cell ${index} is untouched by the override`).toBe(text);
+    }
+  });
+
+  /**
+   * The other half of the conversion, driven on the input the isolation exists
+   * for. The builder's own hostile fixture put U+202E on the observation id;
+   * `verdicts.action` is text this app did not author either (the settle route
+   * writes whatever it was handed), and it is the cell the reader scans first.
+   *
+   * Graded the same way, and on the same three claims: verbatim on screen AND
+   * on the hook an oracle addresses the row by, isolated in its own box, and
+   * contained to that box — the override reaches no sibling cell, each of
+   * which renders byte-identical to the same row carrying a clean action.
+   */
+  it("holds a bidi-override action inside its own cell, verbatim, without touching the row's other cells", async () => {
+    const RLO = "\u202E";
+    const hostile = `choose${RLO}_claimed_value`;
+    const row = verdictLogEntry({
+      verdict_id: "0192dddd-0000-7000-8000-000000000001",
+      action: hostile,
+      observation_id: null,
+      note: "a note the app must not let the override reach",
+    });
+    const clean = { ...row, action: "choose_claimed_value" };
+
+    const markup = await renderQueues(scriptOf([row], OBSERVATIONS));
+    const $ = cheerio.load(markup);
+
+    const shown = $(`${LOG} [data-verdict-action]`);
+    expect(shown, "the hostile action is on screen at all").toHaveLength(1);
+    // Verbatim: never prettified, and still addressable by the hook a live
+    // oracle reads the row's action off (`tests/live/queues.live.test.ts`).
+    expect(shown.text()).toBe(hostile);
+    expect(shown.attr("data-verdict-action")).toBe(hostile);
+    const marker = isolationMarker(hostile);
+    expect(marker, "the primitive marks its own box").toBeDefined();
+    expect(shown.attr("dir"), "an action the database produced is isolated").toBe(
+      marker,
+    );
+
+    // Contained: the override is inside exactly one `td`...
+    const cells = shown.closest("tr").find("td");
+    const carrying = cells
+      .toArray()
+      .map((td, index) => ($(td).html()?.includes(RLO) === true ? index : -1))
+      .filter((index) => index !== -1);
+    expect(carrying, "the override sits in the action cell and nowhere else").toEqual([
+      ACTION,
+    ]);
+    // ...and every other cell of the row renders what it renders when the
+    // action is clean.
+    const before = soleRowCells(await renderQueues(scriptOf([clean], OBSERVATIONS)));
+    const after = soleRowCells(markup);
+    expect(after).toHaveLength(before.length);
+    for (const [index, text] of before.entries()) {
+      if (index === ACTION) continue;
+      expect(after[index], `cell ${index} is untouched by the override`).toBe(text);
+    }
   });
 });
