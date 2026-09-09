@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T16:04:51Z — do not edit)
+# Tracker index (regenerated 2026-09-09T16:05:41Z — do not edit)
 
 ## open
 - BUG-0135 [P2][bug][-] A population read no row depends on deletes the rows the URL's own complete read returned  (scope:src/lib/db/review-items.ts,src/app/queues/page.tsx,tests/offline/review/review-items.test.ts,tests/offline/queues/page.test.ts from:BUG-0133)
