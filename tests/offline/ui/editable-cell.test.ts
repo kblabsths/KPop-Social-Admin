@@ -699,6 +699,169 @@ describe.each([{ leaked: false }, { leaked: true }])(
 );
 
 /**
+ * A REFUSAL ENDS WITH THE EDIT THAT PRODUCED IT — campaign
+ * admin-window/BUG-0107.
+ *
+ * Measured by the designer on the M2 endgame walk (2026-09-09, production
+ * build against staging, 1440x900, light, `walk_sandbox` row …0001): `tally`
+ * was refused with `seven`, and the red panel then survived Escape, survived a
+ * further 4s, survived a click elsewhere on the page, and was still standing
+ * beside a `tally` reverted to `7` after `note` had been edited and saved
+ * SUCCESSFULLY. Reopening the cell was the only thing in the component that
+ * ever cleared one. So a second refusal drew a second unbordered panel over
+ * the first — the `label` 23502 (5 lines) and the `observed_on` 22007 (2
+ * lines) on screen at once, printed across each other, neither readable.
+ *
+ * The seam is the one BUG-0075 built: a status belongs to an edit, and only
+ * that edit or a later one may replace or retire it. `editing` retires a spent
+ * status by starting the NEXT edit; `abandoned` retires it by ending the SAME
+ * one without a next. The rule is pinned here both ways — what it retires, and
+ * everything it must not touch — because that is the half no browser is needed
+ * to see.
+ *
+ * The moves themselves (Escape at rest, a press outside the cell, focus
+ * leaving it) are DOM events on a closed cell, and `tests/offline` is
+ * environment node with `renderToStaticMarkup` and no jsdom (STACK.md §4), so
+ * they are measured in the walk exactly as `focusVerdict`'s focus is — as is
+ * the cross-cell half of "at most one refusal on screen", which is one
+ * component listening for a press that lands on another.
+ */
+
+/** Edit 1 opened, committed, and REFUSED — the panel is on screen. */
+const AFTER_REFUSAL: EditEvent[] = [
+  { kind: "editing", edit: 1 },
+  { kind: "committed", edit: 1 },
+  { kind: "settled", edit: 1, outcome: { ok: false, message: REFUSAL } },
+];
+
+describe("a refusal ends with the edit that produced it", () => {
+  it("retires when the operator abandons that edit, leaving the cell as if never edited", () => {
+    const refused = replay(...AFTER_REFUSAL);
+    expect(refused.status).toEqual({ kind: "failed", message: REFUSAL });
+    const after = reduceEdit(refused, { kind: "abandoned", edit: 1 });
+    // The same end state a cell that was never edited is in — which is the
+    // acceptance criterion, and is why this compares the whole status.
+    expect(after.status).toEqual(IDLE_EDIT_STATE.status);
+    // ...and the edit that owned it is still the one the cell is on, so the
+    // next event is judged against the right ordinal.
+    expect(after.edit).toEqual(1);
+  });
+
+  it("is still on no clock: what retires it is the operator, at whatever moment they act", () => {
+    // "Readable long enough to act on" is the other half of the criterion: the
+    // fix must not become a timeout. Nothing fires on its own, ever.
+    const refused = replay(...AFTER_REFUSAL);
+    expect(confirmationDelayMs(refused.status)).toBeNull();
+    const cell = driveCell([
+      ...edit(1, 0, 10, 400, NO),
+      { at: 30_000, event: { kind: "abandoned", edit: 1 } },
+    ]);
+    for (const t of [401, 1_630, 4_000, 29_999]) {
+      expect(cell.at(t), `t=${t}ms`).toEqual({ kind: "failed", message: REFUSAL });
+    }
+    expect(cell.at(30_000).kind).toEqual("idle");
+    expect(cell.timeline.at(-1)?.at, "nothing fires after the operator's own move").toEqual(30_000);
+  });
+
+  it("never lets a straggler clock or a stale abandonment retire a newer edit's statement", () => {
+    // The mirror of BUG-0075's rule, on the event this ticket adds. Both
+    // directions are fixtures: an abandonment older than what is on screen,
+    // and one newer than it — a listener torn down a tick late is the first,
+    // a re-entered cell the second.
+    const later = replay(
+      ...AFTER_REFUSAL,
+      { kind: "editing", edit: 2 },
+      { kind: "committed", edit: 2 },
+      { kind: "settled", edit: 2, outcome: { ok: false, message: "second refusal (22007)" } },
+    );
+    for (const stale of [0, 1, 3, 99]) {
+      // unchanged, and unchanged BY REFERENCE — what makes `useReducer` bail
+      // out rather than re-render and re-arm anything.
+      expect(reduceEdit(later, { kind: "abandoned", edit: stale }), `edit ${stale}`).toBe(later);
+    }
+    // the negative fixture that keeps that honest (LESSONS 3): the ordinal
+    // that DOES own what is showing retires it.
+    expect(reduceEdit(later, { kind: "abandoned", edit: later.edit }).status.kind).toEqual("idle");
+  });
+
+  it("does not stop a write still in flight, whatever the operator presses", () => {
+    // Acceptance criterion 3, and the reason the reducer decides this rather
+    // than the listener: Escape during a PATCH cancels nothing, so claiming it
+    // did would be a lie about the database.
+    const inFlight = replay({ kind: "editing", edit: 1 }, { kind: "committed", edit: 1 });
+    expect(inFlight.status.kind).toEqual("saving");
+    expect(reduceEdit(inFlight, { kind: "abandoned", edit: 1 })).toBe(inFlight);
+    // ...and the write's own answer still lands on it afterwards, refusal and
+    // confirmation alike.
+    for (const outcome of [OK, NO]) {
+      const abandoned = reduceEdit(inFlight, { kind: "abandoned", edit: 1 });
+      const settled = reduceEdit(abandoned, { kind: "settled", edit: 1, outcome });
+      expect(settled.status.kind, outcome.ok ? "ok" : "refused").toEqual(
+        outcome.ok ? "saved" : "failed",
+      );
+    }
+  });
+
+  it("leaves the 1.5s confirmation on its own clock, and idle alone", () => {
+    // Acceptance criterion 4: `saved` is not a sentence to act on, it is a
+    // receipt, and it retires when CONFIRMATION_MS says so and not before.
+    const confirmed = replay(...AFTER_FIRST_SAVE);
+    expect(confirmed.status.kind).toEqual("saved");
+    expect(reduceEdit(confirmed, { kind: "abandoned", edit: 1 })).toBe(confirmed);
+    expect(confirmationDelayMs(confirmed.status)).toEqual(1500);
+    expect(reduceEdit(IDLE_EDIT_STATE, { kind: "abandoned", edit: 0 })).toBe(IDLE_EDIT_STATE);
+    // driven the way the component composes it: the receipt still clears at
+    // 1.5s after its own save even though the operator walked away at once.
+    const cell = driveCell([
+      ...edit(1, 0, 10, 400, OK),
+      { at: 500, event: { kind: "abandoned", edit: 1 } },
+    ]);
+    expect(cell.at(500).kind, "walked away 100ms in").toEqual("saved");
+    expect(cell.at(1_899).kind).toEqual("saved");
+    expect(cell.at(1_900).kind, "1500ms after its own save").toEqual("idle");
+  });
+
+  it("replaces a second refusal on the same cell rather than adding one", () => {
+    // A cell holds ONE status, so two refusals of the same cell can never
+    // stack; the walk measures the cross-cell half, which is a listener's job.
+    const twice = replay(
+      ...AFTER_REFUSAL,
+      { kind: "editing", edit: 2 },
+      { kind: "committed", edit: 2 },
+      { kind: "settled", edit: 2, outcome: { ok: false, message: "second refusal (22007)" } },
+    );
+    expect(twice.status).toEqual({ kind: "failed", message: "second refusal (22007)" });
+    expect(reduceEdit(twice, { kind: "abandoned", edit: 2 }).status.kind).toEqual("idle");
+  });
+
+  it("retires a refusal and nothing else, over every status the cell can be in", () => {
+    // The rule swept rather than sampled, at every ordinal relationship.
+    const reached: EditState[] = [
+      IDLE_EDIT_STATE,
+      replay({ kind: "editing", edit: 1 }),
+      replay({ kind: "editing", edit: 1 }, { kind: "committed", edit: 1 }),
+      replay(...AFTER_FIRST_SAVE),
+      replay(...AFTER_REFUSAL),
+    ];
+    for (const state of reached) {
+      const retires = state.status.kind === "failed";
+      const next = reduceEdit(state, { kind: "abandoned", edit: state.edit });
+      expect(next.status.kind, state.status.kind).toEqual(retires ? "idle" : state.status.kind);
+      if (!retires) expect(next, state.status.kind).toBe(state);
+    }
+  });
+
+  it("still lets the operator reopen the cell to clear it, the way that already worked", () => {
+    // BUG-0069's path is not replaced by this one, and a cell reopened after
+    // an abandonment is idle either way.
+    const refused = replay(...AFTER_REFUSAL);
+    expect(reduceEdit(refused, { kind: "editing", edit: 2 }).status.kind).toEqual("idle");
+    const abandoned = reduceEdit(refused, { kind: "abandoned", edit: 1 });
+    expect(reduceEdit(abandoned, { kind: "editing", edit: 2 }).status.kind).toEqual("idle");
+  });
+});
+
+/**
  * WHERE FOCUS GOES when an edit ends — campaign admin-window/BUG-0069.
  *
  * Measured by QA on the BUG-0060 pass (2026-09-03, production build against
@@ -1762,6 +1925,84 @@ describe("the status box's width cap binds on the words inside it", () => {
     expect(failed).toEqual(message);
     expect(fix).toEqual(refusalFix(message));
     expect(announced(statusMarkup({ kind: "failed", message }), "alert")).toContain(token);
+  });
+});
+
+
+/* ── ...and the box has an EDGE against what it floats over ──────────
+ *
+ * campaign admin-window/BUG-0107, leg 2. The status box is opaque
+ * (`bg-surface`) so it stays readable over the row it hangs across — but the
+ * table under it is `bg-surface` too, so a fill alone gave it no boundary at
+ * all: it covered the row hairlines it crossed and truncated the value beside
+ * it with nothing to say where the panel began. The designer measured
+ * `is_flagged` reading `fal`, the rest of `false` behind an unbordered red
+ * panel belonging to another row (2026-09-09, 1440x900, light theme).
+ *
+ * The Look allows one answer — "1px hairlines, never shadows. Structure comes
+ * from rules and fills. There is no elevation in this app" — and this
+ * component already writes it, on the HINT popover it renders a few lines
+ * away. So these assert the two boxes AGREE rather than pinning a spelling
+ * twice: whatever the hint uses to bound itself, the status box uses too. A
+ * hint restyled without the status box following it is the failure this
+ * catches, which is the defect one component with two spellings actually was.
+ */
+
+/** How a floating box in this component is bounded: its fill, edge and radius. */
+function edgeClasses(classes: string[]): string[] {
+  return classes.filter((name) => /^(border|rounded|bg)-|^border$/.test(name)).sort();
+}
+
+describe("the status box is bounded the way this component bounds a floating box", () => {
+  it("carries an edge, in every kind it draws a box for and whichever way it grows", () => {
+    for (const status of KINDS.filter((kind) => kind.kind !== "idle")) {
+      for (const growth of ["down", "up"] satisfies StatusGrowth[]) {
+        const classes = boxClasses(status, growth);
+        expect(classes, `${status.kind}/${growth}`).toContain("border");
+        expect(classes, `${status.kind}/${growth}`).toContain("border-hairline");
+      }
+    }
+    // The negative fixtures that keep "contains" a real discriminator
+    // (LESSONS 3): a resting cell draws no box, and neither does `idle`.
+    const resting = render(
+      h(EditableCell, { value: "Tuzi", onSave: noop, label: "label of walk_sandbox" }),
+    );
+    expect(classesOf(resting)).not.toContain("border-hairline");
+    expect(classesOf(statusMarkup({ kind: "idle" }))).toEqual([]);
+  });
+
+  it("is bounded exactly as the hint beside it is, so one component has one floating box", () => {
+    // Derived from the hint rather than written out again: if the hint's fill,
+    // edge or radius ever changes, this fails until the status box follows.
+    const hint = edgeClasses(hintClasses("below"));
+    expect(hint, "the hint bounds itself with something").not.toEqual([]);
+    for (const status of KINDS.filter((kind) => kind.kind !== "idle")) {
+      for (const growth of ["down", "up"] satisfies StatusGrowth[]) {
+        expect(edgeClasses(boxClasses(status, growth)), `${status.kind}/${growth}`).toEqual(hint);
+      }
+    }
+    // ...and the hint's other side is bounded the same way, so "below" above
+    // is not a special case.
+    expect(edgeClasses(hintClasses("above"))).toEqual(hint);
+  });
+
+  it("gets its edge from a hairline and never from elevation", () => {
+    // "1px hairlines, never shadows": a shadow would bound the panel too, and
+    // is the one way this app does not do it.
+    for (const status of KINDS.filter((kind) => kind.kind !== "idle")) {
+      for (const growth of ["down", "up"] satisfies StatusGrowth[]) {
+        const raised = boxClasses(status, growth).filter((name) => /shadow|ring-|outline-/.test(name));
+        expect(raised, `${status.kind}/${growth}`).toEqual([]);
+      }
+    }
+  });
+
+  it("keeps the refusal's red in the ink and out of the edge", () => {
+    // The edge is structure, not state: the palette's five jobs mean `broken`
+    // is what the words are, never what the box is outlined in.
+    const classes = boxClasses({ kind: "failed", message: REFUSAL });
+    expect(classes).toContain("text-broken");
+    expect(classes.filter((name) => /^border-/.test(name))).toEqual(["border-hairline"]);
   });
 });
 
