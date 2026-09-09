@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T05:44:10Z — do not edit)
+# Tracker index (regenerated 2026-09-09T05:50:06Z — do not edit)
 
 ## open
 - FEAT-0010 [P1][feat][M2] The verdict UI: every spec 7 action as one typed decision, one call, one transaction  (deps:FEAT-0009 scope:src/app/queues,src/components,src/lib/db,src/lib/review,tests/offline,tests/live)
@@ -11,8 +11,7 @@
 - BUG-0100 [P3][bug][M2] The override surface calls a claim an 'observation' — the one noun the glossary pins hardest  (scope:src/app/records/[table]/[id]/page.tsx,tests/offline/ui/copy.test.ts @builder-167 from:designer:early-walk)
 
 ## qa
-- BUG-0096 [P2][bug][M2] The close sits 3,500px below the evidence it closes, so the operator scrolls four screenfuls to act  (scope:src/app/queues/[reviewItemId]/page.tsx,tests/offline/review-item/page.test.ts @builder-160 from:designer:early-walk)
 - BUG-0098 [P2][bug][M2] A failed inline save shows the database's refusal and nothing else — no fix in the app's voice, unlike every read error  (scope:src/components/EditableCell.tsx,tests/offline/ui/editable-cell.test.ts @builder-162 from:designer:early-walk)
 - BUG-0099 [P2][bug][M2] Links inside data tables announce themselves only under the pointer — the defect BUG-0054 fixed on /cycles, still shipping on three M2 surfaces  (scope:src/components/records/record-fields.tsx,src/components/queues/queue-list.tsx,src/components/review/evidence-cells.tsx,tests/offline/records/page.test.ts @builder-163 from:designer:early-walk)
 
-Totals — claimed:4, done:47, open:2, qa:3, wont_fix:1. Archived: 124.
+Totals — claimed:4, done:48, open:2, qa:2, wont_fix:1. Archived: 124.
