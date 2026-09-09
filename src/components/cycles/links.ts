@@ -1,11 +1,17 @@
 /**
- * How `/cycles` spells an anchor and a link — campaign admin-window/DEBT-0004.
+ * How this app spells an anchor and a link — campaign admin-window/DEBT-0004,
+ * widened to the whole app by admin-window/BUG-0099.
  *
- * Three constants the page's sections share: the row anchor a `?cycle=` link
- * lands on, the one way this page draws a link at rest, and the id the runs
- * window carries. Spelled once, here, because the cycle table, the asked-for
- * line, the cycle-health error line and the newest-run lead all write them and
- * four spellings is four chances for one of them to stop matching.
+ * Three constants: the row anchor a `?cycle=` link lands on, the ONE way this
+ * app draws a link at rest, and the id the runs window carries. The first and
+ * the last are `/cycles`' own; `IN_PAGE_LINK` is not, and never really was —
+ * it is the app's single spelling of a link, imported by the record surface's
+ * reference line, the queue row and the evidence table as well as by every
+ * section of `/cycles`. Spelled once, here, because a second spelling is a
+ * second answer to "does this text go somewhere", and BUG-0099 is what the
+ * second answer cost: three M2 surfaces shipping links that announced
+ * themselves only under the pointer, months after BUG-0054 settled the
+ * question.
  */
 
 /** The anchor a linked cycle's row carries, so `#` reaches the row itself. */
@@ -14,8 +20,8 @@ export function anchorFor(runId: string): string {
 }
 
 /**
- * How every anchor on this page renders **at rest** (campaign
- * admin-window/BUG-0054).
+ * How every anchor in this app renders **at rest** (campaign
+ * admin-window/BUG-0054, applied app-wide by admin-window/BUG-0099).
  *
  * These links were `text-ink hover:text-accent`, which made a linked cycle id
  * identical to the dozens of mono ids this page prints as plain text: the one

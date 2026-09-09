@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Badge, type Column, DataTable, Section, StatCard } from "@/components/ui";
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { count, relativeAge } from "@/lib/format";
 import { shapeOf, type Kind, type ReviewItemRow } from "@/lib/review/shapes";
 
@@ -116,11 +117,11 @@ export function QueueList({
       key: "summary",
       label: "what happened",
       cell: (item) => (
-        <a
-          href={hrefFor(item)}
-          data-item={item.review_item_id}
-          className="transition-colors hover:text-accent"
-        >
+        // The row's one route out, drawn as this app draws a link — accent
+        // ink plus an underline, with nothing hovering it
+        // (admin-window/BUG-0099). A queue is read by scanning, and an
+        // affordance that needs the pointer is not there for the scan.
+        <a href={hrefFor(item)} data-item={item.review_item_id} className={IN_PAGE_LINK}>
           {item.summary}
         </a>
       ),

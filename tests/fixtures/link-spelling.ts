@@ -1,0 +1,92 @@
+import type { CheerioAPI } from "cheerio";
+import { expect } from "vitest";
+import { IN_PAGE_LINK } from "@/components/cycles/links";
+
+/**
+ * "Is this drawn as a link, at rest?" — asked the same way on every surface
+ * (campaign admin-window/BUG-0099).
+ *
+ * The app has ONE spelling of a link, `components/cycles/links.ts`'s
+ * `IN_PAGE_LINK`, and this helper reads it from there rather than repeating
+ * it: no test here pins a class literal, so a later change to how this app
+ * draws a link moves one constant and the suite follows. What the tests below
+ * assert is the property BUG-0054 bought and BUG-0099 found missing on three
+ * more surfaces — that the ink and the decoration are on the element as it is
+ * SERVED, not behind a `hover:`/`focus:` variant that a reader who has not
+ * moved the mouse never sees.
+ */
+
+/**
+ * A selection, however it was made — `$("a")`, `$(element)`, `.closest("tr")`.
+ * Taken from the query function's own return type so this file names no
+ * cheerio internal (the alternative in the tree casts through `never`).
+ */
+export type Selection = ReturnType<CheerioAPI>;
+
+/** The classes of `IN_PAGE_LINK`, as a set to test membership against. */
+const LINK_CLASSES: readonly string[] = IN_PAGE_LINK.split(/\s+/).filter(Boolean);
+
+/** Anything that decides ink or decoration, with or without a variant prefix. */
+const INK_OR_DECORATION = /^(?:[^\s]+:)?(?:text-|decoration-|underline$|no-underline$)/;
+
+/** One element's classes, in the order it carries them. */
+export function classesOf(element: Selection): string[] {
+  return (element.attr("class") ?? "").split(/\s+/).filter(Boolean);
+}
+
+/** Every anchor inside `scope`, as its class list, in document order. */
+export function anchorClasses($: CheerioAPI, scope: Selection): string[][] {
+  return scope
+    .find("a")
+    .toArray()
+    .map((anchor) => classesOf($(anchor)));
+}
+
+/** The type-scale face an element is drawn in — `type-body`, `type-data`, … */
+export function faceOf(classes: readonly string[]): string[] {
+  return classes.filter((className) => className.startsWith("type-"));
+}
+
+/**
+ * Assert that an element carrying `classes` reads as a link with nothing
+ * hovering, focusing or clicking it.
+ */
+export function expectDrawnAsLinkAtRest(classes: readonly string[], what: string): void {
+  for (const link of LINK_CLASSES) {
+    expect(classes, `${what} is missing the app's link spelling`).toContain(link);
+  }
+  // The defect itself: ink or decoration parked behind a state variant, so the
+  // one thing on screen that goes somewhere announces itself only under the
+  // pointer.
+  expect(
+    classes.filter(
+      (className) => className.includes(":") && INK_OR_DECORATION.test(className),
+    ),
+    `${what} puts its ink or decoration behind a state variant`,
+  ).toEqual([]);
+}
+
+/** The ink half of the spelling — what separates a link from every other value. */
+const LINK_INK: readonly string[] = LINK_CLASSES.filter((className) =>
+  className.startsWith("text-"),
+);
+
+/**
+ * Assert the opposite for a value that goes nowhere — the second fixture every
+ * guard needs, so "everything on the surface is a link" cannot pass this file
+ * (LESSONS 3).
+ *
+ * The claim is about INK, not about the underline: an editable value carries a
+ * hairline underline of its own at rest (admin-window/TASK-0053) and must stay
+ * unconfusable with a link, which it does by staying in primary ink.
+ */
+export function expectNotDrawnAsLink(classes: readonly string[], what: string): void {
+  expect(
+    LINK_INK.filter((ink) => classes.includes(ink)),
+    `${what} goes nowhere but wears the link's ink`,
+  ).toEqual([]);
+  expect(
+    LINK_CLASSES.every((link) => classes.includes(link)),
+    `${what} goes nowhere but is drawn as a link`,
+  ).toBe(false);
+}

@@ -1,4 +1,5 @@
 import { DataTable, type Column } from "@/components/ui";
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { hintSide } from "@/components/edit-cell-layout";
 import { relativeAge } from "@/lib/format";
 import type { FieldProvenance } from "@/lib/records/provenance";
@@ -71,20 +72,20 @@ function ProvenanceLine({ fact }: { fact: FieldProvenance }) {
  * here. The id stays on screen beside the name, in mono, because it is the
  * machine's word for this row and the operator copying it into a query needs
  * it verbatim; when no name was read, the id IS the label and the line still
- * links. Same anchor styling as the Browse row link, which is the app's one
- * treatment for "this text goes somewhere".
+ * links.
+ *
+ * Two things about how it is drawn, both settled by admin-window/BUG-0099.
+ * The anchor carries the app's ONE link spelling (`IN_PAGE_LINK`), so it is
+ * accent ink plus an underline with nothing hovering it: on a page whose every
+ * other value is inert mono, the one value that navigates may not wait for the
+ * pointer to say so. And the LABEL is mono in both branches — a venue's name is
+ * a value the database produced, exactly like the id beside it, so the line
+ * cannot switch faces on whether a name happened to resolve.
  */
 function ReferenceValue({ reference }: { reference: FieldReference }) {
   return (
     <span className="flex flex-wrap items-baseline gap-2">
-      <a
-        href={reference.href}
-        className={
-          reference.name === null
-            ? "type-data transition-colors hover:text-accent"
-            : "type-body transition-colors hover:text-accent"
-        }
-      >
+      <a href={reference.href} className={`type-data ${IN_PAGE_LINK}`}>
         {reference.name ?? reference.id}
       </a>
       {reference.name === null ? null : (

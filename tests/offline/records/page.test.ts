@@ -13,6 +13,13 @@ import {
   type Script,
   type StubClient,
 } from "../../fixtures/stub-client";
+import {
+  anchorClasses,
+  classesOf,
+  expectDrawnAsLinkAtRest,
+  expectNotDrawnAsLink,
+  faceOf,
+} from "../../fixtures/link-spelling";
 
 /**
  * The edit surface, rendered (campaign admin-window/TASK-0018).
@@ -297,6 +304,33 @@ function lineFor(markup: string, name: string): Line {
   const found = lines(markup).find((line) => line.name === name);
   if (!found) throw new Error(`no line for ${name} in the rendered surface`);
   return found;
+}
+
+/** The value cell of one line, by field name. */
+function valueCell($: cheerio.CheerioAPI, name: string) {
+  const row = $("tbody tr")
+    .toArray()
+    .find((tr) => $(tr).find("td").eq(0).text().trim() === name);
+  if (!row) throw new Error(`no line for ${name} in the rendered surface`);
+  return $(row).find("td").eq(1);
+}
+
+/** The classes of every anchor in one line's value cell, in document order. */
+function valueAnchorClasses(markup: string, name: string): string[][] {
+  const $ = cheerio.load(markup);
+  return anchorClasses($, valueCell($, name));
+}
+
+/**
+ * The face the machine-readable id beside a reference's label is drawn in —
+ * the yardstick criterion 7 of admin-window/BUG-0099 measures the label
+ * against, so no test here has to name the face itself.
+ */
+function idFaceOf(markup: string, name: string): string[] {
+  const $ = cheerio.load(markup);
+  const id = valueCell($, name).find("a").nextAll("span").first();
+  if (id.length !== 1) throw new Error(`no id beside the ${name} reference`);
+  return faceOf(classesOf(id));
 }
 
 /** Every interactive control in the whole page, not just inside the table. */
@@ -1405,6 +1439,76 @@ describe("a resolver-owned record", () => {
       // Nothing failed, so nothing is reported.
       expect(markup).not.toContain("event_listings");
     }
+  });
+
+  /**
+   * **BUG-0099 (admin-window).** The one value on this page that NAVIGATES was
+   * drawn exactly like the inert ids above it — primary ink, no decoration —
+   * and became a link only under the pointer. These assert the resting
+   * rendering against the app's one link spelling (`components/cycles/links.ts`),
+   * never against a class literal, so how this app draws a link stays one
+   * decision in one place.
+   */
+  describe("the venue line says it goes somewhere before anything touches it", () => {
+    it("draws the reference as this app draws a link, at rest, on both of its paths", async () => {
+      // The two components that render this line: the picker's resting value
+      // when the choices read answered, and the read-only line when it did
+      // not. A reader cannot tell them apart, so neither may the styling.
+      for (const [path, script] of [
+        ["with the picker", {}],
+        ["with the picker's read refused", { venues: { error: permissionDenied("venues") } }],
+      ] as const) {
+        const markup = await renderRecord("events", {
+          ...eventWithVenue(IDS.venues, {
+            event_listings: { data: { event_id: IDS.events, venue_name: VENUE_NAME } },
+          }),
+          ...script,
+        });
+        const anchors = valueAnchorClasses(markup, "venue_id");
+        expect(anchors.length, `${path}: the line still links`).toBe(1);
+        expectDrawnAsLinkAtRest(anchors[0], `the venue reference ${path}`);
+      }
+    });
+
+    it("reads the label in the machine's face whether or not a name resolved", async () => {
+      // The name is a value the database produced, like the id beside it, and
+      // one line may not render in two faces depending on the data.
+      const named = await renderRecord("events", {
+        ...eventWithVenue(IDS.venues, {
+          event_listings: { data: { event_id: IDS.events, venue_name: VENUE_NAME } },
+        }),
+      });
+      const unnamed = await renderRecord("events", {
+        ...eventWithVenue(IDS.venues, {
+          event_listings: { data: { event_id: IDS.events, venue_name: null } },
+        }),
+      });
+      const namedFace = faceOf(valueAnchorClasses(named, "venue_id")[0]);
+      expect(namedFace.length, "the label names a face at all").toBe(1);
+      // The id printed beside the name is already the machine's face; the
+      // label is the same kind of value, so it is drawn the same way.
+      expect(namedFace).toEqual(idFaceOf(named, "venue_id"));
+      expect(faceOf(valueAnchorClasses(unnamed, "venue_id")[0])).toEqual(namedFace);
+    });
+
+    it("stays unconfusable with the resting edit affordance the same page draws", async () => {
+      // The second fixture (LESSONS 3): this page draws an editable value and
+      // an inert one beside the link, and neither may wear the link's ink.
+      const markup = await renderRecord("events", {
+        ...eventWithVenue(IDS.venues, {
+          event_listings: { data: { event_id: IDS.events, venue_name: VENUE_NAME } },
+        }),
+      });
+      const $ = cheerio.load(markup);
+      expectDrawnAsLinkAtRest(valueAnchorClasses(markup, "venue_id")[0], "the venue reference");
+      for (const field of ["title", "event_id"]) {
+        const cell = valueCell($, field);
+        expect(cell.length, `${field} renders a value cell`).toBe(1);
+        for (const element of cell.find("*").toArray()) {
+          expectNotDrawnAsLink(classesOf($(element)), `${field}'s value`);
+        }
+      }
+    });
   });
 
   it("draws an event with no venue as the absence, and reads no view for it", async () => {

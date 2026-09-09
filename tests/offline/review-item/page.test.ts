@@ -22,6 +22,12 @@ import {
   transportFailure,
   type Script,
 } from "../../fixtures/stub-client";
+import {
+  anchorClasses,
+  classesOf,
+  expectDrawnAsLinkAtRest,
+  expectNotDrawnAsLink,
+} from "../../fixtures/link-spelling";
 import { oneEach, stateOf, surfaceHooks } from "../../live/parity";
 
 /**
@@ -391,6 +397,42 @@ describe("every evidence id resolves to a claim", () => {
       expect(row.status).toBe(claim.status);
       expect(row.payload).toBe(claim.payload_ref);
       expect(row.sourceHref).toBe(`/sources?source_id=${source.source_id}`);
+    }
+  });
+
+  it("draws every route out of an evidence row as this app draws a link, at rest", async () => {
+    // **BUG-0099 (admin-window).** The `source` column is "the source, in one
+    // click" (LOOK_AND_FEEL bar 10), and on a 91-row evidence table it was
+    // indistinguishable from the mono values beside it until the pointer
+    // arrived. Asserted against the app's one link spelling
+    // (`components/cycles/links.ts`), never a class literal.
+    for (const [shape, script, id] of [
+      ["the conflict item", conflictScript(), reviewItemDataConflict().review_item_id],
+      ["the source-pattern item", patternScript(), reviewItemSourcePattern().review_item_id],
+    ] as const) {
+      const markup = await renderItem(script, id);
+      const $ = cheerio.load(markup);
+      const rows = $("[data-evidence]")
+        .toArray()
+        .map((element) => $(element).closest("tr"));
+      expect(rows.length, `${shape} renders evidence rows`).toBeGreaterThan(0);
+
+      let seen = 0;
+      for (const row of rows) {
+        for (const classes of anchorClasses($, row)) {
+          expectDrawnAsLinkAtRest(classes, `an anchor in ${shape}'s evidence row`);
+          seen += 1;
+        }
+        // The second fixture on the same row (LESSONS 3): the values that go
+        // nowhere must not wear the link's ink, or the affordance says
+        // nothing about which cell is the way through.
+        for (const inert of ["[data-tier-now]", "[data-claim-status]", "[data-payload]"]) {
+          for (const cell of row.find(inert).toArray()) {
+            expectNotDrawnAsLink(classesOf($(cell)), `${inert} in ${shape}`);
+          }
+        }
+      }
+      expect(seen, `${shape} has at least one route out`).toBeGreaterThan(0);
     }
   });
 

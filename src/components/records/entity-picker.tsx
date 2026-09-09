@@ -6,6 +6,7 @@ import {
   type SaveOutcome,
   type Status,
 } from "@/components/EditableCell";
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { cx } from "@/components/ui/cx";
 import { Empty } from "@/components/ui/empty";
 import { WindowLine, type WindowObject } from "@/components/ui/window-line";
@@ -260,6 +261,13 @@ export function PickerPanel({
  * open (admin-window/BUG-0034). An empty reference renders the app's absence
  * and still offers the control: a field with no value is exactly the one an
  * operator most needs to be able to fill in.
+ *
+ * "The same anchor" is now literal, and has to be: this component draws the
+ * reference line whenever the choices read answered, and `RecordFields`'
+ * `ReferenceValue` draws it when it did not, so a reader who cannot tell the
+ * two apart must never be shown a difference. Both spell the anchor with
+ * `IN_PAGE_LINK` and both put the label in the machine's face
+ * (admin-window/BUG-0099).
  */
 export function PickerValue({
   id,
@@ -274,14 +282,7 @@ export function PickerValue({
   if (id === null || href === null) return <>{orDash(null)}</>;
   return (
     <span className="flex flex-wrap items-baseline gap-2">
-      <a
-        href={href}
-        className={
-          name === null
-            ? "type-data transition-colors hover:text-accent"
-            : "type-body transition-colors hover:text-accent"
-        }
-      >
+      <a href={href} className={`type-data ${IN_PAGE_LINK}`}>
         {name ?? id}
       </a>
       {name === null ? null : (
