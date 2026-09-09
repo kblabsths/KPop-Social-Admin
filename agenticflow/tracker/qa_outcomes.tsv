@@ -155,3 +155,5 @@
 2026-09-09T03:15:10Z	BUG-0084	qa->done	fixed	qa
 2026-09-09T03:23:55Z	TASK-0049	qa->done	fixed	qa
 2026-09-09T03:26:03Z	TASK-0058	qa->done	fixed	qa
+2026-09-09T03:33:16Z	TASK-0043	blocked->done	already_done	qa
+2026-09-09T03:33:35Z	TASK-0044	blocked->done	already_done	qa
