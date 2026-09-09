@@ -18863,3 +18863,9 @@
 2026-09-09T14:34:23Z	agent	-	-	-	-
 # STRANDED	2026-09-09T14:34:25Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0125.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0125.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0129.md
 2026-09-09T14:34:25Z	agent	-	-	-	-
+# STRANDED	2026-09-09T14:34:35Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T14:34:35Z	agent	-	-	-	-
+# STRANDED	2026-09-09T14:34:53Z	qa-adversary	1 uncommitted in primary checkout: .env.example
+2026-09-09T14:34:53Z	qa-adversary	BUG-0125	15999	889	150331
+# STRANDED	2026-09-09T14:34:57Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T14:34:57Z	agent	-	-	-	-
