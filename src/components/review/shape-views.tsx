@@ -10,7 +10,6 @@ import {
   type GaugeState,
 } from "@/components/gauges";
 import {
-  type Column,
   DataTable,
   Empty,
   type MicroLabel,
@@ -20,6 +19,9 @@ import {
 import { EM_DASH, count, counted, pluralise } from "@/lib/format";
 import type { Shape } from "@/lib/review/shapes";
 import {
+  DASH_MEANS,
+  type EvidenceColumn,
+  drawsDash,
   factColumn,
   heldColumn,
   observedColumn,
@@ -213,13 +215,23 @@ function ClaimRows({
   unresolved,
 }: {
   rows: readonly EvidenceRow[];
-  columns: Column<EvidenceRow>[];
+  columns: EvidenceColumn[];
   label: string;
   empty: EmptyWords;
   unresolved: readonly string[];
 }) {
+  // What a dash means here, said once and only while one is on screen
+  // (admin-window/BUG-0132). `drawsDash` asks each rendered column through the
+  // same accessor its cell draws, so this line and the dashes it explains
+  // cannot disagree; `data-absence-note` is what makes "once" structural.
+  const dashOnScreen = rendersClaimsTable(rows) && drawsDash(rows, columns);
   return (
     <>
+      {dashOnScreen ? (
+        <p data-absence-note="dash" className="type-body text-ink-secondary">
+          {DASH_MEANS}
+        </p>
+      ) : null}
       {rendersClaimsTable(rows) ? (
         <DataTable<EvidenceRow>
           columns={columns}

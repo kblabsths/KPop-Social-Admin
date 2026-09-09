@@ -1,6 +1,6 @@
 import type { Column } from "@/components/ui";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
-import { relativeAge } from "@/lib/format";
+import { EM_DASH, isAbsent, orDash, relativeAge } from "@/lib/format";
 
 /**
  * The shared evidence anatomy, one column at a time (campaign
@@ -82,17 +82,116 @@ export interface EvidenceRow {
 }
 
 /**
+ * An evidence column, plus the row value it draws (campaign
+ * admin-window/BUG-0132).
+ *
+ * `value` is the SAME accessor the cell reads, exposed so the block around the
+ * table can ask whether a dash reaches the screen without a second spelling of
+ * which columns can be absent — two spellings is how a rule and its rendering
+ * drift apart. A column with no `value` carries nothing nullable (`source`,
+ * `observed`, `status`, `fact`) and can never dash.
+ */
+export type EvidenceColumn = Column<EvidenceRow> & {
+  value?: (row: EvidenceRow) => string | null;
+};
+
+/**
+ * A column over a nullable value, decided ONCE for all four of them
+ * (campaign admin-window/BUG-0132).
+ *
+ * Each of these cells carries a `data-` hook the suite addresses the row or
+ * the cell by, so the body handed to `DataTable` is always an ELEMENT — and an
+ * element is never absent to `isAbsent` (`src/lib/format.ts` has no branch for
+ * one, by design: an element with a hook in it is not nothing). The table's own
+ * `orDash` therefore never fired and the cell rendered EMPTY, while the same
+ * absent tier drew the app's dash in the evidence pair one block above.
+ *
+ * So the hook and the value are split: the hook stays on the span, and the
+ * VALUE goes through `orDash` inside it. The cell still does not decide what an
+ * absence looks like (`Column.cell`'s contract) — `lib/format.ts` does, in its
+ * one spelling: an em dash in disabled ink, labelled `no value`.
+ *
+ * `addresses` is what the hook attribute carries, which is only sometimes the
+ * value: the value column's hook is the row's `observation_id`, because that is
+ * how the whole suite addresses an evidence ROW (`[data-evidence="<id>"]`).
+ * It defaults to the value itself, empty string when there is none — the
+ * spelling those hooks already had, kept so every selector that reads them
+ * still matches.
+ */
+function nullableColumn({
+  key,
+  label,
+  hook,
+  value,
+  addresses,
+}: {
+  key: string;
+  label: string;
+  hook: string;
+  value: (row: EvidenceRow) => string | null;
+  addresses?: (row: EvidenceRow) => string;
+}): EvidenceColumn {
+  const hookValue = addresses ?? ((row: EvidenceRow) => value(row) ?? "");
+  return {
+    key,
+    label,
+    value,
+    cell: (row) => <span {...{ [hook]: hookValue(row) }}>{orDash(value(row))}</span>,
+  };
+}
+
+/**
+ * What a dash means in the claims table, said once above it (LESSONS 1: "a
+ * column of dashes carries one line saying what a dash means"; campaign
+ * admin-window/BUG-0132).
+ *
+ * One sentence for all five nullable columns, because one sentence is true of
+ * all of them: a producer publishes no value and no payload pointer, a source
+ * carries no tier or its registry row could not be read, the bucket view names
+ * nothing holding the claim, a folded record has no id on either side. The
+ * table cannot tell those apart and does not pretend to — the dash says the
+ * app holds nothing there, and the block's own state lines say why a read did
+ * not answer.
+ */
+export const DASH_MEANS =
+  `A ${EM_DASH} is a value this row does not carry: the claim states none, or ` +
+  "the read that would name it did not answer.";
+
+/**
+ * Does this table put the app's dash on screen at all?
+ *
+ * Asked over the columns the SHAPE actually renders and the rows it actually
+ * has, through each column's own `value` accessor — so a shape that draws no
+ * nullable column, or a table whose every cell is filled, is not handed a
+ * sentence explaining a character its operator cannot see (the condition
+ * `close/slot.tsx` already carries, campaign admin-window/BUG-0092).
+ */
+export function drawsDash(
+  rows: readonly EvidenceRow[],
+  columns: readonly EvidenceColumn[],
+): boolean {
+  return columns.some((column) => {
+    const value = column.value;
+    return value !== undefined && rows.some((row) => isAbsent(value(row)));
+  });
+}
+
+/**
  * The value, carrying the row's hook.
  *
  * Every view draws this column, so `[data-evidence="<id>"]` finds the row one
  * claim renders in, whichever shape rendered it and wherever in that shape's
  * column order the value sits.
  */
-export const valueColumn: Column<EvidenceRow> = {
+export const valueColumn: EvidenceColumn = nullableColumn({
   key: "value",
   label: "value",
-  cell: (row) => <span data-evidence={row.observationId}>{row.value}</span>,
-};
+  hook: "data-evidence",
+  // The hook is the row's key, never the value: `[data-evidence="<id>"]` has to
+  // find the row of a claim that says nothing as surely as one that does.
+  addresses: (row) => row.observationId,
+  value: (row) => row.value,
+});
 
 /**
  * The source, in one click (LOOK_AND_FEEL bar 10).
@@ -113,11 +212,12 @@ export const sourceColumn: Column<EvidenceRow> = {
 };
 
 /** The source's CURRENT tier — the header states which tier this is, once. */
-export const tierColumn: Column<EvidenceRow> = {
+export const tierColumn: EvidenceColumn = nullableColumn({
   key: "tier",
   label: "tier now",
-  cell: (row) => <span data-tier-now={row.tier ?? ""}>{row.tier}</span>,
-};
+  hook: "data-tier-now",
+  value: (row) => row.tier,
+});
 
 /** When the claim was made: relative, with the absolute in the title (Voice bar 6). */
 export const observedColumn: Column<EvidenceRow> = {
@@ -141,18 +241,20 @@ export const statusColumn: Column<EvidenceRow> = {
 };
 
 /** The raw payload's pointer, verbatim. See `EvidenceRow.payloadRef`. */
-export const payloadColumn: Column<EvidenceRow> = {
+export const payloadColumn: EvidenceColumn = nullableColumn({
   key: "payload",
   label: "payload",
-  cell: (row) => <span data-payload={row.payloadRef ?? ""}>{row.payloadRef}</span>,
-};
+  hook: "data-payload",
+  value: (row) => row.payloadRef,
+});
 
 /** What is holding this claim, and what it is waiting for. */
-export const heldColumn: Column<EvidenceRow> = {
+export const heldColumn: EvidenceColumn = nullableColumn({
   key: "held",
   label: "held by",
-  cell: (row) => <span data-held={row.held ?? ""}>{row.held}</span>,
-};
+  hook: "data-held",
+  value: (row) => row.held,
+});
 
 /**
  * WHICH record this row is about (campaign admin-window/BUG-0122).
@@ -172,9 +274,13 @@ export const heldColumn: Column<EvidenceRow> = {
  *  - neither: `null`, so `DataTable`'s own `orDash` draws the app's one dash.
  *    An absence is rendered, never blanked and never filled with a borrowed id.
  */
-export const recordColumn: Column<EvidenceRow> = {
+export const recordColumn: EvidenceColumn = {
   key: "record",
   label: "record",
+  // The value the cell draws, in the same three states its body does — so the
+  // dash-meaning line counts this column too (admin-window/BUG-0132).
+  value: (row) =>
+    row.entityId !== null && row.recordHref !== null ? row.entityId : row.externalRef,
   cell: (row) => {
     if (row.entityId !== null && row.recordHref !== null) {
       return (
