@@ -639,3 +639,151 @@ describe("the whole-queue population against staging", () => {
     }
   });
 });
+
+/* ── narrowed by a SOURCE (admin-window/BUG-0141) ─────────────────────────── */
+
+/**
+ * `/sources` labels an anchor "review items" and points it at
+ * `/queues?source_id=<id>` (spec F5). Walked 2026-09-09, that link narrowed
+ * NOTHING: the `test_harness` row's link rendered `ticketmaster`'s single item,
+ * as if it were `test_harness`'s.
+ *
+ * The oracle counts the SAME narrowing the surface renders — its own
+ * `.eq("source_id", …)` on `review_items`, beside the per-kind narrowing every
+ * other case here spells (common violation 7) — and names the STATE KIND from
+ * `data-state` before it reads a number (common violation 6). A registered
+ * source carrying no items is `empty` with a stated 0: a PASS, never an error
+ * and never another source's row.
+ *
+ * It writes nothing: `sources` and `review_items` are both read.
+ */
+
+/** The scope element the page states a source narrowing in. */
+function sourceScope(markup: string) {
+  const $ = cheerio.load(markup);
+  const line = $('[data-scope="source_id"]');
+  return { lines: line.length, id: line.find("[data-scope-value]").attr("data-scope-value") };
+}
+
+/** What the page says it did NOT apply. */
+function droppedNames(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("[data-dropped-params] [data-dropped-param]")
+    .toArray()
+    .map((element) => $(element).attr("data-dropped-param") ?? "");
+}
+
+/** Every source id `review_items` actually carries, this test's own read. */
+async function sourcesWithItems(): Promise<string[]> {
+  const { data, error } = await independentClient()
+    .from(T.reviewItems)
+    .select("source_id")
+    .not("source_id", "is", null);
+  if (error) throw new Error(`the source census failed: ${JSON.stringify(error)}`);
+  return [...new Set(((data ?? []) as { source_id: string }[]).map((row) => row.source_id))];
+}
+
+/** A registered source, and whether the review table holds any item of it. */
+async function registeredSources(): Promise<string[]> {
+  const { data, error } = await independentClient().from(T.sources).select("source_id");
+  if (error) return [];
+  return ((data ?? []) as { source_id: string }[]).map((row) => row.source_id);
+}
+
+describe("a source narrowing against staging", () => {
+  it("renders exactly the items of the source the URL names, in both blocks", async () => {
+    const carried = await sourcesWithItems();
+    if (carried.length === 0) {
+      // `review_items` holds no per-source item at all: nothing to narrow to,
+      // and the absent-source case below is the whole of what staging can say.
+      expect(await countOrAbsent(() => exactCount(T.reviewItems))).toBeDefined();
+      return;
+    }
+
+    for (const sourceId of carried) {
+      const markup = await queuesMarkup({ source_id: sourceId });
+      for (const kind of KINDS) {
+        // The SAME narrowing the surface renders: this kind's own rows, this
+        // source's own column.
+        const expected = await rowsOf(kind, { column: "source_id", value: sourceId });
+        const state = await gradeSurface({
+          markup,
+          within: BLOCK[kind],
+          object: T.reviewItems,
+          counted: expected.length,
+          figure: OPEN_LABEL[kind],
+        });
+        if (state === "not_provisioned") return;
+        expect(new Set(idsIn(markup, kind)), `${sourceId} / ${kind}`).toEqual(
+          new Set(expected.map((row) => row.review_item_id)),
+        );
+      }
+      // Nothing from another source leaked into either block, and the page says
+      // which source it is narrowed to.
+      const { data } = await independentClient()
+        .from(T.reviewItems)
+        .select("review_item_id")
+        .eq("source_id", sourceId);
+      expect(idsIn(markup).length, sourceId).toBe((data ?? []).length);
+      expect(sourceScope(markup), sourceId).toEqual({ lines: 1, id: sourceId });
+      expect(droppedNames(markup), sourceId).toEqual([]);
+    }
+  });
+
+  it("renders the honest empty for a registered source with no items", async () => {
+    const [registered, carried] = await Promise.all([
+      registeredSources(),
+      sourcesWithItems(),
+    ]);
+    const barren = registered.find((id) => !carried.includes(id));
+    if (barren === undefined) {
+      // Every registered source carries an item (or the registry would not
+      // read): there is no barren source on this database today, and inventing
+      // one would be a write.
+      expect(registered.length >= 0).toBe(true);
+      return;
+    }
+
+    const markup = await queuesMarkup({ source_id: barren });
+    for (const kind of KINDS) {
+      // Counted 0 by this test's own narrowed read — so `empty` is a PASS with
+      // a stated zero, and `error` is a failure.
+      const expected = await rowsOf(kind, { column: "source_id", value: barren });
+      expect(expected, `${barren} / ${kind}`).toEqual([]);
+      const state = await gradeSurface({
+        markup,
+        within: BLOCK[kind],
+        object: T.reviewItems,
+        counted: 0,
+        figure: OPEN_LABEL[kind],
+      });
+      if (state === "not_provisioned") return;
+      expect(state, `${barren} / ${kind}`).toBe("empty");
+    }
+    // The defect this ticket was filed for: no other source's row on screen.
+    expect(idsIn(markup), barren).toEqual([]);
+    expect(sourceScope(markup), barren).toEqual({ lines: 1, id: barren });
+  });
+
+  it("names a source_id it cannot use and renders the whole table, never an error", async () => {
+    const markup = await queuesMarkup({ source_id: "not-a-uuid" });
+    const bare = await queuesMarkup();
+
+    for (const kind of KINDS) {
+      const expected = await rowsOf(kind);
+      const state = await gradeSurface({
+        markup,
+        within: BLOCK[kind],
+        object: T.reviewItems,
+        counted: expected.length,
+        figure: OPEN_LABEL[kind],
+      });
+      if (state === "not_provisioned") return;
+      // Exactly the unnarrowed page: an unusable value narrows nothing, and no
+      // `22P02` reaches the read.
+      expect(new Set(idsIn(markup, kind)), kind).toEqual(new Set(idsIn(bare, kind)));
+    }
+    expect(droppedNames(markup)).toEqual(["source_id"]);
+    expect(sourceScope(markup).lines).toBe(0);
+  });
+});

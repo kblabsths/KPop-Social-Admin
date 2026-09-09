@@ -22,7 +22,9 @@ import {
   type DrawnWindow,
   type ReadWindow,
 } from "@/components/ui/window-line";
+import { DroppedParamsLine } from "@/components/ui/dropped-params";
 import { EM_DASH, absoluteUtc, count, relativeAge } from "@/lib/format";
+import { droppedParams } from "@/lib/url/dropped-params";
 
 import {
   classesOf,
@@ -1404,5 +1406,104 @@ describe("the uppercased-identifier guard", () => {
     );
     expect(uppercasedIdentifiers(good)).toEqual([]);
     expect(textOf(good)).toContain("walk_sandbox");
+  });
+});
+
+/* ── the dropped-parameter line, and its rule (admin-window/BUG-0141) ─────── */
+
+/**
+ * The sentence that says what the URL asked for and a page did not do. It was
+ * `/claims`' alone and is now a primitive, because `/queues` says it too and a
+ * second copy would be born without the four fixes that landed on the first
+ * (BUG-0123, BUG-0127, BUG-0136, BUG-0137 — ARCHITECTURE.md Common violations
+ * rows 9 and 15).
+ *
+ * Every behaviour those four bugs pinned is graded, unchanged, in
+ * `tests/offline/claims/{page,filters}.test.ts` — which did not move when the
+ * code did, and are the proof this was a MOVE. What is graded here is what the
+ * move added: the two page assumptions that became arguments, and the hooks the
+ * component publishes for any page that renders it.
+ */
+describe("droppedParams, the shared rule", () => {
+  it("skips the keys a page says it consumed, and only those", () => {
+    // `tab` is the default because both routes that carry a tab spell it that
+    // way, and every value of it lands on a real tab.
+    expect(droppedParams({ tab: "verdict_log", record_id: "r-1" }, {})).toEqual({
+      named: ["record_id"],
+      withheld: 0,
+    });
+    // A route with no tab says so, and then `tab` is a dropped parameter like
+    // any other.
+    expect(droppedParams({ tab: "x" }, {}, [], [])).toEqual({
+      named: ["tab"],
+      withheld: 0,
+    });
+    // …and a route consuming something else names it.
+    expect(droppedParams({ cols: "a", record_id: "r-1" }, {}, [], ["cols"])).toEqual({
+      named: ["record_id"],
+      withheld: 0,
+    });
+  });
+
+  it("asks the APPLIED narrowing by its own keys, never by a prototype's", () => {
+    // A URL may spell anything: `?constructor=1` must be answered by what the
+    // page applied, not by `Object.prototype.constructor` being present on
+    // every object in the language.
+    expect(droppedParams({ constructor: "1" }, {})).toEqual({
+      named: ["constructor"],
+      withheld: 0,
+    });
+    expect(droppedParams({ toString: "1" }, { bucket: "escalated" })).toEqual({
+      named: ["toString"],
+      withheld: 0,
+    });
+    // An applied key is still applied, and an explicitly-undefined one is not.
+    expect(droppedParams({ source_id: "s-1" }, { source_id: "s-1" })).toEqual({
+      named: [],
+      withheld: 0,
+    });
+    expect(droppedParams({ source_id: "s-1" }, { source_id: undefined })).toEqual({
+      named: ["source_id"],
+      withheld: 0,
+    });
+  });
+
+  it("reads a repeated key the way a page reads it: the first value", () => {
+    expect(droppedParams({ record_id: ["r-1", "r-2"] }, {})).toEqual({
+      named: ["record_id"],
+      withheld: 0,
+    });
+    expect(droppedParams({ record_id: [] }, {})).toEqual({ named: [], withheld: 0 });
+    expect(droppedParams({ record_id: [""] }, {})).toEqual({ named: [], withheld: 0 });
+  });
+});
+
+describe("DroppedParamsLine", () => {
+  const line = (dropped: Parameters<typeof DroppedParamsLine>[0]["dropped"]) =>
+    render(h(DroppedParamsLine, { dropped }));
+
+  it("renders nothing at all when nothing was dropped", () => {
+    expect(line({ named: [], withheld: 0 })).toBe("");
+  });
+
+  it("publishes the total and each spelled name as its own hook", () => {
+    const $ = cheerio.load(line({ named: ["record_id", "cols"], withheld: 1 }));
+    expect($("[data-dropped-params]").attr("data-dropped-params")).toBe("3");
+    expect(
+      $("[data-dropped-param]")
+        .toArray()
+        .map((element) => $(element).attr("data-dropped-param")),
+    ).toEqual(["record_id", "cols"]);
+    // The names are the app's identifier treatment, isolated left-to-right.
+    expect($('[data-dropped-param="record_id"]').attr("dir")).toBe("ltr");
+    expect(classesOf(line({ named: ["record_id"], withheld: 0 }))).toContain("type-data");
+  });
+
+  it("counts a withheld parameter without spelling it anywhere", () => {
+    const parked = "in_" + "window";
+    const html = line({ named: [], withheld: 1 });
+    expect(html).not.toContain(parked);
+    expect(cheerio.load(html)("[data-dropped-param]")).toHaveLength(0);
+    expect(cheerio.load(html)("[data-dropped-params]").attr("data-dropped-params")).toBe("1");
   });
 });

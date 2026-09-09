@@ -382,6 +382,31 @@ describe("the filters — exactly the matching items (acceptance test 4)", () =>
     ).toEqual([]);
   });
 
+  it("returns exactly the items of one source, and none of a source with no items", () => {
+    // `review_items.source_id` as a filter field (admin-window/BUG-0141): the
+    // one predicate compares it, so `/queues?source_id=` narrows through the
+    // same function every other facet does. A per-fact item carries no source
+    // at all and matches no source narrowing.
+    expectExactly(
+      { source_id: ID.sourceBandsintown },
+      (i) => i.source_id === ID.sourceBandsintown,
+    );
+    expect(
+      population().some((i) => i.source_id === ID.sourceTicketmaster),
+      "the fixture must hold no item of this source, or the case below is vacuous",
+    ).toBe(false);
+    expect(selectItems(population(), { source_id: ID.sourceTicketmaster })).toEqual([]);
+    // AND with a field of another sort, and a contradiction that must empty.
+    expectExactly(
+      { source_id: ID.sourceBandsintown, status: "open" },
+      (i) => i.source_id === ID.sourceBandsintown && i.status === "open",
+    );
+    expect(
+      matchesFilter(reviewItemDataConflict(), { source_id: ID.sourceBandsintown }),
+      "a fact item carries no source",
+    ).toBe(false);
+  });
+
   it("an empty filter constrains nothing", () => {
     expect(ids(selectItems(population(), {}))).toEqual(ids(population()));
     expect(ids(selectItems(population()))).toEqual(ids(population()));

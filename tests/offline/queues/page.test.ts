@@ -5,6 +5,7 @@ import { EM_DASH, absoluteUtc } from "@/lib/format";
 import { disagreeingCounts, render, uppercasedIdentifiers } from "../ui/markup";
 import { readNumber, stateOf as surfaceStateOf } from "../../live/parity";
 import {
+  ID,
   reviewItemEdgePopulation,
   type ReviewItemRow,
 } from "../../fixtures/rows";
@@ -143,7 +144,10 @@ function matching(params: Record<string, string> = {}): ReviewItemRow[] {
       (params.queue === undefined || item.queue === params.queue) &&
       (params.status === undefined || item.status === params.status) &&
       (params.shape === undefined || shapeName(item) === params.shape) &&
-      (params.kind === undefined || kindOf(item) === params.kind),
+      (params.kind === undefined || kindOf(item) === params.kind) &&
+      // `review_items.source_id`, compared as the column is: a per-fact item
+      // carries none and so matches no source (admin-window/BUG-0141).
+      (params.source_id === undefined || item.source_id === params.source_id),
   );
 }
 
@@ -2037,6 +2041,268 @@ describe("each tab reads only what it renders", () => {
         .toArray()
         .map((element) => $(element).attr("data-surface") ?? "");
       expect(new Set(names).size, JSON.stringify(params)).toBe(names.length);
+    }
+  });
+});
+
+/* ── narrowed by a SOURCE (admin-window/BUG-0141) ─────────────────────────── */
+
+/**
+ * `/sources` labels an anchor "review items" and points it at
+ * `/queues?source_id=<id>` (`queueItemsHref`). Until this ticket the page read
+ * no such facet: the link landed on EVERY source's items, and the walk of
+ * 2026-09-09 read one source's row as another source's — `?source_id=` naming
+ * `test_harness` rendered `ticketmaster`'s single item, and `?source_id=not-a-uuid`
+ * rendered the identical page with nothing saying the parameter was dropped.
+ *
+ * The four cases below are the ticket's four pins, over the same edge
+ * population every other case in this file uses, and every expectation is
+ * computed HERE from that population with this file's own predicate.
+ */
+describe("a source narrowing", () => {
+  /** The registered source three signals and one decision of the fixture carry. */
+  const CARRIED = ID.sourceBandsintown;
+  /** Registered, well-formed — and carried by no row of the fixture. */
+  const ABSENT = ID.sourceTicketmaster;
+
+  /** The scope element the page states a source narrowing in, if any. */
+  function scopeOf(markup: string) {
+    const $ = cheerio.load(markup);
+    const line = $('[data-scope="source_id"]');
+    return {
+      present: line.length === 1,
+      lines: line.length,
+      id: line.find("[data-scope-value]").attr("data-scope-value"),
+      text: squash(line.text()),
+      clearHref: line.find("a").attr("href"),
+    };
+  }
+
+  /** Which emptiness a block is rendering, when it renders one at all. */
+  function emptyKindIn(markup: string, kind: string): string | undefined {
+    return cheerio
+      .load(markup)(`[data-queue="${kind}"] [data-empty]`)
+      .attr("data-empty");
+  }
+
+  /** What the page says it did NOT apply: the shared line's two hooks. */
+  function droppedLine(markup: string) {
+    const $ = cheerio.load(markup);
+    const line = $("[data-dropped-params]");
+    return {
+      lines: line.length,
+      total: line.length === 0 ? 0 : Number(line.attr("data-dropped-params")),
+      names: line
+        .find("[data-dropped-param]")
+        .toArray()
+        .map((element) => $(element).attr("data-dropped-param") ?? ""),
+      text: squash(line.text()),
+    };
+  }
+
+  it("renders exactly the items of the source the URL names, in both blocks", async () => {
+    const markup = await renderQueues(healthyScript(), paramsOf(`source_id=${CARRIED}`));
+    const expected = matching({ source_id: CARRIED });
+
+    // The fixture is worth the pin: this source's rows span BOTH blocks, so
+    // neither block can be hidden and neither can leak the other's rows.
+    expect(idsOf(matching({ source_id: CARRIED, kind: "decision" })).length).toBeGreaterThan(0);
+    expect(idsOf(matching({ source_id: CARRIED, kind: "signal" })).length).toBeGreaterThan(0);
+    expect(expected.length).toBeLessThan(POPULATION.length);
+
+    for (const kind of KIND_NAMES) {
+      const mine = matching({ source_id: CARRIED, kind });
+      expect(new Set(idsIn(markup, kind)), kind).toEqual(new Set(idsOf(mine)));
+      expect(stateOf(markup, kind), kind).toBe(mine.length === 0 ? "empty" : "ok");
+      // Rows are here, so no block is rendering an emptiness of any kind.
+      expect(emptyKindIn(markup, kind), kind).toBeUndefined();
+    }
+    // Nothing from any other source reached the page, in either block.
+    expect(idsIn(markup)).toHaveLength(expected.length);
+    for (const id of idsIn(markup)) {
+      const row = POPULATION.find((item) => item.review_item_id === id);
+      expect(row?.source_id, id).toBe(CARRIED);
+    }
+  });
+
+  it("names the filtered scope of the block the source really narrowed, and not of the block it did not", async () => {
+    // The counted rule BUG-0133 landed, held against a source narrowing. This
+    // population puts EVERY signal on `CARRIED`, so the signal block renders
+    // exactly the set it renders unfiltered — no row was removed from it, and
+    // a block that claimed a scope there would be blaming a filter that hid
+    // nothing. The decision block loses six of its seven rows and says so.
+    //
+    // Both halves are held against the SAME rows rendered with no filter at
+    // all, so nothing pins a word of the sub-line: the difference IS the
+    // scope claim.
+    const markup = await renderQueues(healthyScript(), paramsOf(`source_id=${CARRIED}`));
+
+    for (const kind of KIND_NAMES) {
+      const mine = matching({ source_id: CARRIED, kind });
+      const removedRows = mine.length !== matching({ kind }).length;
+      const unscoped = openSub(
+        await renderQueues({ [T.reviewItems]: tableHolding(mine) }),
+        kind,
+      );
+      if (removedRows) {
+        expect(openSub(markup, kind), kind).not.toBe(unscoped);
+      } else {
+        expect(openSub(markup, kind), kind).toBe(unscoped);
+      }
+    }
+    // The fixture really does exercise both arms.
+    expect(matching({ source_id: CARRIED, kind: "signal" }).length).toBe(
+      matching({ kind: "signal" }).length,
+    );
+    expect(matching({ source_id: CARRIED, kind: "decision" }).length).toBeLessThan(
+      matching({ kind: "decision" }).length,
+    );
+  });
+
+  it("states the scope on screen, with the id verbatim and a link back out", async () => {
+    // The narrowing may not live in the URL alone: this page has no chip for
+    // it, so an unstated source scope is a page claiming a population its read
+    // did not cover. The id is spelled as the database spells it.
+    const markup = await renderQueues(healthyScript(), paramsOf(`source_id=${CARRIED}`));
+    const scope = scopeOf(markup);
+
+    expect(scope.lines).toBe(1);
+    expect(scope.id).toBe(CARRIED);
+    expect(scope.text).toContain(CARRIED);
+    // The way back: this page, this tab, the source dropped and nothing else.
+    expect(scope.clearHref).toBe("/queues");
+    // No chip row is invented for it — the four chip facets are unchanged.
+    expect(
+      cheerio.load(markup)("[data-facet]").toArray().map((element) =>
+        cheerio.load(markup)(element).attr("data-facet"),
+      ),
+    ).toEqual(["kind", "queue", "shape", "status"]);
+  });
+
+  it("carries the source through every chip href and both tab hrefs", async () => {
+    // LOOK_AND_FEEL bar 11: clicking `settled`, or the verdict-log tab, may not
+    // silently widen the page back to every source.
+    const markup = await renderQueues(healthyScript(), paramsOf(`source_id=${CARRIED}`));
+    const $ = cheerio.load(markup);
+
+    const chipHrefs = ["kind", "queue", "shape", "status"].flatMap((facet) =>
+      chipsOf(markup, facet).map((chip) => chip.href),
+    );
+    expect(chipHrefs.length).toBeGreaterThan(0);
+    for (const href of chipHrefs) {
+      expect(new URL(href, "https://x.invalid").searchParams.get("source_id"), href).toBe(
+        CARRIED,
+      );
+    }
+
+    const tabHrefs = $("[data-tab] a")
+      .toArray()
+      .map((element) => $(element).attr("href") ?? "");
+    expect(tabHrefs).toHaveLength(2);
+    for (const href of tabHrefs) {
+      expect(new URL(href, "https://x.invalid").searchParams.get("source_id"), href).toBe(
+        CARRIED,
+      );
+    }
+  });
+
+  it("claims no source scope on the verdict-log tab, and says the facet did not apply there", async () => {
+    // That tab renders one whole-object window narrowed by nothing (its scope
+    // is null, admin-window/BUG-0114), so a source in its URL narrows not one
+    // verdict row: a scope element there would claim a narrowing the read did
+    // not make, and silence would be the defect this ticket was filed for.
+    // The facet still travels, so going back to the queues tab restores it.
+    const onLog = await renderQueues(
+      healthyScript(),
+      paramsOf(`source_id=${CARRIED}&tab=verdict_log`),
+    );
+
+    expect(scopeOf(onLog).lines).toBe(0);
+    expect(droppedLine(onLog).names).toEqual(["source_id"]);
+    const back = cheerio
+      .load(onLog)('[data-tab="queues"] a')
+      .attr("href");
+    expect(new URL(back ?? "", "https://x.invalid").searchParams.get("source_id")).toBe(
+      CARRIED,
+    );
+  });
+
+  it("renders the honest empty for a registered source no item carries, and no other source's row", async () => {
+    // THE DEFECT THIS TICKET WAS FILED FOR: the walk's `test_harness` link.
+    const markup = await renderQueues(healthyScript(), paramsOf(`source_id=${ABSENT}`));
+
+    expect(matching({ source_id: ABSENT })).toHaveLength(0);
+    expect(POPULATION.length).toBeGreaterThan(0); // the table is NOT empty
+    expect(idsIn(markup)).toEqual([]);
+
+    for (const kind of KIND_NAMES) {
+      expect(stateOf(markup, kind), kind).toBe("empty");
+      // The narrowing matched nothing — never "this queue holds nothing",
+      // which is what a table with rows in it would be lying about.
+      expect(emptyKindIn(markup, kind), kind).toBe("narrowing");
+      expect(emptyKindIn(await renderQueues(EMPTY_TABLE), kind), kind).toBe("queue");
+    }
+    // The scope is still stated: an empty page under a narrowing must say what
+    // it was narrowed by, or it reads as an empty database.
+    expect(scopeOf(markup).id).toBe(ABSENT);
+    // And it is a normal page: no error state, no write control.
+    expect(cheerio.load(markup)("[data-read-failed]")).toHaveLength(0);
+  });
+
+  it("names an unknown parameter it dropped, and narrows nothing by it", async () => {
+    const uuid = "01920000-0000-7000-8000-0000000009ff";
+    const markup = await renderQueues(healthyScript(), paramsOf(`record_id=${uuid}`));
+    const line = droppedLine(markup);
+
+    expect(line.lines).toBe(1);
+    expect(line.names).toEqual(["record_id"]);
+    expect(line.total).toBe(1);
+    // The NAME is spelled; the value never is (LOOK_AND_FEEL bar 3).
+    expect(line.text).not.toContain(uuid);
+    // The page is otherwise the unnarrowed page.
+    expect(new Set(idsIn(markup))).toEqual(new Set(idsOf(POPULATION)));
+    expect(scopeOf(markup).lines).toBe(0);
+    for (const kind of KIND_NAMES) expect(stateOf(markup, kind), kind).toBe("ok");
+    // A bare URL says nothing, so the line is a fact about THIS url.
+    expect(droppedLine(await renderQueues(healthyScript())).lines).toBe(0);
+  });
+
+  it("names a source_id it could not use, narrows nothing by it, and never errors", async () => {
+    // `?source_id=not-a-uuid` rendered the identical page with no sentence at
+    // all before this ticket. It may not narrow — a value that is not a record
+    // id can match no row — and it may not be swallowed either.
+    const markup = await renderQueues(healthyScript(), paramsOf("source_id=not-a-uuid"));
+    const line = droppedLine(markup);
+
+    expect(line.names).toEqual(["source_id"]);
+    expect(line.total).toBe(1);
+    expect(line.text).not.toContain("not-a-uuid");
+    // The WHOLE population, exactly as the bare URL renders it…
+    expect(new Set(idsIn(markup))).toEqual(new Set(idsOf(POPULATION)));
+    for (const kind of KIND_NAMES) {
+      expect(stateOf(markup, kind), kind).toBe("ok");
+      expect(idsIn(markup, kind), kind).toEqual(idsIn(await renderQueues(healthyScript()), kind));
+    }
+    // …with no scope claimed, because nothing was narrowed.
+    expect(scopeOf(markup).lines).toBe(0);
+    // And no unusable value reached the database: the read that ran is the
+    // unnarrowed one, so no `22P02` can come back from it.
+    expect(cheerio.load(markup)("[data-read-failed]")).toHaveLength(0);
+  });
+
+  it("reads a source id in any spelling the app's uuid grammar accepts", async () => {
+    // One grammar, canonicalised once at the edge (admin-window/BUG-0140): an
+    // uppercased or hyphen-less spelling selects the rows PostgREST would, and
+    // the page spells the narrowing back in the database's own form.
+    const spellings = [CARRIED.toUpperCase(), CARRIED.replace(/-/g, "")];
+    for (const spelling of spellings) {
+      const markup = await renderQueues(healthyScript(), paramsOf(`source_id=${spelling}`));
+      expect(new Set(idsIn(markup)), spelling).toEqual(
+        new Set(idsOf(matching({ source_id: CARRIED }))),
+      );
+      // Spelled back canonical, never as the URL typed it.
+      expect(scopeOf(markup).id, spelling).toBe(CARRIED);
+      expect(droppedLine(markup).lines, spelling).toBe(0);
     }
   });
 });

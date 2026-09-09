@@ -66,10 +66,10 @@ export const REVIEW_ITEM_COLUMNS = [
 /**
  * Build the query, narrowed by the filter's plain COLUMN constraints only.
  *
- * `queue` and `status` are real columns, so PostgREST can do that work.
- * `shape` and `kind` are derived in code and have no column to filter on
+ * `queue`, `status` and `source_id` are real columns, so PostgREST can do that
+ * work. `shape` and `kind` are derived in code and have no column to filter on
  * (§6: "no column carries it") — they are applied by the predicate below.
- * The predicate re-applies `queue`/`status` too: the narrowing is an
+ * The predicate re-applies the three column facets too: the narrowing is an
  * optimisation, and the returned set is decided by exactly one function
  * whether the server narrowed or not.
  *
@@ -94,6 +94,14 @@ function query(db: SupabaseClient, filter: ReviewItemFilter, cap: number) {
     .select(REVIEW_ITEM_COLUMNS, { count: "exact" });
   if (filter.queue !== undefined) builder = builder.eq("queue", filter.queue);
   if (filter.status !== undefined) builder = builder.eq("status", filter.status);
+  // `source_id` is a real column too (admin-window/BUG-0141), so a
+  // `review_items` table past ROW_CAP still answers a source URL COMPLETELY
+  // instead of refusing it. The value arrives canonicalised at the page's edge,
+  // so Postgres's by-value comparison here and the predicate's by-string
+  // comparison below cannot disagree (admin-window/BUG-0140).
+  if (filter.source_id !== undefined) {
+    builder = builder.eq("source_id", filter.source_id);
+  }
   return builder
     .order("status", { ascending: true })
     .order("severity", { ascending: true })
@@ -199,6 +207,13 @@ function countQuery(db: SupabaseClient, shape: Shape) {
  * The reads are issued in `SHAPES` order and answered together; one refusing
  * says nothing about the others, and the kind that did not need it is
  * unaffected.
+ *
+ * **It takes no filter, and that is the point** — the source facet included
+ * (admin-window/BUG-0141). The population is what a kind holds with NO url
+ * facet at all, which is what lets a source carrying no items render "nothing
+ * matched" rather than "this queue is empty" (admin-window/BUG-0133). Narrowing
+ * these counts by the URL would make every block's population equal its
+ * rendered set, and no block would ever name its scope again.
  */
 async function readPopulation(
   db?: SupabaseClient,

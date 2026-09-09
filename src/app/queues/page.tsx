@@ -3,6 +3,7 @@ import {
   FilterBar,
   QueueList,
   QueueTabs,
+  SourceScope,
   VerdictLog,
   type VerdictLine,
 } from "@/components/queues";
@@ -14,7 +15,16 @@ import {
   spreadRows,
   type EmptyWords,
 } from "@/components/gauges";
-import { Empty, Page, Section, StateOf, WindowLine, oldestIn } from "@/components/ui";
+import {
+  DroppedParamsLine,
+  Empty,
+  Page,
+  Section,
+  StateOf,
+  WindowLine,
+  oldestIn,
+} from "@/components/ui";
+import { canonicalRecordId } from "@/lib/db/records";
 import { readReviewQueues, type ReviewQueues } from "@/lib/db/review-items";
 import type { DbResult } from "@/lib/db/result";
 import {
@@ -30,16 +40,20 @@ import {
 } from "@/lib/gauges/queue-health";
 import { recordHref } from "@/lib/records/routes";
 import {
+  SOURCE_FACET,
+  TAB_PARAM,
   filterBar,
   filterFrom,
   isBlockNarrowed,
   isNarrowed,
   narrowingOfKind,
+  queuesHref,
   tabFrom,
   tabLinks,
   type QueuesTab,
   type SearchParams,
 } from "@/lib/review/queue-filters";
+import { droppedParams } from "@/lib/url/dropped-params";
 import {
   KINDS,
   oldestOpenedAt,
@@ -365,7 +379,16 @@ function Queue({
       openDetail={<OpenDetail items={items} narrowed={narrowed} />}
       card={
         items.length === 0 ? (
-          <Empty holds={words.holds} filledBy={words.filledBy} />
+          // Two different emptinesses, two different renderings, and the hook
+          // says WHICH — the spelling `/sources` already carries
+          // (`data-empty="registry" | "narrowing"`). A queue that holds nothing
+          // and a narrowing that matched nothing never share a rendering
+          // (LOOK_AND_FEEL, the four states; admin-window/BUG-0133), and until
+          // this hook existed the only way to tell them apart was to read the
+          // copy (admin-window/BUG-0141).
+          <div data-empty={narrowed ? "narrowing" : "queue"}>
+            <Empty holds={words.holds} filledBy={words.filledBy} />
+          </div>
         ) : undefined
       }
       // Beside the rows, never instead of them: this block's own read
@@ -587,8 +610,34 @@ export default async function QueuesPage({
   searchParams?: Promise<SearchParams>;
 } = {}) {
   const params = (await searchParams) ?? {};
-  const filter = filterFrom(params);
+  // The app's ONE uuid grammar, handed into the pure leaf rather than spelled
+  // there (admin-window/BUG-0139/BUG-0140 own it; a leaf may not import
+  // `lib/db/**`, ARCHITECTURE.md §4 rule 7). Canonicalised HERE, once, at the
+  // edge where the value is derived from the request: everything downstream —
+  // the `.eq` PostgREST makes, the predicate's string compare, the id the
+  // scope element spells — is then comparing like with like. A `source_id`
+  // that is not a record id at all canonicalises to null, narrows nothing, and
+  // is named by the dropped-parameter line below.
+  const filter = filterFrom(params, canonicalRecordId);
   const tab: QueuesTab = tabFrom(params);
+  // What the URL asked for that this page did not do — the same sentence
+  // `/claims` renders, from the same code (admin-window/BUG-0141, Common
+  // violations row 9). `tab` is consumed by the strip below rather than
+  // dropped; this route has no word it may not render, so nothing is withheld
+  // by name.
+  //
+  // The question is the APPLIED narrowing, never the vocabulary — which is why
+  // the verdict-log tab hands over NOTHING as applied: that tab renders one
+  // whole-object window narrowed by no facet at all (its `scope` is null,
+  // admin-window/BUG-0114), so a facet carried in its URL really is a
+  // narrowing this tab did not do, exactly as `/claims`' standing tab reports
+  // its bucket. The facets still travel in the tab hrefs, so the queue you
+  // came from is the queue you go back to.
+  const droppedLine = (applied: ReviewItemFilter) => (
+    <DroppedParamsLine
+      dropped={droppedParams(params, { ...applied }, [], [TAB_PARAM])}
+    />
+  );
   // The strip renders on both tabs and carries the filter across, so the queue
   // you were looking at is the queue you come back to.
   const tabs = <QueueTabs tabs={tabLinks(QUEUES_PATH, filter, tab)} />;
@@ -602,6 +651,7 @@ export default async function QueuesPage({
     return (
       <Page title="Queues">
         {tabs}
+        {droppedLine({})}
         <VerdictSection log={await readVerdictLog()} />
       </Page>
     );
@@ -624,6 +674,23 @@ export default async function QueuesPage({
     <Page title="Queues">
       {tabs}
       <FilterBar facets={filterBar(QUEUES_PATH, filter)} />
+      {droppedLine(filter)}
+      {/* The source narrowing has no chip row to show it active, so the page
+          states it in a line of its own — with the id verbatim and a link back
+          that drops it and keeps everything else (admin-window/BUG-0141). It
+          renders only when the narrowing is really applied, which is exactly
+          when the blocks below are scoped by it. */}
+      {filter.source_id === undefined ? null : (
+        <SourceScope
+          facet={SOURCE_FACET}
+          sourceId={filter.source_id}
+          clearHref={queuesHref(
+            QUEUES_PATH,
+            { ...filter, [SOURCE_FACET]: undefined },
+            tab,
+          )}
+        />
+      )}
 
       <div className="flex flex-col gap-4">
         {KINDS.map((kind) => (
