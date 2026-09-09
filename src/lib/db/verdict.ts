@@ -1,8 +1,10 @@
 import {
   ROW_CAP,
   callFunction,
+  readComplete,
   readRows,
   readRowsByIds,
+  type DbCountedResponse,
   type DbResponse,
   type DbResult,
   type DbUnavailable,
@@ -20,6 +22,12 @@ import { decisionRefusals, type VerdictDecision } from "../verdict/decision";
  *  - `readSettlementReadiness` — may a surface offer a settlement or an
  *    override at all?
  *  - `settleReviewItem` — the one call to `settle_review_item`.
+ *
+ * The reads of the log itself live in the same module for the same reason it
+ * holds one call site: `readVerdictLog` (the tab's window) and
+ * `readItemVerdict` (one item's own verdict, campaign
+ * admin-window/TASK-0059). One module owns this object, so a page never
+ * spells a query against it.
  *
  * Both return a `DbResult` and neither throws, on every path (§4.1), so a
  * database without M2's handoff migration draws a card instead of a stack
@@ -455,6 +463,104 @@ export async function readVerdictLog(
           ? new Map(observed.data.map((fact) => [fact.observation_id, fact]))
           : new Map(),
       factsUnavailable: observed.kind === "ok" ? null : observed,
+    },
+  };
+}
+
+/* ── one item's own verdict ───────────────────────────────────────────────── */
+
+/**
+ * The verdict a settled review item was settled WITH, and where its
+ * observation landed — the read behind the detail page's inline verdict
+ * (spec F13, campaign admin-window/TASK-0059).
+ *
+ * It lives here, beside the log's own read, because one module owns `verdicts`
+ * (ARCHITECTURE.md §9.2): a page issuing this query for itself is the
+ * hand-copied probe common violation 9 forbids, and it is how the log and the
+ * detail come to disagree about what a verdict is.
+ */
+export interface ItemVerdict {
+  /** The verdict itself — §7's seven columns, as the log reads them. */
+  readonly verdict: VerdictLogRow;
+  /**
+   * The fact this verdict's observation is about, when the second leg resolved
+   * it. `null` when the verdict wrote no observation, when the observation has
+   * no canonical row yet, or when the leg did not answer — the caller then
+   * renders the id verbatim rather than linking somewhere invented, exactly as
+   * the log's `observation` column does.
+   */
+  readonly fact: ObservationFact | null;
+  /**
+   * The observation leg's refusal, when that ONE leg refused — `null`
+   * otherwise. Carried BESIDE the verdict rather than returned instead of it
+   * (`readVerdictLog`'s `factsUnavailable`, `readItemEvidence`'s
+   * `sourcesUnavailable`): an unreadable `observations` costs this block a
+   * LINK, never the verdict (admin-window/BUG-0021).
+   */
+  readonly factUnavailable: DbUnavailable | null;
+}
+
+/**
+ * The verdict of ONE item, by id (spec F13's second half).
+ *
+ * **Which read kind, and why** (ARCHITECTURE.md §4.3): a **COMPLETE** read,
+ * kind 1. The surface presents its answer as *the* verdict this item was
+ * settled with, which is an exactness claim, so a silently truncated set may
+ * not become one: `{ count: "exact" }`, a total order ending in the primary
+ * key, and `.range(0, cap - 1)` with the cap handed in. The matching set is
+ * one item's own settlements and is bounded by what an admin can do, so the
+ * cap is never the thing that answers.
+ *
+ * `verdicts.review_item_id` carries no uniqueness — it is nullable precisely
+ * so an item-less override can share the table (`contracts/admin-observability.md`
+ * §7) — so this returns the NEWEST of whatever it read, through the log's own
+ * `newestFirst`. Re-sorting the complete set is what makes the choice
+ * independent of the transport keeping its `.order()` promise; a `.limit(1)`
+ * would have had to trust it.
+ *
+ * `ok` with `null` is the honest gap the surface must say in its own words:
+ * the table is there and holds no row for this item. It is a different state
+ * from `not_provisioned`, which is the table not being there at all, and the
+ * detail renders the two differently.
+ *
+ * The observation leg runs only when the verdict it read actually carries an
+ * `observation_id`: a settle-only verdict asks `observations` nothing.
+ */
+export async function readItemVerdict(
+  reviewItemId: string,
+  db?: DbClient,
+): Promise<DbResult<ItemVerdict | null>> {
+  const result = await readComplete<VerdictLogRow>(
+    T.verdicts,
+    (client, cap) =>
+      client
+        .from(T.verdicts)
+        .select(VERDICT_LOG_COLUMNS, { count: "exact" })
+        .eq("review_item_id", reviewItemId)
+        .order("created_at", { ascending: false })
+        .order("verdict_id", { ascending: false })
+        .range(0, cap - 1) as unknown as PromiseLike<
+        DbCountedResponse<VerdictLogRow[]>
+      >,
+    db,
+  );
+  if (result.kind !== "ok") return result;
+
+  const verdict = newestFirst(result.data)[0];
+  if (verdict === undefined) return { kind: "ok", data: null };
+
+  const observationId = verdict.observation_id;
+  if (observationId === null || observationId.length === 0) {
+    return { kind: "ok", data: { verdict, fact: null, factUnavailable: null } };
+  }
+
+  const observed = await readObservationFacts([observationId], db);
+  return {
+    kind: "ok",
+    data: {
+      verdict,
+      fact: observed.kind === "ok" ? (observed.data[0] ?? null) : null,
+      factUnavailable: observed.kind === "ok" ? null : observed,
     },
   };
 }

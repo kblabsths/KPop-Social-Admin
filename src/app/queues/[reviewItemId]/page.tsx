@@ -13,6 +13,7 @@ import {
   ACTIONS_BY_SHAPE,
   CloseSlot,
   NOTICE_BY_SHAPE,
+  type CloseVerdict,
 } from "@/components/review/close/slot";
 import { ARRIVES_WITH, Empty, Page, RETRY, Section, StateOf } from "@/components/ui";
 import { claimsHref, sourceHref } from "@/lib/claims/filters";
@@ -27,7 +28,11 @@ import {
   type ResolvedClaim,
 } from "@/lib/db/review-item";
 import { T } from "@/lib/db/tables";
-import { readSettlementReadiness } from "@/lib/db/verdict";
+import {
+  readItemVerdict,
+  readSettlementReadiness,
+  type ItemVerdict,
+} from "@/lib/db/verdict";
 import { count, counted, relativeAge } from "@/lib/format";
 import {
   readAwaitingRowTrend,
@@ -64,6 +69,10 @@ import { sourceLabel } from "@/lib/sources/names";
  *     anything. Every action it ever offers becomes one typed decision and one
  *     call to `settle_review_item`, through the route this page never touches
  *     (`src/app/api/admin/review-items/[reviewItemId]/settle/route.ts`).
+ *     A SETTLED item's own verdict renders inline there instead of a control
+ *     (spec F13, campaign admin-window/TASK-0059) — read by id through
+ *     `readItemVerdict`, so the investigation ends where the decision was made
+ *     rather than at the log tab. An unsettled item renders no verdict block.
  *
  * The recommendation slot sits between 1 and 2 and renders nothing either —
  * its producer is parked (spec §6, "the anatomy's recommendation slot … exists
@@ -185,6 +194,12 @@ const EVIDENCE_SURFACE = "evidence";
  * its state is a different read's (`readSettlementReadiness`), so an oracle
  * that graded it as part of the evidence would report an unprovisioned verdict
  * log as unreadable evidence.
+ *
+ * A settled item's own verdict is a sub-surface INSIDE it, `item_verdict`,
+ * named by the component that renders it (`ITEM_VERDICT_SURFACE`,
+ * `src/components/review/close/slot.tsx`) for the same reason once more: its
+ * state is `readItemVerdict`'s, so an item settled with no row on record is
+ * not a close that failed, and an oracle grading the close excludes it.
  */
 const CLOSE_SURFACE = "close";
 
@@ -428,6 +443,45 @@ function dialProps(
   };
 }
 
+/**
+ * The verdict this item was settled with, as the close slot takes it (spec
+ * F13's second half, campaign admin-window/TASK-0059).
+ *
+ * `null` in, `null` out, and it is the load-bearing case: it means the read
+ * was NEVER MADE — an open item was settled by nothing, and a database without
+ * the log has no row to hold one — so the block renders nothing at all rather
+ * than an empty slot claiming an absence it never looked for (LESSONS 1, and
+ * the same rule a missing window line states, ARCHITECTURE.md §4.3).
+ *
+ * Where the observation resolved, its link is the RECORD surface of the fact
+ * it is about — the one place a rendered observation already leads in this app
+ * (`components/queues/verdict-log.tsx`, `components/claims/claim-list.tsx`).
+ * There is no observation-addressable URL, so an id the leg could not place
+ * arrives with a null href and the block renders it verbatim.
+ */
+function settledWith(read: DbResult<ItemVerdict | null> | null): CloseVerdict | null {
+  if (read === null) return null;
+  if (read.kind !== "ok") return read;
+  if (read.data === null) {
+    return { kind: "ok", verdict: null, factUnavailable: null };
+  }
+
+  const { verdict, fact, factUnavailable } = read.data;
+  return {
+    kind: "ok",
+    verdict: {
+      action: verdict.action,
+      actor: verdict.actor,
+      note: verdict.note,
+      createdAt: verdict.created_at,
+      observationId: verdict.observation_id,
+      observationHref:
+        fact === null ? null : recordHref(fact.domain, fact.entity_id),
+    },
+    factUnavailable,
+  };
+}
+
 /* ── the page ────────────────────────────────────────────────────────────── */
 
 export default async function ReviewItemPage({
@@ -533,6 +587,19 @@ export default async function ReviewItemPage({
   // renders today.
   const readiness = await readSettlementReadiness();
 
+  // WHICH verdict settled this item — asked only where there is an answer to
+  // have (spec F13's second half, campaign admin-window/TASK-0059). An OPEN
+  // item was settled by nothing, and a database whose log is absent has no row
+  // to hold one and has already said so in the card above; either way this
+  // read never happens and the block renders nothing, which is what its
+  // absence means here exactly as a missing window line means it elsewhere
+  // (ARCHITECTURE.md §4.3). It is a by-id read through the one module that
+  // owns this object — a page spelling its own query is common violation 9.
+  const verdict =
+    readiness.kind === "ok" && row.status === "settled"
+      ? await readItemVerdict(row.review_item_id)
+      : null;
+
   const EvidenceView = EVIDENCE_VIEW_BY_SHAPE[shape];
   const bucketById = new Map(
     (buckets.kind === "ok" ? buckets.data : []).map((claim) => [
@@ -621,6 +688,7 @@ export default async function ReviewItemPage({
           readiness={readiness}
           actions={ACTIONS_BY_SHAPE[shape]({ item: row, evidence: evidenceRows })}
           notice={NOTICE_BY_SHAPE[shape]({ item: row, evidence: evidenceRows })}
+          verdict={settledWith(verdict)}
         />
       </Section>
     </Page>
