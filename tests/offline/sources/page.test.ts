@@ -387,8 +387,10 @@ describe("the registry, rendered", () => {
       expect(client.calls.filter((call) => call.table === T.runs), name).toHaveLength(1);
       calls.push(client.calls.length);
     }
-    // The same number of requests for 3 sources and for 300.
+    // The same number of requests for 3 sources and for 300, and the whole
+    // page costs at most six of them: registry + runs, and two per gauge.
     expect(calls[1], "300 sources cost more requests than 3").toBe(calls[0]);
+    expect(calls[0], "the page made more than six requests").toBeLessThanOrEqual(6);
   });
 
   it("renders the run log's own refusal instead of a registry that is quietly wrong", async () => {
