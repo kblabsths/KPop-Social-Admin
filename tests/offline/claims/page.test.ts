@@ -2061,6 +2061,49 @@ describe("a parameter the page did not apply", () => {
     expect(droppedLine(await renderClaims(healthyScript(), { record_id: TYPED })).names)
       .toEqual(["record_id"]);
   });
+
+  /**
+   * The name is rendered VERBATIM, so a key carrying an unterminated bidi
+   * override rewrites the sentence it is written into
+   * (admin-window/BUG-0137, QA).
+   *
+   * U+202E RIGHT-TO-LEFT OVERRIDE is a format character, so `visibleContent`
+   * strips it and the key `ab\u202Ecd` has visible content — it is named, and
+   * the override travels into the mono span with it. The override's scope is
+   * the paragraph, not the span, so everything after it reverses. Measured in
+   * Chromium on a production build (port 8798, staging, 2026-09-09, both
+   * colour schemes), `/claims?ab%E2%80%AEcd=1` renders:
+   *
+   *     The URL carries ab.ti yb deworran si woleb gnihton :ylppa ton did egap siht hcihw ,dc
+   *
+   * and `/claims?%E2%80%AEabc=1` the same with the name reading `cba`; the
+   * name span's own box grows from ~20px to 371.75px as it swallows the
+   * reversed run. The sentence the page wrote is not the sentence the
+   * operator reads, which is what bar 13 ("no screen claims a mark it did not
+   * draw") and BUG-0123's "names something the operator can read back" are.
+   *
+   * The check is on the TEXT rather than on any styling, deliberately: the
+   * reversal travels with the sentence when it is copied out of the page into
+   * a plain-text field, where no isolation rule follows it.
+   *
+   * STRICT PIN — `it.fails`, so the day it is fixed this turns RED and sends
+   * the reader to admin-window/BUG-0137 (flip it to `it` there).
+   */
+  it.fails("cannot let a URL reverse the sentence its name is written into", async () => {
+    for (const key of ["ab\u202Ecd", "\u202Eabc", "x\u202Dy"]) {
+      const where = [...key]
+        .map((c) => "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"))
+        .join(" ");
+      const line = droppedLine(await renderClaims(healthyScript(), { [key]: "1" }));
+      // Either arm: drop the override from the name, or name nothing at all.
+      for (const name of line.names) {
+        expect(name, where).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/u);
+      }
+    }
+    // Not vacuous: an ordinary key is still named, in full.
+    expect(droppedLine(await renderClaims(healthyScript(), { record_id: TYPED })).names)
+      .toEqual(["record_id"]);
+  });
 });
 
 /* ══ the adversary's cross-product (admin-window/TASK-0012, QA) ═══════════ */

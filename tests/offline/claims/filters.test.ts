@@ -355,4 +355,73 @@ describe("what the URL asked for and the page did not do", () => {
       withheld: 0,
     });
   });
+
+  /**
+   * The half the CATEGORY the one definition names cannot see
+   * (admin-window/BUG-0137, QA).
+   *
+   * `hasVisibleContent` removes `\p{White_Space}`, `\p{Cf}`, `\p{Cc}` and the
+   * four Hangul fillers — not `\p{Mn}`. So a key of nothing but a nonspacing
+   * mark reaches `named` and is spelled into the mono span, where Chromium
+   * lays it out at **width 0px, is_visible false** and the operator reads
+   * "The URL carries , which this page did not apply" — the hole
+   * admin-window/BUG-0127 and BUG-0136 each closed for their own family of
+   * codepoints. Measured over HTTP on a production build (port 8798,
+   * staging, 2026-09-09), identical in light and dark; the `record_id`
+   * control measures 59.41px, visible.
+   *
+   * STRICT PIN — `it.fails`, so the day the divergence is fixed this turns
+   * RED and sends the reader to admin-window/BUG-0137 (flip it to `it`
+   * there). Either arm satisfies it, as BUG-0127's and BUG-0136's did:
+   * ignore such a key, or spell something an operator can read back.
+   */
+  it.fails("ignores a key that is nothing but marks a reader cannot see", () => {
+    // Each measured at width 0px in Chromium, both colour schemes:
+    // U+FE0F VARIATION SELECTOR-16, U+034F COMBINING GRAPHEME JOINER,
+    // U+0301 COMBINING ACUTE ACCENT.
+    for (const key of ["\uFE0F", "\u034F", "\u0301"]) {
+      const where =
+        "U+" + key.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0");
+      expect(droppedParams({ [key]: "1" }, {}), where).toEqual({
+        named: [],
+        withheld: 0,
+      });
+    }
+  });
+
+  /**
+   * LOOK_AND_FEEL bar 3 through the same gap (admin-window/BUG-0137, QA):
+   * "`in_window` appears nowhere — not as a bucket row, not as a filter
+   * option, not as a zero, on any page", and `contracts/admin-build.md`
+   * acceptance test 3 says the same. admin-window/BUG-0136 made the withheld
+   * test read the key as a reader would (`visibleContent`), which catches
+   * `in_window\u200B`; a mark that same definition rules CONTENT rides
+   * straight through it, and the parked word is rendered legibly.
+   *
+   * Measured in Chromium on a production build (port 8798, 2026-09-09, both
+   * colour schemes): `/claims?in_window%EF%B8%8F=1` renders the mono span
+   * `in_window` at **59.41px, visible — the `record_id` control's exact
+   * width**, because U+FE0F adds no ink; `/claims?in_win%CD%8Fdow=1` the
+   * same; `/claims?in_window%E2%A0%80=1` at 66.92px (the word plus a blank
+   * braille cell). STRICT PIN — see the pin above.
+   */
+  it.fails("still refuses to spell the parked word when an inkless mark rides along", () => {
+    const parked = "in_" + "window";
+    for (const key of [parked + "\uFE0F", "in_win\u034Fdow", parked + "\u2800"]) {
+      const where = [...key]
+        .map((c) => "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"))
+        .join(" ");
+      // Still COUNTED — bar 13's "no screen claims a mark it did not draw" is
+      // kept by saying one was dropped without spelling it.
+      expect(droppedParams({ [key]: "1" }, {}, [parked]), where).toEqual({
+        named: [],
+        withheld: 1,
+      });
+    }
+    // Not vacuous: an ordinary neighbour of the parked word is still named.
+    expect(droppedParams({ in_windows: "1" }, {}, [parked])).toEqual({
+      named: ["in_windows"],
+      withheld: 0,
+    });
+  });
 });
