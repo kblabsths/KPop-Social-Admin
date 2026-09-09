@@ -149,3 +149,4 @@
 2026-09-09T11:30:27Z	artifact_gate	blocked write outside repo: ../../tracker/evidence/BUG-0118/prefix-sentences.txt
 2026-09-09T11:34:32Z	artifact_gate	blocked write outside repo: /tmp/x
 2026-09-09T11:37:30Z	evidence_budget	qa_evidence_overbudget: BUG-0118 4141/4000 chars
+2026-09-09T11:56:01Z	artifact_gate	blocked write outside repo: /
