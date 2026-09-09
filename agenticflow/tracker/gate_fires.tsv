@@ -106,3 +106,4 @@
 2026-09-09T02:32:26Z	evidence_budget	qa_evidence_overbudget: TASK-0048 4117/4000 chars
 2026-09-09T02:37:05Z	artifact_gate	blocked write outside repo: /tmp/x
 2026-09-09T02:37:48Z	artifact_gate	blocked write outside repo: ../logs/snapshot-before.tsv
+2026-09-09T02:43:26Z	artifact_gate	blocked write outside repo: /tmp/x
