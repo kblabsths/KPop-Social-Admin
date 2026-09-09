@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ROW_CAP, readRows, type DbResponse, type DbResult } from "./result";
+import { ROW_CAP, readOne, readRows, type DbResponse, type DbResult } from "./result";
 import { readReviewAttention } from "./review-items";
 import { T } from "./tables";
 import type { ReviewAttention } from "../review/shapes";
@@ -13,10 +13,14 @@ import type { ReviewAttention } from "../review/shapes";
  * Dashboard's reads"), §4.1 (every export returns a `DbResult` and never
  * throws) and §4 rule 4 (only `tables.ts` spells a table name).
  *
- * Three reads, reported separately, because the Dashboard's three surfaces
- * fail independently: with `resolution_runs` absent the attention summary must
+ * Four reads, reported separately, because the Dashboard's surfaces fail
+ * independently: with `resolution_runs` absent the attention summary must
  * still render its counts, and each surface must name the object IT could not
- * read (admin-window/BUG-0016).
+ * read (admin-window/BUG-0016). The fourth is the last-applied row
+ * (admin-window/TASK-0039), which the cycles surface states as a line and
+ * drops whole when its own read did not return — the table's absence is
+ * already named once by the list beside it, and naming it twice on one card
+ * tells an operator nothing new.
  *
  * **Which read kind, and why** (ARCHITECTURE.md §4.3, and the architect's
  * ruling on this ticket 2026-09-02):
@@ -34,6 +38,11 @@ import type { ReviewAttention } from "../review/shapes";
  *    a count over the set, so there is nothing here that a partial set could
  *    make wrong. A later surface that wants "how many cycles ran last night"
  *    needs a complete read, not `rows.length` of this one.
+ *  - the last-applied row is **neither**: it is one row addressed by an order
+ *    (`readOne`), and the database's own `where … order … limit 1` makes it
+ *    the maximum over every row the table holds. Nothing about it is partial,
+ *    so there is no cap to state and no window to name beyond "every cycle on
+ *    record" — see `readLastApplied` below.
  *
  * The cycle and run row shapes here are the DASHBOARD's, deliberately narrow:
  * the Dashboard shows what answers "did anything happen last night" and links
@@ -91,7 +100,23 @@ export interface DashboardRunRow {
   error_summary: string | null;
 }
 
-/** The three reads the Dashboard makes, each reported on its own. */
+/**
+ * The newest `resolution_runs` row that APPLIED something — the row behind the
+ * Dashboard's "when did the resolver last actually write" line
+ * (campaign admin-window/TASK-0039).
+ *
+ * `applied` is selected as well as filtered on, so the row a surface makes the
+ * claim about carries the fact the claim rests on; `started_at` is the instant
+ * the line ages, and it is the same instant the cycles table ages its rows by,
+ * so the two never disagree about one row.
+ */
+export interface LastAppliedCycle {
+  run_id: string;
+  started_at: string;
+  applied: number;
+}
+
+/** The four reads the Dashboard makes, each reported on its own. */
 export interface DashboardReads {
   /** Open counts, max severity and oldest age, per kind. A COMPLETE read. */
   attention: DbResult<ReviewAttention>;
@@ -99,6 +124,11 @@ export interface DashboardReads {
   cycles: DbResult<DashboardCycleRow[]>;
   /** The newest adapter runs. A WINDOW read; the page says which window. */
   runs: DbResult<DashboardRunRow[]>;
+  /**
+   * The newest cycle that applied something, over EVERY cycle the table holds
+   * — `ok` carrying `null` when no cycle in it ever applied anything.
+   */
+  lastApplied: DbResult<LastAppliedCycle | null>;
 }
 
 const CYCLE_COLUMNS = [
@@ -180,22 +210,77 @@ export function readRecentRuns(
   );
 }
 
+/** The columns the last-applied read needs, and no others. */
+const LAST_APPLIED_COLUMNS = ["run_id", "started_at", "applied"].join(", ");
+
+/**
+ * The newest cycle that APPLIED something — the read behind the Dashboard's
+ * "did the resolver actually write anything" line (admin-window/TASK-0039).
+ *
+ * **Not a window over the newest few.** The database applies the filter, the
+ * order and the limit together, so `where applied > 0 order by started_at
+ * desc, run_id desc limit 1` IS the maximum over every row the table holds:
+ * had any cycle applied something, this read would have returned it. That is
+ * why an `ok` carrying `null` is the strong statement "no cycle on record has
+ * applied anything" rather than "none among the six the page lists" — the
+ * distinction the line exists to draw, since the page already shows the
+ * newest cycles and 69 of them applying nothing is exactly the state that
+ * reads calm.
+ *
+ * It is therefore neither read kind of §4.3 in the shape those helpers take:
+ * there is no set here to be silently partial, and no cap to fill. It is
+ * `readOne` — one row addressed by an order rather than by a key — for the
+ * reason `readReviewItem` is: `.maybeSingle()` distinguishes "the table
+ * answered and holds no such row" from "the table is not there", and only the
+ * first of those is a statement about the resolver.
+ *
+ * **No lookback bound, deliberately.** A "has it applied anything in the last
+ * N hours" read would put a dial-able value in a source file, which is the
+ * one thing this line may not become (Ben's ruling, campaign
+ * admin-window/TASK-0039: a timestamp, not a gauge; a dial belongs in a row).
+ * The order is total — `started_at` then the primary key — so two cycles that
+ * applied on the same instant cannot swap the answer between reloads.
+ */
+export function readLastApplied(
+  db?: SupabaseClient,
+): Promise<DbResult<LastAppliedCycle | null>> {
+  return readOne<LastAppliedCycle>(
+    T.resolutionRuns,
+    (client) =>
+      client
+        .from(T.resolutionRuns)
+        .select(LAST_APPLIED_COLUMNS)
+        .gt("applied", 0)
+        .order("started_at", { ascending: false })
+        .order("run_id", { ascending: false })
+        .limit(1)
+        .maybeSingle() as unknown as PromiseLike<DbResponse<LastAppliedCycle>>,
+    db,
+  );
+}
+
 /**
  * Everything the Dashboard reads, in one call.
  *
- * The three run concurrently and are returned unmerged: one failing read never
- * takes the other two down, and the page renders three honest states rather
- * than one anonymous one. Nothing here throws — each read classifies its own
- * failure (§4.1).
+ * The four run concurrently and are returned unmerged: one failing read never
+ * takes the others down, and the page renders honest states rather than one
+ * anonymous one. Nothing here throws — each read classifies its own failure
+ * (§4.1).
+ *
+ * Two of them read `resolution_runs`: the cycles WINDOW the table renders, and
+ * the last-applied row over every cycle on record. They are separate reads on
+ * purpose — one is a list, the other is a maximum, and a maximum taken from
+ * the list's six rows would answer a different question (admin-window/TASK-0039).
  */
 export async function readDashboard(
   limit: number = DASHBOARD_WINDOW,
   db?: SupabaseClient,
 ): Promise<DashboardReads> {
-  const [attention, cycles, runs] = await Promise.all([
+  const [attention, cycles, runs, lastApplied] = await Promise.all([
     readReviewAttention(db),
     readRecentCycles(limit, db),
     readRecentRuns(limit, db),
+    readLastApplied(db),
   ]);
-  return { attention, cycles, runs };
+  return { attention, cycles, runs, lastApplied };
 }
