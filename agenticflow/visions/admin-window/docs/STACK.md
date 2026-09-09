@@ -135,7 +135,7 @@ space — quote it).
 | live suite (staging) | `npm run test:live` | — |
 | http suite | `npm run test:http` | 8772 (its own server) |
 | **reset the walk sandbox** | `node tests/walk/reset-sandbox.mts` (walk prep: step 3's block — it needs the same mapping) | — |
-| **residue sweep** (after any walk that wrote a catalog row) | `npm run test:live -- tests/live/residue.live.test.ts` | — |
+| **residue sweep** (read-only leftover check; since the amendment of 2026-09-08 no walk writes a catalog row, so it should never fire) | `npm run test:live -- tests/live/residue.live.test.ts` | — |
 
 - **8770 is the factory's attention UI** (`run.yaml` `ui_port`). Never bind it.
 - A walk instance takes its database credentials from **its own process
@@ -159,8 +159,8 @@ space — quote it).
 
 Everything below is verbatim and runnable from the repo root. It is the whole
 recipe for the M1 endgame walkers (designer walk, user-sims, verifier), settled
-by Ben's two rulings of 2026-09-03 and proved by
-`tests/http/walk-cookie.http.test.ts`.
+by Ben's two rulings of 2026-09-03, narrowed by his vision amendment of
+2026-09-08 (step 3), and proved by `tests/http/walk-cookie.http.test.ts`.
 
 **1. Launch the instance.** The two names the app reads (`SUPABASE_URL`,
 `SUPABASE_SERVICE_ROLE_KEY`) are mapped from the staging names on the launching
@@ -265,7 +265,7 @@ empty or whitespace-only, the CLI exits non-zero naming that one name and mints
 nothing — there is no fallback to invent.
 
 **3. Reset the walk sandbox — immediately before every walk, mandatory.**
-`public.walk_sandbox` is the table a walk WRITES to once it exists (see the
+`public.walk_sandbox` is the ONLY table a walk WRITES to once it exists (see the
 caveats below), and running this is also how you find out whether it does. It
 exists on staging only, and this puts it back to its three seed rows so the
 walk you are about to run starts from the same state the last one did:
@@ -297,88 +297,70 @@ Four things about that command, so nothing below is a surprise:
 - **If it refuses saying `walk_sandbox` is not on that host**, the table has not
   been created yet — it is created BY HAND, once, by Ben, from the paste-ready
   SQL in `agenticflow/tracker/for-human/TASK-0034.md`. The tool never creates
-  it. **That refusal is also how a walker learns which walk-write rule it is
-  under**, and it is the only test worth trusting — not a date, not this
+  it. **That refusal is also how a walker learns whether it has a write surface
+  at all**, and it is the only test worth trusting — not a date, not this
   paragraph's age. Run step 3 first, read what it said, take the matching
   branch:
   - **It refused *naming the table and the host* — `the table "walk_sandbox"
-    is not on <host>` — so the table is absent and the interim exception is
-    live.** That one sentence is the only refusal that means absence: it is
-    the single `SandboxAbsentError` in `tests/walk/reset-sandbox.mts`, raised
-    from the database's own absence code (`PGRST205` / `42P01`) on a real
-    read. **Every other non-zero exit is a refusal that says nothing about the
-    table** — see the next branch — and none of them puts you here.
-    Measured 2026-09-04: this is the branch staging is on
-    (`ubfjjqlvnpnoborczbdb.supabase.co`, sweep agrees: `walk_sandbox: not
+    is not on <host>` — so the table is absent, and a save-path walk has NO
+    write surface at all.** That one sentence is the only refusal that means
+    absence: it is the single `SandboxAbsentError` in
+    `tests/walk/reset-sandbox.mts`, raised from the database's own absence code
+    (`PGRST205` / `42P01`) on a real read. **Every other non-zero exit is a
+    refusal that says nothing about the table** — see the next branch — and
+    none of them puts you here. Measured 2026-09-04: this is the branch staging
+    is on (`ubfjjqlvnpnoborczbdb.supabase.co`, sweep agrees: `walk_sandbox: not
     present`).
 
-    A save-path walk on this branch writes **one field of one existing
-    `groups`/`idols` row**: note the original value before you change it,
-    restore it in a `finally` so a crashed walk still puts it back, and run
-    the residue sweep afterwards. That is Ben's standing ruling of 2026-09-03,
-    recorded in `agenticflow/tracker/for-human/TASK-0034.md` §1 and in
-    `agenticflow/docs/DECISIONS.md`; it is deliberately interim, and it is what
-    the M1 endgame walks use until the paste lands. Even here: never `events`
-    or `venues`, never an insert, never a delete.
+    **RETIRED 2026-09-08 — what this branch used to say.** Until that date it
+    told a save-path walk to edit one field of one existing `groups`/`idols`
+    row, note the original, restore it in a `finally` and run the residue
+    sweep: the interim exception of Ben's ruling of 2026-09-03. Ben's vision
+    amendment of **2026-09-08** struck *"groups/idols edit directly within it"*
+    from VISION — "admin edits catalog tables only through the observation
+    pipeline; do not re-implement direct edits" — and the architect's dated
+    2026-09-08 entry in `agenticflow/docs/DECISIONS.md` ("direct catalog
+    editing is struck: the three regimes, and the door that must stay shut")
+    records what it closes; read that entry rather than a summary of it here.
+    **No walk and no test writes a `groups` or `idols` row again**, on this
+    branch or any other. The retirement is the amendment's, not the sandbox
+    paste's: it holds whether or not the table exists, and it does not come
+    back on any date.
 
-    Three things are what make that a safety net rather than a sentence:
+    **So on this branch the honest walk is a narrowed one.** Walk the reads and
+    the rendering, and record the gap in the walk report in those terms — *save
+    path not walked: `walk_sandbox` absent on `<host>`, so there is no write
+    surface* — then move on. That is a complete walk report, not a hole to
+    plug. The bans that apply here are the standing ones and they are absolute:
+    never `groups` or `idols`, never `events` or `venues`, never an insert,
+    never a delete, and never a workaround — no substitute table, no fixture
+    writer, no second sandbox, no direct PATCH "just to see the 200". The paste
+    in `agenticflow/tracker/for-human/TASK-0034.md` §2 is the only thing that
+    gives the save path a surface again, and it is Ben's to run
+    (admin-window/TASK-0037 proves the sandbox once he has).
 
-    - **Pick a field the sweep can SEE, and stamp what you type.** The sweep
-      counts rows whose value is `ilike '%admin-window%'`, over text columns
-      only. So the write it can police is a **text** column carrying the
-      campaign marker **`admin-window`** in the value — type
-      `admin-window/<your-ticket> probe`, never `test`, or the sweep reports
-      clean straight over your leftover. On `groups` those columns are `name`,
-      `korean_name`, `short_name`, `company`, `status`, `type`, `image_url`,
-      `bio`; on `idols`, every editable column except the three below.
-    - **The sweep is blind to the five editable columns that are not text, and
-      there the `finally` is your only net.** `ilike` has no operator for a
-      date or a number, so `groups.member_count`, `groups.debut_date`,
-      `idols.birth_date`, `idols.height_cm` and `idols.weight_kg` cannot carry
-      the marker and are never scanned (measured 2026-09-04: the sweep names
-      exactly those five, with their types, in its own "not scannable" list).
-      They are in the editable map, so a walk of the save path *may*
-      legitimately need one — prefer a text column; if you must save one of
-      these, say so in the finding, keep the same `finally`, and **verify the
-      restore by hand**: reload the record page and read the field back. Over
-      an unrestored number the sweep still reports `56 column(s) scanned` and
-      exits 0, and a false all-clear is worse than no sweep.
-    - **Run the sweep afterwards, verbatim, from the repo root:**
-
-      ```sh
-      npm run test:live -- tests/live/residue.live.test.ts
-      ```
-
-      No mapping prefix and no subshell: unlike step 3's tool, the live suite
-      loads `.env` itself and reads the `STAGING_*` names
-      (`tests/live/setup.ts`) — but it reads the **repo root's** `.env`, so
-      step 1's worktree caveat applies unchanged. It is **read-only** and runs
-      in under 10s (9.7s and 6.2s measured here). Clean is exit 0 with a
-      per-column report (`groups: scanned 19 text
-      column(s) … [name=0, …]`); residue is a non-zero exit naming table,
-      column and row count (`groups.bio: 1 row(s)`), after three re-checks 2s
-      apart that tell a leftover from a write still in flight. Both outcomes
-      measured 2026-09-04 on `ubfjjqlvnpnoborczbdb.supabase.co`
-      (admin-window/BUG-0072): the marker was written into `groups.bio` of one
-      existing row, the sweep failed on it, the `finally` restored the
-      213-character original, and the next sweep passed 5/5 with `bio=0`.
+    The residue sweep in §5's table stays as a **read-only** leftover check of
+    the M1-era writes; nothing a walk does now should ever make it fire.
   - **It refused any OTHER way — you have learned nothing about the table, and
-    neither branch is open to you.** An unset name (`the walk-sandbox reset
-    tool refuses: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set`), a
-    guard refusal on a host that is not the declared staging target, or any
-    `SandboxResetError` is a refusal about the RUN, not about the table's
-    existence — a refused tool is not an absent table. One of them is a trap
-    worth naming: if the seed leg fails, the tool says the delete already ran
-    and `walk_sandbox` is **now EMPTY** — the table EXISTS, so the sandbox
-    branch is the live one, and a catalog-row write there would be plain wrong.
-    Fix the cause (most often a missing `source .env` — step 1) and run step 3
-    again until it either succeeds or names the table and the host. Measured
-    2026-09-04: `env -u SUPABASE_URL -u SUPABASE_SERVICE_ROLE_KEY node
-    tests/walk/reset-sandbox.mts` exits 1 with the unset-name refusal above,
-    having read nothing at all.
-  - **It succeeded — the exception is over, from that moment on.** The sandbox
-    is the write surface and the only one; the catalog-row practice above is
-    retired for good (caveats below).
+    neither of the other branches is open to you.** An unset name (`the
+    walk-sandbox reset tool refuses: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+    are not set`), a guard refusal on a host that is not the declared staging
+    target, or any `SandboxResetError` is a refusal about the RUN, not about the
+    table's existence — a refused tool is not an absent table. One of them is a
+    trap worth naming: if the seed leg fails, the tool says the delete already
+    ran and `walk_sandbox` is **now EMPTY** — the table EXISTS, so the sandbox
+    branch is the live one (and a catalog-row write is wrong in every state, per
+    the branch above). Fix the cause (most often a missing `source .env` —
+    step 1) and run step 3 again until it either succeeds or names the table and
+    the host. Measured 2026-09-04: `env -u SUPABASE_URL -u
+    SUPABASE_SERVICE_ROLE_KEY node tests/walk/reset-sandbox.mts` exits 1 with
+    the unset-name refusal above, having read nothing at all.
+  - **It succeeded — the sandbox is the write surface, and the only one.** Write
+    there and nowhere else (caveats below). Nothing about the catalog turns on
+    this moment: the interim `groups`/`idols` practice was not waiting to be
+    replaced, it was retired outright on 2026-09-08. Success here decides only
+    whether a save-path walk has a surface, never whether a catalog row may be
+    touched.
 - **It is DML and nothing else**: four PostgREST requests — read one row to
   check the table is there, delete every row, insert the fixture
   (`tests/walk/sandbox-fixture.ts`), read it back and verify. No DDL, no
@@ -421,7 +403,7 @@ page.goto("http://localhost:8771/")
 - **The sign-in flow itself is never walked.** That blind spot is accepted, not
   overlooked: a minted cookie starts the walk already past the gate, so nothing
   the walk sees says anything about Google sign-in.
-- **A walker's saves LAND on staging — the walk writes real rows.** Ben added
+- **A walker's saves LAND on staging — nothing a walk saves is a dry run.** Ben added
   the labelled row `walker@admin-window.local` to staging's
   `admin_allowed_emails` on 2026-09-03 (beside `kb.labs.ths@gmail.com`), which
   is the table `requireAdmin()` (`src/lib/admin.ts`) consults on **every**
@@ -437,30 +419,31 @@ page.goto("http://localhost:8771/")
   - **Once `public.walk_sandbox` is on staging** (step 3 succeeds), write to
     the **walk sandbox and nowhere else**. The sandbox (`ARCHITECTURE.md` §9.1)
     exists so that a save-path walk has a table of its own — reset before every
-    walk, carrying no catalog fact, reachable only at the address in step 3 —
-    and **its arrival RETIRES the interim exception** ("edit one field of one
-    existing `groups`/`idols` row, note the original, restore it, sweep"), for
-    good and for everyone.
+    walk, carrying no catalog fact, reachable only at the address in step 3.
+    Never `groups` or `idols`, never `events` or `venues`, never an insert,
+    never a delete.
   - **While step 3 refuses with that one absence sentence** — `the table
-    "walk_sandbox" is not on <host>`, and no other refusal counts — that
-    interim exception IS the walk-write rule, under the discipline spelled out
-    in step 3's first branch: a **text** column, the value stamped
-    `admin-window`, the original noted, restored in a `finally`, and
-    `npm run test:live -- tests/live/residue.live.test.ts` after. It is what
-    Ben ruled on 2026-09-03 — the exception holds *until the sandbox exists*,
-    and the sandbox replaces it once it does — and
-    `agenticflow/tracker/for-human/TASK-0034.md` §1 and
-    `agenticflow/docs/DECISIONS.md` record it in the same words. The paste is
-    on Ben's own schedule ("when convenient; nothing is blocked on it"), so a
-    walker arriving on any given day may find either state; nothing here flips
-    on a date.
+    "walk_sandbox" is not on <host>`, and no other refusal counts — **a
+    save-path walk has no write surface at all, and the walk report says so.**
+    Walk the reads and the rendering, write the save path down as not walked
+    for that reason, and stop there; a narrowed walk honestly reported is the
+    whole of what this state allows. The interim exception that used to fill
+    this gap — one field of one existing `groups`/`idols` row, restored in a
+    `finally` and swept — was **retired on 2026-09-08** by Ben's vision
+    amendment, not by the paste (step 3's first branch; the architect's dated
+    2026-09-08 entry in `agenticflow/docs/DECISIONS.md`). The same bans hold
+    here as on the other branch: never `groups` or `idols`, never `events` or
+    `venues`, never an insert, never a delete, never a workaround built to get
+    a write in anyway. The paste is on Ben's own schedule, so a walker arriving
+    on any given day may find either state; nothing here flips on a date.
 
-  Under **both** rules: never a resolver-owned table (`events`, `venues`),
+  In **both** states: never a resolver-owned table (`events`, `venues`), never
+  a catalog table at all — `groups` and `idols` included since the amendment —
   never an insert, never a delete, anywhere. A save that fails is a finding
   worth reporting; a save left behind in a catalog table is damage in a
-  database three repos share — which is exactly the risk the sandbox exists to
-  remove, and why the interim exception buys its one field back with a
-  `finally` and a sweep.
+  database three repos share, which is why the sandbox is now the only surface
+  a walk may ever write, and why a walk that finds no sandbox reports a
+  narrowed walk instead of finding another way in.
 
 ## 6. Deploy (untouched by this campaign)
 
