@@ -4,6 +4,7 @@ import * as cheerio from "cheerio";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import type { Status } from "@/components/EditableCell";
 import {
   PickerOptions,
   PickerPanel,
@@ -207,6 +208,70 @@ describe("what the picker offers", () => {
     const described = search.attr("aria-describedby");
     expect(described).toBeTruthy();
     expect($(`#${described}`).text().length).toBeGreaterThan(0);
+  });
+});
+
+/* ── a write in flight ────────────────────────────────────────────────────── */
+
+/**
+ * A second choice while the first one is still being written (QA,
+ * admin-window/TASK-0055).
+ *
+ * The rule is the cell's, and it was paid for once already: a status belongs to
+ * the edit that produced it, and the control that could start a second write is
+ * `disabled` while one is in flight (`EditableCell`, admin-window/BUG-0069 —
+ * "the button the operator can click again is disabled={status.kind ===
+ * 'saving'}"). The picker is the same seam with a different widget: its options
+ * are the controls that start the write, so they are what has to go busy.
+ *
+ * Driven over `PickerPanel`, which takes the status as a prop, because
+ * `tests/offline` has no jsdom and cannot click (STACK.md §4). Nothing here
+ * reads a word the panel says — only WHICH controls it still offers.
+ */
+describe("a choice while a choice is still saving", () => {
+  function panelAt(status: Status): string {
+    return renderToStaticMarkup(
+      createElement(PickerPanel, {
+        window: windowOf(),
+        query: "",
+        current: null,
+        status,
+        onQuery: () => {},
+        onChoose: () => {},
+      }),
+    );
+  }
+
+  /** Every option button the panel drew that is still live to a click. */
+  function liveOptions(markup: string): number {
+    const $ = cheerio.load(markup);
+    return $("li button").filter((_, button) => $(button).attr("disabled") === undefined)
+      .length;
+  }
+
+  it("offers every option while nothing is in flight, so the claim below is not vacuous", () => {
+    expect(liveOptions(panelAt({ kind: "idle" }))).toBe(OPTIONS.length);
+  });
+
+  /**
+   * A strict xfail pin for admin-window/BUG-0097 — `it.fails` passes only
+   * while the assertion below FAILS, so the day the guard lands this turns red
+   * and sends the reader to the ticket. Flip it back to a plain `it(...)` then.
+   *
+   * Today every option is still clickable under `saving`, so a second click
+   * sends a second PATCH for the same field: two override decisions for one
+   * intent, and the value the panel settles on is whichever answer came back
+   * last rather than the choice made last.
+   */
+  it.fails("offers no option that would start a second write while one is saving", () => {
+    expect(liveOptions(panelAt({ kind: "saving" }))).toBe(0);
+  });
+
+  it("offers them again once the write has answered", () => {
+    expect(liveOptions(panelAt({ kind: "saved" }))).toBe(OPTIONS.length);
+    expect(liveOptions(panelAt({ kind: "failed", message: "refused" }))).toBe(
+      OPTIONS.length,
+    );
   });
 });
 
