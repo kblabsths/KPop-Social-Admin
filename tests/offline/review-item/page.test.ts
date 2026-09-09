@@ -2046,7 +2046,7 @@ describe("a table name in a queues empty state card", () => {
       .map((element) => faceOf(classesOf($(element))));
   }
 
-  it.fails("sets the name in the machine's face on an address that is no id", async () => {
+  it("sets the name in the machine's face on an address that is no id", async () => {
     const id = "not-a-uuid";
     readWith.client = stubClient({
       [T.reviewItems]: { error: invalidUuidSyntax(id) },
@@ -2059,7 +2059,7 @@ describe("a table name in a queues empty state card", () => {
     expect(drawnAsTheMachineWord($)).toEqual([machineFace($)]);
   });
 
-  it.fails("sets the name in the machine's face on an id no row has", async () => {
+  it("sets the name in the machine's face on an id no row has", async () => {
     const $ = cheerio.load(
       await renderItem(
         { ...conflictScript(), [T.reviewItems]: { data: null } },
@@ -2068,5 +2068,31 @@ describe("a table name in a queues empty state card", () => {
     );
     expect(saidInTheCard($), "the card names the table").toBe(1);
     expect(drawnAsTheMachineWord($)).toEqual([machineFace($)]);
+  });
+
+  /**
+   * The other half of the same rule, and the trap next door: "review item" —
+   * two words — is the app's OWN noun for the thing, prose and not a machine
+   * word, and it opens the first line of both cards ("No review item at this
+   * address"). So the machine's face may reach the identifier and nothing
+   * else: anything else the card draws at the data step is prose prettified
+   * into the machine's voice, which is the same defect pointing the other way.
+   */
+  it("draws nothing but the identifier in the machine's face", async () => {
+    const id = "not-a-uuid";
+    readWith.client = stubClient({
+      [T.reviewItems]: { error: invalidUuidSyntax(id) },
+    }).asSupabaseClient();
+    const $ = cheerio.load(
+      render(await ReviewItemPage({ params: Promise.resolve({ reviewItemId: id }) })),
+    );
+    const machine = faceOf(classesOf($("[data-review-item]")));
+    const inTheMachinesFace = $('[data-state="empty"]')
+      .find("*")
+      .toArray()
+      .filter((element) => faceOf(classesOf($(element))).join(" ") === machine.join(" "))
+      .map((element) => $(element).text());
+    // Non-vacuous: the identifier IS drawn that way, and it is the only thing.
+    expect(inTheMachinesFace).toEqual([T.reviewItems]);
   });
 });
