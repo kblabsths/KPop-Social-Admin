@@ -15,6 +15,7 @@
  *   3. `assertChildOwnsPort()` — the OS says which pid holds the socket.
  */
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { HTTP_TEST_PORT } from "../suite-globs";
@@ -234,7 +235,36 @@ export async function waitForReady(child: ChildProcess, log: string[]): Promise<
   throw new Error(`server never became ready on ${base}\n${log.join("")}`);
 }
 
+/**
+ * A production build to start, built here if this tree has none.
+ *
+ * `next start` refuses without one ("Could not find a production build in the
+ * '.next' directory"), and the client-bundle scan in `auth.http.test.ts` reads
+ * `.next/static` directly. `npm run test:http` builds first — but this project
+ * is also run FILE BY FILE, by a ticket's stored `## Checks` command and by
+ * `agenticflow/scripts/receipt.py`, which replays those checks in a fresh git
+ * worktree carrying linked `node_modules` and `.env` and no `.next` at all.
+ * Measured there 2026-09-08 (admin-window/BUG-0081): every server-backed test
+ * failed before its first assertion, and the bundle scan failed `expected 0 to
+ * be greater than 5` — a RED that says nothing about the app.
+ *
+ * It builds ONLY when there is no build, never over an existing one: the
+ * build `npm run test:http` just made is the one asserted against, and a
+ * caller who built deliberately keeps their artifact. Staleness is therefore
+ * still the caller's business, exactly as it was.
+ */
+function ensureProductionBuild(): void {
+  if (fs.existsSync(path.join(repoRoot, ".next", "BUILD_ID"))) return;
+  execFileSync(nextBin, ["build"], {
+    cwd: repoRoot,
+    // The build loads the repo's `.env`; nothing it prints is wanted here and
+    // no value of it may reach a log.
+    stdio: "ignore",
+  });
+}
+
 export async function startServer(): Promise<{ child: ChildProcess; log: string[] }> {
+  ensureProductionBuild();
   if (!(await portIsFree())) {
     throw new Error(
       `port ${HTTP_TEST_PORT} is already held by another process, so this suite ` +
