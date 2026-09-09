@@ -10,11 +10,19 @@ import {
   filterBar,
   filterFrom,
   isNarrowed,
+  narrowingOfKind,
   queuesHref,
   withFacet,
   type SearchParams,
 } from "@/lib/review/queue-filters";
-import { KINDS, SHAPES, type ReviewItemFilter } from "@/lib/review/shapes";
+import {
+  KINDS,
+  SHAPES,
+  selectItems,
+  type Kind,
+  type ReviewItemFilter,
+} from "@/lib/review/shapes";
+import { reviewItemEdgePopulation } from "../../fixtures/rows";
 
 /**
  * The Queues page's URL state (campaign admin-window/TASK-0010).
@@ -168,6 +176,115 @@ describe("what narrows ONE surface, not the whole URL", () => {
     expect(isNarrowed({}, {})).toBe(false);
     expect(isNarrowed({ kind: "signal" }, {})).toBe(true);
     expect(isNarrowed({}, { kind: "signal" })).toBe(false);
+  });
+});
+
+describe("the narrowing a KIND implies", () => {
+  /**
+   * `narrowingOfKind(kind)` — every facet value a row of that kind must carry
+   * (admin-window/BUG-0131). A queue block hands it to both `selectItems` and
+   * `isNarrowed`, so it has to be exactly right in both directions: claiming a
+   * value the kind does NOT imply would silently drop rows from the block,
+   * claiming too few leaves the block blaming a facet that removed nothing.
+   */
+  const POPULATION = reviewItemEdgePopulation();
+
+  /**
+   * What each kind implies, spelled from spec §6 and migration
+   * `20260901000002` — NOT read back out of `narrowingOfKind`. Asking the
+   * function what it expects would make every sweep below vacuous the moment
+   * the function under-claims.
+   */
+  const IMPLIED: Record<Kind, Partial<Record<string, string>>> = {
+    decision: { kind: "decision" },
+    signal: {
+      kind: "signal",
+      shape: "entity_link_source_pattern",
+      queue: "entity_link",
+    },
+  };
+
+  it("names the values spec §6 says every row of that kind carries", () => {
+    // The signal queue is `entity_link_source_pattern` and no other shape, and
+    // that shape exists only under the `entity_link` queue (migration
+    // `20260901000002`: a per-source subject belongs to that queue alone).
+    expect(narrowingOfKind("signal")).toEqual(IMPLIED.signal);
+    // The decision queue spans two shapes and both queues, so it implies
+    // nothing beyond its own kind — `?shape=data_conflict_fact` and
+    // `?queue=data_conflict` really do remove rows from it.
+    expect(narrowingOfKind("decision")).toEqual(IMPLIED.decision);
+  });
+
+  it("never implies a status: that is a row's own state, not its kind's", () => {
+    for (const kind of KINDS) {
+      expect(narrowingOfKind(kind).status, kind).toBeUndefined();
+    }
+  });
+
+  it("SELECTS exactly the kind's rows — an implied value removes none of them", () => {
+    // The soundness half, on rows rather than on the mapping: the derived
+    // narrowing and the bare `{ kind }` pick the same items out of a
+    // population that holds all three shapes, both statuses, and the rows the
+    // schema permits but the happy path never produces.
+    for (const kind of KINDS) {
+      const implied = selectItems(POPULATION, narrowingOfKind(kind));
+      const byKind = selectItems(POPULATION, { kind });
+      expect(implied.length, kind).toBeGreaterThan(0);
+      expect(implied, kind).toEqual(byKind);
+    }
+  });
+
+  it("discounts a URL facet exactly when the kind implies its value", () => {
+    // Both ways, over the whole URL vocabulary: the value the kind implies is
+    // not narrowing, every other value of every facet is. This is the pin an
+    // over-fix fails — dropping a facet by NAME rather than by value would let
+    // `?shape=entity_link_fact` (which empties the signal block) read as
+    // unfiltered.
+    for (const kind of KINDS) {
+      const within = narrowingOfKind(kind);
+      for (const facet of FACETS) {
+        for (const value of FACET_VALUES[facet] as readonly string[]) {
+          expect(
+            isNarrowed(filterFrom({ [facet]: value }), within),
+            `${facet}=${value} on ${kind}`,
+          ).toBe(IMPLIED[kind][facet] !== value);
+        }
+      }
+    }
+  });
+
+  it("keeps counting a facet BESIDE the implied one", () => {
+    // The fix may not turn a block's narrowing off wholesale: a status facet
+    // still narrows the signal block on the very URLs that select its own set.
+    const within = narrowingOfKind("signal");
+    for (const query of [
+      "shape=entity_link_source_pattern&status=settled",
+      "queue=entity_link&status=open",
+      "kind=signal&status=settled",
+    ]) {
+      expect(isNarrowed(filterFrom(paramsOf(`/queues?${query}`)), within), query).toBe(
+        true,
+      );
+    }
+  });
+
+  it("is derived, not written down — no kind claims a value its rows contradict", () => {
+    // Whatever the registry says today, the claim has to hold row by row: for
+    // every kind and every facet value it implies, EVERY row of that kind
+    // carries that value. A fourth shape or a third queue changes the derived
+    // answer, and this stays the test of it.
+    for (const kind of KINDS) {
+      const within = narrowingOfKind(kind) as Record<string, string | undefined>;
+      const rows = selectItems(POPULATION, { kind });
+      for (const facet of FACETS) {
+        const value = within[facet];
+        if (value === undefined) continue;
+        expect(
+          selectItems(rows, filterFrom({ [facet]: value })),
+          `${kind} implies ${facet}=${value}`,
+        ).toEqual(rows);
+      }
+    }
   });
 });
 

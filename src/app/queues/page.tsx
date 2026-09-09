@@ -33,6 +33,7 @@ import {
   filterBar,
   filterFrom,
   isNarrowed,
+  narrowingOfKind,
   tabFrom,
   tabLinks,
   type QueuesTab,
@@ -215,9 +216,11 @@ function OpenDetail({
    * A filter is narrowing THIS BLOCK, so the figure above counts the RENDERED
    * set and not the queue. `?status=settled` renders a real zero here, and a
    * zero that did not name its scope would read as "nothing is open" about a
-   * database that holds plenty. Decided by `isNarrowed(filter, { kind })`, so
-   * a facet that cannot remove a row from this block (its own `kind`) is not
-   * counted and the zero stays unscoped (admin-window/BUG-0129).
+   * database that holds plenty. Decided by
+   * `isNarrowed(filter, narrowingOfKind(kind))`, so a facet that cannot remove
+   * a row from this block — its own kind, or any value that kind implies — is
+   * not counted and the zero stays unscoped (admin-window/BUG-0129,
+   * admin-window/BUG-0131).
    */
   narrowed: boolean;
 }) {
@@ -285,16 +288,20 @@ function Queue({
   // narrowed and ordered. `selectItems` is the app's one predicate — a
   // hand-written `filter(i => …)` here would be a second one (acceptance
   // test 4), and the order is `queueOrder`'s, untouched.
-  const ownNarrowing: ReviewItemFilter = { kind };
+  const ownNarrowing = narrowingOfKind(kind);
   const items = selectItems(result.data, ownNarrowing);
   // Narrowed BY WHAT THIS BLOCK RENDERS, not by the URL: the same object the
   // selection above ran with is what the predicate discounts, so the two
-  // cannot come to disagree about what this block already excludes. On
-  // `/queues?kind=decision` — the Dashboard's own zero-decisions link — the
-  // `kind` facet removes not one row from the decision block, so that block
-  // reads exactly as it does unfiltered, while the signal block beside it
-  // (which the same facet really did empty) still names its scope
-  // (admin-window/BUG-0129).
+  // cannot come to disagree about what this block already excludes. That
+  // object is every facet value the kind IMPLIES, not just the kind itself
+  // (`narrowingOfKind`) — on `/queues?kind=decision` (the Dashboard's own
+  // zero-decisions link), `/queues?shape=entity_link_source_pattern` and
+  // `/queues?queue=entity_link` (both one click away on this page's own chip
+  // row) the named facet removes not one row from the block it selects, so
+  // that block reads exactly as it does unfiltered — while a facet that really
+  // does empty a block (`?kind=signal` on the decisions, `?queue=data_conflict`
+  // on the signals) still makes it name its scope (admin-window/BUG-0129,
+  // admin-window/BUG-0131).
   const narrowed = isNarrowed(filter, ownNarrowing);
   // The read succeeded either way, so it produced a figure either way. An
   // empty queue differs from a full one ONLY in the rows region, where its
