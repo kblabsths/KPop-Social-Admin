@@ -87,6 +87,19 @@ const FORGED_EDITS: ReadonlyArray<readonly [string, string, string, unknown]> = 
   // On a MAPPED column, so what is refused is the VALUE and not the table.
   ["a json value for a mapped column", "walk_sandbox", "label", { nested: true }],
   ["an array value for a mapped column", "walk_sandbox", "label", ["a", "b"]],
+  // The invisible class — campaign admin-window/BUG-0095. What THIS tier can
+  // say about them is the wire claim and only that: a value with nothing
+  // visible in it, sent at a mapped column of a `not null` one, is never
+  // answered 2xx by the app as built. WHY it is refused is not readable here
+  // (the gate fails closed under the DB sentinels, as the preamble states);
+  // that the route turns each into a CLEAR rather than storing it as content
+  // is pinned where the writer is observable, in
+  // `tests/offline/edit/route.test.ts`. They are here because a body carrying
+  // a raw Cf character has to survive the trip through JSON, Node's decoder
+  // and the handler at all — which is a property only a real request has.
+  ["a zero-width space for a mapped not-null column", "walk_sandbox", "label", "\u200b"],
+  ["a padded word joiner for the same column", "walk_sandbox", "label", "  \u2060  "],
+  ["a BOM for a mapped column of a resolver-owned table", "events", "title", "\ufeff"],
 ];
 
 describe("the record PATCH route over http", () => {

@@ -24,11 +24,13 @@ import {
   type Status,
   confirmationDelayMs,
   editHint,
+  committedValue,
   focusVerdict,
   reduceEdit,
   selectOnOpen,
 } from "@/components/EditableCell";
-import { EM_DASH } from "@/lib/format";
+import { EM_DASH, isAbsent } from "@/lib/format";
+import { hasVisibleContent } from "@/lib/verdict/decision";
 
 import { classesOf, h, render, tagsOf, textOf } from "./markup";
 
@@ -1035,6 +1037,97 @@ function spyField(value: string) {
     value: () => value,
   };
 }
+
+/* ── what an edit commits ──────────────────────────────────────────────────
+ *
+ * campaign admin-window/BUG-0095. The cell used to decide blank with
+ * `draft.trim() === ""`, which knows only the Unicode `White_Space` set — so a
+ * draft of U+200B ZERO WIDTH SPACE, U+2060 WORD JOINER, U+00AD SOFT HYPHEN or
+ * U+FEFF (what a paste out of a web page or a PDF carries) committed as
+ * CONTENT, while `isAbsent` — asking the app's ONE definition of blank — drew
+ * that same value as the em dash. QA measured it on staging: the record page
+ * showed no value and the column held one code point; on the `not null`
+ * `walk_sandbox.label` the paste also answered 200 where an ordinary clear
+ * answers Postgres 23502.
+ *
+ * Typing into a field is a browser fact this tier cannot produce (environment
+ * node, `renderToStaticMarkup`, no jsdom — STACK.md §4), which is why the
+ * decision is an exported unit: `committedValue` is pinned here exactly as
+ * `focusVerdict` and `selectOnOpen` pin theirs, and the same class is pinned
+ * at the route — the contract — in `tests/offline/edit/route.test.ts`.
+ */
+
+describe("an edit commits what a person could read, and nothing else", () => {
+  /** The class of ink-less drafts, each on its own and each padded. */
+  const INVISIBLE = ["\u200b", "\u2060", "\u00ad", "\ufeff", "\u3164", "  \u200b  ", "   ", ""];
+
+  it("commits a draft with nothing visible in it as the clear it looks like", () => {
+    for (const draft of INVISIBLE) {
+      const seen = JSON.stringify(draft);
+      // The app's own answer about this string on the surface it renders on —
+      // which is what the commit must agree with.
+      expect(isAbsent(draft), seen).toBe(true);
+      expect(committedValue(draft), seen).toBeNull();
+    }
+  });
+
+  it("commits a draft with anything visible in it, byte-identical but for its ends", () => {
+    // The fixtures it must NOT flag, or it says nothing (LESSONS 3): the
+    // invisible characters are an absence only when they are ALL there is, and
+    // U+2800 BRAILLE PATTERN BLANK is an assigned printable character the one
+    // definition rules as content.
+    for (const draft of ["\u200bBLACKPINK\u200b", "\u2800", "0", "a", " x "]) {
+      const seen = JSON.stringify(draft);
+      expect(hasVisibleContent(draft), seen).toBe(true);
+      expect(isAbsent(draft), seen).toBe(false);
+      expect(committedValue(draft), seen).toBe(draft.trim());
+    }
+    // Padding a real value is still stripped at the ends, as it always was.
+    expect(committedValue("  BLACKPINK  ")).toBe("BLACKPINK");
+    expect(committedValue("\n line one\n line two \n")).toBe("line one\n line two");
+  });
+
+  it("decides through the app's one definition, not through a second copy of it", () => {
+    // The whole point of one definition, stated as an identity rather than as
+    // two lists: for ANY draft, committing null and `hasVisibleContent` saying
+    // "nothing to read" are the same answer. A future edit that reintroduces
+    // `trim()` breaks this on a character neither list above happens to name —
+    // U+115F HANGUL CHOSEONG FILLER and U+FE0F VARIATION SELECTOR-16 are here
+    // for exactly that.
+    for (const draft of [...INVISIBLE, "\u200bBLACKPINK\u200b", "\u2800", "0", " x ", "\u115f", "\ufe0f"]) {
+      const seen = JSON.stringify(draft);
+      expect(committedValue(draft) === null, seen).toBe(!hasVisibleContent(draft));
+    }
+  });
+
+  it("agrees with the SURFACE over the class this bug arrived as", () => {
+    // The disagreement admin-window/BUG-0095 is: a draft the page draws as an
+    // absence must not commit as content. Asserted over the ink-less class
+    // rather than over every string, because `isAbsent` deliberately says one
+    // thing more than the one definition does — it also calls a bare EM DASH
+    // an absence, since that is what `format.ts`'s own helpers RETURN for a
+    // null (`count(null)`), so a cell that typed the dash still commits it.
+    // That divergence is `isAbsent`'s and is not this ticket's to settle.
+    for (const draft of INVISIBLE) {
+      const seen = JSON.stringify(draft);
+      expect(isAbsent(draft), seen).toBe(true);
+      expect(committedValue(draft), seen).toBeNull();
+    }
+    expect(isAbsent(EM_DASH)).toBe(true);
+    expect(committedValue(EM_DASH)).toBe(EM_DASH);
+  });
+
+  it("draws the dash for the value it just committed, rather than an empty target", () => {
+    // The end of the round trip at this tier: a cleared cell renders as an
+    // absence, which is the same thing the operator saw before they saved.
+    const html = render(
+      h(EditableCell, { value: committedValue("\u200b"), onSave: noop, label: "label of walk_sandbox" }),
+    );
+    expect(html).toContain(EM_DASH);
+    expect(html).not.toContain("\u200b");
+  });
+});
+
 
 describe("a cell opens with its value selected, so a retype replaces", () => {
   it("hands the field the select-on-open behaviour, on the input and the textarea alike", () => {

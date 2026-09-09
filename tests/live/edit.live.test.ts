@@ -1151,6 +1151,75 @@ describe("the walk sandbox", () => {
     });
   }
 
+  /**
+   * An invisible-only value is the ABSENCE it renders as, against the real
+   * PostgREST — campaign admin-window/BUG-0095.
+   *
+   * QA measured the defect here, on this row: `{"field":"note","value":"\u200b"}`
+   * answered 200 and the column came back holding one code point, `200b`, while
+   * the record page drew the em dash over it; on the `not null` `label` the same
+   * paste answered 200 where an ordinary clear answers `23502`, so the paste was
+   * a way around a refusal the database exists to make. Only a live test can
+   * close that: an offline stub cannot produce the not-null violation, and it is
+   * the violation — not a status — that says the clear really reached the column.
+   *
+   * Both halves of the fix's choice are asserted: the app CLEARS rather than
+   * refuses, so a nullable column empties to the app's one absence marker and a
+   * required one meets the database's own words.
+   */
+  it("clears a nullable column and meets the database's refusal on a required one", async (ctx) => {
+    const skip = await sandboxSkip();
+    if (skip !== null) ctx.skip(skip);
+
+    const config = EDIT_CONFIG[SANDBOX_TABLE];
+    const id = SANDBOX_WALK_KEY;
+    /** The class as an operator's paste delivers it: alone, and padded. */
+    const INVISIBLE = ["\u200b", "\u2060", "\u00ad", "\ufeff", "\u3164", "  \u200b  "];
+
+    try {
+      for (const sent of INVISIBLE) {
+        const seen = JSON.stringify(sent);
+
+        // Nullable: the save lands as the CLEAR it looks like, the column is
+        // null in this file's own read, and the page draws the one absence
+        // marker — the same thing the operator saw in the field.
+        expect(await save(id, "note", sent), `note ${seen}`).toEqual({
+          ok: true,
+          value: null,
+        });
+        expect((await wholeRow(config, id)).note, `note ${seen}`).toBeNull();
+        expect(cellText(await sandboxMarkup(id), "note"), `note ${seen}`).toBe(EM_DASH);
+
+        // Required: the refusal is the DATABASE's, in its own words, and the
+        // standing value is untouched on the row and on the page. This is the
+        // 200 QA measured, gone.
+        const before = await wholeRow(config, id);
+        const outcome = await save(id, "label", sent);
+        expect(outcome.ok, `label ${seen}: ${JSON.stringify(outcome)}`).toBe(false);
+        const said = outcome.ok ? "" : outcome.message;
+        expect(said, `label ${seen}`).toContain(NOT_NULL_VIOLATION);
+        expect(said, `label ${seen}`).toContain("label");
+        expect(await wholeRow(config, id), `label ${seen}`).toEqual(before);
+        expect(cellText(await sandboxMarkup(id), "label"), `label ${seen}`).toBe(
+          String(before.label),
+        );
+      }
+
+      // The fixture this must NOT flag, or it says nothing (LESSONS 3): a value
+      // with anything visible in it is still stored, and stored BYTE-IDENTICAL
+      // — the zero-width padding included. This is a blankness test, never a
+      // sanitiser.
+      const padded = `\u200b${COERCION_PROBE} note\u200b`;
+      expect(await save(id, "note", padded), "padded").toEqual({
+        ok: true,
+        value: padded,
+      });
+      expect((await wholeRow(config, id)).note, "padded").toBe(padded);
+    } finally {
+      await resetSandbox(independentClient());
+    }
+  });
+
   describe("the absence branch", () => {
     /**
      * The skip is not dead code (criterion 4): it is exercised here on a

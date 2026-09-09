@@ -279,6 +279,35 @@ describe("a mapped column of a resolver-owned table", () => {
     }
   });
 
+  /**
+   * An invisible-only value IS a clear on this path too — campaign
+   * admin-window/BUG-0095.
+   *
+   * The route decides blank once, in `parseBody`, so a value with nothing
+   * visible in it arrives at both arms of the branch as the null it reads as.
+   * On the override arm that meets `decisionRefusals` invariant 5 exactly as
+   * an explicit clear does: named, 400, before the function — never an
+   * admin-tier OBSERVATION carrying a value nobody could read into the
+   * pipeline's canonical store.
+   */
+  it("refuses an invisible-only value as the clear it is, not as an override", async () => {
+    for (const value of ["\u200b", "\u2060", "\u00ad", "\ufeff", "\u3164", "  \u200b  ", "   "]) {
+      const seen = JSON.stringify(value);
+      const { status, text } = await patch("events", { field: "title", value });
+      expect(status, seen).toBe(400);
+      expect(JSON.parse(text).refusals, seen).toContain("value_payload_missing");
+      expect(settleReviewItem, seen).not.toHaveBeenCalled();
+      expect(updateRecordField, seen).not.toHaveBeenCalled();
+    }
+    // The fixture this must NOT flag, or it says nothing (LESSONS 3): a value
+    // with visible content still settles, byte-identical.
+    const { status } = await patch("events", { field: "title", value: "\u200bBLACKPINK\u200b" });
+    expect(status).toBe(200);
+    expect(settleReviewItem).toHaveBeenCalledTimes(1);
+    const [, decision] = settleReviewItem.mock.calls[0] as [unknown, { value: { value: unknown } }];
+    expect(decision.value.value).toBe("\u200bBLACKPINK\u200b");
+  });
+
   it("answers a malformed id without settling anything", async () => {
     const { status } = await patch("events", { field: "title", value: "x" }, "walk-1");
     expect(status).toBe(404);
@@ -879,12 +908,15 @@ describe("the handler refuses a forged edit and attempts no write", () => {
    * test's. What may not stand is storing as content what the app renders as
    * absence.
    *
-   * **Strict pin for admin-window/BUG-0095**, watched RED as a plain `it()` on
-   * the landed tree: `"\u200b": status 200, wrote "\u200b"`. `it.fails` is
-   * strict in Vitest — the day the route stops storing it, this turns red and
-   * sends the reader to the ticket; flip it back to `it()` with the fix.
+   * **QA's strict `it.fails` pin for admin-window/BUG-0095** — watched RED on
+   * the landed tree as `"\u200b": status 200, wrote "\u200b"`, and a plain
+   * `it()` again since the fix: `parseBody` decides blank with
+   * `hasVisibleContent` rather than `=== ""`, so the app CLEARS the column —
+   * the second of the two answers this test allows. On a `not null` column
+   * that clear is then refused by the database (23502), which is the refusal
+   * the invisible paste used to walk around.
    */
-  it.fails("does not store as content a value every surface draws as an absence", async () => {
+  it("does not store as content a value every surface draws as an absence", async () => {
     const { isAbsent } = await import("@/lib/format");
     for (const value of ["\u200b", "\u2060", "\u00ad", "\ufeff", "\u3164", "  \u200b  "]) {
       const seen = JSON.stringify(value);
@@ -896,6 +928,27 @@ describe("the handler refuses a forged edit and attempts no write", () => {
         { [seen]: status >= 400 || wrote === null },
         `${seen}: status ${status}, wrote ${JSON.stringify(wrote)}`,
       ).toEqual({ [seen]: true });
+      updateRecordField.mockReset();
+      updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
+    }
+  });
+
+  /**
+   * The same hole, reached the way only a FORGED body can — campaign
+   * admin-window/BUG-0095.
+   *
+   * `EditableCell` never sends `"   "`: its own commit trims. A hand-written
+   * PATCH does, and the route is the CONTRACT while the cell is the courtesy
+   * (admin-window/BUG-0089's thesis), so the route must answer it without the
+   * cell's help. One definition of blank closes both cases at once — this is
+   * that claim, and it fails the day the route starts asking `=== ""` again.
+   */
+  it("clears the column for a whitespace-only value a forged body can send", async () => {
+    for (const value of ["   ", "\t\n", "\u00a0", "\u3000"]) {
+      const seen = JSON.stringify(value);
+      const { status } = await patch("walk_sandbox", { field: "label", value });
+      expect(status, seen).toBe(200);
+      expect(updateRecordField.mock.calls[0]?.[2], seen).toBeNull();
       updateRecordField.mockReset();
       updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
     }
