@@ -8,7 +8,7 @@ import {
   writePathFor,
 } from "@/lib/edit/config";
 import { T } from "@/lib/db/tables";
-import { EM_DASH, isAbsent } from "@/lib/format";
+import { EM_DASH, counted, isAbsent } from "@/lib/format";
 import { isRecordId } from "@/lib/db/records";
 import {
   invalidUuidSyntax,
@@ -1955,6 +1955,190 @@ describe("the regime note", () => {
       expect(text.split(table).length - 1, `${table} is said more than once`).toBe(1);
       // ...and the app's own sentence is still there after it.
       expect(text.slice(table.length).trim().length, table).toBeGreaterThan(40);
+    }
+  });
+});
+
+/* ── the scope of the field table ─────────────────────────────────────────── */
+
+/**
+ * The field table draws a SUBSET of the row's columns, and says so — campaign
+ * admin-window/BUG-0126, from both M2 user-sims.
+ *
+ * Priya read a `venues.timezone` claim on the signal page and then found no
+ * timezone line on the venue record; Devin found no line for `events.status`
+ * after Cycles had shown him a `column "venue" does not exist` error. Nothing
+ * on the page separated the three states that share "no line here": a column
+ * that is null (which HAS a line, and a dash), a column the map does not carry,
+ * and a column the database does not have. The map's subset is Ben's ruling of
+ * 2026-09-02 and is not the defect — the silence about it was.
+ *
+ * These assertions pin the LINE's behaviour, never its wording: that it is said
+ * once per drawn table, that its figure is the number of lines the table
+ * actually drew (LESSONS 2 — a figure reads the same narrowing the surface
+ * renders), that it names the table in the face the heading gives it (Voice
+ * bar 5), that it names no column at all, and that it is absent wherever no
+ * field table was drawn.
+ */
+describe("the scope of the field table", () => {
+  /** Every rendering of the scope line, whitespace-normalised. */
+  function scopeLine(markup: string): string[] {
+    const $ = cheerio.load(markup);
+    return $('[data-note="drawn-columns"]')
+      .toArray()
+      .map((node) => $(node).text().replace(/\s+/g, " ").trim());
+  }
+
+  it("says once, on every mapped table, how many columns the table below draws", async () => {
+    // Both regimes, so this is not one side's guard wearing a loop (LESSONS 3).
+    expect(
+      new Set(
+        EDITABLE_TABLES.map((table) => writePathFor(EDIT_CONFIG[table].regime)),
+      ).size,
+    ).toBeGreaterThan(1);
+    for (const table of EDITABLE_TABLES) {
+      const markup = await renderRecord(table);
+      const said = scopeLine(markup);
+      // Once per record — never per row, never twice.
+      expect(said.length, table).toBe(1);
+      const drawn = lines(markup);
+      expect(drawn.length, table).toBeGreaterThan(1);
+      // The figure carries its noun, from the app's one counting helper, so
+      // the copy and the count cannot drift apart.
+      expect(said[0], table).toContain(counted(drawn.length, "column"));
+      // ...and it is a sentence about the scope, not a bare figure.
+      expect(said[0].length, table).toBeGreaterThan(60);
+    }
+  });
+
+  it("counts the lines the table drew, not the columns the map lists", async () => {
+    // The read is what the page answers for. The fixture row carries a column
+    // outside the map, which the surface draws as a read-only line — so a line
+    // that recited `mappedColumns` would state a number one short of the rows
+    // an operator can count on screen.
+    for (const table of EDITABLE_TABLES) {
+      const markup = await renderRecord(table);
+      const drawn = lines(markup).length;
+      expect(drawn, table).toBe(mappedColumns(EDIT_CONFIG[table]).length + 1);
+      expect(scopeLine(markup)[0], table).toContain(counted(drawn, "column"));
+      expect(scopeLine(markup)[0], table).not.toContain(
+        counted(mappedColumns(EDIT_CONFIG[table]).length, "column"),
+      );
+    }
+  });
+
+  it("names the table in the face the heading above it uses, verbatim", async () => {
+    for (const table of EDITABLE_TABLES) {
+      const $ = cheerio.load(await renderRecord(table));
+      const note = $('[data-note="drawn-columns"]');
+      expect(note.length, table).toBe(1);
+      const named = note
+        .find("span")
+        .toArray()
+        .filter((element) => $(element).text() === table);
+      expect(named.length, `${table} is set in one element of its own`).toBe(1);
+      const heading = $("h1")
+        .find("span")
+        .toArray()
+        .filter((element) => $(element).text() === table);
+      expect(heading.length, `${table} names itself in the heading`).toBe(1);
+      expect(faceOf(classesOf($(named[0]))), table).toEqual(
+        faceOf(classesOf($(heading[0]))),
+      );
+      // ...and the agreement is not the note drifting into the machine's face:
+      // the words the app wrote are drawn in something the identifier is not.
+      expect(faceOf(classesOf($(named[0]))), table).not.toEqual(
+        faceOf(classesOf(note)),
+      );
+    }
+  });
+
+  it("is drawn in the same prose as the page's other notes", async () => {
+    // The yardstick is the page's own dash legend, so nothing here pins a
+    // face, a type step or an ink: one line, no card, no colour, no icon.
+    const $ = cheerio.load(await renderRecord("events"));
+    const legend = $('[data-note="provenance-absence"]');
+    expect(legend.length).toBe(1);
+    const note = $('[data-note="drawn-columns"]');
+    expect(classesOf(note)).toEqual(classesOf(legend));
+    expect(note.is("p")).toBe(true);
+    expect(note.find("svg, img").length).toBe(0);
+  });
+
+  it("stands inside the Fields section, above the table and never in a row", async () => {
+    for (const table of EDITABLE_TABLES) {
+      const markup = await renderRecord(table);
+      const $ = cheerio.load(markup);
+      expect($('[data-surface="fields"] [data-note="drawn-columns"]').length, table).toBe(1);
+      expect($('tbody [data-note="drawn-columns"]').length, table).toBe(0);
+      expect($('td [data-note="drawn-columns"]').length, table).toBe(0);
+      // Above the table the operator is about to read, not under it.
+      expect(
+        markup.indexOf('data-note="drawn-columns"'),
+        table,
+      ).toBeLessThan(markup.indexOf("<tbody"));
+    }
+  });
+
+  it("claims nothing about the columns it does not draw", async () => {
+    // It cannot: the page never read them. So it names a count and no column —
+    // not the drawn ones (which are on screen), and above all not the absent
+    // ones, whose names this page has no source for.
+    for (const table of EDITABLE_TABLES) {
+      const markup = await renderRecord(table);
+      const said = scopeLine(markup)[0];
+      for (const line of lines(markup)) {
+        expect(said, `${table} enumerates ${line.name}`).not.toContain(line.name);
+      }
+      // Exactly one figure in the sentence: the number of columns drawn. A
+      // second one could only be a claim about columns the page never read.
+      expect(said.match(/\d+/g), table).toEqual([String(lines(markup).length)]);
+    }
+  });
+
+  it("leaves a null value its dash and the line that says what a dash means", async () => {
+    // The scope line answers "why is there no line", never "why is this line
+    // empty" — the two states keep their two renderings.
+    const markup = await renderRecord("events", {
+      events: { data: { ...scriptedRecord("events"), title: null } },
+      field_provenance: complete([]),
+      sources: complete([]),
+      event_listings: { data: { event_id: IDS.events, venue_name: VENUE_NAME } },
+    });
+    expect(lineFor(markup, "title").value).toContain(EM_DASH);
+    expect(scopeLine(markup).length).toBe(1);
+    expect(cheerio.load(markup)('[data-note="provenance-absence"]').length).toBe(1);
+    // ...and the null column is still counted: it has a line.
+    expect(scopeLine(markup)[0]).toContain(counted(lines(markup).length, "column"));
+  });
+
+  it("says nothing where no field table was drawn", async () => {
+    const table = DIRECT_WRITE_TABLE;
+    // The address is not an id at all.
+    expect(
+      scopeLine(await renderRecord(table, defaultScript(table), "not-an-id")),
+    ).toEqual([]);
+    // The table answered and holds no such row.
+    expect(
+      scopeLine(
+        await renderRecord(table, { ...defaultScript(table), [table]: { data: null } }),
+      ),
+    ).toEqual([]);
+    // The read was refused, and the table is not in the database at all.
+    for (const failure of [
+      { error: permissionDenied(table) },
+      { error: tableNotInSchemaCache(table) },
+    ]) {
+      const markup = await renderRecord(table, {
+        ...defaultScript(table),
+        [table]: failure,
+      });
+      expect(lines(markup)).toEqual([]);
+      expect(scopeLine(markup)).toEqual([]);
+      // ...and the page is not silent: the leg still reports for itself.
+      expect(
+        cheerio.load(markup)('[data-state="error"], [data-state="not_provisioned"]').length,
+      ).toBeGreaterThan(0);
     }
   });
 });

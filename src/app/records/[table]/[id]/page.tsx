@@ -16,7 +16,7 @@ import {
   writePathFor,
   type TableEditConfig,
 } from "@/lib/edit/config";
-import { EM_DASH } from "@/lib/format";
+import { EM_DASH, counted } from "@/lib/format";
 
 /**
  * The edit surface for one canonical record — campaign admin-window/TASK-0018.
@@ -192,6 +192,66 @@ function ProvenanceLegend() {
       {" "}in Provenance means no field provenance is recorded for that field:
       the value has no source behind it, rather than a source this page failed
       to read.
+    </p>
+  );
+}
+
+/**
+ * What the field table below is a table OF, said once above it — campaign
+ * admin-window/BUG-0126, from both M2 user-sims.
+ *
+ * The page draws the columns the ONE map names for this table (`mappedColumns`,
+ * Ben's ruling of 2026-09-02) plus whatever else the read handed back, and it
+ * used to say nothing about that being a set. So three states shared the one
+ * rendering the Feel's Emptiness principle forbids them to share — nothing on
+ * the page: a column that is null (which does have a line, and a dash in it), a
+ * column this window deliberately does not draw, and a column the database does
+ * not have. Priya was shown a `venues.timezone` claim on the signal page and
+ * then found no timezone line on the venue record; Devin found no line for
+ * `events.status` a page after Cycles had shown him `column "venue" does not
+ * exist`. Neither could tell which of the three they were looking at.
+ *
+ * The subset itself is right and is not what changed here. What was missing is
+ * a legend, exactly as it was for the dash one column over (`ProvenanceLegend`,
+ * admin-window/BUG-0053), and this is that legend for the table as a whole.
+ *
+ * Four things about it are deliberate:
+ *
+ *  - the figure is the number of lines the table ACTUALLY DREW, handed in from
+ *    the same array the table is built from — never `mappedColumns(config)`
+ *    recited a second time. A read that hands back a column outside the map
+ *    draws a read-only line for it (`fields.ts`), and a sentence reciting the
+ *    map would then state a number one short of the rows on screen (LESSONS 2:
+ *    a figure reads the same narrowing the surface renders);
+ *  - it names NO column. Not the drawn ones — they are on screen, and the line
+ *    is a statement about the set, not a second copy of it — and above all not
+ *    the absent ones: this page never read them, so it has no source for their
+ *    names, their number, or why they are out. Saying any of that would be the
+ *    page inventing a fact about a read it did not make;
+ *  - the closing clause is about what the ABSENCE of a line means, and stops
+ *    exactly there. "This page does not draw it" is a fact about the window; a
+ *    claim that the column exists, or does not, would be a fact about the
+ *    database that nothing here established;
+ *  - it stands only where a field table stands. A failed read, an absent table,
+ *    an unknown id and a malformed address draw no lines at all, and a sentence
+ *    about the columns below it would describe nothing on screen — the same
+ *    gate the dash legend keeps, for the same reason. It rides INSIDE the body
+ *    it describes so the two cannot come apart.
+ */
+function DrawnColumns({
+  config,
+  drawn,
+}: {
+  config: TableEditConfig;
+  /** How many lines the table below this sentence draws. */
+  drawn: number;
+}) {
+  return (
+    <p data-note="drawn-columns" className="type-body text-ink-secondary">
+      {`These ${counted(drawn, "column")} are the ones Admin works with for `}
+      <TableName config={config} />
+      {`: a column with no line here is one this page does not draw, and its ` +
+        `absence says nothing about what the database holds.`}
     </p>
   );
 }
@@ -473,19 +533,26 @@ export default async function RecordPage({
       />
     );
   } else {
+    // Shaped once, drawn twice: the table renders these lines and the sentence
+    // above it counts them, so no figure on this screen can be a second
+    // reading of the map (admin-window/BUG-0126).
+    const fields = recordFields(
+      config,
+      result.data,
+      provenance.fields,
+      reference.name,
+      access,
+    );
     body = (
-      <RecordFields
-        table={config.table}
-        id={id}
-        fields={recordFields(
-          config,
-          result.data,
-          provenance.fields,
-          reference.name,
-          access,
-        )}
-        choices={choices?.window ?? null}
-      />
+      <>
+        <DrawnColumns config={config} drawn={fields.length} />
+        <RecordFields
+          table={config.table}
+          id={id}
+          fields={fields}
+          choices={choices?.window ?? null}
+        />
+      </>
     );
   }
 
