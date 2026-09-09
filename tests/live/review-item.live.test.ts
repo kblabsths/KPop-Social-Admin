@@ -153,6 +153,30 @@ async function anyItem(): Promise<Item | null | "absent"> {
   return rows.find((row) => row.evidence.length > 0) ?? rows[0] ?? null;
 }
 
+/**
+ * An item whose subject IS a source — the `entity_link` source-pattern SIGNAL,
+ * which is the one shape staging actually holds and the only one with the two
+ * header links. Module-level so the close's oracle and the header's read the
+ * same row through one query rather than two copies of it.
+ */
+async function sourcePatternItem(): Promise<Item | null | "absent"> {
+  const { data, error } = await independentClient()
+    .from(T.reviewItems)
+    .select(
+      "review_item_id, queue, source_id, domain, entity_id, field, summary, severity, folded_count, evidence",
+    )
+    .not("source_id", "is", null)
+    .order("last_evidence_at", { ascending: false })
+    .order("review_item_id", { ascending: true })
+    .limit(1);
+  if (error) {
+    const code = (error as { code?: string }).code ?? "";
+    if (code === "PGRST205" || code === "42P01") return "absent";
+    throw new Error(`the source-pattern query failed: ${(error as Error).message}`);
+  }
+  return ((data ?? []) as Item[])[0] ?? null;
+}
+
 /** The observations the test resolves for itself, by the ids the item carries. */
 async function observationsOf(ids: readonly string[]) {
   if (ids.length === 0) return [];
@@ -484,6 +508,52 @@ describe("the close against staging", () => {
     expect($(CLOSE).find("[data-close-note]")).toHaveLength(1);
   });
 
+  it("grades the signal item's page: not_provisioned in the close, the rest of it not", async () => {
+    // The one shape staging really holds, and the one whose two dispositions
+    // M2 fills (campaign admin-window/TASK-0051). The STATE KIND is named
+    // before any number is compared, and the absence is established by THIS
+    // test's own read of the object — never inferred from "no control
+    // rendered" (ARCHITECTURE.md §10, rule 5).
+    const item = await sourcePatternItem();
+    if (item === "absent" || item === null) return;
+    expect(shapeOfItem(item)).toBe("entity_link_source_pattern");
+
+    const markup = await itemMarkup(item.review_item_id);
+    const $ = cheerio.load(markup);
+
+    // The header read answered: the close's state is the CLOSE's own read and
+    // never leaks upward into the anatomy M1 shipped.
+    assertState(markup, HEADER, "ok");
+    // The evidence surface is graded against the ids this item carries, so a
+    // signal with nothing resolvable is `empty` rather than a failure — and an
+    // `error` is a failure either way.
+    await gradeEvidence(markup, item);
+
+    if (await objectIsAbsent(T.verdicts)) {
+      assertState(markup, CLOSE, "not_provisioned");
+      expect($(CLOSE).text()).toContain(T.verdicts);
+      // Neither disposition is offered, because the object that records one
+      // is not in this database (spec §10: no control calls a missing
+      // function, and nothing queues the write).
+      expect($(CLOSE).find("[data-close-action]")).toHaveLength(0);
+      // And the anatomy above it still says what M1 said.
+      expect(textOf(markup)).toContain(item.summary);
+      expect($("[data-severity]").attr("data-severity")).toBe(item.severity);
+      expect($("[data-folds]").attr("data-folds")).toBe(String(item.folded_count));
+      return;
+    }
+
+    // Installed: this shape's close offers exactly its two dispositions, in
+    // spec §7's order, with both machine names verbatim (§11).
+    assertState(markup, CLOSE, "ok");
+    expect(
+      $(CLOSE)
+        .find("[data-close-action]")
+        .toArray()
+        .map((element) => $(element).attr("data-close-action")),
+    ).toEqual(["fixed", "wont_fix"]);
+  });
+
   it("never settles anything by rendering the page", async () => {
     const item = await anyItem();
     if (item === "absent" || item === null) return;
@@ -522,25 +592,6 @@ describe("the close against staging", () => {
  * independently of `lib/db/review-item.ts`.
  */
 describe("the header names its source, against staging", () => {
-  /** An item whose subject IS a source — the only shape with these links. */
-  async function sourcePatternItem(): Promise<Item | null | "absent"> {
-    const { data, error } = await independentClient()
-      .from(T.reviewItems)
-      .select(
-        "review_item_id, queue, source_id, domain, entity_id, field, summary, severity, folded_count, evidence",
-      )
-      .not("source_id", "is", null)
-      .order("last_evidence_at", { ascending: false })
-      .order("review_item_id", { ascending: true })
-      .limit(1);
-    if (error) {
-      const code = (error as { code?: string }).code ?? "";
-      if (code === "PGRST205" || code === "42P01") return "absent";
-      throw new Error(`the source-pattern query failed: ${(error as Error).message}`);
-    }
-    return ((data ?? []) as Item[])[0] ?? null;
-  }
-
   it("says the name the registry holds, in both links and in the cells below", async () => {
     const item = await sourcePatternItem();
     if (item === "absent" || item === null) return;
