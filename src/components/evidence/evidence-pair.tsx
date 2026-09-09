@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { orDash, relativeAge, type Timestamp } from "@/lib/format";
+import { isAbsent, orDash, relativeAge, type Timestamp } from "@/lib/format";
 import { cx } from "@/components/ui/cx";
 import { DATA_MUTED, Identifier } from "@/components/ui/identifier";
 
@@ -50,6 +50,31 @@ function CardValue({ value }: { value: string | null }) {
   );
 }
 
+/**
+ * One machine value on the claim line — the source's own name, the source's
+ * tier — in the identifier primitive's isolated box
+ * (admin-window/BUG-0151, DEBT-0011 criteria 2 and 4).
+ *
+ * Both are foreign text: `claim.source` is the source's own name straight out
+ * of the pipeline and `claim.tier` is `sources.tier`, and
+ * `src/components/ui/identifier.tsx` names exactly that class of value as what
+ * the primitive is for ("a source's own name"). Hand-facing them with
+ * `DATA_MUTED` left them un-isolated inside the line's own bidi paragraph, so
+ * an unterminated U+202E in a source name drew the app's OWN separators, tier
+ * and relative age backwards: `ticketmaster · official · 14d ago` reached
+ * Chromium as `ticketoga d41 · laiciffo · retsam`. `<Identifier muted>` renders
+ * the same class pair `DATA_MUTED` spells, so this changes the face by exactly
+ * `dir="ltr"` — the isolation, and nothing else.
+ *
+ * An ABSENT value is not a machine value at all: it is the app's own absence
+ * element (`orDash`, admin-window/BUG-0134), so it is returned unwrapped —
+ * isolating the app's own dash would be the same category error in reverse.
+ */
+function ClaimValue({ value }: { value: string | null }) {
+  if (isAbsent(value)) return <>{orDash(value)}</>;
+  return <Identifier muted>{value}</Identifier>;
+}
+
 export function EvidencePair({
   claims,
   canonical,
@@ -71,8 +96,22 @@ export function EvidencePair({
           >
             <span className="type-micro text-ink-secondary">contender</span>
             <CardValue value={claim.value} />
+            {/*
+              * The wrapper keeps `DATA_MUTED`: after the values moved into
+              * their own isolated boxes it inks only the app's OWN words on
+              * this line — the two separators and the relative age — which is
+              * precisely what the primitive's doc reserves the class for
+              * ("the app's own transient words that happen to share the face
+              * … they are not identifiers and they are not isolated"). Its one
+              * prohibition, "a machine identifier takes `<Identifier muted>`
+              * instead — never this", is now honoured: no machine value on
+              * this line wears the class.
+              */}
             <span className={DATA_MUTED}>
-              {claim.source} · {orDash(claim.tier)} ·{" "}
+              <ClaimValue value={claim.source} />
+              {" · "}
+              <ClaimValue value={claim.tier} />
+              {" · "}
               <span title={age.title || undefined}>{orDash(age.text)}</span>
             </span>
             {claim.action ? <div className="flex gap-2 pt-1">{claim.action}</div> : null}
