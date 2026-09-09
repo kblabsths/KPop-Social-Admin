@@ -344,13 +344,15 @@ export const REFERENCE_FIELDS: readonly string[] = [
  * Is this fact a reference — a field that links rows rather than holding a
  * scalar?
  *
- * The question a surface asks BEFORE it offers a control for a fact. A
- * reference's value is an entity, so it travels in the `ref` slot
- * (`link_entity`, or an `override` carrying the picker's choice) and never in
- * the `value` slot that `supply_value` is the sole filler of
- * (`PAYLOAD_SLOTS` below). A free-text control offered for one would settle a
- * `venue_id` fact with typed text, which is the write §8 exists to prevent
- * ("the apply links rows … instead of writing text").
+ * The question a surface asks BEFORE it offers a control for a fact, and the
+ * question `decisionRefusals` invariant 6 asks after it — a surface withholding
+ * the control is courtesy, the refusal is the contract. A reference's value is
+ * an entity, so it travels in the `ref` slot (`link_entity`, or an `override`
+ * carrying the picker's choice) and never in the `value` slot that
+ * `supply_value` is the sole filler of (`PAYLOAD_SLOTS` below). A free-text
+ * control offered for one would settle a `venue_id` fact with typed text, which
+ * is the write §8 exists to prevent ("the apply links rows … instead of writing
+ * text").
  */
 export function isReferenceField(domain: string, field: string): boolean {
   return REFERENCE_FIELDS.includes(factKey(domain, field));
@@ -371,6 +373,11 @@ type PayloadSlot = "observation_id" | "value" | "ref";
  * record surface, never as a `supply_value` — which is why widening this to a
  * ref-carrying `supply_value` would be a decision for the architect, not an
  * adaptation here (admin-window/TASK-0042).
+ *
+ * This table is about the SLOT and knows nothing about the FACT: `["value"]`
+ * says a scalar may ride in `value`, not that the field this decision names
+ * holds a scalar at all. Invariant 7 is the half that reads the fact
+ * (admin-window/BUG-0091).
  */
 const PAYLOAD_SLOTS: Readonly<Record<VerdictAction, readonly PayloadSlot[]>> = {
   choose_claimed_value: ["observation_id"],
@@ -430,6 +437,23 @@ function present(text: unknown): boolean {
 }
 
 /**
+ * The `domain.field` a payload envelope names, or null when it names no fact a
+ * predicate could answer about.
+ *
+ * Both parts must really be STRINGS. `isReferenceField` interpolates them, and
+ * an envelope carrying `{domain: {}, field: []}` would otherwise be asked about
+ * under a coerced spelling — a graded body is never trusted to hold the type it
+ * declares (admin-window/BUG-0079). A fact this cannot read is simply not a
+ * reference, and the other invariants keep grading it.
+ */
+function factOf(value: unknown): { domain: string; field: string } | null {
+  const holder = asRecord(value);
+  const { domain, field } = holder;
+  if (typeof domain !== "string" || typeof field !== "string") return null;
+  return { domain, field };
+}
+
+/**
  * Every reason this decision may not be sent, as NAMED refusals — empty when
  * the decision is well-formed.
  *
@@ -447,13 +471,13 @@ function present(text: unknown): boolean {
  * omitting `value` on a settle, or `review_item_id` on an override, is the
  * ordinary JSON for that decision and refuses nothing.
  *
- * The six invariants, in the order they are checked:
+ * The seven invariants, in the order they are checked:
  *
  *  1. `unknown_action` — the action is not one of the eight. Data can arrive
  *     from a form as any string, so this is checked at runtime rather than
  *     left to the type. When it fires, the action-dependent invariants (2-5)
  *     are NOT evaluated — there is no rule to evaluate them against — while
- *     `actor` still is, because invariant 6 does not depend on the action.
+ *     `actor` still is, because invariant 7 does not depend on the action.
  *  2. `review_item_required` / `review_item_forbidden` — `review_item_id` is
  *     null on `override`, and a non-blank id on every other action. An id of
  *     nothing but ink-less characters — spaces, or the invisible ones
@@ -474,7 +498,18 @@ function present(text: unknown): boolean {
  *  5. `value_payload_missing` / `value_payload_ambiguous` /
  *     `value_payload_not_allowed` — exactly one payload slot is filled, and it
  *     is one this action may fill (`PAYLOAD_SLOTS`).
- *  6. `actor_required` — a blank actor, by the same visible-content test.
+ *  6. `reference_field_not_scalar` — the `value` slot is filled for a fact
+ *     `isReferenceField` calls a REFERENCE. A reference links rows
+ *     (`events.venue` -> `venue_id`), so its value is an entity and travels in
+ *     `ref`; typed text in `value` is the write spec §8 exists to prevent
+ *     ("the apply links rows … instead of writing text"). Asked of the FACT,
+ *     not of the action, so it holds for a hand-crafted `supply_value`, for the
+ *     scalar arm of an `override`, and for any later action that fills that
+ *     slot — while `link_entity` and a ref-carrying `override` are untouched,
+ *     because neither fills `value` (admin-window/BUG-0091). Until this landed
+ *     the rule lived only in the close slot's list of controls, which FEAT-0010
+ *     calls the courtesy layer (admin-window/BUG-0087).
+ *  7. `actor_required` — a blank actor, by the same visible-content test.
  *     `verdicts.actor` is not null, and the verdict log is the record of every
  *     admin data action.
  *
@@ -522,9 +557,22 @@ export function decisionRefusals(decision: VerdictDecision): readonly string[] {
       else if (usedSlots.length > 1) refusals.push("value_payload_ambiguous");
       else if (!slots.includes(usedSlots[0])) refusals.push("value_payload_not_allowed");
     }
+
+    // 6. A reference is LINKED, never typed. Read off the fact rather than off
+    //    the action, and independent of invariant 5's arithmetic: a filled
+    //    `value` slot on a reference fact is refused whether it is the only
+    //    filled slot, one of two, or in a slot this action may not fill at all.
+    //    An envelope that is not an envelope reaches `factOf` as no fact and is
+    //    invariant 4's business, not this one's.
+    if (isValueObject(value) && filled(value, "value")) {
+      const fact = factOf(value);
+      if (fact !== null && isReferenceField(fact.domain, fact.field)) {
+        refusals.push("reference_field_not_scalar");
+      }
+    }
   }
 
-  // 6. Who decided. Independent of the action, so it is checked either way.
+  // 7. Who decided. Independent of the action, so it is checked either way.
   if (!present(body.actor)) refusals.push("actor_required");
 
   return refusals;

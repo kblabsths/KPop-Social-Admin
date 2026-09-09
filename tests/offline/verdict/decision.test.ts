@@ -17,10 +17,11 @@ import { codeText, sourceFiles } from "../source-tree";
  * every other M2 surface builds and the §9 handoff artifact's SQL reads.
  *
  * The bar this file holds: one WELL-FORMED decision per action refuses
- * nothing, and each of the six invariants of `decisionRefusals` has an input
+ * nothing, and each of the seven invariants of `decisionRefusals` has an input
  * it MUST flag beside one it must NOT (LESSONS 3 — a guard proved on one
  * fixture can be vacuous). The action set is iterated, never hand-listed, so a
- * ninth action cannot arrive unseen.
+ * ninth action cannot arrive unseen, and the reference fields are iterated off
+ * `REFERENCE_FIELDS` for the same reason.
  */
 
 /** A `VerdictValue` with every payload slot empty; each fixture fills one. */
@@ -97,6 +98,16 @@ const VALUE_CARRYING: readonly VerdictAction[] = [
 const SETTLE_ONLY: readonly VerdictAction[] = VERDICT_ACTIONS.filter(
   (action) => !VALUE_CARRYING.includes(action),
 );
+
+/**
+ * The two keys a `VerdictValue` spells a fact with, out of the `domain.field`
+ * spelling `REFERENCE_FIELDS` carries — so every reference fixture below is
+ * iterated off that constant rather than naming a spelling it may later drop.
+ */
+function factKeys(spelling: string): Pick<VerdictValue, "domain" | "field"> {
+  const [domain, field] = spelling.split(".");
+  return { domain, field };
+}
 
 /** The one fixture that is not keyed by action: an override of a REFERENCE. */
 const REFERENCE_OVERRIDE: VerdictDecision = decisionOf({
@@ -602,7 +613,152 @@ describe("invariant 5 — exactly one payload slot, and one this action may fill
   });
 });
 
-describe("invariant 6 — who decided", () => {
+describe("invariant 6 — a reference is linked, never typed", () => {
+  /**
+   * Spec §8's rule — "the apply links rows (`venue_id`, `event_performers`)
+   * instead of writing text" — asked of the FACT, in the leaf, which FEAT-0010
+   * calls the contract as against the form's courtesy
+   * (admin-window/BUG-0091). Until this landed the only thing withholding a
+   * free-text control for a reference fact was the close slot's list of
+   * controls (admin-window/BUG-0087), so a hand-crafted `supply_value` settled
+   * `venue_id` with a venue NAME.
+   */
+  const TYPED = "The Forum, Inglewood";
+
+  it("flags a supply_value carrying text for every reference fact", () => {
+    for (const spelling of REFERENCE_FIELDS) {
+      const decision = decisionOf({
+        action: "supply_value",
+        value: valueOf({ ...factKeys(spelling), value: TYPED }),
+      });
+      expect(decisionRefusals(decision), spelling).toContain("reference_field_not_scalar");
+    }
+  });
+
+  it("flags the scalar arm of an override on a reference fact", () => {
+    // `override` is the one action with two legal slots, and only ONE of them
+    // is how a reference travels.
+    for (const spelling of REFERENCE_FIELDS) {
+      const decision = decisionOf({
+        action: "override",
+        review_item_id: null,
+        value: valueOf({ ...factKeys(spelling), value: TYPED }),
+      });
+      expect(decisionRefusals(decision), spelling).toContain("reference_field_not_scalar");
+    }
+  });
+
+  it("flags a filled value slot on a reference fact whatever the action", () => {
+    // Read off the fact rather than off the action, so a ninth action cannot
+    // arrive with a hole in this rule — and so a slot the action may not fill
+    // at all is still refused for the reason it is really wrong.
+    for (const spelling of REFERENCE_FIELDS) {
+      for (const action of VERDICT_ACTIONS) {
+        const decision = decisionOf({
+          action,
+          review_item_id: action === "override" ? null : "22222222-2222-4222-8222-222222222222",
+          note: "the operator's reason",
+          value: valueOf({ ...factKeys(spelling), value: TYPED }),
+        });
+        expect(
+          decisionRefusals(decision),
+          `${action} / ${spelling}`,
+        ).toContain("reference_field_not_scalar");
+      }
+    }
+  });
+
+  it("flags a falsy typed value too — `false`, `0` and an empty string fill the slot", () => {
+    for (const typed of [false, 0, ""] as const) {
+      const decision = decisionOf({
+        action: "supply_value",
+        value: valueOf({ ...factKeys("events.venue"), value: typed }),
+      });
+      expect(decisionRefusals(decision), JSON.stringify(typed)).toContain(
+        "reference_field_not_scalar",
+      );
+    }
+  });
+
+  it("does not flag a reference carried the way a reference travels", () => {
+    // The must-NOT half (LESSONS 3): the entity id in `ref`, from the picker
+    // or from the link action, refuses NOTHING at all.
+    for (const spelling of REFERENCE_FIELDS) {
+      const linked = decisionOf({
+        action: "link_entity",
+        value: valueOf({ ...factKeys(spelling), ref: "55555555-5555-4555-8555-555555555555" }),
+      });
+      const overridden = decisionOf({
+        action: "override",
+        review_item_id: null,
+        value: valueOf({ ...factKeys(spelling), ref: "55555555-5555-4555-8555-555555555555" }),
+      });
+      for (const decision of [linked, overridden]) {
+        expect(decisionRefusals(decision), `${decision.action} / ${spelling}`).toEqual([]);
+      }
+    }
+  });
+
+  it("does not flag adopting a claimed observation for a reference fact", () => {
+    // The control admin-window/BUG-0087 left standing on a reference conflict:
+    // the value adopted is an observation's, never text an operator typed.
+    for (const spelling of REFERENCE_FIELDS) {
+      const decision = decisionOf({
+        action: "choose_claimed_value",
+        value: valueOf({
+          ...factKeys(spelling),
+          observation_id: "33333333-3333-4333-8333-333333333333",
+        }),
+      });
+      expect(decisionRefusals(decision), spelling).toEqual([]);
+    }
+  });
+
+  it("does not flag a typed value on a scalar fact", () => {
+    // Every well-formed decision, plus the two facts whose names come CLOSE to
+    // a reference: the canonical column `venue_id` and the same field under
+    // another domain. The predicate answers about the whole fact.
+    for (const decision of [...Object.values(WELL_FORMED), REFERENCE_OVERRIDE]) {
+      expect(decisionRefusals(decision), decision.action).not.toContain(
+        "reference_field_not_scalar",
+      );
+    }
+    const nearMisses: readonly (readonly [string, string])[] = [
+      ["events", "venue_id"],
+      ["venues", "venue"],
+      ["events", "title"],
+      ["groups", "performers"],
+    ];
+    for (const [domain, field] of nearMisses) {
+      const decision = decisionOf({
+        action: "supply_value",
+        value: valueOf({ domain, field, value: TYPED }),
+      });
+      expect(decisionRefusals(decision), `${domain}.${field}`).toEqual([]);
+    }
+  });
+
+  it("grades a fact whose domain and field are not strings, and never throws", () => {
+    // A parsed body holds whatever the client sent: an envelope naming its
+    // fact with a number and an array must not be asked about under a coerced
+    // spelling, and must not crash the one pre-database guard
+    // (admin-window/BUG-0079).
+    const body = {
+      action: "supply_value",
+      review_item_id: "22222222-2222-4222-8222-222222222222",
+      actor: "admin@example.test",
+      note: null,
+      value: { domain: 7, entity_id: {}, field: ["events", "venue"], value: TYPED, ref: null },
+    } as unknown as VerdictDecision;
+    let refusals: readonly string[] = ["not run"];
+    expect(() => {
+      refusals = decisionRefusals(body);
+    }).not.toThrow();
+    expect(refusals).not.toContain("reference_field_not_scalar");
+  });
+});
+
+describe("invariant 7 — who decided", () => {
   it("flags a blank actor", () => {
     for (const blank of ["", "   ", "\n"]) {
       const decision = decisionOf({ ...WELL_FORMED.settle, actor: blank });

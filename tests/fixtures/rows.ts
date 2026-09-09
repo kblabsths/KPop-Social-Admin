@@ -740,7 +740,7 @@ export function verdictValue(overrides: Override<VerdictValue> = {}): VerdictVal
  * — not a migration — is what this shape is true against
  * (`src/lib/verdict/decision.ts`, ARCHITECTURE.md §9.2).
  * `tests/offline/verdict/decision.test.ts` keeps its own eight-action table on
- * purpose: it grades the leaf's six invariants exhaustively, one well-formed
+ * purpose: it grades the leaf's seven invariants exhaustively, one well-formed
  * fixture per action, which is a different job from handing one valid decision
  * to a caller that is testing something else.
  */
