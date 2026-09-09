@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   readComplete,
-  readRows,
   readRowsByIds,
   type DbCountedResponse,
   type DbResponse,
@@ -219,52 +218,94 @@ export function readSourceNames(
 }
 
 /**
- * The newest `runs` row for one source NAME — a WINDOW read (§4.3 kind 2)
- * whose window is exactly one row: the newest run this source has.
+ * Every run the table holds, newest first within each source NAME — **ONE
+ * request**, whatever the registry holds (campaign admin-window/BUG-0139).
  *
- * `ok` carries `null` when the table holds no run for that name.
+ * A COMPLETE read (ARCHITECTURE.md §4.3 kind 1): `{ count: "exact" }`, a total
+ * server order, and `.range(0, cap - 1)` through `readComplete`, so the `ok`
+ * array is the WHOLE `runs` table or the read refuses naming `runs` with the
+ * real number. That is what keeps "this source has never run" an absence in a
+ * COMPLETE SET rather than a row that fell off the end of a window — the one
+ * thing the dash on this page may not mean, and the objection the per-source
+ * `limit 1` seek this replaces was written to answer.
  *
- * **Why one read per source rather than one read over all of them.** A single
- * `.in("source", names)` scan ordered by `started_at desc` under a row cap
- * cannot tell "this source has never run" from "this source's runs fell off
- * the end of the window" — a busy source's runs would push a quiet source's
- * last run out, and the quiet source would then render the dash, which is the
- * one thing the dash may not mean here. PostgREST cannot express
- * `distinct on (source)`, and there is no aggregate beyond `count`
- * (`STACK.md` §2). So the bound is per source and exact: `limit(1)`, ordered
- * newest first, and the cost is one round trip per registered source — a
- * registry whose size `readSources` has already capped.
+ * The order is the fold's contract: `source` groups the names, `started_at`
+ * descending puts each name's newest run first, and `run_id` — a uuid v7 —
+ * breaks a tie in the same direction time runs, so the order is total and the
+ * first row carrying a name is that name's newest run.
+ *
+ * **Unnarrowed on purpose.** `.in("source", names)` would need the registry's
+ * names first, which is the sequential round trip this replaces, and above
+ * `ID_CHUNK` names it would have to chunk — at which point "exactly one
+ * request" stops being true. Needing no name, it runs CONCURRENTLY with the
+ * registry read. A run whose `source` matches no registered source is simply
+ * matched by nobody (there is no foreign key to prevent one — §6 trap 6).
+ *
+ * The cost of the ruling, recorded where the next reader meets it: `runs` is
+ * one row per adapter invocation and has no retention policy, so on the day it
+ * outgrows `ROW_CAP` this read refuses and the page says so with the real
+ * number instead of rendering a registry whose last-run column is quietly
+ * wrong. The fix for that day is a retention policy or a per-source seek, and
+ * both live in the scraper repo.
  */
-export async function readLastRun(
-  source: string,
-  db?: SupabaseClient,
-): Promise<DbResult<LastRunRow | null>> {
-  const rows = await readRows<LastRunRow>(
+export function readLastRuns(db?: SupabaseClient): Promise<DbResult<LastRunRow[]>> {
+  return readComplete<LastRunRow>(
     T.runs,
-    (client) =>
+    (client, cap) =>
       client
         .from(T.runs)
-        .select(LAST_RUN_COLUMNS)
-        // The name comparison migration `20260829000001` made the only
-        // possible join: there is no key to join on, by design.
-        .eq("source", source)
+        .select(LAST_RUN_COLUMNS, { count: "exact" })
+        .order("source", { ascending: true })
         .order("started_at", { ascending: false })
         // `run_id` is a uuid v7, so it breaks a tie on `started_at` in the
         // same direction time runs; the order is total either way.
         .order("run_id", { ascending: false })
-        .limit(1) as unknown as PromiseLike<DbResponse<LastRunRow[]>>,
+        .range(0, cap - 1) as unknown as PromiseLike<DbCountedResponse<LastRunRow[]>>,
     db,
   );
-  if (rows.kind !== "ok") return rows;
-  return { kind: "ok", data: rows.data[0] ?? null };
+}
+
+/**
+ * The newest run per source NAME, out of that complete set — a pure fold, no
+ * read and no clock (campaign admin-window/BUG-0139).
+ *
+ * **The rows' ORDER is the input, not a hint.** `readLastRuns` asks the server
+ * for `source asc, started_at desc, run_id desc`, so the newest run for a name
+ * is the FIRST row carrying it and every later row with that name is an older
+ * run of the same source. Nothing is re-sorted here: the comparison that
+ * decides "newest" is the database's, over its own column types, and the chain
+ * that asks for it is pinned in `tests/offline/sources/read.test.ts`. A name
+ * the set holds no row for is simply absent from the map, which is how the
+ * caller tells "has never run" from a run it could not read.
+ */
+export function lastRunBySource(
+  runs: readonly LastRunRow[],
+): ReadonlyMap<string, LastRunRow> {
+  const newest = new Map<string, LastRunRow>();
+  for (const run of runs) {
+    if (!newest.has(run.source)) newest.set(run.source, run);
+  }
+  return newest;
 }
 
 /**
  * Every source, with its last run — the Sources page's read.
  *
- * Both legs report separately, exactly as `listClaims` does: a
- * `not_provisioned` from either names THAT object (`sources` or `runs`), so
- * the page's card says which one is absent rather than blaming the other.
+ * **Two requests, not one per source** (campaign admin-window/BUG-0139): the
+ * registry and the whole run log, issued TOGETHER because neither needs
+ * anything from the other, then matched by NAME in this one place (§6 trap 6:
+ * there is no key to join on, by design). It was `readSources()` followed by a
+ * `readLastRun` per registered source, awaited in a loop — four sequential
+ * round trips for three sources and thirty-one for thirty, which is most of
+ * the 2.0-2.3 s Ben measured on the walk instance.
+ *
+ * Both legs report separately, exactly as before: a `not_provisioned` from
+ * either names THAT object (`sources` or `runs`), so the page's card says
+ * which one is absent rather than blaming the other, and the registry's
+ * refusal is the one returned when both fail — the first refusal wins, as it
+ * did when the legs ran in sequence. A half-filled list where some rows
+ * silently carry no run would present a read failure as "this source has never
+ * run".
  *
  * The read is deliberately NOT narrowed by the page's filter: `selectSources`
  * below does every narrowing, so the source column offers every source the
@@ -274,19 +315,18 @@ export async function readLastRun(
 export async function listSources(
   db?: SupabaseClient,
 ): Promise<DbResult<SourceState[]>> {
-  const sources = await readSources(db);
+  const [sources, runs] = await Promise.all([readSources(db), readLastRuns(db)]);
   if (sources.kind !== "ok") return sources;
+  if (runs.kind !== "ok") return runs;
 
-  const states: SourceState[] = [];
-  for (const row of sources.data) {
-    const lastRun = await readLastRun(row.source, db);
-    // The first refusal wins and is returned as it stands: a half-filled list
-    // where some rows silently carry no run would present a read failure as
-    // "this source has never run".
-    if (lastRun.kind !== "ok") return lastRun;
-    states.push({ ...row, lastRun: lastRun.data });
-  }
-  return { kind: "ok", data: states };
+  const newest = lastRunBySource(runs.data);
+  return {
+    kind: "ok",
+    data: sources.data.map((row) => ({
+      ...row,
+      lastRun: newest.get(row.source) ?? null,
+    })),
+  };
 }
 
 /* ── the one predicate ───────────────────────────────────────────────────── */

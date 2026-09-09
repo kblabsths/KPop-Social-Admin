@@ -38,8 +38,8 @@ import {
   PENDING_CLAIMS,
   PENDING_OBSERVATIONS,
   REJECTIONS,
-  RUNS,
   SOURCES,
+  runsResponse,
 } from "../sources/population";
 import type { Script, ScriptedResponse, StubClient } from "../../fixtures/stub-client";
 
@@ -246,7 +246,9 @@ export function populatedScript(surface?: Surface): Script {
     },
     [T.sources]: { data: [...SOURCES], count: SOURCES.length },
     [T.resolutionRuns]: { data: [...CYCLES], count: CYCLES.length },
-    [T.runs]: { data: [...RUNS], count: RUNS.length },
+    // In the order the one `runs` request asks the server for them, which is
+    // the answer a database would give it (admin-window/BUG-0139).
+    [T.runs]: runsResponse(),
     [T.fieldProvenance]: { data: [...APPLIES], count: APPLIES.length },
     [T.events]: { data: [eventRow()], count: 1 },
     [T.eventListings]: { data: [eventListingRow()], count: 1 },

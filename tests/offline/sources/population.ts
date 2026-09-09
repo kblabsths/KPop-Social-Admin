@@ -17,7 +17,8 @@ import {
  * Every row comes from `tests/fixtures/rows.ts`, so no column here is
  * invented; this file only chooses the SHAPE of the world — three sources in
  * three lifecycles, one of them never run, a run belonging to no registered
- * source, and a run still in flight.
+ * source, a run still in flight, and two runs starting at the same instant so
+ * the tie has to be broken.
  *
  * The timestamps that must fall inside a GAUGE WINDOW are relative to now
  * rather than fixed: the two gauges window 90 days back from the real clock,
@@ -95,13 +96,20 @@ export const RUN = {
   ticketmasterNew: "01920000-0000-7000-8000-000000000702",
   fandomInFlight: "01920000-0000-7000-8000-000000000703",
   orphan: "01920000-0000-7000-8000-000000000704",
+  /**
+   * Started at the same INSTANT as `fandomInFlight` and finished — the tie the
+   * `run_id` order breaks (campaign admin-window/BUG-0139). Its id sorts
+   * BELOW the in-flight run's, so a fold that broke the tie the other way
+   * would show fandom as `succeeded` instead of running.
+   */
+  fandomTied: "01920000-0000-7000-8000-000000000700",
 } as const;
 
 /**
- * Four runs, three sources' worth of them — `bandsintown` has none, and
- * `eventbrite` has one while having no `sources` row at all (a run against an
- * unregistered source is exactly why `runs.source` has no foreign key,
- * migration `20260829000001`).
+ * Five runs, three sources' worth of them — `bandsintown` has none, `fandom`
+ * has two that start at the same instant, and `eventbrite` has one while
+ * having no `sources` row at all (a run against an unregistered source is
+ * exactly why `runs.source` has no foreign key, migration `20260829000001`).
  */
 export const RUNS: RunRow[] = [
   runRow({
@@ -129,6 +137,14 @@ export const RUNS: RunRow[] = [
     failure_class: null,
   }),
   runRow({
+    run_id: RUN.fandomTied,
+    source: "fandom",
+    // The same instant as the in-flight run above: the tie `run_id` breaks.
+    started_at: "2026-09-01T05:00:00Z",
+    ended_at: "2026-09-01T05:03:00Z",
+    outcome: "succeeded",
+  }),
+  runRow({
     run_id: RUN.orphan,
     source: "eventbrite",
     started_at: "2026-09-01T06:00:00Z",
@@ -141,16 +157,74 @@ export const RUNS: RunRow[] = [
  * to one answer, or it proves nothing).
  */
 export function newestRunFor(name: string): RunRow | null {
-  const held = RUNS.filter((run) => run.source === name).sort(
-    (a, b) => Date.parse(b.started_at) - Date.parse(a.started_at),
-  );
+  const held = RUNS.filter((run) => run.source === name).sort(newestFirst);
   return held[0] ?? null;
 }
 
-/** What a `runs` read filtered to one name returns, newest first, capped at one. */
-export function runsResponseFor(name: string): RunRow[] {
-  const newest = newestRunFor(name);
-  return newest === null ? [] : [newest];
+/**
+ * Newest first for one source: `started_at` descending, and a tie broken by
+ * the uuid v7 `run_id` — the same direction time runs, which is why the id
+ * decides it. Written from the schema, so it is this file's own statement of
+ * "newest" rather than the module's.
+ */
+function newestFirst(a: RunRow, b: RunRow): number {
+  const byInstant = Date.parse(b.started_at) - Date.parse(a.started_at);
+  if (byInstant !== 0) return byInstant;
+  return b.run_id.localeCompare(a.run_id);
+}
+
+/**
+ * Every run, in the order the ONE `runs` request returns them — `source`
+ * ascending, then newest first within each name (campaign
+ * admin-window/BUG-0139).
+ *
+ * A stub answers with whatever it is scripted with, so this is where the
+ * database's own ordering is stated: the read asks the SERVER for this order
+ * (pinned in `read.test.ts` off the recorded chain) and the fold takes the
+ * first row per name, so a fixture in any other order would be a database that
+ * does not exist.
+ */
+export const RUNS_AS_READ: RunRow[] = [...RUNS].sort(
+  (a, b) => a.source.localeCompare(b.source) || newestFirst(a, b),
+);
+
+/** What the one `runs` read returns: the whole table, ordered, with its count. */
+export function runsResponse(): { data: RunRow[]; count: number } {
+  return { data: [...RUNS_AS_READ], count: RUNS.length };
+}
+
+/**
+ * A registry of `count` sources, each with one run — the fixture that would
+ * have caught the per-source loop (campaign admin-window/BUG-0139).
+ *
+ * The names sort in the order the reads ask for, so the rows are already the
+ * order both queries return them in.
+ */
+export function manySources(count: number): { sources: SourceRow[]; runs: RunRow[] } {
+  const sources: SourceRow[] = [];
+  const runs: RunRow[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const suffix = String(index).padStart(4, "0");
+    const name = `source-${suffix}`;
+    sources.push(
+      sourceRow({
+        source_id: `01920000-0000-7000-8000-0000000b${suffix}`,
+        source: name,
+        lifecycle: "active",
+        tier: "standard",
+      }),
+    );
+    runs.push(
+      runRow({
+        run_id: `01920000-0000-7000-8000-0000000c${suffix}`,
+        source: name,
+        started_at: "2026-09-01T01:00:00Z",
+        ended_at: "2026-09-01T01:01:00Z",
+        outcome: "succeeded",
+      }),
+    );
+  }
+  return { sources, runs };
 }
 
 /* ── the pending claims behind the awaiting-row trend ────────────────────── */
