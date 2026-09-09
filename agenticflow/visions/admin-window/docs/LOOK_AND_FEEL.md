@@ -224,7 +224,16 @@ rows carry no editor and none returns.
 is interactive: active = accent fill + white; inactive = chrome fill +
 secondary text. A *badge* is not interactive and is always chrome fill with
 primary text (tier, kind, bucket, shape) — **only severity and health carry
-color**, so a page of sources is not a rainbow.
+color**, so a page of sources is not a rainbow. **A badge never sits inside a
+link, and a link never wears one**: a label that navigates carries the app's one
+link spelling on the words themselves — accent ink plus underline — and any
+badge classifying it sits beside it, never around it. Where one noun both
+classifies and navigates (`bucket` on `/claims`: a chip in the claim list, a
+link in the bucket table), the classifying instance is the badge and the
+navigating instance is the link. Walkable: no anchor inside `main` contains a
+chip-filled span. *(Earned by BUG-0113 — a badge inside the bucket anchor
+re-inked the words and its chrome fill painted over the underline, so five
+navigating buckets rendered byte-identical to unlinked chips.)*
 
 **The four states, mandatory on every data surface** — a surface that can
 render rows must render all four:
