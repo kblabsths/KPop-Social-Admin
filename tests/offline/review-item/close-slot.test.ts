@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { VerdictAction } from "@/lib/verdict/decision";
 import { FN, T } from "@/lib/db/tables";
 import {
   CloseSlot,
@@ -21,7 +22,7 @@ import {
   submitSettlement,
   type ActionSpec,
 } from "@/components/review/close/actions";
-import { SHAPES, type ReviewItemRow } from "@/lib/review/shapes";
+import { SHAPES, type ReviewItemRow, type Shape } from "@/lib/review/shapes";
 import { h, render } from "../ui/markup";
 import {
   ID,
@@ -294,7 +295,25 @@ describe("the close slot with the verdict log present", () => {
 /* ── the by-shape map ────────────────────────────────────────────────────── */
 
 describe("the shape's action list", () => {
-  it("answers for every shape, and offers nothing while the function is absent", () => {
+  /**
+   * The actions each shape offers over NO evidence, as the shape modules stand
+   * today — each written by its own ticket, in its own worktree.
+   *
+   * `data_conflict` is filled (campaign admin-window/TASK-0050): with no
+   * evidence card there is no claim to adopt, and its other two actions stand
+   * regardless, so the operator can still supply a value or leave the fact as
+   * it is. Its own suite grades the whole list
+   * (`tests/offline/review-item/conflict-actions.test.ts`). The other two ship
+   * an empty list until their tickets fill them, and this table is what those
+   * tickets amend — one place, rather than a claim repeated per shape.
+   */
+  const OFFERED: Readonly<Record<Shape, readonly VerdictAction[]>> = {
+    data_conflict_fact: ["supply_value", "keep_current"],
+    entity_link_fact: [],
+    entity_link_source_pattern: [],
+  };
+
+  it("answers for every shape, with the actions that shape offers and no other", () => {
     const items: Record<string, ReviewItemRow> = {
       data_conflict_fact: reviewItemDataConflict(),
       entity_link_fact: reviewItemEntityLink(),
@@ -302,9 +321,14 @@ describe("the shape's action list", () => {
     };
     for (const shape of SHAPES) {
       const actions = ACTIONS_BY_SHAPE[shape]({ item: items[shape], evidence: [] });
-      // Empty is the TRUTHFUL state, not a placeholder: no shape may offer a
-      // control that would call a function this database does not have.
-      expect(actions, shape).toEqual([]);
+      expect(actions.map((spec) => spec.action), shape).toEqual(OFFERED[shape]);
+      // Whatever a shape offers, the frame's own invariant holds: a settle-only
+      // action carries no payload and a value-carrying one carries an envelope,
+      // which is `decisionRefusals` invariant 4 seen from this side.
+      for (const spec of actions) {
+        expect(typeof spec.label, `${shape} ${spec.action}`).toBe("string");
+        expect(spec.label.length, `${shape} ${spec.action}`).toBeGreaterThan(0);
+      }
     }
     // Total by construction: every shape has an entry, so a fourth shape is a
     // compile error rather than a missing action list.

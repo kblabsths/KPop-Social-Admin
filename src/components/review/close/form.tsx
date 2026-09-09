@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { EditableCell, type SaveOutcome } from "@/components/EditableCell";
 import { Button } from "@/components/ui";
 import type { VerdictAction } from "@/lib/verdict/decision";
 import {
@@ -48,6 +49,17 @@ export type CloseState =
 
 /** Nothing has been pressed yet. */
 export const IDLE_CLOSE_STATE: CloseState = { kind: "idle" };
+
+/**
+ * What a control is told when another settlement is already in flight.
+ *
+ * The buttons are `disabled` for the whole of a write, but the edit cell's
+ * resting control is not — a cell cannot be disabled without dropping focus —
+ * so this is the state's own guard, and it is words rather than silence
+ * because the cell has to be handed an outcome to revert on.
+ */
+const IN_FLIGHT_WORDS =
+  "A settlement is already in flight; wait for it to answer, then try again.";
 
 /**
  * Where focus belongs once a settlement answers — the same rule
@@ -157,6 +169,49 @@ export function SettledNotice({
   );
 }
 
+/**
+ * A control the operator TYPES into — campaign admin-window/TASK-0050, spec
+ * §7's "supply a different value".
+ *
+ * It is the shared edit cell (`EditableCell`, the M1 widget the record surface
+ * already writes through) and NOT a second widget spelling of the same thing:
+ * the resting hairline underline, the select-on-open, "Enter or leaving the
+ * field saves. Escape cancels", the statement of work beside the field and the
+ * focus return all come from that one control, so the two places an operator
+ * types a catalog value behave identically.
+ *
+ * The cell rests EMPTY — its dash — rather than pre-filled with canonical:
+ * this action exists to write a value canonical does not hold, and a cell that
+ * opened holding the current one would settle the item with it on a stray
+ * Enter. The dash is also the app's own invitation to fill a field in.
+ *
+ * What it says beside the cell is the action's own label plus the fact the
+ * value lands on, and the fact is a machine identifier: it renders verbatim in
+ * mono, as its own element, never folded into the sans sentence (§11,
+ * LESSONS 5).
+ *
+ * `onSupply` returns the cell's own outcome, so a refusal reverts the field
+ * and stands in red exactly as a refused record edit does.
+ */
+export function SuppliedControl({
+  spec,
+  onSupply,
+}: {
+  spec: ActionSpec;
+  onSupply: (next: string | null) => Promise<SaveOutcome>;
+}) {
+  return (
+    <span
+      data-close-action={spec.action}
+      className="inline-flex flex-wrap items-baseline gap-2"
+    >
+      <span className="type-body text-ink">{spec.label} for</span>{" "}
+      <span className="type-data text-ink-secondary">{spec.supplies}</span>{" "}
+      <EditableCell value={null} label={spec.supplies ?? spec.label} onSave={onSupply} />
+    </span>
+  );
+}
+
 /** The note field's own words — a hint, not a placeholder inside the field. */
 export function noteHint(actions: readonly ActionSpec[]): string {
   return noteIsRequiredBy(actions)
@@ -184,8 +239,14 @@ export function CloseForm({
     pressed.current?.focus();
   }, [state]);
 
-  async function settle(spec: ActionSpec, control: HTMLButtonElement | null) {
-    if (state.kind === "settling") return;
+  async function settle(
+    spec: ActionSpec,
+    control: HTMLButtonElement | null,
+    supplied: string | null = null,
+  ) {
+    if (state.kind === "settling") {
+      return { ok: false as const, message: IN_FLIGHT_WORDS };
+    }
     pressed.current = control;
 
     // The form's guard, run before the in-flight statement so a refusal that
@@ -193,19 +254,29 @@ export function CloseForm({
     // the contract — `submitSettlement` refuses the same case for any caller,
     // the route's `decisionRefusals` refuses it again, and the function
     // raises — it is what keeps this statement honest.
-    const refusal = closeRefusal(spec, note);
+    const refusal = closeRefusal(spec, note, supplied);
     if (refusal !== null) {
-      setState({ kind: "refused", message: refusalWords(refusal) });
-      return;
+      const message = refusalWords(refusal);
+      setState({ kind: "refused", message });
+      return { ok: false as const, message };
     }
 
     setState({ kind: "settling", action: spec.action });
-    const outcome = await submitSettlement({ reviewItemId, spec, note, fetchImpl: fetch });
+    const outcome = await submitSettlement({
+      reviewItemId,
+      spec,
+      note,
+      supplied,
+      fetchImpl: fetch,
+    });
     setState(
       outcome.ok
         ? { kind: "settled", action: spec.action, label: spec.label }
         : { kind: "refused", message: outcome.message },
     );
+    return outcome.ok
+      ? { ok: true as const }
+      : { ok: false as const, message: outcome.message };
   }
 
   if (state.kind === "settled") {
@@ -233,17 +304,28 @@ export function CloseForm({
       />
       {actions.length === 0 ? null : (
         <div className="flex flex-wrap items-center gap-2">
-          {actions.map((spec, index) => (
-            <Button
-              key={`${spec.action}-${index}`}
-              data-close-action={spec.action}
-              variant={spec.variant ?? "secondary"}
-              disabled={settling}
-              onClick={(event) => void settle(spec, event.currentTarget)}
-            >
-              {spec.label}
-            </Button>
-          ))}
+          {actions.map((spec, index) =>
+            // A control whose payload the operator types is the shared edit
+            // cell; every other control is a button. One list, two renderings,
+            // and the same single request path underneath.
+            spec.supplies === undefined ? (
+              <Button
+                key={`${spec.action}-${index}`}
+                data-close-action={spec.action}
+                variant={spec.variant ?? "secondary"}
+                disabled={settling}
+                onClick={(event) => void settle(spec, event.currentTarget)}
+              >
+                {spec.label}
+              </Button>
+            ) : (
+              <SuppliedControl
+                key={`${spec.action}-${index}`}
+                spec={spec}
+                onSupply={(next) => settle(spec, null, next)}
+              />
+            ),
+          )}
         </div>
       )}
       <CloseStatus state={state} />

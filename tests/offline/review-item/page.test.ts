@@ -894,16 +894,44 @@ describe("the close, with the verdict log absent", () => {
 });
 
 describe("the close, with the verdict log present", () => {
-  it("renders the note field and no action, on every shape", async () => {
-    // The three shape modules ship an empty action list each and are filled by
-    // their own tickets; with none of them filled, the truthful state is the
-    // note field, no control, and a line saying so.
+  /**
+   * What each shape offers once the log is there, as the shape modules stand
+   * today — each filled by its own ticket, in its own worktree.
+   *
+   * `data_conflict` is filled (campaign admin-window/TASK-0050): spec §7's
+   * three, with one `choose_claimed_value` per evidence card, and the conflict
+   * script resolves two. The other two shapes still ship an empty list, and
+   * their own tickets amend this table when they fill it — which is exactly
+   * what this table exists for, rather than one number repeated per shape.
+   */
+  const OFFERED: Readonly<Record<string, readonly string[]>> = {
+    conflict: [
+      "choose_claimed_value",
+      "choose_claimed_value",
+      "supply_value",
+      "keep_current",
+    ],
+    stuck: [],
+    pattern: [],
+  };
+
+  it("renders the note field and this shape's actions, on every shape", async () => {
     for (const [name, script, id] of SHAPED) {
       const $ = cheerio.load(await renderItem(withSettlement(script()), id));
       const close = $(`[data-surface="${CLOSE_HOOK}"]`);
       expect(close.find("[data-close-note]"), name).toHaveLength(1);
-      expect(close.find("[data-close-action]"), name).toHaveLength(0);
-      expect(close.find("button"), name).toHaveLength(0);
+      expect(
+        close
+          .find("[data-close-action]")
+          .toArray()
+          .map((element) => $(element).attr("data-close-action")),
+        name,
+      ).toEqual(OFFERED[name]);
+      // A shape with nothing to offer offers nothing at all — not a disabled
+      // button standing in for a control.
+      if (OFFERED[name].length === 0) {
+        expect(close.find("button"), name).toHaveLength(0);
+      }
       // A read that answered is not an emptiness and not an absence.
       expect(close.find("[data-state]"), name).toHaveLength(0);
     }
