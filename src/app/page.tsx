@@ -586,6 +586,10 @@ export default async function DashboardPage() {
               // Newest first, so the last row is the oldest cycle the read
               // came back with.
               oldest: oldestIn(cycles.data, (row) => row.started_at),
+              // Both panels read their whole table — this page carries no
+              // facet, no filter and no search — so the floor either line
+              // names is the object's own (admin-window/BUG-0114).
+              scope: null,
             })}
             shows={{
               of: "newest",
@@ -616,6 +620,7 @@ export default async function DashboardPage() {
               held: runs.data.length,
               over: RUNS_OBJECT,
               oldest: oldestIn(runs.data, (row) => row.started_at),
+              scope: null,
             })}
             shows={{
               of: "newest",
