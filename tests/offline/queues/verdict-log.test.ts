@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { T } from "@/lib/db/tables";
-import { EM_DASH } from "@/lib/format";
+import { CLAMP_LIMIT, ELLIPSIS, EM_DASH } from "@/lib/format";
 import { VERDICT_ACTIONS } from "@/lib/verdict/decision";
 import { render } from "../ui/markup";
 import { stateOf as surfaceStateOf } from "../../live/parity";
@@ -194,7 +194,10 @@ function cellsOf(markup: string, verdictAction: string) {
  * note, when.
  */
 const ACTOR = 0;
+const ITEM = 2;
+const OBSERVATION = 3;
 const NOTE = 4;
+const WHEN = 5;
 
 /**
  * How many of the APP's dashes a given cell holds — `nullDash`'s marked
@@ -209,6 +212,17 @@ function dashesIn(markup: string, verdictAction: string, at: number): number {
     .find("td")
     .eq(at)
     .find('[aria-label="no value"]').length;
+}
+
+/** The `title` the note cell's own element carries, if it drew one. */
+function noteTitle(markup: string, verdictAction: string): string | undefined {
+  const $ = cheerio.load(markup);
+  return $(`${LOG} [data-verdict-action="${verdictAction}"]`)
+    .closest("tr")
+    .find("td")
+    .eq(NOTE)
+    .find("span")
+    .attr("title");
 }
 
 function windowHooks(markup: string): Record<string, string | undefined> {
@@ -519,6 +533,117 @@ describe("the nulls that are structure, not missing data", () => {
     expect(cellsOf(markup, "link_entity").cells[ACTOR]).toBe(EM_DASH);
     expect(dashesIn(markup, "link_entity", ACTOR)).toBe(1);
     expect(markup).not.toMatch(/<td[^>]*>\s*<\/td>/);
+  });
+
+  /**
+   * The blanks that are not the space bar. `isAbsent` decides on
+   * `String.prototype.trim()`, which strips U+00A0 (a non-breaking space, what
+   * a paste out of a rendered page yields) and U+FEFF (a byte-order mark, what
+   * a paste out of a spreadsheet export yields) along with the ASCII
+   * whitespace the case above covers. Both look blank on screen, so both must
+   * read as the one dash.
+   *
+   * It also grades what the absence guard COSTS: the dashed row's other five
+   * columns are asserted whole in the same breath, because a cell that returns
+   * `null` early is a cell that can take its row's links with it.
+   */
+  it("dashes a note of non-ASCII blanks, and leaves the rest of the row whole", async () => {
+    const blanks = [
+      ["settle", "\u00a0"],
+      ["fixed", "\ufeff\u00a0\ufeff"],
+    ] as const;
+    const markup = await renderQueues(
+      scriptOf(
+        blanks.map(([action, note], index) =>
+          verdictLogEntry({
+            verdict_id: `0192abcd-0000-7000-8000-${String(index).padStart(12, "0")}`,
+            action,
+            note,
+            created_at: new Date(Date.UTC(2026, 8, 8, 11, index)).toISOString(),
+          }),
+        ),
+        OBSERVATIONS,
+      ),
+    );
+
+    for (const [action] of blanks) {
+      const row = cellsOf(markup, action);
+      expect(row.cells[NOTE]).toBe(EM_DASH);
+      expect(dashesIn(markup, action, NOTE)).toBe(1);
+      // …and the note cell is the ONLY thing the guard touched: the actor is
+      // still the actor, both links still lead where they led, the action is
+      // still verbatim, and the instant still renders an age.
+      expect(row.actor).toBe(verdictLogEntry({}).actor);
+      expect(row.item).toBe(verdictLogEntry({}).review_item_id);
+      expect(row.itemHref).toBe(["", "queues", verdictLogEntry({}).review_item_id].join("/"));
+      expect(row.observation).toBe(ID.observationA);
+      expect(row.observationHref).toBe(["", "records", "events", ID.eventEntity].join("/"));
+      for (const column of [ACTOR, ITEM, OBSERVATION, WHEN]) {
+        expect(dashesIn(markup, action, column)).toBe(0);
+      }
+    }
+  });
+
+  /**
+   * Two absences on ONE row, which is the shape a settle from a session with
+   * no email leaves behind (`gate.user?.email ?? ""` in the settle route, with
+   * `body.note` forwarded verbatim). Each absent cell draws exactly one dash
+   * and neither borrows the other's: the row still says which action it was
+   * and still opens the item it settled.
+   */
+  it("dashes actor and note together without dashing the columns that have values", async () => {
+    const BOTH_BLANK = verdictLogEntry({
+      verdict_id: "01920000-0000-7000-8000-000000000816",
+      action: "supply_value",
+      actor: "",
+      note: "\t",
+      created_at: "2026-09-08T05:00:00Z",
+    });
+    const markup = await renderQueues(scriptOf([BOTH_BLANK], OBSERVATIONS));
+    const row = cellsOf(markup, "supply_value");
+
+    expect(row.cells[ACTOR]).toBe(EM_DASH);
+    expect(row.cells[NOTE]).toBe(EM_DASH);
+    expect(dashesIn(markup, "supply_value", ACTOR)).toBe(1);
+    expect(dashesIn(markup, "supply_value", NOTE)).toBe(1);
+    for (const column of [ITEM, OBSERVATION, WHEN]) {
+      expect(dashesIn(markup, "supply_value", column)).toBe(0);
+    }
+    expect(row.itemHref).toBe(["", "queues", BOTH_BLANK.review_item_id].join("/"));
+    expect(markup).not.toMatch(/<td[^>]*>\s*<\/td>/);
+  });
+
+  /**
+   * The other end of the same guard: a note far past the clamp is a note, not
+   * an absence. It renders clamped and marked as clamped, carries the WHOLE of
+   * itself on the element's own title (`clamped`, `lib/format.ts`) so nothing
+   * an admin wrote is lost to the surface, and draws no dash.
+   */
+  it("keeps a note far past the clamp, whole, on its own title, and dashes nothing", async () => {
+    const HUGE = `${"why ".repeat(2500)}end`;
+    const markup = await renderQueues(
+      scriptOf(
+        [
+          verdictLogEntry({
+            verdict_id: "01920000-0000-7000-8000-000000000817",
+            action: "keep_current",
+            note: HUGE,
+            created_at: "2026-09-08T04:00:00Z",
+          }),
+        ],
+        OBSERVATIONS,
+      ),
+    );
+    const shown = cellsOf(markup, "keep_current").cells[NOTE];
+
+    expect(HUGE.length).toBeGreaterThan(CLAMP_LIMIT * 10);
+    expect(shown.length).toBeLessThanOrEqual(CLAMP_LIMIT);
+    expect(shown.endsWith(ELLIPSIS)).toBe(true);
+    expect(HUGE.startsWith(shown.slice(0, -1))).toBe(true);
+    // The whole value survives on the title — the surface clamps what it
+    // DRAWS, never what it holds.
+    expect(noteTitle(markup, "keep_current")).toBe(HUGE);
+    expect(dashesIn(markup, "keep_current", NOTE)).toBe(0);
   });
 });
 
