@@ -497,30 +497,19 @@ describe("the close once the verdict log is installed", () => {
 describe("the link control's picker", () => {
   const { link } = controls();
 
-  /**
-   * The control with its panel open — the state a click produces. `disabled`
-   * is what `CloseForm` passes: false at rest, true while a settlement of
-   * ANY of the shape's controls is in flight.
-   */
-  function opened(query = "", disabled = false): string {
+  /** The control with its panel open — the state a click produces. */
+  function opened(query = ""): string {
     return render(
       h(ChosenControl, {
         spec: link,
         open: true,
         query,
-        disabled,
+        disabled: false,
         onToggle: () => {},
         onQuery: () => {},
         onChoose: () => {},
       }),
     );
-  }
-
-  /** The rows that would still ACT if they were clicked. */
-  function liveRows(markup: string): number {
-    const $ = cheerio.load(markup);
-    return $("li button").filter((_, button) => $(button).attr("disabled") === undefined)
-      .length;
   }
 
   it("offers exactly the rows the read returned, each carrying its own id", () => {
@@ -587,31 +576,6 @@ describe("the link control's picker", () => {
     expect(chosen).toEqual([]);
   });
 
-  it("offers every row at rest, so the claim below cannot pass vacuously", () => {
-    expect(liveRows(opened())).toBe(venueWindow().options.length);
-  });
-
-  /**
-   * QA's pin for campaign admin-window/BUG-0102, written as a plain `it` by
-   * the fix. Before it, `ChosenControl` handed the shared panel a hardcoded
-   * `status: { kind: "idle" }`, so the panel's busy rule
-   * (admin-window/BUG-0097) never fired here: every row stayed live under a
-   * settlement, and the click it was given was dropped in silence at
-   * `settle`'s in-flight guard — no refusal, no status, no note touched.
-   */
-  it("offers no live option while a settlement is in flight", () => {
-    // `open: true, disabled: true` is exactly what `CloseForm` hands this
-    // control while its own state is `settling`.
-    const markup = opened("", true);
-    expect(liveRows(markup)).toBe(0);
-    // Drawn, not gone: the operator keeps the list they were reading and the
-    // panel does not blank itself mid-settlement — going busy is not the same
-    // move as going away (the shared panel's rule, admin-window/BUG-0097).
-    expect(cheerio.load(markup)("li button")).toHaveLength(
-      venueWindow().options.length,
-    );
-  });
-
   it("marks nothing as the current row: this item is here because nothing linked", () => {
     const $ = cheerio.load(opened());
     expect($("[aria-current]")).toHaveLength(0);
@@ -632,12 +596,15 @@ describe("the link control's picker", () => {
    * guard, which returns without setting any state, so the choice is dropped
    * with nothing said.
    *
-   * A STRICT pin (`it.fails`) on admin-window/BUG-0102, observed red as a
-   * plain `it` against the landed tree at 6a93776 before it was pinned: the
-   * day the divergence goes, this reddens as an XPASS and sends the reader
-   * to the ticket. The fix flips it back to `it`.
+   * Landed as a STRICT pin (`it.fails`) on admin-window/BUG-0102, observed red
+   * as a plain `it` against the landed tree at 6a93776; the fix flipped it
+   * back to a plain `it`, having first watched the strict pin redden as an
+   * XPASS against the fixed tree. It now holds the rule for this surface the
+   * way `tests/offline/records/entity-picker.test.ts` holds it for the record
+   * surface: `ChosenControl` hands the shared panel the real status
+   * (`saving` while it is disabled), so the rows go busy and stay drawn.
    */
-  it.fails(
+  it(
     "offers no live option while a settlement is in flight (admin-window/BUG-0102)",
     () => {
       const $ = cheerio.load(
