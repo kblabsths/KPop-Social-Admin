@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T11:26:54Z — do not edit)
+# Tracker index (regenerated 2026-09-09T11:27:07Z — do not edit)
 
 ## open
 - BUG-0111 [P3][bug][M2] The entity picker's saved confirmation never retires — the 1.5s clock lives in EditableCell alone, and the picker renders the same status without one  (scope:src/components/records/entity-picker.tsx,tests/offline/records/entity-picker.test.ts from:designer:endgame-walk)
