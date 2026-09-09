@@ -636,6 +636,63 @@ describe("the link control's picker", () => {
       expect(resting("li button").length).toBe(options.length);
     },
   );
+
+  /**
+   * QA, campaign admin-window/BUG-0102 — the pin above grades the panel's ROWS
+   * (`li button`), which is where the dropped click was. It does not grade the
+   * control's own entry point, and after BUG-0102's fix that entry point is
+   * what the operator actually meets during a settlement: `CloseForm` clears
+   * `choosing` as the settlement goes in flight, so the panel is gone and the
+   * toggle is the only control of this action left on screen. A toggle that
+   * stayed live there would let the operator re-open the picker mid-settlement
+   * and land straight back in the state BUG-0102 was filed about.
+   *
+   * So the rule is graded of the WHOLE control, in both of the states
+   * `CloseForm` can hand it while `settling` is true — panel open (the
+   * component's contract for any caller) and panel closed (what this form now
+   * renders) — with the same two states at rest as the counter-case, or a
+   * control that is dead in every state would pass. Interactivity only: which
+   * buttons can act, never a word or a class.
+   */
+  it("goes inert as a whole while a settlement is in flight, and is live again when none is", () => {
+    function buttons(open: boolean, disabled: boolean) {
+      const $ = cheerio.load(
+        render(
+          h(ChosenControl, {
+            spec: link,
+            open,
+            query: "",
+            disabled,
+            onToggle: () => {},
+            onQuery: () => {},
+            onChoose: () => {},
+          }),
+        ),
+      );
+      const all = $("button").toArray();
+      return {
+        total: all.length,
+        live: all.filter((element) => $(element).attr("disabled") === undefined).length,
+      };
+    }
+
+    for (const open of [true, false]) {
+      const settling = buttons(open, true);
+      const resting = buttons(open, false);
+      // Drawn either way — the same controls exist in both states, so the
+      // assertion below is about acting and not about vanishing.
+      expect(settling.total, `open=${open}`).toBeGreaterThan(0);
+      expect(settling.total, `open=${open}`).toBe(resting.total);
+      // In flight: nothing in this control can act, the toggle included.
+      expect(settling.live, `open=${open}`).toBe(0);
+      // …and the counter-case, or "nothing can act" would pass on a control
+      // that can never act: at rest every one of them can.
+      expect(resting.live, `open=${open}`).toBe(resting.total);
+    }
+    // The open state is the one that carries the rows, so the two states are
+    // not the same assertion twice.
+    expect(buttons(true, false).total).toBeGreaterThan(buttons(false, false).total);
+  });
 });
 
 /* ── one control, one decision, one call ─────────────────────────────────── */
