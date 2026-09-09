@@ -701,6 +701,64 @@ describe("a record URL for a table the edit map does not carry", () => {
   );
 
   /**
+   * admin-window/BUG-0083 — the CASE-VARIANT twin of admin-window/BUG-0081,
+   * on the class admin-window/BUG-0017 exists to close.
+   *
+   * A rewrite `source` is compiled case-insensitively (path-to-regexp, as Next
+   * 16.2.2 configures it) while `editConfigFor` is exact, so the matcher reads
+   * `/records/EVENTS/<id>` as a CONFIGURED table, does not claim it, and the
+   * URL reaches `src/app/records/[table]/[id]/page.tsx` — where the map does
+   * not carry `EVENTS` and `notFound()` throws inside the render shell. The
+   * operator gets the client-rendered `id="__next_error__"` document instead
+   * of the app's framed 404, which is the exact divergence BUG-0081 removed
+   * for encoded spellings.
+   *
+   * The two spellings are the same URI only under encoding, never under case,
+   * so this is not "the same bug": a URI's path is case-SENSITIVE (RFC 3986
+   * §6.2.2.1), which is why `EVENTS` is correctly not a record surface. What
+   * is wrong is only the DOCUMENT it is refused with — every other
+   * not-a-configured-table spelling gets the framed 404.
+   *
+   * Measured on a production build of run/admin-window @ 269bad0, cookie-authed
+   * (`next start --port 8792`, DB pointed at a dead port), 2026-09-08:
+   *   /records/events%20/<id>  -> 404, len 9728, framed (<h1>, nav, no shell)
+   *   /records/EVENTS/<id>     -> 404, len 8004, id="__next_error__", no <h1>
+   *   /records/Events/<id>     -> 404, len 8004, id="__next_error__"
+   *   /records/WALK_SANDBOX/<id> -> 404, len 8016, id="__next_error__"
+   *   /records/EV%65NTS/<id>   -> 404, len 8006, id="__next_error__"
+   *
+   * `it.fails` while the divergence stands — the day the rewrite decides the
+   * miss for a case variant too, this goes red and sends the reader to the
+   * ticket. Block 1b above pins the STATUS of the same URL and deliberately
+   * pins no document shape; this is the shape half, and only this one is
+   * allowed to be red.
+   */
+  it.fails(
+    "BUG-0083: serves the framed 404 for a case variant of a configured table",
+    async () => {
+      const { child } = await startServer();
+      try {
+        const cookie = await signedInCookie();
+        for (const route of [
+          "/records/EVENTS/2f0bc11e",
+          "/records/Events/2f0bc11e",
+          "/records/WALK_SANDBOX/2f0bc11e",
+          "/records/EV%65NTS/2f0bc11e",
+        ]) {
+          const res = await fetch(`${base}${route}`, {
+            headers: { cookie },
+            redirect: "manual",
+          });
+          expect(res.status, route).toBe(404);
+          expectOurNotFound(route, await res.text());
+        }
+      } finally {
+        await stopServer(child);
+      }
+    },
+  );
+
+  /**
    * The rewrite must not reach past the sign-in gate. A stranger asking for an
    * unmapped record URL gets the sign-in page, exactly as they do for every
    * other route — never a 404, which would confirm what does and does not
