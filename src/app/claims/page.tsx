@@ -672,11 +672,26 @@ export default async function ClaimsPage({
                   claims.kind === "error" ? <StateOf result={claims} /> : undefined
                 }
               />
-              <p className="type-body text-ink-secondary">
-                {bucketsNarrowed
-                  ? BUCKET_CAPTION.narrowed
-                  : BUCKET_CAPTION.whole}
-              </p>
+              {/* The caption follows the READ, exactly as the list's window
+                  line one Section down does (ARCHITECTURE.md §4.3, "a window
+                  line states a read that HAPPENED"; admin-window/BUG-0063,
+                  admin-window/BUG-0070, admin-window/BUG-0144). Both arms say
+                  what the figures in this table are figures OF, so over a read
+                  that refused they describe counts nobody produced: the table
+                  draws no bucket row and no count hook, and the sentence still
+                  claims it lists every bucket with every claim in it. Worse
+                  under a facet — a refusal empties both sides of
+                  `bucketsNarrowed`, so the unnarrowed arm is the one that
+                  renders and its "nothing above narrows these counts" denies a
+                  facet the chip bar shows as applied. The refusal card inside
+                  the table is the whole of what this state may say. */}
+              {claims.kind === "ok" ? (
+                <p className="type-body text-ink-secondary">
+                  {bucketsNarrowed
+                    ? BUCKET_CAPTION.narrowed
+                    : BUCKET_CAPTION.whole}
+                </p>
+              ) : null}
             </>
           )}
         </Section>

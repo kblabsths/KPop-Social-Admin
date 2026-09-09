@@ -1497,48 +1497,134 @@ describe("absence and failure", () => {
    * ("drops the whole window line, not just its count, on a read it never
    * made", above; ARCHITECTURE.md §4.3, admin-window/BUG-0063,
    * admin-window/BUG-0070). The caption below the bucket table makes the same
-   * kind of claim — what the figures in that table are figures OF — and it is
-   * rendered for every `kind` but `not_provisioned`, so it stands over an
-   * error card with no bucket row and no count hook beneath it, telling the
-   * operator the table lists every bucket with every claim in it.
+   * kind of claim — what the figures in that table are figures OF — and it was
+   * rendered for every `kind` but `not_provisioned`, so it stood over an error
+   * card with no bucket row and no count hook beneath it, telling the operator
+   * the table lists every bucket with every claim in it. Worse under a facet:
+   * a refusal empties both sides of the narrowing comparison, so the arm that
+   * rendered was the UNNARROWED one, whose "nothing above narrows these
+   * counts" denies a facet the same page shows as applied.
+   *
+   * Both directions are pinned, because a gate that deleted the caption
+   * outright would satisfy the second alone: every state whose read RETURNED
+   * still carries it (rows, and an empty view — an empty read is still a
+   * read), and every state whose read did not — permission denied, a transport
+   * failure, the view outgrowing ROW_CAP, and the view absent — carries
+   * neither arm, with the refusal card and the table's own state line
+   * untouched.
    *
    * Copy-independent: both arms are read off the app itself, from a healthy
    * render of each, rather than typed here — this file pins no sentence of the
    * page, and a rewording of either arm moves this test with it.
    *
-   * Non-vacuous in three directions: the refused render really is in its error
-   * state (it names the object), it really drew no counts, and the page really
-   * applied the facet in the second URL (no dropped-parameters line), so the
-   * sentence is not being denied a parameter the page threw away.
-   *
-   * `it.fails` is the pin: it passes while the defect stands and turns red the
-   * day BUG-0144 is fixed, which is the day it should be flipped back to a
-   * plain `it(`.
+   * Non-vacuous in three directions: the refused render really is in its
+   * refused state (it carries that state hook and names the object), it really
+   * drew no counts, and the page really applied the facet in the second URL
+   * (no dropped-parameters line), so the sentence is not being denied a
+   * parameter the page threw away.
    */
-  it.fails(
-    "says nothing about bucket counts a refused read never produced [admin-window/BUG-0144]",
-    async () => {
-      const refused: Script = {
-        [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
-        [T.observations]: { data: [] },
-        [T.sources]: { data: [...REGISTRY] },
-      };
-      // The two sentences the page owns, read off the app rather than typed
-      // here: the arm it renders when nothing narrows the counts, and the arm it
-      // renders when something does.
-      const whole = bucketCaption(await renderClaims(healthyScript()));
-      const narrowed = bucketCaption(
-        await renderClaims(healthyScript(), { source_id: SOURCE.first }),
-      );
-      expect(whole).not.toBe("");
-      expect(narrowed).not.toBe(whole);
+  it("says nothing about bucket counts a refused read never produced [admin-window/BUG-0144]", async () => {
+    /** Every paragraph the Buckets surface renders, in order. */
+    const bucketParagraphs = (markup: string): string[] => {
+      const $ = cheerio.load(markup);
+      return $('[data-surface="buckets"] p')
+        .toArray()
+        .map((element) => $(element).text().replace(/\s+/g, " ").trim());
+    };
+    const bucketState = (markup: string): string | undefined =>
+      cheerio.load(markup)('[data-surface="buckets"] [data-state]').attr("data-state");
 
+    // The two sentences the page owns, read off the app rather than typed
+    // here: the arm it renders when nothing narrows the counts, and the arm it
+    // renders when something does.
+    const whole = bucketCaption(await renderClaims(healthyScript()));
+    const narrowed = bucketCaption(
+      await renderClaims(healthyScript(), { source_id: SOURCE.first }),
+    );
+    expect(whole).not.toBe("");
+    expect(narrowed).not.toBe("");
+    expect(narrowed).not.toBe(whole);
+
+    // ── the read HAPPENED: the caption stands, on both arms ──────────────
+    const emptyView: Script = {
+      [T.pendingClaims]: { data: [], count: 0 },
+      [T.observations]: { data: [] },
+      [T.sources]: { data: [...REGISTRY] },
+    };
+    for (const [label, script, params] of [
+      ["rows, bare", healthyScript(), {}],
+      ["rows, source facet", healthyScript(), { source_id: SOURCE.first }],
+      ["rows, bucket facet", healthyScript(), { bucket: "escalated" }],
+      // An empty view is a read that returned: it drew a real zero for every
+      // bucket, so the sentence saying what those zeros are zeros OF is true.
+      ["empty view, bare", emptyView, {}],
+      ["empty view, bucket facet", emptyView, { bucket: "escalated" }],
+    ] as [string, Script, Record<string, string>][]) {
+      const markup = await renderClaims(script, params);
+      const said = bucketCaption(markup);
+      expect([whole, narrowed], label).toContain(said);
+      // Non-vacuous: this really is the healthy surface — no refusal card, and
+      // a table that drew a count hook per bucket for the sentence to be about.
+      expect(bucketState(markup), label).toBeUndefined();
+      expect(
+        cheerio.load(markup)("[data-bucket-claims]").length,
+        label,
+      ).toBe(RENDERED_BUCKETS.length);
+    }
+
+    // ── the read did NOT happen: neither arm, in any state or URL ─────────
+    const refusals: [string, string, Script][] = [
+      [
+        "permission denied",
+        "error",
+        {
+          [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
+          [T.observations]: { data: [] },
+          [T.sources]: { data: [...REGISTRY] },
+        },
+      ],
+      [
+        "transport failure",
+        "error",
+        {
+          [T.pendingClaims]: { error: transportFailure("bad port") },
+          [T.observations]: { data: [] },
+          [T.sources]: { data: [...REGISTRY] },
+        },
+      ],
+      [
+        // A complete read that came back TRUNCATED refuses with the real
+        // number rather than returning a partial array (ARCHITECTURE.md §4.3),
+        // so the rows it did fetch are never a count, and no sentence stands
+        // over them either.
+        "outgrew the cap",
+        "error",
+        {
+          [T.pendingClaims]: { data: [...CLAIMS], count: 4096 },
+          [T.observations]: { data: [...OBSERVATIONS] },
+          [T.sources]: { data: [...REGISTRY] },
+        },
+      ],
+      [
+        // The card already replaces the whole surface here; this pins that it
+        // stays that way.
+        "view absent",
+        "not_provisioned",
+        {
+          [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
+          [T.observations]: { data: [] },
+          [T.sources]: { data: [...REGISTRY] },
+        },
+      ],
+    ];
+    for (const [state, hook, script] of refusals) {
       for (const params of [{}, { bucket: "escalated" }] as Record<string, string>[]) {
-        const markup = await renderClaims(refused, params);
-        const label = JSON.stringify(params);
+        const markup = await renderClaims(script, params);
+        const label = `${state} ${JSON.stringify(params)}`;
         // Non-vacuous: the surface really is in its refused state, and it drew
         // no bucket row and no count hook for either sentence to be about.
         expect(markup, label).toContain(T.pendingClaims);
+        expect(bucketState(markup), label).toBe(hook);
         expect(bucketRows(markup), label).toEqual([]);
         expect(
           cheerio.load(markup)("[data-bucket-claims]").length,
@@ -1547,12 +1633,14 @@ describe("absence and failure", () => {
         // ...and the page applied every parameter the URL carried, so the
         // sentence below is not being denied a facet the page dropped.
         expect(droppedLine(markup).lines, label).toBe(0);
-        const said = bucketCaption(markup);
-        expect(said, label).not.toBe(whole);
-        expect(said, label).not.toBe(narrowed);
+        // Neither arm, anywhere in the surface — not as the paragraph below
+        // the table, and not moved somewhere else inside it.
+        const said = bucketParagraphs(markup);
+        expect(said, label).not.toContain(whole);
+        expect(said, label).not.toContain(narrowed);
       }
-    },
-  );
+    }
+  });
 });
 
 /* ── an empty surface is explained from TWO facts (DEBT-0008) ────────────── */
