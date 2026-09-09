@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T09:02:54Z — do not edit)
+# Tracker index (regenerated 2026-09-09T09:15:18Z — do not edit)
 
 ## open
 - BUG-0109 [P2][bug][M2] Bar 13's other half is unbuilt: no windowed list says whether it filled, so five adapter runs that are the whole history read like the top of a long one  (scope:src/components/ui/window-line.tsx,src/app/page.tsx,src/components/cycles/adapter-runs.tsx,src/components/browse/browse-table.tsx,tests/offline/ui/primitives.test.ts,tests/offline/cycles/page.test.ts,tests/offline/browse/page.test.ts,tests/offline/dashboard/page.test.ts from:designer:endgame-walk)
@@ -9,7 +9,7 @@
 ## claimed
 - BUG-0108 [P2][bug][M2] The rest of BUG-0099's sweep: 132 links on Dashboard, Claims, Sources, Browse and the verdict log still announce themselves only under the pointer  (scope:src/app/page.tsx,src/app/claims/page.tsx,src/components/browse/browse-table.tsx,src/components/claims/bucket-table.tsx,src/components/claims/claim-list.tsx,src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/components/queues/verdict-log.tsx,tests/offline/browse/page.test.ts,tests/offline/claims/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/dashboard/page.test.ts @builder-176 from:designer:endgame-walk)
 
-## qa
-- BUG-0107 [P2][bug][M2] A refused inline save outlives its edit — Escape, blur and a later successful save all leave the red line standing, and two of them stack over the values beneath  (scope:src/components/EditableCell.tsx,src/components/edit-cell-layout.ts,tests/offline/ui/editable-cell.test.ts,tests/offline/records/page.test.ts @builder-175 from:designer:endgame-walk)
+## reopened
+- BUG-0107 [P2][bug][M2] A refused inline save outlives its edit — Escape, blur and a later successful save all leave the red line standing, and two of them stack over the values beneath  (scope:src/components/EditableCell.tsx,src/components/edit-cell-layout.ts,tests/offline/ui/editable-cell.test.ts,tests/offline/records/page.test.ts from:designer:endgame-walk)
 
-Totals — claimed:1, done:62, open:4, qa:1, wont_fix:1. Archived: 124.
+Totals — claimed:1, done:62, open:4, reopened:1, wont_fix:1. Archived: 124.
