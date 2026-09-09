@@ -1,6 +1,9 @@
 import * as cheerio from "cheerio";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 
+import { RecordFields } from "@/components/records/record-fields";
+import type { RecordField } from "@/components/records/fields";
 import {
   type EditEnding,
   type EditEvent,
@@ -15,6 +18,7 @@ import {
   editHint,
   focusVerdict,
   reduceEdit,
+  selectOnOpen,
 } from "@/components/EditableCell";
 import { EM_DASH } from "@/lib/format";
 
@@ -811,5 +815,273 @@ describe("an edit that ends gives focus back to the cell", () => {
     expect(resting).not.toMatch(/autofocus/i);
     expect(tagsOf(resting)).not.toContain("input");
     expect(tagsOf(resting)).not.toContain("textarea");
+  });
+});
+
+/* ── the two affordances the M1 walks earned ───────────────────────────────
+ *
+ * campaign admin-window/TASK-0053, LOOK_AND_FEEL "Inputs and inline edit":
+ * an editable value looks editable AT REST, and a cell opens with its value
+ * selected. Both are the shared control's, so every regime with a write path
+ * inherits them from one place.
+ */
+
+/** The one editable line and the one read-only line, drawn as the surface draws them. */
+function recordLines(): string {
+  return render(
+    h(RecordFields, {
+      table: "walk_sandbox",
+      id: "00000000-0000-4000-8000-000000000001",
+      fields: [
+        {
+          name: "label",
+          value: "A label a walker may rewrite.",
+          widget: "cell",
+          multiline: false,
+          isKey: false,
+          provenance: null,
+          reference: null,
+        },
+        {
+          name: "sandbox_id",
+          value: "00000000-0000-4000-8000-000000000001",
+          widget: "read_only",
+          multiline: false,
+          isKey: true,
+          provenance: null,
+          reference: null,
+        },
+      ] satisfies RecordField[],
+    }),
+  );
+}
+
+/** Every class on the innermost element that draws `text`, or `[]` when nothing does. */
+function classesDrawing(html: string, text: string): string[] {
+  const $ = cheerio.load(html);
+  const holder = $("*")
+    .toArray()
+    .filter((element) => $(element).text().trim() === text)
+    .pop();
+  return holder === undefined ? [] : ($(holder).attr("class") ?? "").split(/\s+/).filter(Boolean);
+}
+
+/**
+ * The classes of the element that UNDERLINES `text`, or `[]` when nothing on
+ * its ancestry does.
+ *
+ * Self-or-ancestor because `text-decoration` is drawn by the element that sets
+ * it and inherited by the inline text inside it: an absent value renders its
+ * em dash in a span of its own (`format.ts`'s dash), so asking only the
+ * innermost element would call an underlined dash un-underlined. The walk
+ * measures the delivered `text-decoration-line` on the real cell.
+ */
+function underliningClasses(html: string, text: string): string[] {
+  const $ = cheerio.load(html);
+  const holder = $("*")
+    .toArray()
+    .filter((element) => $(element).text().trim() === text)
+    .pop();
+  if (holder === undefined) return [];
+  const carrier = $(holder)
+    .parents()
+    .toArray()
+    .reduce<string[][]>(
+      (found, element) => {
+        const classes = ($(element).attr("class") ?? "").split(/\s+/).filter(Boolean);
+        return classes.includes("underline") ? [...found, classes] : found;
+      },
+      classesDrawing(html, text).includes("underline") ? [classesDrawing(html, text)] : [],
+    );
+  return carrier[0] ?? [];
+}
+
+/** Does anything on the way to `text` underline it? */
+function isUnderlined(html: string, text: string): boolean {
+  return underliningClasses(html, text).length > 0;
+}
+
+/** The decoration classes in a class set: the colour and the thickness. */
+function decoration(classes: string[]): string[] {
+  return classes.filter((className) => className.startsWith("decoration-"));
+}
+
+describe("an editable value looks editable before anything touches it", () => {
+  it("underlines the value at rest, where a read-only value on the same surface carries none", () => {
+    // Two fixtures on one surface: the guard would pass vacuously against
+    // either alone (LESSONS 3).
+    const html = recordLines();
+    expect(isUnderlined(html, "A label a walker may rewrite.")).toBe(true);
+    expect(isUnderlined(html, "00000000-0000-4000-8000-000000000001")).toBe(false);
+  });
+
+  it("draws it with no hover, no focus and no click — the markup as it is served carries it", () => {
+    // The whole finding: a stranger found the affordance by TABBING. Anything
+    // behind a state variant is invisible to the mouse-first colleague they
+    // named, so the affordance may carry no variant prefix at all.
+    const classes = underliningClasses(recordLines(), "A label a walker may rewrite.");
+    const affordance = classes.filter(
+      (className) => className === "underline" || className.startsWith("decoration-"),
+    );
+    expect(affordance.length).toBeGreaterThan(0);
+    expect(affordance.filter((className) => className.includes(":"))).toEqual([]);
+  });
+
+  it("carries it on an ABSENT value too, which is the one an operator most needs to fill in", () => {
+    const html = render(h(EditableCell, { value: null, onSave: noop, label: "note of walk_sandbox" }));
+    expect(isUnderlined(html, EM_DASH)).toBe(true);
+    // and the dash's own span does not cancel what it inherits.
+    const dash = classesDrawing(html, EM_DASH);
+    expect(dash).not.toContain("no-underline");
+    expect(decoration(dash)).toEqual([]);
+  });
+
+  it("is a hairline rather than the app's link, which is accent ink plus an underline", () => {
+    // `components/cycles/links.ts` spells a link at rest `text-accent
+    // underline`. An accent underline here would say "this goes somewhere".
+    const classes = underliningClasses(recordLines(), "A label a walker may rewrite.");
+    expect(classes).not.toContain("text-accent");
+    expect(decoration(classes)).not.toContain("decoration-accent");
+    expect(decoration(classes)).toContain("decoration-hairline");
+  });
+
+  it("takes the rule from the palette and from the type scale, never from a raw value", () => {
+    // A token flips itself between themes (globals.css), so there is no
+    // `dark:` variant to keep in step and no hex to drift; the values
+    // themselves are measured in tests/offline/ui/contrast.test.ts.
+    const classes = underliningClasses(recordLines(), "A label a walker may rewrite.");
+    const affordance = [...decoration(classes), "underline"];
+    expect(affordance.filter((className) => className.includes("["))).toEqual([]);
+    expect(affordance.filter((className) => /#[0-9a-f]{3,8}/i.test(className))).toEqual([]);
+    expect(affordance.filter((className) => className.startsWith("dark:"))).toEqual([]);
+    // Not weight and not colour: the value stays primary ink at the data step.
+    expect(classes).toContain("type-data");
+    expect(classes).toContain("text-ink");
+    expect(classes.filter((className) => /^font-(medium|semibold|bold)$/.test(className))).toEqual([]);
+  });
+
+  it("is 1px: the hairline width, not a second border weight", () => {
+    const classes = underliningClasses(recordLines(), "A label a walker may rewrite.");
+    expect(decoration(classes)).toContain("decoration-1");
+    // and it is drawn as a text decoration, not as a box border that would
+    // underline the cell's padding and shift the row.
+    expect(classes.filter((className) => /^border(-[trblxy])?(-\d+)?$/.test(className))).toEqual([]);
+  });
+});
+
+/**
+ * A field element out of `EditField`'s returned tree, without rendering it —
+ * the ref that carries the selection is a prop, and a prop that never reaches
+ * the markup (campaign admin-window/TASK-0053).
+ */
+function fieldOf(multiline: boolean): ReactElement<Record<string, unknown>> {
+  const tree = EditField({
+    value: "Tuzi",
+    label: "label of walk_sandbox",
+    hintId: "hint-1",
+    multiline,
+    onChange: () => {},
+    onBlur: () => {},
+    onKeyDown: () => {},
+  }) as ReactElement<{ children: ReactNode }>;
+  const found: ReactElement<Record<string, unknown>>[] = [];
+  const walk = (node: ReactNode) => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!isValidElement(node)) return;
+    const element = node as ReactElement<{ children?: ReactNode }>;
+    if (element.type === "input" || element.type === "textarea") {
+      found.push(element as ReactElement<Record<string, unknown>>);
+    }
+    walk(element.props.children);
+  };
+  walk(tree.props.children);
+  expect(found.length, `exactly one field, multiline=${multiline}`).toBe(1);
+  return found[0];
+}
+
+/**
+ * A field that records what was done to it and refuses to be written —
+ * `selectOnOpen` reads the field and selects it, and a future version that
+ * rewrote the value would fail here rather than in a walk.
+ */
+function spyField(value: string) {
+  let selects = 0;
+  const field = {
+    select: () => {
+      selects += 1;
+    },
+    setSelectionRange: (start: number, end: number) => {
+      throw new Error(`computed an index range (${start}, ${end}) instead of selecting`);
+    },
+    focus: () => {},
+  };
+  Object.defineProperty(field, "value", {
+    get: () => value,
+    set: () => {
+      throw new Error("selecting a value must never write it");
+    },
+  });
+  return {
+    field: field as unknown as HTMLInputElement,
+    selects: () => selects,
+    value: () => value,
+  };
+}
+
+describe("a cell opens with its value selected, so a retype replaces", () => {
+  it("hands the field the select-on-open behaviour, on the input and the textarea alike", () => {
+    for (const multiline of [false, true]) {
+      const field = fieldOf(multiline);
+      // A function, and THE function: an absent export would make both sides
+      // of the identity check undefined and pass vacuously (LESSONS 3).
+      expect(typeof field.props.ref, `multiline=${multiline}`).toBe("function");
+      expect(field.props.ref, `multiline=${multiline}`).toBe(selectOnOpen);
+      // and it still opens focused: the selection is made on a field that
+      // already holds focus, because React commits autoFocus before the ref.
+      expect(field.props.autoFocus, `multiline=${multiline}`).toBe(true);
+    }
+  });
+
+  it("hands it the SAME reference every render, so typing does not re-select", () => {
+    // React re-invokes a ref callback whose identity changed. An inline arrow
+    // here would reselect the whole field after every keystroke — a worse bug
+    // than the one being fixed.
+    expect(fieldOf(false).props.ref).toBe(fieldOf(false).props.ref);
+    expect(fieldOf(true).props.ref).toBe(fieldOf(false).props.ref);
+  });
+
+  it("selects the whole value, and writes nothing", () => {
+    const spy = spyField("A label a walker may rewrite.");
+    selectOnOpen(spy.field);
+    expect(spy.selects()).toBe(1);
+    expect(spy.value()).toBe("A label a walker may rewrite.");
+  });
+
+  it("selects a multiline value without counting characters, so no newline is lost", () => {
+    // `select()` rather than `setSelectionRange(0, value.length)`: the spy
+    // throws on the index form, because a textarea's newlines are exactly
+    // where computed lengths go wrong.
+    const spy = spyField("first line\nsecond line\n\nfourth");
+    selectOnOpen(spy.field);
+    expect(spy.selects()).toBe(1);
+    expect(spy.value()).toBe("first line\nsecond line\n\nfourth");
+  });
+
+  it("opens an empty cell without erroring, and selects nothing there is", () => {
+    const spy = spyField("");
+    expect(() => selectOnOpen(spy.field)).not.toThrow();
+    expect(spy.selects()).toBe(1);
+    expect(spy.value()).toBe("");
+  });
+
+  it("does nothing at all when the field is gone", () => {
+    expect(() => selectOnOpen(null)).not.toThrow();
+  });
+
+  it("adds nothing to the resting markup, which has no field to select", () => {
+    const resting = render(h(EditableCell, { value: "Tuzi", onSave: noop, label: "label of walk_sandbox" }));
+    expect(tagsOf(resting)).not.toContain("input");
+    expect(tagsOf(resting)).not.toContain("textarea");
+    expect(resting).not.toMatch(/autofocus/i);
   });
 });

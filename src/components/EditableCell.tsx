@@ -13,6 +13,13 @@ import { cx } from "@/components/ui/cx";
  * for 1.5s; failure is a red `data` line that names the failure, and the field
  * reverts to its old value.
  *
+ * Two affordances the M1 user-sim walks earned (campaign
+ * admin-window/TASK-0053): the value carries a 1px hairline underline AT REST
+ * so it reads as editable before anything touches it (`RESTING_AFFORDANCE`),
+ * and opening it selects what is there so a straight retype replaces
+ * (`selectOnOpen`). Both are the control's, so every regime with a write path
+ * gets them from one place.
+ *
  * It knows nothing about routes or tables: `onSave` is the caller's, and
  * returns what happened rather than throwing. The display is a real button, so
  * editing is reachable by Tab and never only on hover (quality bar 9) — and an
@@ -311,8 +318,78 @@ export function EditStatus({ status }: { status: Status }) {
   }
 }
 
+/**
+ * What makes an editable value LOOK editable before anything touches it —
+ * campaign admin-window/TASK-0053, LOOK_AND_FEEL "Inputs and inline edit".
+ *
+ * A 1px hairline underline under the value, in the RESTING state: no hover,
+ * no focus, no click. A stranger walking M1 found the edit affordance by
+ * tabbing rather than by looking, and said a mouse-first colleague would read
+ * the whole page as read-only — a control nobody can see is a control nobody
+ * uses.
+ *
+ * Three choices in it, each forced by the Look rather than picked:
+ *
+ *  - **Underline, not colour and not weight.** Colour is reserved for state
+ *    (the palette's five jobs) and weight belongs to the type scale, so
+ *    neither is free to mean "editable".
+ *  - **Hairline, not accent.** This app draws a link at rest as accent ink
+ *    plus an underline (`text-accent underline`, `components/cycles/links.ts`),
+ *    so an accent underline here would be the app already saying "this goes
+ *    somewhere". The hairline token — every border and divider in the app —
+ *    is the quiet rule that says "this is a field".
+ *  - **The token, never a value.** `decoration-hairline` resolves through
+ *    `--color-hairline` and flips itself between themes, so there is no
+ *    `dark:` variant to keep in step and no hex to drift from the palette.
+ *
+ * It rides on the resting BUTTON, which is the whole value including the em
+ * dash an absent value renders as: an empty column is exactly the one an
+ * operator most needs to know they may fill in.
+ */
+const RESTING_AFFORDANCE = "underline decoration-hairline decoration-1 underline-offset-2";
+
 const FIELD_CLASS =
   "type-data w-full rounded-control border border-accent bg-surface px-1 py-0.5 text-ink";
+
+/**
+ * The field opens with its value SELECTED, so a straight retype replaces it —
+ * campaign admin-window/TASK-0053, LOOK_AND_FEEL "Inputs and inline edit".
+ *
+ * A stranger walking M1 wrote `7OCSOC` over a catalog value because the caret
+ * sat at the end of the old one and nothing was selected. Correcting a value
+ * is this control's whole job, and a cell that opens unselected is a trap
+ * every operator falls into once per field.
+ *
+ * Three things about how it is done are load-bearing:
+ *
+ *  - **`select()`, never `setSelectionRange(0, value.length)`.** The DOM's own
+ *    "all of it" needs no index arithmetic, so a textarea holding newlines
+ *    cannot be selected short or long by a length this code computed — and it
+ *    reads the field rather than writing it, so no value is touched.
+ *  - **A ref callback, and a MODULE-LEVEL one.** React re-invokes a ref
+ *    callback whose identity changed on every render; an inline arrow here
+ *    would re-select the whole field after every keystroke, which is a worse
+ *    bug than the one being fixed. This function is one stable reference, so
+ *    React attaches it on mount and detaches it on unmount, and "on open" is
+ *    exactly when it runs.
+ *  - **It runs AFTER `autoFocus`.** React commits a host node's `autoFocus`
+ *    before it attaches that node's ref, so the field already holds focus by
+ *    the time the selection is made and nothing re-collapses it to a caret.
+ *
+ * The selection itself is a browser fact the offline tier cannot see
+ * (`tests/offline` is environment node with `renderToStaticMarkup` and no
+ * jsdom, STACK.md §4), which is why this is an exported unit rather than an
+ * inline handler: offline pins that the field carries it and that it selects
+ * without writing, and the walk measures `selectionStart`/`selectionEnd` in a
+ * real browser exactly as `focusVerdict`'s focus is measured.
+ */
+export function selectOnOpen(
+  field: HTMLInputElement | HTMLTextAreaElement | null,
+): void {
+  // Unmount hands back null: there is no field, and nothing to select.
+  if (field === null) return;
+  field.select();
+}
 
 /**
  * The cell in edit mode: the field, and the line that says how the edit ends.
@@ -325,6 +402,9 @@ const FIELD_CLASS =
  * The hint is wired with `aria-describedby`, not merely placed nearby: a
  * screen-reader operator lands on the input and must hear how to commit
  * without hunting for a sibling span.
+ *
+ * The field opens focused (`autoFocus`) and with its value selected
+ * (`selectOnOpen` as the ref) — both renderings, input and textarea alike.
  */
 export function EditField({
   value,
@@ -347,6 +427,10 @@ export function EditField({
 }) {
   const shared = {
     autoFocus: true,
+    // Opening the cell selects what is already there (`selectOnOpen` above).
+    // One stable reference for both renderings, so React runs it on mount and
+    // never again while the operator types.
+    ref: selectOnOpen,
     "aria-label": label,
     "aria-describedby": hintId,
     value,
@@ -515,6 +599,7 @@ export function EditableCell({
           }}
           className={cx(
             "type-data cursor-text rounded-control px-1 py-0.5 text-left text-ink transition-colors hover:bg-chrome",
+            RESTING_AFFORDANCE,
             status.kind === "saving" && "cursor-not-allowed opacity-50",
           )}
         >
