@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T02:23:55Z — do not edit)
+# Tracker index (regenerated 2026-09-09T02:24:17Z — do not edit)
 
 ## open
 - BUG-0082 [P1][bug][M2] the verdicts handoff grants service_role SELECT but never revokes the ALL it inherits, so the table installs writable by the Admin key  (scope:agenticflow/tracker/for-human/M2-handoff-verdicts.md,tests/offline/handoff/verdicts.test.ts from:TASK-0045)
