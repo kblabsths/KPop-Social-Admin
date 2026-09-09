@@ -1,7 +1,8 @@
+import type { ReactNode } from "react";
 import { StateOf, type UnavailableRead } from "@/components/ui";
 import type { ReviewItemRow, Shape } from "@/lib/review/shapes";
-import type { ActionSpec, ShapeActions } from "./actions";
-import { conflictActions } from "./conflict-actions";
+import type { ActionSpec, ShapeActions, ShapeActionsInput } from "./actions";
+import { conflictActions, conflictNotice } from "./conflict-actions";
 import { CloseForm } from "./form";
 import { linkActions } from "./link-actions";
 import { dispositionActions } from "./signal-actions";
@@ -62,6 +63,31 @@ export const ACTIONS_BY_SHAPE: Record<Shape, ShapeActions> = {
 };
 
 /**
+ * A shape's answer to "what is NOT offered here, and why" — a line, or null
+ * when everything spec §7 lists for this shape is on screen.
+ *
+ * The second half of the map above, and it exists for one case: a
+ * `data_conflict` on a `kind: reference` field, whose free-text control is
+ * withheld because a reference links rows rather than carrying text
+ * (campaign admin-window/BUG-0087, spec §8). A withheld control that says
+ * nothing is a shorter list with no reason — the same silent absence the rest
+ * of this window renders rather than blanks.
+ *
+ * A `Record<Shape, …>` for the reason `ACTIONS_BY_SHAPE` is one: a fourth
+ * shape fails to COMPILE rather than falling through to another shape's line.
+ * The other two shapes answer null, and their nulls are not placeholders — an
+ * `entity_link` fact item HAS its picker action (`link_entity`), and a signal
+ * item names no fact at all, so neither withholds anything.
+ */
+export type ShapeNotice = (input: ShapeActionsInput) => ReactNode;
+
+export const NOTICE_BY_SHAPE: Record<Shape, ShapeNotice> = {
+  data_conflict_fact: conflictNotice,
+  entity_link_fact: () => null,
+  entity_link_source_pattern: () => null,
+};
+
+/**
  * What an item that is already closed says, instead of a control that cannot
  * work.
  *
@@ -85,6 +111,7 @@ export function CloseSlot({
   item,
   readiness,
   actions,
+  notice = null,
 }: {
   /** The item being closed — its id addresses the route, its status decides. */
   item: ReviewItemRow;
@@ -100,6 +127,12 @@ export function CloseSlot({
   readiness: { kind: "ok" } | UnavailableRead;
   /** This shape's controls, from `ACTIONS_BY_SHAPE`. Empty is a real answer. */
   actions: readonly ActionSpec[];
+  /**
+   * What this shape withholds and why, from `NOTICE_BY_SHAPE` — null on every
+   * item that is offered the whole of its shape's §7 actions, which is all of
+   * them but a conflict on a reference field.
+   */
+  notice?: ReactNode;
 }) {
   if (readiness.kind !== "ok") {
     // The graded-first state, and the whole of what this slot renders today:
@@ -121,6 +154,10 @@ export function CloseSlot({
           No verdict action is offered for this item yet.
         </p>
       ) : null}
+      {/* Above the controls, because it is the reason the list below is the
+          length it is. It is not a state card: nothing was unread and nothing
+          was empty (LOOK_AND_FEEL: the emptinesses never share a rendering). */}
+      {notice}
       <CloseForm reviewItemId={item.review_item_id} actions={actions} />
     </>
   );

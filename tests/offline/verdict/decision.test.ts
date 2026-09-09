@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  REFERENCE_FIELDS,
   VERDICT_ACTIONS,
   decisionRefusals,
+  isReferenceField,
   noteRequired,
   type VerdictAction,
   type VerdictDecision,
@@ -122,6 +124,57 @@ describe("the action set", () => {
     // The ratchet under every iteration below: a ninth action lands here
     // first, as a missing fixture, rather than passing untested.
     expect(Object.keys(WELL_FORMED).sort()).toEqual([...VERDICT_ACTIONS].sort());
+  });
+});
+
+describe("isReferenceField", () => {
+  /**
+   * The predicate every surface asks before it offers a control for a fact
+   * (campaign admin-window/BUG-0087). Proved on both sides, as a guard must
+   * be (LESSONS 3): a field it MUST call a reference, and fields it must NOT.
+   */
+  it("calls every field the registry declares a reference one", () => {
+    // Iterated off the constant, so a field added there is proved by the same
+    // line rather than by remembering to add an assertion.
+    expect(REFERENCE_FIELDS.length).toBeGreaterThan(0);
+    for (const spelling of REFERENCE_FIELDS) {
+      const [domain, field] = spelling.split(".");
+      expect(isReferenceField(domain, field), spelling).toBe(true);
+    }
+  });
+
+  it("calls a scalar fact no such thing", () => {
+    // The `events` scalars the conflict surface deals in, and a venues one:
+    // a predicate that answered true for these would withhold the supply
+    // control from every conflict there is.
+    for (const field of ["title", "description", "starts_at", "poster_url"]) {
+      expect(isReferenceField("events", field), field).toBe(false);
+    }
+    for (const field of ["name", "city", "country", "address"]) {
+      expect(isReferenceField("venues", field), field).toBe(false);
+    }
+  });
+
+  it("answers about the WHOLE fact, never the field name alone", () => {
+    // `venue` is a reference of `events` and nothing at all of `venues` —
+    // the domain is half the question, and a predicate that dropped it would
+    // silently withhold the control on another domain's like-named field.
+    expect(isReferenceField("events", "venue")).toBe(true);
+    expect(isReferenceField("venues", "venue")).toBe(false);
+    expect(isReferenceField("groups", "performers")).toBe(false);
+    // And it is not a prefix or substring test.
+    expect(isReferenceField("events", "venue_id")).toBe(false);
+    expect(isReferenceField("events", "ven")).toBe(false);
+    expect(isReferenceField("", "")).toBe(false);
+  });
+
+  it("names the fields the reference-carrying actions exist for", () => {
+    // The constant is registry knowledge mirrored by hand; this pins WHICH
+    // fields it claims, so a silent edit to the list is a visible diff here.
+    expect([...REFERENCE_FIELDS].sort()).toEqual([
+      "events.performers",
+      "events.venue",
+    ]);
   });
 });
 
