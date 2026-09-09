@@ -185,15 +185,22 @@ export type CloseVerdict =
  * What an em dash means in this block, said once (LESSONS 1: "a column of
  * dashes carries one line saying what a dash means").
  *
- * Both dashes here are the record doing its job rather than data going
- * missing: a note is at the admin's discretion, and a settle-only verdict
- * observed nothing. Rendered only when a dash is actually on screen — a
- * sentence explaining a character the operator cannot see is noise, and the
- * block is one verdict rather than the log's column of them.
+ * Rendered exactly when a dash is actually on screen, whichever line drew it
+ * (campaign admin-window/BUG-0092) — a sentence explaining a character the
+ * operator cannot see is noise, and the block is one verdict rather than the
+ * log's column of them, so the line is conditional where the log tab's is
+ * unconditional. The condition is EVERY dashable line, not the two structural
+ * ones: a dash on the actor or on an instant that will not parse is still a
+ * dash the operator has to read.
+ *
+ * Which is also why it does not repeat the log tab's "not missing data": two
+ * of these dashes are the record doing its job (a note is at the admin's
+ * discretion, a settle-only verdict observed nothing) and two are a value this
+ * row could not give, so the one sentence says what is true of all four.
  */
 const DASH_MEANS =
-  `A ${EM_DASH} here is not missing data: an admin may settle without a ` +
-  "note, and a settle-only verdict writes no observation.";
+  `A ${EM_DASH} is a value this verdict does not carry: an admin may settle ` +
+  "without a note, and a settle-only verdict writes no observation.";
 
 /** What a settled item with no verdict row on record says, in its own words. */
 const NO_VERDICT_ROW = {
@@ -241,13 +248,28 @@ function VerdictLine({
  * would claim it observed nothing, which is a different verdict.
  */
 function ItemVerdictBlock({ verdict }: { verdict: InlineVerdict }) {
-  const when = relativeAge(verdict.createdAt);
+  const age = relativeAge(verdict.createdAt);
+  // An instant this app cannot read answers `{ text: EM_DASH, title: "" }`
+  // (`relativeAge`, `lib/format.ts`), and rendering that text puts a BARE em
+  // dash on screen — outside the one dash element this app draws absences
+  // with. It is handed over as null instead, so `orDash` draws it, which is
+  // exactly what the sibling rendering of the SAME column does
+  // (`components/queues/verdict-log.tsx`, `created`): one column, one
+  // rendering, on both screens (campaign admin-window/BUG-0092).
+  const when = age.title === "" ? null : age;
   const actor = isAbsent(verdict.actor) ? null : verdict.actor;
   const wrote = isAbsent(verdict.note) ? null : (verdict.note as string);
   const note = wrote === null ? null : clamped(wrote);
   const observation = isAbsent(verdict.observationId)
     ? null
     : (verdict.observationId as string);
+  // Whether a dash reaches the screen at all, asked once over EVERY line that
+  // can draw one — the block explains the dashes it draws, and it draws four
+  // kinds, not two (campaign admin-window/BUG-0092). An unresolvable
+  // observation id is not among them: it renders verbatim, never dashed.
+  const dashOnScreen = [actor, note, when, observation].some(
+    (value) => value === null,
+  );
 
   return (
     <div data-item-verdict={verdict.action} className="flex flex-col gap-2">
@@ -268,9 +290,13 @@ function ItemVerdictBlock({ verdict }: { verdict: InlineVerdict }) {
       </VerdictLine>
 
       <VerdictLine label="when">
-        <span title={when.title} data-verdict-when={verdict.createdAt}>
-          {when.text}
-        </span>
+        {when === null ? (
+          orDash(null)
+        ) : (
+          <span title={when.title} data-verdict-when={verdict.createdAt}>
+            {when.text}
+          </span>
+        )}
       </VerdictLine>
 
       <VerdictLine label="observation">
@@ -291,11 +317,11 @@ function ItemVerdictBlock({ verdict }: { verdict: InlineVerdict }) {
         )}
       </VerdictLine>
 
-      {note !== null && observation !== null ? null : (
+      {dashOnScreen ? (
         <p data-absence-note="dash" className="type-body text-ink-secondary">
           {DASH_MEANS}
         </p>
-      )}
+      ) : null}
     </div>
   );
 }
