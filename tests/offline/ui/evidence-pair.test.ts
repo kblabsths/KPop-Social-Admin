@@ -485,26 +485,23 @@ describe("EvidencePair", () => {
   });
 
   /**
-   * A provenance value with nothing visible in it draws an EMPTY isolated box
-   * and announces no absence — while the claim line one card to its LEFT, for
-   * the same class of value (`sources.source`, reached through
-   * `canonicalSideOf`'s `sources.get(id)?.source`), draws the app's own absence
-   * element (`ClaimValue`; admin-window/BUG-0151, BUG-0134).
+   * A provenance value with nothing visible in it draws the app's own absence
+   * element — the same thing the claim line one card to its LEFT draws for the
+   * same class of value (`sources.source`, reached through `canonicalSideOf`'s
+   * `sources.get(id)?.source`), because both lines now ask one guard
+   * (`MachineValue`; admin-window/BUG-0152, BUG-0151, BUG-0134).
    *
-   * Expected: the absence element the claim line draws for the same value, so a
-   * reader is told the winning source is missing. Found:
-   * `<span dir="ltr" class="…"></span>` and a line reading
-   * " ·  at apply · applied 3d ago" with a silent gap where the source belongs
-   * — `ProvenancePart` (`src/components/evidence/evidence-pair.tsx`) wraps
-   * `segment.identifier` with no absence guard.
+   * Until the guard landed, `ProvenancePart` wrapped `segment.identifier`
+   * unconditionally: the line rendered `<span dir="ltr" class="…"></span>` and
+   * read " ·  at apply · applied 3d ago", a silent gap where the winning source
+   * belongs and no absence announced to a reader who cannot see the ink.
    *
-   * The expectation is read off `orDash` rather than typed here, so this pins
-   * the behaviour and not a literal.
-   *
-   * Pinned as an expected failure for admin-window/BUG-0152: the day the guard
-   * lands this file goes red and sends the reader to the ticket.
+   * Both halves are asserted, because a fix that wrapped `orDash`'s result
+   * wholesale would satisfy the second and still leave the value's own empty box
+   * standing. The expectation is read off `orDash` rather than typed here, so
+   * this pins the behaviour and not a literal.
    */
-  it.fails.each([["empty", ""], ["blank", "   "], ["ink-less", "​‮"]])(
+  it.each([["empty", ""], ["blank", "   "], ["ink-less", "​‮"]])(
     "draws a %s provenance value as the app's absence element, not an empty isolated box — admin-window/BUG-0152",
     (_name, value) => {
       const absence = cheerio.load(render(orDash("")))("[aria-label]").first();
