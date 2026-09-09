@@ -445,3 +445,112 @@ describe("the queue-health gauge against staging", () => {
     }
   });
 });
+
+/* ── the verdict log, the page's second tab ──────────────────────────────── */
+
+/**
+ * The verdict-log tab against staging (campaign admin-window/TASK-0058, spec
+ * F13's "rendered counts equal direct SQL on staging once the table exists;
+ * until then the parity check for this surface asserts the not-provisioned
+ * state, which is the honest oracle").
+ *
+ * **`verdicts` is not on staging** and will not be until Ben installs M2's
+ * handoff migration, so the graded case here is `not_provisioned` — and it is
+ * graded as a STATE, never as a count. An oracle that asserted a number
+ * against a table that does not exist is the M1 bug class that cost six
+ * chained tickets (DECISIONS 2026-09-02); `gradeSurface` decides the kind it
+ * expects from this test's OWN read first, so the day the table lands the same
+ * case starts comparing numbers with no edit.
+ *
+ * The surface is addressed by `data-surface`, never by position (common
+ * violation 8), and the count compared is the WINDOW's — the same narrowing
+ * the tab renders — not the table's (common violation 7).
+ */
+
+/** The tab, as a URL facet of this one route. */
+const VERDICT_TAB: Params = { tab: "verdict_log" };
+
+/** The two surfaces the tab draws, by name. */
+const VERDICT_LOG = '[data-surface="verdict_log"]';
+const VERDICT_PROVENANCE = '[data-surface="verdict_provenance"]';
+
+/**
+ * The window the tab draws, spelled HERE from the surface's own contract
+ * rather than imported from `lib/db/verdict.ts`: importing the page's own
+ * constant would make this one path to one number instead of two
+ * (ARCHITECTURE.md §10).
+ */
+const VERDICT_WINDOW_ROWS = 100;
+
+/** The verdicts rendered, in rendered order, read off each row's action hook. */
+function verdictRows(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $(`${VERDICT_LOG} tbody tr`)
+    .toArray()
+    .map((tr) => $(tr).find("[data-verdict-action]").attr("data-verdict-action") ?? "");
+}
+
+describe("the verdict log against staging", () => {
+  it("renders the window the database holds, or names the table it lacks", async () => {
+    const markup = await queuesMarkup(VERDICT_TAB);
+
+    // This test's own count of the same object, through the same absence
+    // codes the page classifies by. `"absent"` here is what makes
+    // `not_provisioned` a PASS rather than an inference from "no rows".
+    const held = await countOrAbsent(() => exactCount(T.verdicts));
+    // The count the SURFACE claims is the window's, not the table's: at most
+    // the tab's own cap, however many verdicts exist behind it.
+    const windowed = held === "absent" ? held : Math.min(held, VERDICT_WINDOW_ROWS);
+
+    const state = await gradeSurface({
+      markup,
+      within: VERDICT_LOG,
+      object: T.verdicts,
+      counted: windowed,
+      // The observation leg carries its own state and only supplies a link, so
+      // it is not this surface's to answer for — the same exclusion the gauge
+      // slices get above.
+      excluding: VERDICT_PROVENANCE,
+    });
+
+    if (state === "not_provisioned") {
+      // The graded normal case today: the card names the object the query
+      // named, and the tab states no window at all for a read that never
+      // returned (ARCHITECTURE.md §4.3).
+      const $ = cheerio.load(markup);
+      expect($(`${VERDICT_LOG} [data-not-provisioned]`).attr("data-not-provisioned")).toBe(
+        T.verdicts,
+      );
+      expect($('[data-window="verdict_log"]')).toHaveLength(0);
+      expect(verdictRows(markup)).toEqual([]);
+      return;
+    }
+
+    // The table is there. The read RETURNED either way, so the window line
+    // stands — with rows or with none — and its held count is the number of
+    // rows actually drawn.
+    const line = cheerio.load(markup)('[data-window="verdict_log"]');
+    expect(line, "the read returned but the tab published no window").toHaveLength(1);
+    expect(line.attr("data-window-limit")).toBe(String(VERDICT_WINDOW_ROWS));
+    expect(verdictRows(markup)).toHaveLength(windowed as number);
+    expect(line.attr("data-window-held")).toBe(String(windowed));
+  });
+
+  it("is a facet of this route, and the queues tab is unchanged by it", async () => {
+    // EC8's structural half, asked of the running page: both tabs are links to
+    // `/queues`, the log has no route of its own, and the tab an operator is
+    // not on renders none of the other's surfaces.
+    const $ = cheerio.load(await queuesMarkup(VERDICT_TAB));
+    const hrefs = $("[data-tab] a")
+      .toArray()
+      .map((element) => $(element).attr("href") ?? "");
+
+    expect(hrefs.length).toBeGreaterThan(1);
+    for (const href of hrefs) expect(href.startsWith("/queues")).toBe(true);
+    expect($("[data-queue]")).toHaveLength(0);
+
+    const queues = cheerio.load(await queuesMarkup());
+    expect(queues(VERDICT_LOG)).toHaveLength(0);
+    expect(queues("[data-queue]").length).toBeGreaterThan(0);
+  });
+});

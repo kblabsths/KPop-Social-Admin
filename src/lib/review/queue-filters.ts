@@ -60,6 +60,37 @@ export const REVIEW_QUEUES: readonly ReviewQueue[] = ["data_conflict", "entity_l
 /** `review_items.status` — open first, settled browsable (spec §4). */
 export const REVIEW_STATUSES: readonly ReviewStatus[] = ["open", "settled"];
 
+/* ── the tabs ────────────────────────────────────────────────────────────── */
+
+/**
+ * The two views of this route (campaign admin-window/TASK-0058).
+ *
+ * `verdicts` is the VERDICT LOG — `verdicts` newest first, the one record of
+ * every admin data action (spec §7, F13). It is a TAB of `/queues` and not a
+ * seventh page: VISION names six pages, the sidebar holds exactly six links,
+ * and the log renders as a URL facet of the surface whose items it settles
+ * (DECISIONS 2026-09-04). The shipped rendering it copies is the
+ * standing-disagreements tab on Claims (`src/lib/claims/filters.ts`), which is
+ * why the shape below — a `TABS` list, a `DEFAULT_TAB` omitted from every
+ * href, `tabFrom` and `tabLinks` — is that module's, not a second invention.
+ */
+export const TABS = ["queues", "verdict_log"] as const;
+
+export type QueuesTab = (typeof TABS)[number];
+
+/** The tab a bare URL lands on. Omitted from every href, so one state has one URL. */
+export const DEFAULT_TAB: QueuesTab = "queues";
+
+/**
+ * The parameter the tab travels in — a SEARCH parameter, never a path segment.
+ *
+ * State lives in the URL (LOOK_AND_FEEL bar 11): the tab is bookmarkable, it
+ * survives the back button and a reload, and no route is added. It is spelled
+ * `tab` because that is what Claims spells it, and one name for one thing is
+ * this file's own rule about a facet.
+ */
+export const TAB_PARAM = "tab";
+
 /** Every value each facet may take, in the order its chips render. */
 export const FACET_VALUES: {
   kind: readonly Kind[];
@@ -130,6 +161,17 @@ export function filterFrom(params: SearchParams = {}): ReviewItemFilter {
   return filter;
 }
 
+/**
+ * The tab the URL asked for; anything else is the default one.
+ *
+ * The same rule `chosen` applies to every facet: a value outside the offered
+ * vocabulary selects nothing, so `?tab=nonsense` lands on the queues rather
+ * than on an error page.
+ */
+export function tabFrom(params: SearchParams = {}): QueuesTab {
+  return chosen(TABS, params[TAB_PARAM]) ?? DEFAULT_TAB;
+}
+
 /** Is anything narrowed at all? What tells "nothing here yet" from "nothing matched". */
 export function isNarrowed(filter: ReviewItemFilter): boolean {
   return FACETS.some((facet) => filter[facet] !== undefined);
@@ -160,12 +202,17 @@ export function withFacet<F extends Facet>(
  * one state has one URL: the unfiltered page is the bare path, and a bookmark
  * carries no redundant state.
  */
-export function queuesHref(path: string, filter: ReviewItemFilter): string {
+export function queuesHref(
+  path: string,
+  filter: ReviewItemFilter,
+  tab: QueuesTab = DEFAULT_TAB,
+): string {
   const query = new URLSearchParams();
   for (const facet of FACETS) {
     const value = filter[facet];
     if (value !== undefined) query.set(facet, value);
   }
+  if (tab !== DEFAULT_TAB) query.set(TAB_PARAM, tab);
   const search = query.toString();
   return search.length === 0 ? path : `${path}?${search}`;
 }
@@ -234,4 +281,44 @@ export function facetChips(
 /** Every facet's chips, in `FACETS` order. */
 export function filterBar(path: string, filter: ReviewItemFilter): FilterFacet[] {
   return FACETS.map((facet) => facetChips(path, filter, facet));
+}
+
+/* ── the tab strip ───────────────────────────────────────────────────────── */
+
+/** One tab: its word, where it goes, and whether we are on it. */
+export interface TabLink {
+  tab: QueuesTab;
+  label: string;
+  href: string;
+  active: boolean;
+}
+
+/**
+ * What each tab is called on screen — the app's own words.
+ *
+ * "Verdict log" and not `verdicts`: the tab is a view of this app's, not a
+ * machine identifier, so it takes sentence case like every other heading. The
+ * TABLE's name still appears verbatim where it is the subject — in the
+ * not-provisioned card, which names the object the query named.
+ */
+const TAB_LABEL: Record<QueuesTab, string> = {
+  queues: "Queues",
+  verdict_log: "Verdict log",
+};
+
+/**
+ * Both tabs, each linking to this page on that tab with the filter kept — the
+ * queue you were looking at is the queue you come back to.
+ */
+export function tabLinks(
+  path: string,
+  filter: ReviewItemFilter,
+  tab: QueuesTab,
+): TabLink[] {
+  return TABS.map((candidate) => ({
+    tab: candidate,
+    label: TAB_LABEL[candidate],
+    href: queuesHref(path, filter, candidate),
+    active: candidate === tab,
+  }));
 }

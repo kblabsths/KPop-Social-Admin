@@ -5,3 +5,5 @@
  */
 export { FilterBar } from "./filter-bar";
 export { QueueList } from "./queue-list";
+export { QueueTabs } from "./tabs";
+export { VerdictLog, type VerdictLine } from "./verdict-log";

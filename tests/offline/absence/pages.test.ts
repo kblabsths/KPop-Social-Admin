@@ -65,7 +65,7 @@ const {
   renderSurface,
   tablesRead,
 } = await import("./surfaces");
-import type { Surface } from "./surfaces";
+import type { Params, Surface } from "./surfaces";
 
 /** Script the database the next render reads, and keep the stub to ask it what it was asked for. */
 function scriptDatabase(script: Script) {
@@ -396,6 +396,50 @@ describe("the absence sweep itself", () => {
  * measurement against: lose a surface or a hook from it and this file fails
  * rather than thinning out.
  */
+/**
+ * A surface at ONE of its URLs.
+ *
+ * Every page is one view of itself, with one exception: a route whose TAB is a
+ * `searchParams` facet renders a different read on each tab, so the rule below
+ * has to be asked of each. `/queues` grew the verdict log as its second tab
+ * (campaign admin-window/TASK-0058, spec F13) — a windowed surface reached
+ * only at `?tab=verdicts` — and grading the route at its bare URL alone would
+ * leave the newest windowed surface in the app outside the one file that
+ * grades the rule for every surface at once.
+ *
+ * The map is deliberately small and explicit: a tab is not derivable from the
+ * filesystem the way a route is, so it is named here, and a route with no
+ * entry is still swept exactly as it was.
+ */
+const TAB_VIEWS: Readonly<Record<string, readonly Params[]>> = {
+  "/queues": [{}, { tab: "verdict_log" }],
+};
+
+interface View {
+  /** The URL this view is at — the key `WINDOWED` names it by. */
+  label: string;
+  surface: Surface;
+  params: Params;
+}
+
+/** Every surface at every URL the map gives it; a bare route by default. */
+function viewsOf(surfaces: readonly Surface[]): View[] {
+  return surfaces.flatMap((surface) =>
+    (TAB_VIEWS[surface.route] ?? [{}]).map((params) => {
+      const query = new URLSearchParams(
+        Object.entries(params).map(([key, value]) => [key, String(value)]),
+      ).toString();
+      return {
+        label: query.length === 0 ? surface.route : `${surface.route}?${query}`,
+        surface,
+        params,
+      };
+    }),
+  );
+}
+
+const VIEWS = viewsOf(SURFACES);
+
 function windowHooks(markup: string): string[] {
   const $ = cheerio.load(markup);
   return $("[data-window]")
@@ -434,6 +478,7 @@ const WINDOWED: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["/browse", ["events"]],
   ["/claims", ["claims", "pending"]],
   ["/queues", ["queue_health"]],
+  ["/queues?tab=verdict_log", ["verdict_log"]],
   ["/sources", ["awaiting_row", "rejections"]],
   ["/cycles", ["cycle_health", "cycles", "resolution_latency", "runs"]],
 ];
@@ -457,11 +502,11 @@ describe("a window line describes a window the page read", () => {
   it("drops every window it publishes on a healthy read when the read never happened", async () => {
     const publishes = new Map<string, string[]>();
 
-    for (const surface of SURFACES) {
-      scriptDatabase(populatedScript(surface));
-      const healthy = windowHooks(await renderSurface(surface));
+    for (const view of VIEWS) {
+      scriptDatabase(populatedScript(view.surface));
+      const healthy = windowHooks(await renderSurface(view.surface, view.params));
       if (healthy.length === 0) continue;
-      publishes.set(surface.route, healthy);
+      publishes.set(view.label, healthy);
 
       // The same surface, against a database that holds none of the objects
       // it reads: every one of those hooks is a claim about a table it could
@@ -470,8 +515,8 @@ describe("a window line describes a window the page read", () => {
       // a refusal, never a zero"; LOOK_AND_FEEL states 3 and 4).
       scriptDatabase(nothingProvisioned());
       expect(
-        windowHooks(await renderSurface(surface)),
-        `${surface.route} still stated [${healthy.join(", ")}] over tables it could not read`,
+        windowHooks(await renderSurface(view.surface, view.params)),
+        `${view.label} still stated [${healthy.join(", ")}] over tables it could not read`,
       ).toEqual([]);
     }
 
@@ -492,11 +537,11 @@ describe("a window line describes a window the page read", () => {
     // comment about it.
     const publishes = new Map<string, string[]>();
 
-    for (const surface of SURFACES) {
-      scriptDatabase(populatedScript(surface));
-      const healthy = windowHooks(await renderSurface(surface));
+    for (const view of VIEWS) {
+      scriptDatabase(populatedScript(view.surface));
+      const healthy = windowHooks(await renderSurface(view.surface, view.params));
       if (healthy.length === 0) continue;
-      publishes.set(surface.route, healthy);
+      publishes.set(view.label, healthy);
 
       // The same surface, against a database that holds every object it reads
       // and no rows in any of them: every read RETURNED, so every one of those
@@ -505,8 +550,8 @@ describe("a window line describes a window the page read", () => {
       // the empty case by (ARCHITECTURE.md §4.3).
       scriptDatabase(emptyScript());
       expect(
-        windowHooks(await renderSurface(surface)),
-        `${surface.route} dropped a window line on a read that happened and found nothing`,
+        windowHooks(await renderSurface(view.surface, view.params)),
+        `${view.label} dropped a window line on a read that happened and found nothing`,
       ).toEqual(healthy);
     }
 

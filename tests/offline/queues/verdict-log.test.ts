@@ -1,0 +1,459 @@
+import * as cheerio from "cheerio";
+import { describe, expect, it, vi } from "vitest";
+import { T } from "@/lib/db/tables";
+import { EM_DASH } from "@/lib/format";
+import { VERDICT_ACTIONS } from "@/lib/verdict/decision";
+import { render } from "../ui/markup";
+import { stateOf as surfaceStateOf } from "../../live/parity";
+import {
+  ID,
+  observationRow,
+  verdictLogEntry,
+  type ObservationRow,
+  type VerdictLogEntry,
+} from "../../fixtures/rows";
+import {
+  permissionDenied,
+  stubClient,
+  tableNotInSchemaCache,
+  transportFailure,
+  undefinedTable,
+  type Script,
+} from "../../fixtures/stub-client";
+
+/**
+ * The verdict log, as the Queues page's own tab renders it (campaign
+ * admin-window/TASK-0058, spec F13).
+ *
+ * The page function is the route's only async component (ARCHITECTURE.md §5),
+ * so the whole test is `renderToStaticMarkup(await QueuesPage(props))` — no
+ * jsdom, no database. The read is stubbed at `getDbClient`, the ONE seam this
+ * app resolves a client through, so both of the tab's legs (`verdicts`, and
+ * the `observations` leg that only supplies a link) go through one script.
+ *
+ * **Absence is the graded normal case**: `verdicts` arrives with M2's handoff
+ * migration and is on neither staging nor production, so the state this file
+ * exercises first is the one an operator sees today.
+ *
+ * Assertions are STRUCTURE and BEHAVIOUR — which rows render in which order,
+ * which hooks they carry, which state the surface declares — plus the
+ * machine's own strings where rendering them VERBATIM is the requirement (the
+ * eight actions, the missing table's name). No class name and no copy of the
+ * app's own words is pinned.
+ */
+
+const readWith = vi.hoisted(() => ({ client: undefined as unknown }));
+
+vi.mock("@/lib/db/client", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/db/client")>();
+  return {
+    ...actual,
+    getDbClient: () => {
+      if (readWith.client === undefined) {
+        throw new Error("a verdict-log render was made with no database scripted");
+      }
+      return readWith.client as never;
+    },
+  };
+});
+
+const QueuesPage = (await import("@/app/queues/page")).default;
+
+/** The tab this file is about, as a URL facet — never a path segment. */
+const TAB = { tab: "verdict_log" } as const;
+
+/** The log's surface and its provenance sub-surface, by name, never by position. */
+const LOG = '[data-surface="verdict_log"]';
+const PROVENANCE = '[data-surface="verdict_provenance"]';
+
+/** The window the tab draws, spelled here rather than imported from the read. */
+const WINDOW = "100";
+
+async function renderQueues(
+  script: Script,
+  params: Record<string, string | string[]> = TAB,
+): Promise<string> {
+  readWith.client = stubClient(script).asSupabaseClient();
+  return render(await QueuesPage({ searchParams: Promise.resolve(params) }));
+}
+
+/** A database holding these verdicts, these observations, and no review items. */
+function scriptOf(
+  verdicts: VerdictLogEntry[],
+  observations: ObservationRow[] = [],
+): Script {
+  return {
+    [T.verdicts]: { data: verdicts, count: verdicts.length },
+    [T.observations]: { data: observations, count: observations.length },
+    [T.reviewItems]: { data: [], count: 0 },
+  };
+}
+
+/* ── the population ──────────────────────────────────────────────────────── */
+
+const OTHER_OBSERVATION = "01920000-0000-7000-8000-000000000399";
+const OTHER_ITEM = "01920000-0000-7000-8000-000000000599";
+
+/**
+ * Four verdicts covering the shapes of row §7's table admits, written out of
+ * order on purpose so "newest first" is a claim this file can fail.
+ *
+ * One `created_at` is spelled `Z` and one `+00:00`, for the reason
+ * `reviewItemEdgePopulation` does the same: PostgREST spells the offset where
+ * a fixture spells `Z`, and the two orderings disagree lexicographically for
+ * one and the same instant.
+ */
+const SETTLEMENT = verdictLogEntry({
+  verdict_id: "01920000-0000-7000-8000-000000000801",
+  action: "choose_claimed_value",
+  note: "The Ticketmaster title matches the venue listing.",
+  created_at: "2026-09-07T09:00:00Z",
+});
+const OVERRIDE = verdictLogEntry({
+  verdict_id: "01920000-0000-7000-8000-000000000802",
+  action: "override",
+  // The item-less row: an override settles nothing.
+  review_item_id: null,
+  observation_id: OTHER_OBSERVATION,
+  note: null,
+  created_at: "2026-09-08T12:00:00+00:00",
+});
+const SETTLE_ONLY = verdictLogEntry({
+  verdict_id: "01920000-0000-7000-8000-000000000803",
+  action: "wont_fix",
+  review_item_id: OTHER_ITEM,
+  // The value-less row: a disposition observes nothing.
+  observation_id: null,
+  note: "The source is paused; the condition stands.",
+  created_at: "2026-09-06T08:00:00Z",
+});
+const NEWEST = verdictLogEntry({
+  verdict_id: "01920000-0000-7000-8000-000000000804",
+  action: "link_entity",
+  observation_id: null,
+  note: null,
+  created_at: "2026-09-08T18:30:00Z",
+});
+
+const POPULATION = [SETTLE_ONLY, NEWEST, SETTLEMENT, OVERRIDE];
+
+/** Newest first, spelled here from the instants rather than asked of the app. */
+const NEWEST_FIRST = [NEWEST, OVERRIDE, SETTLEMENT, SETTLE_ONLY].map(
+  (row) => row.action,
+);
+
+const OBSERVATIONS = [
+  observationRow({
+    observation_id: ID.observationA,
+    domain: "events",
+    entity_id: ID.eventEntity,
+  }),
+  observationRow({
+    observation_id: OTHER_OBSERVATION,
+    domain: "venues",
+    entity_id: ID.groupEntity,
+  }),
+];
+
+/* ── reading the markup, structurally ────────────────────────────────────── */
+
+/** How many rows the log drew. */
+function rowCount(markup: string): number {
+  return cheerio.load(markup)(`${LOG} tbody tr`).length;
+}
+
+/** The verdicts rendered, in rendered order, read off each row's action hook. */
+function renderedOrder(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $(`${LOG} tbody tr`)
+    .toArray()
+    .map((tr) => $(tr).find("[data-verdict-action]").attr("data-verdict-action") ?? "");
+}
+
+function cellsOf(markup: string, verdictAction: string) {
+  const $ = cheerio.load(markup);
+  const row = $(`${LOG} [data-verdict-action="${verdictAction}"]`).closest("tr");
+  return {
+    text: row.text().replace(/\s+/g, " ").trim(),
+    cells: row
+      .find("td")
+      .toArray()
+      .map((td) => $(td).text().trim()),
+    item: row.find("[data-verdict-item]").attr("data-verdict-item"),
+    itemHref: row.find("[data-verdict-item]").attr("href"),
+    observation: row.find("[data-verdict-observation]").attr("data-verdict-observation"),
+    observationHref: row.find("[data-verdict-observation]").attr("href"),
+    actor: row.find("[data-verdict-actor]").attr("data-verdict-actor"),
+  };
+}
+
+function windowHooks(markup: string): Record<string, string | undefined> {
+  const line = cheerio.load(markup)('[data-window="verdict_log"]');
+  return {
+    held: line.attr("data-window-held"),
+    limit: line.attr("data-window-limit"),
+    truncated: line.attr("data-window-truncated"),
+  };
+}
+
+/* ── absence, first, because it is the normal case ───────────────────────── */
+
+describe("the tab against a database without verdicts", () => {
+  for (const [code, absence] of [
+    ["PGRST205", tableNotInSchemaCache],
+    ["42P01", undefinedTable],
+  ] as const) {
+    it(`draws the card naming verdicts and states no window (${code})`, async () => {
+      const markup = await renderQueues({
+        [T.verdicts]: { error: absence(T.verdicts) },
+        [T.observations]: { data: [], count: 0 },
+        [T.reviewItems]: { data: [], count: 0 },
+      });
+      const $ = cheerio.load(markup);
+
+      // The state is read structurally, never off the card's words: `Empty`
+      // and `NotProvisioned` draw the identical container.
+      expect(surfaceStateOf(markup, LOG)).toBe("not_provisioned");
+      expect($("[data-not-provisioned]").attr("data-not-provisioned")).toBe(T.verdicts);
+      // A read that never returned publishes no window line at all — the rule
+      // graded for every surface at once in tests/offline/absence/pages.test.ts.
+      expect($('[data-window="verdict_log"]')).toHaveLength(0);
+      // …and no row, and no number invented for a table that is not there.
+      expect(rowCount(markup)).toBe(0);
+    });
+  }
+
+  it("asks observations nothing when verdicts was not there", async () => {
+    const stub = stubClient({
+      [T.verdicts]: { error: tableNotInSchemaCache(T.verdicts) },
+      [T.observations]: { data: [], count: 0 },
+      [T.reviewItems]: { data: [], count: 0 },
+    });
+    readWith.client = stub.asSupabaseClient();
+    render(await QueuesPage({ searchParams: Promise.resolve(TAB) }));
+
+    expect(stub.tablesRead()).toContain(T.verdicts);
+    expect(stub.tablesRead()).not.toContain(T.observations);
+  });
+
+  it("reports a REFUSED read as an error, never as an absence", async () => {
+    for (const failure of [permissionDenied(T.verdicts), transportFailure()]) {
+      const markup = await renderQueues({
+        [T.verdicts]: { error: failure },
+        [T.observations]: { data: [], count: 0 },
+        [T.reviewItems]: { data: [], count: 0 },
+      });
+      expect(surfaceStateOf(markup, LOG)).toBe("error");
+      expect(cheerio.load(markup)('[data-window="verdict_log"]')).toHaveLength(0);
+    }
+  });
+});
+
+/* ── the read that happened and found nothing ────────────────────────────── */
+
+describe("the tab against an empty verdicts table", () => {
+  it("keeps its window line, stating a held zero, beside the empty card", async () => {
+    const markup = await renderQueues(scriptOf([]));
+
+    expect(surfaceStateOf(markup, LOG)).toBe("empty");
+    // An empty window is still a window the page looked in: the line and the
+    // card stand TOGETHER (ARCHITECTURE.md §4.3, admin-window/BUG-0070).
+    expect(windowHooks(markup)).toEqual({
+      held: "0",
+      limit: WINDOW,
+      truncated: "false",
+    });
+    expect(rowCount(markup)).toBe(0);
+  });
+});
+
+/* ── the rows ────────────────────────────────────────────────────────────── */
+
+describe("the rows the log renders", () => {
+  it("renders every verdict of the window, newest first", async () => {
+    const markup = await renderQueues(scriptOf(POPULATION, OBSERVATIONS));
+
+    expect(surfaceStateOf(markup, LOG)).toBe("ok");
+    expect(renderedOrder(markup)).toEqual(NEWEST_FIRST);
+    expect(windowHooks(markup).held).toBe(String(POPULATION.length));
+  });
+
+  it("carries actor, action, item, observation, note and time on one row", async () => {
+    const markup = await renderQueues(scriptOf(POPULATION, OBSERVATIONS));
+    const row = cellsOf(markup, "choose_claimed_value");
+
+    expect(row.actor).toBe(SETTLEMENT.actor);
+    expect(row.item).toBe(SETTLEMENT.review_item_id);
+    expect(row.itemHref).toBe(["", "queues", SETTLEMENT.review_item_id].join("/"));
+    expect(row.observation).toBe(SETTLEMENT.observation_id);
+    // The one place a rendered observation already leads in this app: the
+    // record surface of the fact it is about.
+    expect(row.observationHref).toBe(["", "records", "events", ID.eventEntity].join("/"));
+    expect(row.text).toContain(SETTLEMENT.note);
+    // The instant is relative, with the absolute value on a title (Voice 6).
+    expect(row.text).not.toContain(SETTLEMENT.created_at);
+  });
+
+  it("orders two verdicts on one instant by id, whichever way the transport spells it", async () => {
+    const first = verdictLogEntry({
+      verdict_id: "0192bbbb-0000-7000-8000-00000000000a",
+      action: "fixed",
+      created_at: "2026-09-08T12:00:00Z",
+    });
+    const second = verdictLogEntry({
+      verdict_id: "0192bbbb-0000-7000-8000-00000000000b",
+      action: "keep_current",
+      created_at: "2026-09-08T12:00:00+00:00",
+    });
+
+    const markup = await renderQueues(scriptOf([first, second]));
+    const reversed = await renderQueues(scriptOf([second, first]));
+
+    // Total order: the later id first, and the same order either way the rows
+    // arrived, so the window is the same window twice running.
+    expect(renderedOrder(markup)).toEqual(["keep_current", "fixed"]);
+    expect(renderedOrder(reversed)).toEqual(renderedOrder(markup));
+  });
+
+  it("renders a verdict whose created_at will not parse, at the end, with no zero age", async () => {
+    const unparseable = verdictLogEntry({
+      verdict_id: "0192cccc-0000-7000-8000-000000000001",
+      action: "settle",
+      created_at: "not a timestamp",
+    });
+    const markup = await renderQueues(scriptOf([...POPULATION, unparseable]));
+
+    expect(renderedOrder(markup).at(-1)).toBe("settle");
+    expect(cellsOf(markup, "settle").cells.at(-1)).toBe(EM_DASH);
+  });
+
+  it("states a filled window as a floor rather than as the whole log", async () => {
+    const full = Array.from({ length: 100 }, (unused, index) =>
+      verdictLogEntry({
+        verdict_id: `0192dddd-0000-7000-8000-${String(index).padStart(12, "0")}`,
+        action: "keep_current",
+        created_at: new Date(Date.UTC(2026, 8, 8, 0, index)).toISOString(),
+      }),
+    );
+    const markup = await renderQueues(scriptOf(full));
+
+    expect(rowCount(markup)).toBe(full.length);
+    expect(windowHooks(markup)).toEqual({
+      held: String(full.length),
+      limit: WINDOW,
+      truncated: "true",
+    });
+  });
+});
+
+/* ── the two structural nulls ────────────────────────────────────────────── */
+
+describe("the nulls that are structure, not missing data", () => {
+  it("dashes the item on an override and the observation on a settle-only verdict", async () => {
+    const markup = await renderQueues(scriptOf(POPULATION, OBSERVATIONS));
+
+    const override = cellsOf(markup, "override");
+    expect(override.item).toBeUndefined();
+    expect(override.cells[2]).toBe(EM_DASH);
+    // …and the override's own observation is still there, and still a link.
+    expect(override.observation).toBe(OTHER_OBSERVATION);
+
+    const settleOnly = cellsOf(markup, "wont_fix");
+    expect(settleOnly.observation).toBeUndefined();
+    expect(settleOnly.cells[3]).toBe(EM_DASH);
+    expect(settleOnly.item).toBe(OTHER_ITEM);
+  });
+
+  it("dashes a null note, with no qualifier beside it", async () => {
+    const markup = await renderQueues(scriptOf(POPULATION, OBSERVATIONS));
+    expect(cellsOf(markup, "override").cells[4]).toBe(EM_DASH);
+  });
+
+  it("says ONCE, on the surface, what a dash means here", async () => {
+    const markup = await renderQueues(scriptOf(POPULATION, OBSERVATIONS));
+    const $ = cheerio.load(markup);
+    // Behaviour, not copy: the note carries its own hook, so this counts notes
+    // rather than sentences. Counting em dashes instead would pass on a
+    // surface with no note at all, because the window line above carries one
+    // (measured on this tree — the first spelling of this case did exactly
+    // that, and stayed green with the note deleted).
+    const note = $(`${LOG} [data-absence-note]`);
+    expect(note).toHaveLength(1);
+    // It really is about the dash, and it stands outside the table's cells —
+    // a qualifier inside a cell would read as an explanation of missing data.
+    expect(note.text()).toContain(EM_DASH);
+    expect(note.closest("td")).toHaveLength(0);
+    // Every dash on a row is bare: the cell holds the character and nothing
+    // else, whatever the note above says.
+    for (const [action, index] of [
+      ["override", 2],
+      ["wont_fix", 3],
+    ] as const) {
+      expect(cellsOf(markup, action).cells[index]).toBe(EM_DASH);
+    }
+  });
+
+  it("leaves no cell of any row blank", async () => {
+    const markup = await renderQueues(scriptOf(POPULATION, OBSERVATIONS));
+    expect(markup).not.toMatch(/<td[^>]*>\s*<\/td>/);
+  });
+});
+
+/* ── the action, verbatim, for all eight ─────────────────────────────────── */
+
+describe("the action column", () => {
+  it("renders all eight of VERDICT_ACTIONS verbatim", async () => {
+    // Iterated from the constant the settlement seam and the handoff artifact
+    // share, never from a hand-written list (SPEC named gap 6).
+    const everyAction = VERDICT_ACTIONS.map((action, index) =>
+      verdictLogEntry({
+        verdict_id: `0192aaaa-0000-7000-8000-${String(index).padStart(12, "0")}`,
+        action,
+        created_at: new Date(Date.UTC(2026, 8, 8, 12, index)).toISOString(),
+      }),
+    );
+    const markup = await renderQueues(scriptOf(everyAction, OBSERVATIONS));
+    const $ = cheerio.load(markup);
+
+    const rendered = $(`${LOG} [data-verdict-action]`)
+      .toArray()
+      .map((element) => $(element).text().trim());
+    // Verbatim means verbatim: never title-cased, never uppercased, never
+    // mapped to friendlier words (ARCHITECTURE.md §11, admin-window/BUG-0049).
+    expect(rendered.slice().sort()).toEqual([...VERDICT_ACTIONS].sort());
+  });
+});
+
+/* ── the observation leg degrades, and never takes the log with it ───────── */
+
+describe("the observation leg", () => {
+  it("renders the id verbatim, unlinked, when the observation has no row", async () => {
+    // A verdict pointing at an observation this database no longer holds: the
+    // id is real, so a dash there would claim the verdict observed nothing.
+    const markup = await renderQueues(scriptOf([SETTLEMENT], []));
+    const row = cellsOf(markup, "choose_claimed_value");
+
+    expect(row.observation).toBe(SETTLEMENT.observation_id);
+    expect(row.observationHref).toBeUndefined();
+    expect(surfaceStateOf(markup, LOG)).toBe("ok");
+  });
+
+  it("keeps every verdict, and names its own object, when observations refuses", async () => {
+    const markup = await renderQueues({
+      [T.verdicts]: { data: POPULATION, count: POPULATION.length },
+      [T.observations]: { error: tableNotInSchemaCache(T.observations) },
+      [T.reviewItems]: { data: [], count: 0 },
+    });
+    const $ = cheerio.load(markup);
+
+    // Every verdict is still here — a leg that only supplies a link costs this
+    // surface a link, never a verdict (admin-window/BUG-0021).
+    expect(renderedOrder(markup)).toHaveLength(POPULATION.length);
+    expect($(PROVENANCE).find("[data-not-provisioned]").attr("data-not-provisioned")).toBe(
+      T.observations,
+    );
+    // The log's own state is `ok`: the refusal belongs to its own sub-surface,
+    // exactly as the gauge's per-queue slices belong to theirs.
+    expect(surfaceStateOf(markup, LOG, PROVENANCE)).toBe("ok");
+  });
+});
