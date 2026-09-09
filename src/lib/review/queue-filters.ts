@@ -70,7 +70,7 @@ export const SOURCE_FACET = "source_id";
 
 /**
  * Every facet that NARROWS, chips or no chips — what `filterFrom`, `queuesHref`
- * and `isNarrowed` iterate.
+ * and `isNarrowedBeyond` iterate.
  *
  * Two lists, deliberately: a facet with no chip row still travels in every
  * href this page writes, or clicking `settled` — or the verdict-log tab —
@@ -349,9 +349,10 @@ export function narrowingOfKind(kind: Kind): ReviewItemFilter {
 }
 
 /**
- * Is anything narrowed at all? What tells "nothing here yet" from "nothing
- * matched" — the ONE narrowing decision in this route, asked once per surface
- * that renders a scoped figure or a "nothing matched" card.
+ * Is this URL narrowed BEYOND the narrowing a surface already applies to
+ * itself? What tells "nothing here yet" from "nothing matched" — the ONE
+ * narrowing decision in this route, asked once per surface that renders a
+ * scoped figure or a "nothing matched" card.
  *
  * `within` is the narrowing a surface ALREADY applies to itself, whatever the
  * URL says — `narrowingOfKind(kind)` for one queue block, which is every facet
@@ -367,9 +368,16 @@ export function narrowingOfKind(kind: Kind): ReviewItemFilter {
  * against is the whole implied set rather than one facet: `?kind=signal` really
  * does empty the decision block, and `?shape=entity_link_source_pattern` really
  * is the signal block's own set under another name (admin-window/BUG-0131) — the
- * first still reads as filtered, the second may not. A surface with no narrowing
- * of its own (`within` omitted) asks the whole-URL question, which is what the
- * page-level callers want and what this function has always answered.
+ * first still reads as filtered, the second may not.
+ *
+ * **`within` is REQUIRED** (admin-window/DEBT-0010). A surface with no
+ * narrowing of its own passes `{}` at the call and thereby asks the whole-URL
+ * question OUT LOUD. The parameter used to default to `{}`, so one signature
+ * answered two different questions depending on how many arguments it was
+ * given — 'narrowed relative to this block' with two, 'is any facet set' with
+ * one — and no production call site ever took the default; only tests did. A
+ * predicate that answers two questions is the one that gets widened by
+ * whichever question broke last (ARCHITECTURE.md Common violations row 15).
  *
  * **A source is always narrowing.** `narrowingOfKind` is unchanged and carries
  * no `source_id`: no kind implies a source, so a source in the URL can never be
@@ -377,9 +385,9 @@ export function narrowingOfKind(kind: Kind): ReviewItemFilter {
  * (admin-window/BUG-0141). Whether it EMPTIED a block is the counted question
  * `isBlockNarrowed` asks below.
  */
-export function isNarrowed(
+export function isNarrowedBeyond(
   filter: ReviewItemFilter,
-  within: ReviewItemFilter = {},
+  within: ReviewItemFilter,
 ): boolean {
   return NARROWING_FACETS.some(
     (facet) => filter[facet] !== undefined && filter[facet] !== within[facet],
@@ -390,8 +398,8 @@ export function isNarrowed(
  * **Is THIS queue block's rendering scoped by the URL?** The one question the
  * four states turn on, from TWO facts and nothing else (admin-window/BUG-0133).
  *
- * `isNarrowed` above answers the STRUCTURAL half — can a facet of this URL
- * remove a row of this kind at all, whatever the table holds. It is derived
+ * `isNarrowedBeyond` above answers the STRUCTURAL half — can a facet of this
+ * URL remove a row of this kind at all, whatever the table holds. It is derived
  * from the shape registry, so it can never answer the other half: **whether
  * the table holds any row of this kind in the first place.** When a block's
  * own queue is empty, no facet has removed anything from it — every URL leaves
@@ -418,13 +426,13 @@ export function isNarrowed(
  *   no longer named (admin-window/BUG-0133).
  *
  * Pure, and decided here rather than in the page, for the same reason
- * `isNarrowed` is: it is one rule about a narrowing, and the page renders.
+ * `isNarrowedBeyond` is: it is one rule about a narrowing, and the page renders.
  *
  * **The rule itself now lives in `src/lib/url/narrowing.ts`** and this is its
  * review-domain adapter (admin-window/DEBT-0008): the M2 structure walk found
  * `/claims` and `/sources` answering the same question from fact 1 alone, and
  * a rule with three callers is declared once. What stays here is the half that
- * is this domain's — fact 1, `isNarrowed(filter, within)` over
+ * is this domain's — fact 1, `isNarrowedBeyond(filter, within)` over
  * `NARROWING_FACETS` and a kind's implied narrowing, which no other surface
  * can spell. Nothing about this function's name, signature or answer changed.
  */
@@ -433,7 +441,7 @@ export function isBlockNarrowed(
   within: ReviewItemFilter,
   block: SurfacePopulation,
 ): boolean {
-  return isSurfaceNarrowed(isNarrowed(filter, within), block);
+  return isSurfaceNarrowed(isNarrowedBeyond(filter, within), block);
 }
 
 /* ── writing the URL ─────────────────────────────────────────────────────── */

@@ -9,7 +9,7 @@ import {
   facetChips,
   filterBar,
   filterFrom,
-  isNarrowed,
+  hasNarrowingFacet,
   sourceHref,
   tabFrom,
   tabLinks,
@@ -64,12 +64,12 @@ describe("the facets", () => {
       source_id: "source-b",
       domain: "venues",
     });
-    expect(isNarrowed(filter)).toBe(true);
+    expect(hasNarrowingFacet(filter)).toBe(true);
   });
 
   it("narrows nothing for an absent, repeated or unrecognised parameter", () => {
     expect(filterFrom({}, OPTIONS)).toEqual({});
-    expect(isNarrowed({})).toBe(false);
+    expect(hasNarrowingFacet({})).toBe(false);
     // The first value wins, as URLSearchParams.get() does.
     expect(filterFrom({ bucket: ["escalated", "agreeing"] }, OPTIONS)).toEqual({
       bucket: "escalated",

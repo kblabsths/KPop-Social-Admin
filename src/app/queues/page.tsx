@@ -45,7 +45,7 @@ import {
   filterBar,
   filterFrom,
   isBlockNarrowed,
-  isNarrowed,
+  isNarrowedBeyond,
   narrowingOfKind,
   queuesHref,
   tabFrom,
@@ -358,7 +358,7 @@ function Queue({
           rendered: items.length,
           population: population.data,
         })
-      : isNarrowed(filter, ownNarrowing);
+      : isNarrowedBeyond(filter, ownNarrowing);
   // The read succeeded either way, so it produced a figure either way. An
   // empty queue differs from a full one ONLY in the rows region, where its
   // card says what the queue holds and what fills it: the counted zero keeps

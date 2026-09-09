@@ -1563,7 +1563,8 @@ describe("absence and failure", () => {
  * structure walk; admin-window/BUG-0133's rule, admin-window/DEBT-0008 for
  * this page).
  *
- * This page decided the arm from `isNarrowed(filter)` — the URL and nothing
+ * This page decided the arm from `hasNarrowingFacet(filter)` (then named
+ * `isNarrowed`) — the URL and nothing
  * else — so a facet over a tab holding zero claims said "no claims matched
  * these filters" and pointed the operator at a filter that had removed
  * nothing. The ledger records staging holding 0 standing disagreements, which
