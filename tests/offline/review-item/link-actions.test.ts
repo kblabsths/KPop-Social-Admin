@@ -580,6 +580,59 @@ describe("the link control's picker", () => {
     const $ = cheerio.load(opened());
     expect($("[aria-current]")).toHaveLength(0);
   });
+
+  /**
+   * QA, campaign admin-window/TASK-0056 — the close's re-use of the SHARED
+   * picker has to carry the shared picker's own in-flight rule with it
+   * (admin-window/BUG-0097, pinned for the record surface by
+   * `tests/offline/records/entity-picker.test.ts`: "offers no option that would
+   * start a second write while one is saving").
+   *
+   * `ChosenControl`'s `disabled` prop IS that state — its own words: "a
+   * settlement is in flight, so this control may not start a second one" — and
+   * `CloseForm` passes `disabled={settling}` while leaving `open` untouched, so
+   * a panel the operator opened stays open, and live, for the whole of another
+   * control's settlement. A row clicked there reaches `settle`'s in-flight
+   * guard, which returns without setting any state, so the choice is dropped
+   * with nothing said.
+   *
+   * A STRICT pin (`it.fails`) on admin-window/BUG-0102, observed red as a
+   * plain `it` against the landed tree at 6a93776 before it was pinned: the
+   * day the divergence goes, this reddens as an XPASS and sends the reader
+   * to the ticket. The fix flips it back to `it`.
+   */
+  it.fails(
+    "offers no live option while a settlement is in flight (admin-window/BUG-0102)",
+    () => {
+      const $ = cheerio.load(
+        render(
+          h(ChosenControl, {
+            spec: link,
+            open: true,
+            query: "",
+            // Exactly what `CloseForm` hands this control while it settles.
+            disabled: true,
+            onToggle: () => {},
+            onQuery: () => {},
+            onChoose: () => {},
+          }),
+        ),
+      );
+      const options = $("li button");
+      // Not vacuous: the rows stay DRAWN while a write is in flight (BUG-0097's
+      // rule is that they cannot act, not that they vanish).
+      expect(options.length).toBeGreaterThan(0);
+      const live = options
+        .toArray()
+        .filter((element) => $(element).attr("disabled") === undefined);
+      expect(live.map((element) => $(element).text().trim())).toEqual([]);
+      // …and the counter-case, or the assertion above would pass on a picker
+      // that is dead at rest too: with nothing in flight every row can act.
+      const resting = cheerio.load(opened());
+      expect(resting("li button[disabled]")).toHaveLength(0);
+      expect(resting("li button").length).toBe(options.length);
+    },
+  );
 });
 
 /* ── one control, one decision, one call ─────────────────────────────────── */
