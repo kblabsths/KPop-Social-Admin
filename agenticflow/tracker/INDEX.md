@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T20:35:51Z — do not edit)
+# Tracker index (regenerated 2026-09-09T20:36:01Z — do not edit)
 
 ## open
 - DEBT-0011 [P2][debt][patch] The mono identifier face is hand-spelled 44 times across 24 files with no shared primitive — the structural root of BUG-0112/0120/0121  (deps:BUG-0141,DEBT-0008 scope:src/components/ui/identifier.tsx,src/components/ui/index.ts,src/app,src/components,tests/offline/ui/primitives.test.ts,tests/offline/records/page.test.ts,tests/offline/review-item/page.test.ts)
