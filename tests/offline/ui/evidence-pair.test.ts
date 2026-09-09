@@ -525,6 +525,120 @@ describe("EvidencePair", () => {
     },
   );
 
+  /**
+   * The absent-value fixtures every guard on this card is graded on: the three
+   * shapes `isAbsent` calls empty (`lib/format.ts`), plus the two the ROW TYPE
+   * says cannot happen and PostgREST can still deliver — `tier_at_apply` and
+   * `observations.status` are declared `string` in `lib/db/review-item.ts`
+   * while the columns behind them are the scraper repo's, so a null arriving
+   * there is a type lie this component meets at runtime, not a compile error
+   * (LESSONS 8: `undefined` and `null` are two inputs).
+   */
+  const ABSENT_VALUES: [string, string][] = [
+    ["empty", ""],
+    ["blank", "   "],
+    ["ink-less", "\u200b\u202e"],
+    ["null at runtime", null as unknown as string],
+    ["undefined at runtime", undefined as unknown as string],
+  ];
+
+  /** The canonical card's provenance line, split the way the browser splits it. */
+  function canonicalLine(html: string) {
+    const $ = cheerio.load(html);
+    const element = $("div").first().children("div").last().children("span").last();
+    return {
+      $,
+      element,
+      text: element.text(),
+      isolated: element.find("[dir]").toArray().map((node) => $(node).text()),
+    };
+  }
+
+  /** The app's absence element as `orDash` draws it — read, never typed. */
+  function absenceLabel() {
+    return cheerio.load(render(orDash("")))("[aria-label]").first().attr("aria-label");
+  }
+
+  /**
+   * An absent provenance value takes the app's absence element **and the app's
+   * own words beside it are still rendered** — the case the guard's two other
+   * call sites on this line have and the first segment does not
+   * (admin-window/BUG-0152).
+   *
+   * `canonicalCard` (`src/app/queues/[reviewItemId]/page.tsx`) hands two of its
+   * three machine values over WITH app words attached: the tier carries `after`
+   * ("at apply") and a dead claim's status carries `before` ("the claim it
+   * applied is now"). A blank `tier_at_apply` or a blank status therefore lands
+   * in a segment the first-segment fixtures never reach, and the two failure
+   * modes there are different ones: the empty isolated box BUG-0152 was filed
+   * for, and a segment that drops the app's clause along with the value, leaving
+   * a bare dash the line never explains.
+   *
+   * The words are the FIXTURE's own strings, not this app's copy, so a rewrite
+   * of either sentence cannot redden this and a guard that swallows them must.
+   */
+  it.each(ABSENT_VALUES)(
+    "keeps the app's words beside a %s provenance value and leaves no box standing empty — admin-window/BUG-0152",
+    (_name, value) => {
+      const WORDS = "QA_APP_WORDS";
+      const placements: ProvenanceSegment[][] = [
+        // The tier's placement: app words AFTER the value, mid-line.
+        [{ identifier: "songkick" }, { identifier: value, after: WORDS }, "applied 3d ago"],
+        // The dead claim's placement: app words BEFORE the value, last.
+        [{ identifier: "songkick" }, "applied 3d ago", { before: WORDS, identifier: value }],
+      ];
+
+      for (const provenance of placements) {
+        const { element, text, isolated } = canonicalLine(
+          pair({ canonical: { ...CANONICAL, provenance } }),
+        );
+
+        const dash = element.find(`[aria-label="${absenceLabel()}"]`);
+        expect(dash, "the app's absence element stands in for the missing value").toHaveLength(1);
+        expect(dash.parents("[dir]"), "and it sits in no identifier box").toHaveLength(0);
+        expect(isolated, "only the value that HAS something visible keeps a box").toEqual([
+          "songkick",
+        ]);
+        expect(text, "the app's own clause beside it is still rendered").toContain(WORDS);
+      }
+    },
+  );
+
+  /**
+   * The two secondary lines of one card answer an absent machine value with the
+   * SAME element — the property that made `MachineValue` one helper rather than
+   * a guard written twice (admin-window/BUG-0152, LESSONS 5 and 7).
+   *
+   * This is the behaviour the one-owner shape buys, asserted as behaviour: the
+   * provenance line and the claim line beside it are rendered from the same
+   * absent value and their absence elements are compared to EACH OTHER, so a
+   * second hand-written guard on either line — a blank, a hand-typed dash, a
+   * dash in an identifier's box — separates them and reddens this, while a
+   * change to the app's one absence element moves both together and does not.
+   */
+  it.each(ABSENT_VALUES)(
+    "answers a %s value with the same absence element on both lines of the card — admin-window/BUG-0152",
+    (_name, value) => {
+      const onProvenance = canonicalLine(
+        pair({
+          canonical: { ...CANONICAL, provenance: [{ identifier: value }, ...PROVENANCE.slice(1)] },
+        }),
+      );
+      const onClaim = line(pair({ claims: [{ ...CLAIMS[0], source: value }] }));
+
+      const label = absenceLabel();
+      const fromProvenance = onProvenance.element.find(`[aria-label="${label}"]`);
+      const fromClaim = onClaim.element.find(`[aria-label="${label}"]`);
+
+      expect(fromProvenance, "the provenance line draws it once").toHaveLength(1);
+      expect(fromClaim, "so does the claim line").toHaveLength(1);
+      expect(
+        onProvenance.$.html(fromProvenance),
+        "and the two lines draw the very same element",
+      ).toBe(onClaim.$.html(fromClaim));
+    },
+  );
+
   it("renders with no contenders at all and draws no dangling separator", () => {
     const html = pair({ claims: [] });
     expect(html).toContain("current");

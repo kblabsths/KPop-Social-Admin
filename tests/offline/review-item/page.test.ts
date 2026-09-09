@@ -2535,6 +2535,54 @@ describe("an evidence cell with nothing in it", () => {
     }
   });
 
+  /**
+   * The absence the evidence table reaches that the fixtures above do not: a
+   * registry row that EXISTS and whose `source` name has nothing visible in it.
+   *
+   * Every fixture above removes the whole registry read, which is the case
+   * `sourceLabel` (`src/lib/sources/names.ts`) already answers — "the id
+   * VERBATIM … rather than blanking the link", pinned two describes up in
+   * "keeps the id verbatim when the registry named nothing". A row that is
+   * PRESENT and blank takes neither branch: the lookup finds it, `??` sees a
+   * string, and the blank reaches the anchor as its only content — so the cell
+   * renders as `""`, the operator's route to that source is a link with
+   * nothing to read and nothing visible to click, and the sibling row beside
+   * it reads its source's name.
+   *
+   * Two of this suite's own rules say what should happen instead, and both
+   * agree: no evidence cell is ever blank and every absence the table reaches
+   * draws the app's dash (the test above), and a source the registry cannot
+   * name is said as its id rather than blanked (BUG-0043's pair). The claim
+   * and provenance lines of the evidence pair on this same page already draw
+   * the dash for this very value (admin-window/BUG-0152) — this cell is the
+   * third rendering of one row's absence.
+   *
+   * admin-window/BUG-0154. Landed `it.fails` (strict) while the divergence
+   * stands; the fix flips it to a plain `it`.
+   */
+  it.fails(
+    "renders no blank cell for a source whose registry name is blank",
+    async () => {
+      const item = reviewItemDataConflict();
+      const markup = await renderItem(
+        conflictScript({
+          // The registry ANSWERED and holds a row for this source; the row's
+          // name is whitespace (`isAbsent`'s middle fixture, lib/format.ts).
+          [T.sources]: { data: [sourceRow({ source: "   " }), BANDSINTOWN] },
+        }),
+        item.review_item_id,
+      );
+
+      // Non-vacuity: the row beside it, whose source IS named, reads its name.
+      const healthy = cellsOf(markup, CLAIM_B.observation_id);
+      expect(healthy).toContain(BANDSINTOWN.source);
+
+      const cells = cellsOf(markup, CLAIM_A.observation_id);
+      expect(cells.length).toBe(healthy.length);
+      expect(cells.filter((cell) => cell === ""), "blank cells").toEqual([]);
+    },
+  );
+
   /* ── the four columns, one absent and one present (LESSONS 3) ─────────── */
 
   /** The hook each nullable cell is addressed by; the value cell's is the row's. */
