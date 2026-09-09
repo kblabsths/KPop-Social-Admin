@@ -1,0 +1,25 @@
+{
+ "id": "BUG-0102",
+ "created": "2026-09-09T06:19:30Z",
+ "green": true,
+ "git_head": "a23a533138d2b11ddd599218233b7de48f565248",
+ "scope": [
+  "src/components/review/close/form.tsx",
+  "tests/offline/review-item/link-actions.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "c0c47928fab681e89dd7a785ab249fd09639c96ad0c17fb733cd6e8ffe3eeac9",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review-item/link-actions.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-18963\n\n \u2713 |offline| tests/offline/review-item/link-actions.test.ts (32 tests) 65ms\n\n Test Files  1 passed (1)\n      Tests  32 passed (32)\n   Start at  23:19:28\n   Duration  1.02s (transform 257ms, setup 0ms, collect 496ms, tests 65ms, environment 0ms, prepare 222ms)\n\n(node:18970) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/records/entity-picker.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-18963\n\n \u2713 |offline| tests/offline/records/entity-picker.test.ts (32 tests) 74ms\n\n Test Files  1 passed (1)\n      Tests  32 passed (32)\n   Start at  23:19:29\n   Duration  807ms (transform 118ms, setup 0ms, collect 251ms, tests 74ms, environment 0ms, prepare 123ms)\n\n(node:18997) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
