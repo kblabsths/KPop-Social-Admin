@@ -1051,6 +1051,65 @@ describe("the cycles the resolver filed", () => {
     );
   });
 
+  /**
+   * The same invariant, for the padding `String.prototype.trim()` does not
+   * know about — QA's strict pin for admin-window/BUG-0146.
+   *
+   * admin-window/BUG-0145 answered the paste that brought a SPACE along, and
+   * the four spellings its criteria enumerate are green above. Its bar,
+   * though, is the sentence: the page may never print "not in this window"
+   * naming an id whose row the same document is drawing. It still does, for
+   * every ink-less character that is not in the Unicode `White_Space` set —
+   * ZERO WIDTH SPACE, SOFT HYPHEN, WORD JOINER, NUL, DEL, the bidi controls,
+   * a HANGUL FILLER. Each lays out at 0px (this campaign measured exactly
+   * these codepoints in Chromium for admin-window/BUG-0136), so the denied id
+   * reads character-for-character like the drawn one and the operator has
+   * nothing to see — BUG-0145's own harm, from a family its fix does not
+   * reach.
+   *
+   * They arrive: `?cycle=%E2%80%8B<id>` reaches the page as a real U+200B
+   * (measured over HTTP on this tree, a dev server on the QA lane's own port
+   * 8796 with the http suite's database sentinel).
+   *
+   * The app already HAS one definition of blank for exactly this family —
+   * `hasVisibleContent` / `visibleContent`, admin-window/BUG-0089 and
+   * BUG-0136, whose note is that three guards all tested blankness with
+   * `trim()` and all three were wrong the same way. Which arm the page takes
+   * is deliberately not pinned here: the row (as the whitespace family now
+   * gets) and no verdict at all (as `?run=` gives) are both honest. Only the
+   * denial-of-a-drawn-row is refused.
+   */
+  it.fails.each([
+    ["ZERO WIDTH SPACE", 0x200b],
+    ["SOFT HYPHEN", 0x00ad],
+    ["WORD JOINER", 0x2060],
+    ["NUL", 0x0000],
+    ["DEL", 0x007f],
+    ["RIGHT-TO-LEFT OVERRIDE", 0x202e],
+    ["LEFT-TO-RIGHT MARK", 0x200e],
+    ["HANGUL FILLER", 0x3164],
+  ] as const)(
+    "never denies a row it is rendering, padded with %s [admin-window/BUG-0146]",
+    async (_name, codePoint) => {
+      const pad = String.fromCodePoint(codePoint);
+      const markup = await renderCycles(healthyScript(), {
+        cycle: `${pad}${FAILED.run_id}${pad}`,
+      });
+      const $ = cheerio.load(markup);
+      // The window really is drawing that row — without this the rest proves
+      // nothing.
+      const drawn = renderedCycles(markup);
+      expect(drawn).toContain(FAILED.run_id);
+      // QA's invariant, the criterion's own may-not clause: whatever the paste
+      // carried, no verdict may deny an id whose row is in the window just
+      // drawn.
+      const denial = $('[data-cycle-found="false"]');
+      for (const id of drawn) {
+        expect(denial.text().replace(/\s+/g, " "), id).not.toContain(id);
+      }
+    },
+  );
+
   it("keeps the window's own limits on screen beside a cycle it could not find", async () => {
     // A full window is the one case where "not here" and "does not exist" come
     // apart: the cap filled, so the asked-for cycle may be older than the
