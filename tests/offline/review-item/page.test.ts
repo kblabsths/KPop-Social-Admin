@@ -1995,3 +1995,78 @@ describe("a queues address that is not a review-item id", () => {
     }
   });
 });
+
+/* ── the same table name, one route over ──────────────────────────────────── */
+
+/**
+ * The queues detail page's two empty state cards name `review_items` in the
+ * app's own prose face — campaign admin-window/BUG-0120's QA pass, 2026-09-09.
+ *
+ * BUG-0112 gave the record page's regime note the app's identifier-in-prose
+ * spelling and BUG-0120 gave the record page's two empty cards the same one,
+ * so `/records/<table>/<bad id>` now says the table's name in one face
+ * wherever it stands. This route's cards were named as a residual by that
+ * fix's builder and never moved: measured on the production build against
+ * staging (1440x900, light and dark, `/queues/x` and
+ * `/queues/00000000-0000-4000-8000-000000000099`), `review_items` renders
+ * Geist 12px — the app's prose — while the id one line above it renders
+ * Geist Mono 11px. LOOK_AND_FEEL Voice bar 5 does not stop at a route:
+ * machine identifiers "render verbatim in mono", and a table name is the
+ * machine's word on whichever surface prints it.
+ *
+ * The yardstick is the page's OWN machine word — the review-item id it draws
+ * above the card — so nothing here pins a face literal and a restyle moves
+ * both sides together.
+ *
+ * STRICT XFAIL while the divergence stands — reason
+ * `admin-window/BUG-0121`. The day this route wraps the name, `it.fails`
+ * turns red on the XPASS and sends the reader to that ticket.
+ */
+describe("a table name in a queues empty state card", () => {
+  /** The face this page gives a word the machine produced: the id it echoes. */
+  function machineFace($: cheerio.CheerioAPI): string[] {
+    const identity = $("[data-review-item]");
+    expect(identity.length, "the address is echoed back, once").toBe(1);
+    return faceOf(classesOf(identity));
+  }
+
+  /** How many times the one empty card says the table's name. */
+  function saidInTheCard($: cheerio.CheerioAPI): number {
+    const card = $('[data-state="empty"]');
+    expect(card.length, "one empty card, not several").toBe(1);
+    return card.text().split(T.reviewItems).length - 1;
+  }
+
+  /** The face of every element inside the card whose whole text is that name. */
+  function drawnAsTheMachineWord($: cheerio.CheerioAPI): string[][] {
+    return $('[data-state="empty"]')
+      .find("*")
+      .toArray()
+      .filter((element) => $(element).text() === T.reviewItems)
+      .map((element) => faceOf(classesOf($(element))));
+  }
+
+  it.fails("sets the name in the machine's face on an address that is no id", async () => {
+    const id = "not-a-uuid";
+    readWith.client = stubClient({
+      [T.reviewItems]: { error: invalidUuidSyntax(id) },
+    }).asSupabaseClient();
+    const $ = cheerio.load(
+      render(await ReviewItemPage({ params: Promise.resolve({ reviewItemId: id }) })),
+    );
+    // Non-vacuous: this state really does print the table's name.
+    expect(saidInTheCard($), "the card names the table").toBe(1);
+    expect(drawnAsTheMachineWord($)).toEqual([machineFace($)]);
+  });
+
+  it.fails("sets the name in the machine's face on an id no row has", async () => {
+    const $ = cheerio.load(
+      await renderItem(
+        { ...conflictScript(), [T.reviewItems]: { data: null } },
+        ID.reviewItemDataConflict,
+      ),
+    );
+    expect(saidInTheCard($), "the card names the table").toBe(1);
+    expect(drawnAsTheMachineWord($)).toEqual([machineFace($)]);
+  });
+});
