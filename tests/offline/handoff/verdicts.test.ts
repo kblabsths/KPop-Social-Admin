@@ -322,6 +322,27 @@ describe("the verdicts migration", () => {
     expect(grants[0]).toBe("grant select on table public.verdicts to service_role");
   });
 
+  /**
+   * PIN — admin-window/BUG-0082, strict: it must FAIL today, and the day the
+   * artifact carries the revoke this XPASSes and sends the reader to the ticket.
+   *
+   * The block says service_role holds "SELECT and nothing else" (note §4 item 1)
+   * and grants exactly that — but on this project a new public table is BORN
+   * with ALL granted to service_role
+   * (`kspace Scraper/supabase/migrations/20260818000000_the_schema_arrives_as_one_snapshot.sql:6850`,
+   * measured as `service_role=arwdDxtm/postgres` at
+   * `20260821000001_the_gate_becomes_the_only_write_path.sql:30`). A GRANT cannot
+   * narrow an existing privilege; only a REVOKE can. So the assertion that has
+   * to hold is about the REVOKE side, not the grant side — which is exactly what
+   * `gradeVerdicts`'s `service_role_write_grant` finding does not look at.
+   */
+  it.fails("PIN BUG-0082: narrows service_role by an explicit revoke, not by a bare grant", () => {
+    const revokes = statementsStartingWith(shipped, "revoke").filter((statement) =>
+      statement.includes("public.verdicts"),
+    );
+    expect(revokes.some((statement) => /\bservice_role\b/.test(statement))).toBe(true);
+  });
+
   it("alters nothing but its own table, and carries no data statement", () => {
     expect(alterTableTargets(shipped.scan)).toEqual(["public.verdicts", "public.verdicts"]);
     expect(statementsStartingWith(shipped, "insert")).toEqual([]);
