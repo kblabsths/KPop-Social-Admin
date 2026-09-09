@@ -2467,6 +2467,75 @@ describe("a claim's value", () => {
   });
 });
 
+/**
+ * **An absent value in an evidence row renders the app's one dash.**
+ *
+ * `Column.cell`'s own contract (`src/components/ui/data-table.tsx`): "Anything
+ * absent — `null`, a falsy `flag && …` body, an empty string … renders as the
+ * dash in disabled-gray; the cell never decides that itself". The record cell
+ * is already graded on it ("renders the table's dash for a folded record it
+ * can name no way at all"), and ARCHITECTURE.md §6 trap 5 says the same thing
+ * for the tier in particular: "a tier this app could not read is the app's own
+ * dash, not a blank and not a guessed tier".
+ *
+ * **admin-window/BUG-0132** — landed strict: `valueColumn`, `tierColumn`,
+ * `payloadColumn` and `heldColumn` each wrap their value in a `<span data-…>`
+ * ELEMENT, and `isAbsent` (src/lib/format.ts) has no branch for an element, so
+ * `orDash` never fires and the cell renders blank. The same absent tier draws
+ * the app's dash in the evidence pair one block above.
+ *
+ * The rule is graded here over the three absences the evidence table really
+ * reaches — the registry unreadable (no tier), a claim whose `value` and
+ * `payload_ref` are null, and the bucket read refusing (nothing held-by) —
+ * and it reads the ROW, not one cell hook, so a fix is free to drop the hook
+ * span or to render the dash inside it.
+ */
+describe("an evidence cell with nothing in it", () => {
+  /** Every cell of one evidence row, as the operator reads it. */
+  function cellsOf(markup: string, id: string): string[] {
+    const $ = cheerio.load(markup);
+    return $(`[data-evidence="${id}"]`)
+      .closest("tr")
+      .find("td")
+      .map((_index, cell) => $(cell).text().replace(/\s+/g, " ").trim())
+      .get();
+  }
+
+  /** A claim the producer published with no value and no payload pointer. */
+  const NOTHING_SAID: ObservationRow = observationRow({
+    observation_id: ID.observationB,
+    source_id: ID.sourceBandsintown,
+    status: "pending",
+    value: null as never,
+    payload_ref: null,
+  });
+
+  it.fails("renders the app's dash, on every absence the evidence table reaches", async () => {
+    const id = reviewItemEntityLink().review_item_id;
+    const absences: [string, Script][] = [
+      // The source registry could not be read, so no claim has a tier
+      // (admin-window/BUG-0021 keeps the rows and drops the label).
+      ["tier", stuckScript({ [T.sources]: { error: tableNotInSchemaCache(T.sources) } })],
+      // The claim itself says nothing: jsonb null, and no payload pointer.
+      ["value and payload", stuckScript({ [T.observations]: { data: [NOTHING_SAID] } })],
+      // `pending_claims` refused, so nothing states what the claim waits on.
+      ["held by", stuckScript({ [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) } })],
+    ];
+
+    // Non-vacuity: with everything read, the row has cells and none is blank.
+    const whole = cellsOf(await renderItem(stuckScript(), id), ID.observationB);
+    expect(whole.length).toBeGreaterThan(0);
+    expect(whole.filter((cell) => cell === "")).toEqual([]);
+
+    for (const [what, script] of absences) {
+      const cells = cellsOf(await renderItem(script, id), ID.observationB);
+      expect(cells.length, what).toBe(whole.length);
+      expect(cells.filter((cell) => cell === ""), `${what}: blank cells`).toEqual([]);
+      expect(cells, `${what}: the app's dash`).toContain(EM_DASH);
+    }
+  });
+});
+
 /* ── the table scrolls inside its own border, not the page ───────────────── */
 
 describe("a table wider than its column", () => {
