@@ -6,6 +6,7 @@ import { Empty, Page, Section, StateOf } from "@/components/ui";
 import {
   isRecordId,
   readRecord,
+  readReferenceChoices,
   readRecordProvenance,
   readRecordReference,
 } from "@/lib/db/records";
@@ -380,6 +381,18 @@ export default async function RecordPage({
       ? "open"
       : "closed";
 
+  // The FIFTH leg, and the narrowest of all after the readiness question: the
+  // rows this record's reference field may be pointed at (admin-window/TASK-0055).
+  // It is read only where a picker could be drawn — an open write path on a
+  // table whose map entry carries a reference — so the graded normal case, an
+  // absent settlement function, makes no venue read at all and shows no card
+  // for one. A refused read costs the PICKER and nothing else: every value,
+  // the reference's own link and the provenance beside it all stay.
+  const choices =
+    access === "open" && config.reference !== null
+      ? await readReferenceChoices(config)
+      : null;
+
   let body;
   if (result.kind !== "ok") {
     // A leg that could not fill what it was for stands ABOVE the field table
@@ -410,6 +423,7 @@ export default async function RecordPage({
           reference.name,
           access,
         )}
+        choices={choices?.window ?? null}
       />
     );
   }
@@ -436,6 +450,7 @@ export default async function RecordPage({
       {provenanceLegend ? <ProvenanceLegend /> : null}
       {provenance.note ? <StateOf result={provenance.note} /> : null}
       {reference.note ? <StateOf result={reference.note} /> : null}
+      {choices?.note ? <StateOf result={choices.note} /> : null}
       {body}
     </RecordFrame>
   );

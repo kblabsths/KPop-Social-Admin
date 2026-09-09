@@ -57,24 +57,69 @@ export async function submitFieldEdit(
   next: string | null,
   fetchImpl: FetchLike,
 ): Promise<SaveOutcome> {
+  return send(table, id, field, { field, value: next }, fetchImpl);
+}
+
+/**
+ * Point a REFERENCE field at a row — the entity picker's submission
+ * (campaign admin-window/TASK-0055, SPEC F12).
+ *
+ * The body carries `ref` and no `value`, and `ref` is the chosen entity's own
+ * id — never its name, and never anything the operator typed. That is the
+ * whole difference from the cell above and it is the point of the widget: a
+ * reference is observed as a ref, and the apply resolves it into a row link
+ * instead of writing text into a column (ARCHITECTURE §9.2). The route reads
+ * the map to learn which registry field the column carries and builds the
+ * override envelope; this function names no registry field and no domain.
+ *
+ * `field` is the COLUMN the surface drew — `venue_id` — for the same reason
+ * the cell sends a column: it is what the line is called, and the map is the
+ * one place that knows what else it is called.
+ *
+ * There is no clearing arm, deliberately: unlinking a reference is a decision
+ * the envelope cannot express (an override carries exactly one filled payload
+ * slot), so the picker offers no control for it rather than sending something
+ * the function would raise on.
+ */
+export async function submitReferenceEdit(
+  table: string,
+  id: string,
+  field: string,
+  ref: string,
+  fetchImpl: FetchLike,
+): Promise<SaveOutcome> {
+  return send(table, id, field, { field, ref }, fetchImpl);
+}
+
+/**
+ * One PATCH, one reading of what came back — shared by both submitters so the
+ * refusal an operator reads and the value a cell settles on are decided once.
+ */
+async function send(
+  table: string,
+  id: string,
+  field: string,
+  body: Record<string, unknown>,
+  fetchImpl: FetchLike,
+): Promise<SaveOutcome> {
   let response: Response;
   try {
     response = await fetchImpl(recordFieldApiPath(table, id), {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ field, value: next }),
+      body: JSON.stringify(body),
     });
   } catch (thrown) {
     return { ok: false, message: messageOf(thrown) };
   }
 
-  let body: unknown = null;
+  let answered: unknown = null;
   try {
-    body = await response.json();
+    answered = await response.json();
   } catch {
-    body = null;
+    answered = null;
   }
-  const payload = (typeof body === "object" && body !== null ? body : {}) as {
+  const payload = (typeof answered === "object" && answered !== null ? answered : {}) as {
     error?: unknown;
     record?: unknown;
   };

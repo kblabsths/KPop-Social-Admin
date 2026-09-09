@@ -295,6 +295,131 @@ describe("a mapped column of a resolver-owned table", () => {
   });
 });
 
+/* ── the picker's choice: a ref, never a value ────────────────────────────── */
+
+/**
+ * The entity picker's submission, as the decision the function actually takes
+ * — campaign admin-window/TASK-0055, SPEC F12, ARCHITECTURE §9.2.
+ *
+ * The spy is the recording stub: what is asserted is the ENVELOPE the route
+ * built, key for key, because that is what `settle_review_item` reads and the
+ * whole claim of this ticket is about its shape — the chosen entity's id in
+ * `ref`, the REGISTRY's field name, and no free text anywhere for that field.
+ */
+describe("the picker's choice", () => {
+  /** The chosen venue's id — a real record id, as the picker only offers those. */
+  const VENUE = "01920000-0000-7000-8000-0000000000a4";
+
+  it("carries the chosen id as value.ref, under the registry's field name", async () => {
+    const { status } = await patch("events", { field: "venue_id", ref: VENUE });
+    expect(status).toBe(200);
+    expect(settleReviewItem).toHaveBeenCalledTimes(1);
+    const [client, decision] = settleReviewItem.mock.calls[0] as [
+      unknown,
+      Record<string, unknown>,
+    ];
+    expect(client).toBeUndefined();
+    expect(decision).toEqual({
+      action: "override",
+      review_item_id: null,
+      actor: ADMIN_EMAIL,
+      note: null,
+      value: {
+        domain: "events",
+        entity_id: RECORD_ID,
+        // The REGISTRY field, not the column: `events.venue` is what the gate
+        // knows, and `venue_id` is what the link stage produces from it. A
+        // decision naming the column would be registry knowledge re-encoded.
+        field: "venue",
+        observation_id: null,
+        // No free text for this field, and no scalar at all: the reference is
+        // observed as a ref, so the apply LINKS a row.
+        value: null,
+        ref: VENUE,
+      },
+    });
+    // ...and never the direct path, whatever the body said.
+    expect(updateRecordField).not.toHaveBeenCalled();
+  });
+
+  it("refuses the same column submitted as text, before any database call", async () => {
+    // The shipped path criterion 1 names: `venue_id` is not in `editable`, so
+    // a value submission for it is refused by the ONE authoriser — no
+    // settlement, no write, and the refusal names the field.
+    const { status, text } = await patch("events", {
+      field: "venue_id",
+      value: "Olympic Hall",
+    });
+    expect(status).toBe(403);
+    expect(JSON.parse(text).error).toContain("venue_id");
+    expect(settleReviewItem).not.toHaveBeenCalled();
+    expect(updateRecordField).not.toHaveBeenCalled();
+  });
+
+  it("refuses a ref for a column the map does not call a reference", async () => {
+    for (const [table, field] of [
+      ["events", "title"],
+      ["venues", "name"],
+      ["walk_sandbox", "label"],
+    ] as const) {
+      const { status, text } = await patch(table, { field, ref: VENUE });
+      expect(status, `${table}.${field}`).toBe(403);
+      expect(JSON.parse(text).error, `${table}.${field}`).toContain(field);
+      expect(settleReviewItem, `${table}.${field}`).not.toHaveBeenCalled();
+      expect(updateRecordField, `${table}.${field}`).not.toHaveBeenCalled();
+    }
+  });
+
+  it("refuses a ref on a table the map does not carry", async () => {
+    const { status } = await patch("groups", { field: "group_id", ref: VENUE });
+    expect(status).toBe(404);
+    expect(settleReviewItem).not.toHaveBeenCalled();
+  });
+
+  it("refuses a ref that is not a record id, rather than sending it", async () => {
+    // A ref is the chosen row's own id; anything else can link to no row and
+    // would become an external_ref nothing ever resolves.
+    for (const ref of ["Olympic Hall", "", "  ", 12, null, { id: VENUE }]) {
+      const { status } = await patch("events", { field: "venue_id", ref });
+      expect(status, JSON.stringify(ref)).toBe(400);
+      expect(settleReviewItem, JSON.stringify(ref)).not.toHaveBeenCalled();
+    }
+  });
+
+  it("refuses a body carrying both a value and a ref", async () => {
+    const { status, text } = await patch("events", {
+      field: "venue_id",
+      value: "Olympic Hall",
+      ref: VENUE,
+    });
+    expect(status).toBe(400);
+    expect(JSON.parse(text).error).toContain("ref");
+    expect(settleReviewItem).not.toHaveBeenCalled();
+  });
+
+  it("answers 503 naming what is absent, which is the normal case here too", async () => {
+    settleReviewItem.mockResolvedValue({
+      kind: "not_provisioned",
+      missing: "settle_review_item",
+    });
+    const { status, text } = await patch("events", { field: "venue_id", ref: VENUE });
+    expect(status).toBe(503);
+    expect(JSON.parse(text).missing).toBe("settle_review_item");
+    expect(JSON.parse(text).ok).toBeUndefined();
+    expect(updateRecordField).not.toHaveBeenCalled();
+  });
+
+  it("answers a malformed record id without settling anything", async () => {
+    const { status } = await patch(
+      "events",
+      { field: "venue_id", ref: VENUE },
+      "not-a-uuid",
+    );
+    expect(status).toBe(404);
+    expect(settleReviewItem).not.toHaveBeenCalled();
+  });
+});
+
 /* ── the branch is the PATH, never the table name ─────────────────────────── */
 
 describe("the route branches on the write path alone", () => {

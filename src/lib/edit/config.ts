@@ -415,6 +415,20 @@ export type EditRefusal =
       readonly table: string;
       readonly field: string;
       readonly message: string;
+    }
+  /**
+   * A column asked for as a REFERENCE that the map does not call one
+   * (campaign admin-window/TASK-0055). Its own arm rather than
+   * `field_not_editable`'s, because it answers a different question about a
+   * different submission: `venue_id` is not editable AND is a reference, and
+   * `title` is editable AND is not one, so one refusal cannot serve both
+   * without saying something false about half its subjects.
+   */
+  | {
+      readonly kind: "field_not_reference";
+      readonly table: string;
+      readonly field: string;
+      readonly message: string;
     };
 
 /**
@@ -494,4 +508,90 @@ export function decideEdit(table: string, field: string): EditDecision {
 /** Shorthand for the decision above when only the yes/no is wanted. */
 export function isEditable(table: string, field: string): boolean {
   return decideEdit(table, field).allowed;
+}
+
+/* ── the reference decision: the picker's half of the same map ────────────── */
+
+/**
+ * A reference edit the map allows — what the entity picker submits
+ * (campaign admin-window/TASK-0055, SPEC F12).
+ *
+ * Only `decideReference` produces one, so no caller can build a reference
+ * decision without having consulted the map — the same property `AllowedEdit`
+ * has for a cell.
+ */
+export interface AllowedReference {
+  readonly config: TableEditConfig;
+  /** The COLUMN the surface draws and the client names: `venue_id`. */
+  readonly column: string;
+  /** The REGISTRY field the decision carries: `venue`. */
+  readonly field: string;
+  /** How this edit is written — the regime's answer, resolved once. */
+  readonly path: WritePath;
+}
+
+export type ReferenceDecision =
+  | { readonly allowed: true; readonly reference: AllowedReference }
+  | { readonly allowed: false; readonly refusal: EditRefusal };
+
+/**
+ * **The reference decision**: is this column of this table the one the map
+ * calls a reference, and what does a decision about it name?
+ *
+ * The THIRD question this one map answers about the same columns — after "may
+ * it be written as a cell" (`decideEdit`) and "does this line link somewhere"
+ * (`reference`) — and it is asked by exactly two callers: the surface, which
+ * draws a picker instead of a cell, and the write route, which builds the
+ * override envelope. Neither spells `venue_id`, `venues` or `venue` for
+ * itself.
+ *
+ * **It is not a widening of `editable`, and it cannot become one.** A
+ * reference column stands in `display` (SPEC F8: the map holds user-facing
+ * fields, never ids or keys), so `decideEdit` refuses it and goes on refusing
+ * it — a `{field: "venue_id", value: "Olympic Hall"}` body is refused
+ * `field_not_editable`, before any database call, exactly as it was before
+ * this function existed. What this function admits is a submission of a
+ * different SHAPE: an entity's id in the `ref` slot, which the apply resolves
+ * into a row link rather than writing as text (ARCHITECTURE §9.2).
+ *
+ * Pure, like every other answer this file gives, and total over the map: a
+ * table with no reference refuses every column, naming the field.
+ */
+export function decideReference(table: string, column: string): ReferenceDecision {
+  const config = editConfigFor(table);
+  if (config === null) {
+    return {
+      allowed: false,
+      refusal: {
+        kind: "unknown_table",
+        table,
+        message: `${table} is not an editable table`,
+      },
+    };
+  }
+  const reference = config.reference;
+  if (reference === null || reference.field !== column) {
+    return {
+      allowed: false,
+      refusal: {
+        kind: "field_not_reference",
+        table,
+        field: column,
+        message: `${column} is not a reference field of ${table}`,
+      },
+    };
+  }
+  return {
+    allowed: true,
+    reference: {
+      config,
+      column: reference.field,
+      // Through the ONE reader of that pairing (admin-window/BUG-0090), never
+      // by reaching into `reference.registryField` here: the map already
+      // answers "what is this column's fact called", and a second reader is
+      // how two answers to one question start.
+      field: registryFieldOf(config, reference.field),
+      path: writePathFor(config.regime),
+    },
+  };
 }

@@ -7,6 +7,7 @@ import {
   EDIT_CONFIG,
   columnOfRegistryField,
   decideEdit,
+  decideReference,
   editConfigFor,
   isEditable,
   mappedColumns,
@@ -968,6 +969,86 @@ describe("decideEdit", () => {
     }
     for (const field of ["constructor", "toString", "__proto__"]) {
       expect(isEditable("walk_sandbox", field), field).toBe(false);
+    }
+  });
+});
+
+/* ── decideReference: the picker's half of the same map ───────────────────── */
+
+/**
+ * `decideReference` (campaign admin-window/TASK-0055, SPEC F12) — the THIRD
+ * question this one map answers about the same columns.
+ *
+ * It admits a submission of a different SHAPE (an entity's id in `ref`) for
+ * the one column the map calls a reference. It is not, and cannot become, a
+ * widening of `editable`: every assertion here is paired with the `decideEdit`
+ * answer for the same column, which stays a refusal.
+ */
+describe("decideReference", () => {
+  it("allows the one reference the map declares, naming both of its names", () => {
+    const decision = decideReference("events", "venue_id");
+    expect(decision.allowed).toBe(true);
+    if (!decision.allowed) return;
+    expect(decision.reference.column).toBe("venue_id");
+    // The REGISTRY field, which is what a decision about the fact carries.
+    expect(decision.reference.field).toBe("venue");
+    expect(decision.reference.config.table).toBe("events");
+    // The path is the regime's answer, resolved once, exactly as `AllowedEdit`
+    // carries it — no caller re-derives it from a table name.
+    expect(decision.reference.path).toBe(writePathFor(EDIT_CONFIG.events.regime));
+    expect(decision.reference.path).toBe("override");
+  });
+
+  it("does not make that column editable as a value", () => {
+    // The two questions are separate and stay separate: the reference is
+    // allowed as a REF and refused as a VALUE, by the same map, in the same
+    // breath. That is what makes "no code path submits a reference field's
+    // value as a string" true of the authoriser rather than of a widget.
+    const asValue = decideEdit("events", "venue_id");
+    expect(asValue.allowed).toBe(false);
+    if (!asValue.allowed) {
+      expect(asValue.refusal.kind).toBe("field_not_editable");
+    }
+  });
+
+  it("refuses every column that is not the reference, naming the field", () => {
+    const columns = Object.values(EDIT_CONFIG).flatMap((config) =>
+      mappedColumns(config)
+        .filter((column) => config.reference?.field !== column)
+        .map((column) => [config.table, column] as const),
+    );
+    // Not vacuous: the map really does carry columns that are not references.
+    expect(columns.length).toBeGreaterThan(0);
+    for (const [table, column] of columns) {
+      const decision = decideReference(table, column);
+      expect(decision.allowed, `${table}.${column}`).toBe(false);
+      if (!decision.allowed) {
+        expect(decision.refusal.kind, `${table}.${column}`).toBe(
+          "field_not_reference",
+        );
+        expect(decision.refusal.message, `${table}.${column}`).toContain(column);
+      }
+    }
+  });
+
+  it("refuses every column of a table with no reference at all", () => {
+    for (const table of ["venues", "walk_sandbox"]) {
+      expect(EDIT_CONFIG[table].reference, table).toBeNull();
+      for (const column of mappedColumns(EDIT_CONFIG[table])) {
+        expect(decideReference(table, column).allowed, `${table}.${column}`).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  it("refuses a table the map does not carry, naming the table", () => {
+    for (const table of ["groups", "idols", "event_performers", "", "__proto__"]) {
+      const decision = decideReference(table, "venue_id");
+      expect(decision.allowed, table).toBe(false);
+      if (!decision.allowed) {
+        expect(decision.refusal.kind, table).toBe("unknown_table");
+      }
     }
   });
 });

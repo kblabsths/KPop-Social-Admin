@@ -2,6 +2,7 @@ import { DataTable, type Column } from "@/components/ui";
 import { hintSide } from "@/components/edit-cell-layout";
 import { relativeAge } from "@/lib/format";
 import type { FieldProvenance } from "@/lib/records/provenance";
+import { EntityPicker, type PickerWindow } from "./entity-picker";
 import { FieldEditor } from "./field-editor";
 import type { FieldReference, RecordField } from "./fields";
 
@@ -97,11 +98,24 @@ export function RecordFields({
   table,
   id,
   fields,
+  choices = null,
 }: {
   table: string;
   /** The record's primary-key value — the write route's path segment. */
   id: string;
   fields: readonly RecordField[];
+  /**
+   * The rows a reference field may be pointed at, and the read that produced
+   * them — `null` when this record has no reference, when the read did not
+   * answer, or when the override path is closed and no picker is drawn
+   * (campaign admin-window/TASK-0055).
+   *
+   * The page reads it; this draws it. A `picker` line with no window falls
+   * back to the read-only link, which is the same line M1 shipped: a control
+   * over an empty set could choose nothing, and a control over a set that was
+   * never read would be a claim the page has no answer for.
+   */
+  choices?: PickerWindow | null;
 }) {
   /**
    * Which side each line's open-cell hint hangs on, by field name — campaign
@@ -135,6 +149,21 @@ export function RecordFields({
             value={field.value}
             multiline={field.multiline}
             hintSide={sides.get(field.name)}
+          />
+        ) : field.widget === "picker" && choices !== null ? (
+          // A reference edits by LINKING a row, never by typing one: the
+          // picker submits the chosen entity's id, and no path from here can
+          // send this field's value as text (SPEC F12, ARCHITECTURE §9.2).
+          <EntityPicker
+            table={table}
+            id={id}
+            field={field.name}
+            window={choices}
+            reference={
+              field.reference === null
+                ? null
+                : { id: field.reference.id, name: field.reference.name }
+            }
           />
         ) : field.reference !== null ? (
           // A link, not a control: a reference column is read-only like every

@@ -1,12 +1,21 @@
 import { requireAdmin } from "@/lib/admin";
-import { decideEdit, type AllowedEdit, type EditRefusal } from "@/lib/edit/config";
+import {
+  decideEdit,
+  decideReference,
+  type AllowedReference,
+  type EditRefusal,
+} from "@/lib/edit/config";
 import {
   isRecordId,
   updateRecordField,
   type EditableValue,
 } from "@/lib/db/records";
 import { settleReviewItem } from "@/lib/db/verdict";
-import { decisionRefusals, type VerdictDecision } from "@/lib/verdict/decision";
+import {
+  decisionRefusals,
+  type VerdictDecision,
+  type VerdictValue,
+} from "@/lib/verdict/decision";
 import type { DbResult } from "@/lib/db/result";
 
 /**
@@ -83,6 +92,10 @@ function statusFor(refusal: EditRefusal): number {
     // The table exists and is understood; the map refuses this column of it.
     case "field_not_editable":
       return 403;
+    // The table exists; the map does not call this column a reference, so it
+    // cannot be pointed at a row (campaign admin-window/TASK-0055).
+    case "field_not_reference":
+      return 403;
   }
 }
 
@@ -113,9 +126,19 @@ function noSuchRecord(table: string): Response {
   );
 }
 
-/** The parsed body, or the reason it is unusable. */
+/**
+ * The parsed body, or the reason it is unusable.
+ *
+ * TWO shapes since the entity picker landed (campaign admin-window/TASK-0055),
+ * and the SLOT the body fills is what says which edit it is: `value` is a
+ * scalar an operator typed, `ref` is the id of a row they chose. A body may
+ * fill exactly one — two would be two spellings of one intent, and the
+ * envelope this becomes carries exactly one filled payload slot either way
+ * (`decisionRefusals`, invariant 5).
+ */
 type ParsedBody =
-  | { ok: true; field: string; value: EditableValue }
+  | { ok: true; kind: "value"; field: string; value: EditableValue }
+  | { ok: true; kind: "ref"; field: string; ref: string }
   | { ok: false; message: string };
 
 /**
@@ -144,6 +167,36 @@ async function parseBody(request: Request): Promise<ParsedBody> {
     return { ok: false, message: "field must be a non-empty string" };
   }
 
+  // A REFERENCE submission, which is a different shape and not a value at all
+  // — campaign admin-window/TASK-0055. It carries the chosen row's id in
+  // `ref`, so the apply links rows instead of writing text (§9.2), and it is
+  // read FIRST because everything below is about the `value` key this body
+  // does not have.
+  const hasRef = Object.prototype.hasOwnProperty.call(body, "ref");
+  const hasValue = Object.prototype.hasOwnProperty.call(body, "value");
+  if (hasRef) {
+    if (hasValue) {
+      return {
+        ok: false,
+        message: "send either value or ref, never both",
+      };
+    }
+    const { ref } = body as { ref?: unknown };
+    if (typeof ref !== "string" || ref.length === 0) {
+      return { ok: false, message: "ref must be a non-empty string" };
+    }
+    // The chosen row's own id, and every table the map carries is keyed by a
+    // uuid: an id that is not one can name no row anywhere, so it is refused
+    // here rather than sent to the gate as an external ref nothing will ever
+    // link (`isRecordId` carries the grammar, and this file writes no second
+    // one). There is no clearing arm — an override carries exactly one filled
+    // payload slot, so unlinking is not expressible and no control offers it.
+    if (!isRecordId(ref)) {
+      return { ok: false, message: "ref must be the id of an existing record" };
+    }
+    return { ok: true, kind: "ref", field, ref };
+  }
+
   // An ABSENT `value` key is malformed, never a clear — campaign
   // admin-window/BUG-0011. `JSON.stringify` drops a key whose value is
   // `undefined`, so folding the missing key into the clearing branch let a
@@ -162,7 +215,7 @@ async function parseBody(request: Request): Promise<ParsedBody> {
   const { value } = body as { value?: unknown };
 
   if (value === null || value === "") {
-    return { ok: true, field, value: null };
+    return { ok: true, kind: "value", field, value: null };
   }
   if (
     typeof value !== "string" &&
@@ -193,7 +246,7 @@ async function parseBody(request: Request): Promise<ParsedBody> {
       message: `value must be a finite number; ${String(value)} cannot be stored`,
     };
   }
-  return { ok: true, field, value };
+  return { ok: true, kind: "value", field, value };
 }
 
 /**
@@ -215,10 +268,8 @@ async function parseBody(request: Request): Promise<ParsedBody> {
  * resolver-owned field is refused `value_payload_missing` rather than being
  * quietly turned into something the envelope cannot say.
  */
-async function overrideField(
-  edit: AllowedEdit,
-  id: string,
-  value: EditableValue,
+async function sendOverride(
+  value: VerdictValue,
   actor: string,
 ): Promise<Response> {
   const decision: VerdictDecision = {
@@ -226,14 +277,7 @@ async function overrideField(
     review_item_id: null,
     actor,
     note: null,
-    value: {
-      domain: edit.config.table,
-      entity_id: id,
-      field: edit.field,
-      observation_id: null,
-      value,
-      ref: null,
-    },
+    value,
   };
 
   const refusals = decisionRefusals(decision);
@@ -272,6 +316,63 @@ async function overrideField(
   return Response.json({ ok: true, verdict: result.data });
 }
 
+/**
+ * The picker's choice, as the ONE decision the settlement function takes —
+ * campaign admin-window/TASK-0055, SPEC F12.
+ *
+ * Two things separate it from the scalar override above, and both come from
+ * the MAP rather than from the caller:
+ *
+ *  - the field is the REGISTRY's name, `venue`, not the column `venue_id`.
+ *    The registry's field names are the canonical columns' names with exactly
+ *    that one exception, and the gate knows the column — a decision naming it
+ *    would be scraper registry knowledge re-encoded by hand (ARCHITECTURE
+ *    §9.2). `decideReference` is what resolves the one into the other; this
+ *    file spells neither name;
+ *  - the id travels in `ref` and `value` is null. A reference is OBSERVED as a
+ *    ref, and the link stage resolves `(source, domain, external_ref)` through
+ *    `confirmed_matches` into the id column, so the apply produces a row link
+ *    and never a string. That is the whole point of the widget, and it is why
+ *    no path in this app sends a reference field's value as text.
+ *
+ * Everything else — the item-less row, the actor from the gate, the refusals,
+ * the 503 that is the normal answer — is `sendOverride`'s, unchanged, because
+ * it is the same decision with a different payload slot filled.
+ */
+async function overrideReference(
+  reference: AllowedReference,
+  id: string,
+  ref: string,
+  actor: string,
+): Promise<Response> {
+  // A reference is settled through the pipeline or not at all: there is no
+  // direct write that could carry a confirmed match. No entry in the map is
+  // shaped this way today, and this is what keeps that from mattering.
+  if (reference.path !== "override") {
+    return Response.json(
+      {
+        error:
+          `${reference.column} of ${reference.config.table} cannot be ` +
+          `linked from Admin: a reference is recorded through the ` +
+          `resolution pipeline`,
+      },
+      { status: 403 },
+    );
+  }
+
+  return sendOverride(
+    {
+      domain: reference.config.table,
+      entity_id: id,
+      field: reference.field,
+      observation_id: null,
+      value: null,
+      ref,
+    },
+    actor,
+  );
+}
+
 /** What the DIRECT path makes of each writer outcome — the M1 answers, unchanged. */
 function directAnswer(
   table: string,
@@ -307,6 +408,29 @@ export async function PATCH(
     return Response.json({ error: body.message }, { status: 400 });
   }
 
+  // A REFERENCE submission is a different question of the same map, and it is
+  // asked here, in the same place and in the same order as the other one
+  // (campaign admin-window/TASK-0055). `decideEdit` is untouched by it and
+  // goes on refusing `venue_id`: a `{field: "venue_id", value: "…"}` body is
+  // still `field_not_editable`, so no path in this route submits a reference
+  // field's value as text.
+  if (body.kind === "ref") {
+    const chosen = decideReference(table, body.field);
+    if (!chosen.allowed) {
+      return Response.json(
+        { error: chosen.refusal.message },
+        { status: statusFor(chosen.refusal) },
+      );
+    }
+    if (!isRecordId(id)) return noSuchRecord(table);
+    return overrideReference(
+      chosen.reference,
+      id,
+      body.ref,
+      gate.user?.email ?? "",
+    );
+  }
+
   const decision = decideEdit(table, body.field);
   if (!decision.allowed) {
     return Response.json(
@@ -325,7 +449,17 @@ export async function PATCH(
   // regime. Adding a table to the map cannot move it between these two arms —
   // only its regime can (ARCHITECTURE §9).
   if (decision.edit.path === "override") {
-    return overrideField(decision.edit, id, body.value, gate.user?.email ?? "");
+    return sendOverride(
+      {
+        domain: decision.edit.config.table,
+        entity_id: id,
+        field: decision.edit.field,
+        observation_id: null,
+        value: body.value,
+        ref: null,
+      },
+      gate.user?.email ?? "",
+    );
   }
 
   return directAnswer(table, await updateRecordField(decision.edit, id, body.value));

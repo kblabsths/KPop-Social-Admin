@@ -1,6 +1,7 @@
 import {
   decideEdit,
   mappedColumns,
+  writePathFor,
   type TableEditConfig,
 } from "@/lib/edit/config";
 import type { FieldProvenance } from "@/lib/records/provenance";
@@ -24,8 +25,20 @@ import { isEditableValue, scalarText } from "./values";
  * here; this decides what each line is; the component draws it.
  */
 
-/** What a line offers: the click-to-edit cell, or nothing but its value. */
-export type FieldWidget = "cell" | "read_only";
+/**
+ * What a line offers: the click-to-edit cell, the entity picker, or nothing
+ * but its value.
+ *
+ * **The widget follows the field's KIND** (spec §8, SPEC F12): a scalar column
+ * the map allows edits as a `cell`, and the one column the map calls a
+ * reference edits as a `picker` — never as a cell, because a reference names a
+ * ROW and a cell can only send text (`entity-picker.tsx`,
+ * ARCHITECTURE.md §9.2). There is no state in which a reference column is
+ * offered as a cell: the two arms are decided from different questions of the
+ * one map (`decideEdit` and `config.reference`), and `decideEdit` refuses a
+ * reference column for the ordinary reason — it is not in `editable`.
+ */
+export type FieldWidget = "cell" | "picker" | "read_only";
 
 /**
  * Is the table's write path OPEN — the second half of "may this line offer a
@@ -170,13 +183,45 @@ export function recordFields(
     return {
       name,
       value: value ?? (raw === null || raw === undefined ? null : JSON.stringify(raw)),
-      widget: editable ? "cell" : "read_only",
+      widget: editable ? "cell" : pickable(config, name, access) ? "picker" : "read_only",
       multiline: editable && value !== null && value.includes("\n"),
       isKey: name === config.pk,
       provenance: provenance.get(name) ?? null,
       reference: referenceOf(config, name, value, referenceName),
     };
   });
+}
+
+/**
+ * Does this line edit through the PICKER — campaign admin-window/TASK-0055.
+ *
+ * Three things must hold, and none of them is the row's value: the MAP calls
+ * this column a reference, that reference's edit is written through the
+ * override path, and the path is OPEN. The value is deliberately not asked
+ * about — an event with no venue is exactly the record an operator most needs
+ * to be able to point at one, and a control that appears only once a value
+ * exists can never set the first one.
+ *
+ * The path is checked rather than assumed: a reference on a directly-written
+ * table would have no way to carry a confirmed match (a `ref` travels in a
+ * verdict decision and nowhere else), so it draws no picker instead of a
+ * control over a write this app cannot make. No such entry is in the map
+ * today, and the check is what keeps that from mattering.
+ *
+ * A closed path draws NOTHING here, exactly as it does for a cell: no picker,
+ * no disabled button, no control toward a write path that is not installed.
+ */
+function pickable(
+  config: TableEditConfig,
+  name: string,
+  access: WriteAccess,
+): boolean {
+  return (
+    config.reference !== null &&
+    config.reference.field === name &&
+    writePathFor(config.regime) === "override" &&
+    access === "open"
+  );
 }
 
 /**

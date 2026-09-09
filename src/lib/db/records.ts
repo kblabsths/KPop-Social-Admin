@@ -1,13 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  ROW_CAP,
   readComplete,
   readOne,
+  readRows,
   type DbCountedResponse,
   type DbResponse,
   type DbResult,
   type DbUnavailable,
 } from "./result";
-import { T } from "./tables";
+import { T, objectKindOf, type ObjectKind, type TableName } from "./tables";
 import { currentDecisions } from "../browse/rows";
 import {
   fieldProvenanceOf,
@@ -342,6 +344,173 @@ export async function readRecordReference(
 
   const name = row.data?.[source.column];
   return { name: typeof name === "string" && name.length > 0 ? name : null, note: null };
+}
+
+/* ── the rows a reference field may be pointed at ─────────────────────────── */
+
+/** One row the entity picker may choose: the entity's id, and what it is called. */
+export interface ReferenceOption {
+  /** The chosen entity's primary key — what travels in the decision's `ref`. */
+  readonly id: string;
+  /**
+   * Its readable name, or `null` when the row holds none. A nameless row is
+   * still offered: it exists, and the id is the machine's word for it
+   * (LESSONS 1 — an absence renders as the dash, never as a dropped line).
+   */
+  readonly name: string | null;
+}
+
+/**
+ * The WINDOW the picker chooses from — a named window, never a claim about the
+ * whole table (ARCHITECTURE.md §4.3, read kind 2).
+ *
+ * It carries the facts every window line in this app publishes (`limit`,
+ * `held`, `truncated`, `over`) so the surface states the window it is showing
+ * without any call site spelling a fact of the read (admin-window/DEBT-0006).
+ */
+export interface ReferenceWindow {
+  /** The rows, in the read's own order: by name, then by key. */
+  readonly options: readonly ReferenceOption[];
+  /** The row cap the query carried. */
+  readonly limit: number;
+  /** How many rows came back. */
+  readonly held: number;
+  /** The window filled its cap, so it is a floor and not the whole set. */
+  readonly truncated: boolean;
+  /** Table or view — the word the window's sentence ends on. */
+  readonly over: ObjectKind;
+  /** The referenced entity, spelled as the map keys it: `venues`. */
+  readonly domain: string;
+}
+
+/**
+ * What the choices leg produced: the window, and its own account of why there
+ * is none.
+ *
+ * Reported separately from every other leg, for the reason they all are: a
+ * refused or absent `venues` must leave every value on screen and say for
+ * itself what happened. `window` null with `note` null means there was nothing
+ * to read — this table has no reference, or none this layer knows how to
+ * search — and no round trip was made.
+ */
+export interface ReferenceChoices {
+  readonly window: ReferenceWindow | null;
+  readonly note: DbUnavailable | null;
+}
+
+/** Nothing to choose from, and nothing to report. */
+const NO_CHOICES: ReferenceChoices = { window: null, note: null };
+
+/**
+ * How each referenced entity is SEARCHED — its own table, its key, and the
+ * column that names a row.
+ *
+ * Here rather than in the map for the reason `NAME_RELATIONS` above is: these
+ * are relation names, and ARCHITECTURE.md §4 rule 4 leaves `lib/db/tables.ts`
+ * the only file in `src/` that spells one, so every relation below comes from
+ * `T`. The map says which column links and where; this layer says how the
+ * linked table is read.
+ *
+ * Keyed by the reference's `domain` — the same string the map keys the target
+ * table by — so a reference whose target has no entry here simply offers no
+ * picker rather than guessing a name column.
+ */
+const CHOICE_RELATIONS: Readonly<
+  Record<
+    string,
+    { readonly relation: TableName; readonly key: string; readonly name: string }
+  >
+> = {
+  [T.venues]: { relation: T.venues, key: "venue_id", name: "name" },
+};
+
+/** One row of a choices read: the entity's key and its name column. */
+type ChoiceRow = Record<string, unknown>;
+
+/**
+ * The window query: an explicit ORDER and an explicit LIMIT, which is what
+ * makes it a named window rather than a set (§4.3).
+ *
+ * The order is by name and then by key, so it is TOTAL — two venues sharing a
+ * name cannot swap places between two reads, and the window's edge is
+ * therefore the same edge every time. `.limit(cap)` is the same shape Browse's
+ * events window uses; the cap is handed in so this function never spells the
+ * number.
+ */
+function choicesFor(
+  db: SupabaseClient,
+  source: { relation: TableName; key: string; name: string },
+  cap: number,
+): PromiseLike<DbResponse<ChoiceRow[]>> {
+  return db
+    .from(source.relation)
+    .select(`${source.key}, ${source.name}`)
+    .order(source.name, { ascending: true })
+    .order(source.key, { ascending: true })
+    .limit(cap) as unknown as PromiseLike<DbResponse<ChoiceRow[]>>;
+}
+
+/**
+ * The rows a reference field may be pointed at — the entity picker's whole
+ * database side (campaign admin-window/TASK-0055, SPEC F12).
+ *
+ * **It issues no query unless there is something to choose from**: a table
+ * whose map entry carries no `reference`, or a reference whose target this
+ * layer has no search for, answers with nothing to show and nothing to report.
+ * The caller asks it only where a picker could be drawn at all — with the
+ * settlement function absent no picker renders, so no venue is read.
+ *
+ * **A WINDOW read, and it says so.** The rows are the first `ROW_CAP` by name;
+ * whether that is every venue is not knowable from here and is not claimed.
+ * `truncated` is the honest floor: the window filled its cap, so rows later in
+ * the alphabet exist and are not in it.
+ *
+ * **It offers only rows that EXIST, and creates nothing.** There is no insert
+ * in this module and there never will be: entity creation is the resolver's
+ * (spec §8, AGENTS.md).
+ */
+export async function readReferenceChoices(
+  config: TableEditConfig,
+  db?: SupabaseClient,
+): Promise<ReferenceChoices> {
+  const reference = config.reference;
+  if (reference === null) return NO_CHOICES;
+
+  const source = CHOICE_RELATIONS[reference.domain];
+  if (source === undefined) return NO_CHOICES;
+
+  const rows = await readRows<ChoiceRow>(
+    source.relation,
+    (client) => choicesFor(client, source, ROW_CAP),
+    db,
+  );
+  if (rows.kind !== "ok") return { window: null, note: rows };
+
+  const options: ReferenceOption[] = [];
+  for (const row of rows.data) {
+    const id = row[source.key];
+    // A row with no key is a row nothing could be pointed at, so it is not an
+    // option. A row with no NAME is: the dash is its label and the id is the
+    // machine's word for it.
+    if (typeof id !== "string" || id.length === 0) continue;
+    const name = row[source.name];
+    options.push({
+      id,
+      name: typeof name === "string" && name.length > 0 ? name : null,
+    });
+  }
+
+  return {
+    window: {
+      options,
+      limit: ROW_CAP,
+      held: rows.data.length,
+      truncated: rows.data.length >= ROW_CAP,
+      over: objectKindOf(source.relation),
+      domain: reference.domain,
+    },
+    note: null,
+  };
 }
 
 /* ── per-field provenance ─────────────────────────────────────────────────── */

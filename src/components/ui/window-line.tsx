@@ -87,7 +87,19 @@ export type DrawnSentence =
   /** `/claims`'s list: a complete read, drawn a window at a time. */
   | { of: "matched"; lede: string; rows: string }
   /** `/browse`'s recent events. */
-  | { of: "catalog"; rows: string };
+  | { of: "catalog"; rows: string }
+  /**
+   * The entity picker's choices: the first N rows of the referenced table BY
+   * NAME (campaign admin-window/TASK-0055).
+   *
+   * Its own arm because none of the three above states this read: the picker's
+   * window is neither newest-first nor a complete matching set nor a catalog
+   * arrival order, and its truncation costs rows LATER IN THE ALPHABET rather
+   * than older ones. Naming that is the whole job of the line — a picker that
+   * showed the first thousand venues and said nothing would read as "these are
+   * the venues", which is the total claim §4.3 forbids.
+   */
+  | { of: "alphabetical"; rows: string };
 
 /**
  * The one paragraph, and the one hook set, every window line in this app is.
@@ -206,6 +218,17 @@ export function WindowLine(
           ? ` ${count(info.held)} ${shows.rows} match these filters; the ${count(
               info.limit,
             )} longest-waiting are below — narrow with the filters above to reach the rest.`
+          : ""}
+      </WindowParagraph>
+    );
+  }
+  if (shows.of === "alphabetical") {
+    return (
+      <WindowParagraph gauge={props.gauge} window={info}>
+        The first {count(info.limit)} {shows.rows} by name — a window, not the
+        whole {info.over}.
+        {info.truncated
+          ? ` The window filled its cap, so ${shows.rows} later in the alphabet are not in it.`
           : ""}
       </WindowParagraph>
     );
