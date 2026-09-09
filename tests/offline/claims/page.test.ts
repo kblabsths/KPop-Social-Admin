@@ -1947,6 +1947,33 @@ describe("a parameter the page did not apply", () => {
     expect(narrowed).toContain("under the filters above");
     expect(narrowed).not.toBe(whole);
   });
+
+  /**
+   * A URL may carry a parameter whose KEY is empty or blank, and both reach
+   * this page as a real dropped parameter: `?=x` arrives as `{"": "x"}` and
+   * `?%20%20=1` as `{"  ": "1"}` (measured over HTTP against a production
+   * build, 2026-09-09). `droppedParams` skips an empty VALUE and never an
+   * empty NAME, so the line counts one and spells nothing — "The URL carries
+   * , which this page did not apply: nothing below is narrowed by it." The
+   * sentence exists to name the parameter verbatim (criterion 3); a hole
+   * where the name goes names nothing, and the operator who typed it is told
+   * only that something they cannot identify was ignored.
+   *
+   * STRICT PIN (admin-window/BUG-0127). Either arm is a fix: spell a name
+   * that is there, or count the parameter without claiming to name it (the
+   * `withheld` path this line already has). The day either lands, this
+   * XPASSes and sends the reader to the ticket.
+   */
+  it.fails("spells a name, or none, but never a hole where a name goes", async () => {
+    const blankKeys: Record<string, string>[] = [{ "": "x" }, { "  ": "1" }];
+    for (const params of blankKeys) {
+      const line = droppedLine(await renderClaims(healthyScript(), params));
+      // Every name the line puts in mono is a name an operator can read back.
+      for (const name of line.names) {
+        expect(name.trim(), JSON.stringify(params)).not.toBe("");
+      }
+    }
+  });
 });
 
 /* ══ the adversary's cross-product (admin-window/TASK-0012, QA) ═══════════ */
