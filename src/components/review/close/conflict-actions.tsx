@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { EvidenceRow } from "@/components/review";
 import { EM_DASH } from "@/lib/format";
 import type { ReviewItemRow } from "@/lib/review/shapes";
-import { isReferenceField, type VerdictValue } from "@/lib/verdict/decision";
+import { factKey, isReferenceField, type VerdictValue } from "@/lib/verdict/decision";
 import type { ActionSpec, ShapeActionsInput } from "./actions";
 
 /**
@@ -71,16 +71,6 @@ function factOf(item: ReviewItemRow): Pick<
 }
 
 /**
- * The fact, as the app already spells one: `events.title`, `events.venue`.
- *
- * Spelled through one function so the control's `supplies` and the withheld
- * line's identifier cannot drift into two spellings of the same fact.
- */
-function factName(fact: Pick<VerdictValue, "domain" | "field">): string {
-  return `${fact.domain}.${fact.field}`;
-}
-
-/**
  * What the control that adopts one claim says.
  *
  * A verb plus its object, naming what gets written (LOOK_AND_FEEL copy bar 1),
@@ -134,7 +124,10 @@ export function conflictActions({
         // it in at submission (`decisionValue`). Everything the SERVER knows
         // about where the value lands is here.
         value: { ...fact, observation_id: null, value: null, ref: null },
-        supplies: factName(fact),
+        // The fact, as the whole app spells one (`factKey`, the leaf): the
+        // control's `supplies` and the notice below are the same string by
+        // construction, not by two templates agreeing (admin-window/DEBT-0007).
+        supplies: factKey(fact.domain, fact.field),
       });
     }
   }
@@ -175,7 +168,7 @@ export function conflictActions({
 export function conflictNotice({ item }: ShapeActionsInput): ReactNode {
   const fact = factOf(item);
   if (fact === null || !isReferenceField(fact.domain, fact.field)) return null;
-  const name = factName(fact);
+  const name = factKey(fact.domain, fact.field);
   return (
     <p className="type-body text-ink-secondary" data-close-notice={name}>
       <span className="type-data text-ink">{name}</span>{" "}
