@@ -1,0 +1,85 @@
+{
+ "id": "BUG-0141",
+ "created": "2026-09-09T19:24:43Z",
+ "green": true,
+ "git_head": "b9ebc176e53ceabce733c82c5312dc6c3e7cad5e",
+ "scope": [
+  "src/app/queues/page.tsx",
+  "src/components/queues",
+  "src/components/ui/dropped-params.tsx",
+  "src/components/ui/index.ts",
+  "src/lib/url/dropped-params.ts",
+  "src/lib/review/queue-filters.ts",
+  "src/lib/review/shapes.ts",
+  "src/lib/db/review-items.ts",
+  "src/lib/sources/routes.ts",
+  "src/lib/claims/filters.ts",
+  "src/app/claims/page.tsx",
+  "tests/offline/queues/page.test.ts",
+  "tests/offline/queues/filters.test.ts",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/claims/filters.test.ts",
+  "tests/offline/review/shapes.test.ts",
+  "tests/offline/review/review-items.test.ts",
+  "tests/offline/review/one-place.test.ts",
+  "tests/offline/sources/page.test.ts",
+  "tests/live/queues.live.test.ts",
+  "tests/live/sources.live.test.ts",
+  "tests/fixtures/rows.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "5cbe699add4d571c184a9415727ad8f03ed85faffcbd30b9ccbc798fad824806",
+ "commands": [
+  {
+   "cmd": "grep -q \"export const SOURCE_FACET\" src/lib/review/queue-filters.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q '\\.eq(\"source_id\"' src/lib/db/review-items.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q \"does not offer this facet yet\" src/lib/sources/routes.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -rl \"export function droppedParams\" src | wc -l)\" -eq 1",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"DroppedParamsLine\" src/components/ui/index.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -rq \"DroppedParamsLine\" src/app/queues src/components/queues",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/queues tests/offline/claims tests/offline/review tests/offline/ui tests/offline/db tests/offline/sources",
+   "exit": 0,
+   "output_tail": ".ts (60 tests) 1295ms\n   \u2713 the registry, rendered > one runs request, whatever the registry holds  320ms\n \u2713 |offline| tests/offline/review-item/conflict-actions.test.ts (47 tests) 173ms\n \u2713 |offline| tests/offline/db/result.test.ts (91 tests) 25ms\n \u2713 |offline| tests/offline/review-item/close-slot.test.ts (34 tests) 89ms\n \u2713 |offline| tests/offline/db/client.test.ts (5 tests) 70ms\n \u2713 |offline| tests/offline/review/shapes.test.ts (42 tests) 17ms\n \u2713 |offline| tests/offline/claims/read.test.ts (18 tests) 33ms\n \u2713 |offline| tests/offline/queues/filters.test.ts (40 tests) 42ms\n \u2713 |offline| tests/offline/review-item/signal-actions.test.ts (27 tests) 36ms\n \u2713 |offline| tests/offline/review-item/page.test.ts (111 tests) 1725ms\n \u2713 |offline| tests/offline/ui/contrast.test.ts (51 tests) 11ms\n \u2713 |offline| tests/offline/ui/tokens.test.ts (9 tests) 23ms\n \u2713 |offline| tests/offline/review/review-items.test.ts (45 tests) 34ms\n \u2713 |offline| tests/offline/sources/read.test.ts (26 tests) 14ms\n \u2713 |offline| tests/offline/review-item/read.test.ts (18 tests) 14ms\n \u2713 |offline| tests/offline/claims/filters.test.ts (24 tests) 12ms\n \u2713 |offline| tests/offline/ui/evidence-pair.test.ts (10 tests) 29ms\n \u2713 |offline| tests/offline/sources/names.test.ts (9 tests) 7ms\n \u2713 |offline| tests/offline/queues/page.test.ts (116 tests) 4284ms\n   \u2713 a zero that a filter produced > leaves a block untouched by EVERY value its kind implies, and by no other  369ms\n   \u2713 a zero that a filter produced > adds the scope claim to the open figure only where the facet removed rows  320ms\n \u2713 |offline| tests/offline/claims/page.test.ts (120 tests) 4303ms\n\n Test Files  29 passed (29)\n      Tests  1331 passed (1331)\n   Start at  12:24:28\n   Duration  5.66s (transform 2.62s, setup 0ms, collect 11.20s, tests 15.32s, environment 6ms, prepare 2.48s)\n\n(node:37661) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/queues.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-37581\n\n \u2713 |live| tests/live/queues.live.test.ts (14 tests) 7629ms\n   \u2713 the two queues against staging > renders the open decision count the database holds  471ms\n   \u2713 the two queues against staging > renders the open signal count the database holds  320ms\n   \u2713 the two queues against staging > renders every row the table holds, split between the two queues  347ms\n   \u2713 the filters against staging > returns exactly the matching items for every queue and status value  2082ms\n   \u2713 the filters against staging > returns exactly the matching items for every shape value  785ms\n   \u2713 the queue-health gauge against staging > renders each queue's open count over its own window  593ms\n   \u2713 the whole-queue population against staging > counts each kind's whole-queue population, and it is the census the database holds  555ms\n   \u2713 the whole-queue population against staging > renders a faceted URL with no block reporting a count it could not make  540ms\n   \u2713 a source narrowing against staging > renders exactly the items of the source the URL names, in both blocks  513ms\n   \u2713 a source narrowing against staging > renders the honest empty for a registered source with no items  435ms\n   \u2713 a source narrowing against staging > names a source_id it cannot use and renders the whole table, never an error  382ms\n\n Test Files  1 passed (1)\n      Tests  14 passed (14)\n   Start at  12:24:34\n   Duration  8.36s (transform 196ms, setup 32ms, collect 349ms, tests 7.63s, environment 0ms, prepare 74ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/queues.live.test.ts\n(node:37785) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
