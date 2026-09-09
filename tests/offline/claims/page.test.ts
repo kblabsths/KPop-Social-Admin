@@ -855,6 +855,67 @@ describe("the claim list's window", () => {
     );
   });
 
+  /**
+   * The standing bucket's claims inside a view that holds OTHER buckets too.
+   *
+   * `standingCrowd` above is standing rows and nothing else, so there the
+   * bucket's count and the whole view's count are the same number and a
+   * sentence naming either population reads true. This one separates them,
+   * which is what the filled window's new clause needs: it names a population
+   * beside a number (admin-window/BUG-0118).
+   */
+  function standingAmong(standingSize: number, otherSize: number): Script {
+    const rowsOf = (script: Script, table: string): unknown[] => {
+      const response = script[table];
+      return Array.isArray(response) ? [] : ((response.data ?? []) as unknown[]);
+    };
+    const standing = standingCrowd(standingSize);
+    const others = crowdedScript(otherSize);
+    const claims = [
+      ...rowsOf(standing, T.pendingClaims),
+      ...rowsOf(others, T.pendingClaims),
+    ];
+    return {
+      [T.pendingClaims]: { data: claims, count: claims.length },
+      [T.observations]: {
+        data: [...rowsOf(standing, T.observations), ...rowsOf(others, T.observations)],
+      },
+      [T.sources]: { data: [] },
+    };
+  }
+
+  it("counts the population a FILLED window NAMES, not the view it read from", async () => {
+    // The other half of admin-window/BUG-0118: the clause now names a
+    // narrowing beside its count, so the two must come from ONE selection. A
+    // true narrowing stated over the whole view's number is the same defect
+    // with its halves swapped, and no fixture above can catch it — every
+    // standing population here IS the whole view.
+    const standingSize = CLAIM_WINDOW + 23;
+    const otherSize = 60;
+    const script = standingAmong(standingSize, otherSize);
+
+    const standing = windowLine(await renderClaims(script, { tab: "standing" }));
+    expect(standing.truncated).toBe(true);
+    expect(standing.held).toBe(standingSize);
+    // The number the sentence renders is the named bucket's own, and the
+    // view's total appears nowhere in it.
+    expect(standing.text).toContain(
+      `${count(standingSize)} claims in the ${STANDING_BUCKET} bucket`,
+    );
+    expect(standing.text).not.toContain(count(standingSize + otherSize));
+    // And the window drew the bucket, not the view: the rows below the
+    // sentence are the population it names.
+    expect(claimIds(await renderClaims(script, { tab: "standing" }))).toHaveLength(
+      CLAIM_WINDOW,
+    );
+
+    // Non-vacuous: the same read, framed by the other tab, holds more — so the
+    // two counts really are two populations of one view.
+    const whole = windowLine(await renderClaims(script, {}));
+    expect(whole.held).toBe(standingSize + otherSize);
+    expect(whole.text).not.toContain(STANDING_BUCKET);
+  });
+
   it("counts held claims per narrowing, not per rendered page", async () => {
     // Big enough that EACH bucket alone overflows the cap, so a narrowing is
     // windowed too and its held count is the narrowing's, not the page's.
