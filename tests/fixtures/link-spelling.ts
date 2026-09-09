@@ -108,6 +108,36 @@ export function expectDrawnAsLinkAtRestIn(
   ).toEqual([]);
 }
 
+/**
+ * The same claim, asked where the READER is: does the link's spelling reach the
+ * glyphs on screen, or only the anchor element?
+ *
+ * `expectDrawnAsLinkAtRest` grades the anchor's own classes, which is the whole
+ * story for an anchor whose body is text. It is not the story when the anchor
+ * wraps a box that re-inks and re-fills its own contents: CSS gives a
+ * descendant's `text-*` ink priority over the inherited one, and an atomic
+ * inline box with a fill of its own paints over the ancestor's decoration. Such
+ * an anchor MEASURES accent-plus-underline on itself while rendering exactly as
+ * it did before anyone spelled it as a link.
+ *
+ * `overriders` is every element inside the anchor that could do that — pass
+ * `anchor.find("*")` mapped through `classesOf`.
+ */
+export function expectLinkSpellingReachesTheGlyphs(
+  anchorClasses: readonly string[],
+  overriders: readonly (readonly string[])[],
+  what: string,
+): void {
+  expectDrawnAsLinkAtRest(anchorClasses, what);
+  const reInked = overriders
+    .flatMap((classes) => classes.filter((className) => className.startsWith("text-")))
+    .filter((className) => !LINK_INK.includes(className));
+  expect(
+    reInked,
+    `${what} is a link whose ink never reaches the words inside it`,
+  ).toEqual([]);
+}
+
 /** The ink an error line keeps while wearing the link's decoration (criterion 3). */
 export const BROKEN_INK: readonly string[] = ["text-broken"];
 

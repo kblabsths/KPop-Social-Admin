@@ -15,6 +15,7 @@ import {
 import {
   classesOf,
   expectDrawnAsLinkAtRest,
+  expectLinkSpellingReachesTheGlyphs,
   expectNotDrawnAsLink,
 } from "../../fixtures/link-spelling";
 import {
@@ -531,6 +532,34 @@ describe("what on this page says it goes somewhere", () => {
     expect(anchors.length, "the standing tab rendered no source links").toBeGreaterThan(0);
     for (const anchor of anchors) {
       expectDrawnAsLinkAtRest(classesOf($(anchor)), "a standing-disagreement source");
+    }
+  });
+
+  // STRICT PIN — admin-window/BUG-0113. `it.fails` so the suite stays green
+  // while the divergence stands and turns RED the day it is fixed, sending the
+  // reader to the ticket. Flip to a plain `it(...)` as part of that fix.
+  it.fails("draws the bucket link so the WORDS carry the link's ink, not just the anchor", async () => {
+    // Measured in Chromium on a production build, 1440x900, both themes, at
+    // rest: each bucket anchor computes rgb(152, 16, 250) + underline, and the
+    // <Badge> it wraps computes rgb(30, 41, 57) on a chrome fill with
+    // text-decoration-line: none. A crop of the anchor is BYTE-IDENTICAL with
+    // its underline removed (sha1 equal, 5/5 buckets, both themes; 0 accent
+    // pixels), against 1000 -> 443 accent pixels for a plain /browse title.
+    // So the bucket names render exactly as they did before this rule existed.
+    const markup = await renderClaims(healthyScript());
+    const $ = cheerio.load(markup);
+    const anchors = $("[data-bucket][href]").toArray();
+    expect(anchors.length, "no bucket links to grade").toBeGreaterThan(0);
+    for (const anchor of anchors) {
+      const inside = $(anchor)
+        .find("*")
+        .toArray()
+        .map((element) => classesOf($(element)));
+      expectLinkSpellingReachesTheGlyphs(
+        classesOf($(anchor)),
+        inside,
+        `${$(anchor).attr("data-bucket")} on the buckets tab`,
+      );
     }
   });
 
