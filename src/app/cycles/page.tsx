@@ -13,7 +13,15 @@ import {
   cycleColumns,
   type AskedCycleState,
 } from "@/components/cycles";
-import { DataTable, Empty, Page, Section, StateOf, WindowLine } from "@/components/ui";
+import {
+  DataTable,
+  Empty,
+  Page,
+  Section,
+  StateOf,
+  WindowLine,
+  oldestIn,
+} from "@/components/ui";
 import {
   CYCLES_OBJECT,
   CYCLE_COUNTERS,
@@ -235,6 +243,10 @@ export default async function CyclesPage({
               held: rows.length,
               truncated: cyclesTruncated,
               over: CYCLES_OBJECT,
+              // Newest first, so the last row is the oldest cycle the read
+              // came back with — the object's own floor on a window that did
+              // not fill (admin-window/BUG-0109).
+              oldest: oldestIn(rows, (row) => row.started_at),
             }}
             shows={{
               of: "newest",

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import * as cheerio from "cheerio";
-import { EM_DASH, UTC_ZONE } from "@/lib/format";
+import { EM_DASH, UTC_ZONE, absoluteUtc } from "@/lib/format";
 import { T } from "@/lib/db/tables";
 import {
   COLUMNS_PARAM,
@@ -484,6 +484,79 @@ describe("the page's rows", () => {
       .toArray()
       .map((el) => $(el).attr("title") ?? "");
     expect(titled.some((t) => t.endsWith("UTC"))).toBe(true);
+  });
+});
+
+/* ── the window it is showing ─────────────────────────────────────────────── */
+
+/** The events window line: its published facts and its sentence. */
+function windowLine(markup: string) {
+  const line = cheerio.load(markup)('[data-window="events"]');
+  return {
+    lines: line.length,
+    limit: line.attr("data-window-limit"),
+    held: line.attr("data-window-held"),
+    truncated: line.attr("data-window-truncated"),
+    text: line.text().replace(/\s+/g, " ").trim(),
+  };
+}
+
+/** `count` events, newest arrival first, a day apart — a window that fills. */
+function arrivals(count: number) {
+  return Array.from({ length: count }, (_, index) =>
+    eventRow({
+      event_id: `01920000-0000-7000-8000-0000000b${String(index).padStart(4, "0")}`,
+      title: `arrival ${index}`,
+      created_at: new Date(Date.parse("2026-09-01T00:00:00Z") - index * 86_400_000)
+        .toISOString(),
+    }),
+  );
+}
+
+/**
+ * Bar 13 on `/browse` (admin-window/BUG-0109). The catalog arm carried NO
+ * truncation clause at all, so a window holding 50 of 50 — where older events
+ * certainly exist — and one holding two, which are the whole catalog, rendered
+ * the identical sentence. Both directions are graded, on two populations.
+ */
+describe("the events window states whether it filled", () => {
+  it("publishes the read's own facts, and says the window did not fill", async () => {
+    const markup = await renderBrowse(healthyScript());
+    const line = windowLine(markup);
+    expect(line.lines).toBe(1);
+    expect(line.limit).toBe(String(view.window));
+    expect(line.held).toBe(String(population().length));
+    expect(line.truncated).toBe("false");
+    // The bottom of the list is the CATALOG's floor, not the window's, so the
+    // line names the oldest arrival it holds — the fixture's own instant,
+    // rendered the way this app renders one.
+    const oldest = [...population()].sort((a, b) =>
+      (a.created_at ?? "") < (b.created_at ?? "") ? -1 : 1,
+    )[0].created_at;
+    expect(line.text).toContain(absoluteUtc(oldest));
+  });
+
+  it("says the window filled its cap, and names no floor of its own", async () => {
+    const full = arrivals(view.window);
+    const markup = await renderBrowse(healthyScript({ [T.events]: { data: full } }));
+    const line = windowLine(markup);
+    expect(line.held).toBe(String(view.window));
+    expect(line.truncated).toBe("true");
+    // Its last row is the cap's, not the catalog's: older events exist and
+    // are not shown, so the line must not offer that row as a floor.
+    expect(line.text).not.toContain(absoluteUtc(full[full.length - 1].created_at));
+  });
+
+  it("keeps its line on a read that found nothing, and drops it on one that did not happen", async () => {
+    // The line follows the READ, not the rows (ARCHITECTURE.md §4.3).
+    const empty = await renderBrowse(healthyScript({ [T.events]: { data: [] } }));
+    expect(windowLine(empty).held).toBe("0");
+    expect(windowLine(empty).truncated).toBe("false");
+
+    const absent = await renderBrowse(
+      healthyScript({ [T.events]: { error: tableNotInSchemaCache(T.events) } }),
+    );
+    expect(windowLine(absent).lines).toBe(0);
   });
 });
 

@@ -338,7 +338,12 @@ export function PickerPanel({
       />
       <WindowLine
         gauge={pickerWindowName(info.domain)}
-        window={info}
+        // No floor to name, and that is a fact of this read: the choices are
+        // the first N rows BY NAME, so the window's bottom row is the one
+        // latest in the alphabet and never its oldest. A window that did not
+        // fill still says it holds every choice the read found
+        // (admin-window/BUG-0109).
+        window={{ ...info, oldest: null }}
         shows={{ of: "alphabetical", rows: info.domain }}
       />
       {matches.length === 0 ? (

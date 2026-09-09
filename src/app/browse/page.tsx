@@ -1,7 +1,15 @@
 import type { ReactNode } from "react";
 import { BrowseTable } from "@/components/browse/browse-table";
 import { ColumnSelector } from "@/components/browse/column-selector";
-import { Empty, Page, Section, StateOf, WindowLine } from "@/components/ui";
+import {
+  Empty,
+  Page,
+  Section,
+  StateOf,
+  WindowLine,
+  drawnWindow,
+  oldestIn,
+} from "@/components/ui";
 import { EVENTS_OBJECT, readRecentEvents } from "@/lib/db/browse";
 import {
   COLUMNS_PARAM,
@@ -134,12 +142,18 @@ export default async function BrowsePage({
         {events.kind === "ok" ? (
           <WindowLine
             gauge={EVENTS_WINDOW}
-            window={{
+            // `drawnWindow` decides whether the read filled its cap, in the
+            // one place the app decides that — this page used to spell the
+            // comparison itself, and the arm below then said the same thing
+            // whether it filled or not (admin-window/BUG-0109). The rows are
+            // in ARRIVAL order, newest first, so the last one carries the
+            // oldest arrival the catalog holds when the window did not fill.
+            window={drawnWindow({
               limit: view.window,
               held: events.data.length,
-              truncated: events.data.length >= view.window,
               over: EVENTS_OBJECT,
-            }}
+              oldest: oldestIn(events.data, (row) => row.created_at),
+            })}
             shows={{ of: "catalog", rows: "events" }}
           />
         ) : null}

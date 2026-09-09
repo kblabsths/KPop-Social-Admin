@@ -81,7 +81,7 @@ vi.mock("@/lib/db/dashboard", async (importActual) => {
   };
 });
 
-const { default: DashboardPage } = await import("@/app/page");
+const { default: DashboardPage, THE_REST } = await import("@/app/page");
 
 /*
  * The OTHER surface that renders a cycle, routed through the same stub client
@@ -1030,6 +1030,149 @@ describe("when a read fails", () => {
 });
 
 /* ── the window ──────────────────────────────────────────────────────────── */
+
+/** A named window line on this page: its published facts and its sentence. */
+function windowOf(markup: string, name: string) {
+  const line = cheerio.load(markup)(`[data-window="${name}"]`);
+  return {
+    lines: line.length,
+    limit: line.attr("data-window-limit"),
+    held: line.attr("data-window-held"),
+    truncated: line.attr("data-window-truncated"),
+    text: line.text().replace(/\s+/g, " ").trim(),
+  };
+}
+
+/** `count` cycles and `count` runs, newest first, an hour apart. */
+function fullWindow(count: number) {
+  return {
+    cycles: Array.from({ length: count }, (_, index) =>
+      resolutionRunRow({
+        run_id: `01920000-0000-7000-8000-0000000006f${index}`,
+        started_at: minutesAgo(10 + index * 15),
+        ended_at: secondsAfter(minutesAgo(10 + index * 15), 40),
+        outcome: "succeeded",
+      }),
+    ),
+    runs: Array.from({ length: count }, (_, index) =>
+      runRow({
+        run_id: `01920000-0000-7000-8000-0000000007f${index}`,
+        source: "ticketmaster",
+        started_at: minutesAgo(10 + index * 15),
+        ended_at: secondsAfter(minutesAgo(10 + index * 15), 20),
+        outcome: "succeeded",
+      }),
+    ),
+  };
+}
+
+/**
+ * The two panels' window lines — bar 13, on the last two windowed lists in the
+ * app that carried hand-written prose and published no hook at all
+ * (admin-window/BUG-0109).
+ *
+ * Graded on TWO populations, because a window that filled and one that did not
+ * used to render the identical sentence: the runs panel said "a window of 6 …
+ * Open Cycles & runs for the rest" over five runs that ARE every run recorded,
+ * and `/cycles` then showed the operator the same five.
+ */
+describe("each panel states the window it is showing", () => {
+  it("publishes the hooks every windowed surface publishes, on both panels", async () => {
+    const markup = await renderDashboard(healthyScript());
+    for (const [name, rows] of [
+      ["cycles", cycles().length],
+      ["runs", runs().length],
+    ] as const) {
+      const line = windowOf(markup, name);
+      expect(line.lines, name).toBe(1);
+      expect(line.limit, name).toBe(String(DASHBOARD_WINDOW));
+      expect(line.held, name).toBe(String(rows));
+      // Fewer rows than the cap: the read returned everything it matched.
+      expect(line.truncated, name).toBe("false");
+    }
+  });
+
+  it("names the oldest row a panel holds when its window did not fill", async () => {
+    // The floor is the OBJECT's, not the window's: these are every cycle and
+    // every run the read found, so the last row on screen is where the record
+    // itself stops. The instant is the fixture's own, rendered the way this
+    // app renders an instant — no copy is pinned.
+    const markup = await renderDashboard(healthyScript());
+    const oldestCycle = cycles()[cycles().length - 1].started_at;
+    const oldestRun = runs()[runs().length - 1].started_at;
+
+    expect(windowOf(markup, "cycles").text).toContain(absoluteUtc(oldestCycle));
+    expect(windowOf(markup, "runs").text).toContain(absoluteUtc(oldestRun));
+  });
+
+  it("says a window that FILLED filled, and names no floor of its own", async () => {
+    const full = fullWindow(DASHBOARD_WINDOW);
+    const markup = await renderDashboard(
+      healthyScript({
+        [T.resolutionRuns]: [{ data: full.cycles }, { data: appliedCycle() }],
+        [T.runs]: { data: full.runs },
+      }),
+    );
+    for (const [name, rows] of [
+      ["cycles", full.cycles],
+      ["runs", full.runs],
+    ] as const) {
+      const line = windowOf(markup, name);
+      expect(line.held, name).toBe(String(DASHBOARD_WINDOW));
+      expect(line.truncated, name).toBe("true");
+      // Its bottom row is the cap's, so the oldest row it holds is not the
+      // oldest row that exists and the line must not offer it as one.
+      expect(line.text, name).not.toContain(
+        absoluteUtc(rows[rows.length - 1].started_at),
+      );
+    }
+  });
+
+  it("promises a rest only where its own read says there is one", async () => {
+    // admin-window/BUG-0109: five runs of a cap of six are every run recorded,
+    // and `/cycles` shows the same five — so "for the rest" is a promise this
+    // page cannot keep. It rides on truncation now, read from the app's own
+    // constant rather than written down here.
+    const short = await renderDashboard(healthyScript());
+    expect(windowOf(short, "cycles").text).not.toContain(THE_REST);
+    expect(windowOf(short, "runs").text).not.toContain(THE_REST);
+
+    const full = fullWindow(DASHBOARD_WINDOW);
+    const filled = await renderDashboard(
+      healthyScript({
+        [T.resolutionRuns]: [{ data: full.cycles }, { data: appliedCycle() }],
+        [T.runs]: { data: full.runs },
+      }),
+    );
+    expect(windowOf(filled, "cycles").text).toContain(THE_REST);
+    expect(windowOf(filled, "runs").text).toContain(THE_REST);
+  });
+
+  it("states a window on a read that returned nothing, and none on a read that did not", async () => {
+    // The line follows the READ, not the rows (ARCHITECTURE.md §4.3): an
+    // empty window is still a window the page looked in, and a refused read
+    // publishes no window at all. Graded for every surface at once in
+    // `tests/offline/absence/pages.test.ts`; pinned here because these two
+    // panels are the newest surfaces to inherit the rule.
+    const empty = await renderDashboard(
+      healthyScript({
+        [T.resolutionRuns]: [{ data: [] }, { data: null }],
+        [T.runs]: { data: [] },
+      }),
+    );
+    expect(windowOf(empty, "cycles").held).toBe("0");
+    expect(windowOf(empty, "runs").held).toBe("0");
+
+    const absent = await renderDashboard(
+      healthyScript({
+        [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
+        [T.runs]: { error: tableNotInSchemaCache(T.runs) },
+      }),
+    );
+    expect(windowOf(absent, "cycles").lines).toBe(0);
+    expect(windowOf(absent, "runs").lines).toBe(0);
+  });
+});
 
 describe("the cycles and runs window", () => {
   it("never renders more lines than the window it asked for", async () => {

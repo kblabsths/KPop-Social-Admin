@@ -564,6 +564,13 @@ export default async function ClaimsPage({
               held: listed.held,
               truncated: listed.truncated,
               over: CLAIMS_OBJECT,
+              // No floor to name, and that is a fact of this read rather than
+              // a gap: the list is drawn LONGEST-WAITING first, so its bottom
+              // row is the newest claim it holds and never its oldest. A
+              // window that did not fill still says it holds every claim the
+              // read found; it just has no "nothing earlier" to state
+              // (admin-window/BUG-0109).
+              oldest: null,
             }}
             shows={{ of: "matched", lede: SORT_STATEMENT, rows: "claims" }}
           />
