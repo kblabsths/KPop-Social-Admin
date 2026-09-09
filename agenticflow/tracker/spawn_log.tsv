@@ -21797,3 +21797,23 @@
 2026-09-09T22:04:50Z	agent	-	-	-	-
 # STRANDED	2026-09-09T22:04:51Z	agent	6 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-BUG-0148/, .worktrees/_receipt-qa-DEBT-0013/, agenticflow/visions/admin-window/tracker/tickets/BUG-0149.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0011.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0013.md
 2026-09-09T22:04:51Z	agent	-	-	-	-
+2026-09-09T22:05:18Z	builder	BUG-0149	spawned
+# STRANDED	2026-09-09T22:05:22Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-BUG-0148-pre/, .worktrees/_receipt-qa-BUG-0148/
+2026-09-09T22:05:22Z	agent	-	-	-	-
+# STRANDED	2026-09-09T22:05:22Z	agent	3 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-BUG-0148-pre/, .worktrees/_receipt-qa-BUG-0148/
+2026-09-09T22:05:22Z	agent	-	-	-	-
+2026-09-09T22:05:32Z	qa-adversary	DEBT-0011	spawned
+# STRANDED	2026-09-09T22:05:50Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-BUG-0148-pre/, .worktrees/_receipt-qa-BUG-0148/, agenticflow/visions/admin-window/tracker/tickets/BUG-0149.md
+2026-09-09T22:05:50Z	agent	-	-	-	-
+# STRANDED	2026-09-09T22:05:54Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-BUG-0148-pre/, .worktrees/_receipt-qa-BUG-0148/, agenticflow/visions/admin-window/tracker/tickets/BUG-0149.md
+2026-09-09T22:05:54Z	agent	-	-	-	-
+# STRANDED	2026-09-09T22:05:54Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-BUG-0148-pre/, .worktrees/_receipt-qa-BUG-0148/, agenticflow/visions/admin-window/tracker/tickets/BUG-0149.md
+2026-09-09T22:05:54Z	agent	-	-	-	-
+# STRANDED	2026-09-09T22:06:04Z	agent	5 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-BUG-0148-pre/, .worktrees/_receipt-qa-BUG-0148/, .worktrees/_receipt-qa-DEBT-0011-r2/, agenticflow/visions/admin-window/tracker/tickets/BUG-0149.md
+2026-09-09T22:06:04Z	agent	-	-	-	-
+# STRANDED	2026-09-09T22:06:14Z	qa-adversary	6 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-BUG-0148-pre/, .worktrees/_receipt-qa-BUG-0148/, .worktrees/_receipt-qa-DEBT-0011-r2/, agenticflow/visions/admin-window/tracker/tickets/BUG-0149.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0011.md
+2026-09-09T22:06:14Z	qa-adversary	DEBT-0013	26569	621	108196
+# STRANDED	2026-09-09T22:06:22Z	agent	6 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-BUG-0148-pre/, .worktrees/_receipt-qa-BUG-0148/, .worktrees/_receipt-qa-DEBT-0011-r2/, agenticflow/visions/admin-window/tracker/tickets/BUG-0149.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0011.md
+2026-09-09T22:06:22Z	agent	-	-	-	-
+# STRANDED	2026-09-09T22:06:26Z	agent	6 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-BUG-0148-pre/, .worktrees/_receipt-qa-BUG-0148/, .worktrees/_receipt-qa-DEBT-0011-r2/, agenticflow/visions/admin-window/tracker/tickets/BUG-0149.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0011.md
+2026-09-09T22:06:26Z	agent	-	-	-	-
