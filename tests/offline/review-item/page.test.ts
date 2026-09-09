@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { isRecordId } from "@/lib/db/records";
 import { T } from "@/lib/db/tables";
-import { render } from "../ui/markup";
+import { render, uppercasedIdentifiers } from "../ui/markup";
 import {
   ID,
   fieldProvenanceRow,
@@ -863,6 +863,35 @@ describe("the close, with the verdict log absent", () => {
     }
   });
 
+  it("leaves the signal item's own anatomy exactly as M1 shipped it", async () => {
+    // The shape whose dispositions M2 fills is the one staging really holds,
+    // so this is where a filled action list could regress the page: with the
+    // verdict log absent the close offers neither control, and everything
+    // above it renders as it did before there were any (spec §6's anatomy).
+    const item = reviewItemSourcePattern();
+    const markup = await renderItem(patternScript(), item.review_item_id);
+    const $ = cheerio.load(markup);
+
+    expect($("[data-close-action]")).toHaveLength(0);
+    expect(
+      $(`[data-surface="${CLOSE_HOOK}"]`).find(`[data-not-provisioned="${T.verdicts}"]`),
+    ).toHaveLength(1);
+
+    // The machine's own sentence, verbatim — it is the item.
+    expect(textOf(markup)).toContain(item.summary);
+    expect($("[data-severity]").attr("data-severity")).toBe(item.severity);
+    expect($("[data-folds]").attr("data-folds")).toBe(String(item.folded_count));
+    // The fold count is READ as a number beside the item: "asked again ×N".
+    expect($("[data-folds]").text()).toContain(String(item.folded_count));
+    // An age is relative, with the absolute in the title (Voice bar 6).
+    const titles = $("[title]")
+      .toArray()
+      .map((element) => $(element).attr("title") ?? "");
+    expect(titles.some((title) => title.includes(item.opened_at.slice(0, 10)))).toBe(
+      true,
+    );
+  });
+
   it("names the absent object in the close slot, as an absence and not a failure", async () => {
     for (const [name, script, id] of SHAPED) {
       const markup = await renderItem(script(), id);
@@ -900,9 +929,12 @@ describe("the close, with the verdict log present", () => {
    *
    * `data_conflict` is filled (campaign admin-window/TASK-0050): spec §7's
    * three, with one `choose_claimed_value` per evidence card, and the conflict
-   * script resolves two. The other two shapes still ship an empty list, and
-   * their own tickets amend this table when they fill it — which is exactly
-   * what this table exists for, rather than one number repeated per shape.
+   * script resolves two. The source-pattern SIGNAL is filled too (campaign
+   * admin-window/TASK-0051): it takes no verdict and closes with a
+   * disposition, so it offers those two and nothing that carries a value. The
+   * remaining shape still ships an empty list, and its own ticket amends this
+   * table when it fills it — which is exactly what this table exists for,
+   * rather than one number repeated per shape.
    */
   const OFFERED: Readonly<Record<string, readonly string[]>> = {
     conflict: [
@@ -912,7 +944,7 @@ describe("the close, with the verdict log present", () => {
       "keep_current",
     ],
     stuck: [],
-    pattern: [],
+    pattern: ["fixed", "wont_fix"],
   };
 
   it("renders the note field and this shape's actions, on every shape", async () => {
@@ -934,6 +966,31 @@ describe("the close, with the verdict log present", () => {
       }
       // A read that answered is not an emptiness and not an absence.
       expect(close.find("[data-state]"), name).toHaveLength(0);
+    }
+  });
+
+  it("says the signal's two names on the page as hooks, and prettifies neither", async () => {
+    // WHICH actions the signal offers is the table above; this is the other
+    // half, and the one only a rendered page can answer. The frame's rule is
+    // that the operator reads copy and the machine's name is the hook, so what
+    // the page owes here is the name reaching it VERBATIM — never uppercased
+    // by a type step, never Title Cased into prose (§11, LESSONS 5). The shape
+    // staging really holds is this one (campaign admin-window/TASK-0051).
+    const id = reviewItemSourcePattern().review_item_id;
+    const markup = await renderItem(withSettlement(patternScript()), id);
+    const $ = cheerio.load(markup);
+    const close = $(`[data-surface="${CLOSE_HOOK}"]`);
+
+    expect(OFFERED.pattern).toHaveLength(2);
+    for (const action of OFFERED.pattern) {
+      expect(markup, action).toContain(`data-close-action="${action}"`);
+      // The control says the operator's words, not the machine's name.
+      const said = close.find(`[data-close-action="${action}"]`).text();
+      expect(said.trim().length, action).toBeGreaterThan(0);
+    }
+    expect(uppercasedIdentifiers(markup)).toEqual([]);
+    for (const prettified of ["WONT_FIX", "Wont Fix", "Won't fix"]) {
+      expect(markup, prettified).not.toContain(prettified);
     }
   });
 

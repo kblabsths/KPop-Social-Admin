@@ -303,14 +303,18 @@ describe("the shape's action list", () => {
    * evidence card there is no claim to adopt, and its other two actions stand
    * regardless, so the operator can still supply a value or leave the fact as
    * it is. Its own suite grades the whole list
-   * (`tests/offline/review-item/conflict-actions.test.ts`). The other two ship
-   * an empty list until their tickets fill them, and this table is what those
-   * tickets amend — one place, rather than a claim repeated per shape.
+   * (`tests/offline/review-item/conflict-actions.test.ts`). The source-pattern
+   * SIGNAL is filled too (campaign admin-window/TASK-0051): it takes no
+   * verdict and closes with a disposition, the same two whatever it folded, so
+   * its row does not move with the evidence either
+   * (`tests/offline/review-item/signal-actions.test.ts`). The remaining shape
+   * ships an empty list until its ticket fills it, and this table is what that
+   * ticket amends — one place, rather than a claim repeated per shape.
    */
   const OFFERED: Readonly<Record<Shape, readonly VerdictAction[]>> = {
     data_conflict_fact: ["supply_value", "keep_current"],
     entity_link_fact: [],
-    entity_link_source_pattern: [],
+    entity_link_source_pattern: ["fixed", "wont_fix"],
   };
 
   it("answers for every shape, with the actions that shape offers and no other", () => {
