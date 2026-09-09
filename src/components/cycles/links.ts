@@ -20,6 +20,25 @@ export function anchorFor(runId: string): string {
 }
 
 /**
+ * The same, for an ADAPTER run's row in the runs window (campaign
+ * admin-window/BUG-0142).
+ *
+ * A separate spelling rather than a second call to `anchorFor`, because the
+ * two halves of this page are two producers' rows and their ids come from two
+ * tables: `resolution_runs.run_id` and `runs.run_id` are different keys that
+ * could perfectly well hold the same value, and one anchor function for both
+ * would put two elements on one id — where `#` reaches whichever the browser
+ * met first, which is not the row the sentence named.
+ *
+ * The LEAD copy of the newest run carries none of this: it is the window's
+ * first row repeated, and a repeated id is the same collision from the other
+ * side (`run-columns.tsx`, role `lead`).
+ */
+export function runAnchorFor(runId: string): string {
+  return `run-${runId}`;
+}
+
+/**
  * The mark EVERY link in this app wears, whatever ink its own job gives it.
  *
  * Only one kind of link has an ink of its own: the Dashboard's `error_summary`

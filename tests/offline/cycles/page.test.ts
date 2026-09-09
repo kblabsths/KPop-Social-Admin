@@ -49,6 +49,8 @@ import {
   NEWEST_FIRST as RUNS_NEWEST_FIRST,
   NO_SUCH_SOURCE,
   RUNS,
+  SOURCE as RUN_SOURCE,
+  runsFrom,
 } from "../runs/population";
 
 /**
@@ -1742,6 +1744,302 @@ describe("a ?source= link arriving from the Sources page", () => {
     );
   });
 });
+
+/* ── the run a Dashboard link asked for (admin-window/BUG-0142) ──────────── */
+
+/**
+ * The Dashboard's run rows link to `/cycles?run=<run_id>`, and until
+ * admin-window/BUG-0142 this page consumed that parameter in SILENCE: the id
+ * appeared nowhere in the rendered text, `data-row-marked` occurred zero times,
+ * and all five runs rendered alike — while `?cycle=` on the very same page had
+ * marked its row and named it since admin-window/BUG-0054 (walked 2026-09-09).
+ *
+ * What is pinned below is BOTH directions, because a mark and a sentence are
+ * each other's evidence (LOOK_AND_FEEL bar 13, "no screen claims a mark it did
+ * not draw"): the run that is here is marked once and named once, and the run
+ * that is not here is named as absent with nothing marked. The runs half's own
+ * rendering — its nine columns, its four states — stays the property of
+ * `tests/offline/runs/`; what these assert is this page's answer to its URL.
+ */
+describe("a ?run= link arriving from the Dashboard", () => {
+  const RUNS_TABLE = "Adapter runs";
+
+  /** A database holding the whole run population beside the cycles. */
+  const withRuns = (overrides: Script = {}) =>
+    healthyScript({ [T.runs]: { data: [...RUNS] }, ...overrides });
+
+  /** Every marked row on the page, as the `aria-label` of the table holding it. */
+  function markedRowTables(markup: string): string[] {
+    const $ = cheerio.load(markup);
+    return $("tr[data-row-marked]")
+      .toArray()
+      .map((element) => $(element).closest("table").attr("aria-label") ?? "");
+  }
+
+  /** The runs the window rendered, in rendered order. */
+  function renderedRuns(markup: string): string[] {
+    const $ = cheerio.load(markup);
+    return $("[data-run]")
+      .toArray()
+      .map((element) => $(element).attr("data-run") ?? "");
+  }
+
+  /** One run row's marking, read the way the cycles half's is. */
+  function runRow(markup: string, runId: string) {
+    const $ = cheerio.load(markup);
+    const marker = $(`[data-run="${runId}"]`);
+    return {
+      marked: marker.closest("tr").attr("data-row-marked"),
+      current: marker.attr("aria-current"),
+      anchor: marker.attr("id"),
+      rendering: marker.closest("tr").attr("class"),
+    };
+  }
+
+  /** The names the dropped-parameter line spelled, in the order it spelled them. */
+  function droppedNames(markup: string): string[] {
+    const $ = cheerio.load(markup);
+    return $("[data-dropped-param]")
+      .toArray()
+      .map((element) => $(element).attr("data-dropped-param") ?? "");
+  }
+
+  it("marks the run the link named, and links its id to that very row", async () => {
+    const markup = await renderCycles(withRuns(), { run: RUN_FAILED.run_id });
+    const $ = cheerio.load(markup);
+
+    // The sentence names the run the URL asked for…
+    expect($('[data-run-found="true"]').attr("data-run-asked")).toBe(RUN_FAILED.run_id);
+    expect($("[data-run-asked]").text()).toContain(RUN_FAILED.run_id);
+    // …and the id it names is a link into the page, landing on the row itself.
+    expect($('[data-run-found="true"] a').attr("href")).toBe(
+      `#${runRow(markup, RUN_FAILED.run_id).anchor}`,
+    );
+
+    // Exactly one row on the whole page is marked, it is in the ADAPTER RUNS
+    // table, and it is that run's row — never the lead's repeat of the newest.
+    expect(markedRowTables(markup)).toEqual([RUNS_TABLE]);
+    expect(runRow(markup, RUN_FAILED.run_id).marked).toBe("true");
+    // The accessible marking lands on the same row and no other.
+    expect($("[data-run][aria-current]").length).toBe(1);
+    expect(runRow(markup, RUN_FAILED.run_id).current).toBe("true");
+
+    // It LOOKS different from every other row without hovering, and the other
+    // rows still look alike — the mark is drawn, not only announced.
+    const renderings = rowRenderings(markup, RUNS_TABLE);
+    expect(renderings.length).toBe(RUNS.length);
+    const mine = runRow(markup, RUN_FAILED.run_id).rendering;
+    expect(renderings.filter((rendering) => rendering === mine)).toHaveLength(1);
+    expect(new Set(renderings.filter((rendering) => rendering !== mine)).size).toBe(1);
+
+    // The facet narrows NOTHING: the same runs, in the same order, and the
+    // cycles half is the same cycles it renders with no facet at all.
+    const plain = await renderCycles(withRuns());
+    expect(renderedRuns(markup)).toEqual(renderedRuns(plain));
+    expect(renderedCycles(markup)).toEqual(renderedCycles(plain));
+    // A parameter the page acted on is not a parameter it dropped.
+    expect(droppedNames(markup)).toEqual([]);
+  });
+
+  it("matches the id in any spelling the database would have matched", async () => {
+    // Postgres compares a uuid by VALUE and this page compares it by STRING,
+    // so the value is canonicalised where it is derived from the request. An
+    // uppercased or unhyphenated paste of a real run id is the same run
+    // (admin-window/BUG-0140's class; LESSONS 4).
+    const canonical = RUN_FAILED.run_id;
+    for (const spelling of [
+      canonical.toUpperCase(),
+      canonical.replace(/-/g, ""),
+      canonical.replace(/-/g, "").toUpperCase(),
+    ]) {
+      const markup = await renderCycles(withRuns(), { run: spelling });
+      expect(markedRowTables(markup), spelling).toEqual([RUNS_TABLE]);
+      expect(runRow(markup, canonical).marked, spelling).toBe("true");
+      // Named in the database's own spelling — the id that reaches the row.
+      expect($runAsked(markup), spelling).toBe(canonical);
+    }
+  });
+
+  it("says a run id no row in the window holds is not here, and marks nothing", async () => {
+    // Well formed, and no run carries it: the window IS the evidence, so the
+    // negative verdict is earned (unlike the read that returned none, below).
+    const absent = "0192f0c2-0000-7000-8000-0000000000ff";
+    const markup = await renderCycles(withRuns(), { run: absent });
+    const $ = cheerio.load(markup);
+
+    expect($('[data-run-found="false"]').attr("data-run-asked")).toBe(absent);
+    // The id is named verbatim, so the operator sees which run was meant.
+    expect($("[data-run-asked]").text()).toContain(absent);
+    // Said ONCE: one sentence about this run, not one per state.
+    expect($("[data-run-asked]").length).toBe(1);
+    expect(markedRowTables(markup)).toEqual([]);
+    expect($("[data-run][aria-current]").length).toBe(0);
+    // And the window is the window it always was.
+    expect(renderedRuns(markup)).toEqual(RUNS_NEWEST_FIRST.map((row) => row.run_id));
+    expect(droppedNames(markup)).toEqual([]);
+  });
+
+  it("says which window it looked in when a source facet narrowed the runs", async () => {
+    // The runs read is narrowed by `?source=`, so "not in this window" is a
+    // claim about ONE source's runs — and a run of another source, which this
+    // page renders without the facet, is a third possibility the line must not
+    // swallow (LESSONS 2: a sentence claims only the scope its read had).
+    // The read the page makes is narrowed at the database, so the script hands
+    // back exactly the rows that query would return.
+    const markup = await renderCycles(
+      withRuns({ [T.runs]: { data: runsFrom(RUN_SOURCE.bandsintown) } }),
+      {
+        source: RUN_SOURCE.bandsintown,
+        run: RUNS_NEWEST_FIRST.find((row) => row.source === RUN_SOURCE.ticketmaster)!
+          .run_id,
+      },
+    );
+    const $ = cheerio.load(markup);
+    const line = $('[data-run-found="false"]');
+    expect(line.length).toBe(1);
+    // The scope the read really had is named in the same sentence…
+    expect(line.text()).toContain(RUN_SOURCE.bandsintown);
+    // …and the window below holds exactly that source's runs, unmarked.
+    expect(renderedRuns(markup)).toEqual(
+      RUNS_NEWEST_FIRST.filter((row) => row.source === RUN_SOURCE.bandsintown).map(
+        (row) => row.run_id,
+      ),
+    );
+    expect(markedRowTables(markup)).toEqual([]);
+  });
+
+  it("marks the run that is in a narrowed window, and says so", async () => {
+    const run = RUNS_NEWEST_FIRST.find(
+      (row) => row.source === RUN_SOURCE.bandsintown,
+    )!;
+    const markup = await renderCycles(
+      withRuns({ [T.runs]: { data: runsFrom(RUN_SOURCE.bandsintown) } }),
+      { source: RUN_SOURCE.bandsintown, run: run.run_id },
+    );
+    expect(cheerio.load(markup)('[data-run-found="true"]').attr("data-run-asked")).toBe(
+      run.run_id,
+    );
+    expect(markedRowTables(markup)).toEqual([RUNS_TABLE]);
+    expect(runRow(markup, run.run_id).marked).toBe("true");
+  });
+
+  it("holds the verdict back when the read returned no window to look in", async () => {
+    // A refused or absent read hands this page NO window, so "that run is not
+    // here" is a verdict it has no evidence for — the third state, and not a
+    // shade of absent (admin-window/BUG-0023, applied to the other half).
+    for (const [state, script] of Object.entries({
+      not_provisioned: withRuns({ [T.runs]: { error: tableNotInSchemaCache(T.runs) } }),
+      refused: withRuns({ [T.runs]: { error: permissionDenied(T.runs) } }),
+      transport: withRuns({ [T.runs]: { error: transportFailure() } }),
+    })) {
+      const markup = await renderCycles(script, { run: RUN_FAILED.run_id });
+      const $ = cheerio.load(markup);
+      expect($("[data-run-unchecked]").attr("data-run-asked"), state).toBe(
+        RUN_FAILED.run_id,
+      );
+      // It names the object whose read returned none, in that read's own
+      // spelling, so the operator is sent to the failure and not to a phantom.
+      expect($("[data-run-unchecked]").attr("data-run-unchecked"), state).toBe(T.runs);
+      expect($("[data-run-found]").length, state).toBe(0);
+      expect(markedRowTables(markup), state).toEqual([]);
+      // The cycles half is untouched by any of it.
+      expect(renderedCycles(markup), state).toEqual(
+        NEWEST_FIRST.map((row) => row.run_id),
+      );
+    }
+  });
+
+  it("names a ?run= that is not a run id as a parameter it did not apply", async () => {
+    // The shared owner's sentence, the one `/claims` and `/queues` render
+    // (admin-window/BUG-0141): a value that can match no row narrows nothing,
+    // and a page that drops a parameter says so. The NAME is spelled; the
+    // value never is.
+    for (const nonsense of [
+      "not-a-uuid",
+      "../../etc/passwd",
+      "%%%",
+      "<script>alert(1)</script>",
+    ]) {
+      const markup = await renderCycles(withRuns(), { run: nonsense });
+      const $ = cheerio.load(markup);
+      expect(droppedNames(markup), nonsense).toEqual(["run"]);
+      expect($("[data-dropped-params]").attr("data-dropped-params"), nonsense).toBe("1");
+      // No verdict about a run, because no run was asked for that could exist.
+      expect($("[data-run-asked]").length, nonsense).toBe(0);
+      expect(markedRowTables(markup), nonsense).toEqual([]);
+      expect($("[data-run][aria-current]").length, nonsense).toBe(0);
+      // Nothing is narrowed, and the URL's value reaches the page as neither
+      // text nor markup.
+      expect(renderedRuns(markup), nonsense).toEqual(
+        RUNS_NEWEST_FIRST.map((row) => row.run_id),
+      );
+      expect(markup, nonsense).not.toContain(nonsense);
+      expect($("script").length, nonsense).toBe(0);
+    }
+  });
+
+  it("takes the first value when the URL names the run twice", async () => {
+    const markup = await renderCycles(withRuns(), {
+      run: [RUN_FAILED.run_id, RUNS_NEWEST_FIRST[0].run_id],
+    });
+    expect($runAsked(markup)).toBe(RUN_FAILED.run_id);
+    expect(markedRowTables(markup)).toEqual([RUNS_TABLE]);
+    expect(runRow(markup, RUN_FAILED.run_id).marked).toBe("true");
+    expect(runRow(markup, RUNS_NEWEST_FIRST[0].run_id).marked).toBeUndefined();
+  });
+
+  it("marks the newest run without marking the lead that repeats it", async () => {
+    // The lead is the window's first row shown again above the fold
+    // (admin-window/BUG-0040). Marking it too would draw two marks for one
+    // run, and giving it the row's anchor would put two elements on one id —
+    // where `#` reaches whichever the browser met first.
+    const newest = RUNS_NEWEST_FIRST[0].run_id;
+    const markup = await renderCycles(withRuns(), { run: newest });
+    const $ = cheerio.load(markup);
+    expect(markedRowTables(markup)).toEqual([RUNS_TABLE]);
+    expect(leadRun(markup).runId).toBe(newest);
+    expect($("[data-latest-run]").closest("tr").attr("data-row-marked")).toBeUndefined();
+    expect($("[data-latest-run]").attr("aria-current")).toBeUndefined();
+
+    // Every id in the document is unique, so the sentence's link is unambiguous.
+    const ids = $("[id]")
+      .toArray()
+      .map((element) => $(element).attr("id") ?? "");
+    expect(ids.length).toBeGreaterThan(0);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("marks nothing, and says nothing about a run, with no ?run= at all", async () => {
+    const markup = await renderCycles(withRuns());
+    const $ = cheerio.load(markup);
+    expect($("[data-run-asked]").length).toBe(0);
+    expect($("tr[data-row-marked]").length).toBe(0);
+    expect($("[data-run][aria-current]").length).toBe(0);
+    expect($("[data-dropped-params]").length).toBe(0);
+    // Every run row still carries the anchor a link would land on.
+    for (const run of RUNS) {
+      expect(runRow(markup, run.run_id).anchor, run.run_id).toBeTruthy();
+    }
+  });
+
+  it("answers the two facets independently when the URL carries both", async () => {
+    // `?cycle=` marks a cycle and `?run=` marks a run: two halves, two
+    // sentences, two marks — and neither is the other's.
+    const markup = await renderCycles(withRuns(), {
+      cycle: FAILED.run_id,
+      run: RUN_FAILED.run_id,
+    });
+    expect(markedRowTables(markup).sort()).toEqual([RUNS_TABLE, CYCLES_TABLE].sort());
+    expect(cycleRow(markup, FAILED.run_id).marked).toBe("true");
+    expect(runRow(markup, RUN_FAILED.run_id).marked).toBe("true");
+    expect(droppedNames(markup)).toEqual([]);
+  });
+});
+
+/** The run id the page says it was asked for, wherever it landed. */
+function $runAsked(markup: string): string | undefined {
+  return cheerio.load(markup)("[data-run-asked]").attr("data-run-asked");
+}
 
 /**
  * The adapter framework's `runs` are the page's OTHER half and landed with
