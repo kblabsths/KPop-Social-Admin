@@ -729,7 +729,7 @@ describe("the observation leg", () => {
   });
 
   /**
-   * STRICT PIN — QA, filed as admin-window/BUG-0149 while attacking BUG-0148.
+   * STRICT PIN — QA, filed as admin-window/BUG-0150 while attacking BUG-0148.
    *
    * BUG-0148 put the review-item block's unlinked observation id through the
    * shared `Identifier` primitive (DEBT-0011 criterion 2: "every call site
