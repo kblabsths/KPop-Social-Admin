@@ -12854,3 +12854,6 @@
 2026-09-09T03:37:12Z	agent	-	-	-	-
 # STRANDED	2026-09-09T03:37:12Z	agent	6 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0053.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0086.md, agenticflow/visions/admin-window/tracker/tickets/FEAT-0011.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0053.md
 2026-09-09T03:37:12Z	agent	-	-	-	-
+# STRANDED	2026-09-09T03:37:22Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T03:37:22Z	agent	-	-	-	-
+2026-09-09T03:37:25Z	qa-adversary	BUG-0085	spawned
