@@ -21037,3 +21037,23 @@
 2026-09-09T20:12:04Z	agent	-	-	-	-
 # STRANDED	2026-09-09T20:12:18Z	agent	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-DEBT-0010/, agenticflow/visions/admin-window/tracker/tickets/BUG-0144.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0010.md
 2026-09-09T20:12:18Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:12:29Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T20:12:29Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:12:43Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T20:12:43Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:12:49Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T20:12:49Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:13:00Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-09T20:13:00Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:13:15Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0143.json
+2026-09-09T20:13:15Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:13:20Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0143.json
+2026-09-09T20:13:20Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:13:32Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0143.json
+2026-09-09T20:13:32Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:13:47Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0143.json
+2026-09-09T20:13:47Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:13:52Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0143.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0143.md
+2026-09-09T20:13:52Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:14:04Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0143.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0143.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0145.md
+2026-09-09T20:14:04Z	agent	-	-	-	-
