@@ -34,12 +34,15 @@ v1 is the spec's two slices (spec §2), on two clocks (spec §2, §10):
 | slice | what it is | milestone |
 | --- | --- | --- |
 | read slice | spec §4 (the window), §5 (the gauges), §6 (a review item rendered) — **zero schema** | **M1** |
-| edit surface, pre-cutover half | spec §8 for `groups` / `idols` — direct edits, no schema | **M1** |
+| edit surface, pre-cutover half | spec §8 for `groups` / `idols` — direct edits, no schema | **M1 — shipped, then RETIRED 2026-09-08 (see F8)** |
 | verdict slice | spec §7 (the verdict), §8's override half, §9's two handoff artifacts | M2 |
 | live proof of the §7 actions | tests 6–8 on staging, after Ben installs the §9 migrations | deferred patch run |
 
 **F1–F8 below are M1 behavior**, shipped 2026-09-04 (tag `m1`) — those sections
-are closed and are not rewritten. **F9–F13 are M2 behavior**, added at the M1
+are closed and are not rewritten. One of them, **F8, has since been retired by the
+human's vision amendment of 2026-09-08** — it shipped, and the behavior it
+describes is being removed rather than rewritten; the amendment note under F8
+says what replaced it. **F9–F13 are M2 behavior**, added at the M1
 close 2026-09-04. The deferred run is described in `ROADMAP.md`. No M1 behavior
 may depend on the §9 handoffs existing, and **no M2 behavior may depend on them
 being installed** — M2 is satisfiable with zero installed schema.
@@ -250,10 +253,35 @@ Observable behavior:
 - No whole-table browsing, no free-SQL runner, no second curated view (spec §1,
   §4 Rationale).
 
-## F8 — The edit surface, pre-cutover half
+## F8 — The edit surface, pre-cutover half *(shipped M1; RETIRED 2026-09-08)*
 
-*VISION: "The edit surface driven by one hand-written map of what is editable:
-groups/idols edit directly within it."*
+> **Amendment note — 2026-09-08, the human.** Ben struck *"groups/idols edit
+> directly within it"* from the frozen VISION: *"admin edits catalog tables only
+> through the observation pipeline; do not re-implement direct edits.
+> groups/idols stay as test tables until they are removed."* He ruled two
+> adjacent things the same day: `groups`/`idols` get **no door** — no listing,
+> no search, no entry point — and the group row's own `source_*` provenance
+> columns **stay hidden**, as he ruled on 2026-09-02.
+>
+> **F8 below is left as written, because it shipped** (M1, tag `m1`, acceptance
+> test 7's pre-cutover half passed) and this document does not rewrite shipped
+> sections. It is a record of what was true, not a statement of what the app
+> does. **What survives it:** the one hand-written map, the server-side refusal
+> of anything absent from it, and the rule that a column absent from the map is
+> refused rather than hidden. **What is retired:** the direct write path itself
+> — `groups` and `idols` leave `EDIT_CONFIG` (TASK-0040), so no catalog table is
+> writable from Admin at all until F11's override path lands, and the interim
+> walk-write exception over those rows is withdrawn (TASK-0041).
+>
+> **No successor section is added, and none is owed.** A strike removes; it
+> licenses nothing. Direct editing of a catalog table is not to be
+> re-implemented in any form — the standing rule for builders lives in the
+> architect's 2026-09-08 entry in `agenticflow/docs/DECISIONS.md` and its
+> ARCHITECTURE rule, which is the one place it is stated.
+
+*VISION (as it read when F8 shipped; the quoted clause was struck 2026-09-08):
+"The edit surface driven by one hand-written map of what is editable:
+~~groups/idols edit directly within it~~."*
 *Spec §8; AGENTS.md data-ownership rule; acceptance doc test 7.*
 
 Observable behavior:
@@ -373,11 +401,15 @@ Observable behavior:
   column absent from the map is still refused server-side, exactly as F8 ships.
 - **Per-field provenance shows at the field** for a resolver-owned table, read
   from `field_provenance` ("ticketmaster, applied 3d ago" / "admin-set Jun 12").
-  A pre-cutover table keeps the rendering Ben confirmed on 2026-09-02.
+  Wherever a pre-cutover record still renders after the 2026-09-08 amendment,
+  it keeps the rendering Ben confirmed on 2026-09-02, and a catalog row's own
+  `source_*` columns stay hidden (his ruling, 2026-09-08).
 - **Absent the function**, `events` and `venues` render **read-only** with the
   reason named, which is what M1 already ships — the surface degrades to M1's
   behavior rather than to a broken control.
-- Two affordances the M1 walks earned, on the shared edit cell (both regimes):
+- Two affordances the M1 walks earned, on the shared edit cell wherever it
+  renders (the amendment of 2026-09-08 left the override path the only catalog
+  write path there is):
   an editable value is **distinguishable from a read-only one before it is
   touched**, and a click-to-edit cell **opens with its existing value selected**
   so a straight retype replaces.
@@ -398,12 +430,13 @@ Observable behavior:
 - The picker searches within the referenced entity's own table and offers only
   rows that exist. It never creates an entity.
 - **Display half:** a reference renders as a **link to the record it names**,
-  wherever it is shown — which ends the idol↔group islands (`idols` shows its
-  group and reaches it in one click, and a group reaches its idols), using the
-  rendering `events.venue_id` already ships. This is display of an existing
-  vetted column; **it adds no editable column** (SPEC F8: never ids or keys),
-  and it is **not a door** — a first group is still reached only by uuid unless
-  Ben answers ROADMAP's question 1.
+  wherever both ends have a record surface — which today is `events.venue_id`,
+  already shipped, and nothing new is built for it. This is display of an
+  existing vetted column and **it adds no editable column** (never ids or keys).
+  *Amended 2026-09-08:* the idol↔group half of this bullet is **cut**. Ben
+  struck the direct-edit scope and ruled `groups`/`idols` get no door and stay
+  test tables until they are removed, so neither has a record surface to link to
+  or from — see the amendment note under F8.
 
 ## F13 — The verdict log, visible
 
@@ -434,15 +467,21 @@ Observable behavior:
   deciding either way (spec §10).
 - **Any dial, threshold line, or dial-shaped control.** Ben builds dials after
   the campaign closes; nothing in M2 renders, reads, or hand-copies one.
-- **A groups/idols listing or a search box** (SPEC F7 stands; ROADMAP question
-  1 is Ben's alone), a second Browse view, whole-table browsing, a SQL runner.
+- **A groups/idols listing, a search box, or any link to either table.** Ben
+  answered ROADMAP question 1 on 2026-09-08: **no door**, and they stay test
+  tables until they are removed. Also out: a second Browse view, whole-table
+  browsing, a SQL runner.
 - **Phone and responsive work** — desktop-only, 1280px+, both themes kept
   (DECISIONS 2026-09-02).
 - A `verdicts` row for a **pre-cutover** edit. Spec §7's `action` CHECK does not
   admit one, and inventing an action name is schema design this campaign does
-  not own. The gap between VISION's "every change is attributed" and F8's
-  "legal and unprovenanced" therefore **survives M2**, and is named as an open
-  question rather than closed by a build judgment.
+  not own. *Amended 2026-09-08:* the human's amendment settles the tension
+  behind this the only other way it could be settled — by removing the
+  unprovenanced write itself. No catalog edit escapes attribution, because no
+  direct catalog edit exists. The gap between VISION's "every change is
+  attributed" and F8's "legal and unprovenanced" is therefore **closed by
+  removal, not by a build judgment**; it stays recorded in
+  `tracker/for-human/M1-contract-gaps.md` as a thing that happened.
 - Every parked section, in full, unchanged.
 
 ## Named gaps carried into M2
@@ -461,11 +500,13 @@ M1's five named gaps stand where they were left. Three more are visible now:
    fields of `events`" (AGENTS.md) narrows it but does not fix it. The map's
    first `events`/`venues` entry is a blocked question for Ben, not a builder's
    pick.
-8. **The human edit with no fingerprint.** VISION: "every change is attributed";
-   SPEC F8: pre-cutover edits are "legal and unprovenanced"; `groups.updated_at`
-   does not move on an Admin write. Already routed to Ben in
-   `tracker/for-human/M1-contract-gaps.md` — the only honest fix is a trigger,
-   which is schema, which this repo may never carry. Carried, not closed.
+8. **The human edit with no fingerprint** — *CLOSED 2026-09-08 by the human's
+   amendment, by removal.* VISION says "every change is attributed"; SPEC F8's
+   pre-cutover edits were "legal and unprovenanced" and `groups.updated_at` did
+   not move on an Admin write. The fix nobody here could make (a trigger — schema
+   this repo may never carry) is moot: Ben struck the direct-edit scope, so the
+   unattributed write path is being removed rather than instrumented. The record
+   of it stays in `tracker/for-human/M1-contract-gaps.md`.
 
 ---
 
@@ -501,7 +542,10 @@ builder needs the answer; none may be decided silently (acceptance doc).
    13 sanctions a live suite that writes and sweeps, while spec §8 forbids
    *app* write paths to those domains — is the question to ask before any
    fixture is written.
-3. **Per-field provenance on a pre-cutover table.** Spec §8 shows provenance at
+3. **Per-field provenance on a pre-cutover table** *(moot for the catalog after
+   the 2026-09-08 amendment: `groups`/`idols` leave the map, so no catalog record
+   renders under this regime; Ben also ruled their own `source_*` columns stay
+   hidden).* Spec §8 shows provenance at
    the edit surface, but `groups` / `idols` edits are unprovenanced by
    construction, so no `field_provenance` row exists for them. Rendering
    nothing is the honest read; confirm before shipping it.

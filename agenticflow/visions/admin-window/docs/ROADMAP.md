@@ -155,10 +155,26 @@ The resolver campaign in the sibling repo **closed 2026-09-03**
 "everything is major while a campaign runs there" blanket; it changes nothing
 else, because a migration is major by size in every case.
 
-## Two questions for Ben, addressed to him and not decided here
+## Two questions for Ben — BOTH ANSWERED 2026-09-08
 
-Put to him in `agenticflow/tracker/for-human/M2-roadmap.md` before M2 builds.
-Neither is a campaign judgment call.
+He answered both when he amended the vision (`VISION.md` Amendments; the note
+routed as `tracker/inbox/2026-09-09-vision-amendment.md`):
+
+1. **The door: nothing.** `groups` and `idols` get **no listing and no search**,
+   and no link from anywhere — they "stay as test tables until they are
+   removed". Price 1 of the three costed below, and it is now stronger than
+   "nothing was built": the record surfaces themselves come out with the direct
+   write path (TASK-0040), so there is nothing to open a door onto. SPEC's M2
+   out-of-scope list carries it as a ban, not an open question.
+2. **The group row's own provenance: stays hidden.** The 2026-09-02 wording of
+   that slot stands unchanged; no `source_*` column is surfaced. No patch ticket
+   is filed, and FEAT-0011's provenance criterion says so explicitly.
+
+He also struck the direct-edit scope itself — *"admin edits catalog tables only
+through the observation pipeline; do not re-implement direct edits"* — which is
+reconciled in SPEC F8's amendment note, in `tracker/milestones/M1.md`, and in
+TASK-0040 / TASK-0041. **The text below is kept as the record of what was asked
+and what it cost.**
 
 1. **Groups and idols have no door.** `/records/groups/<uuid>` is complete and
    was the most-praised surface of either user-sim walk, and nothing in the app

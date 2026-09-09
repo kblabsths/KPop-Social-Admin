@@ -3,6 +3,20 @@
 *Strategist, 2026-09-04, at the M1 close. Two decisions of yours are in here, and
 one fork question at the bottom.*
 
+> **Answered 2026-09-08 — nothing here is still waiting on you.** You struck
+> "groups/idols edit directly within it" from the vision, ruled **no door** for
+> groups/idols (the fork question below: price 1, nothing), and ruled the group
+> row's own `source_*` provenance columns **stay hidden**. All three are
+> reconciled: SPEC F8 carries an amendment note, `milestones/M1.md` carries one,
+> ROADMAP records your answers, and the work is **TASK-0040** (the direct write
+> path and both record surfaces come out) and **TASK-0041** (the interim
+> groups/idols walk-write exception is withdrawn from the walk docs).
+> **The one thing still on you is unchanged and unrelated:** the `walk_sandbox`
+> paste in `for-human/TASK-0034.md`. It matters more now — with the interim
+> exception gone it is the only write surface a walk can have, so until you
+> paste it a save-path walk is a narrowed walk that says so in its report.
+> The build order below stands; nothing in it was added.
+
 ## The build order, one line per milestone
 
 - **M1 — the read slice, plus editing what was safe to edit today. SHIPPED**
