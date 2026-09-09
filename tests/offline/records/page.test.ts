@@ -1958,3 +1958,101 @@ describe("the regime note", () => {
     }
   });
 });
+
+/* ── the same table name, one card lower ──────────────────────────────────── */
+
+/**
+ * The empty state cards on this route name the table too, and a table name is
+ * the machine's word wherever it stands — campaign admin-window/BUG-0112's QA
+ * pass, 2026-09-09.
+ *
+ * BUG-0112 moved the REGIME NOTE's name into the app's identifier-in-prose
+ * spelling. Measured on the production build against staging afterwards
+ * (1440x900, light and dark), `/records/walk_sandbox/x` shows the same name
+ * four times: twice in Geist Mono 11px (the heading, the note) and twice in
+ * Geist 12px sans (the empty card's two lines) — the exact disagreement the
+ * ticket was filed about, on the state an operator reaches by mistyping or
+ * half-pasting an id. LOOK_AND_FEEL Voice bar 5 does not stop at a note:
+ * machine identifiers "render verbatim in mono", so which of the app's four
+ * data-surface states is drawing one cannot change its face.
+ *
+ * The yardstick is the page's own heading rather than a class literal, exactly
+ * as the regime note's guard above: nothing here pins a face, and a restyle
+ * moves both sides together.
+ *
+ * `walk_sandbox` is the fixture on purpose. It is the name the walk called
+ * loudest (an underscore, mid-sentence, in a proportional face) and the only
+ * one of the three that cannot be read as an English word — `events` is also
+ * the app's own plural noun in "Browse lists recent events", which is prose
+ * and must stay sans, so a rule counting occurrences of THAT string would
+ * demand the wrong fix.
+ */
+describe("a table name in an empty state card", () => {
+  /** The span inside `scope` whose whole text is the table's name, verbatim. */
+  function namesTheTable(
+    $: cheerio.CheerioAPI,
+    scope: ReturnType<cheerio.CheerioAPI>,
+    table: string,
+  ) {
+    return scope
+      .find("span")
+      .toArray()
+      .filter((element) => $(element).text() === table);
+  }
+
+  /**
+   * Every line of the one empty card that says the table's name, with how many
+   * times it says it and how many of those are drawn as the identifier.
+   */
+  function namesInTheCard(markup: string, table: string) {
+    const $ = cheerio.load(markup);
+    const card = $('[data-state="empty"]');
+    expect(card.length, `${table} draws one empty card`).toBe(1);
+    const heading = namesTheTable($, $("h1"), table);
+    expect(heading.length, `${table} names itself in the heading`).toBe(1);
+    return {
+      headingFace: faceOf(classesOf($(heading[0]))),
+      lines: card
+        .find("p")
+        .toArray()
+        .map((line) => ({
+          text: $(line).text(),
+          said: $(line).text().split(table).length - 1,
+          drawn: namesTheTable($, $(line), table).map((element) =>
+            faceOf(classesOf($(element))),
+          ),
+        }))
+        .filter((line) => line.said > 0),
+    };
+  }
+
+  // xfail, strict: passes only while the divergence stands. The day the card
+  // wraps its name, this XPASSes, vitest turns it red, and whoever reads it is
+  // sent to admin-window/BUG-0120 to take the `.fails` off.
+  it.fails("sets the name in the face the heading above it uses, on a mistyped id (admin-window/BUG-0120)", async () => {
+    const table = DIRECT_WRITE_TABLE;
+    const { headingFace, lines } = namesInTheCard(
+      await renderRecord(table, defaultScript(table), "not-an-id"),
+      table,
+    );
+    // Non-vacuous: this state really does say the name, more than once.
+    expect(lines.reduce((total, line) => total + line.said, 0)).toBeGreaterThan(1);
+    for (const line of lines) {
+      expect(line.drawn.length, `"${line.text.slice(0, 60)}…"`).toBe(line.said);
+      for (const face of line.drawn) expect(face).toEqual(headingFace);
+    }
+  });
+
+  it.fails("sets the name in the face the heading above it uses, on an id no row has (admin-window/BUG-0120)", async () => {
+    const table = DIRECT_WRITE_TABLE;
+    const { headingFace, lines } = namesInTheCard(
+      await renderRecord(table, { ...defaultScript(table), [table]: { data: null } }),
+      table,
+    );
+    expect(lines.reduce((total, line) => total + line.said, 0)).toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(line.drawn.length, `"${line.text.slice(0, 60)}…"`).toBe(line.said);
+      for (const face of line.drawn) expect(face).toEqual(headingFace);
+    }
+  });
+});
