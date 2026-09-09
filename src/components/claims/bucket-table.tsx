@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
-import { Badge, type Column, DataTable } from "@/components/ui";
+import { type Column, DataTable } from "@/components/ui";
 import { count, relativeAge } from "@/lib/format";
 
 /**
@@ -56,6 +56,16 @@ export function BucketTable({
     {
       key: "bucket",
       label: "bucket",
+      // A bare link, carrying the words itself. It wore a <Badge> until
+      // admin-window/BUG-0113: the chip re-inked the bucket name `text-ink` on
+      // a fill of its own, which took CSS priority over the anchor's inherited
+      // accent and painted over the anchor's underline, so the anchor MEASURED
+      // as a link while rendering byte-identically to plain text. A badge
+      // never sits inside a link, and a link never wears one (LOOK_AND_FEEL,
+      // "Chips and badges"): badge classifies, link navigates, and this one
+      // navigates. No type class is added here — the DataTable cell already
+      // draws its body `type-data` (src/components/ui/data-table.tsx), so the
+      // bucket stays mono as the machine identifier it is (spec §11).
       cell: (row) => (
         <a
           href={row.href}
@@ -63,7 +73,7 @@ export function BucketTable({
           aria-current={row.active ? "true" : undefined}
           className={IN_PAGE_LINK}
         >
-          <Badge>{row.bucket}</Badge>
+          {row.bucket}
         </a>
       ),
     },

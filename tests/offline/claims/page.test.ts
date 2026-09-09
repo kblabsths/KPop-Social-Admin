@@ -535,17 +535,21 @@ describe("what on this page says it goes somewhere", () => {
     }
   });
 
-  // STRICT PIN — admin-window/BUG-0113. `it.fails` so the suite stays green
-  // while the divergence stands and turns RED the day it is fixed, sending the
-  // reader to the ticket. Flip to a plain `it(...)` as part of that fix.
-  it.fails("draws the bucket link so the WORDS carry the link's ink, not just the anchor", async () => {
-    // Measured in Chromium on a production build, 1440x900, both themes, at
-    // rest: each bucket anchor computes rgb(152, 16, 250) + underline, and the
-    // <Badge> it wraps computes rgb(30, 41, 57) on a chrome fill with
-    // text-decoration-line: none. A crop of the anchor is BYTE-IDENTICAL with
-    // its underline removed (sha1 equal, 5/5 buckets, both themes; 0 accent
-    // pixels), against 1000 -> 443 accent pixels for a plain /browse title.
-    // So the bucket names render exactly as they did before this rule existed.
+  // Was a strict `it.fails` pin while admin-window/BUG-0113 stood: the bucket
+  // anchor wrapped a <Badge>, which re-inked the words `text-ink` on a chrome
+  // fill and painted over the anchor's underline, so the five bucket names
+  // rendered exactly as they did before this app had a link spelling. The
+  // Badge is gone (the bucket is a link, not a chip — LOOK_AND_FEEL, "Chips
+  // and badges": a badge never sits inside a link), so this is a plain `it`.
+  it("draws the bucket link so the WORDS carry the link's ink, not just the anchor", async () => {
+    // What the defect measured, kept so the number survives the fix: in
+    // Chromium on a production build, 1440x900, both themes, at rest, each
+    // bucket anchor computed rgb(152, 16, 250) + underline while the <Badge>
+    // it wrapped computed rgb(30, 41, 57) on a chrome fill with
+    // text-decoration-line: none — a crop of the anchor was BYTE-IDENTICAL
+    // with its underline removed (sha1 equal, 5/5 buckets, both themes; 0
+    // accent pixels), against 1000 -> 443 accent pixels for a plain /browse
+    // title.
     const markup = await renderClaims(healthyScript());
     const $ = cheerio.load(markup);
     const anchors = $("[data-bucket][href]").toArray();
