@@ -1929,8 +1929,12 @@ describe("no shape's lede claims a completeness its read cannot support", () => 
       .map((element) => $(element).text().replace(/\s+/g, " ").trim());
   }
 
-  it("holds on the conflict and source-pattern shapes", async () => {
-    for (const [name, script, id] of SHAPED.filter(([shape]) => shape !== "stuck")) {
+  it("holds on all three shapes", async () => {
+    // The rule is graded ONCE, over every shape a `Shape` can be — the
+    // `entity_link` fact view folded in here when its own lede stopped
+    // claiming a total (admin-window/BUG-0128), so a fourth shape's lede is
+    // graded the day the compiler forces a fourth view into the map.
+    for (const [name, script, id] of SHAPED) {
       const ledes = await ledesOf(script(), id);
       expect(ledes.length, name).toBeGreaterThan(0);
       for (const text of ledes) expect(text, name).not.toMatch(CLAIMS_A_TOTAL);
@@ -1938,18 +1942,18 @@ describe("no shape's lede claims a completeness its read cannot support", () => 
   });
 
   /**
-   * **STRICT PIN — admin-window/BUG-0128.** The `entity_link` FACT shape keeps
-   * the claim this ticket retired one shape over: its lede asserts that every
-   * claim the record holds is below, over a block whose own accounting says
-   * one of the item's two evidence ids resolved to no claim at all. Admin
-   * never reads a record's claims — it reads the ids in `review_items.evidence`
-   * — so the completeness is unknowable here for exactly the reason it was
-   * unknowable on the source-pattern lede.
+   * **admin-window/BUG-0128** — the fixture on which the retired sentence was
+   * not merely unknowable but false: two evidence ids, one of which names no
+   * claim this database holds. The lede said every claim the record held was
+   * below while the accounting under it said one of two resolved and the
+   * unresolved line printed the id that resolved to nothing.
    *
-   * When this goes green the pin turns red: fold the shape into the test above
-   * and delete this one.
+   * What is asserted is the same pair the source-pattern lede is held to: the
+   * lede names the POPULATION the block actually carries, and carries no
+   * figure of its own — the counts belong to the sentences that read them,
+   * which this test reads off the same markup.
    */
-  it.fails("does not hold on the entity_link fact shape (BUG-0128)", async () => {
+  it("names the population on the fact shape where an evidence id resolved to nothing", async () => {
     const orphan = "01920000-0000-7000-8000-000000000999";
     const item = reviewItemEntityLink({
       evidence: [ID.observationB, orphan],
@@ -1957,16 +1961,23 @@ describe("no shape's lede claims a completeness its read cannot support", () => 
     });
     const script = stuckScript({ [T.reviewItems]: { data: item } });
     const markup = await renderItem(script, item.review_item_id);
-    const $ = cheerio.load(markup);
 
     // The page's own read, stated on the page: two ids, one claim, one id
     // naming nothing this database holds.
     expect(accountingIn(markup)).toEqual([1, 2]);
     expect(attrsOf(markup, "[data-unresolved]")).toEqual([orphan]);
 
-    const ledes = await ledesOf(script, item.review_item_id);
-    expect(ledes.length).toBeGreaterThan(0);
-    for (const text of ledes) expect(text).not.toMatch(CLAIMS_A_TOTAL);
+    const lede = cheerio.load(markup)(
+      '[data-evidence-view="stuck-fact"] [data-lede]',
+    );
+    expect(lede, "the entity_link fact view leads with a lede").toHaveLength(1);
+    const text = lede.text().replace(/\s+/g, " ").trim();
+    // It names what the block holds — the claims behind this item's evidence
+    // ids — the same population the accounting sentence above accounts for.
+    expect(text).toContain("evidence ids");
+    // Nothing in it is a figure: neither the 2 ids, the 1 claim nor the 700
+    // folds is the lede's to state.
+    expect(text).not.toMatch(/\d/);
   });
 });
 
