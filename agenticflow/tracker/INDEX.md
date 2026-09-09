@@ -1,10 +1,12 @@
-# Tracker index (regenerated 2026-09-09T21:55:18Z — do not edit)
+# Tracker index (regenerated 2026-09-09T21:56:47Z — do not edit)
 
 ## open
-- BUG-0148 [P2][bug][patch] The verdict block's observation id is still hand-faced — the one call site DEBT-0011's sweep left outside the identifier primitive  (scope:src/components/review/close/slot.tsx,tests/offline/review-item/verdict-inline.test.ts from:DEBT-0011)
 - BUG-0147 [P3][bug][M2] /cycles spells a raw ?cycle= into the app's own sentence, so a bidi control in the URL reverses the page's paragraph  (scope:src/components/cycles/asked-cycle.tsx,src/app/cycles/page.tsx,tests/offline/cycles/page.test.ts from:BUG-0146)
 - DEBT-0012 [P3][debt][patch] readPopulation issues all three shape counts on every narrowed /queues URL, including the two the URL's own kind cannot render  (deps:BUG-0141 scope:src/lib/db/review-items.ts,tests/offline/review/review-items.test.ts)
 - DEBT-0014 [P3][debt][-] selectClaims is exported twice with unrelated shapes — the claims vocabulary's own narrowedTo, left untracked by two lanes  (scope:src/lib/db/claims.ts,src/lib/gauges/pending-claims.ts,src/lib/gauges/standing-disagreements.ts,src/app/claims/page.tsx,tests/offline/url/narrowing.test.ts from:DEBT-0010)
+
+## claimed
+- BUG-0148 [P2][bug][patch] The verdict block's observation id is still hand-faced — the one call site DEBT-0011's sweep left outside the identifier primitive  (scope:src/components/review/close/slot.tsx,tests/offline/review-item/verdict-inline.test.ts @builder-219 from:DEBT-0011)
 
 ## built
 - DEBT-0013 [P2][debt][patch] The entity picker manages no focus at all, and its hint promises an Escape that only works while focus is inside the panel  (scope:src/components/records/entity-picker.tsx,tests/offline/records/entity-picker.test.ts @builder-218)
@@ -15,4 +17,4 @@
 ## reopened
 - DEBT-0011 [P2][debt][patch] The mono identifier face is hand-spelled 44 times across 24 files with no shared primitive — the structural root of BUG-0112/0120/0121  (deps:BUG-0141,DEBT-0008 scope:src/components/ui/identifier.tsx,src/components/ui/index.ts,src/app,src/components,tests/offline/ui/primitives.test.ts,tests/offline/records/page.test.ts,tests/offline/review-item/page.test.ts)
 
-Totals — blocked:1, built:1, done:104, open:4, reopened:1, wont_fix:1. Archived: 124.
+Totals — blocked:1, built:1, claimed:1, done:104, open:3, reopened:1, wont_fix:1. Archived: 124.
