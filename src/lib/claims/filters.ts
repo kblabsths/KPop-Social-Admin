@@ -152,7 +152,16 @@ function isFacet(key: string): key is ClaimFacet {
  *    so the page consumed it and no sentence is claiming otherwise.
  *  - **A key carrying no value asked for nothing** and is not a dropped
  *    narrowing; `?bucket=` is the URL saying nothing, not the page ignoring
- *    something.
+ *    something. **A value carrying no key asks for nothing either**
+ *    (admin-window/BUG-0127): `/claims?=x` reaches the page as `{"": "x"}`
+ *    and `/claims?%20%20=1` as `{"  ": "1"}`, and a query pair is a request
+ *    only with both halves — a nameless value names no facet, so there is no
+ *    narrowing to have dropped. Same rule as the empty value, read from the
+ *    other side, and it is why this line can no longer render a sentence
+ *    with a hole where the name goes. Counting such a key as `withheld`
+ *    instead would put "a parameter this page may not name" on screen, which
+ *    states a reason that is not the reason: nothing is withheld, there is
+ *    no name. Bar 3 is untouched either way — nothing is rendered.
  *
  * `neverNamed` is the small set of words this app may not put on screen at all
  * — the parked bucket (`UNRENDERABLE_BUCKET`, `lib/db/claims.ts`; LOOK_AND_FEEL
@@ -178,6 +187,10 @@ export function droppedParams(
   let withheld = 0;
   for (const key of Object.keys(params)) {
     if (key === TAB_PARAM) continue;
+    // A key that is empty or whitespace-only names nothing, so it asked for
+    // nothing — the empty-value rule from the other side. The one thing this
+    // line may never do is spell a name that is not there.
+    if (key.trim() === "") continue;
     const asked = firstValue(params[key]);
     if (asked === undefined || asked === "") continue;
     if (isFacet(key) && applied[key] !== undefined) continue;

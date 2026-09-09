@@ -5,6 +5,7 @@ import {
   DEFAULT_TAB,
   TABS,
   claimsHref,
+  droppedParams,
   facetChips,
   filterBar,
   filterFrom,
@@ -200,5 +201,55 @@ describe("where a claim leads", () => {
     // to show provenance for, and the row says what it is waiting for instead.
     expect(recordHref("events", null)).toBeNull();
     expect(recordHref("events", "")).toBeNull();
+  });
+});
+
+describe("what the URL asked for and the page did not do", () => {
+  const APPLIED: ClaimsFilter = { bucket: "escalated" };
+
+  it("names a parameter this page never applied, and only that one", () => {
+    expect(
+      droppedParams({ bucket: "escalated", record_id: "r-1" }, APPLIED),
+    ).toEqual({ named: ["record_id"], withheld: 0 });
+    // The tab is consumed by the page, and a facet that reached the filter is
+    // applied — neither is a dropped narrowing.
+    expect(droppedParams({ tab: "standing", bucket: "escalated" }, APPLIED)).toEqual({
+      named: [],
+      withheld: 0,
+    });
+    // A facet whose value no chip offers narrowed nothing, so it IS dropped.
+    expect(droppedParams({ bucket: "invented" }, {})).toEqual({
+      named: ["bucket"],
+      withheld: 0,
+    });
+  });
+
+  it("counts a parameter whose own NAME the app may not render, and spells none of it", () => {
+    const parked = "in_" + "window";
+    expect(droppedParams({ [parked]: "1" }, {}, [parked])).toEqual({
+      named: [],
+      withheld: 1,
+    });
+  });
+
+  it("ignores a key that is empty or blank, exactly as it ignores an empty value", () => {
+    // admin-window/BUG-0127: `/claims?=x` reaches the page as `{"": "x"}` and
+    // `/claims?%20%20=1` as `{"  ": "1"}`. A query pair is a request only when
+    // it has both halves: a value carrying no name asks for nothing this page
+    // could have applied, so it is the URL saying nothing — the same answer
+    // `?bucket=` already gets — and not a narrowing to report. Counting it
+    // instead would put it on the `withheld` path, whose sentence ("a
+    // parameter this page may not name") states a reason that is not the
+    // reason: there is no name being withheld.
+    expect(droppedParams({ "": "x" }, {})).toEqual({ named: [], withheld: 0 });
+    expect(droppedParams({ "  ": "1" }, {})).toEqual({ named: [], withheld: 0 });
+    expect(droppedParams({ "\t\n": "1" }, {})).toEqual({ named: [], withheld: 0 });
+    // The empty VALUE this sits beside, unchanged.
+    expect(droppedParams({ record_id: "" }, {})).toEqual({ named: [], withheld: 0 });
+    // A blank key alongside a real one drops neither the report nor the count.
+    expect(droppedParams({ "": "x", record_id: "r-1" }, {})).toEqual({
+      named: ["record_id"],
+      withheld: 0,
+    });
   });
 });
