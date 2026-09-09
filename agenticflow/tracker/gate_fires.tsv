@@ -181,3 +181,5 @@
 2026-09-09T21:14:22Z	artifact_gate	blocked write outside repo: /tmp-unused
 2026-09-09T21:16:45Z	artifact_gate	blocked write outside repo: /settle
 2026-09-09T21:20:15Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T21:41:30Z	artifact_gate	blocked write outside repo: /tmp_lint.log
+2026-09-09T21:54:54Z	evidence_budget	qa_evidence_overbudget: DEBT-0011 4735/4000 chars
