@@ -36,6 +36,7 @@ import {
   committedValue,
   focusVerdict,
   armRetire,
+  domRetireHost,
   opensCell,
   reduceEdit,
   retiresRefusal,
@@ -1333,6 +1334,210 @@ describe("the moves a refusing cell listens for", () => {
     expect(page.stopped).toEqual([]);
     disarm();
     expect(page.stopped).toEqual(["pointerdown", "keydown", "focusin"]);
+  });
+});
+
+/**
+ * THE ADAPTER ITSELF — `domRetireHost`, campaign admin-window/BUG-0119,
+ * graded by QA because nothing graded it.
+ *
+ * BUG-0119 EXTRACTED this four-line adapter out of the cell's own effect and
+ * exported it so the entity picker arms the SAME listeners rather than a
+ * second copy (that ticket's criterion 3). Extraction is the right move and it
+ * also doubled the blast radius: one wrong line here now breaks the refusal
+ * rule on both widgets at once. Its own docstring calls it "deliberately empty
+ * of decisions" and "not unit-testable offline"; both are false. It makes four
+ * decisions, and every one of them is reachable from a fake element — measured
+ * on the landed tree (run/admin-window e2ec475), where each of these three
+ * one-line mutations left the whole 210-test picker+cell run green:
+ *
+ *  - `contains: () => false` — every press and every focus landing INSIDE the
+ *    widget reads as walking away, so the refusal is deleted the instant the
+ *    operator reaches back into the cell or the open panel to fix what it
+ *    names. That is the exact negative fixture BUG-0107 was bought on.
+ *  - `removeEventListener(type, wrapped)` without the capture flag it was
+ *    added with — the listener is never actually removed, so every refusal
+ *    ever shown leaves three live document listeners behind for the rest of
+ *    the session.
+ *  - `key: undefined` — the page-wide Escape never reaches `armRetire` at all,
+ *    which is BUG-0107 criterion 1 and BUG-0119 criterion 1 on the floor.
+ *
+ * `tests/offline` is environment node with no jsdom (STACK.md §4), so the DOM
+ * the adapter talks to is a recorder: an element that answers `contains`, and
+ * an owner document that writes down what was bound and unbound. That is
+ * enough, because the adapter's whole job is the wiring between those two
+ * objects and `RetireHost`. What still has no tier here is REACT — that the
+ * component runs this effect while and only while a refusal shows — and that
+ * stays a walk fact.
+ */
+function fakeDomPage() {
+  /** The DOM's `Node`, which node itself does not have (`typeof Node` is
+   *  "undefined" on node 26.7.0) — the adapter narrows a target with it. */
+  class FakeNode {}
+  const bindings: Array<{
+    type: string;
+    handler: (event: unknown) => void;
+    capture: unknown;
+    live: boolean;
+  }> = [];
+  const owner = {
+    addEventListener(type: string, handler: (event: unknown) => void, capture: unknown) {
+      bindings.push({ type, handler, capture, live: true });
+    },
+    removeEventListener(
+      type: string,
+      handler: (event: unknown) => void,
+      capture: unknown,
+    ) {
+      const bound = bindings.find(
+        (binding) =>
+          binding.live &&
+          binding.type === type &&
+          binding.handler === handler &&
+          binding.capture === capture,
+      );
+      // A remove whose three arguments do not match an add removes nothing —
+      // the DOM's own rule, and the leak the third mutation above relies on.
+      if (bound !== undefined) bound.live = false;
+    },
+  };
+  const within: object[] = [];
+  const box = {
+    ownerDocument: owner,
+    contains: (target: unknown) => within.includes(target as object),
+  };
+  return {
+    /** A node of this page that the box does (or does not) contain. */
+    node(inside: boolean) {
+      const node = new FakeNode();
+      if (inside) within.push(node);
+      return node;
+    },
+    host: () => domRetireHost(box as unknown as Element),
+    /** Everything the adapter is still listening for, in binding order. */
+    listening: () => bindings.filter((binding) => binding.live).map((b) => b.type),
+    capturePhase: () => bindings.map((binding) => binding.capture),
+    /** Deliver a real-shaped event to whatever is still bound for `type`. */
+    dispatch(type: string, event: unknown) {
+      for (const binding of [...bindings]) {
+        if (binding.live && binding.type === type) binding.handler(event);
+      }
+    },
+    /** Install the realm's `Node`, and say how to take it away again. */
+    install() {
+      const had = Object.prototype.hasOwnProperty.call(globalThis, "Node");
+      const before = (globalThis as Record<string, unknown>).Node;
+      (globalThis as Record<string, unknown>).Node = FakeNode;
+      return () => {
+        if (had) (globalThis as Record<string, unknown>).Node = before;
+        else delete (globalThis as Record<string, unknown>).Node;
+      };
+    },
+  };
+}
+
+describe("the adapter from a real element to the moves that reach it", () => {
+  it("binds every listener on the box's OWN document, in the capture phase", () => {
+    // Its own document, so a widget rendered into another one still hears its
+    // own page; capture, so a handler on the way up cannot swallow the move
+    // before the refusal ever learns the operator left.
+    const page = fakeDomPage();
+    const uninstall = page.install();
+    try {
+      armRetire(page.host(), () => {});
+      expect(page.listening()).toEqual(["pointerdown", "keydown", "focusin"]);
+      expect(page.capturePhase(), "every one of them in the capture phase").toEqual([
+        true,
+        true,
+        true,
+      ]);
+    } finally {
+      uninstall();
+    }
+  });
+
+  it("reads a press inside the widget as inside, and one outside as away", () => {
+    // The negative half is the load-bearing one: an adapter whose `contains`
+    // always answered false would pass every "it retires" test in this file
+    // and delete the refusal under the operator reaching for it.
+    const page = fakeDomPage();
+    const uninstall = page.install();
+    try {
+      const moves: RetireMove[] = [];
+      armRetire(page.host(), (move) => moves.push(move));
+      page.dispatch("pointerdown", { target: page.node(true) });
+      page.dispatch("focusin", { target: page.node(true) });
+      page.dispatch("pointerdown", { target: page.node(false) });
+      page.dispatch("focusin", { target: page.node(false) });
+      expect(moves).toEqual([
+        { kind: "press", inside: true },
+        { kind: "focus", inside: true },
+        { kind: "press", inside: false },
+        { kind: "focus", inside: false },
+      ]);
+    } finally {
+      uninstall();
+    }
+  });
+
+  it("treats a target that is no node of this page as away, rather than throwing", () => {
+    // `focusin` with a null target is what a focus leaving the document looks
+    // like; the operator has left, and a throw here would take the listener
+    // down with it.
+    const page = fakeDomPage();
+    const uninstall = page.install();
+    try {
+      const moves: RetireMove[] = [];
+      armRetire(page.host(), (move) => moves.push(move));
+      page.dispatch("focusin", { target: null });
+      page.dispatch("pointerdown", { target: "not a node" });
+      expect(moves).toEqual([
+        { kind: "focus", inside: false },
+        { kind: "press", inside: false },
+      ]);
+    } finally {
+      uninstall();
+    }
+  });
+
+  it("carries the key of a key event, and none where there was no key", () => {
+    // Escape reaches `armRetire` only if the key travels; a press carries no
+    // key at all, and must not be read as one.
+    const page = fakeDomPage();
+    const uninstall = page.install();
+    try {
+      const moves: RetireMove[] = [];
+      armRetire(page.host(), (move) => moves.push(move));
+      page.dispatch("keydown", { target: page.node(false), key: "Tab" });
+      expect(moves, "a key that is not Escape ends nothing").toEqual([]);
+      page.dispatch("keydown", { target: page.node(false), key: "Escape" });
+      expect(moves, "Escape from wherever focus is").toEqual([{ kind: "escape" }]);
+      page.dispatch("pointerdown", { target: page.node(true) });
+      expect(moves.at(-1), "a press is not a key").toEqual({ kind: "press", inside: true });
+    } finally {
+      uninstall();
+    }
+  });
+
+  it("actually unbinds all three when the refusal goes, and hears nothing after", () => {
+    // The DOM removes a listener only for a matching (type, handler, capture)
+    // triple. An adapter that adds in the capture phase and removes without it
+    // leaks all three listeners for the rest of the session, and they go on
+    // dispatching into a widget that is gone.
+    const page = fakeDomPage();
+    const uninstall = page.install();
+    try {
+      const moves: RetireMove[] = [];
+      const disarm = armRetire(page.host(), (move) => moves.push(move));
+      disarm();
+      expect(page.listening(), "nothing is still bound").toEqual([]);
+      page.dispatch("pointerdown", { target: page.node(false) });
+      page.dispatch("keydown", { target: page.node(false), key: "Escape" });
+      page.dispatch("focusin", { target: page.node(false) });
+      expect(moves, "and nothing reaches the retired refusal").toEqual([]);
+    } finally {
+      uninstall();
+    }
   });
 });
 
