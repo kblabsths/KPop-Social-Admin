@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { CLAIM_WINDOW } from "@/components/claims";
+import { ANY_LABEL } from "@/lib/claims/filters";
 import { count } from "@/lib/format";
 import { STANDING_BUCKET } from "@/lib/gauges/standing-disagreements";
 import { T } from "@/lib/db/tables";
@@ -1929,6 +1930,105 @@ describe("the filters", () => {
     }
     // The way out is on screen: the "all" chip of the facet that emptied it.
     expect(chipsOf(markup, "domain")[0].href).not.toContain("domain=");
+  });
+});
+
+/* ── one id, one narrowing ───────────────────────────────────────────────── */
+
+/**
+ * **A source id in any spelling Postgres accepts narrows the same rows** —
+ * admin-window/BUG-0140's property, on `/claims` (admin-window/DEBT-0009).
+ *
+ * `source_id` is a uuid column: Postgres matches every spelling of one id, and
+ * JavaScript matches exactly one. This page compares both ways — the gauges at
+ * the query, `selectClaims` and the chip's `active` test in code — and it
+ * compared the URL's RAW value against the ids the view carries, so a real
+ * source's id uppercased or hyphen-less selected nothing, was reported as a
+ * dropped parameter, and the page rendered every claim under a filter bar
+ * showing "all". `/sources` was fixed for exactly this a route away; `/claims`
+ * could not be until the grammar moved to a leaf `lib/claims/filters.ts` may
+ * import (ARCHITECTURE §4 rule 7).
+ *
+ * Graded against the CANONICAL render rather than against a literal: what is
+ * claimed is that the two are the same page, whichever spelling asked for it.
+ */
+describe("a source id in another spelling", () => {
+  const CANONICAL = SOURCE.first;
+
+  /**
+   * Spellings of `CANONICAL` a URL can carry that Postgres would match.
+   *
+   * **The case arm is not here, and its absence is the fixture's**: every
+   * source id in this population is hex digits with no letter in it, so
+   * `toUpperCase()` returns the same string and an uppercased arm would grade
+   * nothing. It is graded where a fixture can carry a letter — the leaf's own
+   * `tests/offline/claims/filters.test.ts`, on `259e2030-00bd-…` — and the
+   * page reaches the same function, so what is left to prove here is that the
+   * PAGE asks it.
+   */
+  const SPELLINGS = [
+    CANONICAL.replace(/-/g, ""),
+    // The padding a paste brings — a `?source_id=%20<id>` reaches the page as
+    // a real space (admin-window/BUG-0145).
+    ` ${CANONICAL}\n`,
+    ` ${CANONICAL.replace(/-/g, "")}\t`,
+  ];
+
+  it.each(SPELLINGS)("renders the same claims as the canonical spelling, for %o", async (spelling) => {
+    expect(spelling).not.toBe(CANONICAL);
+    const asked = await renderClaims(healthyScript(), { source_id: spelling });
+    const canonical = await renderClaims(healthyScript(), { source_id: CANONICAL });
+
+    // The rows themselves, and the fixture makes the claim non-vacuous: this
+    // source really does narrow, so "the same rows" is not "all of them".
+    expect(claimIds(asked)).toEqual(claimIds(canonical));
+    expect(claimIds(asked).length).toBeGreaterThan(0);
+    expect(claimIds(asked).length).toBeLessThan(
+      claimIds(await renderClaims(healthyScript())).length,
+    );
+    // ...and the bucket table, which is the page's other set.
+    expect(bucketRows(asked)).toEqual(bucketRows(canonical));
+  });
+
+  it.each(SPELLINGS)("spells the narrowing back in ONE form, for %o", async (spelling) => {
+    const markup = await renderClaims(healthyScript(), { source_id: spelling });
+    const chips = chipsOf(markup, "source_id");
+    const active = chips.filter((chip) => chip.active);
+
+    // One chip is on, it is this source's, and it says the source's NAME.
+    expect(active.map((chip) => chip.label)).toEqual([nameOf(CANONICAL)]);
+    // Every href this page writes carries the canonical id and no other
+    // spelling of it — a bookmark taken from here is the one URL for this
+    // state, whatever the operator pasted.
+    // The href this page writes for the state it is IN carries the canonical
+    // id — a bookmark taken from here is the one URL for this state, whatever
+    // the operator pasted — and the whole chip bar is byte for byte the one
+    // the canonical spelling renders, so no href anywhere carries a second
+    // spelling of this id.
+    expect(active[0].href).toContain(encodeURIComponent(CANONICAL));
+    expect(chips).toEqual(
+      chipsOf(await renderClaims(healthyScript(), { source_id: CANONICAL }), "source_id"),
+    );
+    // The page did the narrowing, so it may not say it dropped it.
+    expect(droppedLine(markup).lines).toBe(0);
+  });
+
+  /**
+   * The second fixture the guard owes (LESSONS 8). Neither of these names a
+   * source this view holds, so each narrows NOTHING and is reported by the
+   * dropped-parameter line exactly as before — the id grammar widened which
+   * spellings of a REAL id are understood and nothing else.
+   */
+  it.each([
+    ["a well-formed id no claim carries", "01920000-0000-7000-8000-0000000009f9"],
+    ["a value that is no id at all", "not-a-uuid"],
+    ["whitespace INSIDE an otherwise real id", `${CANONICAL.slice(0, 20)} ${CANONICAL.slice(20)}`],
+  ])("narrows nothing for %s, and says so", async (_label, asked) => {
+    const markup = await renderClaims(healthyScript(), { source_id: asked });
+    expect(claimIds(markup)).toEqual(claimIds(await renderClaims(healthyScript())));
+    expect(droppedLine(markup).names).toEqual(["source_id"]);
+    expect(chipsOf(markup, "source_id").filter((chip) => chip.active).map((chip) => chip.label))
+      .toEqual([ANY_LABEL]);
   });
 });
 

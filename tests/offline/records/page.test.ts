@@ -9,7 +9,7 @@ import {
 } from "@/lib/edit/config";
 import { T } from "@/lib/db/tables";
 import { EM_DASH, counted, isAbsent } from "@/lib/format";
-import { canonicalRecordId, isRecordId } from "@/lib/db/records";
+import { canonicalRecordId, isRecordId } from "@/lib/records/id";
 import {
   invalidUuidSyntax,
   permissionDenied,
@@ -362,7 +362,7 @@ describe("the id fixture", () => {
       );
       // ...and the grammar that matters is the PAGE's own gate, not the
       // canonical spelling above: `isRecordId` is what every render below
-      // passes through before a read is issued (`lib/db/records.ts`), and it
+      // passes through before a read is issued (`lib/records/id.ts`), and it
       // is the exact predicate the sandbox's key ruling turned on (architect,
       // 2026-09-04, §9.1 item 9 — `walk-1` failed it, so neither state the
       // sandbox owes was reachable at its own address). Asserting the regex
@@ -825,7 +825,7 @@ describe("the states", () => {
    *
    * A BRACED uuid is Postgres-legal and absent on purpose: a dynamic segment
    * reaches the page still percent-encoded, so `{id}` arrives as `%7Bid%7D`
-   * and is not an id by anyone's grammar (`RECORD_ID`, lib/db/records.ts).
+   * and is not an id by anyone's grammar (`RECORD_ID`, lib/records/id.ts).
    */
   const WELL_FORMED_IDS = [
     "01920000-0000-7000-8000-0000000000a1",

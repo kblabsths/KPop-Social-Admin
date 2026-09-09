@@ -85,14 +85,22 @@ export type NarrowingFacet = (typeof NARROWING_FACETS)[number];
 
 /**
  * The app's one uuid grammar, HANDED IN (admin-window/BUG-0139/BUG-0140 own
- * it, in `src/lib/db/records.ts`).
+ * it; it lives in `src/lib/records/id.ts`).
  *
- * A pure domain leaf may not import `lib/db/**` (ARCHITECTURE.md §4 rule 7),
- * and a uuid pattern written here would be a SECOND grammar — the defect that
- * one is there to prevent. So `filterFrom` takes the canonicaliser as an
- * argument, the way `claims/filters.ts` takes its `FacetOptions`: it returns
- * the id in the database's own spelling, or `null` for a value that is not an
- * id at all.
+ * A uuid pattern written here would be a SECOND grammar — the defect that one
+ * is there to prevent — so this file writes none: it takes the canonicaliser
+ * as an argument, the way `claims/filters.ts` takes its `FacetOptions`. It
+ * returns the id in the database's own spelling, or `null` for a value that is
+ * not an id at all.
+ *
+ * **Handed in is no longer FORCED, and stays anyway.** The argument was
+ * BUG-0141's answer to the grammar living under `lib/db/**`, which a pure
+ * domain leaf may not import (ARCHITECTURE.md §4 rule 7); since
+ * admin-window/DEBT-0009 moved it to a leaf, this file may import it and a
+ * leaf-to-leaf edge is the shape rule 7's second paragraph wants. That move
+ * did not re-open this signature — the call site is unchanged and so is every
+ * answer this module gives — so switching it is a decision for whoever needs
+ * it, not a side effect of a file moving.
  */
 export type CanonicalId = (raw: string) => string | null;
 

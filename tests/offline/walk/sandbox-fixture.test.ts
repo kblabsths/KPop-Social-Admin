@@ -29,7 +29,7 @@ import { repoRoot } from "../source-tree";
  *     `EDIT_CONFIG` — it is imported by a bare-`node` program — so its column
  *     list is a copy, and this file is what stops the copy drifting.
  *  3. **Keyed by the three ruled uuids.** `isRecordId`
- *     (`src/lib/db/records.ts`) refuses a record-page segment that is not a
+ *     (`src/lib/records/id.ts`) refuses a record-page segment that is not a
  *     uuid BEFORE any read, so a text key put both of the sandbox's states out
  *     of reach at its own address (§9.1 item 9).
  */

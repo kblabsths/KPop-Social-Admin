@@ -270,7 +270,7 @@ const ENTRIES: readonly TableEditConfig[] = [
   // It is in the map so a walker can reach
   // `/records/walk_sandbox/00000000-0000-4000-8000-000000000001`, the first of
   // the three rows the staging fixture seeds — `sandbox_id` is a uuid like
-  // every other key in this map, because `isRecordId` (`lib/db/records.ts`)
+  // every other key in this map, because `isRecordId` (`lib/records/id.ts`)
   // gates every record page before any read: a key it refuses would draw the
   // not-an-id card at this table's own address, leaving both the absent and
   // the present rendering unreachable there (architect ruling, 2026-09-04,

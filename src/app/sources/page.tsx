@@ -12,7 +12,7 @@ import {
   sourceColumns,
 } from "@/components/sources";
 import { DataTable, Empty, Page, Section, StateOf } from "@/components/ui";
-import { canonicalRecordId } from "@/lib/db/records";
+import { canonicalRecordId } from "@/lib/records/id";
 import {
   listSources,
   selectSources,

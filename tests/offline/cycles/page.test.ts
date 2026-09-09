@@ -973,7 +973,7 @@ describe("the cycles the resolver filed", () => {
    * Was QA's strict `it.fails` pin for admin-window/BUG-0145 — flipped to a
    * plain `it(...)` by that ticket, which trimmed the padding a paste carries
    * where the value is DERIVED from the request (`canonicalRecordId`,
-   * `src/lib/db/records.ts`). QA's own assertions are kept verbatim below and
+   * `src/lib/records/id.ts`). QA's own assertions are kept verbatim below and
    * the answer the page now gives is pinned above them, so the invariant and
    * the behaviour that satisfies it are graded together.
    *

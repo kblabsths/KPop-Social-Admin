@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { ClaimList, type ClaimLine } from "@/components/claims/claim-list";
-import { isRecordId } from "@/lib/db/records";
+import { isRecordId } from "@/lib/records/id";
 import { SHAPES, shapeOf } from "@/lib/review/shapes";
 import { EM_DASH, counted } from "@/lib/format";
 import { T } from "@/lib/db/tables";
@@ -2985,7 +2985,7 @@ describe("the surface hooks the live parity oracle addresses", () => {
  * `20260901000002_the_review_item_opens_once_per_subject.sql`, line 39), so a
  * segment that is not a uuid can equal no key in that table: "no such item" is
  * knowable here without a database, exactly as it is on the record page
- * (`isRecordId`, `src/lib/db/records.ts`, admin-window/BUG-0065) and on the
+ * (`isRecordId`, `src/lib/records/id.ts`, admin-window/BUG-0065) and on the
  * PATCH route (admin-window/BUG-0068). The page used to hand the segment
  * straight to PostgREST, which refuses it with `22P02`, and the surface then
  * reported a FAILED READ — the state whose recovery line is "reload", advice
@@ -3128,7 +3128,7 @@ describe("a queues address that is not a review-item id", () => {
   });
 
   it("asks the one id grammar this repo has, and no copy of it", async () => {
-    // The gate is `isRecordId` (`src/lib/db/records.ts`) — the same function
+    // The gate is `isRecordId` (`src/lib/records/id.ts`) — the same function
     // the record page and the PATCH route ask (ARCHITECTURE §9.1 item 9). The
     // claim is that the PAGE agrees with it on every fixture above, which is
     // what a second regex here would break silently.

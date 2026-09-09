@@ -20,18 +20,21 @@
  * It decides no membership: `selectClaims` in `lib/db/claims.ts` is the one
  * predicate over claims, and this module only says what the URL asked for.
  *
- * **Its two imports are both `lib/url/` leaves**: `dropped-params.ts`, the
- * shared owner of the dropped-parameter rule this file re-exports
- * (admin-window/BUG-0141) — which in turn asks `lib/verdict/decision.ts` the
- * app's single definition of blank (admin-window/BUG-0136) — and
- * `narrowing.ts`, the shared owner of the two-fact rule that tells "nothing
- * here yet" from "nothing matched" (admin-window/DEBT-0008). None of them
- * reaches anything that can reach a database, so no cycle can be written
- * through them. The alternative in both cases was a second copy of a rule,
- * which is the exact defect ARCHITECTURE.md Common violations row 9 promoted
- * to a rule.
+ * **Its imports are all leaves** (ARCHITECTURE.md §4 rule 7, second
+ * paragraph: a leaf may import a leaf, and the leaf layer is a DAG):
+ * `lib/url/dropped-params.ts`, the shared owner of the dropped-parameter rule
+ * this file re-exports (admin-window/BUG-0141) — which in turn asks
+ * `lib/verdict/decision.ts` the app's single definition of blank
+ * (admin-window/BUG-0136); `lib/url/narrowing.ts`, the shared owner of the
+ * two-fact rule that tells "nothing here yet" from "nothing matched"
+ * (admin-window/DEBT-0008); and `lib/records/id.ts`, the app's ONE uuid
+ * grammar (admin-window/DEBT-0009). None of them reaches anything that can
+ * reach a database, so no cycle can be written through them. The alternative
+ * in every case was a second copy of a rule, which is the exact defect
+ * ARCHITECTURE.md Common violations row 9 promoted to a rule.
  */
 
+import { canonicalRecordId } from "@/lib/records/id";
 import {
   isSurfaceNarrowed,
   type SurfacePopulation,
@@ -91,7 +94,10 @@ function firstValue(value: ParamValue): string | undefined {
 }
 
 /**
- * The value if the offered vocabulary holds it, else nothing.
+ * The value if the offered vocabulary holds it, else nothing — the TAB's
+ * reader (`filterFrom` asks `named` below, which answers the same question of
+ * a facet whose values may be identifiers).
+ *
  *
  * A value outside the set constrains NOTHING rather than narrowing to an empty
  * list — the rule `queue-filters.ts` and `browse/views.ts` already apply to a
@@ -112,6 +118,38 @@ function chosen(allowed: readonly string[], raw: ParamValue): string | undefined
 }
 
 /**
+ * The offered value a URL value NAMES — the same question `chosen` asks, of a
+ * facet whose values may be identifiers (campaign admin-window/DEBT-0009).
+ *
+ * `source_id` is a uuid column, and the two comparisons a narrowed claims page
+ * makes only agree on values that were put in one spelling first: Postgres
+ * matches every spelling of one uuid at the gauge's `.eq`, JavaScript matches
+ * exactly one in `selectClaims` and in the chip's `active` test. Compared RAW,
+ * a real source's id uppercased or with its hyphens left out selected nothing,
+ * was reported as a dropped parameter, and the page rendered unnarrowed —
+ * admin-window/BUG-0140's defect, still shipping on `/claims` because the
+ * grammar lived in `lib/db/records.ts` where no leaf could reach it.
+ *
+ * So BOTH sides are canonicalised and canonical is compared to canonical
+ * (LESSONS 4). The one grammar answers it — `canonicalRecordId`, which also
+ * strips the whitespace a paste brings (admin-window/BUG-0145) — and a value
+ * it says is no id at all compares as ITSELF, which is every value of the two
+ * word facets and is byte for byte what this function did before. No second
+ * uuid pattern is written here, and no facet needs naming: the values decide.
+ *
+ * What it RETURNS is always the OFFERED value — the vocabulary's own spelling,
+ * which for `source_id` is the id the database printed — so the filter, every
+ * chip href and every row link carry one spelling of one id, whatever the URL
+ * arrived in.
+ */
+function named(allowed: readonly string[], raw: ParamValue): string | undefined {
+  const value = firstValue(raw);
+  if (value === undefined) return undefined;
+  const asked = canonicalRecordId(value) ?? value;
+  return allowed.find((candidate) => (canonicalRecordId(candidate) ?? candidate) === asked);
+}
+
+/**
  * The narrowing the URL asked for, against the vocabularies the page offers.
  * `filterFrom({}, options)` is every claim.
  */
@@ -121,7 +159,7 @@ export function filterFrom(
 ): ClaimsFilter {
   const filter: ClaimsFilter = {};
   for (const facet of CLAIM_FACETS) {
-    const value = chosen(options[facet], params[facet]);
+    const value = named(options[facet], params[facet]);
     if (value !== undefined) filter[facet] = value;
   }
   return filter;

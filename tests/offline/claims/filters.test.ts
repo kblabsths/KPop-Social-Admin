@@ -49,6 +49,110 @@ const OPTIONS: FacetOptions = {
   domain: DOMAINS,
 };
 
+/**
+ * A registered source as the registry really keys it — a uuid — and the same
+ * id in the two other spellings Postgres accepts and a URL can carry
+ * (admin-window/DEBT-0009, on admin-window/BUG-0140's property).
+ *
+ * The fixtures above are deliberately NOT uuids: this file's other job is to
+ * prove a value outside the offered set narrows nothing, and word-shaped
+ * options make that readable. Both live here because both are real — the
+ * comparison this leaf makes has to answer a uuid facet and a word facet with
+ * the same rule.
+ */
+const SOURCE_ID = "259e2030-00bd-4200-8730-4669e46a0c04";
+
+const ID_OPTIONS: FacetOptions = {
+  bucket: BUCKETS,
+  source_id: [SOURCE_ID],
+  domain: DOMAINS,
+};
+
+/** Every spelling of `SOURCE_ID` a URL can carry that Postgres would match. */
+const ID_SPELLINGS = [
+  SOURCE_ID.toUpperCase(),
+  SOURCE_ID.replace(/-/g, ""),
+  SOURCE_ID.replace(/-/g, "").toUpperCase(),
+  ` ${SOURCE_ID}\n`,
+];
+
+/**
+ * **One id, one narrowing** — admin-window/BUG-0140's property, on `/claims`
+ * (admin-window/DEBT-0009).
+ *
+ * `source_id` is a uuid column, so Postgres matches every spelling of one id
+ * while JavaScript matches exactly one; this leaf compares in JavaScript, and
+ * compared the URL's RAW value against the ids the view carries. A real
+ * source's id, uppercased or with its hyphens left out, therefore selected
+ * nothing, was reported by the dropped-parameter line, and the page rendered
+ * unnarrowed — the same defect `/sources` was fixed for, one route over. It
+ * could not be fixed here until the grammar became a leaf this leaf may
+ * import (ARCHITECTURE §4 rule 7).
+ */
+describe("a source id in another spelling", () => {
+  it.each(ID_SPELLINGS)("narrows to the id the view holds, for %o", (spelling) => {
+    expect(spelling).not.toBe(SOURCE_ID);
+    expect(filterFrom({ source_id: spelling }, ID_OPTIONS)).toEqual({
+      source_id: SOURCE_ID,
+    });
+  });
+
+  it("spells the narrowing back in the one canonical form", () => {
+    for (const spelling of ID_SPELLINGS) {
+      const filter = filterFrom({ source_id: spelling }, ID_OPTIONS);
+      // What the chips and the row links carry is the id the DATABASE prints,
+      // never the spelling the URL arrived in.
+      expect(claimsHref(PATH, filter)).toBe(`/claims?source_id=${SOURCE_ID}`);
+      expect(sourceHref(filter.source_id ?? "")).toBe(`/sources?source_id=${SOURCE_ID}`);
+      // ...and the chip for that source is the active one.
+      const chips = facetChips(PATH, filter, DEFAULT_TAB, "source_id", [SOURCE_ID]);
+      expect(chips.choices.find((choice) => choice.active)?.label).toBe(SOURCE_ID);
+    }
+  });
+
+  it("says nothing was dropped once the id narrowed", () => {
+    for (const spelling of ID_SPELLINGS) {
+      const params = { source_id: spelling };
+      expect(droppedParams(params, filterFrom(params, ID_OPTIONS))).toEqual({
+        named: [],
+        withheld: 0,
+      });
+    }
+  });
+
+  /**
+   * The second fixture the guard owes (LESSONS 8). Neither of these is an id
+   * this page offers, so each narrows NOTHING and is named by the
+   * dropped-parameter line exactly as before — a well-formed id the view does
+   * not hold, and a value that is no id at all.
+   */
+  it.each([
+    "01920000-0000-7000-8000-0000000000a1",
+    "not-a-uuid",
+    `${SOURCE_ID.slice(0, 20)} ${SOURCE_ID.slice(20)}`,
+  ])("narrows nothing for %o, and is reported", (asked) => {
+    const params = { source_id: asked };
+    expect(filterFrom(params, ID_OPTIONS)).toEqual({});
+    expect(droppedParams(params, filterFrom(params, ID_OPTIONS))).toEqual({
+      named: ["source_id"],
+      withheld: 0,
+    });
+  });
+
+  /**
+   * The word facets are answered by the SAME comparison and are unchanged by
+   * it: no bucket and no domain is a uuid, so the id grammar has nothing to
+   * say about either and the value compares as itself.
+   */
+  it("leaves a facet whose values are words comparing as words", () => {
+    expect(filterFrom({ bucket: "escalated", domain: "venues" }, ID_OPTIONS)).toEqual({
+      bucket: "escalated",
+      domain: "venues",
+    });
+    expect(filterFrom({ bucket: " escalated", domain: "VENUES" }, ID_OPTIONS)).toEqual({});
+  });
+});
+
 describe("the facets", () => {
   it("are spec §4's three, each named for the field it narrows", () => {
     expect([...CLAIM_FACETS]).toEqual(["bucket", "source_id", "domain"]);

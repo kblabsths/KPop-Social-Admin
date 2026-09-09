@@ -274,7 +274,7 @@ export interface ReviewItemFilter {
    * existed — another source's item rendered as that source's. It is a plain
    * uuid string because the column is a uuid, and it is compared for EQUALITY:
    * the value reaching here has already been put in the database's own
-   * spelling by `canonicalRecordId` at the edge (`lib/db/records.ts`, the app's
+   * spelling by `canonicalRecordId` at the edge (`lib/records/id.ts`, the app's
    * one uuid grammar), so the code comparison below and the `.eq` PostgREST
    * makes agree by construction (admin-window/BUG-0140).
    *

@@ -30,7 +30,7 @@ import {
   readCycles,
   type ResolutionRunRow,
 } from "@/lib/db/cycles";
-import { canonicalRecordId } from "@/lib/db/records";
+import { canonicalRecordId } from "@/lib/records/id";
 import type { DbUnavailable } from "@/lib/db/result";
 import {
   RUNS_OBJECT,
@@ -116,7 +116,7 @@ export const dynamic = "force-dynamic";
  * names the row the operator came to read and this page marks it.
  *
  * The value is CANONICALISED where it is derived from the request, exactly as
- * `?run=` is below (`canonicalRecordId`, `lib/db/records.ts` — the app's one
+ * `?run=` is below (`canonicalRecordId`, `lib/records/id.ts` — the app's one
  * uuid grammar, admin-window/BUG-0139/BUG-0140/BUG-0143). Postgres compares a
  * uuid by VALUE and this page compares it by STRING, so until that landed an
  * uppercased or unhyphenated paste of a real cycle id was told the cycle "is
@@ -152,7 +152,7 @@ const CYCLE_FACET = "cycle";
  * situation since admin-window/TASK-0016.
  *
  * The value is CANONICALISED here, at the edge where it is derived from the
- * request (`canonicalRecordId`, `lib/db/records.ts` — the app's one uuid
+ * request (`canonicalRecordId`, `lib/records/id.ts` — the app's one uuid
  * grammar, admin-window/BUG-0139/BUG-0140). Postgres compares a uuid by value
  * and JavaScript compares it by string, and the mark is a string compare
  * against the row's key, so an uppercased or unhyphenated spelling of a real
