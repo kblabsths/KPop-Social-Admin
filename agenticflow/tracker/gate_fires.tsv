@@ -102,3 +102,4 @@
 2026-09-09T02:07:59Z	artifact_gate	blocked write outside repo: /bcheckb/i.test
 2026-09-09T02:11:27Z	artifact_gate	blocked write outside repo: /verdicts/.test
 2026-09-09T02:13:37Z	evidence_budget	qa_evidence_overbudget: TASK-0040 4179/4000 chars
+2026-09-09T02:23:54Z	artifact_gate	blocked write outside repo: /tmp/insert.ts.txt
