@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import type { CheerioAPI } from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -13,7 +14,9 @@ import {
   classesOf,
   expectDrawnAsLinkAtRest,
   expectDrawnAsLinkAtRestIn,
+  expectLinkSpellingReachesTheGlyphs,
   expectNotDrawnAsLink,
+  type Selection,
 } from "../../fixtures/link-spelling";
 
 /*
@@ -87,6 +90,47 @@ function hoverLinkSpellingsIn(text: string): string[] {
     .map((line) => line.trim());
 }
 
+/**
+ * The other way a file gets the spelling wrong: it gets it RIGHT, by hand
+ * (campaign admin-window/BUG-0117).
+ *
+ * `links.ts` publishes one spelling because "a second spelling is a second
+ * answer to 'does this text go somewhere', and BUG-0099 is what the second
+ * answer cost". A file that retypes the published classes as a literal renders
+ * identically today and is a second answer tomorrow — which is exactly the
+ * state the eight files of BUG-0108 were in the day before the spelling
+ * changed under them. Three files were doing it when this rule landed:
+ * `review/item-header.tsx`, `review/close/slot.tsx` and `app/not-found.tsx`.
+ *
+ * Derived from `IN_PAGE_LINK`, never pinned: the rule is "this line writes out
+ * every class the published spelling is made of", so restyling the link moves
+ * the guard with it. Order does not matter and a longer class that merely
+ * begins with one of them (`underline-offset-2`, `decoration-hairline`) is not
+ * a hit — `EditableCell`'s resting hairline is a real, different affordance.
+ */
+const PUBLISHED_CLASSES: readonly string[] = IN_PAGE_LINK.split(/\s+/).filter(Boolean);
+
+/** The file that PUBLISHES the spelling, which necessarily writes it out. */
+const SPELLING_OWNER = "src/components/cycles/links.ts";
+
+/** `className` as a whole class word, not as the head of a longer one. */
+function writesClass(line: string, className: string): boolean {
+  return new RegExp(`(?<![\\w-])${className.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(
+    line,
+  );
+}
+
+/**
+ * Every place `text` retypes the published spelling instead of importing it,
+ * as the trimmed line. Text in, hits out — the same two-fixture shape the
+ * rejected-spelling rule above is proved with.
+ */
+function retypedLinkSpellingsIn(text: string): string[] {
+  return codeLinesIn(text)
+    .filter((line) => PUBLISHED_CLASSES.every((className) => writesClass(line, className)))
+    .map((line) => line.trim());
+}
+
 describe("the guard over the source tree", () => {
   it("flags the spelling this app rejected", () => {
     // The fixture it MUST flag: the class string all eight files carried.
@@ -134,6 +178,47 @@ describe("the guard over the source tree", () => {
     const offenders = sourceFiles().flatMap((file) =>
       hoverLinkSpellingsIn(sourceText(file)).map((hit) => `${file} — ${hit}`),
     );
+    expect(offenders).toEqual([]);
+  });
+
+  it("flags a file that retypes the published spelling", () => {
+    // The fixture it MUST flag: the literal three files carried
+    // (admin-window/BUG-0117), and the same two classes written the other way
+    // round, since the rule is about the spelling and not about the order.
+    expect(
+      retypedLinkSpellingsIn(`<a href={href} className="${IN_PAGE_LINK}">x</a>`),
+    ).toHaveLength(1);
+    expect(
+      retypedLinkSpellingsIn(
+        `<a href={href} className="${[...PUBLISHED_CLASSES].reverse().join(" ")}">x</a>`,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("stays green on a file that imports it", () => {
+    // The fixture it must NOT flag, both ways a file spells the import — and
+    // the neighbouring affordance that merely starts with the same word.
+    expect(retypedLinkSpellingsIn(`<a href={href} className={IN_PAGE_LINK}>x</a>`)).toEqual(
+      [],
+    );
+    expect(
+      retypedLinkSpellingsIn("<a className={`type-data ${IN_PAGE_LINK}`}>x</a>"),
+    ).toEqual([]);
+    expect(
+      retypedLinkSpellingsIn(
+        'const RESTING = "underline decoration-hairline decoration-1 underline-offset-2";',
+      ),
+    ).toEqual([]);
+  });
+
+  it("finds no file under src retyping the spelling it could import", () => {
+    // `links.ts` is the one file that necessarily writes the classes out: it
+    // is where they are published. Everything else imports them.
+    const offenders = sourceFiles()
+      .filter((file) => file !== SPELLING_OWNER)
+      .flatMap((file) =>
+        retypedLinkSpellingsIn(sourceText(file)).map((hit) => `${file} — ${hit}`),
+      );
     expect(offenders).toEqual([]);
   });
 });
@@ -216,7 +301,94 @@ describe("the rule that a badge never sits inside a link", () => {
   });
 });
 
-describe("no anchor anywhere in the window contains a chip", () => {
+/**
+ * The INK half of the published spelling — the sweep's SUBJECT filter
+ * (campaign admin-window/BUG-0117).
+ *
+ * Load-bearing, and asserted as a predicate below rather than assumed: the
+ * Dashboard's `error_summary` anchors keep `text-broken` and wear the
+ * decoration alone by ruling (admin-window/BUG-0108 criterion 3), so a sweep
+ * that graded every anchor in the window would redden on correct work.
+ */
+const LINK_INK: readonly string[] = PUBLISHED_CLASSES.filter((className) =>
+  className.startsWith("text-"),
+);
+
+/** One anchor drawn in the app's own ink, with everything it wraps. */
+interface InkedLink {
+  /** The anchor's own classes. */
+  classes: string[];
+  /** The classes of every element inside it — what could re-ink its words. */
+  overriders: string[][];
+  /** The words a reader sees, for the failure message. */
+  words: string;
+}
+
+/**
+ * Every anchor in `scope` drawn in the link's OWN ink, with its descendants.
+ *
+ * Structural: it asks "is this the app's link" by the ink half of the one
+ * published spelling, never by a class literal written here.
+ */
+function linksInTheAppsInk($: CheerioAPI, scope: Selection): InkedLink[] {
+  return scope
+    .find("a")
+    .toArray()
+    .map((anchor) => $(anchor))
+    .filter((anchor) => {
+      const classes = classesOf(anchor);
+      return LINK_INK.every((ink) => classes.includes(ink));
+    })
+    .map((anchor) => ({
+      classes: classesOf(anchor),
+      overriders: anchor
+        .find("*")
+        .toArray()
+        .map((element) => classesOf($(element))),
+      words: anchor.text().replace(/\s+/g, " ").trim().slice(0, 40),
+    }));
+}
+
+describe("the ink filter the window sweep picks its subject with", () => {
+  /*
+   * LESSONS 3, applied to the FILTER and not only to the rule: a predicate
+   * that quietly matched nothing, or matched everything, would make the sweep
+   * below either vacuous or wrong about links that are not its subject.
+   */
+  it("takes an anchor drawn in the app's own ink as its subject", () => {
+    const $ = cheerio.load(`<p><a href="/x" class="${IN_PAGE_LINK}">standing</a></p>`);
+    expect(linksInTheAppsInk($, $.root()).map((link) => link.words)).toEqual(["standing"]);
+  });
+
+  it("leaves the error line's own ink out of it, which the ruling requires", () => {
+    // admin-window/BUG-0108 criterion 3: red is the palette's word for a
+    // failed run, so these anchors keep `text-broken` and wear the decoration
+    // alone. They are not this rule's subject.
+    const $ = cheerio.load(
+      `<p><a href="/x" class="type-data ${BROKEN_INK.join(" ")} underline">a failed run</a></p>`,
+    );
+    expect(linksInTheAppsInk($, $.root())).toEqual([]);
+  });
+
+  it("reports what an anchor wraps, which is what the rule grades", () => {
+    const $ = cheerio.load(
+      `<p><a href="/x" class="${IN_PAGE_LINK}">Its source` +
+        `<span class="type-data text-ink-secondary"> bandsintown</span></a></p>`,
+    );
+    const [link] = linksInTheAppsInk($, $.root());
+    expect(link.overriders).toEqual([["type-data", "text-ink-secondary"]]);
+    expect(() =>
+      expectLinkSpellingReachesTheGlyphs(link.classes, link.overriders, "a half-inked link"),
+    ).toThrow();
+    // And the shape the fix leaves behind: the value keeps its FACE, the ink
+    // is the link's one ink.
+    expect(() =>
+      expectLinkSpellingReachesTheGlyphs(link.classes, [["type-data"]], "a whole link"),
+    ).not.toThrow();
+  });
+});
+
+describe("no anchor anywhere in the window breaks the app's link spelling", () => {
   /*
    * ARCHITECTURE.md §7, promoted from Common violations row 13 at its second
    * instance (admin-window/BUG-0113 on `/claims`, admin-window/BUG-0115 on the
@@ -241,19 +413,38 @@ describe("no anchor anywhere in the window contains a chip", () => {
    *
    * Measured on the pre-fix tree, 2026-09-09: 2 hits on `/` (both attention
    * `StatCard`s) and 0 on the other seven routes.
+   *
+   * **The second assertion, on the same rendered routes** (campaign
+   * admin-window/BUG-0117): for every anchor drawn in the link's own INK, the
+   * spelling reaches the words a reader sees. A chip is one way a descendant
+   * takes CSS priority over the inherited ink; an unboxed `<span>` that simply
+   * re-inks the link's own words is the other, and it leaves the underline
+   * intact so nothing about the anchor looks wrong. The review header's two
+   * out-links did exactly that — the label in accent, the source's name beside
+   * it in secondary ink, inside one anchor. Measured on the pre-fix tree,
+   * 2026-09-09: 2 hits, both on `/queues/<reviewItemId>`, 0 on the other seven
+   * routes. It rides this loop rather than a second sweep of its own, so a
+   * page added later inherits both rules from one render.
    */
   it("sweeps exactly the routes the filesystem offers", () => {
     expect(SURFACES.map((surface) => surface.route).sort()).toEqual(WINDOW_ROUTES);
   });
 
   for (const surface of SURFACES) {
-    it(`${surface.route} draws no chip inside a link`, async () => {
+    it(`${surface.route} keeps every link's spelling on the words it draws`, async () => {
       scriptDatabase(populatedScript(surface));
       const $ = cheerio.load(await renderSurface(surface));
       expect(
         chipsInsideLinks($, $.root()),
         `${surface.route} renders a chip inside an anchor`,
       ).toEqual([]);
+      for (const link of linksInTheAppsInk($, $.root())) {
+        expectLinkSpellingReachesTheGlyphs(
+          link.classes,
+          link.overriders,
+          `${surface.route} — "${link.words}"`,
+        );
+      }
     });
   }
 
@@ -276,5 +467,23 @@ describe("no anchor anywhere in the window contains a chip", () => {
     // one (LESSONS 3 — a guard that never saw its subject passes vacuously).
     expect(anchors).toBeGreaterThan(0);
     expect(chips).toBeGreaterThan(0);
+  });
+
+  it("finds links in the app's own ink on more than one route, and words inside them", async () => {
+    // The same non-vacuity for the second assertion: its subject is the anchor
+    // drawn in the published INK, and the thing it grades is what such an
+    // anchor WRAPS. A window that rendered no inked link, or only bare ones,
+    // would pass the loop above saying nothing at all.
+    const routesWithLinks: string[] = [];
+    let wrapping = 0;
+    for (const surface of SURFACES) {
+      scriptDatabase(populatedScript(surface));
+      const $ = cheerio.load(await renderSurface(surface));
+      const inked = linksInTheAppsInk($, $.root());
+      if (inked.length > 0) routesWithLinks.push(surface.route);
+      wrapping += inked.filter((link) => link.overriders.length > 0).length;
+    }
+    expect(routesWithLinks.length).toBeGreaterThan(1);
+    expect(wrapping).toBeGreaterThan(0);
   });
 });

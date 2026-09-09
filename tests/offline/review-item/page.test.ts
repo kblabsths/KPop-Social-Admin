@@ -26,7 +26,9 @@ import {
   anchorClasses,
   classesOf,
   expectDrawnAsLinkAtRest,
+  expectLinkSpellingReachesTheGlyphs,
   expectNotDrawnAsLink,
+  faceOf,
 } from "../../fixtures/link-spelling";
 import { oneEach, stateOf, surfaceHooks } from "../../live/parity";
 
@@ -1261,6 +1263,57 @@ describe("the investigation continues", () => {
 
     expect(hrefs).toContain(`/claims?source_id=${item.source_id}`);
     expect(hrefs).toContain(`/sources?source_id=${item.source_id}`);
+  });
+
+  it("draws the whole of each out-link's words in the link's one ink", async () => {
+    /*
+     * **admin-window/BUG-0117.** `ItemLink.value` is "WHAT it is narrowed to,
+     * as the app names it — shown beside the label": part of the link's own
+     * words, not a caption under them. It carried `text-ink-secondary`, and a
+     * descendant's `text-*` outranks the ink an anchor passes down, so each
+     * out-link read half in accent and half in the ink of a value that goes
+     * nowhere — with the underline intact and the anchor's own classes
+     * perfectly correct, which is why grading the anchor alone never saw it.
+     *
+     * The value keeps its mono FACE (ARCHITECTURE §7: mono carries every value
+     * the database produced) and the space before it; only the ink moved.
+     */
+    for (const [shape, script, id] of [
+      ["the conflict item", conflictScript(), reviewItemDataConflict().review_item_id],
+      ["the source-pattern item", patternScript(), reviewItemSourcePattern().review_item_id],
+    ] as const) {
+      const $ = cheerio.load(await renderItem(script, id));
+      const outLinks = $("a[data-out]").toArray();
+      expect(outLinks.length, `${shape} renders a way out`).toBeGreaterThan(0);
+
+      let valued = 0;
+      for (const anchor of outLinks) {
+        const inside = $(anchor)
+          .find("*")
+          .toArray()
+          .map((element) => classesOf($(element)));
+        expectLinkSpellingReachesTheGlyphs(
+          classesOf($(anchor)),
+          inside,
+          `${shape}: the out-link "${$(anchor).text().trim()}"`,
+        );
+        const value = $(anchor).find("span").first();
+        if (value.length === 0) continue;
+        valued += 1;
+        // The words are unchanged: the value is still mono, still inside the
+        // link, still separated from the label by a space.
+        expect(faceOf(classesOf(value)), `${shape}: the value keeps its face`).toEqual([
+          "type-data",
+        ]);
+        expect(value.text().startsWith(" "), `${shape}: label and value run together`).toBe(
+          true,
+        );
+        expect(value.text().trim().length).toBeGreaterThan(0);
+      }
+      // Non-vacuity: an out-link that names what it is narrowed to is on the
+      // page, so a green result is not a page that stopped rendering values.
+      expect(valued, `${shape} names what an out-link narrows to`).toBeGreaterThan(0);
+    }
   });
 
   it("offers no record link when the record does not exist yet", async () => {
