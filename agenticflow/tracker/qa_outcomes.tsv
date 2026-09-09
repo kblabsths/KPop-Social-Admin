@@ -229,3 +229,5 @@
 2026-09-09T17:09:17Z	BUG-0136	qa->done	fixed	qa
 2026-09-09T18:01:53Z	BUG-0139	qa->reopened	-	qa
 2026-09-09T18:14:24Z	BUG-0137	qa->done	fixed	qa
+2026-09-09T18:32:13Z	BUG-0139	qa->done	fixed	qa
+2026-09-09T18:32:27Z	BUG-0140	open->done	already_done	qa
