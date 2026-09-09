@@ -847,6 +847,43 @@ describe("the cycles the resolver filed", () => {
     }
   });
 
+  /**
+   * QA pin, admin-window/BUG-0143 — strict (`it.fails`): it passes the day the
+   * `?cycle=` facet is canonicalised, and the XPASS sends the reader to the
+   * ticket.
+   *
+   * `?run=` was canonicalised at the edge by admin-window/BUG-0142
+   * (`canonicalRecordId`, `src/app/cycles/page.tsx`), because Postgres
+   * compares a uuid by VALUE and this page compares it by STRING — so an
+   * uppercased or unhyphenated spelling of a real id marks its row. Its twin
+   * `?cycle=`, in the same page function two lines above, still goes to the
+   * row predicate raw. The result is not silence: the page states, of a cycle
+   * whose row it is rendering three elements below, that it is "not among the
+   * 200 newest cycles" — a false claim about the very window it just read
+   * (LESSONS 2 and 4, and the class BUG-0140 settled for `/sources`).
+   *
+   * The assertions are the same three the paragraph above makes for the
+   * canonical spelling, so this pin flips to a plain `it(...)` unchanged.
+   */
+  it.fails(
+    "marks the cycle a non-canonical spelling of a real id names [admin-window/BUG-0143]",
+    async () => {
+      for (const spelling of [
+        FAILED.run_id.toUpperCase(),
+        FAILED.run_id.replace(/-/g, ""),
+      ]) {
+        const markup = await renderCycles(healthyScript(), { cycle: spelling });
+        const $ = cheerio.load(markup);
+        // The row IS in the window the page just read…
+        expect(renderedCycles(markup), spelling).toContain(FAILED.run_id);
+        // …so the verdict is `found`, and the row it names carries the mark.
+        expect($("[data-cycle-found]").attr("data-cycle-found"), spelling).toBe("true");
+        expect(cycleRow(markup, FAILED.run_id).marked, spelling).toBe("true");
+        expect(cycleRow(markup, FAILED.run_id).current, spelling).toBe("true");
+      }
+    },
+  );
+
   it("keeps the window's own limits on screen beside a cycle it could not find", async () => {
     // A full window is the one case where "not here" and "does not exist" come
     // apart: the cap filled, so the asked-for cycle may be older than the
@@ -2020,6 +2057,45 @@ describe("a ?run= link arriving from the Dashboard", () => {
     for (const run of RUNS) {
       expect(runRow(markup, run.run_id).anchor, run.run_id).toBeTruthy();
     }
+  });
+
+  it("keeps the two halves' anchors apart when one id names a cycle AND a run", async () => {
+    // `resolution_runs.run_id` and `runs.run_id` are two producers' keys over
+    // two tables and could perfectly well hold the same value; `links.ts`
+    // spells the two anchors separately (`cycle-<id>` / `run-<id>`) so that
+    // `#` cannot reach the wrong half. Nothing pinned that, so the seam is
+    // pinned here: one id, both facets, two marks that stay in their own
+    // tables and two links that each land on their own row.
+    const shared = FAILED.run_id;
+    const runs = [
+      { ...RUN_FAILED, run_id: shared },
+      ...RUNS.filter((row) => row.run_id !== RUN_FAILED.run_id),
+    ];
+    const markup = await renderCycles(withRuns({ [T.runs]: { data: runs } }), {
+      cycle: shared,
+      run: shared,
+    });
+    const $ = cheerio.load(markup);
+
+    // One mark per half, each in its own table.
+    expect(markedRowTables(markup).sort()).toEqual([CYCLES_TABLE, RUNS_TABLE].sort());
+    expect(cycleRow(markup, shared).marked).toBe("true");
+    expect(runRow(markup, shared).marked).toBe("true");
+    // One accessible marking per half, and neither reaches the other's rows.
+    expect($(`[data-cycle="${shared}"][aria-current]`).length).toBe(1);
+    expect($(`[data-run="${shared}"][aria-current]`).length).toBe(1);
+
+    // Two distinct anchors, and every id in the document still unique — so
+    // each sentence's link reaches the row that sentence names.
+    const cycleAnchor = cycleRow(markup, shared).anchor;
+    const runAnchor = runRow(markup, shared).anchor;
+    expect(cycleAnchor).toBeTruthy();
+    expect(runAnchor).toBeTruthy();
+    expect(cycleAnchor).not.toBe(runAnchor);
+    expect($('[data-cycle-found="true"] a').attr("href")).toBe(`#${cycleAnchor}`);
+    expect($('[data-run-found="true"] a').attr("href")).toBe(`#${runAnchor}`);
+    const ids = $("[id]").toArray().map((element) => $(element).attr("id") ?? "");
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it("answers the two facets independently when the URL carries both", async () => {
