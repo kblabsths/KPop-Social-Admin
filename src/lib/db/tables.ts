@@ -102,3 +102,41 @@ const OBJECT_KIND: Record<TableName, ObjectKind> = {
 export function objectKindOf(name: TableName): ObjectKind {
   return OBJECT_KIND[name];
 }
+
+/* ── database FUNCTIONS ───────────────────────────────────────────────────── */
+
+/**
+ * The only place a database FUNCTION name is spelled — §4 rule 4's other half
+ * (campaign admin-window/TASK-0048).
+ *
+ * The rule that puts every table name here is about two things, and both apply
+ * word for word to a function: a typo'd name must be one grep away, and the
+ * not-provisioned card must name the same string the call used. PostgREST
+ * answers a missing function with `PGRST202` and Postgres with `42883`
+ * (`result.ts`), so a mis-spelled function name renders as "this is not
+ * provisioned" rather than as a mistake — which is exactly why the spelling
+ * lives in one place.
+ *
+ * The name is the scraper repo's, like every name in `T`: `settle_review_item`
+ * arrives with M2's handoff artifact
+ * (`agenticflow/tracker/for-human/M2-handoff-settle-review-item.md`) and does
+ * NOT exist on staging or in production today. It is named here on purpose, so
+ * the one call site classifies as `not_provisioned` against today's database
+ * instead of spelling the name inline later (ARCHITECTURE.md §9.2).
+ *
+ * `apply_resolution` is deliberately absent and must never be added: it exists,
+ * it WRITES the catalog, and nothing in Admin may call it. The resolver runs
+ * it; Admin's one entry point is the function above.
+ */
+export const FN = {
+  settleReviewItem: "settle_review_item",
+} as const;
+
+/** The key side of `FN` — e.g. `"settleReviewItem"`. */
+export type FunctionKey = keyof typeof FN;
+
+/** The value side of `FN` — e.g. `"settle_review_item"`. */
+export type FunctionName = (typeof FN)[FunctionKey];
+
+/** Every name in `FN`, for structural tests and for exhaustive iteration. */
+export const FUNCTION_NAMES: readonly FunctionName[] = Object.values(FN);

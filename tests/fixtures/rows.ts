@@ -1,3 +1,8 @@
+import type {
+  VerdictDecision,
+  VerdictValue,
+} from "@/lib/verdict/decision";
+
 /**
  * Shared row builders for the offline suite (campaign admin-window).
  *
@@ -32,6 +37,7 @@ export const ID = {
   reviewItemSourcePattern: "01920000-0000-7000-8000-000000000503",
   resolutionRun: "01920000-0000-7000-8000-000000000601",
   run: "01920000-0000-7000-8000-000000000701",
+  verdict: "01920000-0000-7000-8000-000000000801",
 } as const;
 
 /* ── sources ─────────────────────────────────────────────────────────────── */
@@ -647,6 +653,106 @@ export function eventListingRow(
     performers_text: "TWICE",
     going_count: 0,
     interested_count: 0,
+    ...overrides,
+  };
+}
+
+/* ── verdicts ─────────────────────────────────────────────────────────────
+ * The table M2's handoff migration installs
+ * (`contracts/admin-observability.md` §7). It does NOT exist on staging or in
+ * production yet, so every fixture below describes the row the settlement
+ * function will return once it does — and the ABSENT case, which is the
+ * normal one for the whole of M2, needs no fixture at all: it is
+ * `tableNotInSchemaCache("verdicts")` / `functionNotInSchemaCache(...)` from
+ * `tests/fixtures/stub-client.ts`.
+ */
+
+/**
+ * The seven columns of `verdicts`, in the order §7's table states them.
+ *
+ * **Deliberately not named `…Row`**, and this is the one fixture type in this
+ * file that is not. `tests/offline/absence/surfaces.ts` derives its page-row
+ * null sweep by parsing every `export interface <name>Row` here and nulling
+ * every column any of them declares nullable — a name-keyed set shared across
+ * tables. `verdicts.review_item_id` is nullable (the item-less `override`),
+ * while `review_items.review_item_id` is the primary key and never is, so a
+ * `VerdictRow` would null a PK on every page the sweep drives and ask them to
+ * survive a row the schema forbids. No page renders a verdicts row at all —
+ * the only read of the table asks for ZERO rows and answers a yes/no
+ * (`readSettlementReadiness`) — so this shape is genuinely outside that
+ * derivation, not hidden from it. The day a surface renders verdicts, the
+ * derivation is what needs fixing (per interface, not per column name), and
+ * this comment is the note that says so.
+ */
+export interface VerdictLogEntry {
+  verdict_id: string;
+  /** Null on an `override` from the record surface, and only there. */
+  review_item_id: string | null;
+  actor: string;
+  action: string;
+  /** Null on a settle-only verdict — nothing was observed. */
+  observation_id: string | null;
+  note: string | null;
+  created_at: string;
+}
+
+/**
+ * One settled verdict: the `choose_claimed_value` shape, which is the only
+ * action that fills every nullable column, so an override or a settle-only
+ * verdict is one override away.
+ */
+export function verdictLogEntry(
+  overrides: Override<VerdictLogEntry> = {},
+): VerdictLogEntry {
+  return {
+    verdict_id: ID.verdict,
+    review_item_id: ID.reviewItemDataConflict,
+    actor: "admin@kspace.local",
+    action: "choose_claimed_value",
+    observation_id: ID.observationA,
+    note: null,
+    created_at: "2026-09-08T12:00:00.000Z",
+    ...overrides,
+  };
+}
+
+/**
+ * A well-formed `VerdictValue` with every payload slot empty — a caller fills
+ * exactly one (`decisionRefusals` invariant 5).
+ */
+export function verdictValue(overrides: Override<VerdictValue> = {}): VerdictValue {
+  return {
+    domain: "events",
+    entity_id: ID.eventEntity,
+    field: "title",
+    observation_id: null,
+    value: null,
+    ref: null,
+    ...overrides,
+  };
+}
+
+/**
+ * A well-formed `VerdictDecision`: the `keep_current` shape, which carries no
+ * payload at all, so every other action is one override away.
+ *
+ * The TYPE is imported from the leaf rather than re-declared, because the leaf
+ * — not a migration — is what this shape is true against
+ * (`src/lib/verdict/decision.ts`, ARCHITECTURE.md §9.2).
+ * `tests/offline/verdict/decision.test.ts` keeps its own eight-action table on
+ * purpose: it grades the leaf's six invariants exhaustively, one well-formed
+ * fixture per action, which is a different job from handing one valid decision
+ * to a caller that is testing something else.
+ */
+export function verdictDecision(
+  overrides: Override<VerdictDecision> = {},
+): VerdictDecision {
+  return {
+    action: "keep_current",
+    review_item_id: ID.reviewItemDataConflict,
+    actor: "admin@kspace.local",
+    note: null,
+    value: null,
     ...overrides,
   };
 }

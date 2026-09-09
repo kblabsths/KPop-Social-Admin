@@ -29,6 +29,14 @@ import { codeLines, repoRoot, sourceFiles, sourceText } from "../source-tree";
 
 const CONFIG_MODULE = "src/lib/edit/config.ts";
 const RECORDS_MODULE = "src/lib/db/records.ts";
+/**
+ * The settlement seam (campaign admin-window/TASK-0048): the ONE module in
+ * `src/` allowed to call a database procedure, and the one that spells the
+ * procedure's argument name.
+ */
+const VERDICT_MODULE = "src/lib/db/verdict.ts";
+/** Where every database object name is spelled — table, view or function (§4 rule 4). */
+const TABLES_MODULE = "src/lib/db/tables.ts";
 const ROUTE_MODULE = "src/app/api/admin/records/[table]/[id]/route.ts";
 /**
  * The widget's two readers (campaign admin-window/TASK-0018). config.ts's own
@@ -870,7 +878,20 @@ describe("the write surface of the whole repo", () => {
     // Map it is an ordinary call and would be a false red elsewhere.
     expect(filesWhereCodeMatches(/\.insert\(|\.upsert\(/)).toEqual([]);
     expect(filesWhereCodeMatches(/\.delete\(/).filter(DATA_LAYER)).toEqual([]);
-    expect(filesWhereCodeMatches(/\.rpc\(/)).toEqual([]);
+  });
+
+  it("calls a database procedure from exactly one module", () => {
+    // INVERTED for M2 (campaign admin-window/TASK-0048). Through M1 this read
+    // `toEqual([])`: nothing settled anything, so nothing called a procedure.
+    // M2 settles a review item through ONE call to `settle_review_item`
+    // (ARCHITECTURE.md §9.2), so the rule is no longer "none" but "one, and
+    // this one" — a second `.rpc(` anywhere under `src/` is the defect, and it
+    // is a defect whether it is a second settlement path or a probe.
+    //
+    // Exact equality, not a filter: the list is the whole answer, so the day
+    // the seam stops calling the procedure this reddens too rather than
+    // passing on an empty tree.
+    expect(filesWhereCodeMatches(/\.rpc\(/)).toEqual([VERDICT_MODULE]);
   });
 
   it("writes the database from exactly one module", () => {
@@ -889,11 +910,25 @@ describe("the write surface of the whole repo", () => {
     // name it, and no module may special-case events or venues for writing.
     expect(filesWhereCodeMatches(/event_performers/)).toEqual(["src/lib/db/tables.ts"]);
 
-    // The two ACTIONS stay banned by NAME: `settle_review_item` and
-    // `apply_resolution` are the resolver's own procedures, so their name on a
-    // code line under `src/` can only be a call — there is nothing else to
-    // spell it for.
-    expect(filesWhereCodeMatches(/settle_review_item|apply_resolution/)).toEqual([]);
+    // `apply_resolution` stays banned by NAME, permanently: it EXISTS on
+    // staging today and it WRITES the catalog. Its name on a code line under
+    // `src/` can only be a call, and Admin never makes that call — the
+    // resolver does. This is why `tables.ts` declines to spell it: an
+    // unspellable name cannot be called through the seam either.
+    expect(filesWhereCodeMatches(/apply_resolution/)).toEqual([]);
+
+    // `settle_review_item` is INVERTED for M2 (admin-window/TASK-0048): it is
+    // Admin's one entry point now, so the rule is where it may be spelled, not
+    // whether. `tables.ts` holds the name (§4 rule 4 — the not-provisioned card
+    // must name the same string the call used) and the seam may spell it too;
+    // no third file may, and a page building its own call is what that catches.
+    const SETTLE_NAME_MAY_APPEAR_IN = [TABLES_MODULE, VERDICT_MODULE];
+    const settleSpellers = filesWhereCodeMatches(/settle_review_item/);
+    // Not vacuous: the name IS spelled, in the registry, on a code line.
+    expect(settleSpellers).toContain(TABLES_MODULE);
+    expect(
+      settleSpellers.filter((file) => !SETTLE_NAME_MAY_APPEAR_IN.includes(file)),
+    ).toEqual([]);
 
     // `admin_locked` is a COLUMN, not an action, and this case is about WRITES.
     // Narrowed 2026-09-02 (architect ruling, admin-window/BUG-0028): the old
@@ -1426,5 +1461,102 @@ describe("the argument scan and string literals", () => {
       ? fs.readdirSync(probes).filter((name) => name.startsWith(`strings-${process.pid}-`))
       : [];
     expect(mine).toEqual([]);
+  });
+});
+
+/**
+ * The one-call-site guard, guarding itself (campaign admin-window/TASK-0048,
+ * the technique this file already uses for `admin_locked`).
+ *
+ * The M2 inversion above turned an assertion that was green because nothing
+ * called a procedure into one that is green because exactly one module does —
+ * and a rule whose scanner cannot SEE a second call would be green for the
+ * wrong reason forever. So it is driven over a mirror tree carrying all three
+ * shapes: the sanctioned call, a second call in a page, and a file that only
+ * talks about calls in a comment.
+ *
+ * The mirror lives under `tests/.probes/`, never in the real `src/`: three
+ * offline suites walk that tree in parallel and a probe deleted between their
+ * readdir and their read reddens a stranger's suite (admin-window/BUG-0020).
+ */
+describe("the one-call-site guard itself", () => {
+  const probeBase = path.join(repoRoot, "tests", ".probes", `one-call-${process.pid}`);
+
+  /** The sanctioned call, in the file the rule names. */
+  const SEAM_PROBE = "src/lib/db/verdict.ts";
+  /** A second call, in a page — the shape the rule exists to catch. */
+  const PAGE_PROBE = "src/app/queues/[reviewItemId]/page.tsx";
+  /** A file that names both the call and the procedure in a COMMENT only. */
+  const COMMENT_PROBE = "src/lib/review/close-note.ts";
+
+  const SOURCES: ReadonlyArray<readonly [string, string]> = [
+    [
+      SEAM_PROBE,
+      "export function settle(db: Db, decision: unknown) {\n" +
+        '  return db.rpc("settle_review_item", { p_decision: decision });\n' +
+        "}\n",
+    ],
+    [
+      PAGE_PROBE,
+      "export default async function Page({ db }: { db: Db }) {\n" +
+        '  const { data } = await db.rpc("settle_review_item", { p_decision: {} });\n' +
+        "  return data;\n" +
+        "}\n",
+    ],
+    [
+      COMMENT_PROBE,
+      "/**\n" +
+        " * The close slot's note. It never calls the database: the settlement\n" +
+        ' * goes through `db.rpc("settle_review_item", …)` in the seam.\n' +
+        " */\n" +
+        "export function closeNote(text: string): string {\n" +
+        "  return text.trim();\n" +
+        "}\n",
+    ],
+  ];
+
+  it("reports the second call and the sanctioned one, and neither comment", () => {
+    let walked: string[] = [];
+    let callers: string[] = [];
+    let spellers: string[] = [];
+    try {
+      for (const [file, source] of SOURCES) {
+        const full = path.join(probeBase, file);
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, source, "utf8");
+      }
+      walked = sourceFiles(probeBase);
+      callers = filesWhereCodeMatches(/\.rpc\(/, probeBase);
+      spellers = filesWhereCodeMatches(/settle_review_item/, probeBase);
+    } finally {
+      fs.rmSync(probeBase, { force: true, recursive: true });
+    }
+
+    // The mirror is the whole world the scan saw, so nothing below is an
+    // accident of the real tree.
+    expect(walked).toEqual(SOURCES.map(([file]) => file).sort());
+
+    // The input the rule MUST flag: on this tree the call-site list is two
+    // files, so the real assertion (`toEqual([VERDICT_MODULE])`) fails — and
+    // it fails naming the page, which is the message a builder needs.
+    expect(callers).toEqual([PAGE_PROBE, SEAM_PROBE].sort());
+    expect(callers.filter((file) => file !== SEAM_PROBE)).toEqual([PAGE_PROBE]);
+
+    // The input it must NOT flag: a comment describing the call is not a call.
+    // Without this the rule would forbid explaining where settlement happens —
+    // common violation 4, four times over in M1.
+    expect(callers).not.toContain(COMMENT_PROBE);
+    expect(spellers).not.toContain(COMMENT_PROBE);
+
+    // And the NAME rule's own two fixtures: the page spells the procedure
+    // where it may not, the seam spells it where it may.
+    expect(spellers).toEqual([PAGE_PROBE, SEAM_PROBE].sort());
+    expect(
+      spellers.filter((file) => ![TABLES_MODULE, VERDICT_MODULE].includes(file)),
+    ).toEqual([PAGE_PROBE]);
+  });
+
+  it("leaves no probe behind for another suite to walk into", () => {
+    expect(fs.existsSync(probeBase)).toBe(false);
   });
 });

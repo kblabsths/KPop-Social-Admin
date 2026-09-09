@@ -655,13 +655,33 @@ describe("what Browse must NOT contain", () => {
 
   it("has no SQL-executing route and no whole-table browser", () => {
     // The ticket's own check, asserted here too so it survives a refactor of
-    // the check list: no `select * from`, no rpc call, no execute_sql.
+    // the check list: no `select * from`, no execute_sql. Both are the shape
+    // of a route that runs SQL a caller supplied, which this app has never had
+    // and must never grow — PostgREST cannot execute SQL, so the ban is about
+    // not BUILDING such a path (AGENTS.md, STACK.md §2).
     const forbidden = new RegExp(
-      ["select\\s+\\*\\s+from", "\\.rpc\\(", "execute_sql"].join("|"),
+      ["select\\s+\\*\\s+from", "execute_sql"].join("|"),
       "i",
     );
     const offenders = sourceFiles().filter((file) => forbidden.test(sourceText(file)));
     expect(offenders).toEqual([]);
+  });
+
+  it("calls a database procedure from the settlement seam alone", () => {
+    // INVERTED for M2 (campaign admin-window/TASK-0048). `.rpc(` used to sit in
+    // the list above, banned outright, because through M1 nothing settled
+    // anything. M2 settles a review item through ONE call to
+    // `settle_review_item` (ARCHITECTURE.md §9.2), so the ban became a
+    // location.
+    //
+    // This scan reads the RAW file, not code lines, so a comment spelling the
+    // call counts as spelling it — which is stricter than the code-line rules
+    // in `tests/offline/edit/config.test.ts` and `…/review/one-place.test.ts`
+    // that own this property, and is kept that way on purpose: a whole-table
+    // browser would arrive commented out first.
+    const procedureCall = /\.rpc\(/;
+    const callers = sourceFiles().filter((file) => procedureCall.test(sourceText(file)));
+    expect(callers).toEqual(["src/lib/db/verdict.ts"]);
   });
 
   it("defines its views in exactly one file", () => {
