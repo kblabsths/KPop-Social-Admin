@@ -1,0 +1,27 @@
+{
+ "id": "TASK-0037",
+ "created": "2026-09-09T01:55:04Z",
+ "green": true,
+ "git_head": "b522db153ba16b7bbf6632d1a141855a41a40c5b",
+ "scope": [
+  "tests/walk",
+  "tests/live",
+  "agenticflow/docs/vision/STACK.md",
+  "agenticflow/docs/DECISIONS.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 7,
+ "tree_hash": "819aaf2715233a1cbf3dd3edb0bb89b1c590ed6aa59834575b088159cdb142d4",
+ "commands": [
+  {
+   "cmd": "bash -c 'npm run test:live -- tests/live/edit.live.test.ts'",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-38581\n\n \u2713 |live| tests/live/edit.live.test.ts (9 tests) 5135ms\n   \u2713 a groups record > edits a mapped column, persists it, and leaves nothing behind  758ms\n   \u2713 a idols record > edits a mapped column, persists it, and leaves nothing behind  756ms\n   \u2713 a resolver-owned record page > renders from staging with no editable widget on it  759ms\n   \u2713 a resolver-owned record page > displays every column the map names, with staging's own value  704ms\n   \u2713 a resolver-owned record page > shows the source behind each field the decision log covers  502ms\n   \u2713 the walk sandbox > edits a mapped column through the surface, and a reset restores the fixture  994ms\n\n Test Files  1 passed (1)\n      Tests  9 passed (9)\n   Start at  18:54:02\n   Duration  6.52s (transform 260ms, setup 39ms, collect 775ms, tests 5.13s, environment 0ms, prepare 161ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/edit.live.test.ts\n(node:38623) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c 'npm test'",
+   "exit": 0,
+   "output_tail": "26.26s, tests 72.47s, environment 10ms, prepare 11.66s)\n\n\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-38581\n\n \u2713 |isolated| tests/isolated/probe-race.isolated.test.ts (6 tests) 37865ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is readable  2503ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is listed but cannot be opened  3118ms\n   \u2713 walking src/ while the layering probe comes and goes > survives the probe directory appearing and vanishing under the walk  10573ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no OTHER offline file that walks the tree either  21668ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  18:54:25\n   Duration  38.45s (transform 46ms, setup 0ms, collect 47ms, tests 37.87s, environment 0ms, prepare 209ms)\n\nnpm notice run kpop-social-space@0.1.0 test\nnpm notice run vitest run --project=offline && vitest run --project=isolated\n(node:38856) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:38879) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:38898) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:38936) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:39334) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
