@@ -1862,10 +1862,10 @@ describe("a refused write names what failed and what to do", () => {
     }
   });
 
-  // PIN, admin-window/BUG-0103 — strict: `it.fails` is red the day the
-  // divergence disappears, which sends the next reader to the ticket rather
-  // than leaving a stale expectation in place. The fixer DELETES `.fails`.
-  it.fails("PROBE: picks the arm from the database's words, not from what the operator typed (admin-window/BUG-0103)", () => {
+  // Was a PIN (`it.fails`) while the divergence stood; admin-window/BUG-0103
+  // closed it and the pin became a plain expectation, which is what the pin
+  // was written to become.
+  it("picks the arm from the database's words, not from what the operator typed (admin-window/BUG-0103)", () => {
     // The refusal a coercion produces QUOTES the operator's own value back
     // (`invalid input syntax for type integer: "<what they typed>"`), and the
     // arms match on the whole string, so a value carrying another arm's prose
@@ -1882,6 +1882,39 @@ describe("a refused write names what failed and what to do", () => {
       "(23502)",
     ]) {
       expect(refusalFix(quoted(typed)), typed).toEqual(benign);
+    }
+  });
+
+  it("takes the arm from the code the refusal STATES, both directions (admin-window/BUG-0103)", () => {
+    // The two halves of the same rule, each stated on its own so a regression
+    // says which direction broke. Relational throughout: no sentence of copy
+    // appears here, only "these two refusals derive the same fix" and "these
+    // two derive different ones".
+
+    // One: a coercion whose quoted value is ANOTHER arm's code. The code that
+    // decides is the one the database appended last, never one the operator
+    // typed inside the quotes.
+    const quotesACode = 'invalid input syntax for type integer: "(23502)" (22P02)';
+expect(refusalFix(quotesACode)).toEqual(refusalFix(REFUSALS.coercion));
+
+    // Two: a genuine 23502 whose failing-row DETAIL carries an earlier arm's
+    // prose — a value in some OTHER column of the row Postgres dumps — is
+    // still a not-null refusal, and still names the column that was emptied.
+    const carriesAnotherArmsProse = REFUSALS.notNull.replace(
+      "walk probe 0908",
+      "settle_review_item is not present in this database",
+    );
+    expect(carriesAnotherArmsProse, "the fixture really carries it").not.toEqual(
+      REFUSALS.notNull,
+    );
+    expect(refusalFix(carriesAnotherArmsProse)).toEqual(refusalFix(REFUSALS.notNull));
+    expect(refusalFix(carriesAnotherArmsProse)).toContain("label");
+
+    // ...and the two arms are distinguishable, so neither equality above is
+    // satisfied by every refusal collapsing onto one sentence.
+    expect(refusalFix(REFUSALS.coercion)).not.toEqual(refusalFix(REFUSALS.notNull));
+    for (const fix of [refusalFix(quotesACode), refusalFix(carriesAnotherArmsProse)]) {
+      expect(fix).not.toEqual(GENERAL_FIX);
     }
   });
 
