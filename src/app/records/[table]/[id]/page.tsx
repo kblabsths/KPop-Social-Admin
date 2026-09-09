@@ -111,7 +111,7 @@ function regimeNote(config: TableEditConfig): string {
         `shown beside a value.`
     : `${config.table} is resolver-owned: its values change through the ` +
         `resolution pipeline, never by a direct edit. An edit here is ` +
-        `recorded as an admin override — an observation at the admin tier, ` +
+        `recorded as an admin override — a claim at the admin tier, ` +
         `applied through the pipeline and logged — and the pipeline then ` +
         `leaves that field alone.`;
 }

@@ -203,7 +203,7 @@ export type CloseVerdict =
  */
 const DASH_MEANS =
   `A ${EM_DASH} is a value this verdict does not carry: an admin may settle ` +
-  "without a note, and a settle-only verdict writes no observation.";
+  "without a note, and a settle-only verdict writes no claim.";
 
 /** What a settled item with no verdict row on record says, in its own words. */
 const NO_VERDICT_ROW = {
@@ -302,7 +302,7 @@ function ItemVerdictBlock({ verdict }: { verdict: InlineVerdict }) {
         )}
       </VerdictLine>
 
-      <VerdictLine label="observation">
+      <VerdictLine label="observation id">
         {observation === null ? (
           orDash(null)
         ) : verdict.observationHref === null ? (
