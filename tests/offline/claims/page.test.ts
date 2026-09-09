@@ -1959,12 +1959,14 @@ describe("a parameter the page did not apply", () => {
    * where the name goes names nothing, and the operator who typed it is told
    * only that something they cannot identify was ignored.
    *
-   * STRICT PIN (admin-window/BUG-0127). Either arm is a fix: spell a name
-   * that is there, or count the parameter without claiming to name it (the
-   * `withheld` path this line already has). The day either lands, this
-   * XPASSes and sends the reader to the ticket.
+   * FIXED by admin-window/BUG-0127, first arm: `droppedParams` now skips a
+   * key that is empty or whitespace-only, exactly as it already skips an
+   * empty VALUE — a pair needs both halves to be a request, and a value with
+   * no name asks for nothing this page could have applied. So the line does
+   * not render at all for these URLs and there is no name to hole. The next
+   * test is the direct pin of that behaviour, in both directions.
    */
-  it.fails("spells a name, or none, but never a hole where a name goes", async () => {
+  it("spells a name, or none, but never a hole where a name goes", async () => {
     const blankKeys: Record<string, string>[] = [{ "": "x" }, { "  ": "1" }];
     for (const params of blankKeys) {
       const line = droppedLine(await renderClaims(healthyScript(), params));
@@ -1973,6 +1975,31 @@ describe("a parameter the page did not apply", () => {
         expect(name.trim(), JSON.stringify(params)).not.toBe("");
       }
     }
+  });
+
+  it("ignores a blank key the way it ignores an empty value, and moves nothing else", async () => {
+    // admin-window/BUG-0127, criterion 2: `?=x` and `?%20%20=1` name no
+    // facet, so they are the URL saying nothing rather than the page
+    // dropping a narrowing — no line, and the page underneath is the
+    // unnarrowed one it was before.
+    const plain = await renderClaims(healthyScript());
+    for (const params of [{ "": "x" }, { "  ": "1" }] as Record<string, string>[]) {
+      const markup = await renderClaims(healthyScript(), params);
+      const line = droppedLine(markup);
+      expect(line.lines, JSON.stringify(params)).toBe(0);
+      expect(claimIds(markup), JSON.stringify(params)).toEqual(claimIds(plain));
+      expect(bucketRows(markup), JSON.stringify(params)).toEqual(bucketRows(plain));
+      expect(bucketCaption(markup), JSON.stringify(params)).toBe(bucketCaption(plain));
+      for (const facet of ["bucket", "source_id", "domain"]) {
+        expect(chipsOf(markup, facet), `${JSON.stringify(params)} ${facet}`).toEqual(
+          chipsOf(plain, facet),
+        );
+      }
+    }
+    // The other direction, so the assertions above are not passing over a
+    // page that stopped reporting dropped parameters altogether.
+    expect(droppedLine(await renderClaims(healthyScript(), { record_id: TYPED })).names)
+      .toEqual(["record_id"]);
   });
 });
 
