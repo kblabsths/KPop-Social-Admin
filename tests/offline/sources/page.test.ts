@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
+import { isRecordId } from "@/lib/db/records";
 import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
 import {
@@ -37,7 +38,7 @@ import {
   runsResponse,
 } from "./population";
 import { oneEach, readNumber, surfaceHooks } from "../../live/parity";
-import { observationRow, runRow } from "../../fixtures/rows";
+import { observationRow, pendingClaimRow, runRow } from "../../fixtures/rows";
 import {
   permissionDenied,
   stubClient,
@@ -549,57 +550,142 @@ describe("a source's links", () => {
     // the table renders "nothing matched" rather than the whole registry —
     // told apart from the registry that holds nothing by the hook, never by
     // its words — and the gauges answer the SAME narrowing the table renders.
-    const markup = await renderSources(healthyScript(), {
-      source_id: "01920000-0000-7000-8000-0000000000ff",
-    });
-    expect(sourceIds(markup)).toEqual([]);
-    expect(cheerio.load(markup)("[data-empty]").attr("data-empty")).toBe("narrowing");
-    expect(notProvisioned(markup)).toEqual([]);
-    expect(readsFailed(markup)).toEqual([]);
-    expect(trendSources(markup, AWAITING_BY_SOURCE)).toEqual([]);
-    expect(trendSources(markup, REJECTED_BY_SOURCE)).toEqual([]);
+    //
+    // In EVERY spelling of that id, for the reason the case below gives: an
+    // id the registry lacks is still an id, so canonicalising the URL's value
+    // may not turn a real narrowing into no narrowing at all (the direction
+    // that would render the whole registry and read as "these three matched").
+    for (const spelling of spellingsOf("01920000-0000-7000-8000-0000000000ff")) {
+      const markup = await renderSources(healthyScript(), { source_id: spelling });
+      expect(sourceIds(markup), spelling).toEqual([]);
+      expect(
+        cheerio.load(markup)("[data-empty]").attr("data-empty"),
+        spelling,
+      ).toBe("narrowing");
+      expect(notProvisioned(markup), spelling).toEqual([]);
+      expect(readsFailed(markup), spelling).toEqual([]);
+      expect(trendSources(markup, AWAITING_BY_SOURCE), spelling).toEqual([]);
+      expect(trendSources(markup, REJECTED_BY_SOURCE), spelling).toEqual([]);
+    }
   });
 
   /**
-   * PIN — admin-window/BUG-0140. `it.fails` is STRICT: the day the defect is
-   * fixed this case XPASSes and turns red, which sends the next reader to the
-   * ticket instead of leaving a dead pin behind.
+   * Every spelling of one uuid Postgres itself accepts and a URL can carry:
+   * canonical, uppercased, hyphen-less, and mixed — each names the SAME row
+   * (`isRecordId`, `src/lib/db/records.ts`; the rule
+   * `tests/offline/records/page.test.ts` states for `/records`).
+   *
+   * The guard proves itself on both inputs (LESSONS 3): every spelling but the
+   * first must DIFFER from the canonical one, or a loop over four identical
+   * strings would pass while nothing was canonicalised at all.
    */
-  it.fails("narrows to the source the URL names, in every uuid spelling Postgres accepts", async () => {
-    // Since admin-window/BUG-0139 the narrowing comes from the URL alone and
-    // is compared to `source_id` as a JAVASCRIPT STRING (`selectSources`),
-    // while the same value goes to the awaiting-row gauge's QUERY, where
-    // Postgres compares it as a UUID. Postgres accepts three spellings of one
-    // uuid — canonical, uppercased, hyphen-less — and `isRecordId`
-    // (lib/db/records.ts, admin-window/BUG-0065) accepts all three as ids;
-    // `/records` already answers all three with the SAME row
-    // (tests/offline/records/page.test.ts, WELL_FORMED_IDS). Measured
+  function spellingsOf(canonical: string): string[] {
+    const spellings = [
+      canonical,
+      canonical.toUpperCase(),
+      canonical.replace(/-/g, ""),
+      canonical.replace(/-/g, "").toUpperCase(),
+      // Mixed: the last group uppercased, the rest left alone.
+      `${canonical.slice(0, 24)}${canonical.slice(24).toUpperCase()}`,
+    ];
+    for (const spelling of spellings.slice(1)) {
+      expect(
+        spelling,
+        `${canonical} carries no hex letter, so this spelling is the canonical one and proves nothing`,
+      ).not.toBe(canonical);
+      expect(isRecordId(spelling), `${spelling} is an id Postgres accepts`).toBe(true);
+    }
+    return spellings;
+  }
+
+  it("narrows to the source the URL names, in every uuid spelling Postgres accepts", async () => {
+    // The narrowing comes from the URL alone (admin-window/BUG-0139) and was
+    // then compared to `source_id` as a JAVASCRIPT STRING (`selectSources`,
+    // `selectClaims`), while the same value went to the awaiting-row gauge's
+    // QUERY, where Postgres compares it as a UUID — so a registered source
+    // named in one of the other spellings was DENIED by the page while the
+    // database it had just read matched it (admin-window/BUG-0140; measured
     // read-only on staging 2026-09-09: `sources` filtered `eq source_id` by
-    // the canonical, uppercased, and hyphen-less spellings of one registered
-    // id returns count=1 for each.
+    // the canonical, uppercased, hyphen-less and upper-hyphen-less spellings
+    // of one registered id returns count=1 for each).
     //
-    // So a URL naming a REGISTERED source in one of the other two spellings
-    // must render that source's row. Anything else tells the operator the
-    // registry holds no such source while the database it just read does.
+    // The registry here is `manySources`', whose ids carry a hex LETTER — the
+    // population's own ids are all digits, so uppercasing one of those spells
+    // the same string and the case would prove nothing. Its one source is
+    // given a pending claim and a rejection stamp of its own, so all three
+    // sections have something to say about the narrowing.
     const { sources: registry, runs } = manySources(1);
     const only = registry[0];
-    const spellings = [
-      only.source_id,
-      only.source_id.toUpperCase(),
-      only.source_id.replace(/-/g, ""),
-    ];
-    for (const spelling of spellings) {
-      const markup = await renderSources(
-        healthyScript({
-          [T.sources]: [
-            { data: [...registry], count: registry.length },
-            { data: [...registry] },
+    const script = healthyScript({
+      [T.sources]: [
+        { data: [...registry], count: registry.length },
+        { data: [...registry] },
+      ],
+      [T.runs]: { data: [...runs], count: runs.length },
+      [T.observations]: [
+        {
+          data: [
+            observationRow({
+              observation_id: "01920000-0000-7000-8000-0000000d0001",
+              source_id: only.source_id,
+              status: "pending",
+              observed_at: daysAgo(1),
+            }),
           ],
-          [T.runs]: { data: [...runs], count: runs.length },
-        }),
-        { source_id: spelling },
-      );
+        },
+        {
+          data: [
+            observationRow({
+              observation_id: "01920000-0000-7000-8000-0000000d0002",
+              source_id: only.source_id,
+              status: "rejected",
+              rejected_at: daysAgo(2),
+              rejected_by: "resolver",
+            }),
+          ],
+        },
+      ],
+      [T.pendingClaims]: {
+        data: [
+          pendingClaimRow("awaiting_row", {
+            observation_id: "01920000-0000-7000-8000-0000000d0001",
+            source_id: only.source_id,
+          }),
+        ],
+      },
+    });
+
+    // Every spelling lands on ONE state: that source's registry row, that
+    // source's gauge rows, and the chip and row link that spell the narrowing
+    // back as the canonical id.
+    for (const spelling of spellingsOf(only.source_id)) {
+      const markup = await renderSources(script, { source_id: spelling });
       expect(sourceIds(markup), spelling).toEqual([only.source_id]);
+      expect(readsFailed(markup), spelling).toEqual([]);
+      expect(notProvisioned(markup), spelling).toEqual([]);
+      // The gauges answer the SAME narrowing the table renders — the half of
+      // the defect that had the query match rows the fold then dropped. A
+      // narrowed page plots that source's own days and weeks, so the claim
+      // and the stamp it holds are what those two sections count.
+      const days = tableRows(markup, AWAITING_BY_DAY);
+      expect(days.length, spelling).toBeGreaterThan(0);
+      expect(
+        days.reduce((total, cells) => total + Number(cells[1]), 0),
+        spelling,
+      ).toBe(1);
+      const weeks = tableRows(markup, REJECTED_BY_WEEK);
+      expect(weeks.length, spelling).toBeGreaterThan(0);
+      expect(
+        weeks.reduce((total, cells) => total + Number(cells[1]), 0),
+        spelling,
+      ).toBe(1);
+      expect(
+        chips(markup)
+          .filter((chip) => chip.active)
+          .map((chip) => chip.href),
+        spelling,
+      ).toEqual([`/sources?source_id=${only.source_id}`]);
+      expect(sourceRowOf(markup, only.source_id).narrowHref, spelling).toBe("/sources");
     }
   });
 

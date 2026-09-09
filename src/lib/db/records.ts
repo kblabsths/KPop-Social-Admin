@@ -138,6 +138,44 @@ export function isRecordId(id: string): boolean {
   return RECORD_ID.test(id);
 }
 
+/**
+ * That id in the ONE spelling Postgres itself prints — lowercase, hyphenated,
+ * 8-4-4-4-12 — or `null` when the value is not a record id at all (campaign
+ * admin-window/BUG-0140).
+ *
+ * It lives beside `isRecordId` and is built ON it, because the two are one
+ * grammar: everything that predicate accepts as an id, this reduces to a
+ * single string, and everything it refuses has no canonical form to give. A
+ * second lowercasing spelled at a call site would be the second uuid pattern
+ * `isRecordId` exists to prevent.
+ *
+ * **Why anything needs it.** Postgres compares a `uuid` column by VALUE, so
+ * `.eq()` matches every spelling of one id; JavaScript compares the same id by
+ * STRING, so `===` matches exactly one. A surface that narrows at the query
+ * AND in code — which every gauge here does, deliberately, so that the
+ * returned set is decided by exactly one function — therefore has two
+ * comparisons that must agree, and they only agree on values that have been
+ * put in one spelling first. Where a URL's raw value went straight to both,
+ * `/sources` denied a source the database it had just read matched
+ * (admin-window/BUG-0140). Canonicalise where the value is DERIVED from the
+ * request, once, and everything downstream — the query, the fold, the chip
+ * that renders the narrowing back as a link — is comparing like with like.
+ *
+ * The canonical form is the database's own output spelling, so a value read
+ * from a row is already canonical and passing it through changes nothing.
+ */
+export function canonicalRecordId(id: string): string | null {
+  if (!isRecordId(id)) return null;
+  const hex = id.replace(/-/g, "").toLowerCase();
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join("-");
+}
+
 function selectRecord(
   db: SupabaseClient,
   config: TableEditConfig,
