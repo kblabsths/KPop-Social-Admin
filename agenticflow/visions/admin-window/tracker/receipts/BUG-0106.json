@@ -1,0 +1,37 @@
+{
+ "id": "BUG-0106",
+ "created": "2026-09-09T08:53:14Z",
+ "green": true,
+ "git_head": "fae1332d5366c135ac239d1e5e97a15be1722b3e",
+ "scope": [
+  "src/components/cycles/outcome.tsx",
+  "src/app/page.tsx",
+  "tests/offline/cycles/page.test.ts",
+  "tests/offline/dashboard/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "63e4383c1a3a40c15052c325fad3a024b33d08c9af687234c8c847abd6215c85",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "bash -c '! grep -q \"OUTCOME_TONE\" src/app/page.tsx'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/cycles/page.test.ts tests/offline/dashboard/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-71370\n\n \u2713 |offline| tests/offline/dashboard/page.test.ts (54 tests) 323ms\n \u2713 |offline| tests/offline/cycles/page.test.ts (71 tests) 1331ms\n\n Test Files  2 passed (2)\n      Tests  125 passed (125)\n   Start at  01:52:57\n   Duration  2.23s (transform 436ms, setup 0ms, collect 1.04s, tests 1.65s, environment 0ms, prepare 222ms)\n\n(node:71408) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/cycles.live.test.ts tests/live/dashboard.live.test.ts",
+   "exit": 0,
+   "output_tail": "e oldest open item of each kind, as the database orders them  335ms\n   \u2713 last night's cycles against staging > renders the newest cycles, newest first, exactly as the database orders them  345ms\n   \u2713 when the resolver last applied something, against staging > states the instant of the newest cycle that applied, or says none did  428ms\n   \u2713 when the resolver last applied something, against staging > answers a different question from the newest cycle the page lists  476ms\n   \u2713 last night's adapter runs against staging > renders the newest runs, newest first, with the source the database holds  329ms\n \u2713 |live| tests/live/cycles.live.test.ts (7 tests) 14011ms\n   \u2713 the resolver's cycles against staging > names every surface on the page once, whatever order they are in  3167ms\n   \u2713 the resolver's cycles against staging > renders the newest cycles, newest first, as the table holds them  1465ms\n   \u2713 the resolver's cycles against staging > renders every count and every error line the row carries  3245ms\n   \u2713 the resolver's cycles against staging > reads a running, a skipped and a dead cycle as what they are  1239ms\n   \u2713 the resolver's cycles against staging > marks the cycle a Dashboard link asks for  2310ms\n   \u2713 the two gauges on this page against staging > counts the cycles of its window as the table holds them  1294ms\n   \u2713 the two gauges on this page against staging > separates the applies it measured from the decisions that name no claim  1290ms\n\n Test Files  2 passed (2)\n      Tests  17 passed (17)\n   Start at  01:52:59\n   Duration  14.73s (transform 235ms, setup 63ms, collect 651ms, tests 17.63s, environment 0ms, prepare 348ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/cycles.live.test.ts tests/live/dashboard.live.test.ts\n(node:71455) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
