@@ -367,8 +367,9 @@ Four things about that command, so nothing below is a surprise:
     never a delete, and never a workaround — no substitute table, no fixture
     writer, no second sandbox, no direct PATCH "just to see the 200". The paste
     in `agenticflow/tracker/for-human/TASK-0034.md` §2 is the only thing that
-    gives the save path a surface again, and it is Ben's to run
-    (admin-window/TASK-0037 proves the sandbox once he has).
+    gives the save path a surface again, and it is Ben's to run — on staging he
+    ran it on 2026-09-08, and admin-window/TASK-0037 proved the sandbox there
+    the same day, which is why this branch is history on that host.
 
     The residue sweep in §5's table stays as a **read-only** leftover check of
     the M1-era writes; nothing a walk does now should ever make it fire.
@@ -465,8 +466,9 @@ page.goto("http://localhost:8771/")
     2026-09-08 entry in `agenticflow/docs/DECISIONS.md`). The same bans hold
     here as on the other branch: never `groups` or `idols`, never `events` or
     `venues`, never an insert, never a delete, never a workaround built to get
-    a write in anyway. The paste is on Ben's own schedule, so a walker arriving
-    on any given day may find either state; nothing here flips on a date.
+    a write in anyway. The paste is on Ben's own schedule — done on staging on
+    2026-09-08 — so a walker establishes which state it is in by running step 3,
+    never by reading this paragraph; nothing here flips on a date.
 
   In **both** states: never a resolver-owned table (`events`, `venues`), never
   a catalog table at all — `groups` and `idols` included since the amendment —
