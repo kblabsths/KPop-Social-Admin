@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T05:24:57Z — do not edit)
+# Tracker index (regenerated 2026-09-09T05:30:57Z — do not edit)
 
 ## open
 - FEAT-0010 [P1][feat][M2] The verdict UI: every spec 7 action as one typed decision, one call, one transaction  (deps:FEAT-0009 scope:src/app/queues,src/components,src/lib/db,src/lib/review,tests/offline,tests/live)
@@ -14,8 +14,10 @@
 - BUG-0099 [P2][bug][M2] Links inside data tables announce themselves only under the pointer — the defect BUG-0054 fixed on /cycles, still shipping on three M2 surfaces  (scope:src/components/records/record-fields.tsx,src/components/queues/queue-list.tsx,src/components/review/evidence-cells.tsx,tests/offline/records/page.test.ts @builder-163 from:designer:early-walk)
 
 ## qa
-- BUG-0086 [P2][bug][M2] Edit cell: opening one cell reflows the record table, so the next single click on another editable value is swallowed and the operator must click twice  (scope:src/components/EditableCell.tsx,src/components/records/record-fields.tsx,tests/offline/ui/editable-cell.test.ts @builder-156 from:TASK-0053)
-- BUG-0094 [P2][bug][M2] A server component importing a value from a "use client" module 500s the record page, and every automated tier stays green  (scope:tests/offline/shell/client-boundary.test.ts,tests/http/records.http.test.ts @builder-157 from:BUG-0086)
 - BUG-0095 [P2][bug][M2] An invisible-only cell value is stored as content while every surface draws it as an absence  (scope:src/app/api/admin/records/[table]/[id]/route.ts,src/components/EditableCell.tsx,tests/offline/edit/route.test.ts @builder-159 from:qa:BUG-0089)
 
-Totals — claimed:4, done:44, open:5, qa:3, wont_fix:1. Archived: 124.
+## reopened
+- BUG-0086 [P2][bug][M2] Edit cell: opening one cell reflows the record table, so the next single click on another editable value is swallowed and the operator must click twice  (scope:src/components/EditableCell.tsx,src/components/records/record-fields.tsx,tests/offline/ui/editable-cell.test.ts from:TASK-0053)
+- BUG-0094 [P2][bug][M2] A server component importing a value from a "use client" module 500s the record page, and every automated tier stays green  (scope:tests/offline/shell/client-boundary.test.ts,tests/http/records.http.test.ts from:BUG-0086)
+
+Totals — claimed:4, done:44, open:5, qa:1, reopened:2, wont_fix:1. Archived: 124.
