@@ -12153,3 +12153,60 @@
 2026-09-09T02:50:24Z	qa-adversary	TASK-0052	21827	915	135700
 # STRANDED	2026-09-09T02:50:30Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0052.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0052.md
 2026-09-09T02:50:30Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:50:48Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:50:48Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:50:55Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:50:55Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:51:02Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:51:02Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:51:20Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:51:20Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:51:22Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:51:22Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:51:33Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:51:33Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:51:52Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:51:52Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:51:54Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:51:54Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:51:57Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:51:57Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:52:05Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:52:05Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:52:23Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:52:23Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:52:25Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:52:25Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:52:36Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:52:36Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:52:57Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:52:57Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:53:25Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:53:25Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:53:28Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:53:28Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:53:28Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:53:28Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:53:37Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:53:37Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:53:57Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:53:57Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:53:59Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:53:59Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:54:00Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T02:54:00Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:54:31Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0084.md
+2026-09-09T02:54:31Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:54:32Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0084.md
+2026-09-09T02:54:32Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:54:39Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0084.md
+2026-09-09T02:54:39Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:54:58Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0084.md
+2026-09-09T02:54:58Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:54:58Z	builder	3 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0084.md
+2026-09-09T02:54:58Z	builder	BUG-0084	26358	545	96686
+# STRANDED	2026-09-09T02:55:03Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0084.md
+2026-09-09T02:55:03Z	agent	-	-	-	-
+# STRANDED	2026-09-09T02:55:04Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0084.md
+2026-09-09T02:55:04Z	agent	-	-	-	-
+2026-09-09T02:55:22Z	builder	TASK-0053	spawned

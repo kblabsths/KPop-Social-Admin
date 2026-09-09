@@ -108,3 +108,5 @@
 2026-09-09T02:37:48Z	artifact_gate	blocked write outside repo: ../logs/snapshot-before.tsv
 2026-09-09T02:43:26Z	artifact_gate	blocked write outside repo: /tmp/x
 2026-09-09T02:49:49Z	evidence_budget	qa_evidence_overbudget: TASK-0052 4273/4000 chars
+2026-09-09T02:51:38Z	artifact_gate	blocked write outside repo: /
+2026-09-09T02:52:59Z	artifact_gate	blocked write outside repo: /tmp/x.txt
