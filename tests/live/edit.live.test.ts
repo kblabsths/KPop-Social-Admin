@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import type { SaveOutcome } from "@/components/EditableCell";
+import { GENERAL_FIX, refusalFix } from "@/components/edit-refusal";
 import { submitFieldEdit, type FetchLike } from "@/components/records/submit";
 import {
   columnOfRegistryField,
@@ -1138,6 +1139,14 @@ describe("the walk sandbox", () => {
         expect(said, field).toContain(NOT_NULL_VIOLATION);
         expect(said, field).toContain(field);
 
+        // ...and the second half the cell renders beside it, derived from
+        // exactly these words (campaign admin-window/BUG-0098): a real arm,
+        // not the general fallback, and it names the column the operator
+        // just emptied.
+        const fix = refusalFix(said);
+        expect(fix, `${field}: ${said}`).not.toEqual(GENERAL_FIX);
+        expect(fix, field).toContain(field);
+
         // The point of the criterion: not "it said no" but "the value is
         // unchanged" — every column, against the read taken before the clear.
         expect(await wholeRow(config, id), field).toEqual(before);
@@ -1150,6 +1159,59 @@ describe("the walk sandbox", () => {
       }
     });
   }
+
+  /**
+   * A refused write carries a FIX in the app's voice, derived from the words
+   * the DATABASE actually used — campaign admin-window/BUG-0098.
+   *
+   * The derivation reads Postgres's own prose (`refusalFix`,
+   * `components/edit-refusal.ts`), so the only test that can prove it reads
+   * the real thing is one that provokes the real thing: an offline stub can
+   * only assert the derivation against a message this repo wrote down, which
+   * is a check of the fixture and not of the coercion. This is the walk's own
+   * measurement automated — the designer typed `seven` into `tally` on the
+   * record page and was told `invalid input syntax for type integer: "seven"
+   * (22P02)` and nothing else (2026-09-08).
+   *
+   * It writes NOTHING: a refused write is a write the database did not make,
+   * and the row is read back column by column to prove it.
+   */
+  it("meets a real type refusal with the database's words AND a fix in the app's voice", async (ctx) => {
+    const skip = await sandboxSkip();
+    if (skip !== null) ctx.skip(skip);
+
+    const config = EDIT_CONFIG[SANDBOX_TABLE];
+    const id = SANDBOX_WALK_KEY;
+    const before = await wholeRow(config, id);
+
+    try {
+      // `tally` is the integer column; `seven` is a word, and Postgres is the
+      // only thing in this stack that says so — this repo ships no client-side
+      // validator by design (`lib/edit/config.ts`).
+      const outcome = await save(id, "tally", "seven");
+      expect(outcome.ok, `typing a word into tally: ${JSON.stringify(outcome)}`).toBe(false);
+      const said = outcome.ok ? "" : outcome.message;
+
+      // Half one, unchanged: the machine's own refusal, never paraphrased.
+      expect(said).toContain("22P02");
+      expect(said).toContain("seven");
+
+      // Half two, the ticket: the fix the cell renders beside it is a real
+      // arm and not the general fallback, which is what proves the derivation
+      // recognises the sentence Postgres actually emits rather than the one
+      // the offline fixture quotes.
+      const fix = refusalFix(said);
+      expect(fix, `the fix for ${JSON.stringify(said)}`).not.toEqual(GENERAL_FIX);
+      expect(fix).toMatch(/whole number/i);
+      expect(said).not.toContain(fix);
+
+      // And the write really was refused: every column as it was.
+      expect(await wholeRow(config, id)).toEqual(before);
+      expect(cellText(await sandboxMarkup(id), "tally")).toBe(String(before.tally));
+    } finally {
+      await resetSandbox(independentClient());
+    }
+  });
 
   /**
    * An invisible-only value is the ABSENCE it renders as, against the real

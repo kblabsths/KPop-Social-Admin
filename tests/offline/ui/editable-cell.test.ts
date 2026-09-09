@@ -29,6 +29,7 @@ import {
   reduceEdit,
   selectOnOpen,
 } from "@/components/EditableCell";
+import { GENERAL_FIX, refusalFix } from "@/components/edit-refusal";
 import { EM_DASH, isAbsent } from "@/lib/format";
 import { hasVisibleContent } from "@/lib/verdict/decision";
 
@@ -1402,5 +1403,216 @@ describe("the hint hangs over a line that is there", () => {
     expect(classesOf(resting)).not.toContain("absolute");
     expect(classesOf(resting)).not.toContain("invisible");
     expect(classesOf(resting)).not.toContain("pointer-events-none");
+  });
+});
+
+
+/* ── a refused write says what to do about it ──────────────────────
+ *
+ * campaign admin-window/BUG-0098. Measured by the designer on the M2 early
+ * walk (2026-09-08, walk instance on 8771 against staging, `walk_sandbox` row
+ * …0001): the whole of what a refused save told the operator was the
+ * database's sentence in red mono. Typing `seven` into `tally` said `invalid
+ * input syntax for type integer: "seven" (22P02)` and nothing about tally
+ * holding a whole number; clearing `label` said Postgres's entire DETAIL line,
+ * every column value of the row included, and nothing about label not being
+ * emptiable. Every READ in this app already carries both halves
+ * (`ui/error-line.tsx`), which is the two lines of LOOK_AND_FEEL this broke.
+ *
+ * These assert the ANATOMY and the DERIVATION, never the sentences: which
+ * half is in which face, that the machine's words survive untouched, that
+ * three different refusals get three different fixes, and that an unrecognised
+ * refusal still gets one. Reworded fixes stay green; a bare refusal does not.
+ */
+
+/** The three refusals of criterion 3, each in the words its producer uses. */
+const REFUSALS = {
+  /** The walk's own measurement, verbatim (`tally`, typed `seven`). */
+  coercion: 'invalid input syntax for type integer: "seven" (22P02)',
+  /** The walk's own measurement, verbatim (`label`, select-all + Delete). */
+  notNull:
+    'null value in column "label" of relation "walk_sandbox" violates ' +
+    "not-null constraint Failing row contains " +
+    "(00000000-0000-4000-8000-000000000001, null, walk probe 0908, 7, f, " +
+    "2026-01-15, 2026-09-09 05:10:25.030369+00). (23502)",
+  /**
+   * The shape FEAT-0011's override half will produce, assembled from the
+   * gate's OWN `raise` — message, then `detail`, then `hint`, then the code,
+   * which is the order `errorMessage` joins them in (`lib/db/result.ts`). The
+   * format strings are the scraper's, in
+   * `supabase/migrations/20260818000000_the_schema_arrives_as_one_snapshot.sql`
+   * (the `KS003` arm on `jsonb_matches_schema`); the pattern is the one
+   * `lib/edit/config.ts` names for `venues.country`.
+   */
+  registry:
+    'observation rejected: value for field "venues.country" violates domain ' +
+    '"venues" schema v3 source=admin domain=venues entity_type=venue ' +
+    'field=country value="usa" reason="usa" does not match "^[A-Z]{2}$" ' +
+    "correct the value, or widen the field's declaration in " +
+    "registry/schemas/venues.schema.json and bump schema.version (KS003)",
+} as const;
+
+/** The two halves of a refused write's line, addressed by their faces. */
+function halves(message: string): { failed: string; fix: string } {
+  const $ = cheerio.load(statusMarkup({ kind: "failed", message }));
+  const read = (face: string) => {
+    const parts = $(`.${face}`);
+    expect(parts.length, `one ${face} half`).toBe(1);
+    return parts.text().replace(/\s+/g, " ").trim();
+  };
+  return { failed: read("type-data"), fix: read("type-body") };
+}
+
+/**
+ * Words this app never says (LOOK_AND_FEEL copy bar 3: "with no apology"), and
+ * the reassurance the Look bans beside them.
+ */
+const APOLOGY = /\b(sorry|oops|unfortunately|whoops|apolog\w*)\b|something went wrong|don't worry|please try/i;
+
+describe("a refused write names what failed and what to do", () => {
+  it("renders both halves at the field, the machine's words in mono and the fix in sans", () => {
+    for (const [name, message] of Object.entries(REFUSALS)) {
+      const { failed, fix } = halves(message);
+      // Half one: the database's own refusal, not paraphrased, not shortened.
+      expect(failed, name).toEqual(message);
+      // Half two: the app's own words — present, and not a slice of the
+      // machine's, which is what "in the app's voice" has to mean if it means
+      // anything.
+      expect(fix, name).toMatch(/\S/);
+      expect(message.includes(fix), `${name}: the fix is the machine's words`).toBe(false);
+    }
+  });
+
+  it("said nothing but the refusal before, which is the bug: the second half is new", () => {
+    // The negative fixture that keeps the check above honest — the failure
+    // line is the ONLY status with two faces on it. `saving…` and `saved` are
+    // one word each and gained nothing.
+    for (const kind of ["saving", "saved"] as const) {
+      const $ = cheerio.load(statusMarkup({ kind }));
+      expect($(".type-body").length, kind).toBe(0);
+      expect($(".type-data").length, kind).toBe(1);
+    }
+  });
+
+  it("derives a different fix for each of the three refusals, none of them the fallback", () => {
+    const fixes = Object.entries(REFUSALS).map(([name, message]) => {
+      const fix = refusalFix(message);
+      expect(fix, `${name} fell through to the general sentence`).not.toEqual(GENERAL_FIX);
+      return fix;
+    });
+    expect(new Set(fixes).size, "three refusals, three fixes").toBe(fixes.length);
+  });
+
+  it("says what to type when the database refused the value's TYPE", () => {
+    // Not the wording — that a coercion refusal's fix speaks about the form
+    // the column stores, which the walk's operator was told nothing about.
+    // One per coercion the sandbox's columns can be asked for, plus a type
+    // nobody listed, which still names that type rather than falling back.
+    const forms: [string, RegExp][] = [
+      ['invalid input syntax for type integer: "seven" (22P02)', /whole number/i],
+      ['invalid input syntax for type boolean: "yes" (22P02)', /true or false/i],
+      ['invalid input syntax for type date: "yesterday" (22P02)', /2026-01-15/],
+      ['invalid input syntax for type numeric: "lots" (22P02)', /number/i],
+      ['invalid input syntax for type uuid: "not-a-uuid" (22P02)', /uuid/i],
+      ['invalid input syntax for type inet: "here" (22P02)', /inet/i],
+    ];
+    for (const [message, form] of forms) {
+      expect(refusalFix(message), message).toMatch(form);
+    }
+  });
+
+  it("names the column a not-null refusal is about, out of the refusal's own words", () => {
+    expect(refusalFix(REFUSALS.notNull)).toContain("label");
+    // A not-null refusal that names no column still gets the same advice,
+    // about the column rather than about nothing.
+    const unnamed = refusalFix("violates not-null constraint");
+    expect(unnamed).toMatch(/\S/);
+    expect(unnamed).not.toEqual(GENERAL_FIX);
+    expect(unnamed).not.toContain("label");
+  });
+
+  it("names the field a registry pattern refused, unqualified as the line is drawn", () => {
+    // The gate spells it `venues.country`; the operator is looking at a line
+    // called `country` (admin-window/FEAT-0011's refusal, spec'd here before
+    // it can be walked).
+    const fix = refusalFix(REFUSALS.registry);
+    expect(fix).toContain("country");
+    expect(fix).not.toContain("venues.country");
+    // And it does not invent an example of the pattern: this repo holds no
+    // copy of any registry pattern by design (`lib/edit/config.ts`), so the
+    // pattern stays in the mono half where the gate put it.
+    expect(fix).not.toContain("^[A-Z]{2}$");
+  });
+
+  it("falls back to a general fix rather than to nothing, for a refusal it has never seen", () => {
+    for (const message of [
+      REFUSAL,
+      "the edit was refused (502)",
+      "TypeError: fetch failed",
+      "",
+    ]) {
+      expect(refusalFix(message), message).toEqual(GENERAL_FIX);
+    }
+    expect(GENERAL_FIX).toMatch(/\S/);
+  });
+
+  it("does not send an operator round a loop when the refusal is not about the value", () => {
+    // The override path's normal answer for the whole of M2 (the route's 503).
+    // "Correct the value and save again" is advice that cannot work here, so
+    // this arm exists to not give it.
+    const fix = refusalFix("settle_review_item is not present in this database");
+    expect(fix).not.toEqual(GENERAL_FIX);
+    expect(fix).not.toMatch(/save again/i);
+  });
+
+  it("speaks in the app's voice in every arm it has: no apology, one sentence, sentence case", () => {
+    const everyFix = [
+      ...Object.values(REFUSALS).map(refusalFix),
+      refusalFix("settle_review_item is not present in this database"),
+      refusalFix("violates not-null constraint"),
+      refusalFix('invalid input syntax for type inet: "here"'),
+      GENERAL_FIX,
+    ];
+    for (const fix of everyFix) {
+      expect(fix, fix).not.toMatch(APOLOGY);
+      // One sentence, finished: nothing after a full stop starts another, and
+      // the fix fits the 320px box the walk measured this line in.
+      expect(fix, `${fix}: ends`).toMatch(/\.$/);
+      expect(fix, `${fix}: one sentence`).not.toMatch(/[.!?]\s+\S/);
+      expect(fix, `${fix}: no shouting`).not.toContain("!");
+    }
+    // The guard proves itself on an input it MUST flag (LESSONS 3): a check
+    // that has only ever seen text it passes passes vacuously.
+    expect("Sorry, something went wrong. Please try again.").toMatch(APOLOGY);
+  });
+
+  it("keeps the refusal one interruption, with both halves inside it", () => {
+    // `role="alert"` is criterion 4: it was on the refusal before and the
+    // second half must not have split it into two regions, or a screen reader
+    // is interrupted with half of what the screen says.
+    for (const message of Object.values(REFUSALS)) {
+      const markup = statusMarkup({ kind: "failed", message });
+      const said = announced(markup, "alert");
+      expect(said, message).toContain(message);
+      expect(said, message).toContain(refusalFix(message));
+      expect(announced(markup, "status"), message).toBeNull();
+    }
+  });
+
+  it("keeps red on the failure line and off the value the field reverted to", () => {
+    // LOOK_AND_FEEL: "Red means broken, never unavailable." The reverted value
+    // is the button's, in primary ink, and the only thing carrying the broken
+    // colour is the line stating the refusal.
+    const $ = cheerio.load(statusMarkup({ kind: "failed", message: REFUSALS.notNull }));
+    const broken = $('[class*="text-broken"]');
+    expect(broken.length, "one broken element, the line itself").toBe(1);
+    expect(broken.attr("role")).toEqual("alert");
+
+    const cell = cheerio.load(
+      render(h(EditableCell, { value: "walk probe 0908", onSave: noop, label: "note of walk_sandbox" })),
+    );
+    const button = (cell("button").attr("class") ?? "").split(/\s+/);
+    expect(button).toContain("text-ink");
+    expect(button).not.toContain("text-broken");
   });
 });
