@@ -586,6 +586,36 @@ in `src/components/ui/`. Tailwind 4 is CSS-first: there is no
   - What the sweep does **not** cover, and the walk still owns: a chip inside a
     link on a state the populated script never renders. The guard is a floor
     under the walk, not a replacement for it.
+- **Text this app did not author never sits inside a sentence this app wrote**
+  (earned by BUG-0123 -> BUG-0127 -> BUG-0136 -> BUG-0137: four bugs on ONE
+  sentence, three of them widenings of one blocklist). Foreign text — a URL's
+  key, a database free-text value — reaches prose one of exactly two ways:
+  - **Through an allowlist**, when the app can say in advance what a legal one
+    looks like. `/claims`' dropped-parameter line spells a key only if it
+    matches `^[A-Za-z0-9_.-]{1,64}$` — the class every facet name satisfies —
+    and every other key is COUNTED without being spelled, through the
+    `withheld` arm that already exists for the parked word
+    (`droppedParams`, `src/lib/claims/filters.ts`).
+  - **In its own box**, when it cannot — a mono value in a table cell, a row, a
+    `<bdi>` — where a bidi control can only reorder that box's own contents.
+    Every DB value this app renders today is in a cell and satisfies this by
+    construction; inlining a database string into an authored sentence does
+    not, and is the shape to refuse. (No survey of that has been done; if one
+    turns up it takes this arm, not a scrub.)
+
+  Why not a wider blocklist. Two questions the line was answering by codepoint
+  class are undecidable that way. "Does this render ink" is font- and
+  layout-dependent, and each patch closes one family: whitespace (BUG-0127),
+  then `Cf`/`Cc`/Hangul fillers (BUG-0136), then `Mn` + U+2800 + the bidi
+  controls (BUG-0137). "Does this READ as the word bar 3 bans" is worse — an
+  ink-less mark inside `in_window`, a Cyrillic homoglyph, a ligature — an open
+  visual-similarity question with no computable boundary. An allowlist
+  collapses both to an exact ASCII compare, which is total and stays true.
+  **The app's one definition of blank (`hasVisibleContent`,
+  `src/lib/verdict/decision.ts`, §4/BUG-0089) is not the tool for this and is
+  never widened for a rendering question**: it answers "did the operator type
+  anything?" for the edit surface, where U+FE0F and U+2800 are CONTENT and a
+  draft of them commits. Two questions, two answers, one owner each.
 
 ## 8. The gauges
 
@@ -1327,6 +1357,8 @@ decomposition brief of every ticket touching that surface.
 
 | 14 | **A composed read's HELPER leg refusing the WHOLE read — rows the URL's own complete read returned, deleted by a leg that renders no row** | 1 | `readReviewQueues` in `src/lib/db/review-items.ts`, on the code BUG-0133 landed: the population leg is an unconditional `listReviewItems({})` — the whole table, which no URL facet narrows — and its refusal is returned as the whole read's refusal. Past `ROW_CAP` every faceted `/queues` URL renders the error state with zero rows, including the `?queue=`/`?status=` URLs PostgREST narrowed by a real column and answered in FULL, and the error line then tells the operator to narrow the filter they just narrowed. Measured offline 2026-09-09 (BUG-0135): leg 1 `{2 rows, count 2}`, leg 2 `{10 rows, count 1500}` → `kind:"error"`, the two rows gone; both blocks `data-state="error"` on `/queues?queue=data_conflict` | **Count 1, note only — NOT promoted.** The rule this violates already exists in three places: §4.1 ("a page composing several reads must be able to say WHICH read refused"), §4.3's window-line rule, and the landed practice on `/claims` (`src/app/claims/page.tsx` ~723-728 — the source registry refuses, every claim still renders, the refusal is reported on its own naming its own object) and on this very page in prose (`src/app/queues/page.tsx` ~565-567). What was missing is not a rule but its application to a leg that decides WORDS rather than rows — the shape a builder does not recognise as a composed read at all. Fixed at the instance by the BUG-0135 ruling (architect, 2026-09-09), both ways: the leg becomes a per-shape COUNT read (`head: true`) so a table of any size can no longer refuse it, AND its refusal is carried per kind as its own `DbResult`, reported as its own sub-surface beside the rows, with the scope decision falling back to BUG-0131's structural rule. **If a second composed read is found refusing whole for a leg it does not render, promote to §4.3:** a leg that renders no row of its own may not decide the surface's state, and its refusal is reported beside the rows or not at all. |
 
+| 15 | **A blocklist chased one codepoint class at a time — foreign text inlined into an app-authored sentence, then "made safe" by removing the family that last broke it** | 3 | One sentence, `/claims`' dropped-parameter line, patched three times: BUG-0127 (`trim()`, so `?=x` and `?%20%20=1` stopped naming nothing), BUG-0136 (`trim()` replaced by the app's one definition of blank, closing `Cf`/`Cc`/the Hangul fillers), BUG-0137 (the same 0px hole through `\p{Mn}`, the parked word `in_win<U+034F>dow` rendered legibly past bar 3, and an unterminated U+202E in a key reversing the rest of the app's own sentence in the copied-out text) | **PROMOTED at 3, 2026-09-09** (architect, this ruling): §7 gains the rule — foreign text reaches prose through an allowlist or inside its own bidi-isolated box, and never by scrubbing. BUG-0137's criteria were amended to the allowlist shape (`^[A-Za-z0-9_.-]{1,64}$`, counted-not-spelled otherwise) and its touch scope narrowed to drop `src/lib/verdict/decision.ts`, because the third patch's tempting move — widening `INK_LESS` to `\p{Mn}` — would have changed what the EDIT surface commits as a draft (`tests/offline/ui/editable-cell.test.ts` pins U+FE0F and U+2800 as content). That is the class's real cost: a shared predicate answering two different questions gets widened by whichever question broke last. Cited in the decomposition brief of every ticket that renders text the app did not author. The measurement the ruling was made on — the allowlist replayed against every fixture BUG-0123/0127/0136 pinned — is `agenticflow/tracker/evidence/BUG-0137/rule-dryrun.mjs`; it is what showed that QA's two strict pins were jointly satisfiable only by a fourth blocklist, so criterion 5 widens one of them by one field rather than leaving the builder to discover it. |
+
 | 3 (re-count) | A list read with no `.range()`, no `.limit()` and no `.order()` | **0 new** | — | **The rule held.** M1 structure walk, 2026-09-03: every `.select(` in `src/lib/db/**` was traced. Fourteen chains a crude scan flagged are all either `.maybeSingle()` by primary key or by-id chunks bounded with `.limit(ids.length)`; every list read goes through `readComplete` / `readRows` with a total order and a bound. Count stays 1 (the original, fixed under TASK-0026). |
 
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
@@ -1336,6 +1368,36 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-09, BUG-0137 ruling (architect).** The Claims dropped-parameter line
+  is fixed by a RULE, not by a fourth blocklist. **§7 gains it** and **Common
+  violations gains row 15, promoted at 3**: text this app did not author never
+  sits inside a sentence this app wrote — it comes through an allowlist, or it
+  renders in its own box. The line now spells a key only from
+  `^[A-Za-z0-9_.-]{1,64}$` (the class every facet name satisfies) and counts
+  every other key through the `withheld` arm that already exists for the parked
+  word, so the U+FE0F/U+034F/U+0301 0px name, the `in_win<U+034F>dow` bar-3 leak
+  and the U+202E sentence reversal close together instead of one family per
+  bug. The alternative — widening `INK_LESS` in `src/lib/verdict/decision.ts` to
+  `\p{Mn}` — was rejected and the file removed from BUG-0137's touch scope: it
+  is the app's one definition of blank for the EDIT surface ("did the operator
+  type anything?"), where U+FE0F and U+2800 are content and a draft of them
+  commits. One predicate, two questions, is how a shared definition gets widened
+  by whichever question broke last. Ruled and measured against every fixture the
+  three predecessor bugs pinned
+  (`agenticflow/tracker/evidence/BUG-0137/rule-dryrun.mjs`, 2026-09-09): 42
+  cases, every BUG-0123/0127 pin unchanged, three BUG-0136 assertions moving
+  from named to counted (`記録`, U+2800, `record_id<U+200B>` — all now
+  counted-not-spelled, with `.`/`-`/`_`/`0`/`record_id`/`bucket`/`in_windows`
+  still named verbatim so the test keeps its non-vacuity), and QA's strict pin A
+  widening by one field, because A (`{named: [], withheld: 0}` for a lone mark)
+  and B (`{named: [], withheld: 1}` for the parked word plus a mark) are jointly
+  satisfiable ONLY by a predicate that calls U+FE0F blank and U+2800 not — the
+  fourth blocklist. Also ruled: **BUG-0139 dispatches before BUG-0137** (set to
+  P1) — BUG-0138 is blocked on 0139 and inherits its read shape, so the perf
+  chain idles behind anything dispatched ahead of it, while BUG-0137 blocks
+  nothing. No `depends_on` edge between them: they share no file and a false
+  edge outlives the cap of 1 that made the order matter.
 
 - **2026-09-09, BUG-0135 ruling (architect).** No section of the contract changed; **Common violations gains row 14** — a composed read's helper leg refusing the whole read — at count 1, note only, because the rule it violates is already written three times over (§4.1, §4.3, and the landed `/claims` practice) and a fourth spelling would not have caught it. The ruling on `readReviewQueues` is a combination and both halves are required: **the surface takes shape B** (the population leg's refusal is reported as its own per-kind sub-surface inside the block, below the rows, on its own `data-surface`, exactly as `/claims` reports a source registry that would not read) and **the scope decision takes shape A** (population carried per kind as a `DbResult<number>`; on a refusal the block falls back to BUG-0131's structural `isNarrowed` and the sub-surface is what says so — a silent fallback would be a state derived from a read that did not happen, the class §4.3 exists to forbid). **And the leg becomes a COUNT read** (`readCount`, `head: true, count: "exact"`, one per shape, summed over `shapesOfKind`), so `ROW_CAP` cannot reach it at all: a figure no row depends on is never bought with a thousand rows, and the fallback above becomes the rare path rather than the permanent state of the page the day `review_items` outgrows the cap. The kind mapping keeps its ONE owner — the column conditions each `Shape` is defined by are declared in the pure `src/lib/review/shapes.ts` beside `shapeOf` and the `lib/db` module builds its queries FROM that declaration, because a queue value or a null-check spelled in `lib/db` would be a second definition of kindhood (§6, "no column carries it"). BUG-0133's rule is kept verbatim wherever the population IS readable, and its sibling pin — a truncated FILTERED leg still refuses whole — stays green. BUG-0135 set to M2.
 
