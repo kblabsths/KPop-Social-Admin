@@ -1918,6 +1918,44 @@ expect(refusalFix(quotesACode)).toEqual(refusalFix(REFUSALS.coercion));
     }
   });
 
+  /*
+   * PIN — admin-window/BUG-0103, second cut. Measured live 2026-09-09 on a
+   * production build of the landed tree (127.0.0.1:8840, staging
+   * ubfjjqlvnpnoborczbdb, walk_sandbox row …0001, bundled Chromium 1440x900),
+   * through the cell.
+   *
+   * The structural guard is the SQLSTATE the refusal states LAST — but the
+   * refusal does not always state it. `errorMessage` appends the code "only
+   * when the account does not already spell it" (`lib/db/result.ts`), so a
+   * refusal whose own text happens to contain `23502` arrives WITHOUT the
+   * trailing code, the guard falls through to prose, and a not-null refusal's
+   * prose is a whole failing-row dump whose values Postgres writes UNQUOTED —
+   * where `QUOTED_RUN` cannot strike them out. A value in any other column of
+   * the row then chooses the sentence again, which is the defect this ticket
+   * is about.
+   */
+  it.fails("picks the arm from the database's words when the refusal states no code (admin-window/BUG-0103)", () => {
+    // One shape, one class, one column emptied: a genuine 23502 about `label`,
+    // varying only in a value the operator typed into ANOTHER cell — and in
+    // every variant the row dump spells `23502`, so none of them carries the
+    // trailing code. Relational: same class, same fix.
+    const dumped = (note: string) =>
+      'null value in column "label" of relation "walk_sandbox" violates ' +
+      "not-null constraint Failing row contains " +
+      `(00000000-0000-4000-8000-000000000001, null, ${note}, 7, f, ` +
+      "2026-01-15, 2026-09-09 07:14:27.7384+00).";
+    const benign = refusalFix(dumped("a note 23502"));
+    expect(benign, "the codeless not-null still reaches its own arm").not.toEqual(
+      GENERAL_FIX,
+    );
+    for (const note of [
+      "is not present in this database 23502",
+      "23502 is not present in this database",
+    ]) {
+      expect(refusalFix(dumped(note)), note).toEqual(benign);
+    }
+  });
+
   it("keeps red on the failure line and off the value the field reverted to", () => {
     // LOOK_AND_FEEL: "Red means broken, never unavailable." The reverted value
     // is the button's, in primary ink, and the only thing carrying the broken
