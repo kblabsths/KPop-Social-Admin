@@ -62,6 +62,14 @@ const RUNS_FIGURE = "Runs in this window";
 /** The runs half's own hook — the surface every case below grades. */
 const RUNS = '[data-surface="runs"]';
 
+/**
+ * A well-formed run id no `runs` row can carry — the nil-prefixed uuid the
+ * adapters never mint (their keys are uuid v7, time-ordered from the instant
+ * they woke). The test that uses it still ASKS the database rather than
+ * trusting this comment (campaign admin-window/BUG-0142).
+ */
+const ABSENT_RUN_ID = "00000000-0000-4000-8000-0000000000ff";
+
 interface StagingRun {
   run_id: string;
   source: string;
@@ -361,5 +369,111 @@ describe("the ?source= facet against staging", () => {
     );
     if (made === null) return;
     expect(cyclesOf(made.faceted)).toEqual(cyclesOf(made.plain));
+  });
+});
+
+/**
+ * The Dashboard's run lines land here — `/cycles?run=<run_id>` — and until
+ * campaign admin-window/BUG-0142 the parameter was consumed in silence
+ * against this very database (walked 2026-09-09 on staging: the id appeared
+ * 0 times in the rendered text and `data-row-marked` occurred 0 times).
+ *
+ * The ids below are staging's OWN, taken from what the page rendered and
+ * confirmed by this file's own query — never invented, and never asked of the
+ * module the page called.
+ */
+describe("the ?run= facet against staging", () => {
+  const RUNS_TABLE = 'table[aria-label="Adapter runs"]';
+
+  /** Every marked row on the page, as the id of the run it holds. */
+  function markedRuns(markup: string): string[] {
+    const $ = cheerio.load(markup);
+    return $(`${RUNS_TABLE} tbody tr[data-row-marked]`)
+      .toArray()
+      .map((element) => $(element).find("[data-run]").attr("data-run") ?? "");
+  }
+
+  it("marks the run the link named, and nothing else on the page", async () => {
+    const plain = await cyclesMarkup();
+    if (!(await gradeState(plain))) return;
+
+    // A run staging really holds, taken from what rendered and confirmed by
+    // this test's own read of the same table.
+    const runId = renderedRuns(plain)[0].runId;
+    const held = await stagingRuns(RUN_WINDOW);
+    expect(held.map((row) => row.run_id)).toContain(runId);
+
+    const markup = await cyclesMarkup({ run: runId });
+    if (!(await gradeState(markup))) return;
+    const $ = cheerio.load(markup);
+
+    // The page names the run it was asked for, and links the id to the row.
+    expect($('[data-run-found="true"]').attr("data-run-asked")).toBe(runId);
+    const anchor = $(`[data-run="${runId}"]`).attr("id");
+    expect(anchor).toBeTruthy();
+    expect($('[data-run-found="true"] a').attr("href")).toBe(`#${anchor}`);
+
+    // Exactly one row is marked, in the runs table, and it is that run's.
+    expect(markedRuns(markup)).toEqual([runId]);
+    expect($("tr[data-row-marked]").length).toBe(1);
+    expect($("[data-run][aria-current]").length).toBe(1);
+
+    // The facet narrows nothing: the same window, in the same order. Compared
+    // under `whileStill`, because an adapter may file a run between the two
+    // renders and that is not the facet dropping one.
+    const { made } = await whileStill(
+      async () => renderedRuns(await cyclesMarkup()).map((row) => row.runId),
+      async () => renderedRuns(await cyclesMarkup({ run: runId })).map((row) => row.runId),
+    );
+    expect(made).toContain(runId);
+  });
+
+  it("says a well-formed run id this database holds no row for is not here", async () => {
+    const markup = await cyclesMarkup({ run: ABSENT_RUN_ID });
+    // This test's own read: no run carries that id.
+    if (!(await objectIsAbsent(T.runs))) {
+      const { data, error } = await independentClient()
+        .from(T.runs)
+        .select("run_id")
+        .eq("run_id", ABSENT_RUN_ID);
+      if (error) throw new Error(`the runs query failed: ${JSON.stringify(error)}`);
+      expect(data ?? []).toHaveLength(0);
+    }
+
+    const $ = cheerio.load(markup);
+    // Said once, naming the id, whatever state the window itself is in.
+    expect($("[data-run-asked]").length).toBe(1);
+    expect($("[data-run-asked]").attr("data-run-asked")).toBe(ABSENT_RUN_ID);
+    expect(markup).toContain(ABSENT_RUN_ID);
+    expect($("tr[data-row-marked]").length).toBe(0);
+    // With a window read, the verdict is the earned one and not the third state.
+    if (cheerio.load(markup)(RUNS).attr("data-state") === "ok") {
+      expect($('[data-run-found="false"]').length).toBe(1);
+    }
+  });
+
+  it("names a ?run= that is not a run id as a parameter it did not apply", async () => {
+    const nonsense = "not-a-uuid";
+    const { made } = await whileStill(
+      async () => renderedRuns(await cyclesMarkup()).map((row) => row.runId),
+      async () => cyclesMarkup({ run: nonsense }),
+    );
+    const $ = cheerio.load(made);
+    // The shared dropped-parameter sentence names the KEY and never the value.
+    expect(
+      $("[data-dropped-param]")
+        .toArray()
+        .map((element) => $(element).attr("data-dropped-param")),
+    ).toEqual(["run"]);
+    expect(made).not.toContain(nonsense);
+    // No verdict about a run, no mark, and the window is what it was.
+    expect($("[data-run-asked]").length).toBe(0);
+    expect($("tr[data-row-marked]").length).toBe(0);
+    if (await gradeState(made)) {
+      const held = await stagingRuns(RUN_WINDOW);
+      expect(renderedRuns(made).map((row) => row.runId)).toEqual(
+        held.map((row) => row.run_id),
+      );
+    }
   });
 });
