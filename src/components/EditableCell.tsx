@@ -4,6 +4,7 @@ import { useEffect, useId, useReducer, useRef, useState } from "react";
 import { orDash } from "@/lib/format";
 import { hasVisibleContent } from "@/lib/verdict/decision";
 import { cx } from "@/components/ui/cx";
+import { refusalFix } from "@/components/edit-refusal";
 import { type HintSide, cellLayout } from "@/components/edit-cell-layout";
 
 /**
@@ -303,6 +304,15 @@ function focusIsAdrift(button: HTMLButtonElement | null): boolean {
  * the button itself — the Look's button rule says a disabled control's label
  * does not change, so the statement of work stands beside the field.
  *
+ * **A refusal is TWO halves, like every read error in this app** (campaign
+ * admin-window/BUG-0098): the database's own words verbatim in mono, and one
+ * sentence in the app's voice naming what to do — `error-line.tsx`'s `failed`
+ * and `retry`, at the field. The second half is DERIVED from the first
+ * (`refusalFix`, `components/edit-refusal.ts`) and never written here, so a
+ * refusal this cell has never rendered still carries a fix and no call site
+ * can ship one without it. Both halves are inside the one `role="alert"`, so
+ * what a screen reader is interrupted with is what the screen says.
+ *
  * **It stands beside the value without taking space beside it** (`STATUS_BOX`,
  * campaign admin-window/BUG-0086): it is drawn where it always appeared, one
  * step to the right of the resting value, but out of the row's flow, because
@@ -320,20 +330,31 @@ export function EditStatus({ status }: { status: Status }) {
   switch (status.kind) {
     case "saving":
       return (
-        <span className={cx(STATUS_BOX, "text-ink-secondary")} role="status">
+        <span className={cx(STATUS_BOX, "type-data text-ink-secondary")} role="status">
           saving…
         </span>
       );
     case "saved":
       return (
-        <span className={cx(STATUS_BOX, "text-healthy")} role="status">
+        <span className={cx(STATUS_BOX, "type-data text-healthy")} role="status">
           saved
         </span>
       );
     case "failed":
       return (
-        <span className={cx(STATUS_BOX, "text-broken")} role="alert">
-          {status.message}
+        // Both halves at the field, the anatomy `ui/error-line.tsx` already
+        // ships for every READ (campaign admin-window/BUG-0098): the
+        // database's own refusal verbatim in mono, then one sentence in the
+        // app's voice naming what to do. The two faces are on the two spans
+        // and never stacked on one element — `type-data` and `type-body` are
+        // utilities of equal specificity, so which one won would be decided by
+        // the order Tailwind emitted them in (`app/globals.css`).
+        <span
+          className={cx(STATUS_BOX, "flex flex-col gap-0.5 text-broken")}
+          role="alert"
+        >
+          <span className="type-data">{status.message}</span>
+          <span className="type-body">{refusalFix(status.message)}</span>
         </span>
       );
     default:
@@ -419,9 +440,16 @@ const FIELD_CLASS =
  * `bg-surface` because it now hangs over whatever is beside the value, and
  * `pointer-events-none` because that thing may be another editable value and
  * this line is not a control.
+ *
+ * It carries no TYPE utility, and that is deliberate since the refusal grew
+ * its second half (admin-window/BUG-0098): `type-data` and `type-body` are
+ * `@utility` rules of equal specificity (`app/globals.css`), so an element
+ * carrying the box's face AND a child's would resolve by the order Tailwind
+ * emitted the two, not by the order they were written. Each arm of
+ * `EditStatus` puts the face on the element whose words it describes.
  */
 const STATUS_BOX =
-  "type-data pointer-events-none absolute top-0 left-full z-10 ml-2 w-max max-w-xs rounded-control bg-surface px-1 py-0.5";
+  "pointer-events-none absolute top-0 left-full z-10 ml-2 w-max max-w-xs rounded-control bg-surface px-1 py-0.5";
 
 /**
  * The field opens with its value SELECTED, so a straight retype replaces it —
