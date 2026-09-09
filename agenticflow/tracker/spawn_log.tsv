@@ -12399,3 +12399,7 @@
 2026-09-09T03:07:57Z	builder	TASK-0053	15841	755	147711
 # STRANDED	2026-09-09T03:08:14Z	agent	7 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md, agenticflow/visions/admin-window/tracker/receipts/BUG-0083.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0083.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0084.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0049.md
 2026-09-09T03:08:14Z	agent	-	-	-	-
+# STRANDED	2026-09-09T03:08:21Z	qa-adversary	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T03:08:21Z	qa-adversary	BUG-0083	11823	722	125136
+# STRANDED	2026-09-09T03:08:28Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/DIGEST.md
+2026-09-09T03:08:28Z	agent	-	-	-	-

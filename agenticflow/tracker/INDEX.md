@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T03:08:04Z — do not edit)
+# Tracker index (regenerated 2026-09-09T03:08:31Z — do not edit)
 
 ## open
 - FEAT-0009 [P1][feat][M2] The two schema handoff artifacts, authored complete for Ben to install  (scope:agenticflow/tracker/for-human,agenticflow/docs/vision/SPEC.md)
