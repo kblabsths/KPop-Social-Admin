@@ -1,0 +1,26 @@
+{
+ "id": "BUG-0090",
+ "created": "2026-09-09T04:53:18Z",
+ "green": true,
+ "git_head": "86ef837dd81c3c46f9d7703c8b080973d8ce4e77",
+ "scope": [
+  "src/lib/db/records.ts",
+  "src/lib/edit/config.ts",
+  "tests/offline/edit/records.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 7,
+ "tree_hash": "1297844f75de62744149105e2c17363adf90ad70dd1650e3deff76231841e295",
+ "commands": [
+  {
+   "cmd": "bash -c \"! grep -q \\\"it.fails(\\\\\\\"carries the venue fact\\\" tests/offline/edit/records.test.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/edit/records.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-27163\n\n \u2713 |offline| tests/offline/edit/records.test.ts (33 tests) 15ms\n\n Test Files  1 passed (1)\n      Tests  33 passed (33)\n   Start at  21:53:17\n   Duration  921ms (transform 139ms, setup 0ms, collect 200ms, tests 15ms, environment 0ms, prepare 313ms)\n\n(node:27178) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
