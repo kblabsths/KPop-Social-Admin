@@ -21883,3 +21883,6 @@
 2026-09-09T22:14:12Z	agent	-	-	-	-
 # STRANDED	2026-09-09T22:14:12Z	builder	4 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-DEBT-0011-r2/, agenticflow/visions/admin-window/tracker/tickets/BUG-0149.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0151.md
 2026-09-09T22:14:12Z	builder	BUG-0149	20331	534	86727
+# STRANDED	2026-09-09T22:14:27Z	agent	2 uncommitted in primary checkout: .env.example, .worktrees/_receipt-qa-DEBT-0011-r2/
+2026-09-09T22:14:27Z	agent	-	-	-	-
+2026-09-09T22:14:44Z	builder	BUG-0151	spawned
