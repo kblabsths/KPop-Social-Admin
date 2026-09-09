@@ -15,23 +15,31 @@ import { codeLines, repoRoot, sourceFiles } from "../source-tree";
  *     to the shape and is derived in code");
  *   - no severity score, rank or formula is computed anywhere (the ranking
  *     formula is parked — resolver.md §11, VISION non-goal);
- *   - no WRITE PATH toward the M2 close is built: no server action anywhere
- *     under `src/`, and no route or page whose path is named settle/verdict.
- *     Narrowed from "no settle or verdict code" on 2026-09-02
- *     (admin-window/BUG-0020) — see that case's own comment.
+ *   - the M2 close settles in exactly ONE place: one call site, reached from
+ *     routes that delegate to it, and no server action anywhere under `src/`.
+ *     INVERTED on 2026-09-08 (admin-window/TASK-0048) from "nothing is
+ *     scaffolded toward the M2 close" — M2 builds the close, so the question
+ *     stopped being whether a settlement path exists and became whether there
+ *     is more than one. Narrowed once before, from "no settle or verdict code"
+ *     on 2026-09-02 (admin-window/BUG-0020) — see that case's own comment.
  *
  * The mutation surface itself is NOT owned here: `tests/offline/edit/config.test.ts`,
- * "the write surface of the whole repo", owns it — no `.insert`/`.upsert`/`.rpc`
- * anywhere under `src/`, `.update(` only in `src/lib/db/records.ts`, and
- * `settle_review_item` nowhere.
- * Nothing from that block is duplicated here (ARCHITECTURE.md §10, one owner
- * per structural guard).
+ * "the write surface of the whole repo", owns WHICH file may call a procedure
+ * and spell its name, `.update(` only in `src/lib/db/records.ts`, and no
+ * `.insert`/`.upsert` anywhere. This file owns the M2 close's own shape — how
+ * many call sites there are, and that a route named for the close reaches the
+ * database through the seam rather than around it (ARCHITECTURE.md §10, one
+ * owner per structural guard).
  *
  * Two later tickets code against `shapes.ts` without reading it, so a second
  * copy of this derivation appearing anywhere is the defect these guard.
  */
 
 const SHAPES_MODULE = "src/lib/review/shapes.ts";
+/** The one call site of `settle_review_item` (admin-window/TASK-0048). */
+const VERDICT_MODULE = "src/lib/db/verdict.ts";
+/** Where every database object name is spelled — table, view or function. */
+const TABLES_MODULE = "src/lib/db/tables.ts";
 
 /*
  * The walk and the comment-stripping read are `tests/offline/source-tree.ts`
@@ -88,7 +96,42 @@ const USE_SERVER = /["']use server["']/;
 /** A route or page whose PATH is named for the close — how one would arrive. */
 const SETTLE_PATH = /^src\/app\/.*(settle|verdict)/i;
 
-describe("nothing is scaffolded toward the M2 close", () => {
+/** The registry name, and any code line that mentions it. */
+const MENTIONS_VERDICTS = /verdicts/;
+
+/** A call to a database procedure, wherever it is written. */
+const PROCEDURE_CALL = /\.rpc\(/;
+
+/** A call that talks to the database directly, of any kind the app can make. */
+const DATABASE_CALL = /\.rpc\(|\.from\(|\.update\(|\.insert\(|\.upsert\(/;
+
+describe("the M2 close settles in exactly one place", () => {
+  it("settles through exactly one call site, and it is the seam", () => {
+    // INVERTED 2026-09-08 (admin-window/TASK-0048). Through M1 the M2-close
+    // pin asserted that NO settlement path existed; M2 builds one, so the
+    // property worth pinning is that there is exactly one of it. Every action
+    // of spec §7 becomes one typed decision and one call to
+    // `settle_review_item` (ARCHITECTURE.md §9.2) — a surface that assembles
+    // its own call is the second write path this campaign forbids, and the
+    // list below is what makes "one entry point" a fact of the repo rather
+    // than of the ticket that wrote the first one.
+    expect(filesWhereCodeMatches(PROCEDURE_CALL)).toEqual([VERDICT_MODULE]);
+  });
+
+  it("keeps a route named for the close out of the database", () => {
+    // The close's route may now EXIST — that is what M2 builds — so this is no
+    // longer an emptiness assertion. What it must not do is talk to the
+    // database itself: it takes the decision, hands it to the seam, and renders
+    // what comes back. A settle route holding its own `.from(` or `.rpc(` is a
+    // second path with the seam's name on the door.
+    const closeNamed = sourceFiles().filter((file) => SETTLE_PATH.test(file));
+    expect(filesWhereCodeMatches(DATABASE_CALL).filter((file) => SETTLE_PATH.test(file))).toEqual(
+      [],
+    );
+    // Not a claim that the route exists yet: M2 adds it under its own ticket.
+    expect(closeNamed.filter((file) => !file.startsWith("src/app/"))).toEqual([]);
+  });
+
   it("builds no write path toward the M2 close", () => {
     // Narrowed 2026-09-02 (architect ruling, admin-window/BUG-0020). The old
     // predicate banned any declaration NAMED settle*/verdict*, which is the
@@ -100,32 +143,53 @@ describe("nothing is scaffolded toward the M2 close", () => {
     //
     // The mutation surface itself is pinned once, in
     // tests/offline/edit/config.test.ts ("the write surface of the whole repo"):
-    // no .insert/.upsert/.rpc anywhere, .update only in src/lib/db/records.ts,
-    // and settle_review_item nowhere. These are the two shapes it does not
-    // cover — a server action, and a route or page named for the close.
+    // no .insert/.upsert anywhere, .update only in src/lib/db/records.ts, and a
+    // procedure call only in the seam. This is the shape it does not cover: a
+    // SERVER ACTION, which is a mutation entry point with no route and no
+    // call-site spelling of its own.
+    //
+    // Still an emptiness assertion after the M2 inversion, and deliberately so:
+    // the close arrives as a route that calls the seam (ARCHITECTURE.md §5, one
+    // async boundary per route; the edit surface's PATCH route is the shipped
+    // precedent). A ticket that genuinely needs a server action changes this
+    // rule with its reason, rather than finding it already relaxed.
     expect(filesWhereCodeMatches(USE_SERVER)).toEqual([]);
-    expect(sourceFiles().filter((file) => SETTLE_PATH.test(file))).toEqual([]);
   });
 
-  it("mentions verdicts under src only as registry entries in tables.ts", () => {
-    // admin-window/TASK-0002 named `verdicts` in `T` on purpose: it does not
-    // exist until M2's handoff migration, so reading it classifies as
-    // not_provisioned against today's database (ARCHITECTURE.md §4.1). Those
-    // entries are the whole footprint; this pins them so a verdict code path
-    // cannot arrive unnoticed before M2 designs it.
-    //
-    // The list is exactly as tight as it was when it held one line: still an
-    // exact match, still `tables.ts` alone. The second line arrived with
-    // admin-window/BUG-0077, which made the registry say table-or-view for
-    // every name it spells — so `verdicts` must be classified there or the map
-    // does not compile. It is the same kind of entry as the first, a NAME and
-    // its metadata; neither is a read, a write, a route or a component, which
-    // is what this guard is about.
-    expect(filesWhereCodeMatches(/verdicts/)).toEqual(["src/lib/db/tables.ts"]);
-    const entries = codeLines("src/lib/db/tables.ts").filter((line) =>
-      /verdicts/.test(line),
+  it("reads verdicts from the registry and the seam, and nowhere else", () => {
+    // admin-window/TASK-0002 named `verdicts` in `T` before it existed, so a
+    // read of it classifies as not_provisioned against today's database
+    // (ARCHITECTURE.md §4.1) — and it still does not exist on staging or in
+    // production. INVERTED 2026-09-08 (admin-window/TASK-0048): M2 adds the
+    // one READ of it, `readSettlementReadiness`, which is how every surface
+    // learns whether it may offer a settlement at all (DECISIONS 2026-09-08 —
+    // PostgREST cannot introspect a function without calling it, so the
+    // table's presence is the question that is safe to ask). Two files now,
+    // and the list is exactly as tight as when it held one: a page asking the
+    // question for itself is the hand-copied probe this forbids (common
+    // violation 9).
+    expect(filesWhereCodeMatches(MENTIONS_VERDICTS)).toEqual([
+      TABLES_MODULE,
+      VERDICT_MODULE,
+    ]);
+
+    // The registry's entries are a NAME and its metadata — not a read, a
+    // write, a route or a component — and they stay pinned line by line.
+    const entries = codeLines(TABLES_MODULE).filter((line) =>
+      MENTIONS_VERDICTS.test(line),
     );
     expect(entries).toEqual(['  verdicts: "verdicts",', '  [T.verdicts]: "table",']);
+
+    // The seam's mentions are the read itself, through `T` — never the
+    // literal, which `tests/offline/db/layering.test.ts` pins to `tables.ts`
+    // alone.
+    const seamLines = codeLines(VERDICT_MODULE).filter((line) =>
+      MENTIONS_VERDICTS.test(line),
+    );
+    expect(seamLines.length).toBeGreaterThan(0);
+    for (const line of seamLines) {
+      expect(line, VERDICT_MODULE).toContain("T.verdicts");
+    }
   });
 });
 
@@ -272,5 +336,107 @@ describe("the fixture rows and the product's row type agree", () => {
         ].sort(),
       );
     }
+  });
+});
+
+/**
+ * The INVERTED rules, guarding themselves (campaign admin-window/TASK-0048,
+ * the same mirror-tree technique the M2-close guard above uses).
+ *
+ * An inversion is where a guard most easily becomes vacuous: "exactly one call
+ * site" is satisfied by a scanner that can see the one file it was told about
+ * and nothing else, and "the close route stays out of the database" is
+ * satisfied by a scanner that sees no routes at all. So both are driven over a
+ * mirror tree that carries the sanctioned shape and the forbidden one side by
+ * side, and each rule is asserted to tell them apart.
+ */
+describe("the one-call-site and close-route rules, guarding themselves", () => {
+  const probeBase = path.join(repoRoot, "tests", ".probes", `m2-one-call-${process.pid}`);
+
+  /** The sanctioned call, in the seam — the input the rule must NOT report as an offender. */
+  const SEAM_PROBE = "src/lib/db/verdict.ts";
+  /** A second call, in a page — the input it MUST flag. */
+  const PAGE_PROBE = "src/app/queues/[reviewItemId]/page.tsx";
+  /** A close-named route that delegates to the seam: named for the close, and clean. */
+  const DELEGATING_ROUTE_PROBE = "src/app/api/review-items/[id]/settle/route.ts";
+  /** A close-named route that reads the database itself — the second path. */
+  const DIRECT_ROUTE_PROBE = "src/app/api/verdict/route.ts";
+
+  const SOURCES: ReadonlyArray<readonly [string, string]> = [
+    [
+      SEAM_PROBE,
+      "export function settle(db: Db, decision: unknown) {\n" +
+        '  return db.rpc("settle_review_item", { p_decision: decision });\n' +
+        "}\n",
+    ],
+    [
+      PAGE_PROBE,
+      "export default async function Page({ db }: { db: Db }) {\n" +
+        '  const { data } = await db.rpc("settle_review_item", { p_decision: {} });\n' +
+        "  return data;\n" +
+        "}\n",
+    ],
+    [
+      DELEGATING_ROUTE_PROBE,
+      'import { settleReviewItem } from "@/lib/db/verdict";\n\n' +
+        "export async function POST(request: Request) {\n" +
+        "  const result = await settleReviewItem(client(), await request.json());\n" +
+        "  return Response.json(result);\n" +
+        "}\n",
+    ],
+    [
+      DIRECT_ROUTE_PROBE,
+      "export async function POST(request: Request) {\n" +
+        '  const { data } = await db.from("review_items").update({ status: "settled" });\n' +
+        "  return Response.json(data);\n" +
+        "}\n",
+    ],
+  ];
+
+  it("tells the one sanctioned call from a second one, and a delegating route from a direct one", () => {
+    let walked: string[] = [];
+    let callers: string[] = [];
+    let closeNamed: string[] = [];
+    let closeNamedTouchingTheDatabase: string[] = [];
+    try {
+      for (const [file, source] of SOURCES) {
+        const full = path.join(probeBase, file);
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, source, "utf8");
+      }
+      walked = sourceFiles(probeBase);
+      callers = filesWhereCodeMatches(PROCEDURE_CALL, probeBase);
+      closeNamed = walked.filter((file) => SETTLE_PATH.test(file));
+      closeNamedTouchingTheDatabase = filesWhereCodeMatches(DATABASE_CALL, probeBase).filter(
+        (file) => SETTLE_PATH.test(file),
+      );
+    } finally {
+      fs.rmSync(probeBase, { force: true, recursive: true });
+    }
+
+    // The mirror is the whole world the scan saw.
+    expect(walked).toEqual(SOURCES.map(([file]) => file).sort());
+
+    // Rule 1's two fixtures. It MUST flag the second call: on this tree the
+    // list is two files, so the real assertion (`toEqual([VERDICT_MODULE])`)
+    // fails, naming the page. It must NOT flag the seam's own call — that call
+    // is the thing the rule exists to permit exactly once.
+    expect(callers).toEqual([PAGE_PROBE, SEAM_PROBE].sort());
+    expect(callers.filter((file) => file !== SEAM_PROBE)).toEqual([PAGE_PROBE]);
+
+    // Rule 2's two fixtures. Both routes are named for the close, so the path
+    // pattern alone cannot separate them — which is the whole reason the rule
+    // asks what they CALL rather than what they are called.
+    expect(closeNamed).toEqual([DIRECT_ROUTE_PROBE, DELEGATING_ROUTE_PROBE].sort());
+    expect(closeNamedTouchingTheDatabase).toEqual([DIRECT_ROUTE_PROBE]);
+    expect(closeNamedTouchingTheDatabase).not.toContain(DELEGATING_ROUTE_PROBE);
+
+    // …and the seam, which DOES touch the database, is not a close-named route,
+    // so rule 2 says nothing about it. The two rules are not the same rule.
+    expect(closeNamedTouchingTheDatabase).not.toContain(SEAM_PROBE);
+  });
+
+  it("leaves no probe behind for another suite to walk into", () => {
+    expect(fs.existsSync(probeBase)).toBe(false);
   });
 });
