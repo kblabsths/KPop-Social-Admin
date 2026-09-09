@@ -1387,6 +1387,24 @@ function pickerShell() {
       return shell;
     },
     /**
+     * A pointer press on a part of the PAGE that focuses nothing — the table's
+     * whitespace, a heading, the gap between two rows of some other record.
+     * Two facts in one gesture, in the browser's own order: `armRetire`'s
+     * `pointerdown` is a capture-phase document listener, so it reaches the
+     * refusal's arm during the dispatch (a press OUTSIDE the box, which
+     * retires the red line — admin-window/BUG-0119), and the press's default
+     * action then blurs whatever held focus to `document.body`. React's
+     * passive effect for `[open, status]` runs after both, so the focus rule
+     * is asked with focus already on nothing. `pressAway` is the same gesture
+     * landing on something that CAN hold focus.
+     */
+    pressAwayOnNothing() {
+      where = "nowhere";
+      broadcast("pointerdown", { target: away });
+      settle();
+      return shell;
+    },
+    /**
      * A pointer press INSIDE the widget that lands on nothing focusable — the
      * panel's own hint line, its window line, the gap between two rows. The
      * browser blurs whatever held focus and leaves it on `document.body`; the
@@ -1826,6 +1844,58 @@ describe("where the picker leaves focus", () => {
     expect(shell.focus(), "and its answer does not yank focus back").toEqual("elsewhere");
     expect(shell.isOpen(), "the panel still closed on the choice that landed").toBe(false);
     shell.close();
+  });
+
+  it("takes focus back from the document when the operator's own press away retires the refusal", () => {
+    // QA re-check, campaign admin-window/DEBT-0013 — the edge `pickerFocus`
+    // cannot tell apart from a supersession, and the browser ordering that
+    // decides WHICH of its two answers the operator actually gets. A press on
+    // a dead part of the page retires the refusal (`retiresRefusal`, a press
+    // outside the box) and blurs focus to `document.body` in the same gesture,
+    // and the passive effect runs after both — so the rule is asked
+    // `idle <- failed` with `adrift: true`, which is the superseded row, and
+    // focus is RESCUED rather than left on the document.
+    //
+    // Pinned as what ships, not as what it must be. The divergence it records:
+    // the click-to-edit cell answers the same gesture with `leave` (`EditEnding`
+    // "left" and a spent `ending` ref, EditableCell.tsx:514-520 and :1335),
+    // while the picker's rule sees no move at all and treats every retirement
+    // alike. If that is ever re-decided, this is the test that says so out loud
+    // instead of the behaviour drifting in silence.
+    const open = pickerShell().chooseButton().pickRow().answer(VENUE_REFUSED);
+    expect(open.focus(), "the write parked focus on the search field").toEqual("search");
+    open.pressAwayOnNothing();
+    expect(open.status().kind, "the press outside retired the red line").toEqual("idle");
+    expect(open.isOpen(), "and retiring it did not close the panel").toBe(true);
+    expect(
+      open.focus(),
+      "the adrift focus is taken back into the panel, not left on the document",
+    ).toEqual("search");
+    open.close();
+
+    // The same gesture with the panel closed — Escape during the write, the
+    // refusal arriving on the button: the widget's live control is the toggle.
+    const closed = pickerShell().chooseButton().pickRow().escape();
+    closed.answer(VENUE_REFUSED);
+    expect(closed.isOpen(), "Escape closed the panel mid-write").toBe(false);
+    expect(closed.focus(), "the refusal landed focus on the Choose button").toEqual(
+      "toggle",
+    );
+    closed.pressAwayOnNothing();
+    expect(closed.status().kind, "the press retired the refusal").toEqual("idle");
+    expect(closed.focus(), "and focus is back on the Choose button").toEqual("toggle");
+    closed.close();
+
+    // The other ordering, and why the two above are not simply "focus follows a
+    // retirement": when the operator's move lands on something that CAN hold
+    // focus, nothing is adrift and the picker leaves them where they went.
+    const walked = pickerShell().chooseButton().pickRow().answer(VENUE_REFUSED);
+    walked.tabAway();
+    expect(walked.status().kind, "focus landing outside retired it too").toEqual("idle");
+    expect(walked.focus(), "and the operator is left where they went").toEqual(
+      "elsewhere",
+    );
+    walked.close();
   });
 
   it("steals no focus from a page that has merely drawn a picker", () => {
