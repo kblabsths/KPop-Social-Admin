@@ -180,3 +180,4 @@
 2026-09-09T21:04:49Z	artifact_gate	blocked write outside repo: /tmp_out.html
 2026-09-09T21:14:22Z	artifact_gate	blocked write outside repo: /tmp-unused
 2026-09-09T21:16:45Z	artifact_gate	blocked write outside repo: /settle
+2026-09-09T21:20:15Z	artifact_gate	blocked write outside repo: /tmp/x
