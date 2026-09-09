@@ -459,12 +459,13 @@ describe("every refusal the leaf can name stops before the client", () => {
     ["value_payload_missing", { action: "supply_value", value: verdictValue() }],
     ["value_payload_ambiguous", { action: "override", review_item_id: null, value: verdictValue({ value: "x", ref: "r" }) }],
     ["value_payload_not_allowed", { action: "supply_value", value: verdictValue({ ref: "r" }) }],
+    ["reference_field_not_scalar", { action: "supply_value", value: verdictValue({ field: "venue", value: "The Forum, Inglewood" }) }],
     ["actor_required", { actor: "\t\n " }],
   ];
 
   it("covers the leaf's whole refusal vocabulary, so this table cannot quietly shrink", () => {
     // Not a hand-copied list checked by eye: every identifier the table claims
-    // is one the leaf actually produced for that decision, and the ten are
+    // is one the leaf actually produced for that decision, and the eleven are
     // distinct. If an invariant is added to the leaf without a row here, the
     // seam still refuses it — but nobody has proved it, and this is where that
     // would be noticed.

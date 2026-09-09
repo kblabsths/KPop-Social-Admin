@@ -221,6 +221,17 @@ export const VALUE_REFUSAL_WORDS =
   "This action settles the fact with a value — type the one canonical should hold, then save it.";
 
 /**
+ * The words for a fact that LINKS a row instead of holding one
+ * (admin-window/BUG-0091). `decisionRefusals` invariant 6 names this one, and
+ * this form cannot produce it — the close slot offers no cell for a reference
+ * fact at all (admin-window/BUG-0087) — so the words exist for the day a
+ * caller hands the leaf's identifier here rather than as a branch a control
+ * can reach today.
+ */
+export const REFERENCE_REFUSAL_WORDS =
+  "This fact points at another record, so it is chosen rather than typed — pick the record it should point at.";
+
+/**
  * The refusal an identifier reads as. The map is TOTAL over the identifiers
  * this form produces, so no raw identifier reaches operator copy through the
  * fallback (LESSONS 5).
@@ -228,6 +239,7 @@ export const VALUE_REFUSAL_WORDS =
 export function refusalWords(refusal: string): string {
   if (refusal === "note_required") return NOTE_REFUSAL_WORDS;
   if (refusal === "value_required") return VALUE_REFUSAL_WORDS;
+  if (refusal === "reference_field_not_scalar") return REFERENCE_REFUSAL_WORDS;
   return `The close was refused: ${refusal}.`;
 }
 

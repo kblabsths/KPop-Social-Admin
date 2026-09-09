@@ -888,6 +888,23 @@ describe("the refusal vocabulary is total — QA attack", () => {
       expect(words.length, refusal).toBeGreaterThan(20);
     }
   });
+
+  /**
+   * The leaf can name a refusal this form cannot produce — the reference guard
+   * of admin-window/BUG-0091 fires in `decisionRefusals`, behind a control the
+   * close slot withholds. The map carries its words anyway, so the day
+   * anything hands that identifier here the operator reads a sentence rather
+   * than the identifier through the fallback (LESSONS 5).
+   */
+  it("has words for the leaf's reference refusal, which no control can produce", () => {
+    const refusal = "reference_field_not_scalar";
+    const words = refusalWords(refusal);
+    expect(words).not.toContain(refusal);
+    expect(words).not.toContain("_");
+    expect(words.length).toBeGreaterThan(20);
+    // Not the fallback sentence, which would carry the identifier verbatim.
+    expect(words).not.toBe(refusalWords("a_name_with_no_words"));
+  });
 });
 
 describe("one spec, two submissions — QA attack", () => {
@@ -1078,26 +1095,33 @@ describe("a reference conflict's control set, card by card — QA attack", () =>
 
 describe("the guard behind the withheld control — QA attack", () => {
   /**
-   * The close slot no longer OFFERS a free-text control for a reference fact.
-   * The decision it would have built is still accepted by everything behind
-   * it: `decisionRefusals` — the campaign's one pre-database guard, and the
-   * module that owns both `PAYLOAD_SLOTS` ("a reference … never as a
-   * `supply_value`") and `isReferenceField` — grades a `supply_value` whose
-   * fact is `events.venue` as well-formed, so the settle route sends it to
-   * `settle_review_item` instead of answering 400.
+   * The close slot does not OFFER a free-text control for a reference fact
+   * (admin-window/BUG-0087), and FEAT-0010 calls that layer the courtesy one:
+   * "the form is courtesy, the function is the contract". So the attack is the
+   * request NO control can build — a hand-crafted `supply_value` carrying a
+   * venue NAME for a fact whose canonical column is `venue_id` — posted at the
+   * real route by a signed-in, allowlisted admin.
    *
-   * FEAT-0010's own contract is that the reference rule is guarded twice:
-   * "the form is courtesy, the function is the contract". Today it is guarded
-   * ONCE, in the courtesy layer, by the list of controls a page chose to
-   * render.
+   * It is graded where the app decides: `decisionRefusals`, the campaign's one
+   * pre-database guard and the module that owns both `PAYLOAD_SLOTS` ("a
+   * reference … never as a `supply_value`") and `isReferenceField`. Until
+   * admin-window/BUG-0091 it never asked the fact's kind, so the route sent
+   * the name to `settle_review_item` and answered 200.
+   *
+   * The two strict xfails QA pinned here were flipped by that ticket; the
+   * blocks below them are its must-NOT half (LESSONS 3), because a guard that
+   * refused a reference EVERY way — including the ref it is supposed to travel
+   * as — would pass the two flipped pins and break the picker.
    */
+  const TYPED = "The Forum, Inglewood";
+
   /** The reference fact, carrying the text the withheld cell would have taken. */
   const referenceValue = {
     domain: "events",
     entity_id: ID.eventEntity,
     field: "venue",
     observation_id: null,
-    value: "The Forum, Inglewood",
+    value: TYPED,
     ref: null,
   };
 
@@ -1107,9 +1131,33 @@ describe("the guard behind the withheld control — QA attack", () => {
     value: referenceValue,
   };
 
-  // Strict xfail: it goes RED the day the guard learns the field's kind, which
-  // is the signal to flip it back to a plain `it` (admin-window/BUG-0091).
-  it.fails("refuses a text-carrying supply_value for a reference fact", () => {
+  /**
+   * The entity a picker would have chosen — spelled here because
+   * `tests/fixtures/rows.ts` carries no venue entity id (grepped), and this is
+   * the only test that needs one.
+   */
+  const CHOSEN_VENUE = "01920000-0000-7000-8000-000000000203";
+
+  /** The same forged body, for any fact, built the way a curl builds it. */
+  function crafted(spelling: string, overrides: Record<string, unknown> = {}) {
+    const [domain, field] = spelling.split(".");
+    return {
+      action: "supply_value",
+      note: null,
+      value: {
+        domain,
+        entity_id: ID.eventEntity,
+        field,
+        observation_id: null,
+        value: TYPED,
+        ref: null,
+      },
+      ...overrides,
+    };
+  }
+
+  // Was QA's first strict xfail, flipped by admin-window/BUG-0091.
+  it("refuses a text-carrying supply_value for a reference fact", () => {
     expect(
       decisionRefusals({
         action: "supply_value",
@@ -1121,12 +1169,79 @@ describe("the guard behind the withheld control — QA attack", () => {
     ).not.toEqual([]);
   });
 
-  // Strict xfail, admin-window/BUG-0091 — the same defect stated as the write
-  // that reaches the database: today this answers 200 and calls the function.
-  it.fails("sends no venue NAME to the settle function", async () => {
+  // Was QA's second strict xfail, flipped by admin-window/BUG-0091 — the same
+  // defect stated as the write that reaches the database.
+  it("sends no venue NAME to the settle function", async () => {
     const stub = scriptDatabase(functionInstalled("supply_value"));
     const { status } = await post(forgedSupply);
     expect(status).toBe(400);
     expect(stub.functionsCalled()).toEqual([]);
+  });
+
+  it("refuses it by NAME, for every fact the registry calls a reference", () => {
+    // Iterated off the constant rather than off `events.venue` alone, so a
+    // reference field added there is guarded by this same line — and named, so
+    // a surface can branch on the identifier instead of parsing a sentence.
+    for (const spelling of REFERENCE_FIELDS) {
+      const decision = {
+        ...crafted(spelling),
+        review_item_id: ITEM_ID,
+        actor: ACTOR,
+      } as unknown as VerdictDecision;
+      expect(decisionRefusals(decision), spelling).toContain("reference_field_not_scalar");
+    }
+  });
+
+  it("reaches the database with nothing at all, for every one of them", async () => {
+    for (const spelling of REFERENCE_FIELDS) {
+      const stub = scriptDatabase(functionInstalled("supply_value"));
+      const { status, payload } = await post(crafted(spelling));
+
+      expect(status, spelling).toBe(400);
+      expect(payload.refusals, spelling).toContain("reference_field_not_scalar");
+      // Not the function, and not a read either.
+      expect(stub.calls, spelling).toEqual([]);
+      expect(stub.functionsCalled(), spelling).toEqual([]);
+      expect(stub.tablesRead(), spelling).toEqual([]);
+    }
+  });
+
+  it("still settles the identical request shape for a scalar fact", async () => {
+    // The must-NOT half: the guard reads the FACT, so the supply the surface
+    // really offers still lands in exactly one call. Same body, same route,
+    // one field name apart.
+    const stub = scriptDatabase(functionInstalled("supply_value"));
+    const { status, payload } = await post(crafted("events.title"));
+
+    expect(status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(stub.functionsCalled()).toEqual([FN.settleReviewItem]);
+    const args = stub.calls[0].steps[0].args[0] as Record<string, unknown>;
+    const decision = args.p_decision as { value: Record<string, unknown> };
+    expect(decision.value.value).toBe(TYPED);
+  });
+
+  it("still settles a link carrying the chosen entity for the same fact", async () => {
+    // A reference is not made un-settleable: it travels in `ref`, which is how
+    // the picker sends it. Refusing this too would be the fix overreaching.
+    for (const spelling of REFERENCE_FIELDS) {
+      const [domain, field] = spelling.split(".");
+      const stub = scriptDatabase(functionInstalled("link_entity"));
+      const { status } = await post({
+        action: "link_entity",
+        note: null,
+        value: {
+          domain,
+          entity_id: ID.eventEntity,
+          field,
+          observation_id: null,
+          value: null,
+          ref: CHOSEN_VENUE,
+        },
+      });
+
+      expect(status, spelling).toBe(200);
+      expect(stub.functionsCalled(), spelling).toEqual([FN.settleReviewItem]);
+    }
   });
 });
