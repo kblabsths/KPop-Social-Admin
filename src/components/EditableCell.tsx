@@ -100,12 +100,18 @@ export type EditEvent =
   /** The confirmation clock ARMED BY `edit` fired. */
   | { kind: "elapsed"; edit: number }
   /**
-   * The operator ended `edit` without starting another — Escape, or leaving
-   * the cell (campaign admin-window/BUG-0107). The counterpart of `editing`:
-   * that one retires a spent status by starting the next edit, this one
-   * retires it by walking away from the same one.
+   * The operator ended `edit` without starting another — Escape, a press
+   * outside the cell, focus landing elsewhere, or another cell's refusal
+   * taking the page's one slot (campaign admin-window/BUG-0107). The
+   * counterpart of `editing`: that one retires a spent status by starting the
+   * next edit, this one retires it by walking away from the same one.
+   *
+   * It carries the MOVE the operator made, so what a move means is
+   * `retiresRefusal`'s single answer rather than a condition each listener
+   * re-decides for itself — which is how the keyboard's move came to be
+   * missing from three listeners that each looked right on its own.
    */
-  | { kind: "abandoned"; edit: number };
+  | { kind: "abandoned"; edit: number; move: RetireMove };
 
 /**
  * How long a status stays on screen on its own clock, or `null` if no clock
@@ -124,6 +130,89 @@ export type EditEvent =
  */
 export function confirmationDelayMs(status: Status): number | null {
   return status.kind === "saved" ? CONFIRMATION_MS : null;
+}
+
+/**
+ * What the operator just did that could end the refusal on screen — campaign
+ * admin-window/BUG-0107.
+ *
+ * Four moves, because four things reach a cell that is closed and refusing.
+ * Naming them is the point: the first fix listened for two of them and the
+ * cell's own blur, each of which looked complete on its own, and the one that
+ * was missing is the one a keyboard operator makes constantly.
+ */
+export type RetireMove =
+  /** A pointer press landed on the page; `inside` — was it in this cell? */
+  | { kind: "press"; inside: boolean }
+  /** Escape, from wherever focus happens to be. */
+  | { kind: "escape" }
+  /** Focus landed somewhere; `inside` — is that somewhere in this cell? */
+  | { kind: "focus"; inside: boolean }
+  /** Another cell on this page is now stating a refusal of its own. */
+  | { kind: "superseded" };
+
+/**
+ * Does this move retire the statement on screen? — campaign
+ * admin-window/BUG-0107, the decision the first attempt spread across three
+ * listeners and QA bounced for it.
+ *
+ * **The defect.** Escape, a press outside, and the cell's own `focusout` all
+ * assumed the operator was still IN the cell when the answer arrived. On a
+ * pure-keyboard path they are not: Tab blur-commits AND leaves in one
+ * keystroke, so the cell's `focusout` fires while the status is still
+ * `saving` — where an abandonment is correctly a no-op — the write then
+ * settles to `failed` for a cell focus has already left, and no fourth event
+ * ever reaches it. QA measured the refusal standing through four further Tabs
+ * and a second refusal stacking over it: `label` at 596,205 320x122 under
+ * `observed_on` at 549,299 320x58, overlapping 273x28px, the first panel's
+ * app-voice half painted nowhere at all (2026-09-09, production build against
+ * staging, 1440x900, light and dark identical).
+ *
+ * **The rule.** A refusal belongs to the operator's involvement with one cell,
+ * and it ends when that involvement does — including when focus simply lands
+ * elsewhere, which is what a Tab is and what no listener was watching. Three
+ * things it will not do, each a criterion:
+ *
+ *  - **`saving` is never retired, by any move** (criterion 3). A write in
+ *    flight is still running; Escape does not cancel a PATCH, and retiring
+ *    there would hide a failed write rather than report it. This is also
+ *    exactly the instant the blur-commit's own focus move arrives.
+ *  - **`saved` keeps its 1.5s clock** (criterion 4). A confirmation is a
+ *    receipt, not a sentence to act on, so walking away does not shorten it.
+ *  - **A move INSIDE the cell is not walking away.** Pressing or tabbing back
+ *    into the refusing cell is the operator reaching for the thing they have
+ *    to fix, and deleting the sentence they are reading would be the worse
+ *    bug. Opening it clears the refusal through `editing`, as it always did.
+ *
+ * `superseded` is criterion 2's page-level clause — "at most ONE refusal is on
+ * screen at any moment, on any record page" — read literally. Two writes in
+ * flight at once, both refused, is the one state no move of the operator's
+ * falls between (the first fix disclosed it as an exception; the criterion
+ * does not have one). The newer statement takes the page's single slot and the
+ * older one, which belongs to an edit the operator has already left behind,
+ * yields it (`takeRefusalSlot`).
+ *
+ * Pure and exported for the reason `focusVerdict` and `opensCell` are: a
+ * press, a Tab and a focus ring are browser facts, and `tests/offline` is
+ * environment node with `renderToStaticMarkup` and no jsdom (STACK.md §4). It
+ * is the reducer's only consumer, so the offline tier drives the rule and the
+ * state machine through one seam, and the walk measures the events that feed
+ * it.
+ */
+export function retiresRefusal(status: Status, move: RetireMove): boolean {
+  // Only a refusal is retired this way; `saving`, `saved` and `idle` are the
+  // three above, in order.
+  if (status.kind !== "failed") return false;
+  switch (move.kind) {
+    case "press":
+    case "focus":
+      return !move.inside;
+    case "escape":
+    case "superseded":
+      return true;
+    default:
+      return false;
+  }
 }
 
 /**
@@ -177,15 +266,133 @@ export function reduceEdit(state: EditState, event: EditEvent): EditState {
       if (event.edit !== state.edit || state.status.kind !== "saved") return state;
       return { status: { kind: "idle" }, edit: event.edit };
     case "abandoned":
-      // Only a REFUSAL retires this way, and only for the edit that produced
-      // it. `saving` is a write still running and Escape does not stop it
-      // (BUG-0075's rule, unchanged); `saved` is on its own 1.5s clock and
-      // keeps it; `idle` has nothing to retire.
-      if (event.edit !== state.edit || state.status.kind !== "failed") return state;
+      // Whose statement this is, then whether the move ends it. The ordinal is
+      // BUG-0075's rule and stays here; what a move means is one exported
+      // decision (`retiresRefusal`) rather than a condition per listener.
+      if (event.edit !== state.edit) return state;
+      if (!retiresRefusal(state.status, event.move)) return state;
       return { status: { kind: "idle" }, edit: event.edit };
     default:
       return state;
   }
+}
+
+/**
+ * One event, reduced to the two facts a retire decision needs — campaign
+ * admin-window/BUG-0107.
+ *
+ * `target` is what the event landed on and `key` is the key, if it was a key
+ * at all. Deliberately narrower than `Event`: everything else a DOM event
+ * carries is something this decision must not start depending on.
+ */
+export type RetireSignal = {
+  target: EventTarget | null;
+  key?: string;
+};
+
+/**
+ * The page, as the retire listeners need to see it — campaign
+ * admin-window/BUG-0107.
+ *
+ * Two questions and nothing else: is a target inside the refusing cell, and
+ * please tell me when this kind of thing happens (returning how to stop
+ * listening). The component builds one from the cell's own box and its owner
+ * document; the offline suite builds one from a recorder, which is what makes
+ * the listener set itself a thing a test without jsdom can read (STACK.md §4)
+ * — QA's bounce named exactly that gap: "the retire decision is
+ * offline-unpinnable while it lives in listeners".
+ */
+export type RetireHost = {
+  /** Is this event's target inside the cell whose refusal is showing? */
+  contains(target: EventTarget | null): boolean;
+  /** Listen page-wide, in the capture phase. Returns how to stop. */
+  listen(
+    type: "pointerdown" | "keydown" | "focusin",
+    handler: (signal: RetireSignal) => void,
+  ): () => void;
+};
+
+/**
+ * Arm the three page-wide listeners that can reach a closed, refusing cell,
+ * and return how to disarm them — campaign admin-window/BUG-0107.
+ *
+ * Page-wide rather than the cell's own handlers, because after a refusal the
+ * cell is CLOSED: the press that abandons it lands on someone else's element,
+ * and the Tab that abandons it moves focus to someone else's element. Nothing
+ * bound to this cell would see either.
+ *
+ *  - **`pointerdown`, in the capture phase**, so it is the same instant
+ *    `opensCell` opens the cell being pressed (BUG-0086) and cannot be
+ *    swallowed on the way up.
+ *  - **`keydown`, for Escape and only Escape.** At most one refusal is on
+ *    screen (`takeRefusalSlot`), so "Escape dismisses it" is unambiguous from
+ *    wherever focus is — which it has to be, since focus is on the resting
+ *    button after an Enter-committed refusal and anywhere at all after a
+ *    blur-committed one.
+ *  - **`focusin`, the one the first attempt did not have.** A Tab presses
+ *    nothing and moves nothing; it lands focus. That is why the refusal
+ *    survived four of them. It also carries "opening a different cell" for
+ *    free, since an opening cell focuses its own field.
+ *
+ * Every signal is dispatched as a MOVE and `retiresRefusal` decides — a
+ * listener that reached a `saving` or a `saved` is a listener whose move is a
+ * no-op, never a listener that had to remember not to fire.
+ */
+export function armRetire(
+  host: RetireHost,
+  onMove: (move: RetireMove) => void,
+): () => void {
+  const stops = [
+    host.listen("pointerdown", (signal) =>
+      onMove({ kind: "press", inside: host.contains(signal.target) }),
+    ),
+    host.listen("keydown", (signal) => {
+      if (signal.key === "Escape") onMove({ kind: "escape" });
+    }),
+    host.listen("focusin", (signal) =>
+      onMove({ kind: "focus", inside: host.contains(signal.target) }),
+    ),
+  ];
+  return () => {
+    for (const stop of stops) stop();
+  };
+}
+
+/**
+ * The page's ONE refusal slot — campaign admin-window/BUG-0107, criterion 2
+ * read literally.
+ *
+ * "At most ONE refusal is on screen at any moment, on any record page" is a
+ * statement about the PAGE, and a cell knows only itself. Every other clause
+ * of that criterion is one cell's business (the operator pressed, tabbed or
+ * escaped, and this cell's listeners saw it), but two writes committed inside
+ * each other's flight window and both refused is the one state where no move
+ * of the operator's falls between the two answers — the first attempt
+ * disclosed it as an exception and QA read the criterion literally, correctly.
+ *
+ * A module-level set rather than a React context, because a context would have
+ * to be provided by every page that renders a cell, and a cell dropped into a
+ * page that forgot the provider would silently lose the guarantee. This is the
+ * client bundle's one page; the set is only ever touched from an effect, so
+ * nothing is added during a server render, and the release returned here runs
+ * in that effect's cleanup — including on unmount, so a navigated-away cell
+ * leaves nothing behind.
+ *
+ * Taking the slot retires whatever held it: the newest refusal is the one the
+ * operator is owed, and the one it displaces belongs to an edit they have
+ * already left.
+ */
+const refusalsOnScreen = new Set<() => void>();
+
+export function takeRefusalSlot(retire: () => void): () => void {
+  // A snapshot, because retiring a holder makes it release its own slot.
+  for (const older of [...refusalsOnScreen]) {
+    if (older !== retire) older();
+  }
+  refusalsOnScreen.add(retire);
+  return () => {
+    refusalsOnScreen.delete(retire);
+  };
 }
 
 /**
@@ -977,33 +1184,33 @@ export function EditableCell({
    * that produced it, and reopening the cell used to be the ONLY thing that
    * ended it, so it outlived Escape, outlived the operator clicking away, and
    * was still standing beside a reverted value after a later save of another
-   * field had succeeded — and a second refusal on the same page drew a second
-   * unbounded panel over the first (measured 2026-09-09, `walk_sandbox` row
-   * …0001, 1440x900).
+   * field had succeeded (measured 2026-09-09, `walk_sandbox` row …0001,
+   * 1440x900).
    *
-   * The two moves that end an edit without starting another are exactly the
-   * two listened for here, and both are DOCUMENT-level rather than the cell's
-   * own handlers, which is the whole reason this is an effect:
+   * The first cut listened for a press outside and for Escape, and leaned on
+   * the cell's own `focusout` for the keyboard. QA bounced it on the path
+   * where all three miss: **Tab blur-commits AND leaves in one keystroke**, so
+   * the `focusout` fires while the status is `saving` (a no-op, correctly —
+   * criterion 3) and the refusal then arrives for a cell focus has already
+   * left. Nothing was watching where focus went next, so four further Tabs
+   * left it standing and the next refusal stacked over it.
    *
-   *  - **A press anywhere outside this cell.** After a refusal the cell is
-   *    closed, so the press that abandons it lands on someone else's element —
-   *    another cell's button, a link, the page background — and no handler of
-   *    this cell's would ever see it. At `pointerdown` and in the CAPTURE
-   *    phase, so it is the same instant `opensCell` opens the cell being
-   *    pressed (BUG-0086) and cannot be swallowed on the way up. A press
-   *    inside this cell is not an abandonment: it reopens the cell, and
-   *    `editing` retires the refusal through the same reducer.
-   *  - **Escape.** Focus is on the resting button after an Enter-committed
-   *    refusal and wherever the operator left it after a blur-committed one,
-   *    so binding Escape to a node would answer for one of those and not the
-   *    other. At most one refusal is on screen (that is this effect's other
-   *    half), so "Escape dismisses the refusal" is unambiguous from anywhere.
+   * So the arming is `armRetire`'s — three page-wide listeners including
+   * `focusin`, the one that was missing — and it happens the instant the
+   * refusal appears, whether or not the operator is still here. The refusal is
+   * not swallowed at arrival: a refused write that leaves no trace is the
+   * worse bug, and the operator's very next move ends it.
+   *
+   * `takeRefusalSlot` is the page-level half: at most ONE refusal on screen at
+   * any moment (criterion 2), including the two-writes-in-flight state where
+   * no move of the operator's falls between the two answers.
    *
    * It is armed only while a refusal is showing, so a page of resting cells
    * adds no listeners at all. The ordinal it closes over is the one whose
    * refusal is on screen, and `reduceEdit` re-checks it: a listener torn down
-   * a tick late cannot retire a newer edit's statement, and neither can it
-   * touch a `saving` or a `saved` — that is the reducer's, both ways.
+   * a tick late cannot retire a newer edit's statement, and no move of any
+   * kind touches a `saving` or a `saved` — that is `retiresRefusal`'s, for
+   * every path at once.
    */
   useEffect(() => {
     if (cell.status.kind !== "failed") return;
@@ -1011,20 +1218,30 @@ export function EditableCell({
     const box = root.current;
     if (box === null) return;
     const owner = box.ownerDocument;
-    const retire = () => dispatch({ kind: "abandoned", edit });
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (target instanceof Node && box.contains(target)) return;
-      retire();
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") retire();
-    };
-    owner.addEventListener("pointerdown", onPointerDown, true);
-    owner.addEventListener("keydown", onKeyDown, true);
+    const retire = (move: RetireMove) => dispatch({ kind: "abandoned", edit, move });
+
+    // The two-line adapter from this cell's box and its document to the two
+    // questions `armRetire` asks (`RetireHost`).
+    const disarm = armRetire(
+      {
+        contains: (target) => target instanceof Node && box.contains(target),
+        listen: (type, handler) => {
+          const wrapped = (event: Event) =>
+            handler({
+              target: event.target,
+              key: "key" in event ? (event as KeyboardEvent).key : undefined,
+            });
+          owner.addEventListener(type, wrapped, true);
+          return () => owner.removeEventListener(type, wrapped, true);
+        },
+      },
+      retire,
+    );
+    const release = takeRefusalSlot(() => retire({ kind: "superseded" }));
+
     return () => {
-      owner.removeEventListener("pointerdown", onPointerDown, true);
-      owner.removeEventListener("keydown", onKeyDown, true);
+      release();
+      disarm();
     };
   }, [cell]);
 
@@ -1121,19 +1338,26 @@ export function EditableCell({
     <span
       ref={root}
       className="relative inline-flex flex-wrap items-baseline"
-      // Focus leaving the cell ends the edit that is showing, exactly as a
-      // press outside it does (campaign admin-window/BUG-0107) — this is the
-      // keyboard's half of the same move, since Tab moves nothing and presses
-      // nothing. React's `onBlur` is `focusout`, so it catches focus leaving
-      // the resting button and focus leaving the open field alike; a move
-      // WITHIN the cell (the field to its own button as an edit ends) is not a
-      // leaving and is skipped. It is `reduceEdit` that decides whether
-      // anything retires: a blur that commits leaves `saving` on screen, and
-      // the abandonment dispatched beside it is a no-op.
+      // Focus leaving the cell is the same move as focus arriving elsewhere,
+      // and this is the one place that sees it even when it arrives NOWHERE —
+      // a press on a non-focusable area drops focus to the body, which fires
+      // no `focusin` for `armRetire` to hear (campaign admin-window/BUG-0107).
+      // React's `onBlur` is `focusout`, so it catches focus leaving the
+      // resting button and focus leaving the open field alike; a move WITHIN
+      // the cell reports itself as such and `retiresRefusal` keeps the
+      // refusal. Nothing here decides anything: a blur that COMMITS leaves
+      // `saving` on screen, and the move dispatched beside it is a no-op —
+      // which is exactly the path QA's bounce came in on.
       onBlur={(event) => {
         const next = event.relatedTarget;
-        if (next instanceof Node && event.currentTarget.contains(next)) return;
-        dispatch({ kind: "abandoned", edit: edits.current });
+        dispatch({
+          kind: "abandoned",
+          edit: edits.current,
+          move: {
+            kind: "focus",
+            inside: next instanceof Node && event.currentTarget.contains(next),
+          },
+        });
       }}
     >
       <button

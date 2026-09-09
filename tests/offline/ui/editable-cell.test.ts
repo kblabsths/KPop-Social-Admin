@@ -26,15 +26,21 @@ import {
   EditStatus,
   IDLE_EDIT_STATE,
   type OpenPress,
+  type RetireHost,
+  type RetireMove,
+  type RetireSignal,
   type SaveOutcome,
   type Status,
   confirmationDelayMs,
   editHint,
   committedValue,
   focusVerdict,
+  armRetire,
   opensCell,
   reduceEdit,
+  retiresRefusal,
   selectOnOpen,
+  takeRefusalSlot,
 } from "@/components/EditableCell";
 import { GENERAL_FIX, refusalFix } from "@/components/edit-refusal";
 import { EM_DASH, isAbsent } from "@/lib/format";
@@ -734,11 +740,51 @@ const AFTER_REFUSAL: EditEvent[] = [
   { kind: "settled", edit: 1, outcome: { ok: false, message: REFUSAL } },
 ];
 
+/**
+ * The four moves that can reach a refusal, named once — campaign
+ * admin-window/BUG-0107, attempt 2.
+ *
+ * QA's bounce was a MISSING move, not a wrong rule: every retire path assumed
+ * the operator was still in the cell, so a refusal that ARRIVED after focus
+ * had already left (Tab blur-commits and leaves in one keystroke) had no event
+ * left that could reach it — four further Tabs left it standing and a second
+ * refusal stacked over it, 273x28px of overlap. Each fixture below is one
+ * thing an operator does, so a test names the move rather than a shape.
+ */
+const ESCAPE: RetireMove = { kind: "escape" };
+const PRESS_OUTSIDE: RetireMove = { kind: "press", inside: false };
+const PRESS_INSIDE: RetireMove = { kind: "press", inside: true };
+/** Focus landed somewhere else on the page — the Tab that QA's repro used. */
+const FOCUS_LEFT: RetireMove = { kind: "focus", inside: false };
+/** Focus came back to this cell's own resting control. */
+const FOCUS_BACK: RetireMove = { kind: "focus", inside: true };
+/** Another cell on the page is now stating a refusal of its own. */
+const SUPERSEDED: RetireMove = { kind: "superseded" };
+
+/** Every move, so a sweep cannot silently miss the one that was missing. */
+const EVERY_MOVE: RetireMove[] = [
+  ESCAPE,
+  PRESS_OUTSIDE,
+  PRESS_INSIDE,
+  FOCUS_LEFT,
+  FOCUS_BACK,
+  SUPERSEDED,
+];
+
+/** The ones that END the operator's involvement with the refusing cell. */
+const RETIRING_MOVES: RetireMove[] = [ESCAPE, PRESS_OUTSIDE, FOCUS_LEFT, SUPERSEDED];
+/** ...and the ones that are the operator staying with it. */
+const KEEPING_MOVES: RetireMove[] = [PRESS_INSIDE, FOCUS_BACK];
+
+/** How a move reads in a failure message. */
+const nameOf = (move: RetireMove) =>
+  "inside" in move ? `${move.kind} ${move.inside ? "inside" : "outside"}` : move.kind;
+
 describe("a refusal ends with the edit that produced it", () => {
   it("retires when the operator abandons that edit, leaving the cell as if never edited", () => {
     const refused = replay(...AFTER_REFUSAL);
     expect(refused.status).toEqual({ kind: "failed", message: REFUSAL });
-    const after = reduceEdit(refused, { kind: "abandoned", edit: 1 });
+    const after = reduceEdit(refused, { kind: "abandoned", edit: 1, move: ESCAPE });
     // The same end state a cell that was never edited is in — which is the
     // acceptance criterion, and is why this compares the whole status.
     expect(after.status).toEqual(IDLE_EDIT_STATE.status);
@@ -754,7 +800,7 @@ describe("a refusal ends with the edit that produced it", () => {
     expect(confirmationDelayMs(refused.status)).toBeNull();
     const cell = driveCell([
       ...edit(1, 0, 10, 400, NO),
-      { at: 30_000, event: { kind: "abandoned", edit: 1 } },
+      { at: 30_000, event: { kind: "abandoned", edit: 1, move: ESCAPE } },
     ]);
     for (const t of [401, 1_630, 4_000, 29_999]) {
       expect(cell.at(t), `t=${t}ms`).toEqual({ kind: "failed", message: REFUSAL });
@@ -775,13 +821,23 @@ describe("a refusal ends with the edit that produced it", () => {
       { kind: "settled", edit: 2, outcome: { ok: false, message: "second refusal (22007)" } },
     );
     for (const stale of [0, 1, 3, 99]) {
-      // unchanged, and unchanged BY REFERENCE — what makes `useReducer` bail
-      // out rather than re-render and re-arm anything.
-      expect(reduceEdit(later, { kind: "abandoned", edit: stale }), `edit ${stale}`).toBe(later);
+      for (const move of EVERY_MOVE) {
+        // unchanged, and unchanged BY REFERENCE — what makes `useReducer` bail
+        // out rather than re-render and re-arm anything.
+        expect(
+          reduceEdit(later, { kind: "abandoned", edit: stale, move }),
+          `edit ${stale}, ${nameOf(move)}`,
+        ).toBe(later);
+      }
     }
     // the negative fixture that keeps that honest (LESSONS 3): the ordinal
     // that DOES own what is showing retires it.
-    expect(reduceEdit(later, { kind: "abandoned", edit: later.edit }).status.kind).toEqual("idle");
+    for (const move of RETIRING_MOVES) {
+      expect(
+        reduceEdit(later, { kind: "abandoned", edit: later.edit, move }).status.kind,
+        nameOf(move),
+      ).toEqual("idle");
+    }
   });
 
   it("does not stop a write still in flight, whatever the operator presses", () => {
@@ -790,11 +846,16 @@ describe("a refusal ends with the edit that produced it", () => {
     // did would be a lie about the database.
     const inFlight = replay({ kind: "editing", edit: 1 }, { kind: "committed", edit: 1 });
     expect(inFlight.status.kind).toEqual("saving");
-    expect(reduceEdit(inFlight, { kind: "abandoned", edit: 1 })).toBe(inFlight);
+    for (const move of EVERY_MOVE) {
+      expect(
+        reduceEdit(inFlight, { kind: "abandoned", edit: 1, move }),
+        nameOf(move),
+      ).toBe(inFlight);
+    }
     // ...and the write's own answer still lands on it afterwards, refusal and
     // confirmation alike.
     for (const outcome of [OK, NO]) {
-      const abandoned = reduceEdit(inFlight, { kind: "abandoned", edit: 1 });
+      const abandoned = reduceEdit(inFlight, { kind: "abandoned", edit: 1, move: FOCUS_LEFT });
       const settled = reduceEdit(abandoned, { kind: "settled", edit: 1, outcome });
       expect(settled.status.kind, outcome.ok ? "ok" : "refused").toEqual(
         outcome.ok ? "saved" : "failed",
@@ -807,14 +868,24 @@ describe("a refusal ends with the edit that produced it", () => {
     // receipt, and it retires when CONFIRMATION_MS says so and not before.
     const confirmed = replay(...AFTER_FIRST_SAVE);
     expect(confirmed.status.kind).toEqual("saved");
-    expect(reduceEdit(confirmed, { kind: "abandoned", edit: 1 })).toBe(confirmed);
+    for (const move of EVERY_MOVE) {
+      expect(
+        reduceEdit(confirmed, { kind: "abandoned", edit: 1, move }),
+        nameOf(move),
+      ).toBe(confirmed);
+    }
     expect(confirmationDelayMs(confirmed.status)).toEqual(1500);
-    expect(reduceEdit(IDLE_EDIT_STATE, { kind: "abandoned", edit: 0 })).toBe(IDLE_EDIT_STATE);
+    for (const move of EVERY_MOVE) {
+      expect(
+        reduceEdit(IDLE_EDIT_STATE, { kind: "abandoned", edit: 0, move }),
+        nameOf(move),
+      ).toBe(IDLE_EDIT_STATE);
+    }
     // driven the way the component composes it: the receipt still clears at
     // 1.5s after its own save even though the operator walked away at once.
     const cell = driveCell([
       ...edit(1, 0, 10, 400, OK),
-      { at: 500, event: { kind: "abandoned", edit: 1 } },
+      { at: 500, event: { kind: "abandoned", edit: 1, move: PRESS_OUTSIDE } },
     ]);
     expect(cell.at(500).kind, "walked away 100ms in").toEqual("saved");
     expect(cell.at(1_899).kind).toEqual("saved");
@@ -831,7 +902,9 @@ describe("a refusal ends with the edit that produced it", () => {
       { kind: "settled", edit: 2, outcome: { ok: false, message: "second refusal (22007)" } },
     );
     expect(twice.status).toEqual({ kind: "failed", message: "second refusal (22007)" });
-    expect(reduceEdit(twice, { kind: "abandoned", edit: 2 }).status.kind).toEqual("idle");
+    expect(reduceEdit(twice, { kind: "abandoned", edit: 2, move: ESCAPE }).status.kind).toEqual(
+      "idle",
+    );
   });
 
   it("retires a refusal and nothing else, over every status the cell can be in", () => {
@@ -844,10 +917,16 @@ describe("a refusal ends with the edit that produced it", () => {
       replay(...AFTER_REFUSAL),
     ];
     for (const state of reached) {
-      const retires = state.status.kind === "failed";
-      const next = reduceEdit(state, { kind: "abandoned", edit: state.edit });
-      expect(next.status.kind, state.status.kind).toEqual(retires ? "idle" : state.status.kind);
-      if (!retires) expect(next, state.status.kind).toBe(state);
+      for (const move of EVERY_MOVE) {
+        const retires =
+          state.status.kind === "failed" && RETIRING_MOVES.includes(move);
+        const where = `${state.status.kind} / ${nameOf(move)}`;
+        // the rule itself, and then the reducer that is its only consumer
+        expect(retiresRefusal(state.status, move), where).toEqual(retires);
+        const next = reduceEdit(state, { kind: "abandoned", edit: state.edit, move });
+        expect(next.status.kind, where).toEqual(retires ? "idle" : state.status.kind);
+        if (!retires) expect(next, where).toBe(state);
+      }
     }
   });
 
@@ -856,8 +935,393 @@ describe("a refusal ends with the edit that produced it", () => {
     // an abandonment is idle either way.
     const refused = replay(...AFTER_REFUSAL);
     expect(reduceEdit(refused, { kind: "editing", edit: 2 }).status.kind).toEqual("idle");
-    const abandoned = reduceEdit(refused, { kind: "abandoned", edit: 1 });
+    const abandoned = reduceEdit(refused, { kind: "abandoned", edit: 1, move: ESCAPE });
     expect(reduceEdit(abandoned, { kind: "editing", edit: 2 }).status.kind).toEqual("idle");
+  });
+});
+
+/**
+ * A REFUSAL THAT ARRIVES AFTER THE OPERATOR HAS GONE, AND THE PAGE'S ONE SLOT
+ * — campaign admin-window/BUG-0107, attempt 2.
+ *
+ * QA reopened the first fix on a pure-keyboard path with no timing race
+ * (2026-09-09, landed tree, production build against staging, 1440x900, light
+ * AND dark, identical numbers): Tab into `label`, clear it, **Tab** — one
+ * keystroke that blur-commits AND leaves. The cell's own `focusout` fires
+ * while the status is still `saving`, where an abandonment is correctly a
+ * no-op (criterion 3); the write then settles to `failed` for a cell focus has
+ * already left, and the three armed paths — a press outside, Escape, the
+ * cell's own blur — could none of them reach it. Four further Tabs left it
+ * standing (`[role=alert]` = 1 while another cell held focus), and the next
+ * refusal STACKED: `label` at 596,205 320x122 under `observed_on` at 549,299
+ * 320x58, overlapping 273x28px, with `label`'s app-voice half painted nowhere.
+ *
+ * The class, not the sequence: a refusal is retired by the MOVE that ends the
+ * operator's involvement with the cell, and "focus landed somewhere else" is
+ * one of those moves — the one no listener was watching. `retiresRefusal` is
+ * that decision, pure and exported for the reason `focusVerdict` is: a press,
+ * a Tab and a focus ring are browser facts and `tests/offline` is environment
+ * node with `renderToStaticMarkup` and no jsdom (STACK.md §4). What the
+ * listeners feed it is measured in the walk; what it ANSWERS is pinned here.
+ *
+ * The refusal is not retired at arrival, which is the fork this ticket left
+ * open. A refused write that leaves no trace is the worse bug: the operator
+ * cleared `label`, tabbed on, the value silently reverted and nothing ever
+ * said the database refused it. So it appears, it is the only one on the page,
+ * and the operator's very next move ends it.
+ */
+
+/**
+ * A record page's cells, composed the way the component composes them, so
+ * "at most ONE refusal is on screen at any moment, on any record page"
+ * (criterion 2) is a claim a test can make. Every operation is one thing an
+ * operator does; each fans the resulting move out to every cell, exactly as a
+ * document-level listener does, and each cell judges it through `reduceEdit`.
+ */
+function recordPage(names: string[]) {
+  const cells = new Map(names.map((name) => [name, IDLE_EDIT_STATE]));
+  const ordinals = new Map(names.map((name) => [name, 0]));
+  const peak = { alerts: 0 };
+
+  const stateOf = (name: string) => cells.get(name) ?? IDLE_EDIT_STATE;
+  function send(name: string, event: EditEvent) {
+    cells.set(name, reduceEdit(stateOf(name), event));
+  }
+  /** One move, seen by every cell on the page — a document-level listener. */
+  function everyCell(move: (name: string) => RetireMove) {
+    for (const name of names) {
+      send(name, { kind: "abandoned", edit: stateOf(name).edit, move: move(name) });
+    }
+    peak.alerts = Math.max(peak.alerts, page.alerts());
+  }
+
+  const page = {
+    /** Focus landed in `name` — a Tab, or the field an opening cell focuses. */
+    focusOn(name: string) {
+      everyCell((cell) => ({ kind: "focus", inside: cell === name }));
+      return page;
+    },
+    /** A pointer press landed in `name`, or on the page itself (`null`). */
+    pressOn(name: string | null) {
+      everyCell((cell) => ({ kind: "press", inside: cell === name }));
+      return page;
+    },
+    escape() {
+      everyCell(() => ESCAPE);
+      return page;
+    },
+    /** Opening a cell moves focus into it and hands out the next ordinal. */
+    open(name: string) {
+      page.focusOn(name);
+      const ordinal = (ordinals.get(name) ?? 0) + 1;
+      ordinals.set(name, ordinal);
+      send(name, { kind: "editing", edit: ordinal });
+      peak.alerts = Math.max(peak.alerts, page.alerts());
+      return page;
+    },
+    commit(name: string) {
+      send(name, { kind: "committed", edit: ordinals.get(name) ?? 0 });
+      peak.alerts = Math.max(peak.alerts, page.alerts());
+      return page;
+    },
+    /**
+     * The write answered. A refusal takes the page's one slot: every other
+     * refusal on screen belongs to an edit the operator has already left.
+     */
+    answer(name: string, outcome: SaveOutcome) {
+      send(name, { kind: "settled", edit: ordinals.get(name) ?? 0, outcome });
+      if (stateOf(name).status.kind === "failed") {
+        for (const other of names) {
+          if (other === name) continue;
+          send(other, { kind: "abandoned", edit: stateOf(other).edit, move: SUPERSEDED });
+        }
+      }
+      peak.alerts = Math.max(peak.alerts, page.alerts());
+      return page;
+    },
+    /** What `document.querySelectorAll('[role=alert]').length` would read. */
+    alerts: () => names.filter((name) => stateOf(name).status.kind === "failed").length,
+    refusing: () => names.filter((name) => stateOf(name).status.kind === "failed"),
+    statusOf: (name: string) => stateOf(name).status,
+    /** The most alerts that were ever on screen at one moment. */
+    peakAlerts: () => peak.alerts,
+  };
+  return page;
+}
+
+const FIELDS = ["label", "note", "observed_on"];
+
+describe("a refusal is retired by the move that ends the operator's involvement", () => {
+  it("stands when it arrives with focus already outside the cell — the operator is told", () => {
+    // QA's steps 1 and 2: Tab in, clear, Tab. The blur COMMITS and leaves in
+    // one keystroke, so the abandonment beside it meets `saving` and is a
+    // no-op (criterion 3) — and the answer must still reach the screen.
+    const page = recordPage(FIELDS).open("label").commit("label").focusOn("note");
+    expect(page.statusOf("label").kind, "the write is still running").toEqual("saving");
+    page.answer("label", NO);
+    expect(page.statusOf("label")).toEqual({ kind: "failed", message: REFUSAL });
+    expect(page.alerts(), "the refused write is reported, not swallowed").toEqual(1);
+  });
+
+  it("and goes on the very next move, which on a keyboard is a focus landing elsewhere", () => {
+    // QA's step 3: two more Tabs. Before the fix this is where the refusal
+    // survived — four Tabs left it standing, because nothing watched focus.
+    const page = recordPage(FIELDS).open("label").commit("label").focusOn("note");
+    page.answer("label", NO);
+    page.focusOn("observed_on");
+    expect(page.alerts(), "one Tab is enough").toEqual(0);
+    expect(page.statusOf("label")).toEqual(IDLE_EDIT_STATE.status);
+  });
+
+  it("gives QA's whole keyboard sequence at most one refusal, and never two", () => {
+    // Steps 1-4 end to end, no pointer used at any point. The measured
+    // failure was alerts = 2 at the last step, overlapping 273x28px.
+    const page = recordPage(FIELDS);
+    page.open("label").commit("label").focusOn("note").answer("label", NO);
+    page.focusOn("observed_on");
+    page.open("observed_on").commit("observed_on");
+    page.answer("observed_on", { ok: false, message: "second refusal (22007)" });
+    expect(page.refusing()).toEqual(["observed_on"]);
+    expect(page.statusOf("observed_on")).toEqual({
+      kind: "failed",
+      message: "second refusal (22007)",
+    });
+    expect(page.peakAlerts(), "at every moment of the sequence").toEqual(1);
+  });
+
+  it("holds one refusal even when two writes are in flight at once", () => {
+    // The exception the first fix disclosed and criterion 2 does not tolerate:
+    // both writes committed before either answered, so neither refusal existed
+    // when the operator left and no move of theirs falls between the answers.
+    // The newer statement takes the page's one slot; the older one yields it.
+    const page = recordPage(FIELDS);
+    page.open("label").commit("label");
+    page.open("observed_on").commit("observed_on");
+    expect(page.statusOf("label").kind, "still running: not spoken over").toEqual("saving");
+    page.answer("label", NO);
+    expect(page.refusing()).toEqual(["label"]);
+    page.answer("observed_on", { ok: false, message: "second refusal (22007)" });
+    expect(page.refusing()).toEqual(["observed_on"]);
+    expect(page.peakAlerts()).toEqual(1);
+  });
+
+  it("keeps a refusal while the operator is still in the cell it belongs to", () => {
+    // The negative fixture the sweep needs (LESSONS 3): a rule that retires on
+    // every move would pass every test above and delete the sentence the
+    // operator is reading the moment they reach for the cell to fix it.
+    const refused = replay(...AFTER_REFUSAL);
+    for (const move of KEEPING_MOVES) {
+      expect(retiresRefusal(refused.status, move), nameOf(move)).toBe(false);
+      expect(reduceEdit(refused, { kind: "abandoned", edit: 1, move }), nameOf(move)).toBe(
+        refused,
+      );
+    }
+    for (const move of RETIRING_MOVES) {
+      expect(retiresRefusal(refused.status, move), nameOf(move)).toBe(true);
+    }
+    // ...and on the page, a press or a Tab back into the refusing cell leaves
+    // it standing, where a press on any other cell ends it.
+    const page = recordPage(FIELDS).open("label").commit("label");
+    page.focusOn("note").answer("label", NO);
+    page.focusOn("label");
+    expect(page.alerts(), "focus came back to the cell that was refused").toEqual(1);
+    page.pressOn("label");
+    expect(page.alerts(), "and a press inside it is not walking away").toEqual(1);
+    page.pressOn("note");
+    expect(page.alerts(), "a press on another cell is").toEqual(0);
+  });
+
+  it("never retires a write in flight, whichever move reaches it", () => {
+    // Criterion 3 against the move this attempt adds: the blur-commit fires a
+    // focus move at the exact instant the status is `saving`, which is why the
+    // refusal arrives orphaned in the first place. Retiring there would hide a
+    // failed write instead of reporting it.
+    const inFlight = replay({ kind: "editing", edit: 1 }, { kind: "committed", edit: 1 });
+    for (const move of EVERY_MOVE) {
+      expect(retiresRefusal(inFlight.status, move), nameOf(move)).toBe(false);
+      expect(reduceEdit(inFlight, { kind: "abandoned", edit: 1, move }), nameOf(move)).toBe(
+        inFlight,
+      );
+    }
+    // A superseding refusal elsewhere may not silence it either.
+    const page = recordPage(FIELDS);
+    page.open("label").commit("label");
+    page.open("note").commit("note").answer("note", NO);
+    expect(page.statusOf("label").kind).toEqual("saving");
+    page.answer("label", { ok: true });
+    expect(page.statusOf("label").kind, "its own answer still lands").toEqual("saved");
+  });
+
+  it("leaves the 1.5s confirmation alone, however the operator moves", () => {
+    // Criterion 4 against every move, including the page-level one: a
+    // confirmation is a receipt on its own clock, not a sentence to act on.
+    const confirmed = replay(...AFTER_FIRST_SAVE);
+    for (const move of EVERY_MOVE) {
+      expect(retiresRefusal(confirmed.status, move), nameOf(move)).toBe(false);
+    }
+    const page = recordPage(FIELDS);
+    page.open("label").commit("label").answer("label", OK);
+    page.open("note").commit("note").answer("note", NO);
+    expect(page.statusOf("label").kind, "the receipt keeps its own clock").toEqual("saved");
+    expect(page.alerts()).toEqual(1);
+  });
+
+  it("cannot be retired by a move belonging to an edit that is no longer showing", () => {
+    // A listener torn down a tick late, and a cell the operator has since
+    // reopened: BUG-0075's rule, on every move this attempt adds.
+    const later = replay(
+      ...AFTER_REFUSAL,
+      { kind: "editing", edit: 2 },
+      { kind: "committed", edit: 2 },
+      { kind: "settled", edit: 2, outcome: { ok: false, message: "second refusal (22007)" } },
+    );
+    for (const move of EVERY_MOVE) {
+      for (const stale of [0, 1, 3, 99]) {
+        expect(
+          reduceEdit(later, { kind: "abandoned", edit: stale, move }),
+          `${nameOf(move)}, edit ${stale}`,
+        ).toBe(later);
+      }
+    }
+  });
+});
+
+/**
+ * THE LISTENERS THEMSELVES, without a browser — campaign
+ * admin-window/BUG-0107, attempt 2.
+ *
+ * QA's bounce named the gap in so many words: "the retire decision is
+ * offline-unpinnable while it lives in listeners", and no tier here can hold a
+ * listener-arming defect (every vitest project is environment node,
+ * `vitest.config.mts`, STACK.md §4). So the arming is a unit over a page it is
+ * TOLD about (`RetireHost`) rather than over `document`: what it listens for,
+ * what each signal means and what it stops listening to are all readable from
+ * a recorder, and the component's remaining share is a two-line adapter from a
+ * span and its owner document to those two questions.
+ *
+ * That is what would have caught the defect: the first attempt's listener set
+ * had no `focusin` in it, which is one assertion below.
+ */
+function recordingHost(inside: (target: EventTarget | null) => boolean = () => false) {
+  const armed = new Map<string, (signal: RetireSignal) => void>();
+  const stopped: string[] = [];
+  const host: RetireHost = {
+    contains: inside,
+    listen(type, handler) {
+      armed.set(type, handler);
+      return () => stopped.push(type);
+    },
+  };
+  return {
+    host,
+    types: () => [...armed.keys()],
+    stopped,
+    /** Fire one signal at the handler armed for `type`, if there is one. */
+    fire(type: string, signal: RetireSignal) {
+      armed.get(type)?.(signal);
+    },
+  };
+}
+
+/** A stand-in for an element, so a target is a target and nothing more. */
+const SOMEWHERE = {} as EventTarget;
+
+describe("the moves a refusing cell listens for", () => {
+  it("listens page-wide for a press, for Escape, AND for focus landing", () => {
+    // The third one is the whole of QA's bounce: a Tab presses nothing and
+    // moves nothing, so a set without `focusin` cannot see a keyboard
+    // operator leave, and the refusal stood through four of them.
+    const page = recordingHost();
+    armRetire(page.host, () => {});
+    expect(page.types()).toEqual(["pointerdown", "keydown", "focusin"]);
+  });
+
+  it("reads a press and a focus landing as the same question: inside, or away", () => {
+    for (const isInside of [true, false]) {
+      const page = recordingHost(() => isInside);
+      const moves: RetireMove[] = [];
+      armRetire(page.host, (move) => moves.push(move));
+      page.fire("pointerdown", { target: SOMEWHERE });
+      page.fire("focusin", { target: SOMEWHERE });
+      expect(moves, `inside=${isInside}`).toEqual([
+        { kind: "press", inside: isInside },
+        { kind: "focus", inside: isInside },
+      ]);
+    }
+  });
+
+  it("answers Escape and stays silent for every other key", () => {
+    // The negative fixture (LESSONS 3): a key listener that fired on anything
+    // would delete the refusal under the operator's own Tab-to-fix-it.
+    const page = recordingHost(() => false);
+    const moves: RetireMove[] = [];
+    armRetire(page.host, (move) => moves.push(move));
+    for (const key of ["Enter", "Tab", "a", "Esc", "escape", " ", "ArrowDown"]) {
+      page.fire("keydown", { target: SOMEWHERE, key });
+    }
+    expect(moves, "no key but Escape ends a refusal").toEqual([]);
+    page.fire("keydown", { target: SOMEWHERE, key: "Escape" });
+    expect(moves).toEqual([{ kind: "escape" }]);
+  });
+
+  it("stops listening to all three when the refusal goes", () => {
+    // A cell that keeps a document listener after its refusal is retired is
+    // the leak that would retire the NEXT refusal on someone else's move.
+    const page = recordingHost();
+    const disarm = armRetire(page.host, () => {});
+    expect(page.stopped).toEqual([]);
+    disarm();
+    expect(page.stopped).toEqual(["pointerdown", "keydown", "focusin"]);
+  });
+});
+
+/**
+ * THE PAGE'S ONE REFUSAL SLOT — campaign admin-window/BUG-0107, criterion 2's
+ * page-level clause read literally.
+ *
+ * The first attempt disclosed one state where two refusals stand together —
+ * two writes in flight at once, both refused, with no move of the operator's
+ * between the two answers — as a deliberate exception. QA read the criterion
+ * literally ("at most ONE refusal is on screen at any moment, on any record
+ * page") and was right to: the measured cost of two is one panel painted over
+ * the other, 273x28px, with the covered one's app-voice half nowhere at all.
+ */
+describe("the page holds one refusal at a time", () => {
+  it("retires the refusal that held the slot when a newer one takes it", () => {
+    const retired: string[] = [];
+    const releaseA = takeRefusalSlot(() => retired.push("label"));
+    expect(retired, "the first refusal has nothing to displace").toEqual([]);
+    const releaseB = takeRefusalSlot(() => retired.push("observed_on"));
+    expect(retired).toEqual(["label"]);
+    releaseA();
+    releaseB();
+  });
+
+  it("hands the slot on down a chain without ever holding two", () => {
+    const holders = ["label", "note", "observed_on", "tally"];
+    const retired: string[] = [];
+    const releases: Array<() => void> = [];
+    for (const holder of holders) {
+      const release = takeRefusalSlot(() => {
+        retired.push(holder);
+        // what the component does: a retired refusal releases its own slot.
+        release();
+      });
+      releases.push(release);
+    }
+    // every holder but the last has been displaced, in order
+    expect(retired).toEqual(holders.slice(0, -1));
+    for (const release of releases) release();
+  });
+
+  it("leaves nothing behind when a cell is released without being displaced", () => {
+    // Unmount — navigating away with a refusal on screen. The next page's
+    // first refusal must not be retiring a component that is gone.
+    const retired: string[] = [];
+    takeRefusalSlot(() => retired.push("gone"))();
+    const release = takeRefusalSlot(() => retired.push("next page"));
+    expect(retired, "the released holder is not called").toEqual([]);
+    release();
   });
 });
 
