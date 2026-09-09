@@ -92,3 +92,4 @@
 2026-09-09T01:02:02Z	artifact_gate	blocked machinery write: agenticflow/run.yaml
 2026-09-09T01:04:43Z	artifact_gate	blocked write outside repo: /Users/ben-m4/.claude/projects/-Users-ben-m4-Desktop-Coding-KPOP-kspace-Admin/memory/reset-run-yaml-knobs.md
 2026-09-09T01:08:29Z	artifact_gate	blocked machinery write: agenticflow/run.yaml
+2026-09-09T01:37:29Z	evidence_budget	qa_evidence_overbudget: TASK-0042 4174/4000 chars

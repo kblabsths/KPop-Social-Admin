@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T01:35:23Z — do not edit)
+# Tracker index (regenerated 2026-09-09T01:38:01Z — do not edit)
 
 ## open
 - BUG-0079 [P1][bug][M2] decisionRefusals throws on an absent `value` key and mis-refuses two ordinary bodies (undefined vs null)  (scope:src/lib/verdict/decision.ts,tests/offline/verdict/decision.test.ts from:TASK-0042)
@@ -23,16 +23,18 @@
 
 ## claimed
 - TASK-0040 [P1][task][patch] Strike the direct-edit path: groups/idols leave EDIT_CONFIG, and every surface that assumed it is reconciled  (scope:src/lib/edit,src/app/records,src/app/api/admin,src/components,src/lib/db,tests/offline,tests/live,tests/http @builder-118 from:inbox:2026-09-09-vision-amendment.md)
-- TASK-0047 [P1][task][M2] not_provisioned learns the absent FUNCTION: PGRST202 and 42883 join the classifier  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts,tests/offline/absence/pages.test.ts,tests/offline/absence/surfaces.ts,tests/live/harness.live.test.ts @builder-122)
 - BUG-0078 [P2][bug][patch] Walk docs and Ben's note still say staging has no walk_sandbox; the reset tool succeeds there today  (scope:agenticflow/docs/vision/STACK.md,agenticflow/tracker/for-human/TASK-0034.md @builder-124 from:TASK-0041)
 - TASK-0039 [P3][task][patch] Dashboard: one line saying when the resolver last actually applied something  (scope:src/app/page.tsx,src/components,src/lib/db,src/lib/gauges,tests/offline,tests/live/dashboard.live.test.ts @builder-123 from:M1-endgame-user-sim)
 
 ## built
-- TASK-0042 [P1][task][M2] The verdict decision envelope: one typed decision, a pure leaf, the shape the SQL reads  (scope:src/lib/verdict/decision.ts,tests/offline/verdict/decision.test.ts,tests/offline/db/layering.test.ts @builder-120)
+- TASK-0047 [P1][task][M2] not_provisioned learns the absent FUNCTION: PGRST202 and 42883 join the classifier  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts,tests/offline/absence/pages.test.ts,tests/offline/absence/surfaces.ts,tests/live/harness.live.test.ts @builder-122)
 - TASK-0037 [P2][task][patch] Prove the walk sandbox on staging once Ben pastes it, and retire the interim walk-write exception  (scope:tests/walk,tests/live,agenticflow/docs/vision/STACK.md,agenticflow/docs/DECISIONS.md @builder-121 from:inbox:2026-09-03-walker-sandbox-table.md)
 
 ## blocked
 - TASK-0043 [P1][task][M2] ASK Ben: which registered sources row is the admin voice, and does it exist on staging  (scope:agenticflow/tracker/for-human)
 - TASK-0044 [P1][task][M2] ASK Ben: which columns of events and venues are editable at all  (scope:agenticflow/tracker/for-human)
 
-Totals — blocked:2, built:2, claimed:4, done:7, open:19, wont_fix:1. Archived: 124.
+## reopened
+- TASK-0042 [P1][task][M2] The verdict decision envelope: one typed decision, a pure leaf, the shape the SQL reads  (scope:src/lib/verdict/decision.ts,tests/offline/verdict/decision.test.ts,tests/offline/db/layering.test.ts)
+
+Totals — blocked:2, built:2, claimed:3, done:7, open:19, reopened:1, wont_fix:1. Archived: 124.
