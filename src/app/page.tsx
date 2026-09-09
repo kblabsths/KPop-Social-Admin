@@ -7,6 +7,7 @@ import {
   Section,
   StatCard,
   StateOf,
+  TONE_INK,
   WindowLine,
   drawnWindow,
   oldestIn,
@@ -182,6 +183,22 @@ function lineHref(parameter: string, id: string): string {
  * Relative age with the absolute in the title attribute (Voice bar 6). With
  * nothing open there is no severity and no age to show, and the line says so
  * rather than showing a dash pair that reads like missing data.
+ *
+ * **The severity is the word alone, with no chip around it** (ARCHITECTURE.md
+ * §7, admin-window/BUG-0115). This card's whole body is an anchor
+ * (`ui/stat-card.tsx` — `href` makes it one), and a chip is an inline-block box
+ * with a fill of its own: inside that anchor it took priority over the
+ * inherited ink, and because the chip's fill and the card's HOVER fill are the
+ * same token it dissolved into the card exactly when the reader pointed at it
+ * — measured at zero card-fill pixels in the chip's own crop, both themes. The
+ * severity keeps its colour and loses its box, which is the designer's
+ * admin-window/BUG-0113 precedent applied.
+ *
+ * The colour is not decided here: `TONE_INK` is `ui/badge.tsx`'s map, the app's
+ * one answer to what ink a severity carries, imported rather than copied so
+ * this page cannot grow a second opinion about it (the cost of a duplicated
+ * tone map is admin-window/BUG-0106). `data-severity` is the hook this page's
+ * severity is read by, spelled as `/queues` and the review header spell it.
  */
 function AttentionDetail({ summary, now }: { summary: KindSummary; now: string }) {
   if (summary.open === 0 || summary.maxSeverity === null) {
@@ -190,7 +207,9 @@ function AttentionDetail({ summary, now }: { summary: KindSummary; now: string }
   const age = relativeAge(summary.oldestOpenedAt, now);
   return (
     <span className="flex flex-wrap items-baseline gap-2">
-      <Badge tone={summary.maxSeverity}>{summary.maxSeverity}</Badge>
+      <span data-severity={summary.maxSeverity} className={TONE_INK[summary.maxSeverity]}>
+        {summary.maxSeverity}
+      </span>
       <span title={age.title}>oldest {age.text}</span>
     </span>
   );

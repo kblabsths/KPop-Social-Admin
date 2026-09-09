@@ -11,7 +11,17 @@ import { cx } from "./cx";
  */
 export type BadgeTone = "neutral" | "high" | "low" | "healthy" | "broken";
 
-const TONE: Record<BadgeTone, string> = {
+/**
+ * What colour a tone is — the app's ONE answer to "what ink does a severity,
+ * a health or a plain classification carry", exported so a surface that shows
+ * one of these words WITHOUT a chip reads the same map instead of growing a
+ * second copy of it (`src/app/page.tsx`, admin-window/BUG-0115).
+ *
+ * A consumer takes the ink and nothing else: the box — the fill, the radius,
+ * the inline-block padding — is `Badge`'s alone, and an anchor may not contain
+ * it (ARCHITECTURE.md §7).
+ */
+export const TONE_INK: Record<BadgeTone, string> = {
   neutral: "text-ink",
   low: "text-ink-secondary",
   high: "text-attention",
@@ -30,7 +40,7 @@ export function Badge({
     <span
       className={cx(
         "type-data inline-block rounded-control bg-chrome px-2 py-0.5",
-        TONE[tone],
+        TONE_INK[tone],
       )}
     >
       {children}
