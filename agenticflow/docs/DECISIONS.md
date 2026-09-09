@@ -1134,3 +1134,34 @@ enter the map by the back door of "it is registry-declared" — registry
 declaration was the CANDIDATE bar; Ben's ruling is the editable bar. And the
 override path is still the only way a catalog value changes from Admin: this
 ruling widens what may be overridden, never how (2026-09-08, the strike).
+
+## 2026-09-09 — a chip may never sit inside an anchor, and the guard is a rendered whole-window sweep
+
+BUG-0115 is the second instance of a chip-filled span inside a link (the first,
+BUG-0113, was the `/claims` bucket anchors), so Common-violations row 13 was
+promoted exactly as its count-1 note said it would be: the rule is now
+ARCHITECTURE.md §7, and the assertion lands in `tests/offline/ui/link-spelling.test.ts`
+with BUG-0115's own fix.
+
+**The door this closes for the layout.** A badge that classifies a *card-shaped*
+link — a `StatCard` with an `href`, whose anchor is the whole card — must sit
+inside the card's shell and outside its anchor. Wrapping a card in an anchor does
+not make the card's classifications part of a label. For the Dashboard's
+attention cards the ruled fix is the designer's BUG-0113 precedent applied: the
+chip goes, the severity word stays, in the severity's ink and with no fill of its
+own — a word with no box cannot dissolve into the box behind it. Restructuring
+`StatCard` so the card stops being one anchor stays OUT of that fix: it is a
+designer's ruling about the card's affordance (the bar-10 shape BUG-0054/BUG-0099
+removed everywhere else), not a builder's pick made while fixing a chip.
+
+**The door this closes for the guards.** The rule is asserted over the RENDERED
+window, not over source text and not per page: every route `pageRoutes()` finds,
+rendered against `populatedScript`, asserted with `chipsInsideLinks`, whose chip
+classes are derived by rendering `<Badge>`. Three consequences we accept
+deliberately. A page added later inherits the rule instead of a comment about it.
+No class literal is pinned anywhere, so restyling the chip moves the guard with
+it. And the guard sees only the states the populated script renders — it is a
+floor under the milestone walk, never a replacement for it. It was dry-run before
+it was written into criteria (2 hits on `/`, 0 on the other seven routes), because
+a repo-wide guard authored against an instance nobody measured is how row 4's
+false-red absence pins were born.

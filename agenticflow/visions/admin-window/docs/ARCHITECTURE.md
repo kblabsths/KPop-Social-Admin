@@ -560,6 +560,32 @@ in `src/components/ui/`. Tailwind 4 is CSS-first: there is no
   component decides *when* the empty state shows (no rows and no other state),
   the caller supplies *the words*, and a header-only table — the one rendering
   that says nothing at all — is unreachable by construction.
+- **A badge never sits inside a link, and a link never wears one**
+  (LOOK_AND_FEEL, *Chips and badges*; earned by BUG-0113, promoted at the
+  second instance, BUG-0115). A chip is an inline-block box with a fill of its
+  own, so inside an anchor it takes CSS priority over the inherited ink and
+  paints over the ancestor's underline — and where the anchor carries a hover
+  fill of the same token, the chip's own box dissolves into the card under the
+  pointer. The rule is structural, not decorative: **no anchor in any page's
+  delivered markup contains a chip-filled span.**
+  - On a **text link** the words themselves carry `IN_PAGE_LINK`; a badge that
+    classifies them sits beside the anchor, never around or inside it.
+  - On a **card-shaped link** — `StatCard` with an `href`, whose anchor is the
+    whole card — a badge that classifies the card sits inside the card's shell
+    and OUTSIDE its anchor. Wrapping a card in an anchor does not make its
+    classifications part of a label.
+  - Enforced repo-wide and over the **rendered window**, not per page:
+    `tests/offline/ui/link-spelling.test.ts` — the one owner of link spelling —
+    sweeps every route the filesystem offers (`loadSurfaces()` / `pageRoutes()`
+    from `tests/offline/absence/surfaces.ts`, the shared harness three files
+    already drive) against a populated database and asserts `chipsInsideLinks`
+    is empty on each. The chip's classes are derived by RENDERING `<Badge>`
+    (`tests/fixtures/link-spelling.ts`), so restyling the chip moves the guard
+    with it and no class literal is pinned. A page added later inherits the
+    rule rather than a comment about it.
+  - What the sweep does **not** cover, and the walk still owns: a chip inside a
+    link on a state the populated script never renders. The guard is a floor
+    under the walk, not a replacement for it.
 
 ## 8. The gauges
 
@@ -1297,7 +1323,7 @@ decomposition brief of every ticket touching that surface.
 
 | 12 | **A direct catalog write path from Admin** — the shape Ben struck from VISION on 2026-09-08 | 1 | The M1 `pre_cutover` regime: `groups`/`idols` PATCHed their own rows through `updateRecordField`. It was legal when it shipped (spec §8, AGENTS.md) and it is not legal now | **Standing rule from the day it was filed, not from a second instance** — the class is closed by a human ruling rather than by a count, so it is promoted at 1: §9's three-regime bullet and §13.8. Cited in the decomposition brief of every ticket touching `src/lib/edit/config.ts`, the PATCH route, or `src/components/records/**`. The teeth are structural and live in `tests/offline/edit/config.test.ts`: the only table whose write path is `direct` is `walk_sandbox`, so a catalog table re-added with a direct path reddens on two fixtures |
 
-| 13 | **A `<Badge>` (or any chip-filled span) standing as the whole body of an anchor, so the link's spelling never reaches the glyphs a reader sees** | 1 | `src/components/claims/bucket-table.tsx`: BUG-0108 gave the five bucket anchors `IN_PAGE_LINK`, but the anchor's body is a `<Badge>` whose own `text-ink` and `bg-chrome` win over the inherited accent and paint over the underline — QA measured the anchor's crop byte-identical to the same crop with `text-decoration-line` forced to `none`, both themes, all five buckets (BUG-0113) | **Noted at 1, deliberately NOT promoted to a rule here.** The designer ruled it on 2026-09-09 and wrote the rule where it belongs — LOOK_AND_FEEL, *Chips and badges*: "a badge never sits inside a link, and a link never wears one", with the walkable form "no anchor inside `main` contains a chip-filled span". This ledger row exists so a second instance is recognised as a class rather than as a fresh bug. Architect's call on the designer's optional ask (generalising the assertion into `tests/offline/ui/link-spelling.test.ts` so no anchor may contain a chip-classed descendant): **not now** — at count 1 the walk plus the Look's clause carry it, and a repo-wide structural guard authored against a single instance is how absence pins keyed on the wrong thing get born (row 4). If a second instance appears, promote both: a rule in §7 and that assertion in the repo-wide link guard, which is already the one owner of link spelling. BUG-0113's own fix is pinned narrowly by `expectLinkSpellingReachesTheGlyphs` in `tests/fixtures/link-spelling.ts` |
+| 13 | **A chip-filled span inside an anchor — a `<Badge>` standing as the whole body of a text link, or a badge classifying a card whose whole body is a link** | 2 | `src/components/claims/bucket-table.tsx`: BUG-0108 gave the five bucket anchors `IN_PAGE_LINK`, but the anchor's body was a `<Badge>` whose own `text-ink` and `bg-chrome` won over the inherited accent and painted over the underline — QA measured the anchor's crop byte-identical to the same crop with `text-decoration-line` forced to `none`, both themes, all five buckets (BUG-0113). Second instance: `src/app/page.tsx:193` (`AttentionDetail`) renders the severity `<Badge>` inside the Dashboard attention card, whose whole body is an anchor (`src/components/ui/stat-card.tsx:82`); card and chip share the `bg-chrome` token, so the chip's box measures 0 card-fill pixels in its own crop under the pointer, both themes (BUG-0115) | **PROMOTED at count 2, 2026-09-09** (architect, this ruling), exactly as the count-1 note said it would be: a rule in **§7** — no anchor in any page's delivered markup contains a chip-filled span, with the card-shaped-link case named — and **the assertion in the repo-wide link guard**, `tests/offline/ui/link-spelling.test.ts`, which is already the one owner of link spelling. The guard is a rendered whole-window sweep over `loadSurfaces()`, not a source-text heuristic: measured 2026-09-09 on the tree at run/admin-window, it returns 2 hits on `/` and 0 on the other seven routes, so it is red today for exactly the open defect and non-vacuous. It lands with BUG-0115's fix (criteria amended the same day), not as a ticket of its own — a guard authored apart from the defect it must flag is how row 4 was born. The count-1 reasoning stands as recorded and is why nothing was built at count 1: the designer had put the rule in LOOK_AND_FEEL, *Chips and badges* ("a badge never sits inside a link, and a link never wears one", walkable form "no anchor inside `main` contains a chip-filled span"), and a repo-wide structural guard authored against a single instance is how absence pins keyed on the wrong thing get born. BUG-0113's own narrow pin (`expectLinkSpellingReachesTheGlyphs`, `tests/fixtures/link-spelling.ts`) is unchanged and still grades the five bucket anchors
 
 | 3 (re-count) | A list read with no `.range()`, no `.limit()` and no `.order()` | **0 new** | — | **The rule held.** M1 structure walk, 2026-09-03: every `.select(` in `src/lib/db/**` was traced. Fourteen chains a crude scan flagged are all either `.maybeSingle()` by primary key or by-id chunks bounded with `.limit(ids.length)`; every list read goes through `readComplete` / `readRows` with a total order and a bound. Count stays 1 (the original, fixed under TASK-0026). |
 
@@ -1308,6 +1334,10 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-09, chip-inside-a-link promoted to a rule (architect, rulings batch 2).** BUG-0115 is the second instance of Common-violations row 13, so both halves the count-1 note promised landed together: **§7 gains the rule** (no anchor in any page's delivered markup contains a chip-filled span, with the card-shaped-link case spelled out — a badge classifying a `StatCard` with an `href` sits inside the shell and outside the anchor), and **the assertion goes into `tests/offline/ui/link-spelling.test.ts`**, the one owner of link spelling, as a rendered whole-window sweep over the shared `loadSurfaces()` harness rather than a source-text heuristic. Dry-run before it was written into criteria: the sweep returns 2 hits on `/` and 0 on the other seven routes today, so BUG-0115's fix is its red-to-green target and the guard cannot pass vacuously. Row 13 now reads count 2 with both examples. No other section changed.
+
+- **2026-09-09, BUG-0110 reopen ruling (architect, rulings batch 2).** The Cycles-in-window sub-line names its excluded set by the property TRUE of every row in it — no end recorded — and never by an outcome verdict, because the excluded set (`duration.unmeasurable`) is a strict superset of the dead and the page pins one word per cycle state in `src/lib/cycles/state.ts` (`STATE_WORD`; BUG-0055, BUG-0074). The alternative shape — splitting running from died from unrecorded on the card — was rejected: it puts a second state vocabulary on a card the Look allows exactly one sub-line, duplicating the outcome panel three cards down. BUG-0110 criterion 4 was the defect QA bounced on (it demanded the excluded count EQUAL the `died` row, which is unsatisfiable with criterion 1 on any mixed window); it now binds the count to the duration note's, from the one field, and forbids the line from implying a verdict. BUG-0116 is closed as the duplicate it is; its strict pin is BUG-0110's red-to-green target. No section of this contract changed.
 
 - **2026-09-09, BUG-0113 criteria ruling (architect).** No section of the contract changed; two things did. (1) **Common violations gains row 13** — a badge standing as the whole body of an anchor — recorded at count 1 and NOT promoted: the designer's ruling already put the rule in LOOK_AND_FEEL, and the row exists so the second instance reads as a class. (2) **BUG-0113 criterion 3 amended** (`ticket.py amend-criteria`): as inherited from BUG-0108 criterion 6 it forbade the fix it was attached to — dropping the chip removes its `inline-block` box and the buckets rows lose about 4px. It now binds the table's own density (cell padding 8/6, column set, order, alignment, no other cell moves) and explicitly permits the row box to shrink by the removed chip's vertical padding. Criteria 1, 2 and 4 and all three checks are unchanged; the red-to-green target stays the `expectLinkSpellingReachesTheGlyphs` pin.
 
