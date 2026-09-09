@@ -1137,6 +1137,90 @@ describe("each shape gets its own view", () => {
     );
   });
 
+  /**
+   * The shape staging actually holds (QA, admin-window/BUG-0122): on item
+   * `01a06287-...` three of the 91 folded claims SHARE an `external_ref` with
+   * another claim -- one source record stuck on two different facts -- so the
+   * record cell alone does not separate 91 rows into 91 (measured read-only:
+   * 91 rows, 88 distinct `external_ref`). The row is a sentence, and it is the
+   * whole sentence that has to be distinguishable: two claims about the same
+   * record still differ, because they state different facts about it.
+   */
+  it("keeps two claims about ONE record apart by the fact each states", async () => {
+    const sameRef = "vvG10Z_2MDlr-4";
+    const ticketUrl = foldedPerformer({
+      observation_id: "01920000-0000-7000-8000-000000000321",
+      entity_id: null,
+      external_ref: sameRef,
+      field: "ticket_url",
+      value: "https://www.ticketmaster.com/sean-healy",
+    });
+    const performers = foldedPerformer({
+      observation_id: "01920000-0000-7000-8000-000000000322",
+      entity_id: null,
+      external_ref: sameRef,
+    });
+    const item = reviewItemSourcePattern({
+      evidence: [ticketUrl.observation_id, performers.observation_id],
+    });
+    const markup = await renderItem(
+      {
+        [T.reviewItems]: { data: item },
+        [T.observations]: [{ data: [ticketUrl, performers] }, { data: [] }],
+        [T.sources]: { data: [BANDSINTOWN] },
+        [T.pendingClaims]: [{ data: [] }, { data: [] }],
+        ...SETTLEMENT_ABSENT,
+      },
+      item.review_item_id,
+    );
+    const a = rowOf(markup, ticketUrl.observation_id);
+    const b = rowOf(markup, performers.observation_id);
+
+    // Same record, named the same way on both rows...
+    expect(a.record).toBe(sameRef);
+    expect(b.record).toBe(sameRef);
+    // ...and still two distinguishable rows, by the fact each one states.
+    expect(a.fact).not.toBe(b.fact);
+    expect(a.text).not.toBe(b.text);
+  });
+
+  /**
+   * The record cell is the one place this surface renders a FOREIGN string --
+   * a reference the source published, not an id this app minted (STACK.md's
+   * trust boundary: this service is internet-reachable and holds the service
+   * role). It is rendered verbatim, as text, and it stays inside its own cell
+   * and its own attribute.
+   */
+  it("renders a source's reference as text, whatever the source published", async () => {
+    const hostile = '<script>alert(1)</script>" onmouseover="alert(2)';
+    const claim = foldedPerformer({
+      observation_id: "01920000-0000-7000-8000-000000000323",
+      entity_id: null,
+      external_ref: hostile,
+    });
+    const item = reviewItemSourcePattern({ evidence: [claim.observation_id] });
+    const markup = await renderItem(
+      {
+        [T.reviewItems]: { data: item },
+        [T.observations]: [{ data: [claim] }, { data: [] }],
+        [T.sources]: { data: [BANDSINTOWN] },
+        [T.pendingClaims]: [{ data: [] }, { data: [] }],
+        ...SETTLEMENT_ABSENT,
+      },
+      item.review_item_id,
+    );
+    const $ = cheerio.load(markup);
+    const cell = $(`[data-evidence="${claim.observation_id}"]`).closest("tr").find("[data-record]");
+
+    // Verbatim, and as TEXT: LESSONS 5's "render verbatim in mono" does not
+    // mean "render as markup".
+    expect(cell.text()).toBe(hostile);
+    expect(cell.attr("data-record")).toBe(hostile);
+    // Neither the element nor the attribute was broken out of.
+    expect($("script")).toHaveLength(0);
+    expect($("[onmouseover]")).toHaveLength(0);
+  });
+
   it("keeps the per-fact views out of it: they are about one record already", async () => {
     // Criterion 5: `ConflictEvidence` and `StuckFactEvidence` are each about a
     // single record, which the item header names — a record column there would
