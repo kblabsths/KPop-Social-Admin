@@ -1,0 +1,38 @@
+{
+ "id": "BUG-0117",
+ "created": "2026-09-09T12:18:11Z",
+ "green": true,
+ "git_head": "502ca50ca1cc6dfe5b39bfe99840b812002d0aca",
+ "scope": [
+  "src/components/review/item-header.tsx",
+  "src/components/review/close/slot.tsx",
+  "src/app/not-found.tsx",
+  "tests/offline/ui/link-spelling.test.ts",
+  "tests/offline/review-item/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "ec5c43f69b147298a25e0d9ecff0410d8811a28a5785ce56d3b2f4b837365d28",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "bash -c 'for f in src/components/review/item-header.tsx src/components/review/close/slot.tsx src/app/not-found.tsx; do grep -q IN_PAGE_LINK \"$f\" || exit 1; done'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'grep -q expectLinkSpellingReachesTheGlyphs tests/offline/ui/link-spelling.test.ts'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/ui/link-spelling.test.ts tests/offline/review-item tests/offline/queues/verdict-log.test.ts tests/offline/shell/shell.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-60054\n\n \u2713 |offline| tests/offline/review-item/signal-actions.test.ts (27 tests) 42ms\n \u2713 |offline| tests/offline/review-item/close-slot.test.ts (34 tests) 57ms\n \u2713 |offline| tests/offline/review-item/conflict-actions.test.ts (47 tests) 81ms\n \u2713 |offline| tests/offline/review-item/link-actions.test.ts (32 tests) 79ms\n \u2713 |offline| tests/offline/queues/verdict-log.test.ts (23 tests) 191ms\n \u2713 |offline| tests/offline/review-item/verdict-inline.test.ts (32 tests) 323ms\n \u2713 |offline| tests/offline/shell/shell.test.ts (23 tests) 132ms\n \u2713 |offline| tests/offline/review-item/read.test.ts (18 tests) 10ms\n \u2713 |offline| tests/offline/ui/link-spelling.test.ts (32 tests) 422ms\n \u2713 |offline| tests/offline/review-item/page.test.ts (75 tests) 621ms\n\n Test Files  10 passed (10)\n      Tests  343 passed (343)\n   Start at  05:18:09\n   Duration  1.65s (transform 2.13s, setup 0ms, collect 6.29s, tests 1.96s, environment 1ms, prepare 1.41s)\n\n(node:60202) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
