@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-09T20:08:11Z — do not edit)
+# Tracker index (regenerated 2026-09-09T20:11:00Z — do not edit)
 
 ## open
 - BUG-0144 [P2][bug][M2] /claims states 'every bucket ... with every claim in it' over a pending_claims read that refused  (scope:src/app/claims/page.tsx,tests/offline/claims/page.test.ts from:DEBT-0008)
@@ -8,7 +8,7 @@
 - DEBT-0013 [P2][debt][patch] The entity picker manages no focus at all, and its hint promises an Escape that only works while focus is inside the panel  (scope:src/components/records/entity-picker.tsx,tests/offline/records/entity-picker.test.ts)
 - DEBT-0012 [P3][debt][patch] readPopulation issues all three shape counts on every narrowed /queues URL, including the two the URL's own kind cannot render  (deps:BUG-0141 scope:src/lib/db/review-items.ts,tests/offline/review/review-items.test.ts)
 
-## claimed
+## built
 - DEBT-0010 [P2][debt][M2] Two exported narrowedTo with different meanings, and one isNarrowed whose two arities answer two different questions — the narrowing vocabulary has no owner  (deps:BUG-0141 scope:src/components/ui/window-line.tsx,src/components/ui/index.ts,src/lib/db/runs.ts,src/lib/review/queue-filters.ts,src/lib/claims/filters.ts,src/app/cycles/page.tsx,src/app/claims/page.tsx,tests/offline/ui/primitives.test.ts,tests/offline/runs/page.test.ts,tests/offline/queues/filters.test.ts @builder-212)
 
 ## qa
@@ -17,4 +17,4 @@
 ## blocked
 - BUG-0138 [P2][bug][M2] /claims reads the whole claim population on every request: ~14 sequential round trips, 2.9-3.8 s warm  (deps:BUG-0139 scope:src/app/claims/page.tsx,src/lib/db/claims.ts,src/components/claims/bucket-table.tsx,src/components/claims/filter-bar.tsx,src/lib/claims/filters.ts,src/lib/gauges/pending-claims.ts,src/lib/gauges/standing-disagreements.ts,tests/offline/claims/page.test.ts,tests/offline/claims/read.test.ts,tests/offline/claims/filters.test.ts,tests/offline/claims/population.ts,tests/offline/absence/pages.test.ts,tests/offline/absence/in-window.test.ts,tests/offline/absence/blank-cells.test.ts,tests/offline/absence/surfaces.ts,tests/offline/gauges/bounded.test.ts,tests/offline/ui/copy.test.ts,tests/offline/ui/link-spelling.test.ts,tests/offline/ui/primitives.test.ts,tests/live/claims.live.test.ts,tests/live/parity.ts from:human:ben-walk)
 
-Totals — blocked:1, claimed:1, done:98, open:6, qa:1, wont_fix:1. Archived: 124.
+Totals — blocked:1, built:1, done:98, open:6, qa:1, wont_fix:1. Archived: 124.

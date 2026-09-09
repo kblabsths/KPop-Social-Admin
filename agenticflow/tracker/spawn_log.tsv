@@ -21007,3 +21007,21 @@
 2026-09-09T20:07:59Z	agent	-	-	-	-
 # STRANDED	2026-09-09T20:08:14Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0145.md
 2026-09-09T20:08:14Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:08:30Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0145.md
+2026-09-09T20:08:30Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:08:46Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0145.md
+2026-09-09T20:08:46Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:09:02Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0145.md
+2026-09-09T20:09:02Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:09:18Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0145.md
+2026-09-09T20:09:18Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:09:33Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0145.md
+2026-09-09T20:09:33Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:10:19Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0145.md
+2026-09-09T20:10:19Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:10:35Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0145.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0010.md
+2026-09-09T20:10:35Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:10:51Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0145.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0010.md, tests/offline/cycles/page.test.ts
+2026-09-09T20:10:51Z	agent	-	-	-	-
+# STRANDED	2026-09-09T20:10:51Z	builder	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0145.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0010.md, tests/offline/cycles/page.test.ts
+2026-09-09T20:10:51Z	builder	DEBT-0010	25559	836	129263
