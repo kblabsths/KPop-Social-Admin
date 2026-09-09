@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it } from "vitest";
 
-import { Badge } from "@/components/ui/badge";
+import { Badge, TONE_INK } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { type Column, DataTable } from "@/components/ui/data-table";
@@ -360,6 +360,27 @@ describe("Badge", () => {
   it("keeps the chrome fill for every tone — colour lands on the text", () => {
     for (const tone of ["neutral", "high", "low", "healthy", "broken"] as const) {
       expect(classesOf(render(h(Badge, { tone, children: "x" })))).toContain("bg-chrome");
+    }
+  });
+
+  /*
+   * `TONE_INK` is exported so a surface that shows one of these words WITHOUT
+   * a chip — the Dashboard's attention cards, where the chip could not stay
+   * inside the card's anchor (admin-window/BUG-0115) — reads the same map
+   * instead of copying it. This asserts the export IS what the badge renders,
+   * which is what makes it one map and not two that agree today.
+   */
+  it("renders the very ink it publishes, so a consumer of the map cannot drift", () => {
+    for (const tone of ["neutral", "high", "low", "healthy", "broken"] as const) {
+      expect(classesOf(render(h(Badge, { tone, children: "x" }))), tone).toContain(
+        TONE_INK[tone],
+      );
+    }
+    // The map is INK and nothing else: a consumer that takes a tone's colour
+    // must not inherit the box — the fill, the radius, the padding — which is
+    // the chip, and which an anchor may not contain (ARCHITECTURE.md §7).
+    for (const ink of Object.values(TONE_INK)) {
+      expect(ink.startsWith("text-"), ink).toBe(true);
     }
   });
 });

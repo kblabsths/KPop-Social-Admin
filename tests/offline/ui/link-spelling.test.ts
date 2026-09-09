@@ -1,17 +1,55 @@
 import * as cheerio from "cheerio";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { codeLinesIn, sourceFiles, sourceText } from "../source-tree";
+import { stubClient, type Script } from "../../fixtures/stub-client";
 import {
   BROKEN_INK,
   CHIP_FILL,
   REJECTED_AT_REST_SPELLING,
   chipsInsideLinks,
+  classesOf,
   expectDrawnAsLinkAtRest,
   expectDrawnAsLinkAtRestIn,
   expectNotDrawnAsLink,
 } from "../../fixtures/link-spelling";
+
+/*
+ * The whole-window sweep below renders every page, so it needs the one seam
+ * every read of every page goes through — `getDbClient()` (ARCHITECTURE.md §4
+ * rule 3). `vi.mock` is hoisted per FILE and cannot be imported, so this
+ * stanza is copied verbatim from the three files that already drive the shared
+ * harness (`absence/pages.test.ts`, `blank-cells.test.ts`, `in-window.test.ts`)
+ * — the mock and its `scriptDatabase`, and nothing else: no walk, no helper.
+ */
+const readWith = vi.hoisted(() => ({ client: undefined as unknown }));
+
+vi.mock("@/lib/db/client", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/db/client")>();
+  return {
+    ...actual,
+    getDbClient: () => {
+      if (readWith.client === undefined) throw new Error("no database scripted");
+      return readWith.client as SupabaseClient;
+    },
+  };
+});
+
+const { loadSurfaces, pageRoutes, populatedScript, renderSurface } = await import(
+  "../absence/surfaces"
+);
+
+/** Script the database the next render reads. */
+function scriptDatabase(script: Script) {
+  readWith.client = stubClient(script).asSupabaseClient();
+}
+
+const SURFACES = await loadSurfaces();
+
+/** The window's pages: every `page.tsx` on disk except the sign-in page. */
+const WINDOW_ROUTES = pageRoutes().filter((route) => route !== "/login");
 
 /**
  * One spelling of a link, asserted over the WHOLE source tree (campaign
@@ -175,5 +213,68 @@ describe("the rule that a badge never sits inside a link", () => {
   it("stays green on a link whose body is its own words", () => {
     const $ = cheerio.load(`<p><a href="/x" class="${IN_PAGE_LINK}">standing</a></p>`);
     expect(chipsInsideLinks($, $.root())).toEqual([]);
+  });
+});
+
+describe("no anchor anywhere in the window contains a chip", () => {
+  /*
+   * ARCHITECTURE.md §7, promoted from Common violations row 13 at its second
+   * instance (admin-window/BUG-0113 on `/claims`, admin-window/BUG-0115 on the
+   * Dashboard's attention cards): **no anchor in any page's delivered markup
+   * contains a chip-filled span**. A chip is an inline-block box with a fill of
+   * its own, so inside an anchor it takes CSS priority over the inherited ink
+   * and paints over the ancestor's underline — and where the anchor carries a
+   * hover fill of the same token, the chip's own box dissolves into the card
+   * under the pointer.
+   *
+   * Repo-wide and over the RENDERED window rather than per page, so a page
+   * added later inherits the rule instead of a comment about it: the inventory
+   * is `loadSurfaces()` / `pageRoutes()` from the shared harness three files in
+   * `tests/offline/absence/` already drive, and the chip's classes are derived
+   * by rendering `<Badge>` (`CHIP_FILL`), so restyling the chip moves the guard
+   * with it and no class literal is pinned here.
+   *
+   * **What this sweep does NOT cover, and the walk still owns**: a chip inside
+   * a link on a state `populatedScript` never renders — a filtered list, an
+   * error, a hover-only affordance. It is a floor under the walk, not a
+   * replacement for it.
+   *
+   * Measured on the pre-fix tree, 2026-09-09: 2 hits on `/` (both attention
+   * `StatCard`s) and 0 on the other seven routes.
+   */
+  it("sweeps exactly the routes the filesystem offers", () => {
+    expect(SURFACES.map((surface) => surface.route).sort()).toEqual(WINDOW_ROUTES);
+  });
+
+  for (const surface of SURFACES) {
+    it(`${surface.route} draws no chip inside a link`, async () => {
+      scriptDatabase(populatedScript(surface));
+      const $ = cheerio.load(await renderSurface(surface));
+      expect(
+        chipsInsideLinks($, $.root()),
+        `${surface.route} renders a chip inside an anchor`,
+      ).toEqual([]);
+    });
+  }
+
+  it("renders anchors and chips on the window it sweeps, so green is not empty", async () => {
+    let anchors = 0;
+    let chips = 0;
+    for (const surface of SURFACES) {
+      scriptDatabase(populatedScript(surface));
+      const $ = cheerio.load(await renderSurface(surface));
+      anchors += $("a").length;
+      chips += $("span")
+        .toArray()
+        .filter((element) => {
+          const classes = classesOf($(element));
+          return CHIP_FILL.every((className) => classes.includes(className));
+        }).length;
+    }
+    // Both halves of the claim have to be on screen for an empty result to
+    // mean anything: pages that link, and chips that could have landed inside
+    // one (LESSONS 3 — a guard that never saw its subject passes vacuously).
+    expect(anchors).toBeGreaterThan(0);
+    expect(chips).toBeGreaterThan(0);
   });
 });

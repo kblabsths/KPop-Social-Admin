@@ -2,7 +2,7 @@
  * The primitive set — campaign admin-window, TASK-0004. Builders consume these
  * and the tokens in `src/app/globals.css`, never raw values (ARCHITECTURE §7).
  */
-export { Badge, type BadgeTone } from "./badge";
+export { Badge, TONE_INK, type BadgeTone } from "./badge";
 export { Button, type ButtonVariant } from "./button";
 export { Chip } from "./chip";
 export { type Column, DataTable, type SortDirection } from "./data-table";

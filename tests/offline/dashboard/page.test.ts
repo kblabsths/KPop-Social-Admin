@@ -5,6 +5,7 @@ import { DASHBOARD_WINDOW } from "@/lib/db/dashboard";
 import { RESOLVER_CADENCE_SECONDS } from "@/lib/gauges/gauge";
 import { T } from "@/lib/db/tables";
 import { absoluteUtc } from "@/lib/format";
+import { TONE_INK, type BadgeTone } from "@/components/ui/badge";
 import { render } from "../ui/markup";
 import {
   BROKEN_INK,
@@ -497,30 +498,51 @@ describe("the attention summary", () => {
   });
 
   /*
-   * PIN — campaign admin-window/BUG-0113's sibling on the Dashboard, filed as
-   * BUG-0115. A strict `it.fails`: the day the chip moves out of the card's
-   * anchor this XPASSes red and sends the reader to the ticket.
+   * Closed: admin-window/BUG-0115, the Dashboard sibling of
+   * admin-window/BUG-0113. Was a strict `it.fails` pin while the defect was
+   * open; it is a plain assertion now that the chip is gone.
    *
-   * The `Open signals` StatCard is a link (`href` = /queues?kind=signal) and
-   * its sub-line renders the max severity as a `<Badge>` — a chip, with a fill
-   * of its own, INSIDE the anchor. LOOK_AND_FEEL, "Chips and badges": "A badge
-   * never sits inside a link, and a link never wears one … any badge
-   * classifying it sits beside it, never around it. Walkable: no anchor inside
-   * `main` contains a chip-filled span."
+   * Both attention `StatCard`s are links (`href` = /queues?kind=…) and their
+   * sub-line used to render the max severity as a `<Badge>` — a chip, with a
+   * fill of its own, INSIDE the anchor. ARCHITECTURE.md §7: "no anchor in any
+   * page's delivered markup contains a chip-filled span"; on a card-shaped
+   * link a badge that classifies the card sits inside the shell and OUTSIDE
+   * the anchor. What it cost, measured in bundled Chromium on a production
+   * build at 1440x900 with the pointer on the card: the chip and the card's
+   * hover state carry the SAME fill token, so in a 54x28 crop of the chip the
+   * light theme went from 691 chip-fill + 676 card-fill px at rest to 1383
+   * chip-fill and ZERO card-fill px hovered (dark: 683 + 676 -> 1359 + 0) —
+   * the chip's box gone exactly where the reader was pointing.
    *
-   * Measured in bundled Chromium on a production build of run/admin-window at
-   * 23ea107, 1440x900, mouse parked at (0,0) then hovering the card: the chip
-   * and the card's hover state carry the SAME fill token, so the chip's box
-   * disappears under the pointer. In a 54x28 crop of the chip, light theme:
-   * 691 chip-fill px + 676 card-fill px at rest -> 1383 chip-fill px and ZERO
-   * card-fill px hovered. Dark: 683 + 676 -> 1359 + 0.
+   * The repo-wide form of this rule, over every route the filesystem offers,
+   * is `tests/offline/ui/link-spelling.test.ts`. This one stays because the
+   * Dashboard is where the defect landed twice.
    */
-  it.fails("never draws a chip inside a link, on the card the severity sits in", async () => {
+  it("never draws a chip inside a link, on the card the severity sits in", async () => {
     const markup = await renderDashboard(healthyScript());
     const $ = cheerio.load(markup);
-    // The population holds an open `high`, so a chip is rendered to find.
+    // The population holds an open `high`, so a chip would be rendered to find.
     expect(reviewItems().some((item) => item.severity === "high")).toBe(true);
     expect(chipsInsideLinks($, $.root())).toEqual([]);
+  });
+
+  it("keeps the severity's colour on the word after taking its chip away", async () => {
+    const markup = await renderDashboard(healthyScript());
+    const $ = cheerio.load(markup);
+
+    for (const kind of ["decision", "signal"] as const) {
+      const word = $(`a[href*="kind=${kind}"]`).find("[data-severity]");
+      expect(word.length, `${kind} publishes no severity hook`).toBe(1);
+      const severity = word.attr("data-severity") as BadgeTone;
+      // The word IS the severity, and the ink is the one map that decides what
+      // colour a severity is (`ui/badge.tsx`) — read from there, never a class
+      // literal repeated here, so a repalette moves both together.
+      expect(word.text().trim()).toBe(severity);
+      expect(classesOf(word), `${kind}'s severity ink`).toContain(TONE_INK[severity]);
+      // A value, not a link: it must not borrow the affordance of the card it
+      // sits on (LESSONS 3's second fixture, on the same element).
+      expectNotDrawnAsLink(classesOf(word), `the ${kind} card's severity word`);
+    }
   });
 
   it("shows the oldest open item's age, with the absolute instant in the title", async () => {
