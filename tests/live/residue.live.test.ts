@@ -3,6 +3,7 @@ import {
   EDITABLE_TABLES,
   EDIT_CONFIG,
   mappedColumns,
+  writePathFor,
   type TableEditConfig,
 } from "@/lib/edit/config";
 import { T } from "@/lib/db/tables";
@@ -244,6 +245,53 @@ function assertSomethingToSweep(table: string, columns: readonly DescribedColumn
   );
 }
 
+/**
+ * **The writable-table floor** — a sweep that looked at nothing Admin can
+ * write is not a clean sweep (criterion 7 of admin-window/TASK-0040).
+ *
+ * Until 2026-09-08 this property came free: `groups` and `idols` were on the
+ * map, always present on staging, and always swept, so "some table Admin can
+ * write was scanned" could not fail quietly. Ben's strike removed both, and
+ * the only table left with a direct write path is the walk sandbox — which
+ * `MAY_BE_ABSENT` above deliberately tolerates. Those two facts together would
+ * let a run sweep `events` and `venues`, find nothing (it can write neither),
+ * and report clean over a sweep that never looked anywhere a leftover of
+ * Admin's could be.
+ *
+ * So it is asserted instead of assumed, as a pure function over the two lists
+ * the run produces — provable on two fixtures without a database, which is
+ * what the guard rule asks for (LESSONS 3).
+ */
+/** The mapped tables Admin has a write path to, from the one map. */
+function writableTables(): string[] {
+  return EDITABLE_TABLES.filter(
+    (table) => writePathFor(EDIT_CONFIG[table].regime) === "direct",
+  );
+}
+
+function assertSweptSomethingWritable(
+  writable: readonly string[],
+  swept: readonly string[],
+): void {
+  if (writable.length === 0) {
+    throw new Error(
+      `the edit map names no table Admin can write at all, so this sweep has ` +
+        `no place a leftover of Admin's could be. A sweep with nothing to ` +
+        `scan is not a clean result.`,
+    );
+  }
+  const looked = writable.filter((table) => swept.includes(table));
+  if (looked.length > 0) return;
+  throw new Error(
+    `the residue sweep scanned none of the table(s) Admin can write ` +
+      `(${writable.join(", ")}) on ${stagingHost} — every one of them was ` +
+      `skipped as absent. The tables it did sweep (${swept.join(", ") || "none"}) ` +
+      `are ones this app has no write path to, so finding nothing in them ` +
+      `says nothing about leftovers. A sweep with nothing to scan is not a ` +
+      `clean result.`,
+  );
+}
+
 /** One table's line of the report: what was scanned, and what was not, and why. */
 function reportLine(
   table: string,
@@ -323,8 +371,9 @@ async function residueIn(table: string, column: string): Promise<number> {
  * The claim this file has always made about an empty table is unchanged: a
  * catalog table with no row is a STAGING problem, not a clean result — a sweep
  * over zero rows finds zero of everything. It is asserted only for the tables
- * this campaign can actually write (`pre_cutover`); a resolver-owned table
- * being empty says nothing about Admin's leftovers.
+ * this campaign can actually WRITE — since Ben's strike of 2026-09-08 that is
+ * the `sandbox` regime alone (ARCHITECTURE §9); a resolver-owned table being
+ * empty says nothing about Admin's leftovers.
  */
 async function rowCount(table: string): Promise<number> {
   const { count, error } = await exactCount(table);
@@ -415,7 +464,7 @@ describe("staging, after the campaign", () => {
           `${stagingHost} and were still not scanned — the sweep narrowed ` +
           `itself away from a place residue can be`,
       ).toEqual([]);
-      if (config.regime === "pre_cutover") {
+      if (writePathFor(config.regime) === "direct") {
         expect(
           editableText.length,
           `no editable text column of ${config.table} was scanned, so this ` +
@@ -472,6 +521,12 @@ describe("staging, after the campaign", () => {
       swept.length,
     );
 
+    // ...and at least one of them is a table Admin can actually WRITE. Since
+    // the strike that is the sandbox alone, and the sandbox is the one table
+    // whose absence is tolerated — so without this the two rules together
+    // would let a sweep of `events` and `venues` pass as clean.
+    assertSweptSomethingWritable(writableTables(), swept);
+
     expect(
       found,
       found.length === 0
@@ -505,6 +560,34 @@ describe("staging, after the campaign", () => {
         { column: "name", type: "text", sweepable: true },
       ]),
     ).not.toThrow();
+  });
+
+  it("refuses to report a sweep clean when it scanned nothing Admin can write", () => {
+    // The floor that replaces the one groups/idols used to provide for free
+    // (admin-window/TASK-0040, criterion 7), on the two fixtures every guard
+    // owes. The map really does name a writable table...
+    const writable = writableTables();
+    expect(writable).toEqual([T.walkSandbox]);
+
+    // ...fixture 1, which it must NOT flag: that table was swept.
+    expect(() =>
+      assertSweptSomethingWritable(writable, ["events", "venues", T.walkSandbox]),
+    ).not.toThrow();
+
+    // ...fixture 2, which it MUST flag: only tables Admin cannot write were
+    // swept, which is a sweep that looked nowhere a leftover of Admin's could
+    // be — exactly the shape the sandbox's tolerated absence would produce.
+    expect(() => assertSweptSomethingWritable(writable, ["events", "venues"])).toThrow(
+      /scanned none of the table\(s\) Admin can write/,
+    );
+    expect(() => assertSweptSomethingWritable(writable, ["events", "venues"])).toThrow(
+      /not a clean result/,
+    );
+    // ...and a map with no writable table at all is the same failure, not a
+    // pass: there would be nowhere for this file to look.
+    expect(() => assertSweptSomethingWritable([], ["events"])).toThrow(
+      /no table Admin can write at all/,
+    );
   });
 
   it("treats a refused scan as a failure naming the column and the code", async () => {

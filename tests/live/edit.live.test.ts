@@ -1,9 +1,8 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
-import { EDIT_CONFIG, type TableEditConfig } from "@/lib/edit/config";
+import { EDITABLE_TABLES, EDIT_CONFIG } from "@/lib/edit/config";
 import { EM_DASH } from "@/lib/format";
 import { codeOf, independentClient, renderPage } from "./parity";
-import { withSweep } from "./sweep";
 import { resetSandbox } from "../walk/reset-sandbox.mjs";
 import {
   SANDBOX_COLUMNS,
@@ -15,20 +14,29 @@ import {
 
 /**
  * The edit surface against staging (campaign admin-window/TASK-0018) —
- * acceptance test 7's pre-cutover half, acceptance test 13, M1 EC10.
+ * acceptance test 7, acceptance test 13, M1 EC10.
  *
- * **This file is the milestone's only writer.** Every write it makes is
- * recorded before it happens and undone in a `finally` by `withSweep`, so a
- * failing assertion — the case that actually leaves residue — still restores
- * the row. Each edit is then read back a THIRD time, after the sweep, to prove
- * the restore landed rather than merely being attempted. The walk-sandbox
- * block at the foot varies the MECHANISM and not the rule: its undo is
- * `resetSandbox` in the same `finally`, which puts every row of that table
- * back rather than the one column that was written.
+ * **It writes ONE table, and that table is not a catalog table.** Ben struck
+ * the direct catalog edit on 2026-09-08 — *"admin edits catalog tables only
+ * through the observation pipeline; do not re-implement direct edits"* — and
+ * `groups`/`idols` left `EDIT_CONFIG` with it (ARCHITECTURE §9,
+ * admin-window/TASK-0040). The case that used to write one field of one
+ * catalog row and restore it in a `finally` is INVERTED at the head of this
+ * file rather than deleted: it proves the refusal on both struck tables and
+ * re-reads each row, every column, to show it is untouched.
  *
- * Two paths to one answer (ARCHITECTURE.md §10): the write goes through the
- * app — the PATCH route, then the record page's own read for the reload — and
- * every verification is a query this file issues itself through
+ * What still writes is the walk-sandbox block at the foot
+ * (admin-window/TASK-0037): a staging-only fixture table in nobody's
+ * ecosystem domain, and now the live suite's ONLY proof that a mapped column
+ * can be written at all. Its undo is `resetSandbox` in a `finally`, which puts
+ * every row of that table back rather than the one column that was written —
+ * the same rule as `withSweep` (`tests/live/sweep.ts`, unchanged and still
+ * graded by `tests/offline/live-guard.test.ts`), by a mechanism that suits a
+ * table whose whole purpose is to be reset.
+ *
+ * Two paths to one answer (ARCHITECTURE.md §10): the request goes through the
+ * app — the PATCH route, and the record page's own render — and every
+ * verification is a query this file issues itself through
  * `independentClient()`, written without `lib/db`.
  *
  * **The gate is stubbed open on purpose.** That is the adversary's premise,
@@ -44,9 +52,9 @@ import {
  * refusal is the correct state until staging is named, and is not a failure of
  * this file.
  *
- * One residue this cannot sweep and does not pretend to: a table with an
- * `updated_at` trigger keeps the touched stamp. No ROW is created, deleted or
- * left changed in any column this test wrote.
+ * There is no residue to sweep: this file issues no write of any kind, so no
+ * row is created, deleted or changed by it — not even an `updated_at` trigger
+ * fires on its account.
  */
 
 vi.mock("@/lib/admin", () => ({
@@ -88,8 +96,20 @@ async function patch(
   return { status: response.status, body: parsed };
 }
 
+/**
+ * A table and the column it is keyed by — all the two readers below need.
+ *
+ * `TableEditConfig` satisfies it structurally, and so does a hand-written pair
+ * for a table the map no longer carries: since Ben's strike the struck tables
+ * have no config, and they are still read here to prove they are untouched.
+ */
+interface Keyed {
+  readonly table: string;
+  readonly pk: string;
+}
+
 /** This test's own read of one whole row, written without `lib/db`. */
-async function wholeRow(config: TableEditConfig, id: string): Promise<Row> {
+async function wholeRow(config: Keyed, id: string): Promise<Row> {
   const { data, error } = await independentClient()
     .from(config.table)
     .select("*")
@@ -109,7 +129,7 @@ async function wholeRow(config: TableEditConfig, id: string): Promise<Row> {
  * that a mapped column edits, and passing because there was nothing to edit
  * would be worse than no test.
  */
-async function subject(config: TableEditConfig): Promise<{ id: string; row: Row }> {
+async function subject(config: Keyed): Promise<{ id: string; row: Row }> {
   const { data, error } = await independentClient()
     .from(config.table)
     .select("*")
@@ -128,75 +148,107 @@ async function subject(config: TableEditConfig): Promise<{ id: string; row: Row 
   return { id: String(row[config.pk]), row };
 }
 
-/** The first mapped column the row actually carries. */
-function mappedColumn(config: TableEditConfig, row: Row): string {
-  const column = config.editable.find((name) => name in row);
-  if (!column) {
-    throw new Error(
-      `no column of ${config.table}'s allowlist exists on staging's row — ` +
-        `the map and the schema have drifted apart.`,
-    );
-  }
-  return column;
-}
+/* ── the struck tables: no surface, no write, and the row untouched ───────── */
 
-/* ── a mapped column edits, and the value survives a reload ───────────────── */
+/**
+ * The two tables Ben struck on 2026-09-08, with the primary key each is
+ * addressed by and the columns their retired allowlists carried.
+ *
+ * The keys and column names are spelled HERE because `EDIT_CONFIG` no longer
+ * carries them — which is the whole point — and the columns are the vetted set
+ * as of `config.ts` at the commit before the strike, so the refusal is proved
+ * over everything that used to be writable rather than over a sample.
+ */
+const STRUCK: ReadonlyArray<{
+  readonly table: string;
+  readonly pk: string;
+  readonly columns: readonly string[];
+}> = [
+  {
+    table: "groups",
+    pk: "id",
+    columns: [
+      "name",
+      "korean_name",
+      "short_name",
+      "company",
+      "status",
+      "type",
+      "member_count",
+      "debut_date",
+      "image_url",
+      "bio",
+    ],
+  },
+  {
+    table: "idols",
+    pk: "id",
+    columns: [
+      "stage_name",
+      "real_name",
+      "korean_name",
+      "position",
+      "nationality",
+      "gender",
+      "bio",
+      "birth_date",
+      "image_url",
+      "status",
+      "height_cm",
+      "weight_kg",
+      "blood_type",
+      "mbti",
+      "agency",
+      "birth_place",
+    ],
+  },
+];
 
-describe.each(["groups", "idols"])("a %s record", (table) => {
-  it("edits a mapped column, persists it, and leaves nothing behind", async () => {
-    const config = EDIT_CONFIG[table];
-    const { id, row } = await subject(config);
-    const field = mappedColumn(config, row);
-    const before = row[field] ?? null;
-    const probe = `${PROBE} ${table} ${field} ${Date.now()}`;
+describe.each(STRUCK)("the struck table $table", ({ table, pk, columns }) => {
+  it("has left the map, has no record page, and refuses every column its allowlist carried — with the row identical", async () => {
+    // It is really gone from the one allowlist...
+    expect(EDIT_CONFIG[table]).toBeUndefined();
+    expect(EDITABLE_TABLES).not.toContain(table);
 
-    await withSweep(independentClient(), async (sweep) => {
-      // Recorded BEFORE the write, so the undo exists even if the write half
-      // of this body throws.
-      await sweep.restore(config.table, { [config.pk]: id }, [field]);
-      expect(sweep.pending).toBe(1);
+    // ...a REAL row of it is read first, whole, by this file's own client.
+    const { id, row } = await subject({ table, pk });
+    expect(Object.keys(row).length).toBeGreaterThan(0);
 
-      const written = await patch(table, id, { field, value: probe });
-      expect(written.status, JSON.stringify(written.body)).toBe(200);
+    // 1. The record URL has no surface. The page throws Next's routing 404
+    //    (`notFound()`); in the served app `next.config.ts` rewrites the URL
+    //    to a path no route matches first, which the http suite proves.
+    await expect(
+      RecordPage({ params: Promise.resolve({ table, id }) }),
+    ).rejects.toThrow(/404/);
 
-      // Reload 1: the database itself, read by this test's own client.
-      expect((await wholeRow(config, id))[field]).toBe(probe);
-
-      // Reload 2: the surface an operator would come back to.
-      const markup = await renderPage(RecordPage, {
-        params: Promise.resolve({ table, id }),
+    // 2. Every column the retired allowlist carried is refused server-side —
+    //    404, the unknown-table sentence, naming the table. A forged PATCH is
+    //    the only way to ask at all now, which is the adversary's premise.
+    for (const field of columns) {
+      const { status, body } = await patch(table, id, {
+        field,
+        value: `${PROBE} forged`,
       });
-      expect(markup).toContain(probe);
-    });
+      expect(status, `${table}.${field}: ${JSON.stringify(body)}`).toBe(404);
+      expect(body, `${table}.${field}`).toEqual({
+        error: `${table} is not an editable table`,
+      });
+    }
 
-    // The sweep ran: the catalog holds what it held before this test.
-    expect((await wholeRow(config, id))[field]).toBe(before);
+    // 3. The point of the criterion: not "the widget was hidden" but "the row
+    //    is unchanged". Every column, compared against the read taken before
+    //    the forgeries ran.
+    expect(await wholeRow({ table, pk }, id)).toEqual(row);
   });
 });
 
 /* ── the map refuses, server-side, with the row unchanged ─────────────────── */
 
 describe("a forged edit", () => {
-  it("is refused on a pre-cutover table and changes nothing", async () => {
-    const config = EDIT_CONFIG.groups;
-    const { id } = await subject(config);
-    const before = await wholeRow(config, id);
-
-    const forgeries: ReadonlyArray<readonly [string, string, unknown]> = [
-      ["a column the map does not carry", "spotify_id", `${PROBE} forged`],
-      ["the primary key itself", config.pk, "00000000-0000-4000-8000-000000000000"],
-      ["a provenance column", "source_url", `${PROBE} forged`],
-      ["a timestamp", "updated_at", "2000-01-01T00:00:00Z"],
-    ];
-    for (const [why, field, value] of forgeries) {
-      const { status, body } = await patch(config.table, id, { field, value });
-      expect(status, `${why}: ${JSON.stringify(body)}`).toBe(403);
-    }
-
-    // The point of the criterion: not "the widget was hidden" but "the row is
-    // unchanged". Every column, compared.
-    expect(await wholeRow(config, id)).toEqual(before);
-  });
+  // The same claim about the one table that CAN be written — an unmapped
+  // column refused 403 with the row unchanged — is "the walk sandbox > refuses
+  // a column the map does not carry" at the foot of this file
+  // (admin-window/TASK-0037). It is not repeated here.
 
   it("is refused on a resolver-owned table, which has no write path at all", async () => {
     for (const table of ["events", "venues"]) {

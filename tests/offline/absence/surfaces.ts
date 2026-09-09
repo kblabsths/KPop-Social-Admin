@@ -110,11 +110,24 @@ export interface Surface {
   render(params: Params): Promise<ReactNode>;
 }
 
+/**
+ * The walk sandbox's first seeded row, as `tests/walk/sandbox-fixture.ts` and
+ * `tests/offline/records/page.test.ts` both spell it — the address a walker
+ * types, so the offline sweep and the walk render the same URL.
+ */
+const SANDBOX_ROW = "00000000-0000-4000-8000-000000000001";
+
 /** The ids the dynamic surfaces are asked for. Fixture ids, never real ones. */
 export const SUBJECT = {
   reviewItem: ID.reviewItemDataConflict,
-  recordTable: "groups",
-  recordId: ID.groupEntity,
+  /**
+   * The walk sandbox, which since Ben's strike of 2026-09-08 is the only table
+   * the record surface can draw a control on — `groups` stood here until the
+   * map lost it, and the four-state sweep needs a subject whose page renders,
+   * not one whose URL is a routed 404 (ARCHITECTURE §9).
+   */
+  recordTable: T.walkSandbox,
+  recordId: SANDBOX_ROW,
 } as const;
 
 /**
@@ -237,7 +250,10 @@ export function populatedScript(surface?: Surface): Script {
     [T.fieldProvenance]: { data: [...APPLIES], count: APPLIES.length },
     [T.events]: { data: [eventRow()], count: 1 },
     [T.eventListings]: { data: [eventListingRow()], count: 1 },
-    [T.groups]: { data: [{ id: SUBJECT.recordId, name: "A group" }], count: 1 },
+    [T.walkSandbox]: {
+      data: [{ sandbox_id: SUBJECT.recordId, label: "A sandbox row" }],
+      count: 1,
+    },
   };
 
   const script = emptyScript();
@@ -270,7 +286,7 @@ export function populatedScript(surface?: Surface): Script {
   }
   if (surface?.route === "/records/[table]/[id]") {
     script[SUBJECT.recordTable] = {
-      data: { id: SUBJECT.recordId, name: "A group" },
+      data: { sandbox_id: SUBJECT.recordId, label: "A sandbox row" },
       count: 1,
     };
   }

@@ -62,20 +62,20 @@ beforeEach(() => {
   updateRecordField.mockReset();
   updateRecordField.mockResolvedValue({
     kind: "ok",
-    data: { id: RECORD_ID, bio: "written" },
+    data: { sandbox_id: RECORD_ID, label: "written" },
   });
 });
 
 /* ── the one edit that is allowed ─────────────────────────────────────────── */
 
-describe("a mapped column of a pre-cutover table", () => {
+describe("a mapped column of the one directly-written table", () => {
   it("reaches the writer with the map's own config", async () => {
-    const { status } = await patch("groups", { field: "bio", value: "hello" });
+    const { status } = await patch("walk_sandbox", { field: "label", value: "hello" });
     expect(status).toBe(200);
     expect(updateRecordField).toHaveBeenCalledTimes(1);
     const [edit, id, value] = updateRecordField.mock.calls[0];
-    expect((edit as { config: { table: string } }).config.table).toBe("groups");
-    expect((edit as { field: string }).field).toBe("bio");
+    expect((edit as { config: { table: string } }).config.table).toBe("walk_sandbox");
+    expect((edit as { field: string }).field).toBe("label");
     expect(id).toBe(RECORD_ID);
     expect(value).toBe("hello");
   });
@@ -83,18 +83,18 @@ describe("a mapped column of a pre-cutover table", () => {
   it("ignores every other key in the body — no second field is written", async () => {
     // A forged body that names a mapped column AND smuggles unmapped ones
     // beside it must apply the mapped one only, never partially apply the rest.
-    await patch("groups", {
-      field: "bio",
+    await patch("walk_sandbox", {
+      field: "label",
       value: "hello",
-      spotify_id: "forged",
-      name: "forged",
-      id: "00000000-0000-4000-8000-000000000000",
-      updated_at: "2026-01-01T00:00:00Z",
+      created_at: "2026-01-01T00:00:00Z",
+      note: "forged",
+      sandbox_id: "00000000-0000-4000-8000-000000000000",
+      tally: 99,
     });
     expect(updateRecordField).toHaveBeenCalledTimes(1);
     expect(updateRecordField.mock.calls[0][2]).toBe("hello");
     expect(updateRecordField.mock.calls[0][0]).toEqual(
-      expect.objectContaining({ field: "bio" }),
+      expect.objectContaining({ field: "label" }),
     );
   });
 });
@@ -111,19 +111,19 @@ async function refused(table: string, body: unknown, where: string) {
 
 describe("the handler refuses a forged edit and attempts no write", () => {
   it("refuses a column the map does not carry", async () => {
-    for (const field of ["spotify_id", "fanclub_name", "social_links", "wikipedia_url"]) {
-      await refused("groups", { field, value: "forged" }, field);
+    for (const field of ["created_at", "spotify_id", "social_links", "wikipedia_url"]) {
+      await refused("walk_sandbox", { field, value: "forged" }, field);
       updateRecordField.mockReset();
     }
   });
 
   it("refuses a primary key, a foreign key and a timestamp", async () => {
     for (const [table, field] of [
-      ["groups", "id"],
-      ["groups", "created_at"],
-      ["groups", "updated_at"],
-      ["idols", "group_id"],
-      ["idols", "last_synced_at"],
+      ["walk_sandbox", "sandbox_id"],
+      ["walk_sandbox", "created_at"],
+      ["events", "event_id"],
+      ["events", "created_at"],
+      ["venues", "venue_id"],
     ] as const) {
       await refused(table, { field, value: "forged" }, `${table}.${field}`);
       updateRecordField.mockReset();
@@ -143,6 +143,58 @@ describe("the handler refuses a forged edit and attempts no write", () => {
     }
   });
 
+  it("refuses both tables Ben struck, 404, naming the table, on every column their allowlists carried", async () => {
+    // Criterion 2 of admin-window/TASK-0040. Until 2026-09-08 a PATCH naming
+    // any of these columns wrote a catalog row; the strike removed the map
+    // entries, so the route now answers exactly as it does for a table it
+    // never carried — 404, `unknown_table`'s sentence, no write attempted.
+    // The whole retired allowlist is driven, not a sample: a partial
+    // restoration would pass a one-column check.
+    const RETIRED: Readonly<Record<string, readonly string[]>> = {
+      groups: [
+        "name",
+        "korean_name",
+        "short_name",
+        "company",
+        "status",
+        "type",
+        "member_count",
+        "debut_date",
+        "image_url",
+        "bio",
+      ],
+      idols: [
+        "stage_name",
+        "real_name",
+        "korean_name",
+        "position",
+        "nationality",
+        "gender",
+        "bio",
+        "birth_date",
+        "image_url",
+        "status",
+        "height_cm",
+        "weight_kg",
+        "blood_type",
+        "mbti",
+        "agency",
+        "birth_place",
+      ],
+    };
+    for (const [table, fields] of Object.entries(RETIRED)) {
+      for (const field of fields) {
+        const { status, text } = await patch(table, { field, value: "forged" });
+        expect(status, `${table}.${field}`).toBe(404);
+        expect(JSON.parse(text).error, `${table}.${field}`).toBe(
+          `${table} is not an editable table`,
+        );
+        expect(updateRecordField, `${table}.${field}`).not.toHaveBeenCalled();
+        updateRecordField.mockReset();
+      }
+    }
+  });
+
   it("refuses a table the map does not carry, the archive and a legacy table", async () => {
     for (const table of [
       "event_performers",
@@ -158,16 +210,23 @@ describe("the handler refuses a forged edit and attempts no write", () => {
   });
 
   it("is not fooled by a case, whitespace or homoglyph variant of a mapped column", async () => {
-    // `nаme` carries a Cyrillic а (U+0430); the rest differ only in case or
+    // `lаbel` carries a Cyrillic а (U+0430); the rest differ only in case or
     // padding. An allowlist compared loosely would let any of them through.
-    for (const field of ["Name", "NAME", "name ", " name", "na me", "nаme", "bio\n"]) {
-      await refused("groups", { field, value: "forged" }, JSON.stringify(field));
+    for (const field of ["Label", "LABEL", "label ", " label", "la bel", "lаbel", "note\n"]) {
+      await refused("walk_sandbox", { field, value: "forged" }, JSON.stringify(field));
       updateRecordField.mockReset();
     }
   });
 
   it("is not fooled by a case or punctuation variant of a mapped table", async () => {
-    for (const table of ["Groups", "GROUPS", "groups ", "groups/", "public.groups", "idols;"]) {
+    for (const table of [
+      "Walk_sandbox",
+      "WALK_SANDBOX",
+      "walk_sandbox ",
+      "walk_sandbox/",
+      "public.walk_sandbox",
+      "walk_sandbox;",
+    ]) {
       await refused(table, { field: "name", value: "forged" }, table);
       updateRecordField.mockReset();
     }
@@ -175,7 +234,7 @@ describe("the handler refuses a forged edit and attempts no write", () => {
 
   it("is not fooled by a name inherited from Object.prototype", async () => {
     for (const field of ["__proto__", "constructor", "prototype", "toString", "hasOwnProperty"]) {
-      await refused("groups", { field, value: "forged" }, `field ${field}`);
+      await refused("walk_sandbox", { field, value: "forged" }, `field ${field}`);
       updateRecordField.mockReset();
     }
     for (const table of ["__proto__", "constructor", "toString"]) {
@@ -186,14 +245,14 @@ describe("the handler refuses a forged edit and attempts no write", () => {
 
   it("refuses a body that is not an object of the documented shape", async () => {
     for (const body of ["[]", '"a string"', "42", "true", "null", "not json at all", ""]) {
-      await refused("groups", body, JSON.stringify(body));
+      await refused("walk_sandbox", body, JSON.stringify(body));
       updateRecordField.mockReset();
     }
   });
 
   it("refuses a non-string or empty field name", async () => {
     for (const field of [123, true, null, [], { name: "bio" }, ""]) {
-      await refused("groups", { field, value: "x" }, JSON.stringify(field));
+      await refused("walk_sandbox", { field, value: "x" }, JSON.stringify(field));
       updateRecordField.mockReset();
     }
   });
@@ -201,7 +260,7 @@ describe("the handler refuses a forged edit and attempts no write", () => {
   it("refuses a non-scalar value for a mapped column", async () => {
     // No json is ever written from here (root CLAUDE.md, AGENTS.md).
     for (const value of [{ nested: true }, ["a", "b"], [{ a: 1 }]]) {
-      await refused("groups", { field: "bio", value }, JSON.stringify(value));
+      await refused("walk_sandbox", { field: "label", value }, JSON.stringify(value));
       updateRecordField.mockReset();
     }
   });
@@ -213,7 +272,7 @@ describe("the handler refuses a forged edit and attempts no write", () => {
    * `"number"`, so the scalar gate accepts it. It then reaches
    * `updateRecordField`, and supabase-js serialises the update payload with
    * `JSON.stringify` — which renders a non-finite number as `null`. The bytes
-   * PostgREST receives are `{"bio":null}`, byte-identical to an explicit
+   * PostgREST receives are `{"label":null}`, byte-identical to an explicit
    * clear, and the route answers 200 `{"ok":true}`.
    *
    * That contradicts the route's own contract (route.ts: "only an explicit
@@ -235,11 +294,11 @@ describe("the handler refuses a forged edit and attempts no write", () => {
    */
   it("refuses a non-finite number instead of nulling the column", async () => {
     for (const body of [
-      '{"field":"bio","value":1e999}',
-      '{"field":"bio","value":-1e999}',
-      '{"field":"member_count","value":1e999}',
+      '{"field":"label","value":1e999}',
+      '{"field":"label","value":-1e999}',
+      '{"field":"tally","value":1e999}',
     ]) {
-      await refused("groups", body, body);
+      await refused("walk_sandbox", body, body);
       updateRecordField.mockReset();
     }
   });
@@ -263,31 +322,31 @@ describe("the handler refuses a forged edit and attempts no write", () => {
    */
   it("guards the parsed value, not the literal: key order, MAX_VALUE, text", async () => {
     // Last duplicate key wins — Infinity arrives last and is refused.
-    await refused("groups", '{"field":"bio","value":"safe","value":1e999}', "dup key, Infinity last");
+    await refused("walk_sandbox", '{"field":"label","value":"safe","value":1e999}', "dup key, Infinity last");
     updateRecordField.mockReset();
-    updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+    updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
 
     // Last duplicate key wins the other way — the string arrives last and writes.
-    let res = await patch("groups", '{"field":"bio","value":1e999,"value":"safe"}');
+    let res = await patch("walk_sandbox", '{"field":"label","value":1e999,"value":"safe"}');
     expect(res.status, "dup key, string last").toBe(200);
     expect(updateRecordField.mock.calls[0][2], "dup key, string last").toBe("safe");
     updateRecordField.mockReset();
-    updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+    updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
 
     // The largest finite double still edits — the guard refuses non-finite, not big.
-    res = await patch("groups", '{"field":"member_count","value":1.7976931348623157e308}');
+    res = await patch("walk_sandbox", '{"field":"tally","value":1.7976931348623157e308}');
     expect(res.status, "MAX_VALUE").toBe(200);
     expect(updateRecordField.mock.calls[0][2], "MAX_VALUE").toBe(Number.MAX_VALUE);
     updateRecordField.mockReset();
-    updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+    updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
 
     // One step past it parses to Infinity, which JSON.stringify would null.
-    await refused("groups", '{"field":"member_count","value":1.8e308}', "just past MAX_VALUE");
+    await refused("walk_sandbox", '{"field":"tally","value":1.8e308}', "just past MAX_VALUE");
     updateRecordField.mockReset();
-    updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+    updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
 
     // A numeric-looking STRING is text and survives the round trip unchanged.
-    res = await patch("groups", '{"field":"bio","value":"1e999"}');
+    res = await patch("walk_sandbox", '{"field":"label","value":"1e999"}');
     expect(res.status, "string 1e999").toBe(200);
     expect(updateRecordField.mock.calls[0][2], "string 1e999").toBe("1e999");
   });
@@ -297,7 +356,7 @@ describe("the handler refuses a forged edit and attempts no write", () => {
     // enough: the caller must be able to tell WHAT the request asked for that
     // could not be stored, and an unstorable number is the client's fault
     // (400), not the database's (5xx). Raw string body — see above.
-    const { status, text } = await patch("groups", '{"field":"bio","value":1e999}');
+    const { status, text } = await patch("walk_sandbox", '{"field":"label","value":1e999}');
     expect(status).toBe(400);
     expect(JSON.parse(text).error).toMatch(/Infinity/);
     expect(updateRecordField).not.toHaveBeenCalled();
@@ -317,16 +376,16 @@ describe("the handler refuses a forged edit and attempts no write", () => {
    * as `{"field":"name"}` — the exact request a widget bug produces.
    */
   it("refuses a body that omits `value` instead of clearing the column", async () => {
-    await refused("groups", { field: "bio" }, "value omitted");
+    await refused("walk_sandbox", { field: "label" }, "value omitted");
     updateRecordField.mockReset();
-    await refused("groups", { field: "name", value: undefined }, "value undefined");
+    await refused("walk_sandbox", { field: "name", value: undefined }, "value undefined");
   });
 
   it("names the missing `value` in the refusal, as a client error", async () => {
     // BUG-0011 asks for more than a non-2xx: the caller must be able to tell
     // WHAT was wrong with the request, and a malformed body is the client's
     // fault (400), not the database's (5xx).
-    const { status, text } = await patch("groups", { field: "bio" });
+    const { status, text } = await patch("walk_sandbox", { field: "label" });
     expect(status).toBe(400);
     expect(JSON.parse(text).error).toMatch(/value/i);
     expect(updateRecordField).not.toHaveBeenCalled();
@@ -335,11 +394,11 @@ describe("the handler refuses a forged edit and attempts no write", () => {
   it("still clears a column on an explicit null or an emptied input", async () => {
     // The clearing path the surface really uses stays intact.
     for (const value of [null, ""]) {
-      await patch("groups", { field: "bio", value });
+      await patch("walk_sandbox", { field: "label", value });
       expect(updateRecordField, JSON.stringify(value)).toHaveBeenCalledTimes(1);
       expect(updateRecordField.mock.calls[0][2], JSON.stringify(value)).toBeNull();
       updateRecordField.mockReset();
-      updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+      updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
     }
   });
 });
@@ -385,7 +444,7 @@ const NOT_RECORD_IDS: readonly string[] = [
 describe("a segment that is not a record id", () => {
   it("is refused 404 and no database call is attempted", async () => {
     for (const id of NOT_RECORD_IDS) {
-      const { status } = await patch("groups", { field: "bio", value: "x" }, id);
+      const { status } = await patch("walk_sandbox", { field: "label", value: "x" }, id);
       expect(status, JSON.stringify(id)).toBe(404);
       expect(updateRecordField, JSON.stringify(id)).not.toHaveBeenCalled();
       updateRecordField.mockReset();
@@ -397,11 +456,11 @@ describe("a segment that is not a record id", () => {
     // matches no row (the writer read and found nothing) and a segment that
     // could match none. The caller cannot tell them apart, and should not.
     updateRecordField.mockResolvedValue({ kind: "ok", data: null });
-    const wellFormedMiss = await patch("groups", { field: "bio", value: "x" });
+    const wellFormedMiss = await patch("walk_sandbox", { field: "label", value: "x" });
     expect(wellFormedMiss.status).toBe(404);
     updateRecordField.mockReset();
 
-    const malformed = await patch("groups", { field: "bio", value: "x" }, "walk-1");
+    const malformed = await patch("walk_sandbox", { field: "label", value: "x" }, "walk-1");
     expect(malformed.status).toBe(404);
     expect(JSON.parse(malformed.text)).toEqual(JSON.parse(wellFormedMiss.text));
     expect(updateRecordField).not.toHaveBeenCalled();
@@ -409,7 +468,7 @@ describe("a segment that is not a record id", () => {
 
   it("says nothing the database said — no error code, no syntax text, no type name", async () => {
     for (const id of NOT_RECORD_IDS) {
-      const { text } = await patch("groups", { field: "bio", value: "x" }, id);
+      const { text } = await patch("walk_sandbox", { field: "label", value: "x" }, id);
       expect(text, JSON.stringify(id)).not.toMatch(/22P02|invalid input syntax|uuid|postgres|pgrst/i);
       updateRecordField.mockReset();
     }
@@ -419,11 +478,11 @@ describe("a segment that is not a record id", () => {
     // The guard refuses non-ids, not ids — over-refusal would break the one
     // path the surface actually uses.
     for (const id of [RECORD_ID, RECORD_ID.toUpperCase()]) {
-      const { status } = await patch("groups", { field: "bio", value: "x" }, id);
+      const { status } = await patch("walk_sandbox", { field: "label", value: "x" }, id);
       expect(status, id).toBe(200);
       expect(updateRecordField.mock.calls[0][1], id).toBe(id);
       updateRecordField.mockReset();
-      updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+      updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
     }
   });
 
@@ -435,8 +494,8 @@ describe("a segment that is not a record id", () => {
     const cases: readonly [string, unknown, number, RegExp][] = [
       ["nosuchtable", { field: "name", value: "x" }, 404, /not an editable table/],
       ["events", { field: "title", value: "x" }, 403, /resolver-owned/],
-      ["groups", { field: "spotify_id", value: "x" }, 403, /spotify_id/],
-      ["groups", { field: "bio" }, 400, /value/i],
+      ["walk_sandbox", { field: "spotify_id", value: "x" }, 403, /spotify_id/],
+      ["walk_sandbox", { field: "label" }, 400, /value/i],
     ];
     for (const [table, body, status, message] of cases) {
       const answer = await patch(table, body, bad);
@@ -504,7 +563,7 @@ const POSTGRES_ID_FORMS: ReadonlyArray<readonly [string, string]> = [
 describe("the id gate, attacked (QA, admin-window/BUG-0068)", () => {
   it("refuses every one of these segments 404 and attempts no database call", async () => {
     for (const [what, id] of MORE_NON_IDS) {
-      const { status } = await patch("groups", { field: "bio", value: "x" }, id);
+      const { status } = await patch("walk_sandbox", { field: "label", value: "x" }, id);
       expect(status, what).toBe(404);
       expect(updateRecordField, what).not.toHaveBeenCalled();
       updateRecordField.mockReset();
@@ -513,9 +572,9 @@ describe("the id gate, attacked (QA, admin-window/BUG-0068)", () => {
 
   it("says nothing the database said for any of them, and echoes no segment back", async () => {
     for (const [what, id] of MORE_NON_IDS) {
-      const { text } = await patch("groups", { field: "bio", value: "x" }, id);
+      const { text } = await patch("walk_sandbox", { field: "label", value: "x" }, id);
       expect(text, what).not.toMatch(/22P02|invalid input syntax|uuid|postgres|pgrst/i);
-      expect(JSON.parse(text), what).toEqual({ error: "no groups record with that id" });
+      expect(JSON.parse(text), what).toEqual({ error: "no walk_sandbox record with that id" });
       updateRecordField.mockReset();
     }
   });
@@ -526,7 +585,7 @@ describe("the id gate, attacked (QA, admin-window/BUG-0068)", () => {
     // loose on purpose: it catches a hang, it does not police speed.
     const started = Date.now();
     for (const id of ["a".repeat(8000), "0123".repeat(2000), "0123-".repeat(1600)]) {
-      const { status } = await patch("groups", { field: "bio", value: "x" }, id);
+      const { status } = await patch("walk_sandbox", { field: "label", value: "x" }, id);
       expect(status).toBe(404);
       updateRecordField.mockReset();
     }
@@ -535,22 +594,19 @@ describe("the id gate, attacked (QA, admin-window/BUG-0068)", () => {
 
   it("does not over-refuse an id form the database itself accepts", async () => {
     for (const [what, id] of POSTGRES_ID_FORMS) {
-      const { status } = await patch("groups", { field: "bio", value: "x" }, id);
+      const { status } = await patch("walk_sandbox", { field: "label", value: "x" }, id);
       expect(status, what).toBe(200);
       expect(updateRecordField, what).toHaveBeenCalledTimes(1);
       expect(updateRecordField.mock.calls[0][1], what).toBe(id);
       updateRecordField.mockReset();
-      updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+      updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
     }
   });
 
   it("gives the malformed miss and the well-formed miss the same body on every editable table", async () => {
     // One sentence, one status, per table: a caller cannot learn from the
     // answer whether the id it sent was even shaped like an id.
-    for (const [table, field] of [
-      ["groups", "bio"],
-      ["idols", "stage_name"],
-    ] as const) {
+    for (const [table, field] of [["walk_sandbox", "label"]] as const) {
       updateRecordField.mockResolvedValue({ kind: "ok", data: null });
       const wellFormed = await patch(table, { field, value: "x" }, RECORD_ID);
       expect(wellFormed.status, table).toBe(404);
@@ -562,7 +618,7 @@ describe("the id gate, attacked (QA, admin-window/BUG-0068)", () => {
       expect(malformed.text, table).toBe(wellFormed.text);
       expect(updateRecordField, table).not.toHaveBeenCalled();
       updateRecordField.mockReset();
-      updateRecordField.mockResolvedValue({ kind: "ok", data: { id: RECORD_ID } });
+      updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
     }
   });
 
@@ -572,9 +628,9 @@ describe("the id gate, attacked (QA, admin-window/BUG-0068)", () => {
     const cases: ReadonlyArray<readonly [string, string, unknown, number]> = [
       ["a".repeat(8000), "nosuchtable", { field: "name", value: "x" }, 404],
       [`{${RECORD_ID}}`, "events", { field: "title", value: "x" }, 403],
-      ["٢f0b", "groups", { field: "spotify_id", value: "x" }, 403],
-      [`${RECORD_ID}\n`, "groups", { field: "bio" }, 400],
-      [`${RECORD_ID}\u0000`, "groups", "not json at all", 400],
+      ["٢f0b", "walk_sandbox", { field: "spotify_id", value: "x" }, 403],
+      [`${RECORD_ID}\n`, "walk_sandbox", { field: "label" }, 400],
+      [`${RECORD_ID}\u0000`, "walk_sandbox", "not json at all", 400],
       ["*", "scraped_events", { field: "payload", value: "x" }, 404],
     ];
     for (const [id, table, body, status] of cases) {
@@ -589,13 +645,13 @@ describe("the id gate, attacked (QA, admin-window/BUG-0068)", () => {
     // The other half of "no call for a malformed id": the route never retries,
     // never double-writes, and never falls through to a second attempt.
     for (const outcome of [
-      { kind: "ok", data: { id: RECORD_ID } },
+      { kind: "ok", data: { sandbox_id: RECORD_ID } },
       { kind: "ok", data: null },
       { kind: "error", message: "connection refused" },
-      { kind: "not_provisioned", missing: "groups" },
+      { kind: "not_provisioned", missing: "walk_sandbox" },
     ]) {
       updateRecordField.mockResolvedValue(outcome);
-      await patch("groups", { field: "bio", value: "x" }, RECORD_ID);
+      await patch("walk_sandbox", { field: "label", value: "x" }, RECORD_ID);
       expect(updateRecordField, outcome.kind).toHaveBeenCalledTimes(1);
       updateRecordField.mockReset();
     }
@@ -603,8 +659,8 @@ describe("the id gate, attacked (QA, admin-window/BUG-0068)", () => {
 
   it("refuses a malformed id the same way when the same request arrives twice at once", async () => {
     const both = await Promise.all([
-      patch("groups", { field: "bio", value: "x" }, "walk-1"),
-      patch("groups", { field: "bio", value: "x" }, "walk-1"),
+      patch("walk_sandbox", { field: "label", value: "x" }, "walk-1"),
+      patch("walk_sandbox", { field: "label", value: "x" }, "walk-1"),
     ]);
     for (const answer of both) expect(answer.status).toBe(404);
     expect(both[0].text).toBe(both[1].text);
@@ -621,35 +677,38 @@ describe("a write that really happened", () => {
     // (LOOK_AND_FEEL), and only that branch may.
     updateRecordField.mockResolvedValue({
       kind: "error",
-      message: 'column groups.bio is of type text but expression is of type integer',
+      message: 'column walk_sandbox.tally is of type integer but expression is of type text',
     });
-    const { status, text } = await patch("groups", { field: "bio", value: "x" });
+    const { status, text } = await patch("walk_sandbox", { field: "label", value: "x" });
     expect(status).toBe(500);
-    expect(JSON.parse(text).error).toMatch(/expression is of type integer/);
+    expect(JSON.parse(text).error).toMatch(/expression is of type text/);
     expect(updateRecordField).toHaveBeenCalledTimes(1);
   });
 
   it("answers 503 naming what is not provisioned", async () => {
-    updateRecordField.mockResolvedValue({ kind: "not_provisioned", missing: "groups" });
-    const { status, text } = await patch("groups", { field: "bio", value: "x" });
+    updateRecordField.mockResolvedValue({
+      kind: "not_provisioned",
+      missing: "walk_sandbox",
+    });
+    const { status, text } = await patch("walk_sandbox", { field: "label", value: "x" });
     expect(status).toBe(503);
-    expect(JSON.parse(text).error).toMatch(/groups/);
+    expect(JSON.parse(text).error).toMatch(/walk_sandbox/);
   });
 
   it("answers 404 for a well-formed id that matches no row", async () => {
     updateRecordField.mockResolvedValue({ kind: "ok", data: null });
-    const { status, text } = await patch("groups", { field: "bio", value: "x" });
+    const { status, text } = await patch("walk_sandbox", { field: "label", value: "x" });
     expect(status).toBe(404);
-    expect(JSON.parse(text).error).toMatch(/no groups record/);
+    expect(JSON.parse(text).error).toMatch(/no walk_sandbox record/);
     expect(updateRecordField).toHaveBeenCalledTimes(1);
   });
 
   it("answers 200 with the record it wrote", async () => {
-    const { status, text } = await patch("groups", { field: "bio", value: "hello" });
+    const { status, text } = await patch("walk_sandbox", { field: "label", value: "hello" });
     expect(status).toBe(200);
     expect(JSON.parse(text)).toEqual({
       ok: true,
-      record: { id: RECORD_ID, bio: "written" },
+      record: { sandbox_id: RECORD_ID, label: "written" },
     });
   });
 });
@@ -663,7 +722,7 @@ describe("the gate", () => {
       error: Response.json({ error: "Forbidden" }, { status: 403 }),
     } as unknown as { user: { email: string } });
 
-    const { status } = await patch("groups", { field: "bio", value: "hello" });
+    const { status } = await patch("walk_sandbox", { field: "label", value: "hello" });
     expect(status).toBe(403);
     expect(updateRecordField).not.toHaveBeenCalled();
   });

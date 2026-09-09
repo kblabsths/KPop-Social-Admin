@@ -74,7 +74,7 @@ describe("the active nav item", () => {
     for (const href of SIX_ROUTES.slice(1)) {
       expect(isNavItemActive(href, "/"), href).toBe(false);
     }
-    expect(isNavItemActive("/records/groups/abc", "/")).toBe(false);
+    expect(isNavItemActive("/records/events/abc", "/")).toBe(false);
   });
 
   it("keeps a section lit inside its own children", () => {
@@ -88,7 +88,7 @@ describe("the active nav item", () => {
   });
 
   it("lights at most one item on any path", () => {
-    for (const pathname of [...SIX_ROUTES, "/queues/2f0b", "/records/groups/abc"]) {
+    for (const pathname of [...SIX_ROUTES, "/queues/2f0b", "/records/events/abc"]) {
       const lit = NAV_ITEMS.filter((item) => isNavItemActive(pathname, item.href));
       expect(lit.length, pathname).toBeLessThanOrEqual(1);
     }
@@ -97,7 +97,7 @@ describe("the active nav item", () => {
 
 describe("the Frame", () => {
   it("wraps every page of the window", () => {
-    for (const pathname of [...SIX_ROUTES, "/queues/2f0b", "/records/groups/abc"]) {
+    for (const pathname of [...SIX_ROUTES, "/queues/2f0b", "/records/events/abc"]) {
       expect(isFramed(pathname), pathname).toBe(true);
     }
   });
@@ -146,7 +146,7 @@ describe("every route's page", () => {
         expect(markup.length, route).toBeGreaterThan(0);
       }
       const record = renderToStaticMarkup(
-        await RecordPage({ params: Promise.resolve({ table: "groups", id: "abc" }) }),
+        await RecordPage({ params: Promise.resolve({ table: "events", id: "abc" }) }),
       );
       expect(record.length).toBeGreaterThan(0);
     });
@@ -167,10 +167,10 @@ describe("every route's page", () => {
     // is still told which row they asked for.
     await withoutDbCredentials(async () => {
       const markup = renderToStaticMarkup(
-        await RecordPage({ params: Promise.resolve({ table: "groups", id: "2f0b-c11e" }) }),
+        await RecordPage({ params: Promise.resolve({ table: "events", id: "2f0b-c11e" }) }),
       );
       expect(markup).toContain("2f0b-c11e");
-      expect(markup).toContain("groups");
+      expect(markup).toContain("events");
     });
   });
 });

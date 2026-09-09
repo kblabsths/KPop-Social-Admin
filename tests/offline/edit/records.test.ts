@@ -25,7 +25,15 @@ import {
  * query was ever built.
  */
 
-const GROUP_ID = "2f0bc11e-0000-4000-8000-000000000001";
+/**
+ * The row every case below reads or writes.
+ *
+ * It is a WALK SANDBOX row: Ben struck the direct catalog edit on 2026-09-08
+ * and `groups`/`idols` left the map with it, so the sandbox is the only table
+ * `updateRecordField` can be asked to write at all (ARCHITECTURE §9). Every
+ * claim in this file is the one it made before; only the subject moved.
+ */
+const ROW_ID = "2f0bc11e-0000-4000-8000-000000000001";
 
 /** An allowed edit, obtained the only way a caller can obtain one. */
 function allowed(table: string, field: string) {
@@ -44,13 +52,12 @@ function step(
 
 describe("the columns a record read asks for", () => {
   it("is the primary key plus exactly the editable ones", () => {
-    expect(recordColumns(EDIT_CONFIG.groups)).toBe(
-      ["id", ...EDIT_CONFIG.groups.editable].join(", "),
+    expect(recordColumns(EDIT_CONFIG.walk_sandbox)).toBe(
+      ["sandbox_id", ...EDIT_CONFIG.walk_sandbox.editable].join(", "),
     );
     // Nothing beyond the map is ever selected, so the surface cannot show —
     // and a later widget cannot offer — a column the map does not carry.
-    expect(recordColumns(EDIT_CONFIG.groups)).not.toContain("spotify_id");
-    expect(recordColumns(EDIT_CONFIG.groups)).not.toContain("created_at");
+    expect(recordColumns(EDIT_CONFIG.walk_sandbox)).not.toContain("created_at");
   });
 
   it("adds the read-only display columns, so the surface has them to draw", () => {
@@ -77,16 +84,20 @@ describe("the columns a record read asks for", () => {
 
 describe("readRecord", () => {
   it("reads one row by primary key and returns it", async () => {
-    const row = { id: GROUP_ID, name: "BLACKPINK", company: "YG" };
-    const db = stubClient({ groups: { data: row } });
+    const row = { sandbox_id: ROW_ID, label: "a sandbox row", tally: 3 };
+    const db = stubClient({ walk_sandbox: { data: row } });
 
-    const result = await readRecord(EDIT_CONFIG.groups, GROUP_ID, db.asSupabaseClient());
+    const result = await readRecord(
+      EDIT_CONFIG.walk_sandbox,
+      ROW_ID,
+      db.asSupabaseClient(),
+    );
 
     expect(result).toEqual({ kind: "ok", data: row });
-    expect(db.tablesRead()).toEqual(["groups"]);
+    expect(db.tablesRead()).toEqual(["walk_sandbox"]);
     const call = db.calls[0];
-    expect(step(call, "select")?.args[0]).toBe(recordColumns(EDIT_CONFIG.groups));
-    expect(step(call, "eq")?.args).toEqual(["id", GROUP_ID]);
+    expect(step(call, "select")?.args[0]).toBe(recordColumns(EDIT_CONFIG.walk_sandbox));
+    expect(step(call, "eq")?.args).toEqual(["sandbox_id", ROW_ID]);
     // Addressed by primary key: one row, so no row-set bound applies
     // (ARCHITECTURE §4.3).
     expect(step(call, "maybeSingle")).toBeDefined();
@@ -95,56 +106,68 @@ describe("readRecord", () => {
   });
 
   it("reports no such row as ok/null, distinct from an absent table", async () => {
-    const present = stubClient({ groups: { data: null } });
+    const present = stubClient({ walk_sandbox: { data: null } });
     expect(
-      await readRecord(EDIT_CONFIG.groups, GROUP_ID, present.asSupabaseClient()),
+      await readRecord(EDIT_CONFIG.walk_sandbox, ROW_ID, present.asSupabaseClient()),
     ).toEqual({ kind: "ok", data: null });
 
-    const absent = stubClient({ groups: { error: tableNotInSchemaCache("groups") } });
+    const absent = stubClient({
+      walk_sandbox: { error: tableNotInSchemaCache("walk_sandbox") },
+    });
     expect(
-      await readRecord(EDIT_CONFIG.groups, GROUP_ID, absent.asSupabaseClient()),
-    ).toEqual({ kind: "not_provisioned", missing: "groups" });
+      await readRecord(EDIT_CONFIG.walk_sandbox, ROW_ID, absent.asSupabaseClient()),
+    ).toEqual({ kind: "not_provisioned", missing: "walk_sandbox" });
   });
 });
 
 describe("updateRecordField writes an allowlisted column", () => {
   it("issues one update on the right table, keyed by the primary key", async () => {
-    const stored = { id: GROUP_ID, name: "BLACKPINK", company: "YG Entertainment" };
-    const db = stubClient({ groups: { data: stored } });
+    const stored = { sandbox_id: ROW_ID, label: "the stored label" };
+    const db = stubClient({ walk_sandbox: { data: stored } });
 
     const result = await updateRecordField(
-      allowed("groups", "company"),
-      GROUP_ID,
-      "YG Entertainment",
+      allowed("walk_sandbox", "label"),
+      ROW_ID,
+      "the stored label",
       db.asSupabaseClient(),
     );
 
     expect(result).toEqual({ kind: "ok", data: stored });
-    expect(db.tablesRead()).toEqual(["groups"]);
+    expect(db.tablesRead()).toEqual(["walk_sandbox"]);
     const call = db.calls[0];
-    expect(step(call, "update")?.args[0]).toEqual({ company: "YG Entertainment" });
-    expect(step(call, "eq")?.args).toEqual(["id", GROUP_ID]);
+    expect(step(call, "update")?.args[0]).toEqual({ label: "the stored label" });
+    expect(step(call, "eq")?.args).toEqual(["sandbox_id", ROW_ID]);
     // The row as stored comes back, so the surface shows what was kept.
-    expect(step(call, "select")?.args[0]).toBe(recordColumns(EDIT_CONFIG.groups));
+    expect(step(call, "select")?.args[0]).toBe(recordColumns(EDIT_CONFIG.walk_sandbox));
   });
 
   it("clears a field when the value is null", async () => {
-    const db = stubClient({ idols: { data: { id: GROUP_ID, mbti: null } } });
-    await updateRecordField(allowed("idols", "mbti"), GROUP_ID, null, db.asSupabaseClient());
-    expect(step(db.calls[0], "update")?.args[0]).toEqual({ mbti: null });
+    const db = stubClient({ walk_sandbox: { data: { sandbox_id: ROW_ID, note: null } } });
+    await updateRecordField(
+      allowed("walk_sandbox", "note"),
+      ROW_ID,
+      null,
+      db.asSupabaseClient(),
+    );
+    expect(step(db.calls[0], "update")?.args[0]).toEqual({ note: null });
   });
 
   it("writes a numeric column as a number", async () => {
-    const db = stubClient({ groups: { data: { id: GROUP_ID, member_count: 4 } } });
-    await updateRecordField(allowed("groups", "member_count"), GROUP_ID, 4, db.asSupabaseClient());
-    expect(step(db.calls[0], "update")?.args[0]).toEqual({ member_count: 4 });
+    const db = stubClient({ walk_sandbox: { data: { sandbox_id: ROW_ID, tally: 4 } } });
+    await updateRecordField(
+      allowed("walk_sandbox", "tally"),
+      ROW_ID,
+      4,
+      db.asSupabaseClient(),
+    );
+    expect(step(db.calls[0], "update")?.args[0]).toEqual({ tally: 4 });
   });
 
   it("reports no matching row as ok/null — nothing was written", async () => {
-    const db = stubClient({ groups: { data: null } });
+    const db = stubClient({ walk_sandbox: { data: null } });
     const result = await updateRecordField(
-      allowed("groups", "bio"),
-      GROUP_ID,
+      allowed("walk_sandbox", "label"),
+      ROW_ID,
       "…",
       db.asSupabaseClient(),
     );
@@ -160,15 +183,16 @@ describe("updateRecordField refuses, and issues no query at all", () => {
    */
   async function refuse(table: string, field: string) {
     const db = stubClient({
-      groups: { data: { id: GROUP_ID } },
-      idols: { data: { id: GROUP_ID } },
-      events: { data: { event_id: GROUP_ID } },
-      venues: { data: { venue_id: GROUP_ID } },
+      walk_sandbox: { data: { sandbox_id: ROW_ID } },
+      events: { data: { event_id: ROW_ID } },
+      venues: { data: { venue_id: ROW_ID } },
+      groups: { data: { id: ROW_ID } },
+      idols: { data: { id: ROW_ID } },
     });
-    const config = EDIT_CONFIG[table] ?? EDIT_CONFIG.groups;
+    const config = EDIT_CONFIG[table] ?? EDIT_CONFIG.walk_sandbox;
     const result = await updateRecordField(
       { config, field },
-      GROUP_ID,
+      ROW_ID,
       "forged",
       db.asSupabaseClient(),
     );
@@ -176,18 +200,61 @@ describe("updateRecordField refuses, and issues no query at all", () => {
   }
 
   it("refuses a column absent from the map, naming the field", async () => {
-    const { result, calls } = await refuse("groups", "spotify_id");
+    const { result, calls } = await refuse("walk_sandbox", "created_at");
     expect(result.kind).toBe("error");
-    if (result.kind === "error") expect(result.message).toContain("spotify_id");
+    if (result.kind === "error") expect(result.message).toContain("created_at");
     expect(calls).toEqual([]);
   });
 
   it("refuses an id, key or timestamp column", async () => {
-    for (const field of ["id", "created_at", "updated_at", "profile_image_id"]) {
-      const { result, calls } = await refuse("groups", field);
+    for (const field of ["sandbox_id", "created_at"]) {
+      const { result, calls } = await refuse("walk_sandbox", field);
       expect(result.kind, field).toBe("error");
       expect(calls, field).toEqual([]);
     }
+  });
+
+  it("refuses a table Ben struck from the map, whatever the column", async () => {
+    // The strike, at the data layer. `groups`/`idols` left `EDIT_CONFIG` on
+    // 2026-09-08, so `decideEdit` cannot produce an `AllowedEdit` for either;
+    // the only way to ASK is the adversarial one — a hand-built config naming
+    // the struck table and the columns its retired allowlist carried. The data
+    // layer consults the map again and never builds a query. The stub scripts
+    // both tables on purpose: had a write been attempted it would have
+    // succeeded, so an empty call list is a real negative.
+    const db = stubClient({
+      groups: { data: { id: ROW_ID } },
+      idols: { data: { id: ROW_ID } },
+    });
+    for (const [table, field] of [
+      ["groups", "name"],
+      ["groups", "bio"],
+      ["groups", "member_count"],
+      ["idols", "stage_name"],
+      ["idols", "mbti"],
+    ] as const) {
+      const result = await updateRecordField(
+        {
+          config: {
+            table,
+            pk: "id",
+            regime: "sandbox",
+            editable: [field],
+            display: [],
+            reference: null,
+          },
+          field,
+        },
+        ROW_ID,
+        "forged",
+        db.asSupabaseClient(),
+      );
+      expect(result.kind, `${table}.${field}`).toBe("error");
+      if (result.kind === "error") {
+        expect(result.message, `${table}.${field}`).toContain(table);
+      }
+    }
+    expect(db.calls).toEqual([]);
   });
 
   it("refuses every column of a resolver-owned table", async () => {
@@ -207,21 +274,26 @@ describe("updateRecordField refuses, and issues no query at all", () => {
     // The strongest form: a caller that hand-builds the config object instead
     // of going through `decideEdit`. The data layer consults the map again and
     // never reaches the database.
-    const db = stubClient({ groups: { data: { id: GROUP_ID } } });
-    for (const table of ["event_performers", "scraped_events", "profiles"]) {
+    const db = stubClient({
+      groups: { data: { id: ROW_ID } },
+      walk_sandbox: { data: { sandbox_id: ROW_ID } },
+    });
+    // `groups` leads the list: a forged config is exactly how the struck
+    // direct edit would be smuggled back, and the map is consulted again here.
+    for (const table of ["groups", "idols", "event_performers", "scraped_events", "profiles"]) {
       const result = await updateRecordField(
         {
           config: {
             table,
             pk: "id",
-            regime: "pre_cutover",
+            regime: "sandbox",
             editable: ["name"],
             display: [],
             reference: null,
           },
           field: "name",
         },
-        GROUP_ID,
+        ROW_ID,
         "forged",
         db.asSupabaseClient(),
       );
@@ -231,22 +303,22 @@ describe("updateRecordField refuses, and issues no query at all", () => {
   });
 
   it("uses the map's own config, not a forged one that widens the allowlist", async () => {
-    // A caller claiming `groups.spotify_id` is editable by handing in its own
-    // `editable` list gets the map's answer, not its own.
-    const db = stubClient({ groups: { data: { id: GROUP_ID } } });
+    // A caller claiming `walk_sandbox.created_at` is editable by handing in
+    // its own `editable` list gets the map's answer, not its own.
+    const db = stubClient({ walk_sandbox: { data: { sandbox_id: ROW_ID } } });
     const result = await updateRecordField(
       {
         config: {
-          table: "groups",
-          pk: "id",
-          regime: "pre_cutover",
-          editable: ["spotify_id", "name"],
+          table: "walk_sandbox",
+          pk: "sandbox_id",
+          regime: "sandbox",
+          editable: ["created_at", "label"],
           display: [],
           reference: null,
         },
-        field: "spotify_id",
+        field: "created_at",
       },
-      GROUP_ID,
+      ROW_ID,
       "forged",
       db.asSupabaseClient(),
     );
@@ -255,50 +327,69 @@ describe("updateRecordField refuses, and issues no query at all", () => {
   });
 
   it("keys the write by the map's primary key, not a forged one", async () => {
-    const db = stubClient({ groups: { data: { id: GROUP_ID } } });
+    const db = stubClient({ walk_sandbox: { data: { sandbox_id: ROW_ID } } });
     await updateRecordField(
       {
         config: {
-          table: "groups",
-          pk: "spotify_id",
-          regime: "pre_cutover",
-          editable: ["name"],
+          table: "walk_sandbox",
+          pk: "created_at",
+          regime: "sandbox",
+          editable: ["label"],
           display: [],
           reference: null,
         },
-        field: "name",
+        field: "label",
       },
-      GROUP_ID,
-      "TWICE",
+      ROW_ID,
+      "a forged key",
       db.asSupabaseClient(),
     );
-    expect(step(db.calls[0], "eq")?.args).toEqual(["id", GROUP_ID]);
+    expect(step(db.calls[0], "eq")?.args).toEqual(["sandbox_id", ROW_ID]);
   });
 });
 
 describe("updateRecordField surfaces what the database said", () => {
   it("classifies an absent table as not provisioned, naming it", async () => {
-    const db = stubClient({ groups: { error: tableNotInSchemaCache("groups") } });
+    const db = stubClient({
+      walk_sandbox: { error: tableNotInSchemaCache("walk_sandbox") },
+    });
     expect(
-      await updateRecordField(allowed("groups", "bio"), GROUP_ID, "…", db.asSupabaseClient()),
-    ).toEqual({ kind: "not_provisioned", missing: "groups" });
+      await updateRecordField(
+        allowed("walk_sandbox", "label"),
+        ROW_ID,
+        "…",
+        db.asSupabaseClient(),
+      ),
+    ).toEqual({ kind: "not_provisioned", missing: "walk_sandbox" });
   });
 
   it("classifies an absent column as not provisioned, naming table and column", async () => {
-    const db = stubClient({ groups: { error: undefinedColumnOfRelation("groups", "bio") } });
+    const db = stubClient({
+      walk_sandbox: { error: undefinedColumnOfRelation("walk_sandbox", "label") },
+    });
     expect(
-      await updateRecordField(allowed("groups", "bio"), GROUP_ID, "…", db.asSupabaseClient()),
-    ).toEqual({ kind: "not_provisioned", missing: "groups.bio" });
+      await updateRecordField(
+        allowed("walk_sandbox", "label"),
+        ROW_ID,
+        "…",
+        db.asSupabaseClient(),
+      ),
+    ).toEqual({ kind: "not_provisioned", missing: "walk_sandbox.label" });
   });
 
   it("passes any other failure through in the database's own words", async () => {
-    const denied = permissionDenied("groups");
-    const db = stubClient({ groups: { error: denied } });
+    const denied = permissionDenied("walk_sandbox");
+    const db = stubClient({ walk_sandbox: { error: denied } });
     expect(
-      await updateRecordField(allowed("groups", "bio"), GROUP_ID, "…", db.asSupabaseClient()),
+      await updateRecordField(
+        allowed("walk_sandbox", "label"),
+        ROW_ID,
+        "…",
+        db.asSupabaseClient(),
+      ),
     ).toEqual({
       kind: "error",
-      reading: "groups",
+      reading: "walk_sandbox",
       message: expect.stringContaining(denied.message),
     });
   });
@@ -309,7 +400,12 @@ describe("updateRecordField surfaces what the database said", () => {
         throw new Error("no client");
       },
     } as never;
-    const result = await updateRecordField(allowed("groups", "bio"), GROUP_ID, "…", exploding);
+    const result = await updateRecordField(
+      allowed("walk_sandbox", "label"),
+      ROW_ID,
+      "…",
+      exploding,
+    );
     expect(result.kind).toBe("error");
   });
 });
@@ -331,14 +427,14 @@ describe("readRecordProvenance", () => {
   }
 
   it("issues no query at all for a table with no display columns", async () => {
-    // The pre-cutover case. `field_provenance` carries rows for
-    // resolver-owned entities; reading it for `groups` could only ever answer
-    // "no rows" — or hand a page with no provenance to miss a
+    // The walk sandbox's case. `field_provenance` carries rows for
+    // resolver-owned entities; reading it for a staging fixture could only
+    // ever answer "no rows" — or hand a page with no provenance to miss a
     // not-provisioned card.
     const db = stubClient({});
     const result = await readRecordProvenance(
-      EDIT_CONFIG.groups,
-      GROUP_ID,
+      EDIT_CONFIG.walk_sandbox,
+      ROW_ID,
       db.asSupabaseClient(),
     );
     expect(db.calls).toEqual([]);

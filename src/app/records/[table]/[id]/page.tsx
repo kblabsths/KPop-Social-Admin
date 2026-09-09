@@ -9,12 +9,16 @@ import {
   readRecordProvenance,
   readRecordReference,
 } from "@/lib/db/records";
-import { editConfigFor, type TableEditConfig } from "@/lib/edit/config";
+import {
+  editConfigFor,
+  writePathFor,
+  type TableEditConfig,
+} from "@/lib/edit/config";
 import { EM_DASH } from "@/lib/format";
 
 /**
  * The edit surface for one canonical record — campaign admin-window/TASK-0018.
- * Spec §8, ARCHITECTURE.md §9, acceptance test 7's pre-cutover half.
+ * Spec §8, ARCHITECTURE.md §9, acceptance test 7's sandbox half.
  *
  * One page for every table in `EDIT_CONFIG`, reached from Browse
  * (`/records/events/<id>`). The MAP decides everything below:
@@ -29,15 +33,21 @@ import { EM_DASH } from "@/lib/format";
  *    throw stays because a refusal is the page's own business: it still
  *    answers for the spellings the rewrite deliberately leaves alone, and the
  *    surface must never render a table the map does not carry;
- *  - `groups` and `idols` are pre-cutover, so a column their allowlist carries
- *    edits directly, as a cell — the `EditableCell` primitive (TASK-0004),
- *    reached through `src/components/records/field-editor.tsx`. That wrapper
- *    is what holds the route knowledge `EditableCell` deliberately lacks, and
- *    it lives under `src/components/` because components do (ARCHITECTURE.md
- *    §4 rule 6) and because a server component cannot hand a callback to a
- *    client one; the page renders no input of its own and never will;
+ *  - `walk_sandbox` is the sandbox regime — the app's only direct write, on a
+ *    staging-only fixture table — so a column its allowlist carries edits as a
+ *    cell: the `EditableCell` primitive (TASK-0004), reached through
+ *    `src/components/records/field-editor.tsx`. That wrapper is what holds the
+ *    route knowledge `EditableCell` deliberately lacks, and it lives under
+ *    `src/components/` because components do (ARCHITECTURE.md §4 rule 6) and
+ *    because a server component cannot hand a callback to a client one; the
+ *    page renders no input of its own and never will;
  *  - `events` and `venues` are resolver-owned and render READ-ONLY: no widget,
- *    no disabled input, no button toward a write path that does not exist.
+ *    no disabled input, no button toward a write path that does not exist —
+ *    their override path is FEAT-0011's (ARCHITECTURE §9.2);
+ *  - `groups` and `idols` have no record surface at all. Ben struck the direct
+ *    catalog edit on 2026-09-08 and they left the map with it, so this page
+ *    never renders either one; the URL is a routed 404 (ARCHITECTURE §9,
+ *    DECISIONS 2026-09-08).
  *
  * The surface is one half of the refusal and never the whole of it: a column
  * absent from the map draws no widget HERE and is refused server-side by the
@@ -68,21 +78,29 @@ import { EM_DASH } from "@/lib/format";
 /**
  * What the operator is told about how this table is written — the regime's
  * consequence, in the app's voice, and the same distinction the write path
- * makes (`Regime` in `src/lib/edit/config.ts`).
+ * makes (`writePathFor` in `src/lib/edit/config.ts`).
  *
- * The pre-cutover line states the provenance fact plainly: `field_provenance`
- * carries rows for resolver-owned entities, and a pre-cutover table has none,
- * so no source stands beside its values. That is a fact about the data, not a
+ * The direct line states the provenance fact plainly: `field_provenance`
+ * carries rows for resolver-owned entities and this table has none, so no
+ * source stands beside its values. That is a fact about the data, not a
  * placeholder value in the provenance slot — and it is said ONCE per record
  * rather than repeated on every line, which is what Ben confirmed on
  * admin-window/TASK-0025 (2026-09-02: keep this rendering; the resolver-owned
  * tables get real per-field provenance, admin-window/TASK-0029).
+ *
+ * **It no longer says "to the catalog", and that is the point of the rename**
+ * (ARCHITECTURE §9.1 item 5, re-ruled 2026-09-08). The only table left with a
+ * direct write is the walk sandbox, a staging-only fixture in nobody's
+ * ecosystem domain: a value written there reaches no catalog and never did,
+ * and the old wording was an inaccuracy the regime name was carrying. Since
+ * Ben's strike, no catalog table has a direct write path at all.
  */
 function regimeNote(config: TableEditConfig): string {
-  return config.regime === "pre_cutover"
-    ? `${config.table} is edited directly: a value changed here is written to ` +
-        `the catalog as it stands. No field provenance is recorded for it, so ` +
-        `no source is shown beside a value.`
+  return writePathFor(config.regime) === "direct"
+    ? `${config.table} is a staging fixture table, edited directly: a value ` +
+        `changed here is written to it as it stands and reaches no catalog ` +
+        `record. No field provenance is recorded for it, so no source is ` +
+        `shown beside a value.`
     : `${config.table} is resolver-owned and read-only from Admin: its values ` +
         `change through the resolution pipeline, not by a direct edit.`;
 }
@@ -116,12 +134,12 @@ function regimeNote(config: TableEditConfig): string {
  *    database's own words; claiming "no row stands behind this value" over a
  *    read that never happened would be the page inventing a fact.
  *
- * It says nothing on a pre-cutover table: `regimeNote` already explains that
+ * It says nothing on a directly-written table: `regimeNote` already explains that
  * column there ("No field provenance is recorded for it"), and the asymmetry
  * this ticket is about was that the branch needing no explanation had one.
  *
  * It says "field provenance" in prose rather than naming the table, exactly as
- * the pre-cutover note two functions up does. That is not squeamishness about
+ * the direct-write note two functions up does. That is not squeamishness about
  * a machine identifier: on THIS page the string `field_provenance` is what a
  * failed or unprovisioned leg prints (`LegNote`), and an operator who has
  * learned that the table name appears when something went wrong should not
@@ -146,28 +164,30 @@ function ProvenanceLegend() {
  * Regime-aware, because the app has two regimes and only one of them has a
  * listing. Browse is the recent-EVENTS view and the only curated view M1 ships
  * (spec F7), so it lists the resolver-owned side and structurally cannot list
- * a pre-cutover table. The old blanket sentence ("Browse lists the records
- * that exist") was therefore true for `events`/`venues` and false for
- * `groups`/`idols`, and it was false in the one moment the operator most
- * needed it to be true: the user-sim walk left the app for a SQL client here
- * (Priya, 2026-09-03).
+ * the walk sandbox, which is reachable by its own address alone and by design
+ * has no entry point anywhere. The old blanket sentence ("Browse lists the
+ * records that exist") was therefore true for `events`/`venues` and false for
+ * the other side, and it was false in the one moment the operator most needed
+ * it to be true: the user-sim walk left the app for a SQL client here (Priya,
+ * 2026-09-03).
  *
- * So the pre-cutover line says the true thing instead — that such a record is
+ * So the direct-write line says the true thing instead — that such a record is
  * reached by its id alone, and where an id comes from when the app cannot hand
  * one over. Neither line names a surface that cannot lead anywhere: the
- * address bar is always there, the catalog database is where these rows are
- * written, and Browse really does list events (and links each event's record
- * on to its venue, which is how the second resolver-owned table is reached).
+ * address bar is always there, the database is where these rows live, and
+ * Browse really does list events (and links each event's record on to its
+ * venue, which is how the second resolver-owned table is reached).
  *
- * It keys on `regime` and not on the table name, for the same reason
+ * It keys on the WRITE PATH and not on the table name, for the same reason
  * everything else on this page does (ARCHITECTURE.md §4 rule 4): the map
- * already answers which side of the cutover a table is on.
+ * already answers how a table is written, and the answer is what decides
+ * whether a listing can exist for it.
  */
 function foundBy(config: TableEditConfig): string {
-  return config.regime === "pre_cutover"
+  return writePathFor(config.regime) === "direct"
     ? `Admin has no ${config.table} listing: such a record is reached by its ` +
         `id alone. Check the id in the address bar, or take one from the ` +
-        `catalog database.`
+        `database.`
     : `Browse lists recent events, and an event's record links to its venue. ` +
         `Check the id in the address bar.`;
 }
@@ -297,8 +317,8 @@ export default async function RecordPage({
 
   // Two reads, reported separately: the record's values, then the per-field
   // provenance behind them. A table with no `display` columns issues no
-  // provenance query at all (`readRecordProvenance`), which is the pre-cutover
-  // case and why `groups` still makes exactly one read.
+  // provenance query at all (`readRecordProvenance`), which is why the walk
+  // sandbox still makes exactly one read.
   const result = await readRecord(config, id);
   const provenance = await readRecordProvenance(config, id);
   // The third leg, and the narrowest: the NAME of the record this one's
