@@ -1380,6 +1380,35 @@ describe("the cycle-health gauge", () => {
     expect(outcomes.get(cycleRow(markup, RUNNING_NOW.run_id).cells[2])).toBe("1");
   });
 
+  it("counts its whole excluded set on a mixed window, not the dead within it (admin-window/BUG-0110)", async () => {
+    // The seam the architect's ruling of 2026-09-09 turns on: the excluded set
+    // is every row with no measured duration, which on a mixed window is a
+    // STRICT SUPERSET of the dead — one in flight, one dead. The card states
+    // that set once, as the same number the duration note states, and does not
+    // report the dead count in its place (which would leave the in-flight row
+    // silently dropped from a figure that claims to name what it excludes).
+    const markup = await renderCycles(scriptOf([...FINISHED, RUNNING_NOW, NO_END[0]]));
+    const excluded = countsIn(cardSubLine(markup, "Cycles in this window"))[2];
+
+    // The rows agree: exactly that many render no duration at all.
+    expect(cyclesWithoutDuration(markup)).toHaveLength(excluded);
+    // One field, two surfaces, one number (amended criterion 4).
+    expect(countsIn(noteBelow(markup, DURATIONS))).toEqual([excluded]);
+
+    // ...and the outcome panel splits that same set across the states the page
+    // classifies rows by. Each word comes from the ROW, looked up in the panel,
+    // so no state literal is pinned here.
+    const outcomes = new Map(
+      tableRows(markup, OUTCOMES).map((cells) => [cells[0], cells[1]]),
+    );
+    const dead = Number(outcomes.get(cycleRow(markup, NO_END[0].run_id).cells[2]));
+    const inFlight = Number(outcomes.get(cycleRow(markup, RUNNING_NOW.run_id).cells[2]));
+    expect(dead + inFlight).toBe(excluded);
+    // The card's count is the superset's, never the dead's: a line reporting
+    // the dead here would drop the in-flight row from what it claims to name.
+    expect(excluded).toBeGreaterThan(dead);
+  });
+
   it("does not pronounce a cycle it is rendering as in-flight one that never finished (admin-window/BUG-0116)", async () => {
     const sub = cardSubLine(
       await renderCycles(scriptOf([...FINISHED, RUNNING_NOW])),
