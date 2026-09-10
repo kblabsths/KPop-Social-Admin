@@ -241,3 +241,33 @@ describe("the narrowing vocabulary has one name per question", () => {
     }
   });
 });
+
+/**
+ * **A known second offender, pinned rather than described** —
+ * admin-window/DEBT-0015, found by QA attacking DEBT-0014's landing.
+ *
+ * `readPendingClaims` is exported by the SAME module pair DEBT-0014 just
+ * separated, under two unrelated meanings: `src/lib/db/claims.ts` reads the
+ * classification view's ROWS by `observation_id`, while
+ * `src/lib/gauges/pending-claims.ts` FETCHES AND AGGREGATES them for
+ * `/claims`. The collision already forces a rename at an import site —
+ * `pending-claims.ts:7` imports its neighbour's word as
+ * `readPendingClaimRows` — and two adjacent pages each call a different
+ * function under the one word (`/queues/[reviewItemId]`, `/claims`).
+ *
+ * It is deliberately NOT in the OWNER map above: an entry there would red
+ * this file today and block every close on the branch. `it.fails` is the pin
+ * instead — the assertion inside FAILS on today's two declarers, so the case
+ * passes, and the day DEBT-0015 lands it XPASSes, this file goes red, and the
+ * reader is sent to the ticket. It names no winner between the two modules,
+ * because which one keeps the bare word is the builder's call (as it was in
+ * DEBT-0010 and DEBT-0014).
+ *
+ * Whoever fixes DEBT-0015 DELETES this block and adds the two names to the
+ * OWNER map instead; the pin must not survive the fix.
+ */
+describe("the vocabulary's one known outstanding collision", () => {
+  it.fails("declares readPendingClaims in exactly one module (admin-window/DEBT-0015)", () => {
+    expect(declaringFiles("readPendingClaims")).toHaveLength(1);
+  });
+});
