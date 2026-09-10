@@ -144,11 +144,21 @@ function healthyScript(overrides: Script = {}): Script {
   };
 }
 
+/**
+ * The stub the LAST `renderCycles` handed the page, kept so a test can read the
+ * QUERIES the render actually issued and not only the markup it produced. That
+ * pairing is the whole of ARCHITECTURE.md §7's rule — what is SHOWN is what was
+ * USED — and it cannot be checked from either side alone (QA, BUG-0155).
+ */
+const lastRender = { stub: undefined as ReturnType<typeof stubClient> | undefined };
+
 async function renderCycles(
   script: Script,
   params: Record<string, string | string[]> = {},
 ): Promise<string> {
-  readWith.client = stubClient(script).asSupabaseClient();
+  const stub = stubClient(script);
+  lastRender.stub = stub;
+  readWith.client = stub.asSupabaseClient();
   return render(await CyclesPage({ searchParams: Promise.resolve(params) }));
 }
 
@@ -3483,5 +3493,164 @@ describe("the module this page's presentation lives in", () => {
     // The page itself must still be async — a criterion the rule above would
     // happily satisfy by deleting the read.
     expect(codeText(PAGE)).toMatch(/export default async function CyclesPage/);
+  });
+});
+
+/* -- what the page SPELLS is what the page QUERIED (QA, BUG-0155) --------- */
+
+/**
+ * QA's attack on the seam admin-window/BUG-0155 closed, taken from the ONE
+ * vantage neither half's tests have: the QUERY the render issued, read off the
+ * stub, paired with the SENTENCES the same render produced.
+ *
+ * ARCHITECTURE.md section 7's rule -- "what is SHOWN is what was USED: one derivation
+ * per URL value class" -- is a statement about two things at once, and neither
+ * side can check it alone. `tests/offline/runs/read.test.ts` pins what
+ * `canonicalUrlText` sends to `.eq("source", ...)`; the strict pin above pins
+ * that the facet's hook and its rendered box agree. Between them sits the
+ * claim an operator actually reads: that the string in `.eq` is the string in
+ * the facet paragraph, in the runs window line's scope clause and in the empty
+ * card -- one page, one name. Before the fix `/cycles?source=%20ticketmaster`
+ * queried `" ticketmaster"` and said "no runs from ticketmaster at all"; the
+ * comparison below is the one that sees both halves of that at once.
+ *
+ * Nothing here asserts a word of the app's copy or a class name. What is
+ * compared is a value the app SENT against a value the app RENDERED, collapsed
+ * the way a browser lays a paragraph out (`white-space: normal`), plus, for a
+ * refused value, the window line of the SAME page rendered with no facet at
+ * all -- a second render, never a literal, so restating any of these sentences
+ * cannot redden this file.
+ */
+describe("the ?source= a render QUERIED is the ?source= that render SPELLED", () => {
+  const TM = RUN_SOURCE.ticketmaster;
+
+  /** As a browser lays a paragraph out: runs of white space are one space. */
+  const laidOut = (text: string) => text.replace(/\s+/g, " ").trim();
+
+  /** Every `.eq(...)` the last render issued against the runs table. */
+  function runsEq(): unknown[][] {
+    return (lastRender.stub?.calls ?? [])
+      .filter((call) => call.table === T.runs)
+      .flatMap((call) =>
+        call.steps.filter((step) => step.method === "eq").map((step) => step.args),
+      );
+  }
+
+  /** The names the dropped-parameter line reported. */
+  const dropped = ($: cheerio.CheerioAPI) =>
+    $("[data-dropped-param]")
+      .toArray()
+      .map((element) => $(element).attr("data-dropped-param") ?? "");
+
+  /**
+   * The shapes an operator's paste and a hand-typed URL actually produce, each
+   * with the name the ruling gives it. `null` means the page must narrow
+   * nothing and report `source` as a parameter it did not apply; a string means
+   * that is the ONE name the query and every sentence must both carry.
+   */
+  const SHAPES: [label: string, asked: string, narrows: string | null][] = [
+    ["the registered name itself", TM, TM],
+    ["a leading space", " " + TM, TM],
+    ["a trailing space", TM + " ", TM],
+    ["blanks at both ends", "  " + TM + "  ", TM],
+    ["a name the registry never heard of", "never-heard-of", "never-heard-of"],
+    ["a single interior space", "tic ketmaster", "tic ketmaster"],
+    ["a name at the allowlist's length bound", "a".repeat(128), "a".repeat(128)],
+    // Refused: a browser would re-spell the value, so no sentence may carry it.
+    ["an interior double space", "tic  ketmaster", null],
+    ["an interior run of three spaces", "tic   ketmaster", null],
+    // Refused: padding the allowlist does not admit is dropped, not laundered
+    // into a spellable name -- the ordering call this fix rests on.
+    ["a tab pad", "\t" + TM, null],
+    ["a no-break-space pad", "\u00A0" + TM, null],
+    ["a zero-width-space pad", "\u200B" + TM, null],
+    ["a newline pad", TM + "\n", null],
+    ["a carriage-return pad", "\r" + TM, null],
+    ["a soft-hyphen pad", "\u00AD" + TM, null],
+    ["a NUL pad", "\u0000" + TM, null],
+    ["a DEL pad", "\u007F" + TM, null],
+    // Refused: BUG-0153's arm, which the padding strip must not undo.
+    ["a right-to-left override", "\u202E" + TM, null],
+    // Refused: padding that pushes the value past the allowlist's bound.
+    ["one space past the length bound", " " + "a".repeat(128), null],
+    // Refused: half a typed URL is not a request for the runs of no name.
+    ["blanks only", "   ", null],
+  ];
+
+  it.each(SHAPES)(
+    "%s: the .eq value, the facet hook, the rendered box and the window line are ONE string",
+    async (_label, asked, narrows) => {
+      const markup = await renderCycles(
+        healthyScript({ [T.runs]: { data: [...RUNS] } }),
+        { source: asked },
+      );
+      const $ = cheerio.load(markup);
+      const facet = $("[data-source-facet]");
+      const eq = runsEq();
+      const line = laidOut($('[data-window="runs"]').text());
+
+      if (narrows === null) {
+        // The refusing arm. The page must not have QUERIED by a value it then
+        // declines to name: a narrowing nothing on screen accounts for is the
+        // same defect wearing the opposite face.
+        expect(eq).toEqual([]);
+        expect(facet).toHaveLength(0);
+        expect(dropped($)).toContain("source");
+        // ...and the window it describes is the unnarrowed one -- compared
+        // against a second render of this same page, never against a literal.
+        const plain = await renderCycles(
+          healthyScript({ [T.runs]: { data: [...RUNS] } }),
+        );
+        expect(line).toBe(laidOut(cheerio.load(plain)('[data-window="runs"]').text()));
+        return;
+      }
+
+      // The narrowing arm. Exactly one string reached PostgREST...
+      expect(eq).toEqual([["source", narrows]]);
+      // ...it is the hook the facet publishes...
+      expect(facet).toHaveLength(1);
+      expect(facet.attr("data-source-facet")).toBe(narrows);
+      // ...it is what an operator READS in that paragraph's own box...
+      expect(laidOut(facet.find('[dir="ltr"]').text())).toBe(narrows);
+      // ...and the window line's scope clause names the same string, laid out.
+      expect(line).toContain(narrows);
+      // A page that answered the parameter never also reports it dropped.
+      expect(dropped($)).not.toContain("source");
+    },
+  );
+
+  it.each(SHAPES.filter(([, , narrows]) => narrows !== null))(
+    "%s: the empty card names the string the read was narrowed by",
+    async (_label, asked, narrows) => {
+      // The card the operator meets when the narrowing matched nothing -- the
+      // sentence the original defect made false ("No runs from ticketmaster"
+      // over a query for " ticketmaster").
+      const markup = await renderCycles(
+        healthyScript({ [T.runs]: { data: [] } }),
+        { source: asked },
+      );
+      const $ = cheerio.load(markup);
+      expect(runsEq()).toEqual([["source", narrows]]);
+      const card = $('[data-empty="runs"]');
+      expect(card).toHaveLength(1);
+      expect(laidOut(card.text())).toContain(narrows as string);
+    },
+  );
+
+  it("spells a refused value NOWHERE on the page it was refused on", async () => {
+    // Values no fixture row carries, so any occurrence in the text is the page
+    // naming what the URL asked for rather than what the table holds.
+    for (const asked of ["tic  ketmaster", "no  such  source", "un\u200Bregistered"]) {
+      const markup = await renderCycles(
+        healthyScript({ [T.runs]: { data: [...RUNS] } }),
+        { source: asked },
+      );
+      const $ = cheerio.load(markup);
+      const text = laidOut($("body").text() || $.root().text());
+      expect(text, JSON.stringify(asked)).not.toContain(laidOut(asked));
+      // ...and not raw either, which is what a `white-space: pre` box would
+      // have left behind (the arm the ruling rejected).
+      expect(text, JSON.stringify(asked)).not.toContain(asked);
+    }
   });
 });
