@@ -45,6 +45,13 @@ const OWNER: Readonly<Record<string, string>> = {
   trimInkPadding: "src/lib/url/text.ts",
   /** Does this URL carry a claim facet at all? Fact 1, claims domain. */
   hasNarrowingFacet: "src/lib/claims/filters.ts",
+  /** Where "no narrowing at all, on this tab" IS — the one control that undoes
+   * every facet a claims URL applied, the ones with no chip row included
+   * (admin-window/BUG-0161). It is in this map because it is the inverse of
+   * the two questions above it: a second copy that subtracted the facets
+   * someone remembered, rather than building the href from the empty filter,
+   * is exactly how a page comes to offer an exit that does not exit. */
+  clearNarrowing: "src/lib/claims/filters.ts",
   /** Narrowed BEYOND what a block already applies to itself? Fact 1, queues. */
   isNarrowedBeyond: "src/lib/review/queue-filters.ts",
   /** The queues-domain adapter of the two-fact rule. */

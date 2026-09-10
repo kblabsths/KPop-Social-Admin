@@ -3,10 +3,13 @@ import {
   ANY_LABEL,
   CHIP_FACETS,
   CLAIM_FACETS,
+  CLEARED_BY,
+  CLEAR_LABEL,
   DEFAULT_TAB,
   TABS,
   UNCHIPPED_FACETS,
   claimsHref,
+  clearNarrowing,
   droppedParams,
   facetChips,
   filterBar,
@@ -19,7 +22,9 @@ import {
   unchippedNarrowings,
   unchippedPhrase,
   withFacet,
+  type ClaimFacet,
   type ClaimsFilter,
+  type ClaimsTab,
   type FacetOptions,
 } from "@/lib/claims/filters";
 import { recordHref } from "@/lib/records/routes";
@@ -486,6 +491,149 @@ describe("one facet at a time", () => {
     expect(filterBar(PATH, {}, "buckets", OPTIONS).map((group) => group.facet)).toEqual([
       ...CHIP_FACETS,
     ]);
+  });
+});
+
+/**
+ * **A narrowing the page applied is a narrowing the page can undo** —
+ * admin-window/BUG-0161.
+ *
+ * Measured on staging at `/claims?domain=zzz` (designer, 2026-09-10): all five
+ * bucket rows read `0`, and every anchor on the page carried `domain=zzz`
+ * forward — both `all` chips included — so the one action the empty card named
+ * ("the 'all' chip on any row shows everything again") landed back on the same
+ * zeroed page. The only exits were the sidebar and the address bar.
+ *
+ * The leaf's share is the pair: ONE control whose href applies no narrowing at
+ * all, and the card's words, which quote that control's own label instead of
+ * describing an action of their own. Both live beside each other here so they
+ * cannot drift into naming different things (LESSONS 5); what the PAGE renders
+ * is graded in `tests/offline/claims/page.test.ts`.
+ *
+ * Every expectation below is computed from `CLAIM_FACETS` rather than from the
+ * three facets that exist today, so a facet added tomorrow — with a chip row
+ * or without one — is graded on the day it is read.
+ */
+describe("the empty card names an exit that clears every narrowing the page applied", () => {
+  /** A value each facet really narrows by, in the facet's own value class. */
+  const A_VALUE: Record<ClaimFacet, string> = {
+    bucket: BUCKETS[0],
+    source_id: SOURCE_ID,
+    // The ticket's own URL: a well-formed value nothing carries. It still
+    // NARROWS (admin-window/BUG-0138), which is what made the dead end.
+    domain: "zzz",
+  };
+
+  /** The narrowing a URL applies, read back off an href this leaf wrote. */
+  const appliedBy = (href: string): ClaimsFilter => {
+    const [path, query = ""] = href.split("?");
+    expect(path).toBe(PATH);
+    return filterFrom(Object.fromEntries(new URLSearchParams(query)), BUCKETS);
+  };
+
+  /** The exit, or a failure naming the state that was left without one. */
+  const exitFrom = (filter: ClaimsFilter, tab: ClaimsTab = DEFAULT_TAB) => {
+    const exit = clearNarrowing(PATH, filter, tab);
+    if (exit === null) {
+      throw new Error(`no exit offered for ${JSON.stringify(filter)} on ${tab}`);
+    }
+    return exit;
+  };
+
+  it("is offered exactly where the URL narrowed something", () => {
+    // Nothing set: no row, because there is nothing to clear and a control
+    // that clears nothing is a control that lies (LOOK_AND_FEEL bar 13).
+    expect(clearNarrowing(PATH, filterFrom({}, BUCKETS))).toBeNull();
+    // A parameter the page did NOT apply is not a narrowing either: the
+    // dropped-parameter line says what happened to it, and this row stays
+    // away rather than offering to clear a filter nobody is under.
+    expect(clearNarrowing(PATH, filterFrom({ domain: "  " }, BUCKETS))).toBeNull();
+    expect(clearNarrowing(PATH, filterFrom({ source_id: "not-a-uuid" }, BUCKETS))).toBeNull();
+    // And every facet on its own gets one.
+    for (const facet of CLAIM_FACETS) {
+      const filter = filterFrom({ [facet]: A_VALUE[facet] }, BUCKETS);
+      expect(hasNarrowingFacet(filter), facet).toBe(true);
+      expect(clearNarrowing(PATH, filter), facet).not.toBeNull();
+    }
+  });
+
+  it("lands on a URL that applies NO narrowing, every facet included", () => {
+    for (const facet of CLAIM_FACETS) {
+      const filter = filterFrom({ [facet]: A_VALUE[facet] }, BUCKETS);
+      // Non-vacuous: this facet really is set on the page the exit is shown on.
+      expect(Object.keys(filter), facet).toEqual([facet]);
+
+      const cleared = appliedBy(exitFrom(filter).href);
+      expect(cleared, facet).toEqual({});
+      expect(hasNarrowingFacet(cleared), facet).toBe(false);
+      expect(hasChipNarrowing(cleared), facet).toBe(false);
+      expect(unchippedNarrowings(cleared), facet).toEqual([]);
+    }
+
+    // Every facet at once — the state where clearing one at a time is exactly
+    // what does not work.
+    const all = filterFrom(A_VALUE, BUCKETS);
+    expect(Object.keys(all).sort()).toEqual([...CLAIM_FACETS].sort());
+    expect(exitFrom(all).href).toBe(PATH);
+    expect(appliedBy(exitFrom(all).href)).toEqual({});
+  });
+
+  it("clears the facet with NO chip row, which is the one nothing else drops", () => {
+    // The dead end itself, in one comparison. Both facets are set; the `all`
+    // chip of the chipped one is the control the old card named.
+    const filter = filterFrom(
+      { source_id: SOURCE_ID, domain: A_VALUE.domain },
+      BUCKETS,
+    );
+    for (const facet of UNCHIPPED_FACETS) {
+      expect(filter[facet], facet).toBeDefined();
+    }
+
+    for (const group of filterBar(PATH, filter, DEFAULT_TAB, OPTIONS)) {
+      const any = group.choices.find((choice) => choice.label === ANY_LABEL);
+      expect(any, group.facet).toBeDefined();
+      // Every `all` chip carries the control-less narrowing forward — which is
+      // correct behaviour for a chip that clears ONE facet, and is why it can
+      // never be the exit (the page's criterion 3: the chip rows keep their
+      // present job).
+      for (const facet of UNCHIPPED_FACETS) {
+        expect(appliedBy(any?.href ?? "")[facet], `${group.facet} / ${facet}`).toBe(
+          filter[facet],
+        );
+      }
+    }
+
+    // The exit drops it, and drops the chip narrowing with it.
+    expect(appliedBy(exitFrom(filter).href)).toEqual({});
+  });
+
+  it("keeps the tab, which is the one narrowing the operator can already see", () => {
+    for (const tab of TABS) {
+      const filter = filterFrom({ domain: A_VALUE.domain }, BUCKETS);
+      const exit = exitFrom(filter, tab);
+      // The same page, unnarrowed, on the tab you were reading — and the tab
+      // strip is the control that crosses back (`tabLinks`), so nothing here
+      // is left without one.
+      expect(appliedBy(exit.href), tab).toEqual({});
+      expect(exit.href, tab).toBe(claimsHref(PATH, {}, tab));
+      expect(tabFrom(Object.fromEntries(new URLSearchParams(exit.href.split("?")[1] ?? ""))), tab)
+        .toBe(tab);
+    }
+  });
+
+  it("is named by the card in the control's own word, not in words of its own", () => {
+    // The two halves that have to agree: the chip says `CLEAR_LABEL`, and the
+    // card quotes exactly that string. Nothing here pins the copy — what is
+    // pinned is that one string reaches both channels (LESSONS 5).
+    expect(exitFrom(filterFrom({ domain: A_VALUE.domain }, BUCKETS)).label).toBe(
+      CLEAR_LABEL,
+    );
+    expect(CLEARED_BY.chip).toContain(`'${CLEAR_LABEL}'`);
+    // It is a different promise from an `all` chip, so it is a different word:
+    // one clears a facet, the other clears the filter.
+    expect(CLEAR_LABEL).not.toBe(ANY_LABEL);
+    // The exit is never the state you are in — it is somewhere else, always.
+    expect(exitFrom(filterFrom(A_VALUE, BUCKETS)).active).toBe(false);
   });
 });
 

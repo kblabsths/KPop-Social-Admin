@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { CLAIM_WINDOW } from "@/components/claims";
 import { ANY_LABEL } from "@/lib/claims/filters";
+import { UNRENDERABLE_BUCKET } from "@/lib/db/claims";
 import { count } from "@/lib/format";
 import { STANDING_BUCKET } from "@/lib/gauges/standing-disagreements";
 import { ROW_CAP } from "@/lib/db/result";
@@ -2245,6 +2246,168 @@ describe("a narrowing with no chip row", () => {
     });
     expect(runTogetherWords(markup)).toEqual([]);
     expect(implicitInterElementSpaces("src/app/claims/page.tsx")).toEqual([]);
+  });
+});
+
+/* ── the way out of a narrowing (admin-window/BUG-0161) ──────────────────── */
+
+/**
+ * **The exit the empty card names works** — admin-window/BUG-0161.
+ *
+ * Measured on staging at `/claims?domain=zzz` (designer, 2026-09-10): all five
+ * bucket rows read `0`, the window line said the read found nothing, and the
+ * empty card said "Widen a filter above; the 'all' chip on any row shows
+ * everything again" — while every anchor on the page carried `domain=zzz`
+ * forward, both `all` chips included:
+ *
+ *     all (bucket)     -> /claims?domain=zzz
+ *     all (source_id)  -> /claims?domain=zzz
+ *
+ * So the one action the card named returned the operator to the same zeroed
+ * page, and the only exits left were the sidebar and the address bar.
+ *
+ * The property graded here is the ticket's human-check, run as a test: from a
+ * narrowed-empty page, follow ONLY the control the card names, and arrive
+ * somewhere that renders claims. It is graded by FOLLOWING the href the page
+ * wrote — rendering the page again at it — rather than by comparing it against
+ * a URL spelled here, so a page that keeps a facet in that href fails even
+ * where the string looks right.
+ */
+describe("the way out of a narrowing", () => {
+  const card = (markup: string): string =>
+    cheerio
+      .load(markup)('[data-surface="claims"] [data-empty]')
+      .text()
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const emptyHook = (markup: string): string | undefined =>
+    cheerio.load(markup)('[data-surface="claims"] [data-empty]').attr("data-empty");
+
+  /** The exit control the filter bar draws, or `undefined` where it draws none. */
+  function exitOf(markup: string): { label: string; href: string } | undefined {
+    const anchor = cheerio.load(markup)("[data-clear-narrowing] a");
+    if (anchor.length === 0) return undefined;
+    return { label: anchor.text().trim(), href: anchor.attr("href") ?? "" };
+  }
+
+  /** The same, insisting there is one — so a missing exit names its own state. */
+  function theExit(markup: string, state: string): { label: string; href: string } {
+    const exit = exitOf(markup);
+    if (exit === undefined) throw new Error(`no exit is drawn on ${state}`);
+    return exit;
+  }
+
+  /** Where an href this page wrote leads, as parameters to render it again. */
+  const paramsOf = (href: string): Record<string, string> =>
+    Object.fromEntries(new URLSearchParams(href.split("?")[1] ?? ""));
+
+  /**
+   * Every URL below empties this page's list through a narrowing it applied —
+   * the ticket's own `?domain=zzz`, the same with a chip facet set beside it,
+   * a pair of real vocabulary values that share no claim, and the control-less
+   * facet on the other tab.
+   */
+  const DEAD_ENDS: ReadonlyArray<readonly [string, Record<string, string>]> = [
+    ["the facet with no chip row, alone", { domain: "zzz" }],
+    ["that facet beside a chip facet", { domain: "zzz", source_id: SOURCE.first }],
+    ["two real values that share no claim", { bucket: "escalated", domain: "groups" }],
+    ["the standing tab, narrowed away", { tab: "standing", domain: "venues" }],
+  ];
+
+  it.each(DEAD_ENDS)("is on the screen when %s emptied the page", async (state, params) => {
+    const markup = await renderClaims(healthyScript(), params);
+    // Non-vacuous: this really is the zeroed page, blamed on the narrowing.
+    expect(claimIds(markup), state).toEqual([]);
+    expect(emptyHook(markup), state).toBe("narrowing");
+
+    // Criterion 1: the card names the control, in the control's own word.
+    const exit = theExit(markup, state);
+    expect(card(markup), state).toContain(exit.label);
+
+    // ...and following it — clicking only what the card named — arrives at a
+    // page that renders claims, with nothing left to clear.
+    const arrived = await renderClaims(healthyScript(), paramsOf(exit.href));
+    expect(claimIds(arrived).length, state).toBeGreaterThan(0);
+    expect(exitOf(arrived), state).toBeUndefined();
+  });
+
+  it("names the facet that has no chip row, so the exit says what it clears", async () => {
+    // The ticket's own URL, end to end: the page never said the word "domain"
+    // (that half is admin-window/BUG-0160) and had no control that dropped it
+    // (this half). Both are read off one card.
+    const markup = await renderClaims(healthyScript(), { domain: "zzz" });
+    for (const row of bucketRows(markup)) expect(row.claims, row.bucket).toBe(0);
+    expect(card(markup)).toContain("domain");
+    expect(card(markup)).toContain("zzz");
+    expect(card(markup)).toContain(theExit(markup, "?domain=zzz").label);
+  });
+
+  it("draws no exit where the URL narrowed nothing", async () => {
+    // A control that clears nothing is a control that lies (LOOK_AND_FEEL bar
+    // 13), so the row is absent from the unnarrowed page on both tabs — and
+    // from a page carrying a parameter this one never applied, which the
+    // dropped-parameter line explains instead.
+    const UNNARROWED: ReadonlyArray<Record<string, string>> = [
+      {},
+      { tab: "standing" },
+      { domain: "  " },
+      { nonsense: "1" },
+    ];
+    for (const params of UNNARROWED) {
+      const markup = await renderClaims(healthyScript(), params);
+      expect(exitOf(markup), JSON.stringify(params)).toBeUndefined();
+    }
+  });
+
+  it("leaves the chip rows doing exactly the job they did", async () => {
+    // Criterion 3. The exit is a row of its own; it takes nothing away from
+    // the chips, whose `all` still means "this facet, unset" and still
+    // composes with the other facet.
+    const markup = await renderClaims(healthyScript(), {
+      domain: "zzz",
+      source_id: SOURCE.first,
+    });
+    for (const facet of ["bucket", "source_id"]) {
+      const chips = chipsOf(markup, facet);
+      expect(chips.length, facet).toBeGreaterThan(1);
+      expect(chips[0].label, facet).toBe(ANY_LABEL);
+      // "this facet, unset" — the other facets are carried, the control-less
+      // one included, which is why an `all` chip can never be the exit.
+      expect(chips[0].href, facet).not.toContain(`${facet}=`);
+      expect(chips[0].href, facet).toContain("domain=zzz");
+      // ...and every OTHER narrowing is kept, which is the whole difference
+      // between widening one row and taking the exit.
+      if (facet !== "source_id") {
+        expect(chips[0].href, facet).toContain(encodeURIComponent(SOURCE.first));
+      }
+    }
+    // The exit is not a facet, so it renders no facet group and sets no
+    // parameter of its own...
+    expect(cheerio.load(markup)("[data-clear-narrowing] [data-facet]")).toHaveLength(0);
+    expect(paramsOf(theExit(markup, "both facets set").href)).toEqual({});
+    // ...and the parked bucket is still nowhere on the page or in its hrefs.
+    expect(markup).not.toContain(UNRENDERABLE_BUCKET);
+  });
+
+  it("says nothing about an exit where no filter is what emptied the page", async () => {
+    // Criterion 4, from the other side: with the tab's own population empty,
+    // no facet removed a row, so the card is the "nothing here yet" one and
+    // names no way out — it is not a narrowing that has to be undone.
+    const script: Script = {
+      [T.pendingClaims]: claimView(CLAIMS.filter((claim) => claim.bucket !== STANDING_BUCKET)),
+      [T.observations]: { data: [...OBSERVATIONS] },
+      [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
+    };
+    const markup = await renderClaims(script, { tab: "standing", domain: "events" });
+    const bare = await renderClaims(script, { tab: "standing" });
+
+    expect(claimIds(markup)).toEqual([]);
+    expect(emptyHook(markup)).not.toBe("narrowing");
+    // The card is word for word the unfaceted tab's card: it blames nothing,
+    // so it offers to undo nothing.
+    expect(card(markup)).toBe(card(bare));
+    expect(card(markup)).not.toContain(theExit(markup, "?tab=standing&domain=events").label);
   });
 });
 
