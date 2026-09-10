@@ -98,6 +98,24 @@ describe("pageUrl", () => {
       expect(new URLSearchParams(url.split("?")[1]).get(OFFSET_PARAM), params).toBe("4");
     }
   });
+
+  // STRICT XFAIL PIN — admin-window/BUG-0166. `it.fails` passes only while the
+  // assertion below is RED, so the day pageUrl overrides a stale bound this
+  // line turns red instead and sends the reader to the ticket; drop the
+  // `.fails` in the same commit that fixes it.
+  it.fails("carries THIS press's bound even when the surface's facets already spell one", () => {
+    // The bound the handler reads must be the one this module wrote, whatever
+    // a surface serialized into `params`. A handler asks `searchParams.get()`,
+    // which answers with the FIRST occurrence, so appending is not overriding:
+    // a stale `offset` in the facets is the bound the server would honour, and
+    // the press would ask for a page the surface already holds.
+    for (const params of [`${OFFSET_PARAM}=99`, `tab=standing&${OFFSET_PARAM}=99`]) {
+      const url = pageUrl({ ...recorder(() => undefined).deps, params }, 4);
+      const read = new URL(url, "https://admin.example").searchParams;
+      expect(read.get(OFFSET_PARAM), params).toBe("4");
+      expect(read.getAll(OFFSET_PARAM), params).toEqual(["4"]);
+    }
+  });
 });
 
 describe("requestPage", () => {
