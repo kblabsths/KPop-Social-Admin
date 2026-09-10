@@ -23347,3 +23347,11 @@
 2026-09-10T01:52:41Z	agent	-	-	-	-
 # STRANDED	2026-09-10T01:53:07Z	builder	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0158.md
 2026-09-10T01:53:07Z	builder	BUG-0158	26766	1056	158979
+2026-09-10T01:53:34Z	qa-adversary	BUG-0158	spawned
+2026-09-10T01:53:48Z	builder	DEBT-0015	spawned
+# STRANDED	2026-09-10T01:54:06Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0158.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0015.md
+2026-09-10T01:54:06Z	agent	-	-	-	-
+# STRANDED	2026-09-10T01:54:19Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0158.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0015.md
+2026-09-10T01:54:19Z	agent	-	-	-	-
+# STRANDED	2026-09-10T01:54:38Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0158.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0015.md
+2026-09-10T01:54:38Z	agent	-	-	-	-
