@@ -1,0 +1,33 @@
+{
+ "id": "BUG-0161",
+ "created": "2026-09-10T20:33:38Z",
+ "green": true,
+ "git_head": "b8ad4823f1daf18d48bc2e8451a3c8e6e4f5dfa6",
+ "scope": [
+  "src/app/claims/page.tsx",
+  "src/components/claims/filter-bar.tsx",
+  "src/lib/claims/filters.ts",
+  "tests/offline/claims/filters.test.ts",
+  "tests/offline/url/narrowing.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "4750cc30d0786b0b1e0e794559124ca404261e5ab89c2953820ad08e69460000",
+ "commands": [
+  {
+   "cmd": "cd \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\" && ./node_modules/.bin/vitest run --project=offline tests/offline/claims/filters.test.ts tests/offline/claims/page.test.ts tests/offline/url/narrowing.test.ts tests/offline/absence/pages.test.ts tests/offline/ui/copy.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\n\n \u2713 |offline| tests/offline/claims/filters.test.ts (45 tests) 17ms\n \u2713 |offline| tests/offline/ui/copy.test.ts (12 tests) 306ms\n \u2713 |offline| tests/offline/url/narrowing.test.ts (21 tests) 846ms\n   \u2713 the narrowing vocabulary has one name per question > declares each name in exactly one module  363ms\n   \u2713 the narrowing vocabulary has one name per question > exports nothing ELSE under one of these names  418ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (275 tests) 2713ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  766ms\n   \u2713 a surface offers a control only where the read behind it answered > puts no control inside a card that says a read did not happen, and gains none  909ms\n \u2713 |offline| tests/offline/claims/page.test.ts (177 tests) 4242ms\n   \u2713 what a filled window promises > cannot reach past the cap from any state its own chips offer  329ms\n   \u2713 what a filled window promises > says what it is not showing and offers no way to it  314ms\n\n Test Files  5 passed (5)\n      Tests  530 passed (530)\n   Start at  13:33:20\n   Duration  6.48s (transform 3.53s, setup 0ms, collect 4.74s, tests 8.12s, environment 1ms, prepare 856ms)\n\n(node:26743) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "cd \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\" && grep -q \"the empty card names an exit that clears every narrowing the page applied\" tests/offline/claims/filters.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "cd \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\" && bash -c \"rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit\"",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
