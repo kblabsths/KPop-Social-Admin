@@ -1380,3 +1380,23 @@ no offset in `searchParams`, so a shared link never depends on how far somebody
 else paged. (3) Paging buys no width — no third surface, no "load everything"
 control, no second Browse view, no raised `ROW_CAP`, and it is not argued as a
 substitute for search, which stays out by Ben's ruling of the same day.
+
+## 2026-09-10 — a page-level latency bar belongs to the page's critical path, not to one function
+
+TASK-0062 made `readRowsByIds` a bounded fan-out and carried M3 EC9's whole
+page bar (`/claims` warm at or under 1.4 s) on a diff confined to
+`src/lib/db/result.ts`. It missed honestly: 2.280 -> 1.714 s median. The
+ruling is that the bar was mis-homed at authoring, not that the bar is wrong.
+It moves to TASK-0074 and M3 still owes 1.4 s. **The door this closes:** on a
+page that composes its reads in one `Promise.all` — which `/claims` does, at
+depth 1 — round-trip COUNT is not the latency lever; the 13 single-trip
+siblings cost `max`, not `sum`, and only DEPTH is on the clock. So collapsing
+the five per-bucket counts and five per-bucket seeks into grouped reads is
+ruled OUT as a latency remedy for as long as that composition holds (it would
+buy database load, not wall clock, and would put a rendered-figure rewrite
+inside a timing ticket). The one deep chain left on `/claims` is the
+pending-claims gauge's two-step join — `readPendingObservations` awaited, then
+877 ids through the fan-out, four sequential waits — and that is the only
+thing TASK-0074 is allowed to attack. A future latency ticket on any surface
+states the page's DEPTH before it proposes a fix; a round-trip census alone
+does not justify one.
