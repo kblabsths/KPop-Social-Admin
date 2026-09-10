@@ -46,17 +46,32 @@ the health endpoint (`src/app/api/health/route.ts`); adding a page protects it a
 
 ## Environment variables
 
-`.env.example` carries the **names**, and only the names — values live in a gitignored `.env` locally and
-in the Railway service in production, and no value belongs in this repo, a log or a transcript.
+Names below, never values: `.env.example` carries the names and nothing else, and no value belongs in this
+repo, a log or a transcript. **Where a value lives depends on which name it is**, and that split is a
+ruling (`agenticflow/docs/DECISIONS.md`, 2026-09-03), not a habit.
+
+**The two the app itself reads**, server-side only, through one seam (`src/lib/db/client.ts`, plus the
+carried-over `src/lib/supabase.ts`):
 
 | Variable | Purpose |
 | --- | --- |
-| `SUPABASE_URL` | Supabase project URL the app reads (server-side only, no `NEXT_PUBLIC_` prefix) |
+| `SUPABASE_URL` | The Supabase project the app reads (no `NEXT_PUBLIC_` prefix — it never reaches a client bundle) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service-role key — bypasses RLS, never expose to the client |
-| `STAGING_SUPABASE_URL` | Staging project, the only live target the test and walk tooling may touch |
+
+Neither is in a file. In production the Railway service holds them; locally they exist only in the
+process environment of a running instance, mapped there from the staging pair by the launch line in
+`agenticflow/docs/STACK.md` §5. Nothing in the code falls back from one name to another, so an unset name
+is a failure and never a quieter default.
+
+**The rest are what a developer's machine carries** in a gitignored `.env` at the repo root, whose names —
+and only whose names — are `.env.example`'s:
+
+| Variable | Purpose |
+| --- | --- |
+| `STAGING_SUPABASE_URL` | The staging project: the only live target the test and walk tooling may touch |
 | `STAGING_SUPABASE_SERVICE_ROLE_KEY` | Staging service-role key; an unset staging name is a loud refusal, never a fallback to the pair above |
-| `AUTH_SECRET` | next-auth secret (`npx auth secret`) |
-| `AUTH_URL` | The app's own public origin; next-auth resolves every redirect and the session cookie name from it |
+| `AUTH_SECRET` | next-auth secret (`npx auth secret`); read outside `src/` only — see `tests/walk/session-cookie.mts` |
+| `AUTH_URL` | The app's own public origin; next-auth resolves every redirect and the session cookie name from it, and a local instance is launched with it set explicitly (STACK.md §5) |
 | `AUTH_GOOGLE_ID` | Google OAuth client ID |
 | `AUTH_GOOGLE_SECRET` | Google OAuth client secret |
 

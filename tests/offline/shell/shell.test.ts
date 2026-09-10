@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { NAV_ITEMS, isFramed, isNavItemActive } from "@/components/shell/nav-items";
 import { Sidebar } from "@/components/shell/shell";
 
+import { codeText, sourceFiles } from "../source-tree";
 import { classesOf, h } from "../ui/markup";
 
 import BrowsePage from "@/app/browse/page";
@@ -103,12 +104,41 @@ describe("the README's front door", () => {
   ];
 
   /**
-   * Files the repo deliberately does not track. `.env` holds the values whose
-   * NAMES live in `.env.example` (which is tracked, and is asserted below like
-   * every other path) — naming it is the point of the environment section, and
-   * it exists on a developer's machine, never in a checkout.
+   * Files the repo deliberately does not track. `.env` holds values, so it
+   * exists on a developer's machine and never in a checkout — naming it is
+   * the point of the environment section.
    */
   const UNTRACKED_BY_DESIGN = new Set([".env"]);
+
+  /**
+   * Every environment name the app's own code reads, taken from the SOURCE
+   * TREE — the thing this repo tracks (`../source-tree`, the one walker) —
+   * and comment-stripped, so the many doc comments that say a module reaches
+   * no `process.env` are not mistaken for reads.
+   *
+   * The first cut of this guard read `.env.example` off disk instead and
+   * required every name the README documents to be declared there. That made
+   * the suite's colour depend on UNCOMMITTED state: that file carries a local
+   * edit implementing the ruling of 2026-09-03 (`agenticflow/docs/DECISIONS.md`
+   * — the two names the app reads are in no file at all any more), so the case
+   * was green in a git worktree, which checks out HEAD, and red in the primary
+   * checkout, which is where `ci_check` and Ben run it (admin-window/BUG-0165).
+   * A guard grades what the repo tracks; an env FILE is never that, in either
+   * direction — committing that edit would redden a correct README just as
+   * surely, since the app really does read both names.
+   */
+  const APP_ENV_READS = [
+    ...new Set(
+      sourceFiles().flatMap((file) =>
+        [...codeText(file).matchAll(/process\.env\.([A-Z][A-Z0-9_]*)/g)].map(([, name]) => name),
+      ),
+    ),
+  ].sort();
+
+  /** The backticked tokens shaped like an environment name: `A_B`, not `RLS`. */
+  const envNames = [
+    ...new Set(backticked.filter((token) => /^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/.test(token))),
+  ];
 
   it("names every one of the six pages", () => {
     for (const href of NAV_ITEMS.map((item) => item.href)) {
@@ -176,26 +206,50 @@ describe("the README's front door", () => {
     if (readme.includes("`npm test`")) expect(Object.keys(scripts)).toContain("test");
   });
 
-  it("carries a name from .env.example for every variable it documents, and no value", () => {
-    const declared = new Set(
-      [...fs.readFileSync(path.join(repoRoot, ".env.example"), "utf8").matchAll(
-        /^([A-Z][A-Z0-9_]*)=/gm,
-      )].map(([, name]) => name),
-    );
-    const documented = [
-      ...new Set(backticked.filter((token) => /^[A-Z][A-Z0-9_]{3,}$/.test(token))),
-    ].filter((token) => declared.has(token) || token.startsWith("SUPABASE") || token.startsWith("AUTH"));
-    expect(documented.length).toBeGreaterThan(5);
+  it("documents every environment name the app itself reads", () => {
+    // A name the app cannot start without, absent from the front door, is the
+    // drift worth catching — and it is decided by `src/`, not by any env file.
+    expect(APP_ENV_READS).not.toEqual([]);
+    for (const name of APP_ENV_READS) {
+      expect(readme.includes(`\`${name}\``), `README does not document ${name}`).toBe(true);
+    }
+  });
+
+  it("prints no value beside any environment name it documents", () => {
+    expect(envNames.length).toBeGreaterThan(5);
     const assigned = (text: string, name: string): boolean =>
       new RegExp(`${name}\\s*=\\s*\\S`).test(text);
-    for (const name of documented) {
-      expect([...declared], `${name} is not declared in .env.example`).toContain(name);
-      // A name is documented; a value is never printed beside it.
+    for (const name of envNames) {
       expect(assigned(readme, name), `README assigns a value to ${name}`).toBe(false);
     }
     // Teeth: the same predicate flags an assignment, so the zero above is a
     // read that could have found one.
     expect(assigned('AUTH_URL="http://example.invalid"', "AUTH_URL")).toBe(true);
+  });
+
+  it("grades itself from tracked files alone", () => {
+    // The property BUG-0165 cost: every input to the cases above is either the
+    // README, the source tree or `package.json`, so this file's verdict is the
+    // same in the primary checkout and in a worktree. Reading an env file back
+    // in — for a "declared" set, for a name list, for anything — reintroduces
+    // an untracked judge, so the read itself is what is banned here.
+    const filesRead = (source: string): string[] =>
+      [...source.matchAll(/readFileSync\(\s*path\.join\(([^)]*)\)/g)].map(([, args]) =>
+        args.replace(/\s+/g, " ").trim(),
+      );
+    const self = fs.readFileSync(
+      path.join(repoRoot, "tests", "offline", "shell", "shell.test.ts"),
+      "utf8",
+    );
+    expect(filesRead(self).length).toBeGreaterThan(1);
+    expect(filesRead(self).filter((args) => /\.env/.test(args))).toEqual([]);
+
+    // Teeth: the same scan finds the read this ticket removed, so the empty
+    // list above is a search that could have found one. The probe is spelled
+    // in two halves because the scan above reads THIS file: written whole, the
+    // literal would be a match in its own right and redden the assertion.
+    const probe = `fs.read${'FileSync(path.join(repoRoot, ".env.example"), "utf8")'}`;
+    expect(filesRead(probe)).toEqual(['repoRoot, ".env.example"']);
   });
 });
 
