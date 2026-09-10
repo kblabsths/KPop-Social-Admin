@@ -72,6 +72,96 @@ export const CHIP_FACETS = ["bucket", "source_id"] as const;
 
 export type ChipFacet = (typeof CHIP_FACETS)[number];
 
+/**
+ * A facet that narrows and renders NO control — `CLAIM_FACETS` minus
+ * `CHIP_FACETS`, and today exactly `domain` (admin-window/BUG-0160).
+ *
+ * DERIVED rather than listed, so the two sets cannot drift: a facet that gains
+ * a chip row leaves this one in the same edit, and a facet that loses one
+ * joins it. The type is what makes that safe — `UNCHIPPED_WORDS` below is a
+ * total `Record` over it, so a facet arriving here with no words to be named
+ * by is a compile error rather than a narrowing the page applies in silence,
+ * which is the whole defect this vocabulary exists for.
+ */
+export type UnchippedFacet = Exclude<ClaimFacet, ChipFacet>;
+
+/** Every facet of a URL that narrows with no chip to read it off. */
+export const UNCHIPPED_FACETS: readonly UnchippedFacet[] = CLAIM_FACETS.filter(
+  (facet): facet is UnchippedFacet =>
+    !(CHIP_FACETS as readonly string[]).includes(facet),
+);
+
+/**
+ * One narrowing the page applied and renders no control for — the facet, the
+ * value the query carried, and the app's words around it.
+ *
+ * The words are handed back in THREE pieces rather than as one sentence
+ * because the same phrase is rendered through two channels: the window line's
+ * `scope` is a string the `matched` arm splits and subtracts phrases from
+ * (`components/ui/window-line.tsx`), while the bucket caption and the empty
+ * card are markup, where the value is a machine identifier and takes the
+ * app's one identifier face (`ui/Identifier`, LOOK_AND_FEEL Voice bar 5).
+ * One spelling, two faces — never two spellings (LESSONS 5).
+ */
+export interface UnchippedNarrowing {
+  facet: UnchippedFacet;
+  /** The value, verbatim as the `.eq()` carried it. */
+  value: string;
+  /** The words before it, so the phrase reads straight after the row noun. */
+  before: string;
+  /** The words after it. */
+  after: string;
+}
+
+/**
+ * What each control-less facet is CALLED in a sentence about it.
+ *
+ * `domain` is spelled as the parameter is spelled — one word for one thing,
+ * so an operator reading "claims in the events domain" off the screen can
+ * write `?domain=events` back into the address bar (LOOK_AND_FEEL bar 11).
+ */
+const UNCHIPPED_WORDS: Record<UnchippedFacet, { before: string; after: string }> = {
+  domain: { before: "in the ", after: " domain" },
+};
+
+/**
+ * Every narrowing this URL applied that the page renders no control for, in
+ * `CLAIM_FACETS` order — empty when the URL carries none.
+ *
+ * It answers what the READ carried, not whether the read came back smaller: a
+ * surface asks `claimsNarrowed` that second question and decides from both
+ * whether to say any of this at all (admin-window/DEBT-0008).
+ */
+export function unchippedNarrowings(filter: ClaimsFilter): UnchippedNarrowing[] {
+  return UNCHIPPED_FACETS.flatMap((facet) => {
+    const value = filter[facet];
+    return value === undefined ? [] : [{ facet, value, ...UNCHIPPED_WORDS[facet] }];
+  });
+}
+
+/** The same narrowing as one string — what a window line's `scope` takes. */
+export function unchippedPhrase(narrowing: UnchippedNarrowing): string {
+  return `${narrowing.before}${narrowing.value}${narrowing.after}`;
+}
+
+/**
+ * Does this URL narrow through a control the page actually renders?
+ *
+ * The other half of `unchippedNarrowings`, and the reason both live here: a
+ * sentence may say "these filters" or "the filters above" only where a filter
+ * the operator can SEE is set (admin-window/BUG-0160). `/claims?domain=events`
+ * narrows every count on the page with both chip rows reading `all`, so those
+ * two phrases pointed at controls that said nothing was filtered — while the
+ * narrowing that really applied was named nowhere on the screen.
+ *
+ * It is NOT `hasNarrowingFacet` with a different set by accident: that one
+ * answers "can this URL remove a row at all" (fact 1 of the four states) and
+ * must go on counting every facet, chipped or not.
+ */
+export function hasChipNarrowing(filter: ClaimsFilter): boolean {
+  return CHIP_FACETS.some((facet) => filter[facet] !== undefined);
+}
+
 /** The narrowing a URL asks for. Every field optional; absent means unnarrowed. */
 export type ClaimsFilter = Partial<Record<ClaimFacet, string>>;
 

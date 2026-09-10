@@ -1,4 +1,6 @@
 
+import { Fragment, type ReactNode } from "react";
+
 import {
   BucketTable,
   ClaimList,
@@ -46,15 +48,19 @@ import {
   droppedParams,
   filterBar,
   filterFrom,
+  hasChipNarrowing,
   hasNarrowingFacet,
   sourceHref,
   type FacetLabel,
   tabFrom,
   tabLinks,
+  unchippedNarrowings,
+  unchippedPhrase,
   withFacet,
   type ClaimsFilter,
   type ClaimsTab,
   type SearchParams,
+  type UnchippedNarrowing,
 } from "@/lib/claims/filters";
 import {
   readPendingClaims,
@@ -150,6 +156,21 @@ export const dynamic = "force-dynamic";
 /** This route's own path — the base every filter, tab and bucket link is built on. */
 const CLAIMS_PATH = "/claims";
 
+/**
+ * How a filled window says where the rest of its claims are, in the one state
+ * the shared clause cannot be said in (admin-window/BUG-0160).
+ *
+ * `WindowLine`'s `matched` arm ends on "narrow with the filters above to reach
+ * the rest", which is true wherever a filter above is a control that narrows
+ * this list — and it is, on every URL but one. `?domain=` narrows every read
+ * on this page with no chip row of its own (`CHIP_FACETS`), so where it is the
+ * ONLY narrowing in force, both chip rows read `all` and a clause pointing at
+ * them as the way to the rest is a sentence about controls that are not set.
+ * The narrowing is named beside the count instead, and the way to the rest is
+ * said without claiming which control carries it.
+ */
+const REACH_THE_REST_WITHOUT_A_CHIP = "narrow further to reach the rest.";
+
 /** The order the claim list is in, stated on screen (LOOK_AND_FEEL bar 6). */
 const SORT_STATEMENT =
   "Oldest first — the longest-waiting claim at the top; a claim whose instant is unknown sorts last.";
@@ -168,11 +189,33 @@ const NOTHING_STANDING: EmptyWords = {
     "One appears when a live claim contradicts the applied value and does not displace it — the loser stays visible here.",
 };
 
-/** The emptiness that has a REASON: the filters, not the database. */
-const NOTHING_MATCHED: EmptyWords = {
-  holds: "claims matching these filters",
-  filledBy: "Widen a filter above; the 'all' chip on any row shows everything again.",
-};
+/**
+ * The emptiness that has a REASON: a narrowing this URL applied, not the
+ * database — in the words of the narrowings that really applied
+ * (admin-window/BUG-0160).
+ *
+ * It used to be one fixed pair naming "these filters" and pointing at the
+ * chip rows, which is true of `?bucket=` and `?source_id=` and false of
+ * `?domain=`: that facet narrows every read on this page and has no chip row
+ * to widen (`CHIP_FACETS`, admin-window/BUG-0138), so the card blamed two
+ * chip rows both reading `all` and offered a way out that clears nothing.
+ * `narrowedEmpty` below composes the arm from the same two ingredients every
+ * other sentence on this page now takes — which chip narrowings are set, and
+ * which control-less ones are.
+ */
+const NOTHING_MATCHED = {
+  /** What the chip facets narrow to, in the window line's own spelling. */
+  filters: NARROWED_BY_FILTERS,
+  /** The way out of a chip narrowing: the control is on the screen. */
+  widen: "Widen a filter above; the 'all' chip on any row shows everything again.",
+  /**
+   * The way out of a narrowing with no control, said after the parameter's own
+   * name — which is spelled exactly as the URL spells it, so the sentence is
+   * an instruction an operator can carry out in the address bar (bar 11).
+   */
+  fromTheUrl:
+    " narrows this page from the URL and has no chip to widen — remove it to see every claim.",
+} as const;
 
 /**
  * What the bucket table's figures are figures OF — the sentence under it, in
@@ -185,10 +228,20 @@ const NOTHING_MATCHED: EmptyWords = {
  * (`M2-usersim-priya.md` §6; LOOK_AND_FEEL bar 13, "no screen claims a mark it
  * did not draw").
  *
- * The narrowed arm is the sentence this page has always rendered, to the byte.
  * Which arm renders is decided by `claimsNarrowed` — the SAME rule that picks
  * the empty card's words below — so the caption and the card cannot come to
  * disagree about whether anything is filtered.
+ *
+ * **It is assembled from clauses rather than held as two sentences**
+ * (admin-window/BUG-0160), because "under the filters above" is a claim about
+ * the CHIP facets and this page has a facet with no chip: `?domain=events`
+ * narrowed the figures in this table from 877 to 849 under a caption saying
+ * they were narrowed by controls that both read `all`, and the word "domain"
+ * appeared nowhere on the screen. So the narrowing clause is now the
+ * narrowings themselves — the control-less ones named in the app's words,
+ * "the filters above" said only where a chip really is set — and both landed
+ * sentences still render to the byte when they are the true ones: with a chip
+ * set and no domain, and with nothing set at all.
  *
  * That rule takes TWO facts, and the second is this TABLE's own population
  * (admin-window/DEBT-0008): the whole view, against the rows this table is
@@ -201,10 +254,21 @@ const NOTHING_MATCHED: EmptyWords = {
  * every state that renders it (LOOK_AND_FEEL bar 13).
  */
 const BUCKET_CAPTION = {
-  narrowed:
-    "Every bucket the classification view can hold, with the claims in it under the filters above. A bucket with no claims is a real zero.",
-  whole:
-    "Every bucket the classification view can hold, with every claim in it — nothing above narrows these counts. A bucket with no claims is a real zero.",
+  head: "Every bucket the classification view can hold, with ",
+  /** The rows this table drew, when something narrowed them. */
+  some: "the claims",
+  /** …and when nothing did. */
+  every: "every claim",
+  inIt: " in it",
+  /**
+   * The chip narrowings, named as what they are: controls ABOVE this table.
+   * It may only be said where one of them is set — the clause was true of
+   * every narrowing while every facet had chips, and `?domain=` is the one
+   * that does not (admin-window/BUG-0160).
+   */
+  underTheFilters: " under the filters above",
+  nothingNarrows: " — nothing above narrows these counts",
+  tail: ". A bucket with no claims is a real zero.",
 } as const;
 
 /** The h2 above the claim list, per tab. */
@@ -247,21 +311,148 @@ const GAUGE_LABEL: Record<ClaimsTab, string> = {
  * filters" over a tab-narrowed read whose chip bar was empty
  * (admin-window/BUG-0118).
  */
-function listScope(tab: ClaimsTab, narrowed: boolean): string | null {
+function listScope(
+  tab: ClaimsTab,
+  narrowed: boolean,
+  narrowings: readonly UnchippedNarrowing[],
+  chipped: boolean,
+): string | null {
   return narrowedTo([
     tab === "standing" ? `in the ${STANDING_BUCKET} bucket` : null,
-    // The window line's own phrase for this narrowing, imported rather than
-    // spelled: the `matched` arm's filled clause says the filters in its own
-    // words and subtracts this exact phrase from the scope so it is not said
-    // twice, which a second spelling here would silently break
+    // The narrowings this page renders NO control for — `?domain=`, today the
+    // only one (admin-window/BUG-0160). They are named here for the same
+    // reason the tab's bucket is: nothing else on the screen says them. A
+    // chip narrowing can be read off its own chip, so the clause below may
+    // stand in for it; a domain narrowing had no chip, no clause and no word
+    // anywhere, while every count on the page was narrowed by it.
+    //
+    // Spelled by the leaf that owns the facet vocabulary, never here: the same
+    // phrase is rendered as markup by the caption and the empty card below,
+    // and two spellings of one narrowing is exactly how the caption and the
+    // line come to describe different sets (LESSONS 5).
+    ...(narrowed ? narrowings.map(unchippedPhrase) : []),
+    // The window line's own phrase for the CHIP narrowings, imported rather
+    // than spelled: the `matched` arm's filled clause says the filters in its
+    // own words and subtracts this exact phrase from the scope so it is not
+    // said twice, which a second spelling here would silently break
     // (admin-window/BUG-0118).
     //
     // `narrowed` is the LIST's two-fact answer, handed in rather than asked
     // for here (admin-window/DEBT-0008): the window line and the empty card it
     // stands beside describe one set, so they may not decide separately
-    // whether a filter is what shaped it.
-    narrowed ? NARROWED_BY_FILTERS : null,
+    // whether a filter is what shaped it. `chipped` is the second gate and a
+    // different question — is a filter the operator can SEE set at all — so a
+    // window narrowed only by the domain says the domain and never claims a
+    // chip row did it (admin-window/BUG-0160).
+    narrowed && chipped ? NARROWED_BY_FILTERS : null,
   ]);
+}
+
+/**
+ * A narrowing the page renders no control for, in the app's prose — the SAME
+ * words `unchippedPhrase` gives the window line's `scope`, with the value in
+ * the app's one identifier face (`ui/Identifier`, LOOK_AND_FEEL Voice bar 5).
+ *
+ * Each phrase carries its own leading space, so a call site writes it straight
+ * after the noun it qualifies and renders nothing at all when the URL carries
+ * no such narrowing.
+ *
+ * **The window line's copy of these words is plain prose, not mono.** A
+ * `DrawnWindow.scope` is a STRING the `matched` arm splits on and subtracts
+ * phrases from (`components/ui/window-line.tsx`), so the value cannot carry an
+ * element there without rewriting that primitive and every page's window
+ * tests; it is the same face the tab's `standing_disagreement` already wears
+ * in that line. Noted rather than hidden — one face per identifier is
+ * LESSONS 6, and closing that gap is a change to the shared window primitive.
+ */
+function NarrowedBy({
+  narrowings,
+}: {
+  narrowings: readonly UnchippedNarrowing[];
+}) {
+  return (
+    <>
+      {narrowings.map((narrowing) => (
+        <Fragment key={narrowing.facet}>
+          {` ${narrowing.before}`}
+          <Identifier>{narrowing.value}</Identifier>
+          {narrowing.after}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+/**
+ * What the bucket table's figures are figures OF, assembled from the
+ * narrowings that produced them (`BUCKET_CAPTION`, admin-window/BUG-0160).
+ *
+ * One paragraph, exactly where the page rendered one before — the test helper
+ * that reads this sentence takes the surface's last `<p>`.
+ */
+function BucketCaption({
+  narrowed,
+  narrowings,
+  chipped,
+}: {
+  narrowed: boolean;
+  narrowings: readonly UnchippedNarrowing[];
+  chipped: boolean;
+}) {
+  return (
+    <p className="type-body text-ink-secondary">
+      {BUCKET_CAPTION.head}
+      {narrowed ? BUCKET_CAPTION.some : BUCKET_CAPTION.every}
+      {/* The narrowing is named on the arm that CLAIMS one. The unnarrowed arm
+          says these counts are whole, and they are: a facet that removed not
+          one row of this table shaped nothing here, and naming it beside
+          "nothing above narrows these counts" would be the page describing a
+          set it did not draw (admin-window/DEBT-0008, LOOK_AND_FEEL bar 13). */}
+      <NarrowedBy narrowings={narrowed ? narrowings : []} />
+      {BUCKET_CAPTION.inIt}
+      {narrowed && chipped ? BUCKET_CAPTION.underTheFilters : ""}
+      {narrowed ? "" : BUCKET_CAPTION.nothingNarrows}
+      {BUCKET_CAPTION.tail}
+    </p>
+  );
+}
+
+/**
+ * The empty card's words when a narrowing this URL applied is what emptied the
+ * list — each narrowing named, and each with the way out that really clears it
+ * (admin-window/BUG-0160).
+ *
+ * `chipped` and `narrowings` cannot both be empty here: this arm renders only
+ * where `claimsNarrowed` is true, which needs a facet of `CLAIM_FACETS`, and
+ * every one of those is either a chip facet or carries words of its own
+ * (`UNCHIPPED_FACETS` is `CLAIM_FACETS` minus `CHIP_FACETS`, and the words are
+ * a total `Record` over it).
+ */
+function narrowedEmpty(
+  narrowings: readonly UnchippedNarrowing[],
+  chipped: boolean,
+): { holds: ReactNode; filledBy: ReactNode } {
+  return {
+    holds: (
+      <>
+        claims
+        <NarrowedBy narrowings={narrowings} />
+        {chipped ? ` ${NOTHING_MATCHED.filters}` : ""}
+      </>
+    ),
+    filledBy: (
+      <>
+        {chipped ? NOTHING_MATCHED.widen : ""}
+        {narrowings.map((narrowing, index) => (
+          <Fragment key={narrowing.facet}>
+            {chipped || index > 0 ? " " : ""}
+            <Identifier>{narrowing.facet}</Identifier>
+            {NOTHING_MATCHED.fromTheUrl}
+          </Fragment>
+        ))}
+      </>
+    ),
+  };
 }
 
 /**
@@ -617,6 +808,13 @@ export default async function ClaimsPage({
   // no count could change a word this page renders, and the read `/queues`
   // skips for the same reason is skipped here too (admin-window/DEBT-0012).
   const structural = hasNarrowingFacet(filter);
+  // The two halves of "what narrowed this page, and can the operator SEE it"
+  // (admin-window/BUG-0160). Both are facts of the URL alone, so they are
+  // established here beside `structural` and handed to every sentence below:
+  // one page-wide answer, so the window line, the bucket caption and the empty
+  // card cannot come to disagree about which narrowings are in force.
+  const chipped = hasChipNarrowing(filter);
+  const narrowings = unchippedNarrowings(filter);
 
   // ONE composition, every leg independent (§4.3, the interface contract of
   // admin-window/BUG-0138). Nothing here is sequenced: no leg needs an id, a
@@ -707,8 +905,8 @@ export default async function ClaimsPage({
           population: population.data,
         })
       : structural;
-  const emptyWords = listNarrowed
-    ? NOTHING_MATCHED
+  const emptyWords: { holds: ReactNode; filledBy: ReactNode } = listNarrowed
+    ? narrowedEmpty(narrowings, chipped)
     : tab === "standing"
       ? NOTHING_STANDING
       : NOTHING_HELD;
@@ -777,11 +975,11 @@ export default async function ClaimsPage({
                   facet the chip bar shows as applied. The refusal inside the
                   table is the whole of what this state may say. */}
               {total.kind === "ok" ? (
-                <p className="type-body text-ink-secondary">
-                  {bucketsNarrowed
-                    ? BUCKET_CAPTION.narrowed
-                    : BUCKET_CAPTION.whole}
-                </p>
+                <BucketCaption
+                  narrowed={bucketsNarrowed}
+                  narrowings={narrowings}
+                  chipped={chipped}
+                />
               ) : null}
             </>
           )}
@@ -828,9 +1026,22 @@ export default async function ClaimsPage({
               oldest: null,
               // What the READS below narrowed to, from the same tab and the
               // same filter they carried (admin-window/BUG-0114).
-              scope: listScope(tab, listNarrowed),
+              scope: listScope(tab, listNarrowed, narrowings, chipped),
             }}
-            shows={{ of: "matched", lede: SORT_STATEMENT, rows: "claims" }}
+            shows={{
+              of: "matched",
+              lede: SORT_STATEMENT,
+              rows: "claims",
+              // Only in the one state the shared clause may not be said in:
+              // something narrowed this window, and no control on the page
+              // carries it (admin-window/BUG-0160, criterion 2). Everywhere
+              // else — unnarrowed, tab-narrowed, chip-narrowed, or both kinds
+              // at once — the arm's own words stand, to the byte.
+              reach:
+                listNarrowed && !chipped && narrowings.length > 0
+                  ? REACH_THE_REST_WITHOUT_A_CHIP
+                  : undefined,
+            }}
           />
         ) : null}
         {rows.kind === "not_provisioned" ? (
