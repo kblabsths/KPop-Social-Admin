@@ -1346,3 +1346,37 @@ to either file satisfies nothing. Related and ruled the same way:
 forge a segment, unreachable today) gets **no ticket**; it is a constraint on
 FEAT-0016, fixed structurally if and only if that work touches the window line's
 scope contract.
+
+## 2026-09-10 — Paging's boundary, decided at the contract rather than in a page: an offset the server validates, a client that decides only when to ask
+
+The architect's M3 opening amendment (ARCHITECTURE §4.3 read kind 3, §4 rule 1's
+one framed fetch exception, §5's client-state and byte-identity rules), recorded
+here because it closes doors a later ticket would otherwise reopen.
+
+**The mechanism, ruled and not left to a builder.** Paging is an **offset into
+the first screen's own total order** — same `.order()` chain ending in the
+primary key, plus `.range(offset, offset + size - 1)` — carried to the app's own
+route handler under `src/app/api/admin/**`. The size is the surface's own window
+and is decided on the SERVER; the client sends only how many rows it already
+holds. A bound that is not a non-negative multiple of that window, or that
+exceeds `MAX_PAGE_OFFSET`, is refused with the reason named — never clamped in
+silence. Past the end is `ok` with zero rows and "exhausted", which is an answer
+and not a refusal. **The alternative considered and rejected: a keyset cursor.**
+It survives concurrent inserts, which offset paging does not, but it puts a
+composable ordering key in the client's hands, needs a second null-ordering arm
+on `/claims`' `observed_at nulls last`, and has no natural "out of range" to
+refuse — and the app makes no snapshot promise across presses in either design.
+The honest position is written into the contract instead: a page is a bounded
+read at the instant it was issued, and no concatenation is ever presented as a
+total.
+
+**The three doors this closes.** (1) The fetch exception is one named control on
+two named surfaces — `/claims` and `/browse` — and never "components may fetch";
+the decision logic lives in a directiveless `src/lib/paging/**` driver the
+offline suite drives with a recording stub, because this repo has no DOM in its
+test tier and a click handler owning its own logic would be untestable here.
+(2) The FIRST server-rendered screen is byte-identical to what shipped in M2:
+no offset in `searchParams`, so a shared link never depends on how far somebody
+else paged. (3) Paging buys no width — no third surface, no "load everything"
+control, no second Browse view, no raised `ROW_CAP`, and it is not argued as a
+substitute for search, which stays out by Ben's ruling of the same day.

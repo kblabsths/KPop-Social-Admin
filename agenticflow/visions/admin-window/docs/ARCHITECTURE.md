@@ -248,6 +248,22 @@ lib/gauges/**   ->  lib/db/**            ->  @supabase/supabase-js
 1. **`components/**` never imports from `lib/db/**` and never fetches.** A
    component takes plain props and returns markup. This is what makes every
    surface testable without a database.
+
+   **One exception, added 2026-09-10 (architect, M3), and it is a door with a
+   frame around it:** a `"use client"` component **named as a paging control**
+   may issue `fetch` — to **this app's own paging route handler under
+   `src/app/api/admin/**`, by a relative path, and to nothing else**. It may
+   not import `lib/db/**`, may not import `@supabase/supabase-js`, may not read
+   `process.env`, and may not reach any other origin: the service-role client
+   stays server-side, which is what `tests/http/**`'s bundle scan already
+   grades. The fetch is a **two-line binding** to a pure driver in
+   `src/lib/paging/**` — the decision of whether to issue a request, what bound
+   it carries, and what happens to the answer lives in a directiveless module
+   the offline suite drives directly with a recording stub (there is no DOM in
+   this suite; a click handler that owns its own logic cannot be tested here at
+   all, and that is why the logic is not in it). Every other component in this
+   repo still takes plain props and fetches nothing, and no component of any
+   kind reaches a database.
 2. **Only `lib/db/**` imports `@supabase/supabase-js`.** A page that builds its
    own client is a defect.
 3. **Only `lib/db/client.ts` reads `process.env`** for database credentials.
@@ -407,11 +423,66 @@ happens to hold.
 > line says where the app looked. The rule is graded once for every surface at
 > once, in `tests/offline/absence/pages.test.ts`, never per page.
 
-Paging is not the answer to a cap and none is built: nothing in the spec asks
-for it, and complete-or-refuse means there is never a partial page to
-continue. When a table genuinely outgrows `ROW_CAP` the app says so with the
-real number, and raising the cap or narrowing the filter is then a deliberate
-decision with evidence behind it.
+**3. Paged window read — the same window, at an explicit offset. AMENDED
+2026-09-10** (architect, M3; SPEC F14, DECISIONS 2026-09-10, Ben's ruling
+*"not being able to load all claims if I want to is a huge oversight"*).
+
+> **Superseded, in place.** Until 2026-09-10 this paragraph read: *"Paging is
+> not the answer to a cap and none is built: nothing in the spec asks for it,
+> and complete-or-refuse means there is never a partial page to continue. When
+> a table genuinely outgrows `ROW_CAP` the app says so with the real number,
+> and raising the cap or narrowing the filter is then a deliberate decision
+> with evidence behind it."* The spec now asks for it. The half of that
+> sentence that still holds is kept below: a page is never partial, and
+> nothing paging does may turn a window's rows into a total.
+
+A paged window read is read kind 2 with one thing added — an **offset into the
+same total order** — and it is the ONLY form of paging this app has. What it
+may do:
+
+- **Two surfaces, named here and nowhere else: `/claims` and `/browse`.** No
+  third surface gains paging on the team's initiative, and neither surface
+  gains a "load everything" control. This list is amended by a ruling, never by
+  a ticket.
+- **One order, and it is the first screen's.** A paged read repeats the first
+  window's `.order()` chain — total, ending in the primary key — and adds
+  `.range(offset, offset + size - 1)`. Nothing re-sorts, re-filters or
+  re-shapes on the way back: the same narrowing function, the same row shaping,
+  the same components. A page that changed any of them would be a different
+  read wearing the first screen's clothes.
+- **The bound is explicit, and it is the OFFSET.** Every request names how many
+  rows of that order the caller already holds. It is not a page number, not a
+  cursor the client may compose, and not a caller-chosen size — the size is the
+  surface's own window, decided on the server. A bound that is not a
+  non-negative integer multiple of that window, or that exceeds
+  `MAX_PAGE_OFFSET`, is **refused with the reason named — never clamped in
+  silence** (LESSONS 8: the guard that counts is on the server).
+- **Exhaustion is an answer, not a refusal.** A page past the end is `ok` with
+  zero rows and says the set is exhausted; the surface then says so and draws
+  no affordance. A refusal is a refusal: `not_provisioned` naming its object,
+  or `error` carrying the database's own words, exactly as every other read
+  here refuses.
+- **Complete-or-refuse holds INSIDE a page.** A page is `ok` with the rows that
+  bound asked for, or it is a refusal — never a half-filled `ok`, and **a
+  refused page never extends the list**: the rendered row count after a refusal
+  equals the row count before it, and the refusal names the object beside the
+  rows it did not add.
+- **A concatenation is still not a total.** No sentence on either surface may
+  claim that what the operator has paged through is the whole set. The only
+  totality claim on these pages remains what it is today: their own exact
+  `head: true` count, read once, labelled as the count it is (§4.3 kind 1,
+  SPEC F15). The app promises no snapshot across presses either — each page is
+  a bounded read at the instant it was issued, and neither surface says
+  otherwise.
+
+What paging may **not** do, stated so it is not inferred: it does not raise
+`ROW_CAP`; it does not turn a window read into a complete read; it does not
+reopen whole-table browsing (Browse keeps its one curated view — a second view,
+a table picker, a SQL runner and a search box all remain out); it is not a
+substitute for search, which stays out of the product by Ben's ruling of the
+same day. When a COMPLETE read genuinely outgrows `ROW_CAP` the old paragraph
+still governs: the app says so with the real number, and raising the cap or
+narrowing the filter is a deliberate decision with evidence behind it.
 
 **An empty surface is explained from TWO facts, never one** (promoted at the
 M2 structure walk, 2026-09-09, from Common violations row 14 — six bugs:
@@ -460,10 +531,32 @@ it is a pure synchronous component that takes plain props.**
   cost this campaign a browser dependency it has no other need for.
 - Client components (`"use client"`) exist only where interaction demands them:
   the nav's active state, filter chips that push URL state, the column
-  selector, `EditableCell`. They receive data as props and never fetch.
+  selector, `EditableCell`, and — **added 2026-09-10 (architect, M3)** — the
+  paging control of `/claims` and `/browse`. They receive data as props and
+  fetch nothing, with the single framed exception §4 rule 1 now names: a paging
+  control calls this app's own paging route handler, and nothing else.
 - **State lives in the URL** (LOOK_AND_FEEL bar 11): every filter, sort, tab
   and page position is a `searchParams` value. No client-only filter state, no
   `useState` filter that a reload forgets.
+
+  **Amended 2026-09-10 (architect, M3): rows the operator has PAGED IN are the
+  one piece of state that is not in the URL, and that is a decision, not a
+  lapse.** The URL still decides the first screen completely — every filter,
+  sort and tab — and **the first screen is byte-identical to what it renders
+  today** (SPEC F14): a URL that is shared, reloaded or opened cold renders the
+  same server-rendered window, the same window line, the same figures and the
+  same rows as before paging existed. What paging adds lives after that screen
+  and dies with it: appended rows are client state, a reload discards them, and
+  no `searchParams` value carries an offset. Why this way and not URL state:
+  putting the offset in the URL makes every "more" a full server round trip and
+  a new document — Ben named on-demand client fetching as the mechanism — and
+  it would make the FIRST screen of a shared link depend on how far somebody
+  else had scrolled, which is exactly the byte-identity this amendment
+  protects. The async boundary above is untouched: a paging control is a
+  synchronous client component, it is not `async`, the page function remains
+  the only `async` component on the route, and
+  `renderToStaticMarkup(await Page({ searchParams }))` still renders the whole
+  first screen offline.
 - **A dynamic route that calls `notFound()` serves the error shell, not the
   app** (BUG-0017, measured on Next 16.2.2). On this version the 404 status
   and a server-rendered document are inseparable *in render*: `notFound()`'s
@@ -1538,6 +1631,27 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-10, M3 opening amendment — paging is legal, inside a frame
+  (architect).** Three contracts amended before any M3 page diff, which is what
+  M3.md EC3 grades: **§4.3** gains read kind 3, the paged window read, and
+  supersedes *"Paging is not the answer to a cap and none is built"* in place
+  (the superseded sentence is quoted where it stood, so the next reader sees
+  what changed and when); **§4 rule 1** gains one framed exception — a named
+  paging control may `fetch` this app's own route handler under
+  `src/app/api/admin/**` and nothing else, as a two-line binding to a pure
+  driver in `src/lib/paging/**`; **§5** records that paged-in rows are client
+  state on purpose and that the first server-rendered screen is byte-identical
+  to today's. Why now: SPEC F14 was added 2026-09-10 on Ben's ruling
+  (DECISIONS, same date), and the contract as written forbade the feature the
+  spec asks for. **What the amendment deliberately does NOT license:** fetching
+  from components generally (the exception is one control on two named
+  surfaces), a second Browse view, whole-table browsing, search, a raised
+  `ROW_CAP`, or a page presented as a total. The boundary is: **the server
+  decides the size, validates the bound and refuses out loud; the client
+  decides only WHEN to ask.** Decomposed the same day into TASK-0062 (the concurrent second leg), TASK-0063…TASK-0069 (paging) and TASK-0070…TASK-0073 (windowed-figure honesty), chained by destination;
+  a builder that finds any of this in its way files a blocked question and
+  never re-interprets it.
 
 - **2026-09-09, BUG-0155 ruling (architect).** **§7 gains a rule** — "What is
   SHOWN is what was USED: one derivation per URL value class" — and **Common
