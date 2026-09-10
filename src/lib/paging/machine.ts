@@ -20,9 +20,9 @@
  * next state, exactly as a refused read does (§4.1: the data layer never
  * throws; the same promise across the wire).
  *
- * **This module publishes no `loading` state of its own.** `requestPage`
- * answers with the state a press ENDS in; a caller that wants the interim
- * publishes `{ ...state, status: "loading" }` itself before awaiting, and the
+ * **`requestPage` publishes no `loading` state of its own.** It answers with
+ * the state a press ENDS in; the interim is `pressing` (added by
+ * admin-window/TASK-0064), which a caller publishes before awaiting, and the
  * `loading` arm below is what makes that safe — a second press on a state
  * already loading issues no request at all.
  */
@@ -52,6 +52,37 @@ export interface PageState<Row> {
   readonly held: number;
   readonly status: "idle" | "loading" | "exhausted";
   readonly refusal: PageRefusal | null;
+}
+
+/**
+ * The state a press publishes BEFORE its request resolves — campaign
+ * admin-window/TASK-0064.
+ *
+ * `idle` becomes `loading` with `rows`, `held` and `refusal` untouched; any
+ * other status comes back as **the SAME object**, so a caller comparing
+ * identity can see that a second press changed nothing and never publish a
+ * re-render for it.
+ *
+ * It lives here, in the leaf, rather than in the hook that calls it, for the
+ * reason every other paging decision does: this suite has no DOM, so a rule
+ * written inside a click handler is a rule nothing can drive. Composed with
+ * `requestPage` it is also the whole double-press proof — `requestPage` on a
+ * `pressing()` state issues zero requests (rule 1 below) — and that
+ * composition is what a caller is obliged to reproduce.
+ *
+ * The pairing with `requestPage` is deliberate and is the caller's contract:
+ * the interim state is PUBLISHED, and the state handed to `requestPage` is the
+ * PRE-press one, because `requestPage` refuses to work from `loading` by
+ * design.
+ *
+ * The standing refusal is carried through rather than cleared: it is still the
+ * only account of why the last press added nothing, and blanking it the moment
+ * the operator acts on it would leave the retry unexplained. `requestPage`
+ * clears it when a press succeeds.
+ */
+export function pressing<Row>(state: PageState<Row>): PageState<Row> {
+  if (state.status !== "idle") return state;
+  return { rows: state.rows, held: state.held, status: "loading", refusal: state.refusal };
 }
 
 /**

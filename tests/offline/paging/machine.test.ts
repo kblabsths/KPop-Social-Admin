@@ -3,6 +3,7 @@ import { OFFSET_PARAM, PAGE_ROUTES, pageBound, type PageAnswer } from "@/lib/pag
 import {
   initialPage,
   pageUrl,
+  pressing,
   requestPage,
   type PageDeps,
   type PageState,
@@ -379,5 +380,90 @@ describe("requestPage", () => {
       expect(next.status).toBe("idle");
       expect(next.refusal).not.toBeNull();
     }
+  });
+});
+
+describe("pressing", () => {
+  // The interim state a press publishes BEFORE its request resolves — campaign
+  // admin-window/TASK-0064. It lives in the leaf, not in the hook that calls
+  // it, so that the arm which makes a double press safe can be driven in a
+  // tier that has no DOM.
+
+  it("turns idle into loading and touches nothing else", () => {
+    const idle: PageState<Row> = { rows: rows("a", "b"), held: 4, status: "idle", refusal: null };
+    const started = pressing(idle);
+    expect(started.status).toBe("loading");
+    // Untouched means the SAME rows, not merely equal ones: a press that
+    // rebuilt the list would re-key every row the operator is looking at.
+    expect(started.rows).toBe(idle.rows);
+    expect(started.held).toBe(idle.held);
+    expect(started.refusal).toBe(idle.refusal);
+  });
+
+  it("keeps a standing refusal visible while the retry is in the air", () => {
+    // The last press was refused, the operator pressed again: the reason is
+    // still the only account of what happened, and clearing it here would
+    // blank the line the moment it is acted on (LESSONS 1, LIFETIME).
+    const refused: PageState<Row> = {
+      rows: rows("a"),
+      held: 2,
+      status: "idle",
+      refusal: { reason: "the read failed", object: "pending_claims" },
+    };
+    expect(pressing(refused).refusal).toBe(refused.refusal);
+    expect(pressing(refused).status).toBe("loading");
+  });
+
+  it("hands back the SAME object from loading and from exhausted", () => {
+    // Identity, not equality: a caller publishing this would re-render the
+    // whole row list for a press that changed nothing.
+    for (const status of ["loading", "exhausted"] as const) {
+      const state: PageState<Row> = { rows: rows("a"), held: 2, status, refusal: null };
+      expect(pressing(state)).toBe(state);
+    }
+  });
+
+  it("is idempotent, so a third press is as free as the second", () => {
+    const idle: PageState<Row> = { rows: rows("a"), held: 2, status: "idle", refusal: null };
+    const once = pressing(idle);
+    expect(pressing(once)).toBe(once);
+  });
+});
+
+describe("the double press, composed from the two pure pieces", () => {
+  // The offline tier has no DOM, so the press itself cannot be simulated here.
+  // What CAN be driven is the composition every caller is obliged to
+  // reproduce — publish `pressing(current)`, hand the PRE-press state to
+  // `requestPage` — and that composition is where the safety lives.
+
+  it("issues ZERO requests when the state has already been pressed", async () => {
+    const { urls, deps } = answering({
+      kind: "ok",
+      rows: rows("c"),
+      offset: 4,
+      exhausted: false,
+    } satisfies PageAnswer<Row>);
+    const idle = paged(4, "a", "b");
+    const inFlight = pressing(idle);
+
+    expect(await requestPage(inFlight, deps)).toBe(inFlight);
+    expect(urls).toEqual([]);
+  });
+
+  it("issues exactly ONE from the pre-press state, so the pin above is not vacuous", () => {
+    // The must-NOT-flag half (LESSONS 8): the same driver, the same deps, the
+    // state a caller is obliged to hand it, and a request really is made.
+    const { urls, deps } = answering({
+      kind: "ok",
+      rows: rows("c"),
+      offset: 4,
+      exhausted: false,
+    } satisfies PageAnswer<Row>);
+    const idle = paged(4, "a", "b");
+    void pressing(idle);
+    return requestPage(idle, deps).then((next) => {
+      expect(urls).toHaveLength(1);
+      expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "c"]);
+    });
   });
 });
