@@ -158,21 +158,6 @@ export const dynamic = "force-dynamic";
 /** This route's own path — the base every filter, tab and bucket link is built on. */
 const CLAIMS_PATH = "/claims";
 
-/**
- * How a filled window says where the rest of its claims are, in the one state
- * the shared clause cannot be said in (admin-window/BUG-0160).
- *
- * `WindowLine`'s `matched` arm ends on "narrow with the filters above to reach
- * the rest", which is true wherever a filter above is a control that narrows
- * this list — and it is, on every URL but one. `?domain=` narrows every read
- * on this page with no chip row of its own (`CHIP_FACETS`), so where it is the
- * ONLY narrowing in force, both chip rows read `all` and a clause pointing at
- * them as the way to the rest is a sentence about controls that are not set.
- * The narrowing is named beside the count instead, and the way to the rest is
- * said without claiming which control carries it.
- */
-const REACH_THE_REST_WITHOUT_A_CHIP = "narrow further to reach the rest.";
-
 /** The order the claim list is in, stated on screen (LOOK_AND_FEEL bar 6). */
 const SORT_STATEMENT =
   "Oldest first — the longest-waiting claim at the top; a claim whose instant is unknown sorts last.";
@@ -1059,20 +1044,16 @@ export default async function ClaimsPage({
               // same filter they carried (admin-window/BUG-0114).
               scope: listScope(tab, listNarrowed, narrowings, chipped),
             }}
-            shows={{
-              of: "matched",
-              lede: SORT_STATEMENT,
-              rows: "claims",
-              // Only in the one state the shared clause may not be said in:
-              // something narrowed this window, and no control on the page
-              // carries it (admin-window/BUG-0160, criterion 2). Everywhere
-              // else — unnarrowed, tab-narrowed, chip-narrowed, or both kinds
-              // at once — the arm's own words stand, to the byte.
-              reach:
-                listNarrowed && !chipped && narrowings.length > 0
-                  ? REACH_THE_REST_WITHOUT_A_CHIP
-                  : undefined,
-            }}
+            // The page words its own subject and nothing about the read: the
+            // arm ends on what the window is not showing, which needs no state
+            // this file knows. It used to hand down a way to REACH the held-back
+            // rows in the one state the shared clause could not be said in
+            // (admin-window/BUG-0160); no state of this page can reach them at
+            // all — the list is a hard `CLAIM_WINDOW` window and the narrowest
+            // state the chip rows offer still held 108 claims against 50 rows
+            // (measured on staging 2026-09-10) — so both wordings were removed
+            // rather than one chosen (admin-window/BUG-0162).
+            shows={{ of: "matched", lede: SORT_STATEMENT, rows: "claims" }}
           />
         ) : null}
         {rows.kind === "not_provisioned" ? (

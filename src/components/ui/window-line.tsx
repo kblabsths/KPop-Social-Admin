@@ -192,30 +192,19 @@ export type DrawnSentence =
        */
       more?: string;
     }
-  /** `/claims`'s list: a complete read, drawn a window at a time. */
-  | {
-      of: "matched";
-      lede: string;
-      rows: string;
-      /**
-       * How to reach the rows this window held back, in the page's own words —
-       * rendered only where there is a rest, which is to say only on a window
-       * that filled its cap. Absent means `REACH_THE_REST` below, which is the
-       * clause this arm has always ended on.
-       *
-       * It rides on the call site because it is a statement about the PAGE's
-       * controls and not about the read: this file cannot see whether the
-       * narrowing a `scope` carries is one the page renders a control for, and
-       * on `/claims` that is exactly the difference between a chip facet and
-       * `?domain=`, which narrows every read and has no chip row
-       * (admin-window/BUG-0160). Pointing an operator at "the filters above"
-       * as the way to reach the rest, in a state where the narrowing in force
-       * is not one of them and both chip rows read `all`, is the same claim
-       * about an unset control that admin-window/BUG-0123 removed from the
-       * clause above.
-       */
-      reach?: string;
-    }
+  /**
+   * `/claims`'s list: a complete read, drawn a window at a time.
+   *
+   * It carries no way for the call site to word the end of the truncated
+   * clause. It briefly did (`reach`, admin-window/BUG-0160): the shared clause
+   * pointed at "the filters above", which is a claim about the PAGE's controls
+   * that this file cannot check, so the one state where the narrowing in force
+   * has no chip row needed its own words. admin-window/BUG-0162 removed the
+   * claim instead — the clause now names what is not shown and says nothing
+   * about how to reach it, which is true from every call site and in every
+   * narrowing, so there is nothing left for a page to override.
+   */
+  | { of: "matched"; lede: string; rows: string }
   /** `/browse`'s recent events. */
   | { of: "catalog"; rows: string }
   /**
@@ -282,11 +271,28 @@ function WindowParagraph({
 export const NARROWED_BY_FILTERS = "matching these filters";
 
 /**
- * How a filled `matched` window says where the rest of its rows are, when the
- * call site names no words of its own — the clause this arm has always ended
- * on, spelled once for both of its branches.
+ * How a filled `matched` window ends: naming what it is NOT showing, and
+ * nothing else — spelled once for both of its branches.
+ *
+ * It used to end by telling the operator to narrow with the filters above —
+ * a remedy no state of the page can perform (admin-window/BUG-0162). `/claims`
+ * draws a hard `limit 50` window, so narrowing reveals a row past the 50th
+ * only where it takes the matching count BELOW 50, and no combination of the
+ * controls it renders gets near that: measured on staging 2026-09-10, the
+ * narrowest state the two chip rows can reach still held 108 claims against
+ * the same 50 rows. A window line states the read (ARCHITECTURE.md §4.3) —
+ * the count, the cap, and what is not below — and paging past the cap is a
+ * capability this app does not have yet (admin-window/BUG-0138), so the line
+ * names its absence by not offering a way around it rather than by inventing
+ * one.
+ *
+ * It names no NUMBER for the rows it held back, deliberately: `held` and
+ * `limit` are established by two different reads (`/claims` counts the
+ * population and draws the window separately), so their difference is a third
+ * figure no read produced, and it goes to zero or negative in exactly the
+ * states truncation is interesting in.
  */
-const REACH_THE_REST = "narrow with the filters above to reach the rest.";
+const THE_REST_IS_NOT_SHOWN = "the rest are not shown.";
 
 /**
  * How a scope of several narrowings is joined — one spelling, seen by both the
@@ -528,13 +534,13 @@ export function WindowLine(
                 besides(info.scope, NARROWED_BY_FILTERS),
               )} match these filters; the ${count(
                 info.limit,
-              )} longest-waiting are below — ${shows.reach ?? REACH_THE_REST}`
+              )} longest-waiting are below — ${THE_REST_IS_NOT_SHOWN}`
             : ` ${count(info.held)} ${population(
                 shows.rows,
                 info.scope,
               )} in all; the ${count(
                 info.limit,
-              )} longest-waiting are below — ${shows.reach ?? REACH_THE_REST}`
+              )} longest-waiting are below — ${THE_REST_IS_NOT_SHOWN}`
           : didNotFill(info, shows.rows)}
       </WindowParagraph>
     );
