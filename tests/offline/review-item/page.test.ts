@@ -3335,6 +3335,128 @@ describe("an evidence cell with nothing in it", () => {
       }
     }
   });
+
+  /**
+   * The rule of BUG-0132/BUG-0156/BUG-0157 read over the WHOLE folded-records
+   * table at once, rather than one column and one row at a time: several
+   * columns dashing on several different rows while their neighbours hold ink,
+   * one sentence explaining all of them, and every other cell left alone.
+   *
+   * The three tickets each fixed one column's condition; what none of them
+   * could see from inside its own row is the table this page actually renders
+   * on a source-pattern item — nine folded claims in nine different states
+   * across the five columns that can dash here (record, value, tier, source,
+   * payload). The cells are located by the `data-` hook each column is
+   * addressed by, never by column index, so a re-ordering of the columns does
+   * not touch this test.
+   *
+   * Each expectation is the state's own: a claim that says nothing dashes in
+   * the VALUE cell and nowhere else; a reference with no ink dashes in the
+   * RECORD cell and keeps its hook; a reference that IS an em dash is the
+   * producer's own value and draws no dash at all; a reference carrying a bidi
+   * override has ink in it, so it too reads verbatim rather than as an
+   * absence; a source the registry names with no ink is the id verbatim
+   * (`sourceLabel`), which is readable, so that column does not dash either.
+   * The sentence is printed once for the five dashes that ARE drawn, and it
+   * stands before the table it explains.
+   *
+   * Watched RED on the pre-fix source (`git show 011e852^`): the ink-less
+   * reference row drew no dash and no words, so the table held 4 dashes where
+   * this asks for 5 and the row's own count was 0.
+   */
+  it("dashes exactly the cells with nothing in them across a whole folded table, under one line", async () => {
+    const TIERLESS = "01920000-0000-7000-8000-0000000005a1";
+    const UNNAMED = "01920000-0000-7000-8000-0000000005a2";
+    const BIDI_REF = "ab‮cd";
+
+    /** id → [the claim, which hook should hold the app's dash, if any]. */
+    const STATES: [string, Partial<ObservationRow>, string | null][] = [
+      ["every cell filled", {}, null],
+      ["the claim states no value", { value: null as never }, "[data-evidence]"],
+      ["no payload pointer", { payload_ref: null }, "[data-payload]"],
+      ["a reference with no ink", { external_ref: "​" }, "[data-record]"],
+      ["the producer's own em dash", { external_ref: EM_DASH }, null],
+      ["no reference at all", { external_ref: null }, "[data-record]"],
+      ["a reference carrying a bidi override", { external_ref: BIDI_REF }, null],
+      ["a source the registry has no row for", { source_id: TIERLESS }, "[data-tier-now]"],
+      ["a source the registry names with no ink", { source_id: UNNAMED }, null],
+    ];
+    const claims = STATES.map(([, overrides], index) =>
+      foldedPerformer({
+        observation_id: `01920000-0000-7000-8000-00000000050${index}`,
+        entity_id: null,
+        external_ref: "k7vGF_oRKjGkH",
+        ...overrides,
+      }),
+    );
+    const item = reviewItemSourcePattern({
+      evidence: claims.map((claim) => claim.observation_id),
+    });
+    const $ = cheerio.load(
+      await renderItem(
+        {
+          [T.reviewItems]: { data: item },
+          [T.observations]: [{ data: claims }, { data: [] }],
+          [T.sources]: {
+            data: [
+              BANDSINTOWN,
+              sourceRow({ source_id: UNNAMED, source: "​", tier: "standard" }),
+            ],
+          },
+          [T.pendingClaims]: [{ data: [] }, { data: [] }],
+          ...SETTLEMENT_ABSENT,
+        },
+        item.review_item_id,
+      ),
+    );
+
+    // The claims table itself, found by the hook its rows carry — the dial
+    // beside it draws a table of its own and this rule is the claims table's.
+    const table = $(EVIDENCE_HOOK).find("[data-evidence]").first().closest("table");
+    expect(table.find("tbody tr"), "one row per folded claim").toHaveLength(claims.length);
+
+    for (const [index, [what, , dashes]] of STATES.entries()) {
+      const claim = claims[index];
+      const row = $(`[data-evidence="${claim.observation_id}"]`).closest("tr");
+      expect(
+        row.find('[aria-label="no value"]').length,
+        `${what}: the app's dashes in this row`,
+      ).toBe(dashes === null ? 0 : 1);
+      if (dashes !== null) {
+        // In the cell that holds nothing, and in no other cell of the row.
+        expect(
+          row.find(dashes).find('[aria-label="no value"]').length +
+            // The one cell with no hook to be found by: a claim with neither
+            // identity draws the table's own dash (admin-window/BUG-0122).
+            (dashes === "[data-record]" && row.find("[data-record]").length === 0
+              ? row.find("td").first().find('[aria-label="no value"]').length
+              : 0),
+          `${what}: the dash is in ${dashes}`,
+        ).toBe(1);
+      }
+    }
+
+    // The two references the app CAN read are read as published, dash or bidi
+    // override included — neither is explained away as an absence.
+    const verbatim = (index: number) =>
+      $(`[data-evidence="${claims[index].observation_id}"]`).closest("tr").find("[data-record]");
+    expect(verbatim(4).text(), "the producer's em dash, verbatim").toBe(EM_DASH);
+    expect(verbatim(6).text(), "the bidi reference, verbatim").toBe(BIDI_REF);
+    // A source the registry names with no ink is its id, not an absence
+    // (admin-window/BUG-0154's answer, read at the page).
+    const unnamed = $(`[data-evidence="${claims[8].observation_id}"]`).closest("tr");
+    expect(unnamed.find("[data-claim-source]").text(), "the source id verbatim").toBe(UNNAMED);
+
+    // Five dashes, one sentence, and it stands before the table it explains.
+    expect(table.find('[aria-label="no value"]').length, "every dash in the table").toBe(5);
+    const note = $(EVIDENCE_HOOK).find('[data-absence-note="dash"]');
+    expect(note, "the dash-meaning line").toHaveLength(1);
+    expect(note.text(), "says what the dash stands for").toContain(EM_DASH);
+    expect(
+      note.nextAll("*").find("table").length + note.nextAll("table").length,
+      "the line comes before the table it explains",
+    ).toBeGreaterThan(0);
+  });
 });
 
 /* ── the table scrolls inside its own border, not the page ───────────────── */
