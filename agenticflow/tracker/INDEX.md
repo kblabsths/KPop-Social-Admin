@@ -1,13 +1,15 @@
-# Tracker index (regenerated 2026-09-10T00:49:10Z — do not edit)
+# Tracker index (regenerated 2026-09-10T00:50:36Z — do not edit)
 
 ## open
 - BUG-0155 [P3][bug][patch] /cycles shows a ?source= name the browser collapsed, not the name it queried: ?source=%20ticketmaster says "No runs from ticketmaster" while ?source=ticketmaster draws five  (deps:DEBT-0014(unmet:1) scope:src/lib/url/text.ts,src/lib/url/spellable.ts,src/lib/records/id.ts,src/lib/db/runs.ts,src/app/cycles/page.tsx,src/components/cycles/adapter-runs.tsx,src/components/cycles/latest-run.tsx,src/components/ui/window-line.tsx,tests/offline/cycles/page.test.ts,tests/offline/runs/read.test.ts,tests/offline/runs/page.test.ts,tests/offline/url/narrowing.test.ts,tests/offline/db/layering.test.ts,tests/offline/records/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/ui/primitives.test.ts from:BUG-0153)
-- DEBT-0014 [P3][debt][patch] selectClaims is exported twice with unrelated shapes — the claims vocabulary's own narrowedTo, left untracked by two lanes  (scope:src/lib/db/claims.ts,src/lib/gauges/pending-claims.ts,src/lib/gauges/standing-disagreements.ts,src/app/claims/page.tsx,tests/offline/url/narrowing.test.ts from:DEBT-0010)
 
-## built
+## claimed
+- DEBT-0014 [P3][debt][patch] selectClaims is exported twice with unrelated shapes — the claims vocabulary's own narrowedTo, left untracked by two lanes  (scope:src/lib/db/claims.ts,src/lib/gauges/pending-claims.ts,src/lib/gauges/standing-disagreements.ts,src/app/claims/page.tsx,tests/offline/url/narrowing.test.ts @builder-232 from:DEBT-0010)
+
+## qa
 - BUG-0156 [P3][bug][patch] A source the registry NAMES "—" is rendered as an absence: the link is gone, the cell is labelled "no value", and the page explains a dash that stands for a name  (scope:src/components/review/evidence-cells.tsx,src/components/claims/claim-list.tsx,tests/offline/review-item/page.test.ts @builder-231 from:BUG-0154)
 
 ## blocked
 - BUG-0138 [P2][bug][M2] /claims reads the whole claim population on every request: ~14 sequential round trips, 2.9-3.8 s warm  (deps:BUG-0139 scope:src/app/claims/page.tsx,src/lib/db/claims.ts,src/components/claims/bucket-table.tsx,src/components/claims/filter-bar.tsx,src/lib/claims/filters.ts,src/lib/gauges/pending-claims.ts,src/lib/gauges/standing-disagreements.ts,tests/offline/claims/page.test.ts,tests/offline/claims/read.test.ts,tests/offline/claims/filters.test.ts,tests/offline/claims/population.ts,tests/offline/absence/pages.test.ts,tests/offline/absence/in-window.test.ts,tests/offline/absence/blank-cells.test.ts,tests/offline/absence/surfaces.ts,tests/offline/gauges/bounded.test.ts,tests/offline/ui/copy.test.ts,tests/offline/ui/link-spelling.test.ts,tests/offline/ui/primitives.test.ts,tests/live/claims.live.test.ts,tests/live/parity.ts from:human:ben-walk)
 
-Totals — blocked:1, built:1, done:115, open:2, wont_fix:1. Archived: 124.
+Totals — blocked:1, claimed:1, done:115, open:1, qa:1, wont_fix:1. Archived: 124.
