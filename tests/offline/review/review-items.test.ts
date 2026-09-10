@@ -10,6 +10,7 @@ import {
   queueOrder,
   shapeOf,
   type ReviewItemRow,
+  type Shape,
 } from "@/lib/review/shapes";
 import { ROW_CAP } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
@@ -26,6 +27,7 @@ import {
   stubClient,
   tableNotInSchemaCache,
   undefinedColumnOfRelation,
+  type StubClient,
 } from "../../fixtures/stub-client";
 
 /**
@@ -80,21 +82,31 @@ function withRows(rows: ReviewItemRow[]) {
 /**
  * A stub whose `review_items` reads answer PER LEG (admin-window/BUG-0135).
  *
- * `readReviewQueues` on a faceted URL makes FOUR reads of one table: the URL's
- * own row read, then one HEAD count per shape, in `SHAPES` order. The stub
- * answers every read of a table from one script entry unless the entry is a
- * queue (`tests/fixtures/stub-client.ts`), so a single `withRows` hands the
- * same count to all four and no population assertion can distinguish the legs.
+ * `readReviewQueues` on a faceted URL makes the URL's own row read, then one
+ * HEAD count per counted shape, in `SHAPES` order. The stub answers every read
+ * of a table from one script entry unless the entry is a queue
+ * (`tests/fixtures/stub-client.ts`), so a single `withRows` hands the same
+ * count to every leg and no population assertion can distinguish them.
  *
  * `legOne` is what the row read returns — the whole table stands in for a
  * database that narrowed nothing, exactly as everywhere else in this file —
  * and `table` is what the database HOLDS, which is what the counts are of.
+ *
+ * `counted` is which shapes this URL is expected to COUNT, in `SHAPES` order,
+ * because the read no longer counts all three on every faceted URL
+ * (admin-window/DEBT-0012): the legs are consumed in order, so a script listing
+ * a shape the read skips would hand that shape's count to the next shape's leg.
+ * It defaults to all three, which is what every URL narrowing both kinds costs.
  */
-function withLegs(legOne: ReviewItemRow[], table: ReviewItemRow[]) {
+function withLegs(
+  legOne: ReviewItemRow[],
+  table: ReviewItemRow[],
+  counted: readonly Shape[] = SHAPES,
+) {
   return stubClient({
     [T.reviewItems]: [
       { data: legOne, count: legOne.length },
-      ...SHAPES.map((shape) => ({
+      ...counted.map((shape) => ({
         // A head count returns no rows at all — only the count.
         data: null,
         count: table.filter((row) => shapeOf(row) === shape).length,
@@ -102,6 +114,15 @@ function withLegs(legOne: ReviewItemRow[], table: ReviewItemRow[]) {
     ],
   });
 }
+
+/**
+ * Each kind's shapes, in `SHAPES` order — spelled from spec §6 ("the two fact
+ * items are decisions, the source-pattern item is the signal") rather than read
+ * out of `shapesOfKind`, so a `lib/review` that regrouped the shapes would
+ * disagree with this file instead of agreeing with itself.
+ */
+const DECISION_SHAPES: readonly Shape[] = ["data_conflict_fact", "entity_link_fact"];
+const SIGNAL_SHAPES: readonly Shape[] = ["entity_link_source_pattern"];
 
 /** The count each kind's population came back as, unwrapped, or the refusal's kind. */
 function populationOf(result: Awaited<ReturnType<typeof readReviewQueues>>) {
@@ -498,9 +519,9 @@ describe("readReviewQueues", () => {
    * with the same script whatever the chain built, so the population here is
    * the population `selectItems` finds in the scripted rows.
    */
-  it("returns the filtered rows beside BOTH kinds' whole-table counts", async () => {
+  it("returns the filtered rows beside the WHOLE-TABLE count of the kind the URL emptied", async () => {
     const rows = population();
-    const stub = withLegs(rows, rows);
+    const stub = withLegs(rows, rows, DECISION_SHAPES);
     const result = await readReviewQueues({ kind: "signal" }, stub.asSupabaseClient());
 
     expect(result.kind).toBe("ok");
@@ -509,23 +530,20 @@ describe("readReviewQueues", () => {
     expect(ids(result.data.items)).toEqual(
       ids(queueOrder(rows.filter((row) => kindOfItem(row) === "signal"))),
     );
-    // ...and the population is NOT: it counts every row of each kind, settled
-    // ones included, which is the set the bare `/queues` renders. Each kind
-    // answers for itself, so the number arrives inside its own `ok`.
-    expect(result.data.population).toEqual({
-      decision: {
-        kind: "ok",
-        data: rows.filter((row) => kindOfItem(row) === "decision").length,
-      },
-      signal: {
-        kind: "ok",
-        data: rows.filter((row) => kindOfItem(row) === "signal").length,
-      },
-    });
-    expect(populationOf(result).decision).toEqual({
+    // ...and the DECISION population is NOT: it counts every decision row the
+    // table holds, settled ones included, which is the set the bare `/queues`
+    // renders in that block. That is the figure the four-state rule needs, and
+    // it needs it for exactly this kind — the one whose rows this URL removed.
+    expect(result.data.population.decision).toEqual({
       kind: "ok",
-      data: expect.any(Number),
+      data: rows.filter((row) => kindOfItem(row) === "decision").length,
     });
+    // The SIGNAL population was never asked for, and says so: this URL removes
+    // no signal row, so `isSurfaceNarrowed` reads that block as unscoped from
+    // fact 1 alone and no count could change a word of it
+    // (admin-window/DEBT-0012). `not_asked` is a third state — not the zero
+    // that would claim an empty queue, and not a refusal to report.
+    expect(result.data.population.signal).toEqual({ kind: "not_asked" });
   });
 
   it("counts a kind the filter emptied as the rows it really holds", async () => {
@@ -533,7 +551,7 @@ describe("readReviewQueues", () => {
     // facet removed, so a decision block reading only its own result cannot
     // tell this state from an empty table.
     const rows = population();
-    const stub = withLegs(rows, rows);
+    const stub = withLegs(rows, rows, DECISION_SHAPES);
     const result = await readReviewQueues({ kind: "signal" }, stub.asSupabaseClient());
 
     if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
@@ -817,6 +835,235 @@ describe("readReviewQueues counts the population instead of reading it", () => {
     );
     expect(filteredRefused.kind).toBe("error");
     expect(filteredRefused).not.toHaveProperty("data");
+  });
+});
+
+/**
+ * **What a `/queues` URL COSTS, counted on the stub's call log**
+ * (campaign admin-window/DEBT-0012).
+ *
+ * The population exists to answer fact 2 of the four-state rule, and
+ * `isSurfaceNarrowed` ANDs it with fact 1 (`src/lib/url/narrowing.ts`) — so a
+ * block whose fact 1 is already `false` renders identically whatever its
+ * population says, and a count issued for it answers a question no rendering
+ * asks. The kinds that DO need it are the ones this URL narrows, which is the
+ * opposite of the kind the URL names: on `?kind=signal` the signal block
+ * renders its own whole set, while the decision block's rows are all gone from
+ * the filtered read and its zero is the one that has to be explained
+ * (admin-window/BUG-0133).
+ *
+ * Every number below is a MEASUREMENT of the tree it runs on, not a wish: the
+ * per-URL figures were read off this log on 2026-09-09 before they were written
+ * down, and the shapes each URL counts are named, so a read that issued the
+ * right NUMBER of counts for the wrong shapes fails here too.
+ *
+ * Which shapes are asked is spelled from the migration's own rule — `queue`,
+ * and whether `source_id` is null (`20260901000002`: a subject is either a fact
+ * or a source) — never from `SHAPE_COLUMNS`, which is the declaration the app
+ * builds these queries FROM.
+ */
+describe("readReviewQueues counts only the kinds the URL narrows", () => {
+  /** Every `review_items` read of one run — the row leg plus every count leg. */
+  function readsOfReviewItems(stub: StubClient): number {
+    return stub.tablesRead().filter((table) => table === T.reviewItems).length;
+  }
+
+  /** A HEAD count leg: `{ head: true }` on the select, which returns no rows. */
+  function isCountLeg(call: StubClient["calls"][number]): boolean {
+    return call.steps.some(
+      (step) =>
+        step.method === "select" &&
+        typeof step.args[1] === "object" &&
+        step.args[1] !== null &&
+        (step.args[1] as Record<string, unknown>).head === true,
+    );
+  }
+
+  /**
+   * Which shape a count leg is narrowed to, read back off the recorded chain
+   * and named in this file's own words: the queue it pinned, plus what it said
+   * about `source_id`. A `data_conflict` leg constrains only the queue.
+   */
+  function countedShapes(stub: StubClient): string[] {
+    return stub.calls
+      .filter((call) => isCountLeg(call))
+      .map((leg) => {
+        const args = (method: string) =>
+          leg.steps.filter((step) => step.method === method).map((step) => step.args);
+        const queue = args("eq").find(([column]) => column === "queue")?.[1];
+        if (args("is").some(([column, value]) => column === "source_id" && value === null)) {
+          return `${String(queue)}/source-null`;
+        }
+        if (args("not").some(([column]) => column === "source_id")) {
+          return `${String(queue)}/source-set`;
+        }
+        return String(queue);
+      });
+  }
+
+  /** A source id the fixtures carry — a source is always narrowing (BUG-0141). */
+  const CARRIED = ID.sourceBandsintown;
+
+  /** The three shapes as this file names their count legs, in `SHAPES` order. */
+  const DATA_CONFLICT_FACT = "data_conflict";
+  const ENTITY_LINK_FACT = "entity_link/source-null";
+  const SOURCE_PATTERN = "entity_link/source-set";
+  const BOTH_KINDS = [DATA_CONFLICT_FACT, ENTITY_LINK_FACT, SOURCE_PATTERN];
+
+  /**
+   * One row per URL shape: what it costs against `review_items`, and which
+   * count legs make up the difference. `reads` is 1 (the row leg) + the legs.
+   */
+  const COST: {
+    where: string;
+    filter: Parameters<typeof readReviewQueues>[0];
+    reads: number;
+    counts: string[];
+  }[] = [
+    // The bare URL: its own rows ARE the whole table, so it is its own
+    // population and not one count is issued (admin-window/BUG-0133).
+    { where: "/queues", filter: {}, reads: 1, counts: [] },
+    // A URL naming ONE kind: the OTHER kind's shapes, and no others. The named
+    // kind's block is not structurally narrowed by its own value, so its
+    // population cannot change a word it renders (BUG-0129, BUG-0131).
+    {
+      where: "/queues?kind=decision",
+      filter: { kind: "decision" },
+      reads: 2,
+      counts: [SOURCE_PATTERN],
+    },
+    {
+      where: "/queues?kind=signal",
+      filter: { kind: "signal" },
+      reads: 3,
+      counts: [DATA_CONFLICT_FACT, ENTITY_LINK_FACT],
+    },
+    // A facet that IMPLIES one kind counts as naming it: every signal row is
+    // `queue: "entity_link"`, and the signal kind has exactly one shape, so
+    // both of these leave the signal block rendering its own whole set.
+    {
+      where: "/queues?queue=entity_link",
+      filter: { queue: "entity_link" },
+      reads: 3,
+      counts: [DATA_CONFLICT_FACT, ENTITY_LINK_FACT],
+    },
+    {
+      where: "/queues?shape=entity_link_source_pattern",
+      filter: { shape: "entity_link_source_pattern" },
+      reads: 3,
+      counts: [DATA_CONFLICT_FACT, ENTITY_LINK_FACT],
+    },
+    // A facet implying NO kind: both blocks can be emptied by it, so both
+    // populations are load-bearing and all three counts are issued. `status`
+    // is never implied by a kind, `source_id` never by anything
+    // (admin-window/BUG-0141), and the decision kind spans both queues and
+    // both fact shapes.
+    { where: "/queues?status=open", filter: { status: "open" }, reads: 4, counts: BOTH_KINDS },
+    {
+      where: "/queues?queue=data_conflict",
+      filter: { queue: "data_conflict" },
+      reads: 4,
+      counts: BOTH_KINDS,
+    },
+    {
+      where: "/queues?shape=data_conflict_fact",
+      filter: { shape: "data_conflict_fact" },
+      reads: 4,
+      counts: BOTH_KINDS,
+    },
+    {
+      where: `/queues?source_id=${CARRIED}`,
+      filter: { source_id: CARRIED },
+      reads: 4,
+      counts: BOTH_KINDS,
+    },
+  ];
+
+  it("scripts its legs against every shape there is, so a fourth shape reddens here", () => {
+    // Fixture integrity, not a domain claim: the per-leg scripting above hands
+    // each count its answer BY POSITION, so this file's two shape lists have to
+    // partition the registry in its own order or every count in this describe
+    // is answered by the wrong leg. A fourth shape reddens this line first.
+    expect([...DECISION_SHAPES, ...SIGNAL_SHAPES]).toEqual([...SHAPES]);
+  });
+
+  it("issues exactly the reads each URL shape needs, and no others", async () => {
+    for (const { where, filter, reads, counts } of COST) {
+      const rows = population();
+      const stub = withRows(rows);
+      await readReviewQueues(filter, stub.asSupabaseClient());
+      expect(readsOfReviewItems(stub), where).toBe(reads);
+      expect(countedShapes(stub), `${where}: which counts`).toEqual(counts);
+    }
+  });
+
+  it("answers the kind it did not count as not_asked — never a zero, never a refusal", async () => {
+    // The three states pulled apart on ONE run: a table holding no decision
+    // row at all, read under `?kind=signal`. The decision population is a real
+    // counted ZERO (a claim about the table, which the block needs), and the
+    // signal population is `not_asked` (no claim at all). A read that answered
+    // the second as `0` would be claiming an empty signal queue over a table
+    // full of signals.
+    const signals = population().filter((row) => kindOfItem(row) === "signal");
+    expect(signals.length).toBeGreaterThan(0);
+    const stub = withLegs(signals, signals, DECISION_SHAPES);
+    const result = await readReviewQueues({ kind: "signal" }, stub.asSupabaseClient());
+
+    const counted = populationOf(result);
+    expect(counted.decision).toEqual({ kind: "ok", data: 0 });
+    expect(counted.signal).toEqual({ kind: "not_asked" });
+  });
+
+  it("reports nothing for the kind it did not count, even when every count refuses", async () => {
+    // A refusal is the caller's to report beside the rows (admin-window/BUG-0135);
+    // a question never asked has nothing to report, and the two may not share a
+    // rendering. The one scripted refusal answers every count leg.
+    const rows = population();
+    const stub = stubClient({
+      [T.reviewItems]: [
+        { data: rows, count: rows.length },
+        { error: permissionDenied(T.reviewItems) },
+      ],
+    });
+    const result = await readReviewQueues({ kind: "decision" }, stub.asSupabaseClient());
+
+    const counted = populationOf(result);
+    expect(counted.signal.kind).toBe("error");
+    expect(counted.decision).toEqual({ kind: "not_asked" });
+    // and the rows the URL's own read returned are all still here
+    expect(ids(result.kind === "ok" ? result.data.items : [])).toEqual(
+      ids(queueOrder(rows.filter((row) => kindOfItem(row) === "decision"))),
+    );
+  });
+
+  it("keeps the whole-table meaning of every count it does issue", async () => {
+    // The saving is in WHICH counts are issued, never in what they count: no
+    // condition on a count leg comes from the filter, so each figure is still
+    // what the kind holds with NO url facet at all (admin-window/BUG-0141) —
+    // which is the only reading under which `rendered !== population` is a
+    // question worth asking.
+    const rows = population();
+    const stub = withLegs(rows, rows);
+    await readReviewQueues(
+      { kind: "signal", status: "open", source_id: CARRIED },
+      stub.asSupabaseClient(),
+    );
+
+    // `?status=` and `?source_id=` narrow both blocks, so this URL costs all
+    // three counts even though it also names a kind...
+    expect(countedShapes(stub)).toEqual(BOTH_KINDS);
+    // ...and every condition on every count leg is one the SHAPE defines: the
+    // queue, and what `source_id` must be. Never the URL's status, and never
+    // its source as an equality.
+    for (const leg of stub.calls.filter((call) => isCountLeg(call))) {
+      for (const step of leg.steps) {
+        if (!["eq", "is", "not"].includes(step.method)) continue;
+        expect([step.method, step.args[0]]).not.toEqual(["eq", "source_id"]);
+        expect(["queue", "source_id"], JSON.stringify(step.args)).toContain(
+          String(step.args[0]),
+        );
+      }
+    }
   });
 });
 

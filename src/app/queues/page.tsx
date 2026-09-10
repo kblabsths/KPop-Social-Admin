@@ -352,6 +352,15 @@ function Queue({
   // them; with it refused this block falls back to the STRUCTURAL rule alone —
   // and says so, on its own sub-surface below, rather than claiming a scope no
   // read supports or silently dropping to a rule the reader cannot see.
+  //
+  // Three states, not two (`KindPopulation`, admin-window/DEBT-0012): counted,
+  // refused, or NOT ASKED. The read skips the count for a kind this URL does
+  // not structurally narrow, because `isBlockNarrowed` ANDs fact 1 with fact 2
+  // and this block's fact 1 is already `false` — so the fallback line below
+  // returns the same answer the counted rule would have, by construction, for
+  // the one input the count is skipped on. Not-asked is NOT a refusal: nothing
+  // failed and nothing is missing from this block, so it reports nothing (the
+  // `note` prop below).
   const population = result.data.population[kind];
   const narrowed =
     population.kind === "ok"
@@ -360,6 +369,11 @@ function Queue({
           population: population.data,
         })
       : isNarrowedBeyond(filter, ownNarrowing);
+  // The population leg REFUSED — the only state with something to report.
+  const populationRefused =
+    population.kind === "ok" || population.kind === "not_asked"
+      ? undefined
+      : population;
   // The read succeeded either way, so it produced a figure either way. An
   // empty queue differs from a full one ONLY in the rows region, where its
   // card says what the queue holds and what fills it: the counted zero keeps
@@ -400,9 +414,9 @@ function Queue({
       // `not_provisioned` arms above — there the block's own state already
       // names the same object.
       note={
-        population.kind === "ok" ? undefined : (
+        populationRefused === undefined ? undefined : (
           <div data-surface={POPULATION_SURFACE[kind]}>
-            <StateOf result={population} eyebrow={POPULATION_EYEBROW} />
+            <StateOf result={populationRefused} eyebrow={POPULATION_EYEBROW} />
           </div>
         )
       }
@@ -659,8 +673,9 @@ export default async function QueuesPage({
   }
 
   // One complete read for both queues — plus, when the URL carries a facet, one
-  // HEAD count per shape, so each block knows its own population and an empty
-  // queue's zero is never dressed as a filtered one (admin-window/BUG-0133).
+  // HEAD count per shape OF EACH KIND THE URL NARROWS, so each block that has a
+  // zero to explain knows its own population and an empty queue's zero is never
+  // dressed as a filtered one (admin-window/BUG-0133, admin-window/DEBT-0012).
   // Those counts return no rows, so no row cap can refuse them and a faceted
   // URL always renders the rows its own read returned (admin-window/BUG-0135).
   // And the gauge's own bounded window.

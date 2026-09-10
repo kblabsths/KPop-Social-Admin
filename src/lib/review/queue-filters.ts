@@ -403,6 +403,33 @@ export function isNarrowedBeyond(
 }
 
 /**
+ * **The kinds this URL structurally narrows** — fact 1, asked of every kind at
+ * once instead of one block at a time (campaign admin-window/DEBT-0012).
+ *
+ * `isNarrowedBeyond(filter, narrowingOfKind(kind))` is exactly the question the
+ * page asks per block, and its answer decides whether that block's POPULATION
+ * is consulted at all: `isSurfaceNarrowed` ANDs fact 1 with fact 2, so a block
+ * this URL does not structurally narrow reads as unscoped whatever its
+ * population turns out to be, and a count issued for it answers a question no
+ * rendering asks (`src/lib/url/narrowing.ts`).
+ *
+ * The kinds it names are the ones whose population is LOAD-BEARING, which is
+ * the opposite of the intuition: on `/queues?kind=signal` the signal block
+ * renders its own whole set — no facet of that URL removes a signal row — while
+ * the DECISION block is the one whose zero has to be explained, and its rows
+ * are all gone from the filtered read (admin-window/BUG-0133). So the kind the
+ * URL named is the kind whose count can be skipped.
+ *
+ * Declared here, beside the predicate it is one call of, and imported by
+ * `src/lib/db/review-items.ts` rather than retyped there: the set the read
+ * ISSUES counts for and the set the page CONSULTS must be one set, or a block
+ * reports a refusal for a read nobody made.
+ */
+export function kindsNarrowedBy(filter: ReviewItemFilter): Kind[] {
+  return KINDS.filter((kind) => isNarrowedBeyond(filter, narrowingOfKind(kind)));
+}
+
+/**
  * **Is THIS queue block's rendering scoped by the URL?** The one question the
  * four states turn on, from TWO facts and nothing else (admin-window/BUG-0133).
  *
