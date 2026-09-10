@@ -62,6 +62,10 @@ export {
   RENDERABLE_BUCKETS,
   isRenderableBucket,
   readPendingClaimRows,
+  // The gauges' claims leg since admin-window/TASK-0074 — a window over the
+  // view's own `observed_at`, issued BESIDE the `observations` scan below
+  // rather than after it.
+  readPendingClaimsInWindow,
 } from "./claims";
 export type { PendingClaimBucket, PendingClaimRow, PendingClaimsFilter } from "./claims";
 

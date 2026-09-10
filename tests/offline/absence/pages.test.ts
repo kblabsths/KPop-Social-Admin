@@ -245,6 +245,20 @@ describe.each(DATABASES)("against %s missing one object", (_label, base) => {
  */
 const COMPOSED_READS: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["/sources", [T.sources, T.runs]],
+  // The pending-claims gauge, which `/sources` draws its `awaiting_row` trend
+  // from, is the second composition of the same kind (admin-window/TASK-0074).
+  // Its two legs — the `observations` scan and the `pending_claims` window —
+  // are issued TOGETHER now rather than one after the other, so with the whole
+  // database absent the page asks for both and reports ONE refusal. Which one
+  // is pinned rather than raced: the OBSERVATIONS refusal wins, because that
+  // is the answer the sequential shape gave, and a card's mono span holds
+  // exactly one object name (§11, LOOK_AND_FEEL state 3).
+  //
+  // The exemption is only ever for the SECOND name and only while the first is
+  // absent too. `pending_claims` missing ON ITS OWN is named on `/sources` by
+  // the matrix above, and by "names the classification view when the gauge's
+  // claims leg cannot be read" in `tests/offline/sources/page.test.ts`.
+  ["/sources", [T.observations, T.pendingClaims]],
 ];
 
 describe("against a database that lacks every ecosystem object", () => {

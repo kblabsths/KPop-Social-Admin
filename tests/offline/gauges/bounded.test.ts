@@ -518,7 +518,13 @@ describe("the second leg of every join", () => {
       gauge: "resolution latency",
       run: (db) => fetchResolutionLatency({ now: NOW }, db),
     },
-    { gauge: "pending claims", run: (db) => fetchPendingClaims({ now: NOW }, db) },
+    // The pending-claims gauge is NOT here, and its absence is the point: it
+    // no longer has an id-set leg at all. Its claims read is a WINDOW over
+    // `pending_claims.observed_at`, issued beside the `observations` scan
+    // instead of after it (admin-window/TASK-0074), so it is bounded by a
+    // window and a cap — which `every gauge query is bounded` above asserts of
+    // every one of its queries. `standing disagreements` stays: it composes
+    // that same claims read and then looks `sources` up BY ID.
     {
       gauge: "standing disagreements",
       run: (db) => fetchStandingDisagreements({ now: NOW }, db),

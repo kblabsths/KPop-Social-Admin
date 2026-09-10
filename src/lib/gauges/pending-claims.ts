@@ -4,7 +4,7 @@ import {
   PENDING_CLAIM_BUCKETS,
   RENDERABLE_BUCKETS,
   isRenderableBucket,
-  readPendingClaimRows,
+  readPendingClaimsInWindow,
   readPendingObservations,
   type DbClient,
   type PendingClaimBucket,
@@ -47,13 +47,15 @@ import {
  *    AND in `selectPendingClaims` below, so the exclusion holds whether or not the
  *    server narrowed.
  *  - the view holds only **live `pending` claims** (migration `20260901000004`,
- *    `live_pending_claim`), which is why the windowed scan is the
- *    `observations` side: same population, and it is the side that carries the
- *    timestamp both the window and the age need.
+ *    `live_pending_claim`) and carries their `observed_at` through unchanged
+ *    (migration `20260910000001`), so ONE window over the same interval
+ *    describes both sides: the gauge windows `observations` for the ages and
+ *    the denominator and `pending_claims` for the classification, and neither
+ *    read waits on the other (admin-window/TASK-0074).
  *
- * The scan is ordered **oldest first**, so a truncated read keeps the oldest
- * claims — the stuck ones this gauge exists to show — and drops the newest.
- * When `window.truncated`, every count here is a floor.
+ * Both reads are ordered **oldest first**, so a truncated read keeps the
+ * oldest claims — the stuck ones this gauge exists to show — and drops the
+ * newest. When `window.truncated`, every count here is a floor.
  */
 
 export {
@@ -174,8 +176,40 @@ export interface AwaitingRowTrend {
 /* ── the read ────────────────────────────────────────────────────────────── */
 
 /**
- * The two bounded reads. `not_provisioned` from either leg names that object —
- * `observations` or `pending_claims` — so the card says which one is absent.
+ * The two bounded reads — **issued together, over the same window and the same
+ * filter** (admin-window/TASK-0074).
+ *
+ * The claims leg used to be the SECOND step of a two-step join: this function
+ * awaited the `observations` scan and fed the ids it returned into
+ * `readPendingClaimRows`, so a page composing this gauge waited once for the
+ * scan and again for the join's chunks — four sequential waits on `/claims`,
+ * measured, and the page's whole remaining cost (admin-window/TASK-0062's
+ * census: 1.714 s warm, longest chain 1 + 3). The view carries `observed_at`
+ * now, so the claims of a window are readable from the view alone
+ * (`readPendingClaimsInWindow`) and the claims leg needs nothing the scan
+ * produces. Both are in flight at once and the gauge's depth is ONE wait.
+ *
+ * The `observations` leg still runs, and is still the one this gauge is
+ * windowed over: `aggregatePendingClaims` takes every age from it (§6 trap 3
+ * says the claim's age is the observation's instant), and `window.held` is
+ * the number of rows THAT scan returned.
+ *
+ * **The set is the one the id-list join returned, and that is enforced rather
+ * than assumed.** The claims are intersected with the observation ids the scan
+ * came back with — which is what `.in(...)` did, in code, for the same reason
+ * `selectPendingClaims` re-applies the filter (§6 trap 4: the returned set is
+ * decided by exactly one rule whether or not the server narrowed). It is a
+ * no-op whenever the scan was not truncated, since every live pending claim of
+ * the window is one of its rows; at the cap it is what keeps the two legs
+ * describing one population, so no claim is counted whose age nothing in hand
+ * can state.
+ *
+ * `not_provisioned` from either leg names that object — `observations` or
+ * `pending_claims` — so the card says which one is absent, and neither ever
+ * degrades to a half-filled gauge or a zero. When BOTH refuse the
+ * OBSERVATIONS refusal is the one returned: that is the answer the sequential
+ * shape gave, and which refusal a page shows may not depend on which request
+ * happened to land first.
  */
 export async function fetchPendingClaims(
   options: GaugeOptions & { filter?: PendingClaimsFilter } = {},
@@ -184,19 +218,24 @@ export async function fetchPendingClaims(
   const bounds = resolveBounds(options, PENDING_CLAIMS_DEFAULTS);
   const filter = options.filter ?? {};
 
-  const observations = await readPendingObservations(bounds, filter, db);
-  if (observations.kind !== "ok") return observations;
+  // Both legs, one wait. Neither read throws or rejects (ARCHITECTURE.md
+  // §4.1), so this settles with one `DbResult` each rather than losing one to
+  // the other's rejection.
+  const [observations, claims] = await Promise.all([
+    readPendingObservations(bounds, filter, db),
+    readPendingClaimsInWindow(bounds, filter, db),
+  ]);
 
-  const claims = await readPendingClaimRows(
-    idsOf(observations.data, (row) => row.observation_id),
-    db,
-  );
+  // Scanned in leg order, never completion order: the observations refusal
+  // wins, exactly as it did when it was the only read that had happened yet.
+  if (observations.kind !== "ok") return observations;
   if (claims.kind !== "ok") return claims;
 
+  const observed = new Set(observations.data.map((row) => row.observation_id));
   return {
     kind: "ok",
     data: {
-      claims: claims.data,
+      claims: claims.data.filter((claim) => observed.has(claim.observation_id)),
       observations: observations.data,
       window: windowOf(bounds, observations.data.length, T.observations),
       filter,

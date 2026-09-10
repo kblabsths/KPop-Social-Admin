@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { CLAIM_WINDOW } from "@/components/claims";
+import { PENDING_CLAIMS_DEFAULTS } from "@/lib/gauges/pending-claims";
 // The app's own phrase for a CHIP narrowing, imported rather than retyped: a
 // literal here would pass while the two surfaces said different things.
 import { NARROWED_BY_FILTERS } from "@/components/ui";
@@ -1468,11 +1469,20 @@ describe("the gauge's window line", () => {
    * An unnarrowed page and a `?bucket=` page issue it not at all.
    */
   it("buys fact 2 with one bounded count, and only where a facet narrows this read", async () => {
+    // A windowed COUNT is a `head: true` read carrying the window's lower
+    // bound. The head option is half of the test and not decoration: since
+    // admin-window/TASK-0074 the gauge's own claims leg is a windowed ROW read
+    // of the same view, so "carries a gte" alone names two different reads.
     const windowedCounts = (stub: StubClient) =>
       stub.calls.filter(
         (call) =>
           call.table === T.pendingClaims &&
-          call.steps.some((step) => step.method === "gte"),
+          call.steps.some((step) => step.method === "gte") &&
+          call.steps.some(
+            (step) =>
+              step.method === "select" &&
+              (step.args[1] as { head?: boolean } | undefined)?.head === true,
+          ),
       );
 
     const unnarrowing: Record<string, string>[] = [{}, { bucket: "escalated" }];
@@ -1518,6 +1528,11 @@ describe("the gauge's window line", () => {
       [T.pendingClaims]: (call: RecordedCall) =>
         call.steps.some(
           (step) => step.method === "gte" && step.args[0] === "observed_at",
+        ) &&
+        call.steps.some(
+          (step) =>
+            step.method === "select" &&
+            (step.args[1] as { head?: boolean } | undefined)?.head === true,
         )
           ? { error: permissionDenied(T.pendingClaims) }
           : claimView(CLAIMS)(call),
@@ -4603,12 +4618,21 @@ describe("the reads this page makes", () => {
     expect(large.stub.tablesRead()).toEqual(small.stub.tablesRead());
 
     // No read over the view is a `range` — the complete read and its ROW_CAP
-    // are gone — and none of them asks for more claim rows than the window.
+    // are gone — and every one of them asks for a FIXED number of rows: the
+    // list's window, one row for a bucket's oldest seek, or the gauge's own
+    // cap (admin-window/TASK-0074 moved the gauge's claims leg onto this view,
+    // where it carries the cap it always carried over `observations`). Three
+    // declared caps, none of which is a function of the 2,000 rows the view
+    // holds — which is the invariance this test is named for.
     for (const call of callsOver(large.stub, T.pendingClaims)) {
       const steps = call.steps.map((step) => step.method);
       expect(steps, shapeOf(call)).not.toContain("range");
       const limit = call.steps.find((step) => step.method === "limit")?.args[0];
-      if (limit !== undefined) expect(Number(limit)).toBeLessThanOrEqual(CLAIM_WINDOW);
+      if (limit !== undefined) {
+        expect([1, CLAIM_WINDOW, PENDING_CLAIMS_DEFAULTS.limit], shapeOf(call)).toContain(
+          Number(limit),
+        );
+      }
     }
 
     // And the 2,000-row view really did render: the window's rows, and a count
@@ -4619,7 +4643,7 @@ describe("the reads this page makes", () => {
     ).toBe(2000);
   });
 
-  it("issues one window read, six counts and five oldest seeks, and no more", async () => {
+  it("issues two window reads, six counts and five oldest seeks, and no more", async () => {
     const { stub } = await renderWithStub(viewOf(200));
     const overView = callsOver(stub, T.pendingClaims);
 
@@ -4634,13 +4658,29 @@ describe("the reads this page makes", () => {
     // The renderable total plus one per bucket — one count per question,
     // because PostgREST refuses the grouped read (PGRST123, measured).
     expect(counts).toHaveLength(1 + RENDERED_BUCKETS.length);
-    // One window, and one `limit 1` seek per bucket.
-    expect(rowReads).toHaveLength(1 + RENDERED_BUCKETS.length);
+    // TWO windows — the list's and the GAUGE's — and one `limit 1` seek per
+    // bucket. The gauge's is the second one since admin-window/TASK-0074: its
+    // claims leg used to be a chunked `.in()` over the ids the `observations`
+    // scan returned, which cost the page the same rows and three more
+    // SEQUENTIAL waits. One request replaced it, and it is issued beside the
+    // scan rather than after it.
+    expect(rowReads).toHaveLength(2 + RENDERED_BUCKETS.length);
     expect(
       rowReads.filter(
         (call) => call.steps.find((step) => step.method === "limit")?.args[0] === 1,
       ),
     ).toHaveLength(RENDERED_BUCKETS.length);
+    const windows = rowReads.filter(
+      (call) => call.steps.find((step) => step.method === "limit")?.args[0] !== 1,
+    );
+    expect(windows.map((call) => call.steps.find((s) => s.method === "limit")?.args[0])).toEqual(
+      [CLAIM_WINDOW, PENDING_CLAIMS_DEFAULTS.limit],
+    );
+    // Neither of them is an id-set lookup any more: no read this page makes
+    // over the view filters on a list of ids some other read produced.
+    expect(
+      overView.filter((call) => call.steps.some((step) => step.method === "in")),
+    ).toHaveLength(0);
 
     // The registry is read once, and the observations table only by the gauge.
     expect(callsOver(stub, T.sources)).toHaveLength(1);

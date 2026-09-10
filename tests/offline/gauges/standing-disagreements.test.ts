@@ -167,13 +167,23 @@ describe("fetchStandingDisagreements", () => {
     expect(scan.find((s) => s.method === "limit")?.args[0]).toBeGreaterThan(0);
 
     // The sources leg is a lookup, bounded by the id set the claims produced —
-    // three distinct sources hold a standing disagreement here.
+    // TWO distinct sources hold a standing disagreement this read can see.
+    //
+    // The third (`SOURCE_UNKNOWN`, claim …a04) is the one whose observation
+    // this fixture deliberately withholds, and it is not in the claim set: the
+    // gauge keeps the claims the `observations` scan returned, which is what
+    // `.in(<the scan's ids>)` did at the database when the claims leg was that
+    // scan's second step (admin-window/TASK-0074). The figure was 3 here only
+    // because the stub answers every query of the view with the same fixed row
+    // set — no database ever handed that claim back for these ids. The
+    // aggregate's own treatment of a claim with no observation is unchanged
+    // and is asserted below, over a bundle rather than over a read.
     const lookup = stub.calls[2].steps;
     expect(lookup.find((s) => s.method === "in")?.args).toEqual([
       "source_id",
-      [SOURCE_B, SOURCE_A, SOURCE_UNKNOWN],
+      [SOURCE_B, SOURCE_A],
     ]);
-    expect(lookup.find((s) => s.method === "limit")?.args).toEqual([3]);
+    expect(lookup.find((s) => s.method === "limit")?.args).toEqual([2]);
   });
 
   it("runs no sources lookup when nothing is standing", async () => {
@@ -294,6 +304,9 @@ describe("readStandingDisagreements", () => {
   it("fetches and aggregates in one call", async () => {
     const stub = withRows(claims(), observations(), sources());
     const result = await readStandingDisagreements({ now: NOW }, stub.asSupabaseClient());
-    expect(result.kind === "ok" && result.data.claims).toBe(4);
+    // Three of the four standing claims: …a04's observation is not in the
+    // scan, so the claim is not in the set the scan's ids bound (see the
+    // sources-lookup test above).
+    expect(result.kind === "ok" && result.data.claims).toBe(3);
   });
 });
