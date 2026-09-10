@@ -1,7 +1,10 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { CLAIM_WINDOW } from "@/components/claims";
-import { ANY_LABEL } from "@/lib/claims/filters";
+// The app's own phrase for a CHIP narrowing, imported rather than retyped: a
+// literal here would pass while the two surfaces said different things.
+import { NARROWED_BY_FILTERS } from "@/components/ui";
+import { ANY_LABEL, CLEAR_LABEL } from "@/lib/claims/filters";
 import { UNRENDERABLE_BUCKET } from "@/lib/db/claims";
 import { count } from "@/lib/format";
 import { STANDING_BUCKET } from "@/lib/gauges/standing-disagreements";
@@ -86,6 +89,13 @@ vi.mock("@/lib/db/claims", async (importActual) => {
       actual.readClaimWindow(options, readWith.client as never),
     readClaimCount: (filter?: Parameters<typeof actual.readClaimCount>[0]) =>
       actual.readClaimCount(filter, readWith.client as never),
+    // The gauge section's fact 2 — the unnarrowed count inside the gauge's own
+    // window (admin-window/BUG-0163). Stubbed at the same boundary as every
+    // other read; without it this one leg would reach for a real client.
+    readClaimCountSince: (
+      since: Parameters<typeof actual.readClaimCountSince>[0],
+      filter?: Parameters<typeof actual.readClaimCountSince>[1],
+    ) => actual.readClaimCountSince(since, filter, readWith.client as never),
     readBucketOldest: (
       bucket: Parameters<typeof actual.readBucketOldest>[0],
       filter?: Parameters<typeof actual.readBucketOldest>[1],
@@ -1351,10 +1361,10 @@ describe("the gauge's window line", () => {
    * those figures came from must carry the facet and the value the URL asked
    * for — the same oracle the list's line is already held to above.
    */
-  // A STRICT pin: it fails today, and the day it stops failing vitest turns
-  // this red and sends the reader to admin-window/BUG-0163, whose fixer flips
-  // it to a plain `it(...)`.
-  it.fails("says what narrowed its own read, where no chip row can say it", async () => {
+  // FIXED by admin-window/BUG-0163: the scan arm of `WindowLine` takes a
+  // `scope`, the page composes it from the same object `gaugeFilter` handed
+  // the read, and this pin is a plain `it(...)`.
+  it("says what narrowed its own read, where no chip row can say it", async () => {
     const narrowed = await renderWithStub(healthyScript(), { domain: "venues" });
     const bare = await renderWithStub(healthyScript());
     const gaugeLine = (rendered: { markup: string }) =>
@@ -1381,6 +1391,112 @@ describe("the gauge's window line", () => {
     expect(gaugeLine(narrowed)).not.toBe(gaugeLine(bare));
   });
 
+  /**
+   * The other half of the same rule (admin-window/BUG-0163): the sentence is
+   * narrowed EXACTLY where the read was, and nowhere else.
+   *
+   * `gaugeFilter` hands the gauge the source and the domain and drops the
+   * bucket — the gauges read `observations`, which has no bucket — so
+   * `?bucket=` moves no figure in this section and may move no word of its
+   * sentence either. Graded by comparing two renders of the page rather than
+   * against copy typed here: a facet the read did not carry must leave the
+   * line byte-identical, on both tabs.
+   */
+  it("says nothing about a facet its own read did not carry", async () => {
+    const gaugeLine = (markup: string) =>
+      cheerio
+        .load(markup)('[data-surface="gauge"] [data-window]')
+        .text()
+        .replace(/\s+/g, " ")
+        .trim();
+
+    for (const tab of ["buckets", "standing"]) {
+      const bare = await renderClaims(healthyScript(), { tab });
+      const bucketed = await renderClaims(healthyScript(), {
+        tab,
+        bucket: "escalated",
+      });
+      expect(gaugeLine(bare), tab).not.toBe("");
+      // Byte-identical: the bucket facet narrowed the page, not this read.
+      expect(gaugeLine(bucketed), tab).toBe(gaugeLine(bare));
+      // …and the unnarrowed sentence names no narrowing at all.
+      expect(gaugeLine(bare), tab).not.toContain(NARROWED_BY_FILTERS);
+      expect(gaugeLine(bare), tab).not.toContain("domain");
+    }
+  });
+
+  /**
+   * `?source_id=` is narrowed at the gauge's query too, so it is named on the
+   * same rule — in the phrase the app owns for a narrowing an operator can
+   * read off a chip (`NARROWED_BY_FILTERS`), which is the one the claim list's
+   * own line already uses for it. Two surfaces, one spelling (LESSONS 5).
+   */
+  it("names a chip narrowing its read carried, in the app's one phrase for it", async () => {
+    const gaugeLine = (markup: string) =>
+      cheerio
+        .load(markup)('[data-surface="gauge"] [data-window]')
+        .text()
+        .replace(/\s+/g, " ")
+        .trim();
+
+    for (const tab of ["buckets", "standing"]) {
+      const narrowed = await renderWithStub(healthyScript(), {
+        tab,
+        source_id: SOURCE.first,
+      });
+      // Non-vacuous, from the query the page built: the scan really carried it.
+      const carried = narrowed.stub.calls
+        .filter((call) => call.table === T.observations)
+        .flatMap((call) => call.steps)
+        .filter((step) => step.method === "eq" && step.args[0] === "source_id")
+        .map((step) => step.args[1]);
+      expect(carried, tab).toEqual([SOURCE.first]);
+      expect(gaugeLine(narrowed.markup), tab).toContain(NARROWED_BY_FILTERS);
+      expect(gaugeLine(narrowed.markup), tab).not.toBe(
+        gaugeLine(await renderClaims(healthyScript(), { tab })),
+      );
+    }
+  });
+
+  /**
+   * What the fix COSTS, in requests (LESSONS 10, admin-window/DEBT-0012).
+   *
+   * Fact 2 of the two-fact rule is a read this page did not have — the
+   * unnarrowed count INSIDE the gauge's own window — so it is issued, and this
+   * pins where: only where a facet can narrow the gauge at all, exactly once,
+   * as a `head: true` count carrying the window's lower bound and no facet.
+   * An unnarrowed page and a `?bucket=` page issue it not at all.
+   */
+  it("buys fact 2 with one bounded count, and only where a facet narrows this read", async () => {
+    const windowedCounts = (stub: StubClient) =>
+      stub.calls.filter(
+        (call) =>
+          call.table === T.pendingClaims &&
+          call.steps.some((step) => step.method === "gte"),
+      );
+
+    const unnarrowing: Record<string, string>[] = [{}, { bucket: "escalated" }];
+    for (const params of unnarrowing) {
+      const quiet = await renderWithStub(healthyScript(), params);
+      expect(windowedCounts(quiet.stub), JSON.stringify(params)).toHaveLength(0);
+    }
+
+    const narrowed = await renderWithStub(healthyScript(), { domain: "venues" });
+    const counts = windowedCounts(narrowed.stub);
+    expect(counts).toHaveLength(1);
+    const steps = counts[0].steps;
+    // A head count, so `ROW_CAP` cannot reach it and no row is transported.
+    const select = steps.find((step) => step.method === "select");
+    expect(select?.args[1]).toEqual({ head: true, count: "exact" });
+    // Bounded by the window the section states, and by nothing else: it is the
+    // population WITH NO FACET, so the domain the page narrowed by is absent.
+    expect(
+      steps.filter((step) => step.method === "gte").map((step) => step.args[0]),
+    ).toEqual(["observed_at"]);
+    expect(
+      steps.filter((step) => step.method === "eq").map((step) => step.args[0]),
+    ).toEqual([]);
+  });
 });
 
 /* ── the four states ─────────────────────────────────────────────────────── */
@@ -2004,6 +2120,79 @@ describe("which emptiness this is", () => {
     expect(bucketRows(narrowed).map((row) => row.claims)).toEqual(
       RENDERED_BUCKETS.map(() => 0),
     );
+  });
+
+
+  /* ── the same rule, over the GAUGE's set (admin-window/BUG-0163) ──────── */
+
+  /**
+   * The gauge section's set is a WINDOW, not the whole view, so it answers the
+   * two-fact question with a population of its own: the claims this tab holds
+   * INSIDE the gauge's window, with no facet at all.
+   *
+   * Two fixtures per claim (LESSONS 8): a facet that really emptied the
+   * window, and a window that is empty whatever the URL says — which is the
+   * case the page's existing whole-view population would get wrong, since that
+   * count knows nothing about the window's lower bound.
+   */
+  const gaugeCard = (markup: string): string =>
+    cheerio
+      .load(markup)('[data-surface="gauge"] [data-state="empty"]')
+      .text()
+      .replace(/\s+/g, " ")
+      .trim();
+
+  /** A database whose view holds claims and whose gauge WINDOW holds none. */
+  function emptyWindow(): Script {
+    return {
+      // The windowed count is the one read carrying `gte` on the instant, so
+      // this answers the two questions the page asks of the view separately:
+      // the whole view still holds every claim, and the window holds none.
+      [T.pendingClaims]: (call: RecordedCall) =>
+        call.steps.some(
+          (step) => step.method === "gte" && step.args[0] === "observed_at",
+        )
+          ? { data: null, count: 0 }
+          : claimView(CLAIMS)(call),
+      [T.observations]: { data: [] },
+      [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
+    };
+  }
+
+  it("blames the facet on the gauge card when the facet emptied the window", async () => {
+    // A domain this app can spell and this view holds no claim in: the read
+    // carried `.eq("domain", …)` and every figure in the section went to zero
+    // because of it.
+    const narrowed = await renderClaims(healthyScript(), { domain: "idols" });
+    const bare = await renderClaims(healthyScript());
+
+    expect(gaugeCard(narrowed)).not.toBe("");
+    expect(gaugeCard(narrowed)).not.toBe(gaugeCard(bare));
+    // It names the narrowing that emptied it, and the one control that clears
+    // it — the same words, from the same module, as the list's own card.
+    expect(gaugeCard(narrowed)).toContain("idols");
+    expect(gaugeCard(narrowed)).toContain(CLEAR_LABEL);
+    // Non-vacuous: with no facet the section has claims to age, so this card
+    // is not simply what this fixture always renders.
+    expect(gaugeCard(bare)).toBe("");
+  });
+
+  it("blames no facet on the gauge card when the window is empty whatever the URL says", async () => {
+    const script = emptyWindow();
+    const narrowed = await renderClaims(script, { domain: "idols" });
+    const bare = await renderClaims(script);
+
+    expect(gaugeCard(bare)).not.toBe("");
+    // The facet removed nothing from a window that holds nothing, so the card
+    // says exactly what the unfaceted page says.
+    expect(gaugeCard(narrowed)).toBe(gaugeCard(bare));
+    expect(gaugeCard(narrowed)).not.toContain("idols");
+    expect(gaugeCard(narrowed)).not.toContain(CLEAR_LABEL);
+    // …while the LIST, whose set is the whole view, blames the facet on the
+    // same render: two surfaces, two populations, one rule (DEBT-0008). This
+    // is also what makes the assertion above non-vacuous — the URL really did
+    // narrow this page.
+    expect(emptyHook(narrowed)).toBe("narrowing");
   });
 
   it("still names its scope for a facet that really removed rows", async () => {
@@ -4422,15 +4611,29 @@ describe("the reads this page makes", () => {
     const overView = callsOver(stub, T.pendingClaims);
     expect(overView.length).toBeGreaterThan(1);
 
-    // The unnarrowed POPULATION count is the one read that must NOT carry the
-    // facets: it answers "what does this surface hold with no URL facet at
-    // all", and narrowing it would make every population equal its rendered
-    // set and no surface would ever name its scope again (BUG-0141's rule on
-    // `/queues`). Every other read of the view carries the whole narrowing.
+    // The POPULATION counts are the reads that must NOT carry the facets: they
+    // answer "what does this surface hold with no URL facet at all", and
+    // narrowing one would make that population equal its rendered set, so no
+    // surface would ever name its scope again (BUG-0141's rule on `/queues`).
+    // Every other read of the view carries the whole narrowing.
+    //
+    // There are TWO of them, over two different sets, and the window bound is
+    // what tells them apart (admin-window/BUG-0163): the LIST's population is
+    // the whole view, and the GAUGE's is the same view inside the gauge's own
+    // window — a count with no facet is not fact 2 of a surface whose set is a
+    // window, since a window empty because nothing was observed in 90 days
+    // would be reported as one a facet emptied.
     const population = overView.filter(
       (call) => !call.steps.some((step) => step.method === "eq"),
     );
-    expect(population, "the unnarrowed population count").toHaveLength(1);
+    const windowed = population.filter((call) =>
+      call.steps.some((step) => step.method === "gte" && step.args[0] === "observed_at"),
+    );
+    expect(
+      population.filter((call) => !windowed.includes(call)),
+      "the unnarrowed population count",
+    ).toHaveLength(1);
+    expect(windowed, "the unnarrowed population count inside the gauge window").toHaveLength(1);
 
     for (const call of overView.filter((call) => !population.includes(call))) {
       const eqs = call.steps

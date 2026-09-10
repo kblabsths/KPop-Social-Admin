@@ -33,6 +33,7 @@ import {
   CLAIMS_OBJECT,
   readBucketOldest,
   readClaimCount,
+  readClaimCountSince,
   readClaimWindow,
   RENDERABLE_BUCKETS,
   UNRENDERABLE_BUCKET,
@@ -64,7 +65,9 @@ import {
   type SearchParams,
   type UnchippedNarrowing,
 } from "@/lib/claims/filters";
+import { resolveBounds } from "@/lib/gauges/gauge";
 import {
+  PENDING_CLAIMS_DEFAULTS,
   readPendingClaims,
   type PendingClaims,
 } from "@/lib/gauges/pending-claims";
@@ -263,6 +266,14 @@ const BUCKET_CAPTION = {
   tail: ". A bucket with no claims is a real zero.",
 } as const;
 
+/**
+ * What the LIST holds — the noun its narrowed empty card is built on
+ * (`narrowedEmpty`). A constant rather than a literal at the call site, so the
+ * one surface whose wording is pinned byte-for-byte by admin-window/BUG-0160
+ * has one place it is spelled.
+ */
+const LIST_HOLDS = "claims";
+
 /** The h2 above the claim list, per tab. */
 const LIST_TITLE: Record<ClaimsTab, string> = {
   buckets: "All claims",
@@ -426,15 +437,25 @@ function BucketCaption({
  * every one of those is either a chip facet or carries words of its own
  * (`UNCHIPPED_FACETS` is `CLAIM_FACETS` minus `CHIP_FACETS`, and the words are
  * a total `Record` over it).
+ *
+ * **`holds` is the surface's own noun, because two surfaces now take these
+ * words** (admin-window/BUG-0163): the list holds `claims`, the gauge's age
+ * distribution holds `claims in this window`. Only the noun differs — the
+ * narrowings, the one exit and every word around them are this one function's,
+ * so the two cards cannot come to name different narrowings or different ways
+ * out (LESSONS 5). The list passes `LIST_HOLDS`, which is the string it
+ * rendered before the noun was a parameter, so its card is unmoved to the
+ * byte.
  */
 function narrowedEmpty(
+  holds: ReactNode,
   narrowings: readonly UnchippedNarrowing[],
   chipped: boolean,
 ): { holds: ReactNode; filledBy: ReactNode } {
   return {
     holds: (
       <>
-        claims
+        {holds}
         <NarrowedBy narrowings={narrowings} />
         {chipped ? ` ${NOTHING_MATCHED.filters}` : ""}
       </>
@@ -503,9 +524,18 @@ const GAUGE_SURFACE = "gauge";
 const LIST_COUNT_SURFACE = "claims_count";
 const POPULATION_SURFACE = "claims_population";
 
+/**
+ * The GAUGE section's sub-surface, on the same rule as the list's two: the
+ * unnarrowed count of this tab's population INSIDE the gauge's window, which
+ * renders no figure and decides only which words an empty card takes
+ * (admin-window/BUG-0163).
+ */
+const GAUGE_POPULATION_SURFACE = "gauge_population";
+
 /** The eyebrows over those refusals: the fact that could not be read. */
 const LIST_COUNT_EYEBROW = "Matching claims";
 const POPULATION_EYEBROW = "Whole-view count";
+const GAUGE_POPULATION_EYEBROW = "Window population";
 
 /**
  * The name each gauge's WINDOW answers to — `data-window`, the hook a live
@@ -620,14 +650,91 @@ function claimLines(
  * and this page's use of it below is unchanged.
  */
 
+/**
+ * What the GAUGE section may say about its OWN read (admin-window/BUG-0163).
+ *
+ * The section's figures are the figures of a scan `gaugeFilter` narrowed by
+ * source and domain, and until this shape existed its window line said, to the
+ * byte, what it says over the whole table: `?domain=events` moved every figure
+ * on the card — 877 claims to 849 on staging, and `?domain=groups` to 0 —
+ * under "Claims observed since …, read to … — a window of at most 1,000 rows,
+ * not the whole table", with no chip row anywhere on the page to read the
+ * narrowing off (`CHIP_FACETS`, admin-window/BUG-0138).
+ *
+ * It carries the two answers separately, because they are two different
+ * questions and one of them costs a read:
+ *
+ *  - `scope` is what the READ carried, and nothing else. A window line states
+ *    the read (ARCHITECTURE.md §4.3), so it is unconditional on what came
+ *    back: the sentence over a narrowed scan names the narrowing whether the
+ *    scan returned 849 rows or none.
+ *  - `emptied` is the two-fact answer (`lib/url/narrowing.ts`) and governs the
+ *    EMPTY CARDS alone — whether a narrowing this URL applied is what emptied
+ *    this surface, or the window is empty on its own account. Blaming a facet
+ *    for a zero it did not cause is the defect that took four consecutive
+ *    tickets on this page (LESSONS 3).
+ *
+ * Both are decided ONCE, in the page function, from the same object the gauge
+ * reads were handed — never from a second reading of the URL, which is how the
+ * sentence and the query come to disagree.
+ */
+interface GaugeNarrowing {
+  /** The phrase the window line reads after its noun, or null. */
+  scope: string | null;
+  /** The control-less narrowings, for the markup face of the same words. */
+  narrowings: readonly UnchippedNarrowing[];
+  /** Is a narrowing the operator can SEE set on this read? */
+  chipped: boolean;
+  /** Did a narrowing of this URL empty this surface — both facts, ANDed? */
+  emptied: boolean;
+}
+
+/**
+ * An empty gauge card's words: the surface's own noun where the window is
+ * empty on its own account, and the narrowed card's where a URL facet emptied
+ * it — the same words, the same one exit, as the claim list's card two
+ * Sections up (`narrowedEmpty`).
+ */
+function gaugeEmpty(words: EmptyWords, narrowing: GaugeNarrowing): EmptyWords {
+  return narrowing.emptied
+    ? narrowedEmpty(words.holds, narrowing.narrowings, narrowing.chipped)
+    : words;
+}
+
+/** The age distribution's two emptinesses, in the app's own words. */
+const NO_AGES_IN_WINDOW: EmptyWords = {
+  holds: "claims to age in this window",
+  filledBy: "A claim is made and stays pending, and its wait joins the spread.",
+};
+
+const NO_CLAIMS_IN_WINDOW: EmptyWords = {
+  holds: "claims in this window",
+  filledBy:
+    "A claim the resolver cannot apply yet appears here, and its wait is measured.",
+};
+
+/** The standing gauge's per-source table, when it drew no source. */
+const NO_STANDING_SOURCES: EmptyWords = {
+  holds: "sources holding a contradiction in this window",
+  filledBy:
+    "A source's claim contradicts the applied value without displacing it, and the source appears here.",
+};
+
 /** The pending-claims gauge (spec §5, gauge 3 of 6) — the buckets tab's. */
-function PendingClaimsGauge({ gauge }: { gauge: PendingClaims }) {
+function PendingClaimsGauge({
+  gauge,
+  narrowing,
+}: {
+  gauge: PendingClaims;
+  narrowing: GaugeNarrowing;
+}) {
   return (
     <>
       <WindowLine
         gauge={PENDING_WINDOW}
         window={gauge.window}
         measured="Claims observed"
+        scope={narrowing.scope}
       />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
@@ -651,18 +758,16 @@ function PendingClaimsGauge({ gauge }: { gauge: PendingClaims }) {
         measure="age"
         format={duration}
         rows={spreadRows(gauge.age)}
-        empty={{
-          holds: "claims to age in this window",
-          filledBy: "A claim is made and stays pending, and its wait joins the spread.",
-        }}
+        empty={gaugeEmpty(NO_AGES_IN_WINDOW, narrowing)}
+        // The zero this card renders is the one admin-window/BUG-0163 was
+        // filed on: `/claims?domain=groups` emptied the whole gauge and this
+        // card explained it as the resolver having filed nothing, which is the
+        // database's emptiness told over the URL's (LESSONS 3). Which of the
+        // two it says is `narrowing.emptied` — both facts — so a facet that
+        // removed nothing from this window still gets the words above.
         state={
           gauge.age.count === 0
-            ? {
-                kind: "empty",
-                holds: "claims in this window",
-                filledBy:
-                  "A claim the resolver cannot apply yet appears here, and its wait is measured.",
-              }
+            ? { kind: "empty", ...gaugeEmpty(NO_CLAIMS_IN_WINDOW, narrowing) }
             : undefined
         }
       />
@@ -682,6 +787,11 @@ function PendingClaimsGauge({ gauge }: { gauge: PendingClaims }) {
             format: duration,
           },
         ]}
+        // Not narrowed-aware, and the rows say why: they are
+        // `RENDERABLE_BUCKETS` mapped one for one, so this table always draws
+        // five and this card is unreachable in every state. A narrowing clause
+        // here would qualify a BUCKET noun with a claim narrowing, in a
+        // sentence no render can produce (admin-window/BUG-0163).
         empty={{
           holds: "buckets in this window",
           filledBy: "A claim is classified into one, and the bucket appears here.",
@@ -699,7 +809,13 @@ function PendingClaimsGauge({ gauge }: { gauge: PendingClaims }) {
 }
 
 /** The standing-disagreements gauge (spec §5, gauge 5 of 6) — the standing tab's. */
-function StandingGauge({ gauge }: { gauge: StandingDisagreements }) {
+function StandingGauge({
+  gauge,
+  narrowing,
+}: {
+  gauge: StandingDisagreements;
+  narrowing: GaugeNarrowing;
+}) {
   // The names map this gauge labels its splits by is the gauge's OWN: each
   // split was built by joining the `sources` rows the gauge itself read, and
   // `source: null` there means that read returned no row for it. So a named
@@ -721,6 +837,10 @@ function StandingGauge({ gauge }: { gauge: StandingDisagreements }) {
         gauge={STANDING_WINDOW}
         window={gauge.window}
         measured="Claims observed"
+        // The standing tab's gauge reads the same `observations` scan under
+        // the same `gaugeFilter`, so its sentence carries the same narrowing
+        // on the same rule — one defect, both tabs (admin-window/BUG-0163).
+        scope={narrowing.scope}
       />
       <GaugeCard
         label="Live contradictions in this window"
@@ -753,11 +873,7 @@ function StandingGauge({ gauge }: { gauge: StandingDisagreements }) {
             format: duration,
           },
         ]}
-        empty={{
-          holds: "sources holding a contradiction in this window",
-          filledBy:
-            "A source's claim contradicts the applied value without displacing it, and the source appears here.",
-        }}
+        empty={gaugeEmpty(NO_STANDING_SOURCES, narrowing)}
       />
       <p className="type-body text-ink-secondary">
         Tier is the source&rsquo;s CURRENT tier, which drifts — not the tier the
@@ -824,13 +940,40 @@ export default async function ClaimsPage({
   const chipped = hasChipNarrowing(filter);
   const narrowings = unchippedNarrowings(filter);
 
+  // The GAUGE's narrowing is not the page's: `gaugeFilter` drops the bucket
+  // facet, because the gauges read `observations` by source and domain and
+  // know nothing of buckets. It is derived ONCE and handed BOTH to the read
+  // and to the words about the read, so the sentence over the card and the
+  // `.eq()` under it cannot come to disagree (admin-window/BUG-0163). Its own
+  // three answers follow from it and from nothing else: `?bucket=` alone
+  // narrows this section's figures not at all, and its sentence says so by
+  // saying nothing.
+  const gaugeNarrowing = gaugeFilter(filter);
+  const gaugeStructural = hasNarrowingFacet(gaugeNarrowing);
+  const gaugeNarrowings = unchippedNarrowings(gaugeNarrowing);
+  const gaugeChipped = hasChipNarrowing(gaugeNarrowing);
+  // The bounds BOTH gauge reads run under, resolved here rather than twice
+  // inside them, so the window the section states and the window the
+  // population count is taken over are one interval and not two instants a
+  // few microseconds apart (`resolveBounds`, `lib/gauges/gauge.ts`).
+  const gaugeBounds = resolveBounds({}, PENDING_CLAIMS_DEFAULTS);
+
   // ONE composition, every leg independent (§4.3, the interface contract of
   // admin-window/BUG-0138). Nothing here is sequenced: no leg needs an id, a
   // name or a count from another, so the page's read DEPTH is one round trip —
   // plus the gauge's own second leg, which is the gauge's shape and not this
   // page's.
-  const [rows, total, perBucket, oldest, registry, pending, standing, population] =
-    await Promise.all([
+  const [
+    rows,
+    total,
+    perBucket,
+    oldest,
+    registry,
+    pending,
+    standing,
+    population,
+    gaugePopulation,
+  ] = await Promise.all([
       readClaimWindow({ filter: listFilter, limit: CLAIM_WINDOW }),
       // The count the LIST's window line states — under the same narrowing the
       // window read carried, so the sentence and the rows describe one set. On
@@ -861,9 +1004,35 @@ export default async function ClaimsPage({
       // else, so it is carried beside the list rather than replacing it: every
       // claim still renders, named by its id verbatim.
       readSources(),
-      showsBuckets ? readPendingClaims({ filter: gaugeFilter(filter) }) : null,
-      showsBuckets ? null : readStandingDisagreements({ filter: gaugeFilter(filter) }),
+      showsBuckets
+        ? readPendingClaims({
+            filter: gaugeNarrowing,
+            since: gaugeBounds.since,
+            now: gaugeBounds.until,
+          })
+        : null,
+      showsBuckets
+        ? null
+        : readStandingDisagreements({
+            filter: gaugeNarrowing,
+            since: gaugeBounds.since,
+            now: gaugeBounds.until,
+          }),
       structural ? readClaimCount(populationFilter) : null,
+      // Fact 2 for the GAUGE surface, whose set is a WINDOW and not the whole
+      // view: how many claims this tab's population holds inside the same
+      // window, with no facet at all (admin-window/BUG-0163). The page's own
+      // `population` above cannot answer it — it counts the view with no time
+      // bound, so a window that is empty because nothing was observed in 90
+      // days would be reported as a window a facet emptied, which is the
+      // misattribution the two-fact rule exists to prevent (LESSONS 3).
+      //
+      // Issued only where a facet of this URL can narrow the gauge at all, on
+      // the same reasoning `population` is (admin-window/DEBT-0012): where
+      // fact 1 is false no count could change a word this section renders. It
+      // is a bounded `head: true` count and never a row read — the shape
+      // `lib/url/narrowing.ts` prescribes where fact 2 costs a query.
+      gaugeStructural ? readClaimCountSince(gaugeBounds.since, populationFilter) : null,
     ]);
 
   const names = sourceNamesOf(registry.kind === "ok" ? registry.data : []);
@@ -914,7 +1083,7 @@ export default async function ClaimsPage({
         })
       : structural;
   const emptyWords: { holds: ReactNode; filledBy: ReactNode } = listNarrowed
-    ? narrowedEmpty(narrowings, chipped)
+    ? narrowedEmpty(LIST_HOLDS, narrowings, chipped)
     : tab === "standing"
       ? NOTHING_STANDING
       : NOTHING_HELD;
@@ -937,6 +1106,45 @@ export default async function ClaimsPage({
   // arm two sentences take (admin-window/BUG-0135).
   const populationRefused =
     population === null || population.kind === "ok" ? undefined : population;
+
+  // The GAUGE section's own two-fact answer (admin-window/BUG-0163). Fact 1 is
+  // the gauge's structural narrowing; fact 2 is the count above, over the same
+  // window with no facet. `rendered` is the figure this section actually draws
+  // — "Claims in this window" on either tab — so the comparison is between two
+  // counts of one population, one narrowed and one not.
+  //
+  // Where either read did not answer, this falls back to the structural rule
+  // alone and says so on its own sub-surface below, rather than claiming a
+  // scope no read supports — the same shape the list's population takes.
+  const gaugeClaims: number | null =
+    pending !== null && pending.kind === "ok"
+      ? pending.data.claims
+      : standing !== null && standing.kind === "ok"
+        ? standing.data.claims
+        : null;
+  const gaugeEmptied =
+    gaugePopulation !== null && gaugePopulation.kind === "ok" && gaugeClaims !== null
+      ? claimsNarrowed(gaugeNarrowing, {
+          rendered: gaugeClaims,
+          population: gaugePopulation.data,
+        })
+      : gaugeStructural;
+  const gaugeWords: GaugeNarrowing = {
+    // What the READ carried, in the one spelling `lib/claims/filters.ts` owns
+    // for a control-less facet and the one `window-line.tsx` owns for the chip
+    // facets — the same two the list's `listScope` composes, over the gauge's
+    // own filter. Unconditional on what came back: a window line states the
+    // read, not the rows.
+    scope: narrowedTo([
+      ...gaugeNarrowings.map(unchippedPhrase),
+      gaugeChipped ? NARROWED_BY_FILTERS : null,
+    ]),
+    narrowings: gaugeNarrowings,
+    chipped: gaugeChipped,
+    emptied: gaugeEmptied,
+  };
+  const gaugePopulationRefused =
+    gaugePopulation === null || gaugePopulation.kind === "ok" ? undefined : gaugePopulation;
 
   // The rows the list draws — the window read's own rows, in the order the
   // database returned them, named from the registry read.
@@ -1104,15 +1312,25 @@ export default async function ClaimsPage({
       <Section title={GAUGE_TITLE[tab]} surface={GAUGE_SURFACE}>
         {pending !== null ? (
           pending.kind === "ok" ? (
-            <PendingClaimsGauge gauge={pending.data} />
+            <PendingClaimsGauge gauge={pending.data} narrowing={gaugeWords} />
           ) : (
             <StateOf result={pending} eyebrow={GAUGE_LABEL[tab]} />
           )
         ) : standing !== null && standing.kind === "ok" ? (
-          <StandingGauge gauge={standing.data} />
+          <StandingGauge gauge={standing.data} narrowing={gaugeWords} />
         ) : standing !== null ? (
           <StateOf result={standing} eyebrow={GAUGE_LABEL[tab]} />
         ) : null}
+        {/* The count that renders no figure of its own: it decides only which
+            words this section's empty cards take, so its refusal is reported
+            BESIDE the gauge rather than instead of it, exactly as the list's
+            population is (admin-window/BUG-0135). A healthy page publishes it
+            never, and an unnarrowed page does not issue the read at all. */}
+        {gaugePopulationRefused === undefined ? null : (
+          <div data-surface={GAUGE_POPULATION_SURFACE}>
+            <StateOf result={gaugePopulationRefused} eyebrow={GAUGE_POPULATION_EYEBROW} />
+          </div>
+        )}
       </Section>
     </Page>
   );

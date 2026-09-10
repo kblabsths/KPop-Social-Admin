@@ -218,6 +218,8 @@ function narrowed(query: unknown, filter: ClaimsFilter = {}): ClaimQuery {
 interface ClaimQuery {
   eq(column: string, value: string): ClaimQuery;
   neq(column: string, value: string): ClaimQuery;
+  /** The lower bound a WINDOWED count carries (admin-window/BUG-0163). */
+  gte(column: string, value: string): ClaimQuery;
   order(
     column: string,
     options: { ascending: boolean; nullsFirst?: boolean },
@@ -285,6 +287,49 @@ export function readClaimCount(
         client.from(T.pendingClaims).select("*", { head: true, count: "exact" }),
         filter,
       ) as unknown as PromiseLike<{ count: number | null; error: unknown }>,
+    db,
+  );
+}
+
+/**
+ * The same count, bounded to a WINDOW — every claim of this narrowing observed
+ * at or after `since` (admin-window/BUG-0163).
+ *
+ * It is fact 2 of `lib/url/narrowing.ts`' two-fact rule for a surface whose
+ * set is a window rather than the whole view: the gauge on `/claims` renders
+ * the claims of a bounded scan, so "what would this surface hold with no URL
+ * facet at all" has to carry the scan's own lower bound. Asked with the
+ * unnarrowed filter, it answers exactly that — and it is the bounded
+ * `head: true` count that rule prescribes for a fact it costs a query
+ * (admin-window/BUG-0135), never a second row read.
+ *
+ * The bound is `observed_at`, the instant the view carries through from
+ * `observations` — the same column the gauge scan windows on, so the two
+ * figures are counts of one population under one window. A claim whose instant
+ * is unknown is outside every such window (`null >= x` is null), which is the
+ * same claim the scan cannot see either.
+ *
+ * It is a SECOND function rather than an argument on `readClaimCount` because
+ * the two answer different questions — "how many claims does this narrowing
+ * hold" and "how many did this window hold" — and a predicate answering two
+ * questions gets widened by whichever one broke last (LESSONS 4). The
+ * narrowing itself is still declared once: both go through `narrowed`.
+ */
+export function readClaimCountSince(
+  since: string,
+  filter?: ClaimsFilter,
+  db?: SupabaseClient,
+): Promise<DbResult<number>> {
+  return readCount(
+    T.pendingClaims,
+    (client) =>
+      narrowed(
+        client.from(T.pendingClaims).select("*", { head: true, count: "exact" }),
+        filter,
+      ).gte("observed_at", since) as unknown as PromiseLike<{
+        count: number | null;
+        error: unknown;
+      }>,
     db,
   );
 }

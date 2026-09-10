@@ -458,18 +458,54 @@ export function WindowLine(
         window: ReadWindow;
         /** What the window is over, in the app's voice: "Cycles started", … */
         measured: string;
+        /**
+         * What the SCAN was narrowed to, in the app's words, as a phrase that
+         * reads straight after `measured` — `"in the events domain"`, so
+         * "Claims observed" becomes "Claims observed in the events domain" —
+         * or `null`/absent where the scan covered the whole object.
+         *
+         * The same fact `DrawnWindow.scope` carries for a drawn list, and it
+         * is here for the same reason (admin-window/BUG-0163): a scan narrowed
+         * at the query is a different population from the object its sentence
+         * names, so `/claims?domain=events` moved every figure on the gauge
+         * card while this line said, to the byte, what it says over the whole
+         * table. It is filled from the SAME narrowing the query carried, never
+         * from a second reading of the URL.
+         *
+         * **It is the one narrowing declaration in this file that is
+         * OPTIONAL**, and that is a fact about this arm's other call sites
+         * rather than a licence to default it. Every DRAWN call site was
+         * converted when `scope` landed, so that one is required; the scan arm
+         * has six others (`/queues`, `/cycles` x2, `/review`, `/sources` x2)
+         * that admin-window/BUG-0163 may not touch — its criterion 4 pins
+         * every other page's window line as admin-window/BUG-0160 left it. Two
+         * of those six — `/sources`' trend and rejection lines, whose reads
+         * carry `readAwaitingRowTrend({ filter })` — are the same defect one
+         * page over, unfixed here and reported in this ticket's handoff rather
+         * than silently changed.
+         */
+        scope?: string | null;
         shows?: undefined;
       }
-    | { window: DrawnWindow; shows: DrawnSentence; measured?: undefined }
+    | {
+        window: DrawnWindow;
+        shows: DrawnSentence;
+        measured?: undefined;
+        scope?: undefined;
+      }
   ),
 ): ReactNode {
   if (props.shows === undefined) {
     const info = props.window;
     return (
       <WindowParagraph gauge={props.gauge} window={info}>
-        {props.measured} since {absoluteUtc(info.since)}, read to{" "}
-        {absoluteUtc(info.until)} — a window of at most {count(info.limit)} rows,
-        not the whole {info.over}.
+        {/* The narrowing rides through the same `population` the drawn arms'
+            clauses use, so a scan and a list state one narrowing in one
+            spelling, and an unnarrowed scan renders the sentence it always
+            did, to the byte. */}
+        {population(props.measured, props.scope ?? null)} since{" "}
+        {absoluteUtc(info.since)}, read to {absoluteUtc(info.until)} — a window
+        of at most {count(info.limit)} rows, not the whole {info.over}.
         {info.truncated
           ? " The window filled its cap, so every count here is a floor."
           : ""}

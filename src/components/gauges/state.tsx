@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import {
   Empty,
   ErrorLine,
@@ -31,8 +33,16 @@ import {
  * Defined once and shared by the `empty` state and by the REQUIRED `empty`
  * prop of `TrendTable`/`Distribution`, so the two spellings of the same
  * sentence cannot drift apart (admin-window/TASK-0030).
+ *
+ * Both halves are NODES, the widening `ui/Empty` already made for its own two
+ * props: a caller whose sentence names a machine identifier — a facet, a
+ * value the URL narrowed by — sets that one word in the app's identifier face
+ * rather than as bare prose (LOOK_AND_FEEL Voice bar 5, LESSONS 6;
+ * admin-window/BUG-0120, admin-window/BUG-0163). A plain string is still a
+ * node, so every caller that passes one renders exactly what it rendered
+ * before: nothing here wraps either half in an element of its own.
  */
-export type EmptyWords = { holds: string; filledBy: string };
+export type EmptyWords = { holds: ReactNode; filledBy: ReactNode };
 
 export type GaugeState =
   | { kind: "loading"; what: string }
