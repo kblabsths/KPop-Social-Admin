@@ -1,10 +1,10 @@
-# Tracker index (regenerated 2026-09-10T23:27:04Z — do not edit)
+# Tracker index (regenerated 2026-09-10T23:29:13Z — do not edit)
 
 ## open
 - FEAT-0014 [P1][feat][M3] F16 — the second leg of a two-step join runs its chunks concurrently  (scope:src/lib/db/result.ts,src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/db/verdict.ts,tests/offline/db/result.test.ts,tests/live/claims.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts)
 - FEAT-0015 [P1][feat][M3] F14 — paging past the window, on Claims and on Browse  (deps:FEAT-0014(unmet:1) scope:src/app/claims/page.tsx,src/app/browse/page.tsx,src/app/api,src/components/claims,src/components/browse,src/lib/db/claims.ts,src/lib/db/browse.ts,src/lib/db/result.ts,tests/offline/claims/page.test.ts,tests/offline/browse/page.test.ts,tests/offline/absence/pages.test.ts,tests/live/claims.live.test.ts,tests/live/browse.live.test.ts)
 - TASK-0064 [P1][task][M3] The paging affordance: one control, five states, one fetch — drawn only where it can be honoured  (deps:TASK-0063,BUG-0166 scope:src/components/ui/paging.tsx,src/components/ui/index.ts,src/lib/paging/machine.ts,tests/offline/ui/paging.test.ts,tests/offline/paging/machine.test.ts,tests/offline/shell/client-boundary.test.ts)
-- TASK-0065 [P1][task][M3] Claims: the window read takes an explicit offset, and the row shaping becomes an importable leaf  (deps:TASK-0063,TASK-0074,BUG-0166(unmet:1) scope:src/lib/db/claims.ts,src/lib/claims/lines.ts,src/components/claims/claim-list.tsx,src/app/claims/page.tsx,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/offline/claims/population.ts)
+- TASK-0065 [P1][task][M3] Claims: the window read takes an explicit offset, and the row shaping becomes an importable leaf  (deps:TASK-0063,TASK-0074,BUG-0166 scope:src/lib/db/claims.ts,src/lib/claims/lines.ts,src/components/claims/claim-list.tsx,src/app/claims/page.tsx,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/offline/claims/population.ts)
 - TASK-0066 [P1][task][M3] The claims paging route handler: gated like a page, bound-checked out loud, one page per request  (deps:TASK-0065(unmet:1) scope:src/app/api/admin/claims/rows/route.ts,tests/offline/paging/claims-route.test.ts,tests/http/paging.http.test.ts,tests/http/auth.http.test.ts)
 - TASK-0067 [P1][task][M3] /claims draws the affordance only where it can be honoured, and pages past the window  (deps:TASK-0064,TASK-0066(unmet:2) scope:src/app/claims/page.tsx,src/components/claims/paged-claim-list.tsx,src/components/claims/index.ts,src/lib/claims/filters.ts,tests/offline/claims/page.test.ts,tests/offline/claims/filters.test.ts,tests/offline/absence/pages.test.ts,tests/live/claims.live.test.ts)
 - TASK-0068 [P1][task][M3] Browse: the events window takes an offset, and its paging route handler answers one page  (deps:TASK-0066(unmet:1) scope:src/lib/db/browse.ts,src/lib/paging/bounds.ts,src/app/api/admin/browse/rows/route.ts,tests/offline/browse/browse-read.test.ts,tests/offline/paging/browse-route.test.ts,tests/http/paging.http.test.ts)
@@ -21,7 +21,4 @@
 ## claimed
 - DEBT-0016 [P3][debt][patch] newestFirst is exported twice over different key columns  (deps:TASK-0063 scope:src/lib/db/verdict.ts,src/lib/db/cycles.ts,tests/offline/db/layering.test.ts @builder-249 from:DEBT-0015)
 
-## qa
-- TASK-0074 [P1][task][M3] The /claims critical path: the pending-claims gauge stops being a four-deep read  (deps:TASK-0062 scope:src/lib/gauges/pending-claims.ts,src/lib/gauges/standing-disagreements.ts,src/lib/db/claims.ts,src/lib/db/result.ts,src/app/claims/page.tsx,tests/offline/gauges/pending-claims.test.ts,tests/offline/gauges/bounded.test.ts,tests/offline/gauges/standing-disagreements.test.ts,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/review-item/page.test.ts,tests/offline/absence/pages.test.ts,tests/live/claims.live.test.ts,tests/live/sources.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts,agenticflow/tracker/evidence @builder-247 from:TASK-0062)
-
-Totals — claimed:1, done:5, open:16, qa:1. Archived: 252.
+Totals — claimed:1, done:6, open:16. Archived: 252.
