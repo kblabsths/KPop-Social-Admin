@@ -1619,3 +1619,99 @@ describe("readRowsByIds fans out over its chunks, bounded", () => {
     expect(CHUNK_FANOUT).toBeLessThanOrEqual(8);
   });
 });
+
+/**
+ * The fan-out's refusal guarantees ACROSS a batch boundary (QA, TASK-0062).
+ *
+ * The block above grades order, which refusal, and the bound — all inside the
+ * FIRST batch. FEAT-0014 names the one way this change can be wrong as
+ * "concurrency turning a refusal into a partial answer", and the batch
+ * boundary is where that would happen: batch 0 has already collected rows into
+ * `collected` when batch 1 refuses. Nothing pinned that the collected rows are
+ * discarded, nor that a chunk whose REQUEST rejects cannot take the whole
+ * `Promise.all` down as a rejection escaping into a page (ARCHITECTURE §4.1:
+ * a read never throws).
+ */
+describe("readRowsByIds keeps its refusal guarantees across a batch boundary", () => {
+  it("discards rows an earlier batch collected when a LATER batch refuses", async () => {
+    const seam = chunkSeam();
+    const pending = readRowsByIds<TaggedRow>(
+      T.sources,
+      idsSpanning(CHUNK_FANOUT + 2),
+      seam.run,
+      unusedClient(),
+    );
+    await flush();
+
+    // Batch 0 answers in full: four chunks of rows are now in `collected`.
+    for (let index = 0; index < CHUNK_FANOUT; index += 1) {
+      seam.settle(index, rowsFor(index));
+    }
+    await flush();
+    expect(seam.issued).toEqual([0, 1, 2, 3, 4, 5]);
+
+    // Batch 1 refuses. The four chunks already collected must not come back.
+    seam.settle(CHUNK_FANOUT, refusalFrom(tableNotInSchemaCache(T.sources)));
+    seam.settle(CHUNK_FANOUT + 1, rowsFor(CHUNK_FANOUT + 1));
+
+    expect(await pending).toEqual({ kind: "not_provisioned", missing: T.sources });
+  });
+
+  it("returns the earlier BATCH's refusal when two batches each hold one", async () => {
+    const seam = chunkSeam();
+    const pending = readRowsByIds<TaggedRow>(
+      T.sources,
+      idsSpanning(CHUNK_FANOUT + 2),
+      seam.run,
+      unusedClient(),
+    );
+    await flush();
+
+    seam.settle(1, refusalFrom(permissionDenied(T.sources)));
+    for (const index of [0, 2, 3]) seam.settle(index, rowsFor(index));
+    const result = await pending;
+
+    // Batch 1 was never issued, so its refusal could not have been chosen.
+    expect(seam.issued).toEqual([0, 1, 2, 3]);
+    expect(result.kind).toBe("error");
+    if (result.kind === "error") expect(result.reading).toBe(T.sources);
+  });
+
+  it("classifies a chunk whose request REJECTS instead of rejecting the fan-out", async () => {
+    const issued: number[] = [];
+    const result = await readRowsByIds<TaggedRow>(
+      T.sources,
+      idsSpanning(CHUNK_FANOUT + 2),
+      (_db, chunkIds) => {
+        const index = chunkIndexOf(chunkIds);
+        issued.push(index);
+        if (index === 2) {
+          return Promise.reject(
+            Object.assign(new Error("connection reset"), { code: "XX000" }),
+          );
+        }
+        return Promise.resolve(rowsFor(index));
+      },
+      unusedClient(),
+    );
+
+    // A rejection inside `Promise.all` would have escaped as a thrown promise;
+    // it must arrive as this module's own error result instead.
+    expect(result.kind).toBe("error");
+    if (result.kind === "error") expect(result.reading).toBe(T.sources);
+    expect(issued).toEqual([0, 1, 2, 3]);
+  });
+
+  it("classifies a chunk whose run THROWS synchronously inside a batch", async () => {
+    const result = await readRowsByIds<TaggedRow>(
+      T.sources,
+      idsSpanning(CHUNK_FANOUT + 2),
+      (_db, chunkIds) => {
+        if (chunkIndexOf(chunkIds) === 1) throw new Error("built a bad query");
+        return Promise.resolve(rowsFor(chunkIndexOf(chunkIds)));
+      },
+      unusedClient(),
+    );
+    expect(result.kind).toBe("error");
+  });
+});
