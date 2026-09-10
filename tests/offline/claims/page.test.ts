@@ -1326,6 +1326,59 @@ describe("the gauge's window line", () => {
       ).toBe(1);
     }
   });
+
+  /**
+   * The gauge's window line states the scope its own read had
+   * (admin-window/BUG-0163, filed against the landed BUG-0160).
+   *
+   * `gaugeFilter` (`src/app/claims/page.tsx`) hands the source and domain
+   * facets to the gauge read, so `?domain=` narrows every figure this section
+   * draws — measured on staging 2026-09-10 against the landed fix: the same
+   * sentence, to the byte, stands over 877 claims (`/claims`), 849
+   * (`?domain=events`) and 0 (`?domain=groups`). BUG-0160 gave the list's
+   * window line and the bucket caption the words for that narrowing; this
+   * section, whose figures the same facet moved, still says "Claims observed
+   * since …, read to … — a window of at most 1,000 rows, not the whole table"
+   * and names nothing, and the facet has no chip row to read it off
+   * (`CHIP_FACETS`, admin-window/BUG-0138) — so the whole gauge card is a
+   * narrowed figure under an unnarrowed sentence (LOOK_AND_FEEL bar 13, "no
+   * screen claims a mark it did not draw"; LESSONS 2).
+   *
+   * Graded from the QUERY the page built rather than from its copy: the
+   * gauge's own read carried the facet, so the sentence stating the window
+   * those figures came from must carry the facet and the value the URL asked
+   * for — the same oracle the list's line is already held to above.
+   */
+  // A STRICT pin: it fails today, and the day it stops failing vitest turns
+  // this red and sends the reader to admin-window/BUG-0163, whose fixer flips
+  // it to a plain `it(...)`.
+  it.fails("says what narrowed its own read, where no chip row can say it", async () => {
+    const narrowed = await renderWithStub(healthyScript(), { domain: "venues" });
+    const bare = await renderWithStub(healthyScript());
+    const gaugeLine = (rendered: { markup: string }) =>
+      cheerio
+        .load(rendered.markup)('[data-surface="gauge"] [data-window]')
+        .text()
+        .replace(/\s+/g, " ")
+        .trim();
+
+    // Non-vacuous, from the query the page actually built: the gauge's own
+    // read carried the facet, so its figures are figures of that narrowing
+    // and not of the object its sentence names.
+    const narrowedBy = narrowed.stub.calls
+      .filter((call) => call.table === T.observations)
+      .flatMap((call) => call.steps)
+      .filter((step) => step.method === "eq" && step.args[0] === "domain")
+      .map((step) => step.args[1]);
+    expect(narrowedBy).toEqual(["venues"]);
+    expect(gaugeLine(narrowed)).not.toBe("");
+
+    // …and the sentence over those figures says so.
+    expect(gaugeLine(narrowed)).toContain("venues");
+    expect(gaugeLine(narrowed)).toContain("domain");
+    expect(gaugeLine(narrowed)).not.toBe(gaugeLine(bare));
+  });
+
 });
 
 /* ── the four states ─────────────────────────────────────────────────────── */
