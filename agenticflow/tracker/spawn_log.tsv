@@ -23474,3 +23474,32 @@
 2026-09-10T17:44:01Z	agent	-	-	-	-
 # STRANDED	2026-09-10T17:44:25Z	builder	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0159.md
 2026-09-10T17:44:25Z	builder	BUG-0159	16306	400	76285
+2026-09-10T17:44:42Z	qa-adversary	BUG-0159	spawned
+# STRANDED	2026-09-10T17:44:50Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json
+2026-09-10T17:44:50Z	agent	-	-	-	-
+# STRANDED	2026-09-10T17:45:13Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0159.md
+2026-09-10T17:45:13Z	agent	-	-	-	-
+# STRANDED	2026-09-10T17:45:44Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0159.md
+2026-09-10T17:45:44Z	agent	-	-	-	-
+# STRANDED	2026-09-10T17:46:16Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0159.md
+2026-09-10T17:46:16Z	agent	-	-	-	-
+# STRANDED	2026-09-10T17:46:47Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0159.md
+2026-09-10T17:46:47Z	agent	-	-	-	-
+# STRANDED	2026-09-10T17:47:19Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0159.md
+2026-09-10T17:47:19Z	agent	-	-	-	-
+# STRANDED	2026-09-10T17:47:50Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0159.md
+2026-09-10T17:47:50Z	agent	-	-	-	-
+# STRANDED	2026-09-10T17:48:22Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0159.md, tests/offline/sources/qa-probe-0159.test.ts
+2026-09-10T17:48:22Z	agent	-	-	-	-
+# STRANDED	2026-09-10T17:48:53Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0159.md, tests/offline/sources/qa-probe-0159.test.ts
+2026-09-10T17:48:53Z	agent	-	-	-	-
+# STRANDED	2026-09-10T17:49:25Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0159.md
+2026-09-10T17:49:25Z	agent	-	-	-	-
+# STRANDED	2026-09-10T17:49:56Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0159.md, tests/offline/sources/page.test.ts
+2026-09-10T17:49:56Z	agent	-	-	-	-
+# STRANDED	2026-09-10T17:50:28Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json, agenticflow/visions/admin-window/tracker/receipts/BUG-0159.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0159.md
+2026-09-10T17:50:28Z	agent	-	-	-	-
+# STRANDED	2026-09-10T17:50:59Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json, agenticflow/visions/admin-window/tracker/receipts/BUG-0159.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0159.md
+2026-09-10T17:50:59Z	agent	-	-	-	-
+# STRANDED	2026-09-10T17:51:23Z	qa-adversary	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0158.json, agenticflow/visions/admin-window/tracker/receipts/BUG-0159.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0159.md
+2026-09-10T17:51:23Z	qa-adversary	BUG-0159	15301	401	92625
