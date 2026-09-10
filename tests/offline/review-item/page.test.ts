@@ -4,6 +4,7 @@ import { ClaimList, type ClaimLine } from "@/components/claims/claim-list";
 import { EVIDENCE_VIEW_BY_SHAPE } from "@/components/review";
 import { isRecordId } from "@/lib/records/id";
 import { SHAPES, shapeOf } from "@/lib/review/shapes";
+import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
 import { EM_DASH, counted } from "@/lib/format";
 import { T } from "@/lib/db/tables";
 import { h, render, uppercasedIdentifiers } from "../ui/markup";
@@ -2710,6 +2711,100 @@ describe("an evidence cell with nothing in it", () => {
       expect(cell.is("a"), `${surface}: the named source's link`).toBe(true);
       expect(cell.text().trim(), surface).toBe(TICKETMASTER.source);
       expect(cell.find('[aria-label="no value"]'), surface).toHaveLength(0);
+    }
+  });
+
+
+  /**
+   * The other end of the same rule: a source the registry DOES name is a link
+   * that says the name — including a name this app finds odd.
+   *
+   * `sourceLabel` decides what the registry named with `hasVisibleContent`
+   * (INK), and by that rule an em dash IS a name: `tests/offline/sources/names.test.ts`
+   * pins it travelling byte-identical, "the app never invents a uuid for a
+   * label it can read". The two source cells decide the same question with
+   * `isAbsent`, whose dash branch exists to recognise the string the app's OWN
+   * formatters return (`count(null)`, `relativeAge(null).text`) — a different
+   * question, asked of a producer's value (LESSONS 4: one predicate answering
+   * two questions). So one value gets two verdicts and the page announces an
+   * absence for a source it holds the name of.
+   *
+   * admin-window/BUG-0156. Landed `it.fails` (strict: the day the divergence
+   * goes, this XPASSes and sends the reader to the ticket) while it stands; the
+   * fix flips it to a plain `it`.
+   */
+  it.fails("keeps the link and the name for a source whose registry name is an em dash", async () => {
+    const item = reviewItemDataConflict();
+    const markup = await renderItem(
+      conflictScript({
+        [T.sources]: { data: [sourceRow({ source: EM_DASH }), BANDSINTOWN] },
+      }),
+      item.review_item_id,
+    );
+    const $ = cheerio.load(markup);
+    const cell = $(`[data-evidence="${CLAIM_A.observation_id}"]`)
+      .closest("tr")
+      .find("[data-claim-source]");
+    expect(cell, "the row's source cell").toHaveLength(1);
+    // Non-vacuity: the sibling row, whose name is ordinary, is a link.
+    const sibling = $(`[data-evidence="${CLAIM_B.observation_id}"]`)
+      .closest("tr")
+      .find("[data-claim-source]");
+    expect(sibling.is("a"), "the sibling row's link").toBe(true);
+
+    // 1. The operator's one route to that source (LOOK_AND_FEEL bar 10)
+    //    survives a name the app finds odd.
+    expect(cell.is("a"), "an anchor for a source the registry names").toBe(true);
+    expect(cell.attr("href")).toBe(`/sources?source_id=${CLAIM_A.source_id}`);
+    // 2. The row is addressable by the hook the suite reads it through.
+    expect(cell.attr("data-claim-source"), "the row's source hook").not.toBe("");
+    // 3. The page does not announce an absence for a row that has an identity:
+    //    no `no value` label, and no sentence explaining a dash that stands for
+    //    a name (this fixture reads every table, so nothing else dashes).
+    expect(cell.find('[aria-label="no value"]'), "announced as no value").toHaveLength(0);
+    expect($('[data-absence-note="dash"]'), "the dash-meaning line").toHaveLength(0);
+  });
+
+  /**
+   * The same divergence stated as the contract it breaks, on both cells at
+   * once: **one value, one verdict** (LESSONS 11). Whatever `sourceLabel`
+   * hands a cell back VERBATIM is a name that cell links; whatever it answers
+   * with the id for is what the cell may refuse to link.
+   *
+   * admin-window/BUG-0156, the same divergence; also landed `it.fails`.
+   */
+  it.fails("agrees with the label rule about which source names are readable", () => {
+    const ConflictEvidence = EVIDENCE_VIEW_BY_SHAPE.data_conflict_fact;
+    // Both directions in one table (LESSONS 8): two the label rule keeps, two
+    // it answers the id for.
+    for (const name of [EM_DASH, "ticketmaster", "​", "   "]) {
+      const names = sourceNamesOf([{ source_id: ID.sourceTicketmaster, source: name }]);
+      const label = sourceLabel(names, ID.sourceTicketmaster);
+      const named = label === name;
+      for (const [surface, markup] of [
+        [
+          "the review item's evidence table",
+          render(
+            h(ConflictEvidence, {
+              rows: [evidenceRow({ source: label })],
+              unresolved: [],
+              empty: { holds: "claims on this item", filledBy: "The resolver folds them." },
+              canonical: null,
+              dial: null,
+            }),
+          ),
+        ],
+        [
+          "/claims",
+          render(h(ClaimList, { rows: [{ ...CLAIMS_PAGE_LINE, source: label }], label: "Claims" })),
+        ],
+      ] as const) {
+        const cell = cheerio.load(markup)("[data-claim-source]");
+        expect(
+          cell.is("a"),
+          `${surface}: ${JSON.stringify(name)} — sourceLabel ${named ? "kept it as a name" : "answered the id"}, so the cell must ${named ? "link it" : "not link it"}`,
+        ).toBe(named);
+      }
     }
   });
 
