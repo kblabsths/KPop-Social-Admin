@@ -1291,3 +1291,58 @@ live checks cannot pass until Ben applies the migration to **staging**, and they
 are required to REFUSE loudly rather than fall back — an unapplied migration
 shows up as a red line on a receipt, not as silence. Production is not this
 factory's business and is never a check's target.
+
+## 2026-09-10 — M3 exists: paging is bought, search is not, and the blank-source-name class is closed
+
+Four rulings taken at the M2 close, recorded together because they are one
+scoping decision with four edges. Full reasoning: `tracker/milestones/M2.md`
+retro and `docs/vision/ROADMAP.md`.
+
+**(1) There is an M3, and Ben bought it.** Through the M2 close both ROADMAP and
+the verifier's EC14 paragraph said "there is no M3." Ben overruled that on
+2026-09-10: *"not being able to load all claims if I want to is a huge
+oversight"*, paging past the window on **Claims and Browse**, through on-demand
+client-side fetching against a route handler, is a next-milestone item; and the
+milestone's shape is *"as long as everything is complete is good."* M3 is three
+features — paging (SPEC F14), windowed-figure honesty (F15), and the concurrent
+second leg of a two-step join (F16, the unbuilt half of BUG-0138's Answer B).
+**The door this closes:** M3 opens no new front. No new page, no new nav item,
+no schema in either repo, no second Browse view, no door onto `groups`/`idols`,
+no dial, no responsive work. Paging is added to Claims and Browse and to nothing
+else on the team's initiative, and it does not reopen whole-table browsing.
+
+**(2) Paging is now legal, and only the architect may make it so.**
+ARCHITECTURE §4.3 reads *"Paging is not the answer to a cap and none is built:
+nothing in the spec asks for it."* The spec now asks for it, so §4.3, §4 rule 1
+("components never fetch") and §5 (one async boundary per route) are amended by
+the **architect at the start of M3, before any page diff lands** — M3.md EC3
+grades that ordering by requiring the amendment's commit to be an ancestor of
+every page commit. A builder that finds a contract in its way files a blocked
+question; it never interprets one. The door this closes: the amendment is not a
+licence to fetch from components generally. It names paging's boundary and
+nothing wider.
+
+**(3) Search stays out, and the evidence for it stays visible.** Ben ruled
+2026-09-10 that search is a **vision addition**, not a residual: out of scope
+unless he runs `/ship revise`. Two independent user-sim strangers named a search
+box, unprompted, as their first condition for returning
+(`tracker/for-human/M2-usersim-judgment.md`), and M1's stranger walk ended in a
+SQL client for the same reason. That evidence is carried in ROADMAP addressed to
+Ben; **no ticket exists and none is filed**, and paging is not argued as a
+substitute for it — they remove two different exits from the app.
+
+**(4) The blank-source-name class is paid for, and this is its last ticket.**
+BUG-0152 / 0154 / 0156 / 0158 / 0159 were five P3 tickets on one state — a
+`sources.source` that exists but carries no ink — filed one site at a time,
+each fixed with a local `??` instead of a call to the helper that already owns
+the question (`lib/sources/names.ts`). Staging's own
+`CHECK (source ~ '^[a-z0-9_]+$')` forbids the state. Two residual sites
+(`components/sources/registry-table.tsx`, `components/sources/trends.tsx`) are
+closed by **one** ticket (TASK-0060) that routes both through the shared helper.
+**The door this closes:** no sixth per-site bug is filed in this class, in M3 or
+after. The condition on the ruling is the shared helper — a local fallback added
+to either file satisfies nothing. Related and ruled the same way:
+`DrawnWindow.scope`'s comma-joined string (a facet value containing `", "` could
+forge a segment, unreachable today) gets **no ticket**; it is a constraint on
+FEAT-0016, fixed structurally if and only if that work touches the window line's
+scope contract.
