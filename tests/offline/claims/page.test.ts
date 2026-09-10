@@ -3275,6 +3275,53 @@ describe("QA: the whole tab x bucket x source x domain cross-product", () => {
   }
 });
 
+/**
+ * The CODE half of ARCHITECTURE.md §6 trap 4 (admin-window/BUG-0138).
+ *
+ * `src/lib/db/claims.ts` excludes the parked bucket twice — in every query and
+ * again in the predicate — so the rendered set is decided by ONE rule whether
+ * or not the server narrowed. Every other case in this file reads a database
+ * that honours the `.neq`, so the second exclusion is invisible to all of
+ * them: measured on this tree by deleting it, with the whole offline suite
+ * still green. This is the fixture that sees it — a database whose bucket
+ * exclusion did nothing.
+ *
+ * What it grades is the ROWS, and deliberately not the counts: a count is the
+ * database's own word about a query it was asked, and a server that answers
+ * the wrong question cannot be caught by the page that asked the right one.
+ * The rows it hands back CAN be checked, and are.
+ */
+describe("a server that ignored the exclusion", () => {
+  it("still renders no parked claim, and no parked row's source", async () => {
+    const ignored = claimView(QA_CLAIMS, { ignoring: "neq" });
+    const states: Record<string, string>[] = [{}, { tab: "standing" }, { bucket: "agreeing" }];
+    for (const params of states) {
+      const markup = await renderClaims(qaScript({ [T.pendingClaims]: ignored }), params);
+      const where = JSON.stringify(params);
+      expect(markup, where).not.toContain(PARKED);
+      expect(markup, where).not.toContain(QA_SOURCE.parkedOnly);
+      // Not vacuous: the parked rows really did come back — the same fixture
+      // with the exclusion honoured draws the same claims, and this one drew
+      // no MORE of them.
+      const rendered = new Set(claimIds(markup));
+      for (const spec of QA_SPECS) {
+        if (spec.bucket === PARKED) expect(rendered.has(spec.id), spec.id).toBe(false);
+      }
+    }
+
+    // The fixture really is ignoring the exclusion: asked with the page's own
+    // window query, it hands a parked claim straight back.
+    const answered = claimView(QA_CLAIMS, { ignoring: "neq" })({
+      table: T.pendingClaims,
+      steps: [
+        { method: "select", args: ["observation_id, bucket"] },
+        { method: "neq", args: ["bucket", PARKED] },
+      ],
+    });
+    expect(JSON.stringify(answered.data)).toContain(PARKED);
+  });
+});
+
 describe("QA: what the parked bucket alone carries", () => {
   it("offers no chip built from a parked row, and none for the domain facet at all", async () => {
     const markup = await renderClaims(qaScript());
