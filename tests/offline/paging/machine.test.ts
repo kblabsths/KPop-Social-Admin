@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OFFSET_PARAM, PAGE_ROUTES, type PageAnswer } from "@/lib/paging/bounds";
+import { OFFSET_PARAM, PAGE_ROUTES, pageBound, type PageAnswer } from "@/lib/paging/bounds";
 import {
   initialPage,
   pageUrl,
@@ -133,6 +133,33 @@ describe("pageUrl", () => {
     expect(read.get("tab")).toBe("standing");
     expect(read.get("source_id")).toBe("abc");
     expect(read.get(OFFSET_PARAM)).toBe("6");
+  });
+
+  // admin-window/BUG-0166, QA round. The override is only worth anything if it
+  // survives the WIRE READ: the handler asks `searchParams.get()` and hands the
+  // raw string to `pageBound` (the guard that counts, LESSONS 8). Both facets
+  // below defeated the pre-fix concatenation at that seam — measured on
+  // 731cf91's implementation: `offset=99` was read back as "99" (a bound this
+  // press never held), and a facet carrying `#` truncated the query at the
+  // fragment so the bound was read back as `null` and every press refused with
+  // "the request named no `offset`". Nothing else pins the seam, so it is
+  // pinned here rather than left to the first route handler to rediscover.
+  it("hands the handler's own reader a bound it accepts, whatever the facets carry", () => {
+    const SERVER_WINDOW = 50;
+    for (const params of [
+      `${OFFSET_PARAM}=99`,
+      `tab=standing&${OFFSET_PARAM}=99`,
+      "q=x#frag",
+      `q=x#frag&${OFFSET_PARAM}=99`,
+      "q=a\r\nX-Injected: 1",
+    ]) {
+      const url = pageUrl(
+        { ...recorder(() => undefined).deps, params, size: SERVER_WINDOW },
+        SERVER_WINDOW * 2,
+      );
+      const raw = new URL(url, "https://admin.example").searchParams.get(OFFSET_PARAM);
+      expect(pageBound(raw, SERVER_WINDOW), params).toEqual({ kind: "ok", offset: SERVER_WINDOW * 2 });
+    }
   });
 });
 
