@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-10T22:26:17Z — do not edit)
+# Tracker index (regenerated 2026-09-10T22:30:08Z — do not edit)
 
 ## open
 - FEAT-0014 [P1][feat][M3] F16 — the second leg of a two-step join runs its chunks concurrently  (scope:src/lib/db/result.ts,src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/db/verdict.ts,tests/offline/db/result.test.ts,tests/live/claims.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts)
@@ -20,7 +20,7 @@
 - DEBT-0016 [P3][debt][patch] newestFirst is exported twice over different key columns  (deps:TASK-0063(unmet:1) scope:src/lib/db/verdict.ts,src/lib/db/cycles.ts,tests/offline/db/layering.test.ts from:DEBT-0015)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - BUG-0165 [P1][bug][patch] npm test is red in the primary checkout: the README env guard reads an untracked .env.example  (scope:README.md,tests/offline/shell/shell.test.ts @builder-245 from:TASK-0061)
 
 ## blocked
@@ -29,4 +29,4 @@
 ## reopened
 - TASK-0061 [P3][task][patch] README.md still describes the retired dashboard  (scope:README.md,agenticflow/docs/STACK.md from:verifier)
 
-Totals — blocked:1, claimed:1, open:18, reopened:1. Archived: 252.
+Totals — blocked:1, built:1, open:18, reopened:1. Archived: 252.
