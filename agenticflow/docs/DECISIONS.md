@@ -1242,3 +1242,52 @@ set stays under the allowlist alone. `?cycle=`'s unmatched-paste arm spells a
 paste in full and queries nothing, so "not among the 200 newest cycles" is true
 of every spelling of it (BUG-0147), and forcing it through a derivation would
 buy nothing and cost the page its answer to a half-typed URL.
+
+## 2026-09-10 — `/claims` gets its order from the database: `observed_at` is carried through `pending_claims`, and two rendered figures are dropped rather than faked (Ben's ruling, Answer A + A2 on BUG-0138)
+
+`/claims` read the whole claim population on every request — a complete read of
+`pending_claims`, then a nine-chunk second leg fetching each claim's instant back
+out of `observations`, then the registry, then the gauge: ~14 sequential round
+trips, 2.9-3.8 s warm on Ben's own walk. The fix Ben ruled on 2026-09-09 (no
+population read; counts from head requests; the list one DB-ordered window of the
+50 longest-waiting) turned out to be **inexpressible from this repo**: measured
+read-only against staging 2026-09-09, PostgREST exposes no relationship between
+`pending_claims` and `observations` (PGRST200 on all three embed shapes) and
+refuses aggregates on this deployment (PGRST123), and the view carries no age. So
+no Admin-side read can order claims by wait time, group them, or count distinct
+sources per bucket.
+
+**Ben's ruling of 2026-09-10 is Answer A + A2.** (A) The scraper repo carries
+`observations.observed_at` through the `pending_claims` view — one existing
+`NOT NULL` column of a table the view's first CTE already selects from, appended
+to the view's column list, no new join, no new scan, no bucket condition touched.
+The artifact is a **handoff for Ben**
+(`agenticflow/tracker/for-human/M2-handoff-pending-claims-observed-at.md`), never
+an edit from this repo, per AGENTS.md. (A2) The two figures the column does not
+rescue are **dropped, not approximated**: the bucket table's distinct-`sources`
+column goes (it was a builder's addition; spec §4 asks for "buckets with counts,
+age"), and the domain CHIP ROW goes while `?domain=` stays a real server-side
+`.eq()` narrowing on every count and on the window, named in the window line.
+Source chips come from the registry read the page already makes — every
+registered source, real zeros — which is the same chip row `/sources` renders.
+
+**The doors this closes.** (1) Admin will not compute in TypeScript what the
+database can answer: no client-side distinct-count, no client-side wait order, no
+re-sort of a set larger than the window, and specifically no derivation of a
+bucket from `observations` + `field_provenance` + `review_items` (§6 trap 12b
+stands). (2) Where a bounded read is impossible and only an unbounded one would
+render a figure, **the figure is dropped and the page says less** — it is never
+rendered from a truncated population and never labelled as a total. That is the
+generalisation of §4.3's complete-or-refuse rule to the case where neither arm is
+available. (3) `held` on this page is now the view's true count and may exceed
+`ROW_CAP`; the page no longer refuses a view larger than the cap, which is the
+point of the fix rather than a regression.
+
+**Precedent and cost.** This is the same move as admin-window/TASK-0031, where
+five Admin-side mitigations were measured, all five failed, the artifact was
+handed off, and one scraper migration took this page from 8.1 s and `57014` to
+~300 ms with no Admin code change (§6 trap 12). The cost accepted: the ticket's
+live checks cannot pass until Ben applies the migration to **staging**, and they
+are required to REFUSE loudly rather than fall back — an unapplied migration
+shows up as a red line on a receipt, not as silence. Production is not this
+factory's business and is never a check's target.
