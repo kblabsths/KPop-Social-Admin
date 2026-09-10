@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-10T23:41:00Z — do not edit)
+# Tracker index (regenerated 2026-09-10T23:54:38Z — do not edit)
 
 ## open
 - FEAT-0014 [P1][feat][M3] F16 — the second leg of a two-step join runs its chunks concurrently  (scope:src/lib/db/result.ts,src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/db/verdict.ts,tests/offline/db/result.test.ts,tests/live/claims.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts)
@@ -17,7 +17,7 @@
 - BUG-0164 [P3][bug][patch] /queues still carries the exit copy BUG-0161 replaced on /claims  (deps:TASK-0072(unmet:1) scope:src/app/queues/page.tsx,tests/offline/queues/page.test.ts,tests/offline/ui/copy.test.ts from:designer:endgame-walk)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - TASK-0064 [P1][task][M3] The paging affordance: one control, five states, one fetch — drawn only where it can be honoured  (deps:TASK-0063,BUG-0166 scope:src/components/ui/paging.tsx,src/components/ui/index.ts,src/lib/paging/machine.ts,tests/offline/ui/paging.test.ts,tests/offline/paging/machine.test.ts,tests/offline/shell/client-boundary.test.ts @builder-250)
 
-Totals — claimed:1, done:7, open:15. Archived: 252.
+Totals — built:1, done:7, open:15. Archived: 252.
