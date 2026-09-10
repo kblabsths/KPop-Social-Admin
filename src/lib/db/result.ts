@@ -573,6 +573,19 @@ export async function readCount(
  */
 export const ID_CHUNK = 100;
 
+/**
+ * How many chunk requests may be in flight at once (admin-window/TASK-0062).
+ *
+ * `readRowsByIds` walked its chunks ONE AT A TIME, so a two-step join over an
+ * id set spanning n chunks cost n round trips end to end and `/claims` paid
+ * that latency on every load (admin-window/BUG-0138, FEAT-0014). The chunks
+ * are independent reads of the same object, so they are issued together — but
+ * BOUNDED: an unbounded fan-out over a 1,000-id set would open ten concurrent
+ * requests at a database three repos share, which is the failure mode this
+ * constant exists to prevent, not a number to raise when a page feels slow.
+ */
+export const CHUNK_FANOUT = 4;
+
 /** Split a list into chunks of at most `size`. */
 export function chunk<T2>(items: readonly T2[], size = ID_CHUNK): T2[][] {
   if (size <= 0) return [[...items]];
@@ -589,10 +602,27 @@ export function chunk<T2>(items: readonly T2[], size = ID_CHUNK): T2[][] {
  * bounded chunks and concatenates the results.
  *
  * No ids means no query at all — an empty `.in()` is a pointless round trip,
- * and `ok: []` is the honest answer. The chunks are sequential, so a chunk
- * that errors stops the read instead of half-filling it, and the first non-`ok`
- * result comes back unchanged so a missing table still reaches the page as
- * `not_provisioned` naming that table.
+ * and `ok: []` is the honest answer.
+ *
+ * The chunks are issued in BATCHES of at most `CHUNK_FANOUT`, batches in
+ * chunk-index order, and every refusal guarantee the sequential loop made is
+ * unchanged (admin-window/TASK-0062; SPEC F16 — only the clock moves):
+ *
+ *  - the rows concatenate in CHUNK-INDEX order, never completion order, so the
+ *    result is the id set's own order however the requests interleave;
+ *  - a batch holding a non-`ok` returns its LOWEST-INDEX one UNCHANGED —
+ *    which is the answer the sequential loop gave, since it would have reached
+ *    that chunk first — so a missing table still reaches the page as
+ *    `not_provisioned` naming that table, and the rows already collected are
+ *    discarded rather than returned as a half-filled `ok`;
+ *  - no batch is started after a refusal is known, so a refused read still
+ *    issues strictly fewer requests than there are chunks.
+ *
+ * Batches, rather than a promise pool that refills as each request lands: the
+ * pool is equally bounded but its refusal depends on WHICH request happened to
+ * land first, and a guarantee that only usually holds is not a guarantee. Here
+ * the batch is awaited whole and scanned in index order, so the answer is the
+ * same on every run.
  *
  * It lives here, beside the read kinds, rather than in `lib/db/gauges.ts`
  * where campaign admin-window/TASK-0007 first needed it: §4.2's two-step is
@@ -607,11 +637,25 @@ export async function readRowsByIds<Row>(
   db?: SupabaseClient,
 ): Promise<DbResult<Row[]>> {
   if (ids.length === 0) return { kind: "ok", data: [] };
+  const chunks = chunk(ids);
   const collected: Row[] = [];
-  for (const chunkIds of chunk(ids)) {
-    const result = await readRows<Row>(missing, (client) => run(client, chunkIds), db);
-    if (result.kind !== "ok") return result;
-    collected.push(...result.data);
+  for (let start = 0; start < chunks.length; start += CHUNK_FANOUT) {
+    // One batch, issued together. `readRows` never throws and never rejects
+    // (ARCHITECTURE.md §4.1), so `Promise.all` here settles with one
+    // `DbResult` per chunk rather than losing the others to a rejection.
+    const batch = await Promise.all(
+      chunks
+        .slice(start, start + CHUNK_FANOUT)
+        .map((chunkIds) =>
+          readRows<Row>(missing, (client) => run(client, chunkIds), db),
+        ),
+    );
+    // Scanned in chunk-index order, so both the row order and WHICH refusal
+    // comes back are the sequential loop's answers, not the network's.
+    for (const result of batch) {
+      if (result.kind !== "ok") return result;
+      collected.push(...result.data);
+    }
   }
   return { kind: "ok", data: collected };
 }
