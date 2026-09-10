@@ -1,5 +1,5 @@
 import { Chip, Eyebrow } from "@/components/ui";
-import type { FilterFacet } from "@/lib/claims/filters";
+import { CLEAR_EYEBROW, type FilterChoice, type FilterFacet } from "@/lib/claims/filters";
 
 /**
  * The Claims page's filters — campaign admin-window/TASK-0012.
@@ -25,7 +25,23 @@ import type { FilterFacet } from "@/lib/claims/filters";
  * keep (noted on this ticket's handoff rather than done here, the way
  * `queue-filters.ts` noted its own duplicate vocabulary).
  */
-export function FilterBar({ facets }: { facets: readonly FilterFacet[] }) {
+export function FilterBar({
+  facets,
+  clear = null,
+}: {
+  facets: readonly FilterFacet[];
+  /**
+   * The one control that clears EVERY narrowing the URL applied, or `null`
+   * where it applied none (`clearNarrowing`, admin-window/BUG-0161).
+   *
+   * It is a row of this bar rather than a link inside the empty card because
+   * a narrowing with no control is un-clearable in every state, not only the
+   * one where it emptied the list: `?domain=zzz` narrows a page that still
+   * draws rows just as thoroughly, and the operator who wants out of it is on
+   * the same screen either way. The card names this chip; the chip is here.
+   */
+  clear?: FilterChoice | null;
+}) {
   return (
     <div className="flex flex-col gap-2">
       {facets.map((group) => (
@@ -51,6 +67,20 @@ export function FilterBar({ facets }: { facets: readonly FilterFacet[] }) {
           ))}
         </div>
       ))}
+      {clear === null ? null : (
+        <div
+          data-clear-narrowing
+          role="group"
+          aria-label={CLEAR_EYEBROW}
+          className="flex flex-wrap items-center gap-2"
+        >
+          {/* The app's own words, so this eyebrow is `micro` prose and not the
+              mono identifier every chip row above it carries: the row sets no
+              parameter and there is no parameter name to render. */}
+          <Eyebrow label={CLEAR_EYEBROW} />
+          <Chip label={clear.label} href={clear.href} active={clear.active} />
+        </div>
+      )}
     </div>
   );
 }

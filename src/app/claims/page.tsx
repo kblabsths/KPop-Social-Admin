@@ -43,8 +43,10 @@ import type { DbResult } from "@/lib/db/result";
 import { readSources } from "@/lib/db/sources";
 import { count, counted, duration } from "@/lib/format";
 import {
+  CLEARED_BY,
   claimsHref,
   claimsNarrowed,
+  clearNarrowing,
   droppedParams,
   filterBar,
   filterFrom,
@@ -206,15 +208,20 @@ const NOTHING_STANDING: EmptyWords = {
 const NOTHING_MATCHED = {
   /** What the chip facets narrow to, in the window line's own spelling. */
   filters: NARROWED_BY_FILTERS,
-  /** The way out of a chip narrowing: the control is on the screen. */
-  widen: "Widen a filter above; the 'all' chip on any row shows everything again.",
   /**
-   * The way out of a narrowing with no control, said after the parameter's own
-   * name — which is spelled exactly as the URL spells it, so the sentence is
-   * an instruction an operator can carry out in the address bar (bar 11).
+   * The way out — ONE control, named in its own words and rendered by the
+   * filter bar above (`CLEARED_BY` / `clearNarrowing`,
+   * admin-window/BUG-0161).
+   *
+   * It used to be two sentences and neither exited: "Widen a filter above;
+   * the 'all' chip on any row shows everything again" was false the moment
+   * `?domain=` was set — every chip on the page carries that parameter
+   * forward, both `all` chips included — and the second sentence sent the
+   * operator to the address bar, which is not a control this page draws.
+   * The words are imported from beside the control rather than typed here, so
+   * the card cannot name a chip that says something else (LESSONS 5).
    */
-  fromTheUrl:
-    " narrows this page from the URL and has no chip to widen — remove it to see every claim.",
+  clearedBy: CLEARED_BY,
 } as const;
 
 /**
@@ -419,8 +426,15 @@ function BucketCaption({
 
 /**
  * The empty card's words when a narrowing this URL applied is what emptied the
- * list — each narrowing named, and each with the way out that really clears it
- * (admin-window/BUG-0160).
+ * list — each narrowing named (admin-window/BUG-0160), and ONE way out that
+ * really clears every one of them (admin-window/BUG-0161).
+ *
+ * The exit is a control this page DRAWS — the filter bar's clear row, whose
+ * label these words quote — and never an instruction the operator cannot
+ * carry out: `/claims?domain=zzz` zeroed every figure on the page while both
+ * `all` chips carried `domain=zzz` forward, so the card's own advice led back
+ * to the same zeroed page and the only other exits were the sidebar and the
+ * address bar.
  *
  * `chipped` and `narrowings` cannot both be empty here: this arm renders only
  * where `claimsNarrowed` is true, which needs a facet of `CLAIM_FACETS`, and
@@ -442,14 +456,23 @@ function narrowedEmpty(
     ),
     filledBy: (
       <>
-        {chipped ? NOTHING_MATCHED.widen : ""}
+        {NOTHING_MATCHED.clearedBy.chip}
+        {/* Each facet the page renders no chip row for, named by the
+            parameter the URL spells it with — so the sentence says both what
+            the one control clears and why the operator could not find the
+            narrowing that emptied this list. */}
         {narrowings.map((narrowing, index) => (
           <Fragment key={narrowing.facet}>
-            {chipped || index > 0 ? " " : ""}
+            {index === 0
+              ? NOTHING_MATCHED.clearedBy.including
+              : NOTHING_MATCHED.clearedBy.and}
             <Identifier>{narrowing.facet}</Identifier>
-            {NOTHING_MATCHED.fromTheUrl}
+            {index === narrowings.length - 1
+              ? NOTHING_MATCHED.clearedBy.withNoChip
+              : ""}
           </Fragment>
         ))}
+        {NOTHING_MATCHED.clearedBy.end}
       </>
     ),
   };
@@ -937,7 +960,15 @@ export default async function ClaimsPage({
   return (
     <Page title="Claims">
       <ClaimTabs tabs={tabLinks(CLAIMS_PATH, filter, tab)} />
-      <FilterBar facets={filterBar(CLAIMS_PATH, filter, tab, options, labelOf)} />
+      <FilterBar
+        facets={filterBar(CLAIMS_PATH, filter, tab, options, labelOf)}
+        // The exit, on the bar rather than in the empty card: a narrowing this
+        // page renders no chip for is un-clearable in every state it reaches,
+        // not only the one where it emptied the list (admin-window/BUG-0161).
+        // It is `null` where the URL narrowed nothing, so the row appears
+        // exactly where there is something to clear.
+        clear={clearNarrowing(CLAIMS_PATH, filter, tab)}
+      />
       <DroppedParamsLine
         dropped={droppedParams(params, filter, [UNRENDERABLE_BUCKET])}
       />
