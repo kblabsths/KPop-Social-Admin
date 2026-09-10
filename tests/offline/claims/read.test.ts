@@ -7,7 +7,7 @@ import {
   facetOptions,
   isRenderableBucket,
   listClaims,
-  readPendingClaims,
+  readPendingClaimRows,
   selectClaims,
   type ClaimRow,
 } from "@/lib/db/claims";
@@ -233,7 +233,7 @@ describe("the classification read", () => {
 describe("the id-set read the gauges use", () => {
   it("excludes the parked bucket too, and asks for no more rows than ids", async () => {
     const stub = scripted(wholeView());
-    const result = await readPendingClaims(
+    const result = await readPendingClaimRows(
       CLAIMS.map((claim) => claim.observation_id),
       stub.asSupabaseClient(),
     );

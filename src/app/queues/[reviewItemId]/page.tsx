@@ -30,7 +30,7 @@ import {
   StateOf,
 } from "@/components/ui";
 import { claimsHref, sourceHref } from "@/lib/claims/filters";
-import { readPendingClaims, type PendingClaimRow } from "@/lib/db/claims";
+import { readPendingClaimRows, type PendingClaimRow } from "@/lib/db/claims";
 import { readLinkChoices } from "@/lib/db/records";
 import type { DbResult, DbUnavailable } from "@/lib/db/result";
 import {
@@ -658,7 +658,7 @@ export default async function ReviewItemPage({
     evidence.kind === "ok"
       ? evidence.data.claims.map((claim) => claim.observation.observation_id)
       : [];
-  const buckets = await readPendingClaims(claimIds);
+  const buckets = await readPendingClaimRows(claimIds);
 
   // What every source on this page is called — one map, from the evidence
   // read's single registry query, so the header link, the evidence cells and
