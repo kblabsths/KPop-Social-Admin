@@ -80,15 +80,27 @@ export interface PageDeps {
 /**
  * The URL one press asks for — `route?params&offset=<offset>`.
  *
- * The bound is appended LAST and under `OFFSET_PARAM`, so the parameter the
- * handler reads is the one this module wrote even if a surface's serialized
- * facets carry a stale one. A leading `?` or `&` on `params` is tolerated
- * because a caller composing a query string has every reason to include one.
+ * The bound OVERRIDES rather than joins: whatever a surface serialized into
+ * `params`, the query this returns carries `OFFSET_PARAM` exactly ONCE and
+ * that occurrence is this press's bound. It is composed with
+ * `URLSearchParams`, not by concatenation, because appending is not overriding
+ * (admin-window/BUG-0166): `?offset=99&offset=4` is a legal query whose FIRST
+ * occurrence is what a handler reading `searchParams.get()` gets — the stale
+ * 99 — so the server would serve a window this press never asked for, which
+ * `requestPage` cannot notice because it deliberately never reads the answer's
+ * own `offset` back into state.
+ *
+ * `delete` then `append`, rather than `set`, so the bound is still written
+ * LAST: `set` keeps a stale parameter's original position. The surface's own
+ * facets survive in the order the caller wrote them, and a leading `?` or `&`
+ * on `params` is tolerated because a caller composing a query string has every
+ * reason to include one.
  */
 export function pageUrl(deps: PageDeps, offset: number): string {
-  const facets = deps.params.replace(/^[?&]+/, "").replace(/&+$/, "");
-  const query = facets.length > 0 ? `${facets}&` : "";
-  return `${deps.route}?${query}${OFFSET_PARAM}=${encodeURIComponent(String(offset))}`;
+  const facets = new URLSearchParams(deps.params.replace(/^[?&]+/, "").replace(/&+$/, ""));
+  facets.delete(OFFSET_PARAM);
+  facets.append(OFFSET_PARAM, String(offset));
+  return `${deps.route}?${facets.toString()}`;
 }
 
 /** A refusal that adds no rows: the list, the bound and the order all stand. */

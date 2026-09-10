@@ -99,22 +99,40 @@ describe("pageUrl", () => {
     }
   });
 
-  // STRICT XFAIL PIN — admin-window/BUG-0166. `it.fails` passes only while the
-  // assertion below is RED, so the day pageUrl overrides a stale bound this
-  // line turns red instead and sends the reader to the ticket; drop the
-  // `.fails` in the same commit that fixes it.
-  it.fails("carries THIS press's bound even when the surface's facets already spell one", () => {
+  // admin-window/BUG-0166. Was a strict XFAIL pin while pageUrl appended the
+  // bound instead of overriding one the facets already spell; it is a plain
+  // `it` from the commit that made overriding true.
+  it("carries THIS press's bound even when the surface's facets already spell one", () => {
     // The bound the handler reads must be the one this module wrote, whatever
     // a surface serialized into `params`. A handler asks `searchParams.get()`,
     // which answers with the FIRST occurrence, so appending is not overriding:
     // a stale `offset` in the facets is the bound the server would honour, and
-    // the press would ask for a page the surface already holds.
-    for (const params of [`${OFFSET_PARAM}=99`, `tab=standing&${OFFSET_PARAM}=99`]) {
+    // the press would ask for a page the surface already holds. `getAll` is
+    // the API that can see the duplicate at all, so both are asserted.
+    for (const params of [
+      `${OFFSET_PARAM}=99`,
+      `tab=standing&${OFFSET_PARAM}=99`,
+      `?${OFFSET_PARAM}=99`,
+      `${OFFSET_PARAM}=99&${OFFSET_PARAM}=7`,
+    ]) {
       const url = pageUrl({ ...recorder(() => undefined).deps, params }, 4);
       const read = new URL(url, "https://admin.example").searchParams;
       expect(read.get(OFFSET_PARAM), params).toBe("4");
       expect(read.getAll(OFFSET_PARAM), params).toEqual(["4"]);
     }
+  });
+
+  it("keeps the surface's own facets, in the caller's order, around an overridden bound", () => {
+    // Overriding removes the stale bound and NOTHING else: a facet the
+    // operator chose is still there, still spelled as sent, still in the order
+    // the caller serialized it — the bound is simply written last.
+    const params = `tab=standing&${OFFSET_PARAM}=99&source_id=abc`;
+    const url = pageUrl({ ...recorder(() => undefined).deps, params }, 6);
+    const read = new URL(url, "https://admin.example").searchParams;
+    expect([...read.keys()]).toEqual(["tab", "source_id", OFFSET_PARAM]);
+    expect(read.get("tab")).toBe("standing");
+    expect(read.get("source_id")).toBe("abc");
+    expect(read.get(OFFSET_PARAM)).toBe("6");
   });
 });
 
