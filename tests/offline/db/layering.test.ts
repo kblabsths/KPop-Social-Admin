@@ -399,6 +399,31 @@ function importLines(file: string): string[] {
     .filter((line) => IMPORT_LINE.test(line));
 }
 
+/**
+ * The paging leaf's directory (admin-window/TASK-0063). §4.3 read kind 3 puts
+ * every decision paging makes — the bound value class, the answer shape, the
+ * one-press driver — in a directiveless module the offline suite drives
+ * directly, and rule 7 is what keeps `fetchJson` a dependency handed IN rather
+ * than a database this layer could reach.
+ *
+ * The whole directory joins the leaf set, enumerated rather than listed
+ * file-by-file, so a module added beside `bounds.ts` and `machine.ts` is
+ * graded by this rule instead of quietly sitting outside it. The test below
+ * pins that the enumeration really found both, so it can never empty into a
+ * vacuous pass.
+ */
+const PAGING_LEAF_DIR = "src/lib/paging";
+
+function pagingLeaves(): string[] {
+  const dir = path.join(repoRoot, PAGING_LEAF_DIR);
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((name) => name.endsWith(".ts") && !name.endsWith(".d.ts"))
+    .map((name) => `${PAGING_LEAF_DIR}/${name}`)
+    .sort();
+}
+
 const LEAF_MODULES = [
   "src/lib/edit/config.ts",
   // The verdict decision envelope: the one shape `settle_review_item` reads,
@@ -431,6 +456,7 @@ const LEAF_MODULES = [
   // precisely a pure function no leaf could reach (common violations row 17),
   // and an import of `lib/db/**` from here would put it back there.
   "src/lib/url/text.ts",
+  ...pagingLeaves(),
 ];
 
 /**
@@ -517,6 +543,15 @@ describe("the pure domain leaves", () => {
         true,
       );
     }
+  });
+
+  it("counts the whole paging leaf directory in the leaf set", () => {
+    // The enumeration's own non-vacuity pin: `pagingLeaves()` returns [] for a
+    // directory that is absent or renamed, which would drop the paging leaf
+    // out of every rule below without failing one of them. §4.3 read kind 3
+    // names these two modules, so the set must hold them by name.
+    expect(LEAF_MODULES).toContain(`${PAGING_LEAF_DIR}/bounds.ts`);
+    expect(LEAF_MODULES).toContain(`${PAGING_LEAF_DIR}/machine.ts`);
   });
 
   it("imports nothing but another leaf, in any leaf", () => {
