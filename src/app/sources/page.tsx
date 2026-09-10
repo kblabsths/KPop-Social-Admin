@@ -21,6 +21,7 @@ import {
 } from "@/lib/db/sources";
 import { readAwaitingRowTrend } from "@/lib/gauges/pending-claims";
 import { readRejectionStampGauge } from "@/lib/gauges/settled-values";
+import { sourceNamesOf } from "@/lib/sources/names";
 import { SOURCE_FACET } from "@/lib/sources/routes";
 import { isSurfaceNarrowed } from "@/lib/url/narrowing";
 
@@ -180,8 +181,13 @@ export default async function SourcesPage({
   const held = sources.kind === "ok" ? sources.data : [];
   const shown = selectSources(held, filter);
 
-  const nameOf = (sourceId: string): string | null =>
-    held.find((source) => source.source_id === sourceId)?.source ?? null;
+  // What the registry calls each source, from the COMPLETE registry read
+  // above. The trend below labels its rows with it through `sourceLabel`, the
+  // app's one rule for what a source is called (`lib/sources/names.ts`): this
+  // page hands over the registry's answer and decides nothing about it
+  // (admin-window/BUG-0158 — the per-row `find(...)?.source ?? null` this
+  // replaced could not tell a missing row from a blank name).
+  const names = sourceNamesOf(held);
 
   // Which emptiness this is, from TWO facts and not from the URL alone
   // (ARCHITECTURE.md §4.3, admin-window/DEBT-0008). Fact 1 is structural: a
@@ -247,7 +253,7 @@ export default async function SourcesPage({
 
       <Section title="Awaiting-row trend" surface={AWAITING_SURFACE}>
         {trend.kind === "ok" ? (
-          <AwaitingRowTrendSection trend={trend.data} filter={filter} nameOf={nameOf} />
+          <AwaitingRowTrendSection trend={trend.data} filter={filter} names={names} />
         ) : (
           <StateOf result={trend} eyebrow={AWAITING_LABEL} />
         )}

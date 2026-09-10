@@ -72,6 +72,49 @@ describe("fieldProvenanceOf", () => {
     );
   });
 
+  /**
+   * The OTHER way the registry can name no source (admin-window/BUG-0158): a
+   * row that EXISTS and whose name has no ink in it. This leaf spelled
+   * `nameOf.get(row.source_id) ?? row.source_id`, and `??` sees only `null`, so
+   * that row took neither branch and the provenance line named its source with
+   * nothing at all. What a source is CALLED is `sourceLabel`'s one rule
+   * (`lib/sources/names.ts`), and the leaf asks it now.
+   */
+  it("says the id when the registry row exists and its name has no ink", () => {
+    for (const blank of ["", "   ", "\u200b"]) {
+      const facts = fieldProvenanceOf(
+        [
+          decision({ field: "title", source_id: ID.sourceTicketmaster }),
+          decision({ field: "starts_at", source_id: ID.sourceBandsintown }),
+        ],
+        [
+          { source_id: ID.sourceTicketmaster, source: blank },
+          { source_id: ID.sourceBandsintown, source: "bandsintown" },
+        ],
+      );
+      const nameOn = (field: string) => {
+        const fact = facts.get(field);
+        return fact && "source" in fact ? fact.source : null;
+      };
+      expect(nameOn("title"), JSON.stringify(blank)).toBe(ID.sourceTicketmaster);
+      // Non-vacuity in the same read: the sibling fact still names its source.
+      expect(nameOn("starts_at"), JSON.stringify(blank)).toBe("bandsintown");
+    }
+  });
+
+  it("leaves a name the registry wrote exactly as it wrote it", () => {
+    // The other direction (LESSONS 8): ink travels byte-identical — never
+    // trimmed, never swapped for the id.
+    const padded = "  ticketmaster  ";
+    const fact = fieldProvenanceOf(
+      [decision({ field: "title", source_id: ID.sourceTicketmaster })],
+      [{ source_id: ID.sourceTicketmaster, source: padded }],
+    ).get("title");
+    const name = fact && "source" in fact ? fact.source : null;
+    expect(name).toBe(padded);
+    expect(name).toHaveLength(padded.length);
+  });
+
   it("answers to the admin when the fact is pinned, whatever source is on the row", () => {
     // `admin_locked` is "a human pinned this field, so resolution leaves it
     // alone" — the authority an operator must see is that human (spec §8).
@@ -163,14 +206,24 @@ describe("the layering this leaf exists to keep", () => {
     expect(files).toContain("src/components/records/record-fields.tsx");
   });
 
-  it("keeps the leaf below lib/db: it imports nothing at all", () => {
+  it("keeps the leaf below lib/db: it imports nothing but another leaf", () => {
     // ARCHITECTURE §4 rule 7 — a pure domain leaf reaches no database, not
     // even by a type-only import, so no directory-level cycle can be written
     // into it. `lib/db/records.ts` imports THIS; never the other way.
+    //
+    // A CLOSED one-entry allowlist since admin-window/BUG-0158, exactly as
+    // `tests/offline/sources/names.test.ts` became one at BUG-0154: the single
+    // permitted edge is to another LEAF (rule 7 ¶2), `lib/sources/names.ts`,
+    // which owns what a source is called and itself reaches nothing but
+    // `lib/verdict/decision.ts`. `lib/db/**`, `@supabase/supabase-js`,
+    // `process.env`, React and every package still redden here, because the
+    // assertion is the whole list and not a filtered one.
     const imports = codeLines(LEAF).filter((line) =>
       /^\s*import\b|\brequire\s*\(|\bfrom\s+["']/.test(line),
     );
-    expect(imports).toEqual([]);
+    expect(imports.map((line) => line.match(/["']([^"']*)["']/)?.[1] ?? line.trim())).toEqual([
+      "@/lib/sources/names",
+    ]);
   });
 
   it("keeps the record components off lib/db and off the client library", () => {

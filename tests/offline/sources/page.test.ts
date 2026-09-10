@@ -29,6 +29,7 @@ import {
   RUNS,
   SOURCE,
   SOURCES,
+  SOURCE_NAME,
   adjudications,
   awaitingRowClaims,
   daysAgo,
@@ -1040,6 +1041,67 @@ describe("the trend tables' own links", () => {
     expect(anchors.length, "no trend rows linked anywhere").toBeGreaterThan(0);
     for (const anchor of anchors) {
       expectDrawnAsLinkAtRest(classesOf($(anchor)), "a trend row's source");
+    }
+  });
+
+  /**
+   * What a trend row is CALLED is `sourceLabel`'s one rule
+   * (`src/lib/sources/names.ts`) — asked over a names map, not spelled here as
+   * `{name ?? sourceId}` (admin-window/BUG-0158, QA's attack on BUG-0156).
+   * `??` sees only `null`, so a registry row that EXISTED with an ink-less
+   * name took neither branch and both trends drew an anchor with nothing to
+   * read and nothing visible to click, beside sibling rows naming their source.
+   *
+   * BOTH tables, because they label from DIFFERENT reads: the awaiting-row
+   * trend takes the map this page builds from its own registry read, the
+   * settled-values trend takes the one the gauge built from the `sources` rows
+   * IT read (`RejectionSection`). The script blanks the same source in both
+   * responses, so a fix that reached only one of them fails here.
+   */
+  for (const blank of ["", "   ", "\u200b"]) {
+    it(`names a source the registry names ${JSON.stringify(blank)} by its id, in both trends`, async () => {
+      const blanked = SOURCES.map((row) =>
+        row.source_id === SOURCE.ticketmaster ? { ...row, source: blank } : row,
+      );
+      const markup = await renderSources(
+        healthyScript({
+          [T.sources]: [
+            { data: blanked, count: blanked.length },
+            { data: blanked },
+          ],
+        }),
+      );
+      for (const table of [AWAITING_BY_SOURCE, REJECTED_BY_SOURCE]) {
+        // The id VERBATIM, which is the only true thing left to say about it.
+        expect(trendRow(markup, table, SOURCE.ticketmaster)[0], table).toBe(
+          SOURCE.ticketmaster,
+        );
+        // Non-vacuity, in the same read: the sibling still reads as its name,
+        // so this is a per-ROW fallback and not a blanked trend.
+        expect(trendRow(markup, table, SOURCE.bandsintown)[0], table).toBe(
+          SOURCE_NAME[SOURCE.bandsintown],
+        );
+      }
+    });
+  }
+
+  it("leaves a registry name with ink in it exactly as the registry wrote it", async () => {
+    // The other direction (LESSONS 8): a name the app can read is never
+    // trimmed and never swapped for the id, on either trend.
+    const padded = "  ticketmaster  ";
+    const rows = SOURCES.map((row) =>
+      row.source_id === SOURCE.ticketmaster ? { ...row, source: padded } : row,
+    );
+    const markup = await renderSources(
+      healthyScript({
+        [T.sources]: [{ data: rows, count: rows.length }, { data: rows }],
+      }),
+    );
+    for (const table of [AWAITING_BY_SOURCE, REJECTED_BY_SOURCE]) {
+      const $ = cheerio.load(markup);
+      const anchor = $(`table[aria-label="${table}"] [data-trend-source="${SOURCE.ticketmaster}"]`);
+      expect(anchor.text(), table).toBe(padded);
+      expect(anchor.text(), table).toHaveLength(padded.length);
     }
   });
 });

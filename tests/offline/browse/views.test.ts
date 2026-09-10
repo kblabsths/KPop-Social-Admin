@@ -370,11 +370,13 @@ describe("the join", () => {
    * source_id: "s1", source: "" }]` yields `[""]` here while the rule answers
    * `"s1"`.
    *
-   * Landed `it.fails` (strict) while the divergence stands; the fix flips it to
-   * a plain `it`. Non-vacuity is the test above (no registry row at all) and
-   * the two below it, which the rule and this join already agree on.
+   * Landed `it.fails` (strict) while the divergence stood; admin-window/BUG-0158
+   * made the join ask `sourceLabel` over the map `sourceNamesOf` builds from
+   * the same `sources` rows, so this is a plain `it`. Non-vacuity is the test
+   * above (no registry row at all), the two below it, and the case after this
+   * one, which grades a blank row and a named row in the SAME join.
    */
-  it.fails("says what the label rule says for a registry row that names nothing readable", () => {
+  it("says what the label rule says for a registry row that names nothing readable", () => {
     for (const name of ["", "   ", "\u200b"]) {
       const rows = joinBrowseRows({
         events: [event("e1")],
@@ -385,6 +387,32 @@ describe("the join", () => {
       expect(rows[0].sources, JSON.stringify(name)).toEqual([
         sourceLabel(sourceNamesOf([{ source_id: "s1", source: name }]), "s1"),
       ]);
+    }
+  });
+
+  /**
+   * Both directions in ONE join (LESSONS 8), which is what makes the case
+   * above non-vacuous per ROW rather than per read: the blank-named source
+   * falls back to its id while its sibling's name travels byte-identical —
+   * never trimmed, never swapped for an id the app could have shown instead.
+   */
+  it("falls back per source, leaving a named sibling in the same read its name", () => {
+    for (const blank of ["", "   ", "\u200b"]) {
+      const rows = joinBrowseRows({
+        events: [event("e1")],
+        venues: [],
+        provenance: [
+          decision("e1", "title", "s1"),
+          decision("e1", "starts_at", "s2"),
+        ],
+        sources: [
+          { source_id: "s1", source: blank },
+          { source_id: "s2", source: "  bandsintown  " },
+        ],
+      });
+      expect(rows[0].sources, JSON.stringify(blank)).toEqual(
+        ["s1", "  bandsintown  "].sort(),
+      );
     }
   });
 

@@ -3,15 +3,19 @@
  * admin-window/TASK-0015).
  *
  * A PURE DOMAIN LEAF alongside `views.ts` (ARCHITECTURE.md §4 rule 7): it
- * imports nothing that can reach a database, and it declares the row
+ * reaches nothing that can reach a database, and it declares the row
  * interfaces BOTH sides need — `lib/db/browse.ts` reads rows of these shapes
- * and hands them straight back here to be ordered and joined.
+ * and hands them straight back here to be ordered and joined. Its one import
+ * is another leaf, which rule 7 ¶2 permits: what a source is CALLED is
+ * `sourceLabel`'s one rule (`lib/sources/names.ts`), and this file spelled its
+ * own `?? sourceId` beside it until admin-window/BUG-0158.
  *
  * Why a join in TypeScript at all: PostgREST embedding is available only where
  * a foreign key exists, and §4.2's standing rule is "fetch by id sets and join
  * in TypeScript" — query A returns rows, query B takes its ids, the join
  * happens here where it unit-tests offline against captured fixtures.
  */
+import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
 
 /**
  * The events window: the columns `events` itself owns, including the arrival
@@ -196,16 +200,21 @@ export function currentDecisions<Row extends EventProvenanceRow>(
  * fact the row still holds, never the union of every decision ever made on it,
  * and nothing at all from a fact whose latest decision is a verdict unset.
  *
- * A `source_id` with no matching `sources` row keeps its id verbatim: the
- * decision behind the field is real whether or not the source row was read,
- * and dropping it would silently understate how many sources are behind a row.
+ * A `source_id` the registry names nothing readable for keeps its id verbatim,
+ * and that is `sourceLabel`'s rule rather than this file's (`lib/sources/names.ts`,
+ * admin-window/BUG-0158): the decision behind the field is real whether or not
+ * a `sources` row came back for it, and dropping it would silently understate
+ * how many sources are behind a row. The two ways the registry can name no
+ * source — no row at all, and a row whose name has no ink in it — get the one
+ * answer the rule gives, not a `??` retyped here that only sees the first.
  */
 export function joinBrowseRows(input: BrowseJoinInput): BrowseRow[] {
   const venueOf = new Map<string, string | null>();
   for (const row of input.venues) venueOf.set(row.event_id, row.venue_name);
 
-  const nameOf = new Map<string, string>();
-  for (const row of input.sources) nameOf.set(row.source_id, row.source);
+  // The names map this join labels by: the registry rows the caller's own
+  // `sources` read returned, exactly as `sourceNamesOf` records them.
+  const sourceNames = sourceNamesOf(input.sources);
 
   const sourceIdsOf = new Map<string, Set<string>>();
   for (const row of currentDecisions(input.provenance)) {
@@ -219,7 +228,7 @@ export function joinBrowseRows(input: BrowseJoinInput): BrowseRow[] {
 
   return arrivalOrder(input.events).map((event) => {
     const names = [...(sourceIdsOf.get(event.event_id) ?? new Set<string>())]
-      .map((sourceId) => nameOf.get(sourceId) ?? sourceId)
+      .map((sourceId) => sourceLabel(sourceNames, sourceId))
       .sort(compare);
     return {
       event_id: event.event_id,
