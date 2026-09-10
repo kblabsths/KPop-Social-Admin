@@ -7,9 +7,9 @@ import {
   type DbUnavailable,
 } from "./result";
 import { T } from "./tables";
+import { kindsNarrowedBy } from "../review/queue-filters";
 import {
   KINDS,
-  SHAPES,
   columnsOfShape,
   queueOrder,
   selectItems,
@@ -153,17 +153,37 @@ export interface ReviewQueues {
   items: ReviewItemRow[];
   /**
    * Per kind, the rows the TABLE holds with no URL facet at all — a count,
-   * never rows. `ok` is the number the database gave; a non-`ok` arm is THIS
-   * kind's population refusing, and it is the CALLER's to report beside the
-   * rows, not the read's to propagate as its own refusal
-   * (admin-window/BUG-0135: a leg that renders no row of its own may not
-   * delete the rows the URL's own complete read returned).
+   * never rows. `ok` is the number the database gave; a refusal is THIS kind's
+   * population refusing, and it is the CALLER's to report beside the rows, not
+   * the read's to propagate as its own refusal (admin-window/BUG-0135: a leg
+   * that renders no row of its own may not delete the rows the URL's own
+   * complete read returned).
    *
    * Both kinds are always present, so an unreadable population is a named
-   * refusal and never a gap.
+   * refusal and never a gap — and a population nobody asked for is the third
+   * state, `not_asked`, never a zero.
    */
-  population: Record<Kind, DbResult<number>>;
+  population: Record<Kind, KindPopulation>;
 }
+
+/**
+ * One kind's population: a number, a refusal, or **the question never asked**
+ * (campaign admin-window/DEBT-0012).
+ *
+ * Three states, because there are three facts and a reader that conflated any
+ * two of them would render a lie:
+ *
+ * - `{ kind: "ok", data: n }` — `n` rows, counted by the database.
+ * - a `DbUnavailable` arm — the count was asked and refused. The caller reports
+ *   it beside the rows (admin-window/BUG-0135) and falls back to fact 1 alone.
+ * - `{ kind: "not_asked" }` — no count was issued for this kind, because this
+ *   URL does not structurally narrow it (`kindsNarrowedBy`): fact 1 is false,
+ *   `isSurfaceNarrowed` ANDs the two facts, so no count could change a word
+ *   this block renders. **Not a refusal:** nothing failed, nothing is missing
+ *   from the page, and there is nothing for the caller to report. **Not a
+ *   zero:** a zero is a claim about the table, and this state makes none.
+ */
+export type KindPopulation = DbResult<number> | { kind: "not_asked" };
 
 /**
  * One shape's whole-table row count: `{ head: true, count: "exact" }`, no rows.
@@ -195,7 +215,8 @@ function countQuery(db: SupabaseClient, shape: Shape) {
 }
 
 /**
- * Each kind's whole-table population, one COUNT read per shape.
+ * Each kind's whole-table population, one COUNT read per shape — **for the
+ * kinds whose population this URL's rendering actually consults.**
  *
  * The shapes are disjoint and exhaustive, so a kind's figure is the SUM of the
  * counts the database gave — never a subtraction from a table total and never
@@ -204,36 +225,59 @@ function countQuery(db: SupabaseClient, shape: Shape) {
  * not a number at all (ARCHITECTURE.md §4.3; a null count is a refusal, never
  * a zero).
  *
- * The reads are issued in `SHAPES` order and answered together; one refusing
- * says nothing about the others, and the kind that did not need it is
- * unaffected.
+ * The reads are issued in shape order within kind order — which is `SHAPES`
+ * order — and answered together; one refusing says nothing about the others,
+ * and the kind that did not need it is unaffected.
  *
- * **It takes no filter, and that is the point** — the source facet included
- * (admin-window/BUG-0141). The population is what a kind holds with NO url
- * facet at all, which is what lets a source carrying no items render "nothing
- * matched" rather than "this queue is empty" (admin-window/BUG-0133). Narrowing
- * these counts by the URL would make every block's population equal its
- * rendered set, and no block would ever name its scope again.
+ * **Which kinds, and why not all of them** (campaign admin-window/DEBT-0012).
+ * The population exists to answer fact 2 of the four-state rule, and
+ * `isSurfaceNarrowed` ANDs it with fact 1 — so for a kind this URL does not
+ * structurally narrow, fact 1 is false and no count could change a word the
+ * block renders. `kindsNarrowedBy` in `src/lib/review/queue-filters.ts` is that
+ * question, imported rather than retyped, so the set counted here and the set
+ * the page consults cannot come apart. On `/queues?kind=decision` that is the
+ * signal kind alone (one count instead of three); on `?kind=signal`,
+ * `?queue=entity_link` and `?shape=entity_link_source_pattern` it is the
+ * decision kind alone (two instead of three); on a `?status=`/`?source_id=` URL
+ * both kinds are narrowed and all three counts are issued, because both blocks
+ * really do have a zero to explain.
+ *
+ * **The counts it does issue are never narrowed by the filter** — the source
+ * facet included (admin-window/BUG-0141). The population is what a kind holds
+ * with NO url facet at all, which is what lets a source carrying no items
+ * render "nothing matched" rather than "this queue is empty"
+ * (admin-window/BUG-0133). Narrowing these counts by the URL would make every
+ * block's population equal its rendered set, and no block would ever name its
+ * scope again. The filter reaches this function to decide WHICH kinds are
+ * asked, and for nothing else — no `.eq` below comes from it.
  */
 async function readPopulation(
+  filter: ReviewItemFilter,
   db?: SupabaseClient,
-): Promise<Record<Kind, DbResult<number>>> {
+): Promise<Record<Kind, KindPopulation>> {
+  const asked = kindsNarrowedBy(filter);
+  // One leg per shape of an asked kind, in `SHAPES` order (`KINDS` order
+  // outside, `shapesOfKind` inside), all issued together.
+  const legs = asked.flatMap((kind) =>
+    shapesOfKind(kind).map((shape) => ({ kind, shape })),
+  );
   const answered = await Promise.all(
-    SHAPES.map((shape) =>
-      readCount(T.reviewItems, (client) => countQuery(client, shape), db),
+    legs.map((leg) =>
+      readCount(T.reviewItems, (client) => countQuery(client, leg.shape), db),
     ),
   );
-  const byShape = {} as Record<Shape, DbResult<number>>;
-  SHAPES.forEach((shape, index) => {
-    byShape[shape] = answered[index];
-  });
 
-  const population = {} as Record<Kind, DbResult<number>>;
+  const population = {} as Record<Kind, KindPopulation>;
   for (const kind of KINDS) {
+    if (!asked.includes(kind)) {
+      population[kind] = { kind: "not_asked" };
+      continue;
+    }
     let total = 0;
     let refused: DbUnavailable | null = null;
-    for (const shape of shapesOfKind(kind)) {
-      const counted = byShape[shape];
+    for (let index = 0; index < legs.length; index += 1) {
+      if (legs[index].kind !== kind) continue;
+      const counted = answered[index];
       if (counted.kind !== "ok") {
         refused = counted;
         break;
@@ -252,8 +296,8 @@ async function readPopulation(
  * Not `summarizeByKind`: that counts OPEN items (attention), and a block's
  * unfiltered set is every row of its kind, settled ones included.
  */
-function populationOfRows(items: ReviewItemRow[]): Record<Kind, DbResult<number>> {
-  const population = {} as Record<Kind, DbResult<number>>;
+function populationOfRows(items: ReviewItemRow[]): Record<Kind, KindPopulation> {
+  const population = {} as Record<Kind, KindPopulation>;
   for (const kind of KINDS) {
     population[kind] = { kind: "ok", data: selectItems(items, { kind }).length };
   }
@@ -264,10 +308,17 @@ function populationOfRows(items: ReviewItemRow[]): Record<Kind, DbResult<number>
  * Does this filter ask the database for anything less than the whole table?
  *
  * Read off `ReviewItemFilter`'s own values rather than off `FACETS` in
- * `lib/review/queue-filters.ts`: the arrow runs `app/** -> lib/db/**` and
- * `app/** -> lib/review/**`, and a `lib/db` module importing the URL layer
- * would invert it. An explicitly-`undefined` facet is no narrowing, which is
- * exactly how `matchesFilter` reads it.
+ * `lib/review/queue-filters.ts`, because this question needs no vocabulary: any
+ * defined field is a narrowing, whatever it is called. An explicitly-`undefined`
+ * facet is no narrowing, which is exactly how `matchesFilter` reads it.
+ *
+ * **It is not an inversion to import that module, and this docstring used to say
+ * it was** (corrected on campaign admin-window/DEBT-0012, which imports
+ * `kindsNarrowedBy` from it above). `lib/review/**` is a PURE DOMAIN LEAF and
+ * `lib/db/** -> lib/<leaf>/**` is the arrow as ARCHITECTURE.md §4 draws it —
+ * this module has imported `../review/shapes` since TASK-0006. What rule 7
+ * forbids is the back-edge, a leaf importing `lib/db/**`, and `queue-filters.ts`
+ * has none: it imports `./shapes` and `lib/url/narrowing.ts` and nothing else.
  */
 function narrows(filter: ReviewItemFilter): boolean {
   return Object.values(filter).some((value) => value !== undefined);
@@ -295,6 +346,11 @@ function narrows(filter: ReviewItemFilter): boolean {
  *
  * The bare `/queues` still costs exactly ONE query: an unnarrowed read IS the
  * whole table, so its own rows are the population.
+ *
+ * A narrowed URL costs that read plus one count per shape of each kind the URL
+ * NARROWS, and no others (admin-window/DEBT-0012) — measured on the stub call
+ * log in `tests/offline/review/review-items.test.ts`: 1 read bare, 2 on
+ * `?kind=decision`, 3 on `?kind=signal`, 4 on `?status=open`.
  */
 export async function readReviewQueues(
   filter: ReviewItemFilter = {},
@@ -303,7 +359,7 @@ export async function readReviewQueues(
   const filtered = await listReviewItems(filter, db);
   if (filtered.kind !== "ok") return filtered;
   const population = narrows(filter)
-    ? await readPopulation(db)
+    ? await readPopulation(filter, db)
     : populationOfRows(filtered.data);
   return { kind: "ok", data: { items: filtered.data, population } };
 }
