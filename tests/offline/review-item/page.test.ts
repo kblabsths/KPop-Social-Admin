@@ -3218,7 +3218,7 @@ describe("an evidence cell with nothing in it", () => {
    * Non-vacuity is the test above and the arm below it: a claim with NEITHER
    * identity draws the dash and does get the line.
    */
-  it.fails("says a dash is on screen only when one is, in the folded-records table", async () => {
+  it("says a dash is on screen only when one is, in the folded-records table", async () => {
     const item = reviewItemSourcePattern();
     const refOnly = observationRow({
       observation_id: ID.observationB,
@@ -3244,7 +3244,7 @@ describe("an evidence cell with nothing in it", () => {
     ).toBe(drawn > 0 ? 1 : 0);
   });
 
-  it.fails("draws SOMETHING for a claim whose only identity has no ink", async () => {
+  it("draws SOMETHING for a claim whose only identity has no ink", async () => {
     // The neighbouring arm of the same defect: an ink-less reference renders
     // as an evidence cell with nothing in it — no dash, no words — which is
     // the rendering admin-window/BUG-0152 and BUG-0154 were filed to remove.
@@ -3267,6 +3267,73 @@ describe("an evidence cell with nothing in it", () => {
     const readable =
       cell.find('[aria-label="no value"]').length > 0 || cell.text().replace(/\s|\u200b/gu, "") !== "";
     expect(readable, "a cell a person can read: the app's dash, or words").toBe(true);
+  });
+
+  /**
+   * BOTH directions of the rule the two pins above state one arm of, over
+   * every ink state an `external_ref` can arrive in
+   * (admin-window/BUG-0157): the dash-meaning line is on the page if and only
+   * if the record cell put the app's dash on the screen.
+   *
+   * `observations.external_ref` is plain `text` with no check constraint, so
+   * all four of these are rows the pipeline can produce. Three of them the app
+   * cannot read to an operator — no reference, an empty one, one made of
+   * zero-widths — and each draws the app's one labelled dash, explained. The
+   * fourth is a reference whose only character IS an em dash: that is the
+   * producer's own value, the cell reads it verbatim, and nothing explains it
+   * away as "a value this row does not carry".
+   *
+   * Non-vacuity has two halves here: the expectations differ between the arms
+   * (a fix that dashed everything, or nothing, fails on some row), and the
+   * second assertion establishes that no OTHER column of this table dashes on
+   * these fixtures — so the line being counted is this cell's own.
+   */
+  it("prints the dash-meaning line exactly when the record cell draws a dash", async () => {
+    const item = reviewItemSourcePattern();
+    const inkStates: [string, string | null, boolean][] = [
+      ["no reference at all", null, true],
+      ["an empty reference", "", true],
+      ["a reference with no ink in it", "\u200b", true],
+      ["the producer's own em dash", EM_DASH, false],
+    ];
+
+    for (const [what, externalRef, dashDrawn] of inkStates) {
+      const claim = observationRow({
+        observation_id: ID.observationB,
+        source_id: ID.sourceBandsintown,
+        status: "pending",
+        // No canonical row, so the source's own reference is the only identity
+        // the cell has to show.
+        entity_id: null,
+        external_ref: externalRef,
+      });
+      const $ = cheerio.load(
+        await renderItem(
+          patternScript({ [T.observations]: [{ data: [claim] }, { data: [] }] }),
+          item.review_item_id,
+        ),
+      );
+      const cell = $(`[data-evidence="${ID.observationB}"]`)
+        .closest("tr")
+        .find("td")
+        .first();
+
+      const drawn = cell.find('[aria-label="no value"]').length;
+      expect(drawn > 0, `${what}: the app's dash in the record cell`).toBe(dashDrawn);
+      expect(
+        $(EVIDENCE_HOOK).find('[aria-label="no value"]').length,
+        `${what}: every dash on this surface is the record cell's`,
+      ).toBe(drawn);
+      expect(
+        $(EVIDENCE_HOOK).find('[data-absence-note="dash"]').length,
+        `${what}: the dash-meaning line, with ${drawn} dash(es) on screen`,
+      ).toBe(drawn > 0 ? 1 : 0);
+
+      if (!dashDrawn) {
+        // The reference the producer published, read as it was published.
+        expect(cell.text().trim(), `${what}: read verbatim`).toBe(externalRef);
+      }
+    }
   });
 });
 
