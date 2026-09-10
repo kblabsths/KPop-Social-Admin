@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 import {
+  CHUNK_FANOUT,
+  ID_CHUNK,
   ROW_CAP,
   callFunction,
   classify,
@@ -8,7 +10,9 @@ import {
   readCount,
   readOne,
   readRows,
+  readRowsByIds,
   type AskedObject,
+  type DbResponse,
   type DbResult,
 } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
@@ -1379,4 +1383,239 @@ async function acceptsARealQueryBuilder(
 
 it("types the read seam against the real client", () => {
   expect(typeof acceptsARealQueryBuilder).toBe("function");
+});
+
+/* ── readRowsByIds: the bounded, concurrent fan-out (admin-window/TASK-0062) ── */
+
+/**
+ * `readRowsByIds` issues its chunks as BATCHES of at most `CHUNK_FANOUT`,
+ * batches in chunk-index order. What that must not change is every refusal
+ * guarantee it already made, so the properties below grade the two halves
+ * together: the clock moved, nothing the function SAYS did.
+ *
+ * Three of the six properties are graded elsewhere and stay there rather than
+ * being retyped here (LESSONS 5): an empty id set issuing ZERO round trips and
+ * an erroring chunk returning the first non-`ok` unchanged are
+ * `tests/offline/gauges/gauge.test.ts`'s `readRowsByIds` block (which reads
+ * through the `lib/db/gauges` re-export, the spelling every caller still
+ * uses), and a missing table reaching the PAGE as `not_provisioned` naming
+ * that table is `tests/offline/absence/pages.test.ts`. The three below are the
+ * ones concurrency can break and a fixed stub cannot see: ORDER, WHICH
+ * refusal, and the bound itself.
+ *
+ * The seam is a hand-built `run` rather than `stubClient`, because the stub
+ * settles synchronously — a request that is never in flight cannot show a
+ * fan-out. Here the test decides when each chunk settles, so every assertion
+ * below is deterministic rather than timing-dependent.
+ */
+
+interface TaggedRow {
+  source_id: string;
+}
+
+/** A promise the TEST settles, at the moment of its choosing. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+/** Let every already-settled microtask run before the next assertion. */
+async function flush(): Promise<void> {
+  for (let tick = 0; tick < 20; tick += 1) await Promise.resolve();
+}
+
+/** Ids spanning exactly `chunks` full chunks, in the id set's own order. */
+function idsSpanning(chunks: number): string[] {
+  return Array.from({ length: chunks * ID_CHUNK }, (_, index) => `id-${index}`);
+}
+
+/** The chunk's index, read back out of the ids the fan-out handed the seam. */
+function chunkIndexOf(chunkIds: string[]): number {
+  return Math.floor(Number(chunkIds[0].slice("id-".length)) / ID_CHUNK);
+}
+
+/** One chunk's answer: the row tagged with the chunk that returned it. */
+function rowsFor(index: number): DbResponse<TaggedRow[]> {
+  return { data: [{ source_id: `row-${index}` }], error: null };
+}
+
+/** A refusal from one chunk, carrying the database's own error object. */
+function refusalFrom(error: unknown): DbResponse<TaggedRow[]> {
+  return { data: null, error };
+}
+
+interface ChunkSeam {
+  /** The `run` callback handed to `readRowsByIds`. */
+  run: (db: SupabaseClient, chunkIds: string[]) => PromiseLike<DbResponse<TaggedRow[]>>;
+  /** Chunk indexes in the order the fan-out ISSUED them. */
+  readonly issued: number[];
+  /** Chunk indexes in the order they SETTLED. */
+  readonly settled: number[];
+  /** The most requests observed in flight at any one moment. */
+  maxInFlight(): number;
+  /** Settle one chunk's request — whether or not it has been issued yet. */
+  settle(index: number, response: DbResponse<TaggedRow[]>): void;
+}
+
+function chunkSeam(): ChunkSeam {
+  const slots = new Map<number, ReturnType<typeof deferred<DbResponse<TaggedRow[]>>>>();
+  const issued: number[] = [];
+  const settled: number[] = [];
+  let inFlight = 0;
+  let peak = 0;
+
+  const slotFor = (index: number) => {
+    const held = slots.get(index);
+    if (held !== undefined) return held;
+    const fresh = deferred<DbResponse<TaggedRow[]>>();
+    slots.set(index, fresh);
+    return fresh;
+  };
+
+  return {
+    issued,
+    settled,
+    maxInFlight: () => peak,
+    settle(index, response) {
+      slotFor(index).resolve(response);
+    },
+    run(_db, chunkIds) {
+      const index = chunkIndexOf(chunkIds);
+      issued.push(index);
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      return slotFor(index).promise.then((response) => {
+        inFlight -= 1;
+        settled.push(index);
+        return response;
+      });
+    },
+  };
+}
+
+/** A client the seam never reads — `readRows` only needs one to exist. */
+const unusedClient = () => stubClient({}).asSupabaseClient();
+
+describe("readRowsByIds fans out over its chunks, bounded", () => {
+  it("issues at most CHUNK_FANOUT at once and at least two at once — a sequential implementation fails this test", async () => {
+    const seam = chunkSeam();
+    const chunks = CHUNK_FANOUT + 2;
+    const pending = readRowsByIds<TaggedRow>(
+      T.sources,
+      idsSpanning(chunks),
+      seam.run,
+      unusedClient(),
+    );
+    await flush();
+
+    // The first batch is in flight together — this is the assertion a
+    // one-at-a-time loop cannot pass: it would have issued exactly [0].
+    expect(seam.issued).toEqual([0, 1, 2, 3]);
+    expect(seam.maxInFlight()).toBeGreaterThanOrEqual(2);
+    expect(seam.maxInFlight()).toBeLessThanOrEqual(CHUNK_FANOUT);
+
+    // …and the batch AFTER it is not issued until this one is done, so the
+    // bound holds across the whole read, not just at its start.
+    for (let index = 0; index < CHUNK_FANOUT; index += 1) {
+      seam.settle(index, rowsFor(index));
+    }
+    await flush();
+    expect(seam.issued).toEqual([0, 1, 2, 3, 4, 5]);
+
+    for (let index = CHUNK_FANOUT; index < chunks; index += 1) {
+      seam.settle(index, rowsFor(index));
+    }
+    const result = await pending;
+    expect(seam.maxInFlight()).toBeLessThanOrEqual(CHUNK_FANOUT);
+    expect(result).toEqual({
+      kind: "ok",
+      data: Array.from({ length: chunks }, (_, index) => ({
+        source_id: `row-${index}`,
+      })),
+    });
+  });
+
+  it("concatenates in chunk-index order, not completion order", async () => {
+    const seam = chunkSeam();
+    const pending = readRowsByIds<TaggedRow>(
+      T.sources,
+      idsSpanning(3),
+      seam.run,
+      unusedClient(),
+    );
+    await flush();
+
+    // Chunk 2 answers first, chunk 0 last — the completion order is the
+    // reverse of the id set's order.
+    for (const index of [2, 1, 0]) {
+      seam.settle(index, rowsFor(index));
+      await flush();
+    }
+    const result = await pending;
+
+    expect(seam.settled).toEqual([2, 1, 0]);
+    expect(result).toEqual({
+      kind: "ok",
+      data: [{ source_id: "row-0" }, { source_id: "row-1" }, { source_id: "row-2" }],
+    });
+  });
+
+  it("returns the LOWEST-INDEX non-ok, not whichever chunk failed first", async () => {
+    const seam = chunkSeam();
+    const pending = readRowsByIds<TaggedRow>(
+      T.sources,
+      idsSpanning(3),
+      seam.run,
+      unusedClient(),
+    );
+    await flush();
+
+    // The later chunk fails FIRST, with a different refusal, so a fan-out that
+    // took whichever rejected soonest would answer with chunk 2's error.
+    seam.settle(2, refusalFrom(permissionDenied(T.sources)));
+    await flush();
+    seam.settle(1, refusalFrom(tableNotInSchemaCache(T.sources)));
+    await flush();
+    seam.settle(0, rowsFor(0));
+    const result = await pending;
+
+    expect(seam.settled).toEqual([2, 1, 0]);
+    // Chunk 1's absence, unchanged — and no half-filled `ok` carrying chunk 0.
+    expect(result).toEqual({ kind: "not_provisioned", missing: T.sources });
+  });
+
+  it("issues no further batch once a refusal is known", async () => {
+    const seam = chunkSeam();
+    const chunks = CHUNK_FANOUT + 2;
+    const pending = readRowsByIds<TaggedRow>(
+      T.sources,
+      idsSpanning(chunks),
+      seam.run,
+      unusedClient(),
+    );
+    await flush();
+
+    seam.settle(0, refusalFrom(tableNotInSchemaCache(T.sources)));
+    for (let index = 1; index < CHUNK_FANOUT; index += 1) {
+      seam.settle(index, rowsFor(index));
+    }
+    const result = await pending;
+    await flush();
+
+    expect(result).toEqual({ kind: "not_provisioned", missing: T.sources });
+    // Strictly fewer requests than there are chunks: the second batch was
+    // never started.
+    expect(seam.issued.length).toBeLessThan(chunks);
+    expect(seam.issued).toEqual([0, 1, 2, 3]);
+  });
+
+  it("bounds the fan-out at a number a database can serve", () => {
+    // A bound of 1 is the sequential loop under another name; an unbounded
+    // fan-out is what §4.2 forbids. Both ends are asserted, not the middle.
+    expect(CHUNK_FANOUT).toBeGreaterThan(1);
+    expect(CHUNK_FANOUT).toBeLessThanOrEqual(8);
+  });
 });
