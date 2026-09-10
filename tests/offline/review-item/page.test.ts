@@ -72,8 +72,8 @@ vi.mock("@/lib/db/claims", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/db/claims")>();
   return {
     ...actual,
-    readPendingClaims: (ids: readonly string[]) =>
-      actual.readPendingClaims(ids, readWith.client as never),
+    readPendingClaimRows: (ids: readonly string[]) =>
+      actual.readPendingClaimRows(ids, readWith.client as never),
   };
 });
 

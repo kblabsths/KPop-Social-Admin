@@ -61,7 +61,7 @@ export {
   PENDING_CLAIM_BUCKETS,
   RENDERABLE_BUCKETS,
   isRenderableBucket,
-  readPendingClaims,
+  readPendingClaimRows,
 } from "./claims";
 export type { PendingClaimBucket, PendingClaimRow, PendingClaimsFilter } from "./claims";
 

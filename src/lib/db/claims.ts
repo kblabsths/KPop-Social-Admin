@@ -134,7 +134,7 @@ const CLAIM_INSTANT_COLUMNS = ["observation_id", "observed_at"].join(", ");
  * every query of this view, so the exclusion below cannot be forgotten by the
  * next query somebody writes.
  */
-export function readPendingClaims(
+export function readPendingClaimRows(
   ids: readonly string[],
   db?: SupabaseClient,
 ): Promise<DbResult<PendingClaimRow[]>> {

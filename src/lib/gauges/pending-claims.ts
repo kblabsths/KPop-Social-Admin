@@ -4,7 +4,7 @@ import {
   PENDING_CLAIM_BUCKETS,
   RENDERABLE_BUCKETS,
   isRenderableBucket,
-  readPendingClaims as readPendingClaimRows,
+  readPendingClaimRows,
   readPendingObservations,
   type DbClient,
   type PendingClaimBucket,
