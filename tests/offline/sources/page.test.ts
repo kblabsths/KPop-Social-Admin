@@ -583,6 +583,47 @@ describe("a source's links", () => {
   }
 
   /**
+   * The chip's whole job, exercised where an operator actually needs it: the
+   * chip for the source the URL is NARROWED TO. QA's re-check of
+   * admin-window/BUG-0159 — the three cases above render the page unnarrowed,
+   * so nothing pinned what the operator reads once the blank-named chip is the
+   * SELECTED one and the registry table beside it is down to that single row.
+   * A chip that is `aria-current` and says nothing is a selection an operator
+   * cannot read or clear.
+   *
+   * Non-vacuous in the same render (LESSONS 8): the selected chip says the id,
+   * exactly one chip is selected, and the two unselected siblings still say
+   * their registry names and never a uuid.
+   */
+  it("names the SELECTED chip by its id when the registry names it nothing", async () => {
+    const blanked = SOURCES.map((row) =>
+      row.source_id === SOURCE.ticketmaster ? { ...row, source: "" } : row,
+    );
+    const markup = await renderSources(
+      healthyScript({
+        [T.sources]: [
+          { data: blanked, count: blanked.length },
+          { data: blanked },
+        ],
+      }),
+      { source_id: SOURCE.ticketmaster },
+    );
+    const rendered = chips(markup);
+    const selected = rendered.filter((chip) => chip.active);
+    expect(selected.map((chip) => chip.href)).toEqual([
+      `/sources?source_id=${SOURCE.ticketmaster}`,
+    ]);
+    expect(selected[0].label).toBe(SOURCE.ticketmaster);
+    for (const sourceId of [SOURCE.bandsintown, SOURCE.fandom]) {
+      const sibling = rendered.find(
+        (chip) => chip.href === `/sources?source_id=${sourceId}`,
+      );
+      expect(sibling, `the chip for ${sourceId} did not render`).toBeDefined();
+      expect((sibling as { label: string }).label).toBe(SOURCE_NAME[sourceId]);
+    }
+  });
+
+  /**
    * Bar 10: the registry's ten routes — each source's own narrowing, its
    * review items and its runs — were drawn in plain ink with no decoration
    * until admin-window/BUG-0108, so the "links" column read as two words and
