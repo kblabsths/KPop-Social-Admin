@@ -23283,3 +23283,11 @@
 2026-09-10T01:43:11Z	agent	-	-	-	-
 # STRANDED	2026-09-10T01:43:19Z	agent	3 uncommitted in primary checkout: .env.example, _receipt-qa-0157/, agenticflow/visions/admin-window/tracker/receipts/BUG-0155.json
 2026-09-10T01:43:19Z	agent	-	-	-	-
+# STRANDED	2026-09-10T01:43:42Z	agent	2 uncommitted in primary checkout: .env.example, _receipt-qa-0157/
+2026-09-10T01:43:42Z	agent	-	-	-	-
+# STRANDED	2026-09-10T01:43:43Z	agent	2 uncommitted in primary checkout: .env.example, _receipt-qa-0157/
+2026-09-10T01:43:43Z	agent	-	-	-	-
+# STRANDED	2026-09-10T01:43:50Z	agent	2 uncommitted in primary checkout: .env.example, _receipt-qa-0157/
+2026-09-10T01:43:50Z	agent	-	-	-	-
+# STRANDED	2026-09-10T01:44:04Z	qa-adversary	2 uncommitted in primary checkout: .env.example, _receipt-qa-0157/
+2026-09-10T01:44:04Z	qa-adversary	BUG-0155	18138	1058	159154
