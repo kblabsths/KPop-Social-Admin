@@ -5,15 +5,19 @@ import {
   CLAIM_FACETS,
   DEFAULT_TAB,
   TABS,
+  UNCHIPPED_FACETS,
   claimsHref,
   droppedParams,
   facetChips,
   filterBar,
   filterFrom,
+  hasChipNarrowing,
   hasNarrowingFacet,
   sourceHref,
   tabFrom,
   tabLinks,
+  unchippedNarrowings,
+  unchippedPhrase,
   withFacet,
   type ClaimsFilter,
   type FacetOptions,
@@ -334,9 +338,10 @@ describe("one facet at a time", () => {
    * is built for it, and the page may not call it dropped. The other half —
    * that the applied value reaches EVERY count read and the window read as
    * `.eq("domain", …)`, and that the window line and the bucket caption name
-   * it — is graded where the queries are: `tests/offline/claims/page.test.ts`
-   * ("narrows every count and the window server-side") and
-   * `tests/offline/claims/read.test.ts`.
+   * it — is graded where the queries and the rendering are:
+   * `tests/offline/claims/page.test.ts` ("narrows every count and the window
+   * server-side", and "a narrowing with no chip row" for the naming,
+   * admin-window/BUG-0160) and `tests/offline/claims/read.test.ts`.
    */
   it("domain narrows every count and the window, with no chip row", () => {
     const params = { domain: "venues" };
@@ -367,6 +372,113 @@ describe("one facet at a time", () => {
     expect(droppedParams({ domain: "\u202Evenues" }, {})).toEqual({
       named: ["domain"],
       withheld: 0,
+    });
+  });
+
+  /**
+   * The other half of the facet with no chip row (admin-window/BUG-0160).
+   *
+   * `?domain=` narrows every count and the window read on `/claims` and the
+   * page renders no control for it, so nothing on the screen said the page was
+   * narrowed at all: `/claims?domain=events` drew `awaiting_row` 741 against
+   * 769 unnarrowed and 849 claims against 877, under a window line saying "849
+   * claims match these filters" and a caption saying the figures were "under
+   * the filters above", with both chip rows reading `all` and the words
+   * "domain" and "events" nowhere in the rendered page (designer, staging,
+   * 2026-09-10).
+   *
+   * This is the leaf's share of the fix: the two questions a sentence has to
+   * ask before it may say "these filters" or name a narrowing, and the ONE
+   * spelling of the words it names it with — the same words the window line
+   * takes as a string and the caption and the empty card render with the value
+   * in the app's identifier face. What the PAGE does with them is graded where
+   * the page is rendered (`tests/offline/claims/page.test.ts`, "a narrowing
+   * with no chip row").
+   *
+   * The words are read off the leaf rather than typed here: this file pins no
+   * copy. What it pins is the shape — the value verbatim, the facet named, one
+   * spelling in both channels — and the RULE, which is that a facet with a
+   * chip row is never named this way and a facet without one always is.
+   */
+  describe("a domain narrowing is named on the page that applied it", () => {
+    it("is the facet set CLAIM_FACETS has that CHIP_FACETS does not", () => {
+      expect([...UNCHIPPED_FACETS]).toEqual(
+        CLAIM_FACETS.filter((facet) => !(CHIP_FACETS as readonly string[]).includes(facet)),
+      );
+      // Non-vacuous in both directions, which is the whole point of the split:
+      // there really is a facet with no chip row, and it is not every facet.
+      expect(UNCHIPPED_FACETS).toContain("domain");
+      expect(UNCHIPPED_FACETS.length).toBeGreaterThan(0);
+      expect(UNCHIPPED_FACETS.length).toBeLessThan(CLAIM_FACETS.length);
+    });
+
+    it("names every facet that narrows with no chip, and no facet that has one", () => {
+      // The facet with no control: named, with the value the query carried.
+      const named = unchippedNarrowings(filterFrom({ domain: "events" }, BUCKETS));
+      expect(named.map((narrowing) => narrowing.facet)).toEqual([...UNCHIPPED_FACETS]);
+      expect(named.map((narrowing) => narrowing.value)).toEqual(["events"]);
+      // The value reaches the sentence VERBATIM — never re-cased, never
+      // prettified (LOOK_AND_FEEL Voice bar 5), and never a label the page
+      // would have to look up.
+      for (const narrowing of named) {
+        expect(unchippedPhrase(narrowing)).toContain(narrowing.value);
+        expect(unchippedPhrase(narrowing)).toContain(narrowing.facet);
+        // One spelling, assembled from the pieces both channels read: the
+        // string the window line takes IS the words the markup renders around
+        // the identifier box.
+        expect(unchippedPhrase(narrowing)).toBe(
+          `${narrowing.before}${narrowing.value}${narrowing.after}`,
+        );
+      }
+
+      // A facet the page DOES render a control for is never named this way —
+      // its chip says it, and saying it twice is what the window line's own
+      // subtraction exists to prevent (admin-window/BUG-0118).
+      for (const facet of CHIP_FACETS) {
+        const filter: ClaimsFilter = { [facet]: BUCKETS[0] };
+        expect(unchippedNarrowings(filter), facet).toEqual([]);
+      }
+
+      // And an unnarrowed URL names nothing at all.
+      expect(unchippedNarrowings(filterFrom({}, BUCKETS))).toEqual([]);
+    });
+
+    it("says whether a filter the operator can SEE is set, which is a different question", () => {
+      // The gate on "these filters" and "the filters above": a chip facet, and
+      // only a chip facet, is a filter the page draws a control for. The facet
+      // with no chip row narrows just as hard — `hasNarrowingFacet` still says
+      // so — which is exactly why the two questions may not share an answer.
+      const domainOnly = filterFrom({ domain: "events" }, BUCKETS);
+      expect(hasNarrowingFacet(domainOnly)).toBe(true);
+      expect(hasChipNarrowing(domainOnly)).toBe(false);
+      expect(unchippedNarrowings(domainOnly)).toHaveLength(1);
+
+      for (const facet of CHIP_FACETS) {
+        const chipped = { ...domainOnly, [facet]: BUCKETS[0] };
+        expect(hasChipNarrowing(chipped), facet).toBe(true);
+        // Both kinds at once: the sentence has to be true of both, so both
+        // are still on offer.
+        expect(unchippedNarrowings(chipped), facet).toHaveLength(1);
+      }
+
+      const bare = filterFrom({}, BUCKETS);
+      expect(hasChipNarrowing(bare)).toBe(false);
+      expect(hasNarrowingFacet(bare)).toBe(false);
+    });
+
+    it("keeps the narrowing readable back into the URL it came from", () => {
+      // LOOK_AND_FEEL bar 11, the half admin-window/BUG-0160 was filed for:
+      // the bookmarked view is a link, so the screen has to spell what the
+      // link carries. The parameter's name and its value are both in the
+      // phrase, and the value is the one the href writes back.
+      for (const value of ["events", "venues", "groups"]) {
+        const filter = filterFrom({ domain: value }, BUCKETS);
+        const [narrowing] = unchippedNarrowings(filter);
+        expect(claimsHref(PATH, filter)).toContain(
+          `${narrowing.facet}=${narrowing.value}`,
+        );
+        expect(unchippedPhrase(narrowing)).toContain(value);
+      }
     });
   });
 

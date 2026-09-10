@@ -1966,6 +1966,235 @@ describe("which emptiness this is", () => {
   });
 });
 
+/* ── a narrowing with no control on screen (admin-window/BUG-0160) ───────── */
+
+/**
+ * `?domain=` narrows every figure on this page and the page renders no chip
+ * row for it (`CHIP_FACETS`, admin-window/BUG-0138). Measured on staging at
+ * `/claims?domain=events` (designer, 2026-09-10): the bucket table read
+ * `awaiting_row` 741 against 769 unnarrowed, the gauge card 849 against 877,
+ * the window line said "849 claims match these filters", the caption said the
+ * counts were "under the filters above" — and both chip rows read `all`, with
+ * the words "domain" and "events" nowhere in the rendered page.
+ *
+ * Two clauses were false in that state and one fact was missing, so this
+ * grades three things at once (the ticket's criteria 1-4):
+ *
+ *  - the narrowing is NAMED — the facet and its value — in every state the
+ *    narrowed arm renders: the filled window line, the window line that did
+ *    not fill, and the "nothing matched" card;
+ *  - "these filters" and "the filters above" appear only where a CHIP facet
+ *    is set, and where both kinds are set the sentence is true of both;
+ *  - the window line and the bucket caption agree, including the case that
+ *    made the old caption honest and the old line dishonest — a domain the
+ *    whole view carries anyway, which narrows nothing and is claimed by
+ *    neither.
+ *
+ * The expectations are computed from the URL and the fixture, never from the
+ * page's copy: what must appear is the value the URL carried and the facet's
+ * own name, and what must not appear is the two phrases the ticket names.
+ */
+describe("a narrowing with no chip row", () => {
+  const line = (markup: string) =>
+    cheerio.load(markup)('[data-window="claims"]').text().replace(/\s+/g, " ").trim();
+  const card = (markup: string) =>
+    cheerio
+      .load(markup)('[data-surface="claims"] [data-empty]')
+      .text()
+      .replace(/\s+/g, " ")
+      .trim();
+
+  /** The two phrases that may only ever refer to a control the page draws. */
+  const CHIP_PHRASES = ["these filters", "the filters above", "a filter above"];
+
+  /** How many times a phrase stands in a sentence, counted literally. */
+  const times = (text: string, phrase: string): number =>
+    text.split(phrase).length - 1;
+
+  /** Did the window say it filled its cap? Structurally, from its own hook. */
+  const filledItsCap = (markup: string): boolean =>
+    cheerio.load(markup)('[data-window="claims"]').attr("data-window-truncated") ===
+    "true";
+
+  /** The facet with no chip row, and a value the fixture population carries. */
+  const FACET = "domain";
+  const NARROWING = "venues";
+
+  /** Every claim of the fixture that the UI may show, by domain. */
+  const inDomain = (domain: string) =>
+    SHOWABLE.filter((claim) => claim.domain === domain);
+
+  /**
+   * A population that FILLS the window and spans two domains — the state the
+   * designer measured, where the count is a floor and the sentence beside it
+   * is the one that said "match these filters".
+   */
+  function acrossDomains(size: number): Script {
+    const claims: PendingClaimRow[] = [];
+    const observations: ReturnType<typeof observationRow>[] = [];
+    for (let index = 0; index < size; index += 1) {
+      const id = `01920000-0000-7000-8000-0000000${(90000 + index).toString()}`;
+      // Two thirds in the narrowed domain, so the narrowing really removes
+      // rows and still leaves the window over its cap.
+      const domain = index % 3 === 0 ? "groups" : NARROWING;
+      const observedAt = new Date(Date.UTC(2026, 0, 1) + index * 3_600_000).toISOString();
+      claims.push(
+        pendingClaimRow("awaiting_row", {
+          observation_id: id,
+          domain,
+          entity_id: null,
+          field: "name",
+          source_id: SOURCE.first,
+          observed_at: observedAt,
+        }),
+      );
+      observations.push(
+        observationRow({
+          observation_id: id,
+          entity_id: null,
+          domain,
+          field: "name",
+          source_id: SOURCE.first,
+          observed_at: observedAt,
+          status: "pending",
+        }),
+      );
+    }
+    return {
+      [T.pendingClaims]: claimView(claims),
+      [T.observations]: { data: observations },
+      [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
+    };
+  }
+
+  it("names the facet and its value in every state the narrowed arm renders", async () => {
+    // The three states of the ticket's criterion 1, each reached by its own
+    // population and each read off the surface that carries the arm.
+    const overflowing = await renderClaims(acrossDomains(CLAIM_WINDOW * 3), {
+      domain: NARROWING,
+    });
+    const drawn = await renderClaims(healthyScript(), { domain: NARROWING });
+    const found = await renderClaims(healthyScript(), {
+      tab: "standing",
+      domain: NARROWING,
+    });
+
+    // Non-vacuous: a window that filled its cap, a window that did not fill
+    // with rows in it, and a narrowing that really emptied the list.
+    expect(filledItsCap(overflowing)).toBe(true);
+    expect(filledItsCap(drawn)).toBe(false);
+    expect(claimIds(drawn)).toEqual(oldestFirst(matching({ domain: NARROWING })));
+    expect(inDomain(NARROWING).length).toBeGreaterThan(0);
+    expect(
+      SHOWABLE.filter(
+        (claim) => claim.bucket === STANDING_BUCKET && claim.domain === NARROWING,
+      ),
+    ).toHaveLength(0);
+    expect(claimIds(found)).toEqual([]);
+
+    const filled = line(overflowing);
+    const drew = line(drawn);
+
+    for (const [state, said] of [
+      ["the window that filled its cap", filled],
+      ["the window that did not fill", drew],
+      ["the nothing-matched card", card(found)],
+      // The caption sits under the figures the same narrowing produced.
+      [
+        "the bucket caption",
+        bucketCaption(await renderClaims(healthyScript(), { domain: NARROWING })),
+      ],
+    ] as [string, string][]) {
+      expect(said, state).toContain(NARROWING);
+      expect(said, state).toContain(FACET);
+    }
+  });
+
+  it("claims no filter above when the only narrowing has no chip", async () => {
+    // The two false clauses of the ticket, in the state the designer read:
+    // both chip rows on `all`, every figure narrowed.
+    const markup = await renderClaims(acrossDomains(CLAIM_WINDOW * 3), {
+      domain: NARROWING,
+    });
+    for (const facet of ["bucket", "source_id"]) {
+      expect(
+        chipsOf(markup, facet).filter((chip) => chip.active).map((chip) => chip.label),
+        facet,
+      ).toEqual([ANY_LABEL]);
+    }
+    for (const phrase of ["these filters", "the filters above"]) {
+      expect(line(markup), phrase).not.toContain(phrase);
+      expect(bucketCaption(markup), phrase).not.toContain(phrase);
+    }
+    // ...and the empty card, reached by the same URL over a population the
+    // domain empties, offers no chip it cannot clear with.
+    const emptied = await renderClaims(healthyScript(), {
+      tab: "standing",
+      domain: NARROWING,
+    });
+    for (const phrase of CHIP_PHRASES) {
+      expect(card(emptied), phrase).not.toContain(phrase);
+    }
+  });
+
+  it("is true of both kinds of narrowing when both are set", async () => {
+    // A chip AND the control-less facet. The chip narrowing keeps its own
+    // clause — it is a control the operator can see — and the domain is named
+    // beside it, once.
+    const both = await renderClaims(
+      healthyScript(),
+      { source_id: SOURCE.first, domain: NARROWING },
+    );
+    expect(claimIds(both)).toEqual(
+      oldestFirst(matching({ source_id: SOURCE.first, domain: NARROWING })),
+    );
+    expect(claimIds(both).length).toBeGreaterThan(0);
+    expect(line(both)).toContain(NARROWING);
+    expect(line(both)).toContain(FACET);
+    expect(times(line(both), NARROWING)).toBe(1);
+    expect(bucketCaption(both)).toContain(NARROWING);
+    expect(bucketCaption(both)).toContain("the filters above");
+  });
+
+  it("claims nothing at all for a domain the whole view carries anyway", async () => {
+    // The other direction, and the reason the fix is not "always name it":
+    // `claimsNarrowed` takes TWO facts (admin-window/DEBT-0008), and a facet
+    // that removed not one row shaped nothing. Both sentences say so by
+    // being, to the byte, the sentences of the page with no facet at all.
+    const oneDomain: Script = {
+      [T.pendingClaims]: claimView(CLAIMS.filter((claim) => claim.domain === "events")),
+      [T.observations]: {
+        data: OBSERVATIONS.filter((row) => row.domain === "events"),
+      },
+      [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
+    };
+    const narrowed = await renderClaims(oneDomain, { domain: "events" });
+    const bare = await renderClaims(oneDomain);
+
+    // Non-vacuous: the page really applied the facet (nothing was dropped) and
+    // really drew rows under it.
+    expect(droppedLine(narrowed).lines).toBe(0);
+    expect(claimIds(narrowed)).toEqual(claimIds(bare));
+    expect(claimIds(narrowed).length).toBeGreaterThan(0);
+
+    expect(line(narrowed)).toBe(line(bare));
+    expect(bucketCaption(narrowed)).toBe(bucketCaption(bare));
+  });
+
+  it("puts a space between the value and the words around it", async () => {
+    // The rule the tree-wide scanner cannot see in this file's transform
+    // (`tests/offline/ui/copy.test.ts`), asserted on the rendering it now
+    // reaches: the value goes into prose inside the app's identifier box, so
+    // the words before and after it must not be glued to the element.
+    const markup = await renderClaims(healthyScript(), {
+      domain: NARROWING,
+      source_id: SOURCE.first,
+    });
+    expect(runTogetherWords(markup)).toEqual([]);
+    expect(implicitInterElementSpaces("src/app/claims/page.tsx")).toEqual([]);
+  });
+});
+
 /* ── the filter bar ──────────────────────────────────────────────────────── */
 
 describe("the filters", () => {
