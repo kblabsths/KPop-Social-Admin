@@ -204,3 +204,4 @@
 2026-09-10T00:13:17Z	evidence_budget	qa_evidence_overbudget: BUG-0154 4085/4000 chars
 2026-09-10T00:36:43Z	artifact_gate	blocked write outside repo: reads=[0-9]* | counts=\[[^]]*\] | dec=[a-z_]* | sig=[a-z_]*
 2026-09-10T00:46:44Z	evidence_budget	qa_evidence_overbudget: DEBT-0012 4536/4000 chars
+2026-09-10T01:27:08Z	artifact_gate	blocked write outside repo: /tmp/x
