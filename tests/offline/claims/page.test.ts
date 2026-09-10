@@ -2193,6 +2193,63 @@ describe("a source is named", () => {
     );
   });
 
+  /**
+   * The standing tab's per-source rows obey the same one rule
+   * (admin-window/BUG-0158, QA's attack on BUG-0156). The split anchor spelled
+   * `{split.source ?? split.sourceId}` — and `??` sees only `null`, so a
+   * registry row that EXISTED with an ink-less name took neither branch and the
+   * anchor rendered with nothing to read and nothing visible to click, beside a
+   * sibling row that named its source. It now asks `sourceLabel` over the map
+   * built from the gauge's OWN joined `sources` rows.
+   *
+   * Both directions in one render (LESSONS 8), and the hooks the link is made
+   * of are asserted too: the label is the only thing that may change, so the
+   * row is still keyed by its id and still narrows to it.
+   */
+  for (const blank of ["", "   ", "\u200b"]) {
+    it(`names a standing split the registry names ${JSON.stringify(blank)} by its id`, async () => {
+      const blanked = REGISTRY.map((row) =>
+        row.source_id === SOURCE.first ? { ...row, source: blank } : row,
+      );
+      const markup = await renderClaims(
+        healthyScript({ [T.sources]: { data: blanked } }),
+        { tab: "standing" },
+      );
+      const $ = cheerio.load(markup);
+      const anchorFor = (id: string) => $(`[data-split-source="${id}"]`);
+
+      const blankNamed = anchorFor(SOURCE.first);
+      expect(blankNamed.length, "the blank-named split did not render").toBe(1);
+      // The id verbatim, and the link still goes where it went.
+      expect(blankNamed.text()).toContain(SOURCE.first);
+      expect(blankNamed.attr("href")).toContain(encodeURIComponent(SOURCE.first));
+      // Non-vacuity in the same render: the sibling split still reads as its
+      // registry name and never as its uuid.
+      const named = anchorFor(SOURCE.second);
+      expect(named.length, "the named split did not render").toBe(1);
+      expect(named.text()).toContain(SOURCE_NAME.get(SOURCE.second) as string);
+      expect(named.text()).not.toContain(SOURCE.second);
+    });
+  }
+
+  it("leaves a standing split's registry name exactly as the registry wrote it", async () => {
+    // The other direction: a name with ink travels byte-identical — the pads
+    // are the registry's and this page neither trims them nor prefers the id.
+    const padded = "  ticketmaster  ";
+    const rows = REGISTRY.map((row) =>
+      row.source_id === SOURCE.first ? { ...row, source: padded } : row,
+    );
+    const markup = await renderClaims(
+      healthyScript({ [T.sources]: { data: rows } }),
+      { tab: "standing" },
+    );
+    const anchor = cheerio.load(markup)(`[data-split-source="${SOURCE.first}"]`);
+    expect(anchor.length).toBe(1);
+    // The anchor also carries the source's tier and lifecycle, so the label is
+    // read as the text it STARTS with rather than as the whole cell.
+    expect(anchor.text().startsWith(padded), anchor.text()).toBe(true);
+  });
+
   it("reports the registry leg when it refuses, and leaves every source its id", async () => {
     const markup = await renderClaims(
       healthyScript({ [T.sources]: { error: permissionDenied(T.sources) } }),

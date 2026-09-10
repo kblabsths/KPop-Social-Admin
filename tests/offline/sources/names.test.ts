@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
 import { hasVisibleContent } from "@/lib/verdict/decision";
-import { codeLines } from "../source-tree";
+import { codeLines, codeLinesIn, codeText, sourceFiles } from "../source-tree";
 import { SOURCE, SOURCE_NAME, SOURCES } from "./population";
 
 /**
@@ -171,6 +171,83 @@ describe("what a source is called on screen", () => {
     ]) {
       expect(sourceLabel(names, near), near).toBe(near);
       expect(sourceLabel(names, near), near).not.toBe(named);
+    }
+  });
+});
+
+/**
+ * **The rule has ONE owner, and this is the guard that keeps it that way**
+ * (admin-window/BUG-0158; LESSONS 5, "a shared spelling gets imported, never
+ * retyped").
+ *
+ * Every fix of this class so far has been the same edit: a surface spelled
+ * `<lookup> ?? <the id>` beside `sourceLabel` instead of calling it, `??` saw
+ * only `null`, and a registry row that EXISTED with an ink-less name reached
+ * the screen as nothing. BUG-0043 found three such sites, BUG-0154 two more in
+ * `lib/db/review-item.ts`, and BUG-0158 four more — `lib/browse/rows.ts`,
+ * `components/sources/trends.tsx`, `app/claims/page.tsx` and
+ * `lib/records/provenance.ts`. Prose in a docstring is what let them drift, so
+ * the rule is asserted over the tree instead.
+ *
+ * The rule is narrow ON PURPOSE: it flags a `??` whose RIGHT operand is a
+ * source-id expression — the "fall back to the id" spelling and nothing else.
+ * `source?.source ?? null` (a gauge recording that the registry answered
+ * nothing, which the dash rule then owns) and `series?.threshold ??
+ * stuckPatternThreshold(sourceId)` (a different fact entirely) are both
+ * legitimate and both stay green; each is a fixture below.
+ */
+describe("what a source is called has one owner", () => {
+  /**
+   * A `??` falling back to a source id: `?? sourceId`, `?? row.source_id`,
+   * `?? split.sourceId`. Read over CODE lines (`codeText` drops commentary),
+   * so a docstring quoting the defect — this file's, and the four fixed
+   * files' — stays documentation.
+   */
+  const ID_FALLBACK = /\?\?\s*(?:[A-Za-z_$][\w$]*\.)*(?:sourceId|source_id)\b/;
+
+  it("flags the retyped fallback and clears the spellings that are not it", () => {
+    // LESSONS 8 — the guard proves itself on inputs it MUST flag ...
+    for (const flagged of [
+      "{name ?? sourceId}",
+      "source: nameOf.get(row.source_id) ?? row.source_id,",
+      "rowLabel={(split) => link(split.source ?? split.sourceId)}",
+      "const label = names.get(id)\n  ?? sourceId;",
+    ]) {
+      expect(ID_FALLBACK.test(codeLinesIn(flagged).join("\n")), flagged).toBe(true);
+    }
+    // ... and on inputs it must NOT, which is what keeps it from being a ban
+    // on the two characters.
+    for (const clear of [
+      "source: source?.source ?? null,",
+      "threshold: series?.threshold ?? stuckPatternThreshold(sourceId),",
+      "const set = sourceIdsOf.get(row.entity_id) ?? new Set<string>();",
+      "{sourceLabel(names, sourceId)}",
+      "// a comment about `name ?? sourceId` is documentation",
+    ]) {
+      expect(ID_FALLBACK.test(codeLinesIn(clear).join("\n")), clear).toBe(false);
+    }
+  });
+
+  it("has no surface falling back to a source id outside the rule", () => {
+    const offenders = sourceFiles().filter((file) => ID_FALLBACK.test(codeText(file)));
+    expect(offenders).toEqual([]);
+  });
+
+  it("is asserted over a tree that really holds the callers", () => {
+    // The ratchet the rule above needs to stay non-vacuous: an empty or
+    // renamed tree would clear it silently. Every surface that labels a
+    // source id imports the rule, and these are the ones the class was found
+    // on.
+    const files = sourceFiles();
+    for (const caller of [
+      "src/lib/browse/rows.ts",
+      "src/components/sources/trends.tsx",
+      "src/app/claims/page.tsx",
+      "src/lib/records/provenance.ts",
+      "src/lib/db/review-item.ts",
+    ]) {
+      expect(files, caller).toContain(caller);
+      expect(codeText(caller), caller).toContain("sourceLabel");
     }
   });
 });

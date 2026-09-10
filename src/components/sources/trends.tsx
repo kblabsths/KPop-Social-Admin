@@ -3,6 +3,7 @@ import { GaugeCard, TrendTable, type TrendMeasure } from "@/components/gauges";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { Identifier, WindowLine } from "@/components/ui";
 import { count, counted, pluralise } from "@/lib/format";
+import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
 import { sourcesHref, type SourceNarrowing } from "@/lib/sources/routes";
 import type {
   AwaitingRowPoint,
@@ -27,23 +28,32 @@ import type {
 
 /**
  * The name a per-source row is known by, as a LINK to that source's narrowing
- * of this page: the registry's name, or the raw id when the read held no
- * registry row for it.
+ * of this page.
  *
- * Named `sourceTrendLink` and not `sourceLabel`: the pure leaf
- * `lib/sources/names.ts` already exports a `sourceLabel`, which answers the
- * different question "what is this source CALLED" and returns a string. One
- * name per concept (LOOK_AND_FEEL, The Voice), so the one that renders a link
- * says so.
+ * WHAT it says is not this file's decision: it is `sourceLabel`'s one rule
+ * (`lib/sources/names.ts`), asked over the names map the caller hands in.
+ * This function only draws the anchor. It spelled `{name ?? sourceId}` until
+ * admin-window/BUG-0158, and `??` sees only `null` — so a registry row that
+ * EXISTED with an ink-less name took neither branch and the trend rendered an
+ * anchor with nothing to read and nothing to click, beside sibling rows that
+ * named their source (BUG-0154's harm, on this surface).
+ *
+ * Named `sourceTrendLink` and not `sourceLabel`: the leaf's `sourceLabel`
+ * answers the different question "what is this source CALLED" and returns a
+ * string. One name per concept (LOOK_AND_FEEL, The Voice), so the one that
+ * renders a link says so.
  */
-function sourceTrendLink(sourceId: string, name: string | null): ReactNode {
+function sourceTrendLink(
+  names: ReadonlyMap<string, string>,
+  sourceId: string,
+): ReactNode {
   return (
     <a
       href={sourcesHref({ source_id: sourceId })}
       data-trend-source={sourceId}
       className={IN_PAGE_LINK}
     >
-      {name ?? sourceId}
+      {sourceLabel(names, sourceId)}
     </a>
   );
 }
@@ -62,11 +72,19 @@ function sourceTrendLink(sourceId: string, name: string | null): ReactNode {
 export function AwaitingRowTrendSection({
   trend,
   filter,
-  nameOf,
+  names,
 }: {
   trend: AwaitingRowTrend;
   filter: SourceNarrowing;
-  nameOf: (sourceId: string) => string | null;
+  /**
+   * What the registry calls each source, as `sourceNamesOf` recorded it — the
+   * page's own `listSources` read, handed over whole (`/sources`' registry leg
+   * is a COMPLETE read, so it names every source this trend can hold). A map
+   * rather than a lookup function because the LABEL rule lives in
+   * `sourceLabel` and needs the registry's answer itself, blank names included
+   * (admin-window/BUG-0158).
+   */
+  names: ReadonlyMap<string, string>;
 }) {
   const { window: info, series } = trend;
   const claims = series.reduce((total, one) => total + one.claims, 0);
@@ -129,7 +147,7 @@ export function AwaitingRowTrendSection({
           period="source"
           rows={series}
           rowKey={(one) => one.sourceId}
-          rowLabel={(one) => sourceTrendLink(one.sourceId, nameOf(one.sourceId))}
+          rowLabel={(one) => sourceTrendLink(names, one.sourceId)}
           measures={perSource}
           empty={{
             holds: "sources waiting on a record in this window",
@@ -202,6 +220,21 @@ export function RejectionSection({
   filter: SourceNarrowing;
 }) {
   const { window: info, bySource } = gauge;
+  // The names map THIS section labels by is the gauge's own: `bySource` was
+  // built by joining the registry rows the gauge itself read, and `source:
+  // null` there means that read returned no row for the source. So the map
+  // gets an entry per named split and nothing for an unnamed one, which is
+  // exactly the input `sourceLabel` answers the id for (admin-window/BUG-0158).
+  // Deliberately NOT the page's registry read: this section's figures and its
+  // labels then come from one read, and a registry leg that refused cannot
+  // rename a row the gauge did name.
+  const names = sourceNamesOf(
+    bySource.flatMap((split) =>
+      split.source === null
+        ? []
+        : [{ source_id: split.sourceId, source: split.source }],
+    ),
+  );
   const narrowed =
     filter.source_id === undefined
       ? null
@@ -248,7 +281,7 @@ export function RejectionSection({
           period="source"
           rows={bySource}
           rowKey={(split) => split.sourceId}
-          rowLabel={(split) => sourceTrendLink(split.sourceId, split.source)}
+          rowLabel={(split) => sourceTrendLink(names, split.sourceId)}
           measures={[
             { key: "rerejected", label: "re-rejected", value: (split) => split.rerejected },
             { key: "adjudicated", label: "adjudicated", value: (split) => split.adjudicated },

@@ -2,12 +2,18 @@
  * Per-field provenance for one record — campaign admin-window/TASK-0029.
  *
  * A PURE DOMAIN LEAF, the sibling of `lib/browse/rows.ts` (ARCHITECTURE.md §4
- * rule 7): it imports NOTHING, it declares the row shape both sides need, and
- * both sides use it — `lib/db/records.ts` reads rows of this shape and hands
- * them here to be joined; `components/records/**` renders what comes out. That
- * is the rule's own prescription for a type two layers share, and it is why
- * neither the data layer nor a component declares a second copy of it
- * (a hand-copied shape drifts — admin-window/BUG-0016).
+ * rule 7): it reaches nothing that can reach a database, it declares the row
+ * shape both sides need, and both sides use it — `lib/db/records.ts` reads
+ * rows of this shape and hands them here to be joined; `components/records/**`
+ * renders what comes out. That is the rule's own prescription for a type two
+ * layers share, and it is why neither the data layer nor a component declares
+ * a second copy of it (a hand-copied shape drifts — admin-window/BUG-0016).
+ *
+ * Its ONE import is another leaf, which rule 7 ¶2 permits for the same reason
+ * `lib/sources/names.ts` imports `hasVisibleContent`: what a source is CALLED
+ * is `sourceLabel`'s one rule, and this file spelled its own `?? row.source_id`
+ * beside it until admin-window/BUG-0158 — so a registry row that EXISTED with
+ * a blank name put nothing at all where the provenance line names its source.
  *
  * **The latest-per-fact rule is NOT here.** `field_provenance` is append-only,
  * so a fact carries as many rows as it has had decisions and only the last of
@@ -16,6 +22,7 @@
  * the ticket's own criterion). The caller reduces, then calls in here; the
  * function below says so in its own contract rather than re-deriving it.
  */
+import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
 
 /**
  * One decision row of `field_provenance`, as this surface reads it.
@@ -106,8 +113,9 @@ export function fieldProvenanceOf(
   current: readonly FieldDecisionRow[],
   sources: readonly SourceNameRow[],
 ): Map<string, FieldProvenance> {
-  const nameOf = new Map<string, string>();
-  for (const row of sources) nameOf.set(row.source_id, row.source);
+  // The names map this join labels by: the `sources` rows the caller's own
+  // read returned, exactly as `sourceNamesOf` records them.
+  const names = sourceNamesOf(sources);
 
   const byField = new Map<string, FieldProvenance>();
   for (const row of current) {
@@ -123,7 +131,7 @@ export function fieldProvenanceOf(
       byField.set(row.field, {
         ...at,
         authority: "source",
-        source: nameOf.get(row.source_id) ?? row.source_id,
+        source: sourceLabel(names, row.source_id),
       });
     }
   }

@@ -460,6 +460,21 @@ function PendingClaimsGauge({ gauge }: { gauge: PendingClaims }) {
 
 /** The standing-disagreements gauge (spec §5, gauge 5 of 6) — the standing tab's. */
 function StandingGauge({ gauge }: { gauge: StandingDisagreements }) {
+  // The names map this gauge labels its splits by is the gauge's OWN: each
+  // split was built by joining the `sources` rows the gauge itself read, and
+  // `source: null` there means that read returned no row for it. So a named
+  // split becomes an entry and an unnamed one contributes nothing, which is
+  // exactly the input `sourceLabel` answers with the id (BUG-0158). It is
+  // deliberately not the page's registry map: the figures and the labels in
+  // this block then come from one read (LESSONS 11), and the label rule has
+  // one owner rather than a `??` retyped in the anchor below.
+  const names = sourceNamesOf(
+    gauge.bySource.flatMap((split) =>
+      split.source === null
+        ? []
+        : [{ source_id: split.sourceId, source: split.source }],
+    ),
+  );
   return (
     <>
       <WindowLine
@@ -484,7 +499,7 @@ function StandingGauge({ gauge }: { gauge: StandingDisagreements }) {
             data-split-source={split.sourceId}
             className={IN_PAGE_LINK}
           >
-            {split.source ?? split.sourceId}
+            {sourceLabel(names, split.sourceId)}
             {split.tier === null ? "" : ` · tier ${split.tier}`}
             {split.lifecycle === null ? "" : ` · ${split.lifecycle}`}
           </a>
