@@ -44,7 +44,7 @@ import {
  *    `observations.observed_at`, joined by `observation_id`.
  *  - trap 4 — **`in_window` must never reach the UI**, not as a row, not as a
  *    filter option, not as a zero. It is excluded in the query (`lib/db/gauges.ts`)
- *    AND in `selectClaims` below, so the exclusion holds whether or not the
+ *    AND in `selectPendingClaims` below, so the exclusion holds whether or not the
  *    server narrowed.
  *  - the view holds only **live `pending` claims** (migration `20260901000004`,
  *    `live_pending_claim`), which is why the windowed scan is the
@@ -212,7 +212,7 @@ export async function fetchPendingClaims(
  * `lib/db/review-items.ts` gives: the returned set is decided by exactly one
  * function whether or not the server narrowed.
  */
-export function selectClaims(input: PendingClaimsRows): PendingClaimRow[] {
+export function selectPendingClaims(input: PendingClaimsRows): PendingClaimRow[] {
   const { filter } = input;
   return input.claims.filter((claim) => {
     if (!isRenderableBucket(claim.bucket)) return false;
@@ -239,7 +239,7 @@ function ages(
 
 /** The pure aggregate: buckets with counts and age percentiles. */
 export function aggregatePendingClaims(input: PendingClaimsRows): PendingClaims {
-  const claims = selectClaims(input);
+  const claims = selectPendingClaims(input);
   const { observations, window, filter } = input;
   const byBucket = groupBy(claims, (claim) => claim.bucket);
 
@@ -274,7 +274,7 @@ export function aggregatePendingClaims(input: PendingClaimsRows): PendingClaims 
 export function aggregateAwaitingRowTrend(input: PendingClaimsRows): AwaitingRowTrend {
   const { observations, window } = input;
   const observed = indexBy(observations, (row) => row.observation_id);
-  const awaitingRow = selectClaims(input).filter((claim) => claim.bucket === "awaiting_row");
+  const awaitingRow = selectPendingClaims(input).filter((claim) => claim.bucket === "awaiting_row");
   const days = utcDaysBetween(window.since, window.until);
 
   const series = [...groupBy(awaitingRow, (claim) => claim.source_id).entries()]

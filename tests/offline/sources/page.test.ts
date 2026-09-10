@@ -632,7 +632,7 @@ describe("a source's links", () => {
   it("narrows to the source the URL names, in every uuid spelling Postgres accepts", async () => {
     // The narrowing comes from the URL alone (admin-window/BUG-0139) and was
     // then compared to `source_id` as a JAVASCRIPT STRING (`selectSources`,
-    // `selectClaims`), while the same value went to the awaiting-row gauge's
+    // `selectPendingClaims`), while the same value went to the awaiting-row gauge's
     // QUERY, where Postgres compares it as a UUID — so a registered source
     // named in one of the other spellings was DENIED by the page while the
     // database it had just read matched it (admin-window/BUG-0140; measured
@@ -933,7 +933,7 @@ describe("the awaiting-row trend", () => {
 
   it("plots the days of the source the URL asked for, not the first series it was handed", async () => {
     // The narrowing is applied twice today — once at the query and once in
-    // `selectClaims` — so the real read hands this section one series and
+    // `selectPendingClaims` — so the real read hands this section one series and
     // taking the first would look right. The RENDERING must not depend on
     // that (admin-window/BUG-0022): handed a fleet-shaped trend, busiest
     // first, it still plots the source the URL named. The seam is the same

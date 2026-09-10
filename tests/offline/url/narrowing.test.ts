@@ -39,6 +39,12 @@ const OWNER: Readonly<Record<string, string>> = {
   isBlockNarrowed: "src/lib/review/queue-filters.ts",
   /** The two-fact rule itself, for every surface (admin-window/DEBT-0008). */
   isSurfaceNarrowed: "src/lib/url/narrowing.ts",
+  /** The app's ONE claim predicate: claim rows + a `ClaimsFilter`, bucket arm
+   * included (admin-window/DEBT-0014). */
+  selectClaims: "src/lib/db/claims.ts",
+  /** The pending-claims GAUGE's own selection over its bundled read — no
+   * bucket arm, filter read off the bundle (admin-window/DEBT-0014). */
+  selectPendingClaims: "src/lib/gauges/pending-claims.ts",
 };
 
 /**

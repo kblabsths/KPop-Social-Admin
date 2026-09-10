@@ -257,6 +257,12 @@ export async function listClaims(db?: SupabaseClient): Promise<DbResult<ClaimRow
  * property of one function rather than of every surface that filters.
  *
  * The parked bucket is dropped here too, whatever was asked for.
+ *
+ * It owns the bare word: the pending-claims gauge's own selection over its
+ * bundled read is `selectPendingClaims` (`lib/gauges/pending-claims.ts`), a
+ * different question over a different input, and both names are pinned to one
+ * declaring module by the vocabulary guard in
+ * `tests/offline/url/narrowing.test.ts` (admin-window/DEBT-0014).
  */
 export function selectClaims(
   claims: readonly ClaimRow[],
