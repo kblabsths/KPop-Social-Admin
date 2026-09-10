@@ -120,7 +120,7 @@ function firstValue(value: ParamValue): string | undefined {
  * It asks for the value CANONICALISED, in one call, because the narrowing it
  * returns is then compared two ways: by Postgres, which matches every spelling
  * of one uuid, at the awaiting-row gauge's query — and by JavaScript, which
- * matches exactly one, in `selectSources` and `selectClaims`. Handed the URL's
+ * matches exactly one, in `selectSources` and `selectPendingClaims`. Handed the URL's
  * raw value both comparisons disagree, and a source the database matched was
  * denied by the page (admin-window/BUG-0140). Canonicalised HERE, where the
  * narrowing is made and nowhere else, every spelling `isRecordId` accepts —

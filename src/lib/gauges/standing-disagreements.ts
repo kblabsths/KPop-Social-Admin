@@ -17,7 +17,11 @@ import {
   type Spread,
   type WindowInfo,
 } from "./gauge";
-import { fetchPendingClaims, selectClaims, type PendingClaimsRows } from "./pending-claims";
+import {
+  fetchPendingClaims,
+  selectPendingClaims,
+  type PendingClaimsRows,
+} from "./pending-claims";
 
 /**
  * Gauge 5 of 6 — **standing disagreements**, on `/claims` (standing tab).
@@ -83,7 +87,7 @@ export interface StandingDisagreements {
 
 /** The claims of this gauge: the renderable set, narrowed to the standing bucket. */
 export function selectStanding(rows: PendingClaimsRows): PendingClaimRow[] {
-  return selectClaims(rows).filter((claim) => claim.bucket === STANDING_BUCKET);
+  return selectPendingClaims(rows).filter((claim) => claim.bucket === STANDING_BUCKET);
 }
 
 /**
