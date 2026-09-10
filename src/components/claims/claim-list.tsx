@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { Badge, type Column, DataTable } from "@/components/ui";
-import { isAbsent, orDash, relativeAge } from "@/lib/format";
-import { factKey } from "@/lib/verdict/decision";
+import { orDash, relativeAge } from "@/lib/format";
+import { factKey, hasVisibleContent } from "@/lib/verdict/decision";
 
 /**
  * The claims themselves — campaign admin-window/TASK-0012.
@@ -180,8 +180,15 @@ export function ClaimList({
       // suite addresses the row's source by. The same guard, spelled the same
       // way, sits on the review item's own source cell
       // (`components/review/evidence-cells.tsx`).
+      // "Unreadable" is the question `sourceLabel` itself asked of the
+      // registry — `hasVisibleContent`, the app's ONE definition of blank —
+      // and never `isAbsent`, whose dash branch answers a different question:
+      // whether a body is one of the app's OWN formatters' em dashes. Asked of
+      // a producer's LABEL it disagreed with the label rule, so a source the
+      // registry NAMES `—` lost its link here and was announced as no value
+      // (admin-window/BUG-0156; LESSONS 4).
       cell: (row) =>
-        isAbsent(row.source) ? (
+        !hasVisibleContent(row.source) ? (
           <span data-claim-source={row.sourceId}>{orDash(row.source)}</span>
         ) : (
           <a

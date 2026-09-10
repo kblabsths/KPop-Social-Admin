@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
-import { isAbsent, orDash, relativeAge, type Timestamp } from "@/lib/format";
+import { orDash, relativeAge, type Timestamp } from "@/lib/format";
+import { hasVisibleContent } from "@/lib/verdict/decision";
 import { cx } from "@/components/ui/cx";
 import { DATA_MUTED, Identifier } from "@/components/ui/identifier";
 
@@ -119,6 +120,18 @@ function CardValue({ value }: { value: string | null }) {
  * isolating the app's own dash would be the same category error in reverse,
  * and wrapping it anyway draws an EMPTY box that announces no absence at all.
  *
+ * **Absent here is INK and not `isAbsent`** (admin-window/BUG-0156). Every
+ * value this function is handed is a PRODUCER's — a source's own name, a tier,
+ * an applied claim's status — so the question is the one the label rule asks,
+ * `hasVisibleContent` (`lib/verdict/decision.ts`, the app's one definition of
+ * blank). `isAbsent` (`lib/format.ts`) additionally calls the bare em dash an
+ * absence, because it exists to recognise what the app's OWN formatters
+ * return (`count(null)`, `relativeAge(null).text`) — and none of those reach
+ * here: the age beside these values is handed to `orDash` directly, one line
+ * below. So a source the registry NAMES `—` used to be announced on this line
+ * as `no value`, in disabled ink, about a source the page holds the name of.
+ * A `null` is still an absence, and so is a name with no ink in it.
+ *
  * Both lines of the canonical card ask THIS function rather than each writing
  * the guard again: the provenance line wrapped its parts unconditionally and so
  * drew that empty box while the claim line beside it drew the dash
@@ -126,7 +139,7 @@ function CardValue({ value }: { value: string | null }) {
  * answering "nothing here" the same way (LESSONS 5, 7).
  */
 function MachineValue({ value }: { value: string | null }) {
-  if (isAbsent(value)) return <>{orDash(value)}</>;
+  if (value === null || !hasVisibleContent(value)) return <>{orDash(value)}</>;
   return <Identifier muted>{value}</Identifier>;
 }
 

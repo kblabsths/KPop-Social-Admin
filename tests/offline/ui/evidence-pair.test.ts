@@ -207,6 +207,51 @@ describe("EvidencePair", () => {
   });
 
   /**
+   * A producer's value that LOOKS like the app's dash is still a value
+   * (admin-window/BUG-0156).
+   *
+   * Every value this line carries is foreign — the source's own name, the
+   * tier, the applied claim's status — so "is there anything here" is the
+   * question the app asks of a producer's string (`hasVisibleContent`, the one
+   * definition of blank, which is what the label rule
+   * `lib/sources/names.ts` asks of the registry). It is NOT `isAbsent`, whose
+   * extra branch calls a bare em dash an absence because that is what the
+   * app's OWN formatters return for one. This line asked `isAbsent`, so a
+   * source the registry NAMES `—` was drawn in disabled ink and announced to
+   * a screen reader as `no value` — about a source whose name the page is
+   * holding, one block above the evidence cell that had lost its link over the
+   * same disagreement.
+   *
+   * Both directions (LESSONS 8), and the second is the one a fix that simply
+   * stopped dashing would fail: a name with NO ink is still an absence here.
+   */
+  it("draws a producer's em-dash name as a value and a name with no ink as the absence", () => {
+    const isolation = cheerio
+      .load(render(h(Identifier, { muted: true, children: "x" })))("span")
+      .attr("dir");
+
+    // 1. A registry name whose only character is an em dash: a machine value,
+    //    in the isolated box every other source name gets, announced as
+    //    nothing.
+    const $named = cheerio.load(pair({ claims: [{ ...CLAIMS[0], source: EM_DASH }] }));
+    const own = $named("*")
+      .toArray()
+      .filter((element) => $named(element).text() === EM_DASH);
+    expect(own, "the name is on the line exactly once").toHaveLength(1);
+    expect($named(own[0]).attr("dir"), "isolated like any other source name").toBe(isolation);
+    expect($named('[aria-label="no value"]'), "announced as an absence").toHaveLength(0);
+
+    // 2. A name with nothing visible in it — not merely whitespace: the class
+    //    `hasVisibleContent` knows and `trim()` does not — is an absence, and
+    //    the app's own element draws it, in no isolated box.
+    const $blank = cheerio.load(pair({ claims: [{ ...CLAIMS[0], source: "\u200b \u2060" }] }));
+    const dash = $blank('[aria-label="no value"]');
+    expect(dash, "the app's absence element draws an unreadable name").toHaveLength(1);
+    expect(dash.attr("dir"), "the dash is the app's own, not a machine value").toBeUndefined();
+    expect(dash.parents("[dir]"), "and it sits in no isolated box").toHaveLength(0);
+  });
+
+  /**
    * The same containment, driven from the TIER (admin-window/BUG-0151, QA
    * attack). The fix routes both machine values through the one helper, so a
    * hostile tier is the arm the source fixture above cannot see: if only the

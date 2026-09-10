@@ -76,6 +76,15 @@ export function sourceNamesOf(
  * here — the review item's header link, its evidence rows and its canonical
  * side, `/claims`, `/sources`' dial. A retyped `?? sourceId` beside it is the
  * defect this ticket removed from `lib/db/review-item.ts` (LESSONS 5).
+ *
+ * **A cell handed a label asks `hasVisibleContent` too, never `isAbsent`**
+ * (admin-window/BUG-0156). The two source cells guarded their anchors with
+ * `isAbsent` (`lib/format.ts`), whose dash branch recognises the bare em dash
+ * one of the app's OWN formatters returns — a different question. So a source
+ * the registry NAMES `—` was kept verbatim here and then rendered as an
+ * absence there: the link gone, the cell labelled `no value`, and the page
+ * explaining a dash that stood for a name. One question, one predicate: this
+ * one (LESSONS 4, LESSONS 11).
  */
 export function sourceLabel(
   names: ReadonlyMap<string, string>,
@@ -84,3 +93,4 @@ export function sourceLabel(
   const name = names.get(sourceId);
   return name !== undefined && hasVisibleContent(name) ? name : sourceId;
 }
+
