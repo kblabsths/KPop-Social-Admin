@@ -150,4 +150,35 @@ describe("the newest-first ordering, over either column pair", () => {
       "aaa",
     ]);
   });
+
+  it("compares INSTANTS, not the strings they arrived as", () => {
+    // Added under QA (admin-window/DEBT-0016). The transport decides the
+    // spelling, not the app: PostgREST hands a `timestamptz` back as
+    // `2026-09-01T10:00:00+00:00`, a fixture and an edge function write `Z`,
+    // and a row that came through neither may carry an offset of its own.
+    // Those are the SAME instant, so the clock must not separate them and the
+    // KEY has to decide — which is the whole reason the order is total.
+    // A comparator that sorted the raw strings would pass every case above
+    // (one fixture, one format) and silently reorder a real window here.
+    expect(
+      orderedTags([
+        // The key that must WIN carries the lexically EARLIER string, so a
+        // comparator that sorted the raw text would answer this backwards.
+        ["2026-09-01T10:00:00+00:00", "zzz"],
+        ["2026-09-01T11:00:00+01:00", "aaa"],
+      ]),
+    ).toEqual(["zzz", "aaa"]);
+  });
+
+  it("ranks two spellings of two DIFFERENT instants by the clock", () => {
+    // The other half of the same property, so the case above cannot pass by a
+    // comparator that has stopped reading the instant at all: the older row is
+    // the one whose STRING sorts later, and the clock still wins.
+    expect(
+      orderedTags([
+        ["2026-09-01T23:00:00+00:00", "zzz"],
+        ["2026-09-02T00:30:00+02:00", "aaa"],
+      ]),
+    ).toEqual(["zzz", "aaa"]);
+  });
 });
