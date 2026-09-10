@@ -2264,13 +2264,19 @@ describe("a ?source= link arriving from the Sources page", () => {
    * `/runs` renders the same component from the same props, so it carries the
    * same defect.
    *
-   * **How it was answered**: the allowlist arm, at ONE edge. `sourceNarrowing`
-   * (`src/lib/db/runs.ts`) asks the app's one predicate for a URL value inside
+   * **How it was answered**: the allowlist arm, at ONE edge — the facet's one
+   * derivation, which is `canonicalUrlText` (`src/lib/url/text.ts`) since
+   * admin-window/BUG-0155 and was a four-line function in `src/lib/db/runs.ts`
+   * when this landed. It asks the app's one predicate for a URL value inside
    * app-authored prose — `canSpellUrlValue`, `src/lib/url/spellable.ts`, the
    * printable-ASCII-with-ink allowlist BUG-0147 wrote for `?cycle=` and this
-   * ticket moved to a leaf both callers import — so a name outside it narrows
-   * nothing, is spelled nowhere, and is reported on the shared
-   * dropped-parameter line (the arm graded on its own below). The boxed arm
+   * ticket moved to a leaf both callers import — OF THE VALUE THE URL CARRIED,
+   * before any padding is stripped, so a name outside it narrows nothing, is
+   * spelled nowhere, and is reported on the shared dropped-parameter line (the
+   * arm graded on its own below). That ordering is what keeps this case
+   * refused rather than laundered: the ink-less class BUG-0146's strip removes
+   * holds the bidi controls, so a strip applied first would turn the first
+   * value below into a spellable `bandsintown` and narrow by it. The boxed arm
    * was declined for BUG-0137's and BUG-0147's reason: `WindowLine.scope` is a
    * sentence fragment `besides`/`narrows` split back apart, so no element can
    * travel through it, and the box leaves the copied-out text reversed anyway.
@@ -2451,8 +2457,20 @@ describe("a ?source= link arriving from the Sources page", () => {
    * assertion is on the TEXT and on the value hook, never on copy or styling;
    * whitespace is collapsed the way a browser collapses it, which is what the
    * measurement above observed.
+   *
+   * **How it was answered** (the architect's ruling of 2026-09-09,
+   * ARCHITECTURE.md §7 "What is SHOWN is what was USED: one derivation per URL
+   * value class"): BOTH arms, each for the case it fits. The ENDS canonicalise
+   * — `canonicalUrlText` (`src/lib/url/text.ts`) strips the padding a paste
+   * carries through the app's one `trimInkPadding`, so the first three cases
+   * below narrow and spell exactly as `?source=bandsintown` does. The INTERIOR
+   * is REFUSED — a run of two or more spaces is the whole of "a value a browser
+   * would re-spell" inside printable ASCII — so the fourth case takes the
+   * dropped-parameter arm this test already offers. The `white-space: pre` box
+   * the ticket floated was rejected in the same ruling: it cannot pass the
+   * comparison below, which collapses the rendered text first.
    */
-  it.fails(
+  it(
     "shows the ?source= name it queried, not one the browser collapsed [admin-window/BUG-0155]",
     async () => {
       for (const asked of [
@@ -3167,7 +3185,7 @@ describe("the newest adapter run, above the cycles window", () => {
    * `holds` ("runs from <name>", `noRunsFrom`).
    *
    * Neither is gated where it renders, and neither needs to be: `/cycles`
-   * derives the facet through `sourceNarrowing`, so a name the app may not
+   * derives the facet through `canonicalUrlText`, so a name the app may not
    * spell never becomes a narrowing and never reaches either. What that must
    * mean on screen is that both sentences are the ones the page renders with
    * NO facet at all — byte for byte — rather than a faceted sentence with a

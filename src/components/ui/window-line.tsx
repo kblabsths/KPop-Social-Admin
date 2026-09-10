@@ -278,10 +278,12 @@ const NARROWING_JOIN = ", ";
  *
  * **This is the only `narrowedTo` in the app** (admin-window/DEBT-0010). It
  * takes narrowing PHRASES and returns a scope SENTENCE FRAGMENT; the facet
- * canonicaliser that used to share the word is `sourceNarrowing` in
- * `src/lib/db/runs.ts`, which takes a `?source=` and returns a query value.
- * Nothing but the type checker stood between the two imports, so the word now
- * belongs to this one.
+ * canonicaliser that used to share the word lived in `src/lib/db/runs.ts` and
+ * took a `?source=` to a query value. Nothing but the type checker stood
+ * between the two imports, so the word now belongs to this one — and that
+ * canonicaliser has since been retired into `canonicalUrlText`
+ * (`src/lib/url/text.ts`, admin-window/BUG-0155), which shares no word with
+ * anything here.
  */
 export function narrowedTo(
   narrowings: readonly (string | null)[],

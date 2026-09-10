@@ -3,7 +3,7 @@ import { newestFirst } from "./cycles";
 import type { DashboardRunRow } from "./dashboard";
 import { ROW_CAP, readRows, type DbResponse, type DbResult } from "./result";
 import { objectKindOf, T, type ObjectKind } from "./tables";
-import { canSpellUrlValue } from "@/lib/url/spellable";
+import { canonicalUrlText } from "@/lib/url/text";
 
 /**
  * What this module's window read runs OVER — the word its window line ends
@@ -159,6 +159,12 @@ export interface RunWindow {
    * The source NAME the query was narrowed to, or `null` when it was not —
    * the narrowing that actually reached the database, so the page states the
    * facet it got rather than the one it asked for.
+   *
+   * It is `canonicalUrlText`'s output and nothing else (see `readRuns`), so
+   * what a sentence built from this field SPELLS is what the `.eq` SENT —
+   * ARCHITECTURE.md §7's "what is SHOWN is what was USED"
+   * (admin-window/BUG-0155). It is spellable by construction too, which is
+   * what the runs window line's bare-text scope rests on (BUG-0153).
    */
   source: string | null;
 }
@@ -166,10 +172,15 @@ export interface RunWindow {
 /** What a runs read may be narrowed by. */
 export interface RunsFilter {
   /**
-   * `?source=<name>` — the Sources page's seam. Matched against `runs.source`
-   * BY NAME (§6 trap 6): there is no foreign key to resolve, and a name with
-   * no `sources` row is still a run that renders. A name matching nothing is
-   * an empty window, which is a real answer and not an error.
+   * `?source=<name>` — the Sources page's seam, AS THE URL CARRIED IT. Matched
+   * against `runs.source` BY NAME (§6 trap 6): there is no foreign key to
+   * resolve, and a name with no `sources` row is still a run that renders. A
+   * name matching nothing is an empty window, which is a real answer and not
+   * an error.
+   *
+   * A caller hands over the raw parameter; `readRuns` derives what it queries
+   * by (`canonicalUrlText`), because the derivation and the `.eq` must be the
+   * same string and only one of them can be authoritative.
    */
   source?: string;
   /** The window size. Defaults to `RUN_WINDOW`, clamped to the platform cap. */
@@ -188,60 +199,28 @@ function windowSize(limit: number): number {
 }
 
 /**
- * The `?source=` FACET as the query will use it, or `null` for no narrowing at
- * all.
- *
- * A `?source=` carrying nothing is not a narrowing to the empty name — it is
- * an operator who typed half a URL — so it narrows nothing rather than
- * rendering every run as unmatched. A name that is present is used VERBATIM:
- * `runs.source` is a text identifier, and trimming it would match a row the
- * URL did not ask for.
- *
- * **A name this app could not SPELL narrows nothing either**
- * (admin-window/BUG-0153; ARCHITECTURE.md §7, common violations row 15). For
- * `?source=` the allowlist question and the narrowing question are ONE
- * question, which `?cycle=` did not have to answer: this facet is not merely
- * spelled, it is SENT (`.eq("source", source)` below) — and the value that
- * comes back on `RunWindow.source` is what the runs window line then
- * interpolates into four clauses of the app's own paragraph, as bare text
- * (`runsScope` in `src/components/cycles/adapter-runs.tsx`). Until this gate
- * landed, `/cycles?source=%E2%80%AEbandsintown` reversed 87 characters of that
- * paragraph and put six bidi controls into the delivered markup (measured in
- * Chromium, both colour schemes, admin-window/BUG-0153). So the ONE allowlist
- * (`canSpellUrlValue`, `src/lib/url/spellable.ts` — printable ASCII carrying
- * ink, the predicate BUG-0147 wrote for `?cycle=`) is asked HERE, where the
- * facet becomes a query value: a value it refuses reaches neither PostgREST
- * nor any sentence, `readRuns` returns a `source: null` window, and the page's
- * shared dropped-parameter line reports `source` as a parameter it did not
- * apply — the "counted, not spelled" arm §7 rules, and the same answer `?run=`
- * gives a value that is not a run id.
- *
- * **Asking it here is what makes the rendering rule structural.** Every
- * sentence that names this facet — the runs window line's scope, the facet
- * paragraph, the lead's row-less line, the empty card's words — is built from
- * a value that passed through this function, so no call site has to remember
- * the rule and none can reintroduce §7's defect by forgetting it. It is the
- * shape `SourceScope` (`src/components/queues/source-scope.tsx`) already
- * relies on for its canonical uuid: safe inline because of WHAT REACHES IT.
- * The cost is named rather than hidden: a source name outside printable ASCII
- * would be unqueryable from a URL. No adapter has ever filed one, and a name
- * this app cannot put on screen is one it cannot honestly narrow by.
- *
- * **Named for the job it does** (admin-window/DEBT-0010). It was `narrowedTo`,
- * which is also the name of the window line's scope-PHRASE composer
- * (`narrowedTo` in `src/components/ui/window-line.tsx`, whose inverse is
- * `besides`): one word over a query value and a sentence fragment, both
- * imported by adjacent pages, and nothing but the type checker between them.
- * This one canonicalises a facet; that one writes English.
- */
-export function sourceNarrowing(source: string | undefined): string | null {
-  if (source === undefined || source.trim() === "") return null;
-  if (!canSpellUrlValue(source)) return null;
-  return source;
-}
-
-/**
  * The newest runs, newest first, optionally narrowed to one source name.
+ *
+ * **What the read narrows by is DERIVED, once, by `canonicalUrlText`**
+ * (`src/lib/url/text.ts`; ARCHITECTURE.md §7, "What is SHOWN is what was
+ * USED"; admin-window/BUG-0155). That one string is what `.eq("source", …)`
+ * sends AND what comes back on `RunWindow.source` for every sentence the page
+ * builds, so a `?source=%20ticketmaster` can no longer query `" ticketmaster"`
+ * while the page's own words say "found no runs from ticketmaster at all" over
+ * a source it draws five runs for one invisible character away (measured in
+ * Chromium, BUG-0155). A value the derivation refuses narrows NOTHING: no
+ * `.eq` is issued, the window says it was narrowed by nothing, and the page's
+ * shared dropped-parameter line reports `source` as a parameter it did not
+ * apply.
+ *
+ * **There is deliberately NO local wrapper of that derivation in this
+ * module.** One lived here until admin-window/BUG-0155 — four lines that
+ * returned the value verbatim: a second name for one question (common
+ * violations row 18) and a pure function parked in `lib/db/**` where no leaf
+ * could reach it (row 17). Once such a body is one call to the derivation it
+ * is neither useful nor harmless; the derivation is a leaf, and every caller —
+ * this read, `/cycles`, and the runs half's own seam gate — asks the SAME
+ * function rather than a local copy of the question. Do not re-add one.
  *
  * The order is total — `started_at` descending then the primary key — so two
  * runs that started on the same instant cannot swap places between reloads and
@@ -255,7 +234,7 @@ export async function readRuns(
   db?: SupabaseClient,
 ): Promise<DbResult<RunWindow>> {
   const size = windowSize(filter.limit ?? RUN_WINDOW);
-  const source = sourceNarrowing(filter.source);
+  const source = canonicalUrlText(filter.source);
 
   const result = await readRows<RunRow>(
     T.runs,

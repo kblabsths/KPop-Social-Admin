@@ -5,9 +5,9 @@ import {
   RUN_COUNTS,
   RUN_WINDOW,
   readRuns,
-  sourceNarrowing,
 } from "@/lib/db/runs";
 import { T } from "@/lib/db/tables";
+import { canonicalUrlText } from "@/lib/url/text";
 import {
   NEWEST_FIRST,
   NO_SUCH_SOURCE,
@@ -246,13 +246,20 @@ describe("the ?source= facet", () => {
   });
 
   it("treats a facet carrying nothing as no facet at all", async () => {
-    expect(sourceNarrowing(undefined)).toBeNull();
-    expect(sourceNarrowing("")).toBeNull();
-    expect(sourceNarrowing("   ")).toBeNull();
-    // A present name is used verbatim: a source is a text identifier, and
-    // trimming it would match a row the URL did not ask for.
-    expect(sourceNarrowing(SOURCE.ticketmaster)).toBe(SOURCE.ticketmaster);
-    expect(sourceNarrowing(" spaced ")).toBe(" spaced ");
+    expect(canonicalUrlText(undefined)).toBeNull();
+    expect(canonicalUrlText("")).toBeNull();
+    expect(canonicalUrlText("   ")).toBeNull();
+    // A present name narrows by itself…
+    expect(canonicalUrlText(SOURCE.ticketmaster)).toBe(SOURCE.ticketmaster);
+    // …and a PADDED one narrows by its twin (admin-window/BUG-0155). This
+    // assertion INVERTS: until the ruling of 2026-09-09 the padded value was
+    // returned verbatim, on the reasoning that "trimming it would match a row
+    // the URL did not ask for" — and the row it matched instead was none,
+    // under six sentences a browser had already re-spelled as the unpadded
+    // name. What is SHOWN is what was USED (ARCHITECTURE.md §7): the padding a
+    // paste carries is stripped where the value is derived, by ink and at the
+    // ends only, and the stripped string is the one both sent and spelled.
+    expect(canonicalUrlText(" spaced ")).toBe("spaced");
 
     const stub = stubClient({ [T.runs]: { data: [SUCCEEDED] } });
     const result = await readRuns({ source: "" }, stub.asSupabaseClient());
@@ -290,7 +297,7 @@ describe("the ?source= facet", () => {
   ] as const)(
     "narrows by no name this app could not spell: %s [admin-window/BUG-0153]",
     async (_name, asked) => {
-      expect(sourceNarrowing(asked)).toBeNull();
+      expect(canonicalUrlText(asked)).toBeNull();
       // …and the read really is the unnarrowed read: no `.eq` reached
       // PostgREST, and the window says it was narrowed by nothing, so no
       // sentence built from it can claim a scope the read did not have.
@@ -303,22 +310,152 @@ describe("the ?source= facet", () => {
     },
   );
 
+  /**
+   * The passing fixtures, as `[what the URL carried, what the read narrows
+   * by]` — two columns since admin-window/BUG-0155, because those are no
+   * longer always the same string and the pair is the whole point: whatever
+   * the URL carried, ONE derived value reaches the `.eq` AND every sentence
+   * built from `RunWindow.source`.
+   *
+   * `"blanks around ink"` is the second assertion that INVERTS under the
+   * ruling of 2026-09-09 (the first is `" spaced "` above): it was returned
+   * verbatim and now derives to its unpadded twin.
+   */
   it.each([
-    ["a registered source", SOURCE.ticketmaster],
-    ["a name the registry never heard of", SOURCE.unregistered],
-    ["a value the URL invented", '"><img src=x onerror=alert(1)>'],
-    ["blanks around ink", " a "],
-    ["punctuation only", "%%%"],
-    ["a value the length of the bound", "a".repeat(128)],
+    ["a registered source", SOURCE.ticketmaster, SOURCE.ticketmaster],
+    ["a name the registry never heard of", SOURCE.unregistered, SOURCE.unregistered],
+    [
+      "a value the URL invented",
+      '"><img src=x onerror=alert(1)>',
+      '"><img src=x onerror=alert(1)>',
+    ],
+    ["blanks around ink", " a ", "a"],
+    ["punctuation only", "%%%", "%%%"],
+    ["a value the length of the bound", "a".repeat(128), "a".repeat(128)],
   ] as const)(
     "still narrows by a name this app can spell: %s [admin-window/BUG-0153]",
-    async (_name, asked) => {
-      expect(sourceNarrowing(asked)).toBe(asked);
+    async (_name, asked, narrowedBy) => {
+      expect(canonicalUrlText(asked)).toBe(narrowedBy);
       const stub = stubClient({ [T.runs]: { data: [] } });
       const result = await readRuns({ source: asked }, stub.asSupabaseClient());
       if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
-      expect(steps(stub.calls[0], "eq")).toEqual([["source", asked]]);
-      expect(result.data.source).toBe(asked);
+      expect(steps(stub.calls[0], "eq")).toEqual([["source", narrowedBy]]);
+      expect(result.data.source).toBe(narrowedBy);
     },
   );
+
+  /**
+   * **What is SHOWN is what was USED, at this read's own edge** — the half of
+   * the facet's contract that lives here (admin-window/BUG-0155;
+   * ARCHITECTURE.md §7, common violations row 20).
+   *
+   * `/cycles` renders six sentences from `RunWindow.source`, so the string
+   * this read hands back is the string a browser will lay out. These grade the
+   * two arms the ruling names, on both fixtures (LESSONS 8): a value whose
+   * padding a browser would drop CANONICALISES here, and a value a browser
+   * would RE-SPELL narrows NOTHING here. The page-level consequences — the
+   * facet box, the window line, the empty card, the dropped-parameter line —
+   * are graded in `tests/offline/cycles/page.test.ts`.
+   */
+  it.each([
+    ["a leading space", ` ${SOURCE.ticketmaster}`],
+    ["a trailing space", `${SOURCE.ticketmaster} `],
+    ["blanks at both ends", `  ${SOURCE.ticketmaster}  `],
+  ] as const)(
+    "narrows by a padded name exactly as by its twin: %s [admin-window/BUG-0155]",
+    async (_name, asked) => {
+      expect(canonicalUrlText(asked)).toBe(SOURCE.ticketmaster);
+      const stub = stubClient({ [T.runs]: { data: runsFrom(SOURCE.ticketmaster) } });
+      const result = await readRuns({ source: asked }, stub.asSupabaseClient());
+      if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+      // The argument PostgREST received, not the one the URL carried.
+      expect(steps(stub.calls[0], "eq")).toEqual([["source", SOURCE.ticketmaster]]);
+      expect(result.data.source).toBe(SOURCE.ticketmaster);
+      expect(result.data.rows).toEqual(runsFrom(SOURCE.ticketmaster));
+    },
+  );
+
+  it.each([
+    ["two spaces inside", "tic  ketmaster"],
+    ["three spaces inside", "a   b"],
+    ["a doubled space that a strip of the ends cannot reach", " a  b "],
+  ] as const)(
+    "narrows by no name a browser would re-spell: %s [admin-window/BUG-0155]",
+    async (_name, asked) => {
+      expect(canonicalUrlText(asked)).toBeNull();
+      const stub = stubClient({ [T.runs]: { data: [SUCCEEDED] } });
+      const result = await readRuns({ source: asked }, stub.asSupabaseClient());
+      if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+      expect(steps(stub.calls[0], "eq")).toEqual([]);
+      expect(result.data.source).toBeNull();
+      expect(result.data.rows).toHaveLength(1);
+    },
+  );
+
+  /**
+   * **Padding the ALLOWLIST itself refuses is refused, not laundered** — the
+   * ordering inside `canonicalUrlText`, graded where it would otherwise be
+   * invisible (admin-window/BUG-0155).
+   *
+   * The strip is by INK, and the ink-less class (`hasVisibleContent`,
+   * `src/lib/verdict/decision.ts`) holds `\p{Cf}` — the bidi controls among
+   * them. Applied BEFORE the allowlist it would turn
+   * `?source=%E2%80%AEbandsintown` into a spellable `bandsintown` and narrow
+   * by it, undoing admin-window/BUG-0153, which rules that such a value is
+   * spelled nowhere and reported on the dropped-parameter line. So the
+   * allowlist is asked of the value AS THE URL CARRIED IT, and inside its
+   * range the only ink-less character is the space: a newline or a U+200B
+   * around a real source name narrows nothing and is reported dropped, which
+   * is the same answer the same characters get INSIDE a name.
+   *
+   * The cost is named rather than hidden: a paste that brings a trailing
+   * newline gets the dropped-parameter line instead of the source's runs. That
+   * is the arm the family already renders, and it is honest — the page never
+   * claims a narrowing it did not make.
+   */
+  it.each([
+    ["a trailing newline", `${SOURCE.ticketmaster}\n`],
+    ["a leading ZERO WIDTH SPACE", `${String.fromCodePoint(0x200b)}${SOURCE.ticketmaster}`],
+    ["a leading RIGHT-TO-LEFT OVERRIDE", `${String.fromCodePoint(0x202e)}${SOURCE.ticketmaster}`],
+    ["a trailing NO-BREAK SPACE", `${SOURCE.ticketmaster}${String.fromCodePoint(0x00a0)}`],
+  ] as const)(
+    "narrows by nothing when the padding itself is unspellable: %s [admin-window/BUG-0155]",
+    async (_name, asked) => {
+      expect(canonicalUrlText(asked)).toBeNull();
+      const stub = stubClient({ [T.runs]: { data: [SUCCEEDED] } });
+      const result = await readRuns({ source: asked }, stub.asSupabaseClient());
+      if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+      expect(steps(stub.calls[0], "eq")).toEqual([]);
+      expect(result.data.source).toBeNull();
+    },
+  );
+
+  it("still narrows by a name carrying ONE interior space [admin-window/BUG-0155]", async () => {
+    // A browser lays a single space out as written, so the sentence and the
+    // query still agree — and BUG-0147's bar holds: a half-typed URL is
+    // answered, spelled in full, over a window that matched nothing.
+    const asked = "a source that never ran";
+    expect(canonicalUrlText(asked)).toBe(asked);
+    const stub = stubClient({ [T.runs]: { data: [] } });
+    const result = await readRuns({ source: asked }, stub.asSupabaseClient());
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+    expect(steps(stub.calls[0], "eq")).toEqual([["source", asked]]);
+    expect(result.data.source).toBe(asked);
+  });
+
+  it("hands back a value that is already its own derivation [admin-window/BUG-0155]", async () => {
+    // What a seam rests on (ARCHITECTURE.md §7): a component may render the
+    // facet it was handed exactly when `canonicalUrlText(v) === v`, which is
+    // only a usable question if the derivation is idempotent.
+    for (const asked of [
+      ` ${SOURCE.ticketmaster} `,
+      SOURCE.unregistered,
+      "a source that never ran",
+      "%%%",
+    ]) {
+      const once = canonicalUrlText(asked);
+      if (once === null) throw new Error(`expected a narrowing for ${JSON.stringify(asked)}`);
+      expect(canonicalUrlText(once), JSON.stringify(asked)).toBe(once);
+    }
+  });
 });

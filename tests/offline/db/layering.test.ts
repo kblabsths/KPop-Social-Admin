@@ -417,9 +417,20 @@ const LEAF_MODULES = [
   // (admin-window/BUG-0153; ARCHITECTURE §7, common violations row 15). It was
   // `canSpellAskedCycle` in `src/components/cycles/asked-cycle.tsx` until a
   // second facet needed the same answer; both callers now import it, and one
-  // of them is `sourceNarrowing` in `src/lib/db/runs.ts`, so it must STAY a
-  // leaf or that edge becomes the directory cycle rule 7 forbids.
+  // of them is `canonicalUrlText` in `src/lib/url/text.ts`, which
+  // `src/lib/db/runs.ts` calls, so it must STAY a leaf or that edge becomes
+  // the directory cycle rule 7 forbids.
   "src/lib/url/spellable.ts",
+  // The app's ONE derivation of a free-text URL facet value, and its ONE
+  // ends-only ink strip (admin-window/BUG-0155; ARCHITECTURE §7, "What is
+  // SHOWN is what was USED", common violations row 20). Its home is a leaf
+  // BECAUSE of who asks it: `readRuns` (`src/lib/db/runs.ts`) derives the
+  // value it sends, `/cycles` derives the value it spells, the runs half's
+  // seam re-asks it, and `src/lib/records/id.ts` — itself a leaf — calls the
+  // strip. Its predecessor was four lines inside `lib/db/**`, which is
+  // precisely a pure function no leaf could reach (common violations row 17),
+  // and an import of `lib/db/**` from here would put it back there.
+  "src/lib/url/text.ts",
 ];
 
 /**

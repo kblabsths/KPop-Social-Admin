@@ -29,8 +29,20 @@ import { codeLines, codeLinesIn, codeText, sourceFiles } from "../source-tree";
 const OWNER: Readonly<Record<string, string>> = {
   /** Narrowing PHRASES → one scope sentence fragment. Inverse: `besides`. */
   narrowedTo: "src/components/ui/window-line.tsx",
-  /** A `?source=` → the value the query narrows by, or `null`. */
-  sourceNarrowing: "src/lib/db/runs.ts",
+  /** A free-text URL facet value → the ONE string that is both SENT to the
+   * query and SPELLED in every sentence naming it, or `null` for no narrowing
+   * (admin-window/BUG-0155). It replaces `sourceNarrowing`
+   * (`src/lib/db/runs.ts`), which took a `?source=` to a query value and
+   * nothing else, and which the ruling of 2026-09-09 retired: once its body
+   * was one call to this, it was a second name for one question. */
+  canonicalUrlText: "src/lib/url/text.ts",
+  /** The app's ONE ends-only ink-padding strip, called by BOTH derivations —
+   * `canonicalUrlText` and `canonicalRecordId` (`src/lib/records/id.ts`),
+   * where it was a private `trimPad` until admin-window/BUG-0155. It is in
+   * this map for the reason the map exists: a hand-copied second strip is how
+   * two value classes come to disagree about what padding IS (LESSONS 5;
+   * ARCHITECTURE.md common violations row 9). */
+  trimInkPadding: "src/lib/url/text.ts",
   /** Does this URL carry a claim facet at all? Fact 1, claims domain. */
   hasNarrowingFacet: "src/lib/claims/filters.ts",
   /** Narrowed BEYOND what a block already applies to itself? Fact 1, queues. */
