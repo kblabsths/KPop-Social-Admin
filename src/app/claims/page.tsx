@@ -3,7 +3,6 @@ import {
   BucketTable,
   ClaimList,
   ClaimTabs,
-  claimWindow,
   CLAIM_WINDOW,
   FilterBar,
   type BucketStat,
@@ -30,15 +29,16 @@ import {
 } from "@/components/ui";
 import {
   CLAIMS_OBJECT,
-  claimOrder,
-  facetOptions,
-  listClaims,
-  selectClaims,
+  readBucketOldest,
+  readClaimCount,
+  readClaimWindow,
   RENDERABLE_BUCKETS,
   UNRENDERABLE_BUCKET,
   type ClaimRow,
+  type PendingClaimBucket,
 } from "@/lib/db/claims";
-import { readSourceNames } from "@/lib/db/sources";
+import type { DbResult } from "@/lib/db/result";
+import { readSources } from "@/lib/db/sources";
 import { count, counted, duration } from "@/lib/format";
 import {
   claimsHref,
@@ -46,6 +46,7 @@ import {
   droppedParams,
   filterBar,
   filterFrom,
+  hasNarrowingFacet,
   sourceHref,
   type FacetLabel,
   tabFrom,
@@ -85,23 +86,38 @@ import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
  * a zero — and not even a query parameter this page will carry forward
  * (ARCHITECTURE.md §6 trap 4; LOOK_AND_FEEL bar 3).
  *
- * **The read is COMPLETE and unnarrowed** (ARCHITECTURE.md §4.3): the bucket
- * table answers "how many claims are in every bucket, for this source", so a
- * bucket filter must not narrow the counts, and the source and domain chips
- * must offer every value the view carries rather than the survivors of the
- * current narrowing. One whole-set read, and `selectClaims` — the app's one
- * claim predicate — does every narrowing. An `ok` array is therefore every row
- * the view holds, which is what makes "rendered bucket counts equal the view's
- * counts, per bucket and per source filter" (acceptance test 3) true rather
- * than hopeful; a read that could not answer completely arrives as the error
- * state and is rendered as one.
+ * **This page reads no claim population** (admin-window/BUG-0138, Ben's ruling
+ * of 2026-09-10). It used to: one COMPLETE read of the view, then a chunked
+ * second leg over `observations` for the age the view did not carry, then the
+ * registry, then the gauge — ~14 sequential requests and 2.9-3.8 s of warm
+ * server time on staging's 877 claims, all of it depth rather than slow
+ * queries. What it reads now, ALL AT ONCE and none of them waiting on
+ * another's ids:
  *
- * The read is complete; the **LIST is drawn as a window** (`CLAIM_WINDOW`,
+ *  - the LIST — ONE window read of the longest-waiting `CLAIM_WINDOW` claims,
+ *    ordered in the DATABASE (`observed_at asc`, the instant the scraper
+ *    handoff carries through the view), narrowed by `.eq()` at the query;
+ *  - every COUNT — `head: true` requests `ROW_CAP` cannot reach: the total
+ *    under this tab's narrowing, one per renderable bucket, and, where a facet
+ *    is set, the unnarrowed population that tells "nothing here yet" from
+ *    "nothing matched" (§4.3, admin-window/DEBT-0008, the shape `/queues`
+ *    already has);
+ *  - each bucket's OLDEST claim — a `limit 1` window read of its own;
+ *  - the source REGISTRY, which is both the labels and the chip vocabulary;
+ *  - and the tab's gauge.
+ *
+ * So the page's cost is invariant to the size of the view: the same requests
+ * over 20 claims and over 2,000, none of them reading more than
+ * `CLAIM_WINDOW` claim rows, and no figure on screen derived from a set that
+ * had to be transported to be counted. Each leg keeps its own `DbResult` and
+ * its own rendering — no leg is cast into another's shape and no leg's refusal
+ * removes another leg's rows (§4.1, §4.3, common violations row 14).
+ *
+ * **The LIST is a window and its count is a count** (`CLAIM_WINDOW`,
  * admin-window/BUG-0041): the longest-waiting rows only, with the cap and the
  * number of matching claims stated above the table in the app's window voice.
- * That bound is a rendering bound and nothing else — every count on this page
- * is still computed from the whole matching set, so a window never becomes a
- * total.
+ * The rows never become a total — the sentence above them states a figure the
+ * database counted, not the length of an array.
  *
  * The two GAUGES on this page are the other kind of read — bounded, ordered
  * WINDOWS (§4.3 kind 2, spec §5) — so their sections name the window they are
@@ -275,6 +291,24 @@ const LIST_SURFACE = "claims";
 const GAUGE_SURFACE = "gauge";
 
 /**
+ * The two SUB-surfaces of the list — the counts that render no row of their
+ * own and are reported beside the rows when they refuse
+ * (admin-window/BUG-0135's shape, admin-window/BUG-0138's reads).
+ *
+ * Neither is ever the list's own state: the window read succeeded, so its
+ * rows, its card and its state stand whatever these did. One of them costs the
+ * window LINE (a `held` nobody counted is not a number this page may print);
+ * the other costs four words of that line and which of two empty cards shows.
+ * Both render only on a refusal, so a healthy page publishes neither.
+ */
+const LIST_COUNT_SURFACE = "claims_count";
+const POPULATION_SURFACE = "claims_population";
+
+/** The eyebrows over those refusals: the fact that could not be read. */
+const LIST_COUNT_EYEBROW = "Matching claims";
+const POPULATION_EYEBROW = "Whole-view count";
+
+/**
  * The name each gauge's WINDOW answers to — `data-window`, the hook a live
  * oracle reads a window back by, as `/cycles` and `/sources` publish theirs
  * (admin-window/DEBT-0003).
@@ -304,35 +338,38 @@ const STANDING_WINDOW = "standing";
  */
 const LIST_WINDOW = "claims";
 
-/** The per-bucket figures, from the claims a source/domain narrowing keeps. */
+/**
+ * The per-bucket figures — each one the answer of the read that was issued for
+ * it, refusal included (admin-window/BUG-0138).
+ *
+ * Nothing is computed from rows here, because the page holds none: `counts[i]`
+ * is bucket `i`'s own `head: true` count under the current source/domain
+ * narrowing and `oldest[i]` is its own `limit 1` window read. A count that
+ * refused travels as the refusal it is — never as a zero, which is the one
+ * substitution §4.3 names (common violations row 2) — and the table renders it
+ * in that bucket's row, leaving the other four alone.
+ *
+ * The bucket facet is deliberately absent from what these reads were narrowed
+ * by: this table is the whole classification under the current source and
+ * domain, and narrowing it to one bucket would answer a question nobody asked
+ * with four blanks.
+ */
 function bucketStats(
-  claims: readonly ClaimRow[],
   filter: ClaimsFilter,
   tab: ClaimsTab,
-  buckets: readonly string[],
+  counts: readonly DbResult<number>[],
+  oldest: readonly DbResult<string | null>[],
 ): BucketStat[] {
-  // The bucket facet is deliberately dropped: this table is the whole
-  // classification under the current source and domain, and narrowing it to
-  // one bucket would answer a question nobody asked with four blanks.
-  const scope = selectClaims(claims, withFacet(filter, "bucket", undefined));
-  return buckets.map((bucket) => {
-    const held = scope.filter((claim) => claim.bucket === bucket);
-    const instants = held
-      .map((claim) => claim.observed_at)
-      .filter((at): at is string => at !== null);
+  return RENDERABLE_BUCKETS.map((bucket, index) => {
+    const claims = counts[index];
+    const instant = oldest[index];
     const active = filter.bucket === bucket;
     return {
       bucket,
-      claims: held.length,
-      // The oldest instant present, by comparison rather than by a position in
-      // a list — and null, never "now", when nothing here has an instant.
-      oldestObservedAt:
-        instants.length === 0
-          ? null
-          : instants.reduce((oldest, at) =>
-              Date.parse(at) < Date.parse(oldest) ? at : oldest,
-            ),
-      sources: new Set(held.map((claim) => claim.source_id)).size,
+      claims: claims.kind === "ok" ? claims.data : claims,
+      // The oldest instant present, from the database's own order — and null,
+      // never "now", when the bucket holds nothing or nothing in it has one.
+      oldestObservedAt: instant.kind === "ok" ? instant.data : instant,
       // Clicking the bucket you are already in clears it: one chip, both ways.
       href: claimsHref(
         CLAIMS_PATH,
@@ -356,7 +393,11 @@ function claimLines(
   claims: readonly ClaimRow[],
   names: ReadonlyMap<string, string>,
 ): ClaimLine[] {
-  return claimOrder(claims).map((claim) => ({
+  // In the order the database returned them, unchanged: the window read is
+  // `observed_at asc, observation_id asc` with `.limit(CLAIM_WINDOW)`, so a
+  // re-sort here could only disagree with the rows that were selected
+  // (admin-window/BUG-0138).
+  return claims.map((claim) => ({
     observationId: claim.observation_id,
     bucket: claim.bucket,
     domain: claim.domain,
@@ -544,126 +585,156 @@ export default async function ClaimsPage({
   const params = (await searchParams) ?? {};
   const tab = tabFrom(params);
 
-  // The view, whole — every narrowing below is the predicate's.
-  const claims = await listClaims();
-
-  // The vocabularies the URL may select from: the buckets the app may render,
-  // and the sources and domains the view actually carries. A parameter naming
-  // anything else narrows nothing, so a hand-typed URL lands on a real state
-  // and carries nothing forward into the chips' hrefs.
-  const asFound =
-    claims.kind === "ok"
-      ? facetOptions(claims.data)
-      : { bucket: RENDERABLE_BUCKETS, source_id: [], domain: [] };
-
-  // What each source is CALLED — admin-window/BUG-0043. `pending_claims` keys
-  // a source by `source_id` and carries no name, so the label is a second leg
-  // (§4.2) over exactly the ids this view holds; the rest of the app has
-  // always shown the name, and 877 rows of uuid said nothing an operator
-  // could read. The id keeps every job it had: it keys the row, it travels in
-  // the URL, and it is what a chip narrows by.
+  // The narrowing, from the URL ALONE — before a single read, because every
+  // read below carries it as `.eq()` and none of them may wait for another to
+  // learn what to ask (admin-window/BUG-0138; the same rule `/sources` follows
+  // for its gauge legs). Each facet is derived by the one derivation its value
+  // class owns (`lib/claims/filters.ts`): the bucket from the vocabulary this
+  // app declares, the source from the app's uuid grammar, the domain from the
+  // free-text one.
   //
-  // A refusal here costs the LABEL and nothing else, so it is carried beside
-  // the list rather than replacing it (the review item does the same with its
-  // own registry leg): every claim still renders, named by its id verbatim.
-  const registry = await readSourceNames(asFound.source_id);
-  const names = sourceNamesOf(registry.kind === "ok" ? registry.data : []);
-  const labelOf: FacetLabel = (facet, value) =>
-    facet === "source_id" ? sourceLabel(names, value) : value;
-
-  const options = {
-    ...asFound,
-    // The chips read in the order their LABELS sort, so this facet reads the
-    // same here as the identical one on `/sources` instead of in uuid order
-    // (LOOK_AND_FEEL: the anatomy does not change between screens). The id
-    // breaks a tie, so the order is total.
-    source_id: [...asFound.source_id].sort((a, b) => {
-      const left = sourceLabel(names, a);
-      const right = sourceLabel(names, b);
-      if (left !== right) return left < right ? -1 : 1;
-      return a < b ? -1 : 1;
-    }),
-  };
   // The standing tab is one bucket's subset, so it carries no bucket facet at
   // all: dropping it here — rather than overriding it at render — is what
   // keeps the chips, the hrefs and the "nothing matched" words telling the
   // same story as the rows, and stops a bucket nobody can see travelling in
   // the URL.
-  const asked = filterFrom(params, options);
+  const asked = filterFrom(params, RENDERABLE_BUCKETS);
   const filter = tab === "standing" ? withFacet(asked, "bucket", undefined) : asked;
+  const showsBuckets = tab !== "standing";
 
-  // Only the tab on screen reads its gauge's window: a tab is a state of this
-  // one route, and reading the other one's window costs a round trip nobody is
-  // looking at. Each is its own typed result, so neither is cast into the
-  // other's shape.
-  const pending =
-    tab === "buckets" ? await readPendingClaims({ filter: gaugeFilter(filter) }) : null;
-  const standing =
-    tab === "standing"
-      ? await readStandingDisagreements({ filter: gaugeFilter(filter) })
-      : null;
+  // The three narrowings the reads take. The LIST's is the tab's own subset;
+  // the bucket TABLE's drops the bucket facet, because that table answers "how
+  // many claims in every bucket, for this source"; the POPULATION's is the
+  // tab's subset with no facet at all — fact 2 of the four-state rule.
+  const listFilter: ClaimsFilter =
+    tab === "standing" ? { ...filter, bucket: STANDING_BUCKET } : filter;
+  const tableFilter = withFacet(filter, "bucket", undefined);
+  const populationFilter: ClaimsFilter =
+    tab === "standing" ? { bucket: STANDING_BUCKET } : {};
+  // Fact 1, from the URL: can a facet of this URL remove a claim at all
+  // (`lib/url/narrowing.ts`)? It also decides whether the population count is
+  // ISSUED: `isSurfaceNarrowed` ANDs the two facts, so where fact 1 is false
+  // no count could change a word this page renders, and the read `/queues`
+  // skips for the same reason is skipped here too (admin-window/DEBT-0012).
+  const structural = hasNarrowingFacet(filter);
 
-  const shown =
-    claims.kind === "ok"
-      ? selectClaims(
-          claims.data,
-          tab === "standing" ? { ...filter, bucket: STANDING_BUCKET } : filter,
-        )
-      : [];
-  // The list is DRAWN as a window; `shown` stays the whole matching set, so
-  // the sentence above the table can state how many claims it really holds
-  // (admin-window/BUG-0041). Nothing else on the page reads these rows.
-  const listed = claimWindow(claimLines(shown, names));
+  // ONE composition, every leg independent (§4.3, the interface contract of
+  // admin-window/BUG-0138). Nothing here is sequenced: no leg needs an id, a
+  // name or a count from another, so the page's read DEPTH is one round trip —
+  // plus the gauge's own second leg, which is the gauge's shape and not this
+  // page's.
+  const [rows, total, perBucket, oldest, registry, pending, standing, population] =
+    await Promise.all([
+      readClaimWindow({ filter: listFilter, limit: CLAIM_WINDOW }),
+      // The count the LIST's window line states — under the same narrowing the
+      // window read carried, so the sentence and the rows describe one set. On
+      // the buckets tab it is also the bucket table's own figure, and where a
+      // bucket facet is set the list's count is that bucket's count below
+      // rather than a second identical request.
+      readClaimCount(showsBuckets ? tableFilter : listFilter),
+      showsBuckets
+        ? Promise.all(
+            RENDERABLE_BUCKETS.map((bucket) =>
+              readClaimCount({ ...tableFilter, bucket }),
+            ),
+          )
+        : null,
+      showsBuckets
+        ? Promise.all(
+            RENDERABLE_BUCKETS.map((bucket) => readBucketOldest(bucket, tableFilter)),
+          )
+        : null,
+      // The registry is BOTH jobs now (admin-window/BUG-0138): what each source
+      // is called, and which sources the chip row offers. It cannot be
+      // `readSourceNames(ids)` any more — the page no longer knows which ids to
+      // ask for until the list read returns, and asking afterwards would put
+      // the sequential round trip back. So the chips are every REGISTERED
+      // source, a source holding no claim included, carrying a real zero.
+      //
+      // A refusal here costs the LABELS and the chip vocabulary and nothing
+      // else, so it is carried beside the list rather than replacing it: every
+      // claim still renders, named by its id verbatim.
+      readSources(),
+      showsBuckets ? readPendingClaims({ filter: gaugeFilter(filter) }) : null,
+      showsBuckets ? null : readStandingDisagreements({ filter: gaugeFilter(filter) }),
+      structural ? readClaimCount(populationFilter) : null,
+    ]);
 
-  // The second fact the URL cannot supply: what each surface holds with NO url
-  // facet at all (ARCHITECTURE.md §4.3, admin-window/DEBT-0008). Both come out
-  // of the read this page has already made and issue no query of their own —
-  // `listClaims` is a COMPLETE read (§4.3 kind 1), so its `ok` array IS the
-  // population and a second count read would ask the database a question it
-  // has already answered. Its refusal is this page's own state, rendered by
-  // the `StateOf` cards below, so there is no second leg here to refuse
-  // separately and no sub-surface to report it on (the shape `/queues` needs,
-  // where the population is its own `readCount` — admin-window/BUG-0135).
+  const names = sourceNamesOf(registry.kind === "ok" ? registry.data : []);
+  const labelOf: FacetLabel = (facet, value) =>
+    facet === "source_id" ? sourceLabel(names, value) : value;
+
+  const options = {
+    bucket: RENDERABLE_BUCKETS,
+    // The chips read in the order their LABELS sort, so this facet reads the
+    // same here as the identical one on `/sources` instead of in uuid order
+    // (LOOK_AND_FEEL: the anatomy does not change between screens). The id
+    // breaks a tie, so the order is total.
+    source_id: (registry.kind === "ok" ? registry.data : [])
+      .map((source) => source.source_id)
+      .sort((a, b) => {
+        const left = sourceLabel(names, a);
+        const right = sourceLabel(names, b);
+        if (left !== right) return left < right ? -1 : 1;
+        return a < b ? -1 : 1;
+      }),
+  };
+
+  // The count of the set the LIST renders. Where a bucket facet is set that
+  // set IS one bucket, so the read issued for that bucket's row answers both
+  // surfaces — one query, one figure, never two reads of one question
+  // (LESSONS 11).
+  const listCount: DbResult<number> =
+    (filter.bucket !== undefined && perBucket !== null
+      ? perBucket[RENDERABLE_BUCKETS.indexOf(filter.bucket as PendingClaimBucket)]
+      : undefined) ?? total;
+
+  // The list's own answer to the four-state question: the URL's structural
+  // narrowing AND whether this tab's set holds anything at all. With a
+  // population of zero no facet removed a row, so no facet may be given as the
+  // reason the list is empty — "the standing tab holds no disagreements" and
+  // "your filter matched nothing" are different facts and never share a
+  // rendering (LOOK_AND_FEEL, the four states; admin-window/BUG-0133).
   //
-  // Two populations, because the two surfaces hold different sets. Both are
-  // derived HERE, in one place, from the one whole-view array: the day the
-  // whole-view read is replaced by a narrowed one (admin-window/BUG-0138)
-  // these two expressions become the reads that answer them and every rule
-  // below is untouched.
-  const population = claims.kind === "ok" ? claims.data : [];
-  const listPopulation = selectClaims(
-    population,
-    tab === "standing" ? { bucket: STANDING_BUCKET } : {},
-  ).length;
-
-  // The list's own answer: the URL's structural narrowing AND whether this
-  // tab's set holds anything at all. With a population of zero no facet
-  // removed a row, so no facet may be given as the reason the list is empty —
-  // "the standing tab holds no disagreements" and "your filter matched
-  // nothing" are different facts and never share a rendering (LOOK_AND_FEEL,
-  // the four states; admin-window/BUG-0133).
-  const listNarrowed = claimsNarrowed(filter, {
-    rendered: shown.length,
-    population: listPopulation,
-  });
+  // Both figures are COUNTS the database gave. Where either refused, this
+  // falls back to the structural rule alone and says so on its own sub-surface
+  // below, rather than claiming a scope no read supports — the shape
+  // admin-window/BUG-0135 landed on `/queues`.
+  const listNarrowed =
+    population !== null && population.kind === "ok" && listCount.kind === "ok"
+      ? claimsNarrowed(filter, {
+          rendered: listCount.data,
+          population: population.data,
+        })
+      : structural;
   const emptyWords = listNarrowed
     ? NOTHING_MATCHED
     : tab === "standing"
       ? NOTHING_STANDING
       : NOTHING_HELD;
 
-  // The bucket table's own answer, over ITS set: the whole view against the
-  // rows it draws, which are the view under the source and domain facets
-  // only — `bucketStats` drops the bucket facet, so a bucket facet removes
-  // not one row from this table and cannot be what narrowed it.
+  // The bucket table's own answer, over ITS set: the whole view against what
+  // it is drawing, which is the view under the source and domain facets only —
+  // the bucket facet removes not one row from this table and cannot be what
+  // narrowed it.
   const bucketRows =
-    claims.kind === "ok"
-      ? bucketStats(claims.data, filter, tab, options.bucket)
+    perBucket !== null && oldest !== null
+      ? bucketStats(filter, tab, perBucket, oldest)
       : [];
-  const bucketsNarrowed = claimsNarrowed(filter, {
-    rendered: bucketRows.reduce((total, row) => total + row.claims, 0),
-    population: population.length,
-  });
+  const bucketsNarrowed =
+    population !== null && population.kind === "ok" && total.kind === "ok"
+      ? claimsNarrowed(filter, { rendered: total.data, population: population.data })
+      : structural;
+
+  // The one leg whose refusal is reported beside the surfaces it feeds rather
+  // than as a surface's own state: it renders no row, and decides only which
+  // arm two sentences take (admin-window/BUG-0135).
+  const populationRefused =
+    population === null || population.kind === "ok" ? undefined : population;
+
+  // The rows the list draws — the window read's own rows, in the order the
+  // database returned them, named from the registry read.
+  const listed = rows.kind === "ok" ? claimLines(rows.data, names) : [];
 
   return (
     <Page title="Claims">
@@ -673,20 +744,24 @@ export default async function ClaimsPage({
         dropped={droppedParams(params, filter, [UNRENDERABLE_BUCKET])}
       />
 
-      {tab === "standing" ? null : (
+      {showsBuckets ? (
         <Section title="Buckets" surface={BUCKETS_SURFACE}>
-          {claims.kind === "not_provisioned" ? (
-            // A card replaces the surface; nothing above it describes a table
-            // that is not there (LOOK_AND_FEEL state 3).
-            <StateOf result={claims} />
+          {/* The table's own state is the count read over the SAME object
+              under the SAME narrowing its figures are figures of — the total.
+              A view that is not in this database answers every one of these
+              reads the same way, so the card replaces the surface once rather
+              than ten times (LOOK_AND_FEEL state 3); a failure of that read is
+              a line inside the table, so the header stays put. A per-BUCKET
+              count that refused is neither: it is rendered in its own row,
+              beside four that answered (admin-window/BUG-0138). */}
+          {total.kind === "not_provisioned" ? (
+            <StateOf result={total} />
           ) : (
             <>
               <BucketTable
                 label="Claims by bucket"
                 rows={bucketRows}
-                line={
-                  claims.kind === "error" ? <StateOf result={claims} /> : undefined
-                }
+                line={total.kind === "error" ? <StateOf result={total} /> : undefined}
               />
               {/* The caption follows the READ, exactly as the list's window
                   line one Section down does (ARCHITECTURE.md §4.3, "a window
@@ -699,9 +774,9 @@ export default async function ClaimsPage({
                   under a facet — a refusal empties both sides of
                   `bucketsNarrowed`, so the unnarrowed arm is the one that
                   renders and its "nothing above narrows these counts" denies a
-                  facet the chip bar shows as applied. The refusal card inside
-                  the table is the whole of what this state may say. */}
-              {claims.kind === "ok" ? (
+                  facet the chip bar shows as applied. The refusal inside the
+                  table is the whole of what this state may say. */}
+              {total.kind === "ok" ? (
                 <p className="type-body text-ink-secondary">
                   {bucketsNarrowed
                     ? BUCKET_CAPTION.narrowed
@@ -711,7 +786,7 @@ export default async function ClaimsPage({
             </>
           )}
         </Section>
-      )}
+      ) : null}
 
       <Section title={LIST_TITLE[tab]} surface={LIST_SURFACE}>
         {/* The window line follows the READ, not the rows (ARCHITECTURE.md
@@ -724,14 +799,25 @@ export default async function ClaimsPage({
             Empty card below rather than instead of it — the card says what
             would fill the surface, the line says where the app looked. Same
             rule and same shape as `/runs` (admin-window/BUG-0063,
-            LOOK_AND_FEEL states 3 and 4). */}
-        {claims.kind === "ok" ? (
+            LOOK_AND_FEEL states 3 and 4).
+
+            Two reads have to have happened for it to stand now, not one: the
+            window, and the COUNT that is its `held`. A count this page never
+            got is not a number it may print, and it may not print the rows'
+            own length instead — that is the window-as-total substitution the
+            line exists to prevent — so a refused count costs the LINE and
+            nothing else, and says so on its own sub-surface below. */}
+        {rows.kind === "ok" && listCount.kind === "ok" ? (
           <WindowLine
             gauge={LIST_WINDOW}
             window={{
               limit: CLAIM_WINDOW,
-              held: listed.held,
-              truncated: listed.truncated,
+              held: listCount.data,
+              // The window is truncated exactly when the set it was drawn from
+              // holds more than it drew — from the COUNT, never from the rows,
+              // which is how a `limit 50` read that returned 50 rows says
+              // whether a 51st exists (admin-window/BUG-0138).
+              truncated: listCount.data > rows.data.length,
               over: CLAIMS_OBJECT,
               // No floor to name, and that is a fact of this read rather than
               // a gap: the list is drawn LONGEST-WAITING first, so its bottom
@@ -740,16 +826,16 @@ export default async function ClaimsPage({
               // read found; it just has no "nothing earlier" to state
               // (admin-window/BUG-0109).
               oldest: null,
-              // What the SELECTION below narrowed to, from the same tab and
-              // the same filter it used (admin-window/BUG-0114).
+              // What the READS below narrowed to, from the same tab and the
+              // same filter they carried (admin-window/BUG-0114).
               scope: listScope(tab, listNarrowed),
             }}
             shows={{ of: "matched", lede: SORT_STATEMENT, rows: "claims" }}
           />
         ) : null}
-        {claims.kind === "not_provisioned" ? (
-          <StateOf result={claims} />
-        ) : claims.kind === "ok" && shown.length === 0 ? (
+        {rows.kind === "not_provisioned" ? (
+          <StateOf result={rows} />
+        ) : rows.kind === "ok" && rows.data.length === 0 ? (
           // Three different emptinesses, three different renderings: the table
           // that holds nothing, the filter that matched nothing, and the table
           // that is not in this database (LOOK_AND_FEEL, Emptiness). The hook
@@ -761,21 +847,34 @@ export default async function ClaimsPage({
             <Empty holds={emptyWords.holds} filledBy={emptyWords.filledBy} />
           </div>
         ) : (
-          <>
-            <ClaimList
-              label={LIST_TITLE[tab]}
-              rows={claims.kind === "ok" ? listed.rows : []}
-              line={
-                claims.kind === "error" ? <StateOf result={claims} /> : undefined
-              }
-            />
-            {registry.kind === "ok" ? null : (
-              // The claims rendered fine; only what NAMES their sources could
-              // not be read, so it is reported on its own, naming its own
-              // object, and every row above is named by its id verbatim.
-              <StateOf result={registry} eyebrow="Source names" />
-            )}
-          </>
+          <ClaimList
+            label={LIST_TITLE[tab]}
+            rows={rows.kind === "ok" ? listed : []}
+            line={rows.kind === "error" ? <StateOf result={rows} /> : undefined}
+          />
+        )}
+        {registry.kind === "ok" ? null : (
+          // The claims rendered fine, or did not; either way what NAMES their
+          // sources is its own read of its own object, so it is reported on
+          // its own — never folded into the list's state and never silent.
+          // Every row above is named by its id verbatim, and the chip row
+          // offers the vocabulary this read did not bring.
+          <StateOf result={registry} eyebrow="Source names" />
+        )}
+        {/* Two counts that render no row of their own, each reported beside
+            the rows rather than instead of them (admin-window/BUG-0135). The
+            first is the list's own `held`; the second is the unnarrowed
+            population, which decides only which of two sentences and which of
+            two empty cards this surface shows. */}
+        {rows.kind === "ok" && listCount.kind !== "ok" ? (
+          <div data-surface={LIST_COUNT_SURFACE}>
+            <StateOf result={listCount} eyebrow={LIST_COUNT_EYEBROW} />
+          </div>
+        ) : null}
+        {populationRefused === undefined ? null : (
+          <div data-surface={POPULATION_SURFACE}>
+            <StateOf result={populationRefused} eyebrow={POPULATION_EYEBROW} />
+          </div>
         )}
       </Section>
 

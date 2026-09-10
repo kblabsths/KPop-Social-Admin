@@ -32,7 +32,7 @@ import {
   reviewItemDataConflict,
   reviewItemShapes,
 } from "../../fixtures/rows";
-import { CLAIMS, OBSERVATIONS } from "../claims/population";
+import { CLAIMS, OBSERVATIONS, claimView } from "../claims/population";
 import { APPLIES, CYCLES, OBSERVED } from "../cycles/population";
 import {
   PENDING_CLAIMS,
@@ -277,6 +277,11 @@ export function populatedScript(surface?: Surface): Script {
     script[T.observations] = { data: [...OBSERVED], count: OBSERVED.length };
   }
   if (surface?.route === "/claims") {
+    // The view, answering the QUERY it is asked: `/claims` narrows at the
+    // database now and reads it a dozen ways in one `Promise.all`
+    // (admin-window/BUG-0138), so a fixed response would answer every count
+    // with one number and no narrowing would ever empty a surface.
+    script[T.pendingClaims] = claimView(CLAIMS);
     script[T.observations] = { data: [...OBSERVATIONS], count: OBSERVATIONS.length };
   }
 

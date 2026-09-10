@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  readComplete,
+  readCount,
+  readRows,
   readRowsByIds,
-  type DbCountedResponse,
   type DbResponse,
   type DbResult,
 } from "./result";
@@ -21,20 +21,39 @@ import type { ClaimsFilter } from "../claims/filters";
 export const CLAIMS_OBJECT: ObjectKind = objectKindOf(T.pendingClaims);
 
 /**
- * The `pending_claims` reads — campaign admin-window/TASK-0012.
+ * The `pending_claims` reads — campaign admin-window/TASK-0012, rebuilt by
+ * admin-window/BUG-0138.
  *
  * **This module is the only place the classification view is queried**, and
  * that is the point of it (ARCHITECTURE.md §6 trap 4): the parked `in_window`
- * bucket is excluded HERE, once, in the query and again in the predicate, so
+ * bucket is excluded HERE, once, in every query and again in the predicate, so
  * no page, component or gauge can re-admit it and none of them has to
  * remember not to. `src/lib/db/gauges.ts` re-exports the vocabulary and the
  * id-set read below, which is the seam that file declared when it first
  * needed them.
  *
+ * **It is no longer the place the population is transported.** It used to
+ * expose one COMPLETE read of the whole view (`listClaims`), followed by a
+ * chunked second leg over `observations` for the age the view did not carry —
+ * ~14 sequential requests and 2.9-3.8 s of warm server time on a view holding
+ * 877 rows (admin-window/BUG-0138, measured by Ben on the walk instance). Both
+ * are gone. What answers the page now is a WINDOW read of the longest-waiting
+ * claims, ordered in the database, plus `head: true` COUNTS the row cap cannot
+ * reach — so the page's cost no longer follows the size of the view.
+ *
+ * That shape rests on ONE schema change, which is the scraper repo's and
+ * Ben's to apply: `public.pending_claims` carries `observations.observed_at`
+ * through (the handoff at
+ * `agenticflow/tracker/for-human/M2-handoff-pending-claims-observed-at.md`).
+ * Until it is installed on a database, every read here that selects the column
+ * refuses naming the view — which is what `tests/live/claims.live.test.ts`
+ * grades, and it is honest rather than fallible: nothing below falls back to
+ * the two-step join, because a fallback is how a page keeps a cost nobody can
+ * see (ARCHITECTURE.md §6 trap 12).
+ *
  * Every export returns a `DbResult` and never throws (§4.1); the view is named
- * through `T` alone (§4 rule 4); the two-step join is §4.2's — the view
- * carries no age, so `observations.observed_at` is fetched by
- * `observation_id` and joined in TypeScript (trap 3).
+ * through `T` alone (§4 rule 4); the reads are explicit about their columns
+ * (§4.2).
  */
 
 /* ── the bucket vocabulary ───────────────────────────────────────────────── */
@@ -81,7 +100,7 @@ export function isRenderableBucket(bucket: string): bucket is PendingClaimBucket
 
 /* ── rows ────────────────────────────────────────────────────────────────── */
 
-/** The `pending_claims` view's whole select list — migration `20260901000004`. */
+/** The `pending_claims` view's classification columns — migration `20260901000004`. */
 export interface PendingClaimRow {
   observation_id: string;
   /** The view spells the canonical table `domain` (ARCHITECTURE.md §6 trap 1). */
@@ -95,11 +114,13 @@ export interface PendingClaimRow {
 }
 
 /**
- * A claim with the instant its observation was made — the view carries no age
- * (trap 3), so this is the joined row every claims surface renders.
+ * A claim with the instant the source observed it — the claim's AGE, which
+ * every claims surface renders.
  *
- * `observed_at` is `null` when the second leg returned no row for the claim:
- * a claim of unknown age, never a claim that arrived this instant.
+ * The column is `observations.observed_at`, carried through the view unchanged
+ * by the scraper handoff (admin-window/BUG-0138). Upstream it is `NOT NULL`,
+ * so a null instant is defensive rather than expected: a claim carrying one
+ * sorts last and renders the dash — never "now", and never dropped.
  */
 export interface ClaimRow extends PendingClaimRow {
   observed_at: string | null;
@@ -123,8 +144,11 @@ const PENDING_CLAIM_COLUMNS = [
   "unmet_requirement",
 ].join(", ");
 
-/** The claim's instant, and nothing else — reads are explicit (§4.2). */
-const CLAIM_INSTANT_COLUMNS = ["observation_id", "observed_at"].join(", ");
+/** What the LIST selects: the classification, and the age beside it. */
+const CLAIM_COLUMNS = [PENDING_CLAIM_COLUMNS, "observed_at"].join(", ");
+
+/** What one bucket's oldest-claim seek selects: the age, and what it belongs to. */
+const BUCKET_INSTANT_COLUMNS = ["bucket", "observed_at"].join(", ");
 
 /**
  * The buckets of a set of claims, by `observation_id` — the gauges' second leg
@@ -153,108 +177,167 @@ export function readPendingClaimRows(
 }
 
 /**
- * The classification view, whole.
+ * The narrowing every read below carries, applied to the query and nowhere
+ * else — never as a filter over rows a page fetched (ARCHITECTURE.md §4.3).
  *
- * A COMPLETE read (ARCHITECTURE.md §4.3): `{ count: "exact" }`, a total
- * server-side order ending in `observation_id` — the view's key, one row per
- * live pending claim — and `.range(0, cap - 1)`. An `ok` array is therefore
- * every row the view holds, which is the only reason "the rendered bucket
- * counts equal the view's counts" (acceptance test 3) can be asserted at all;
- * a silently truncated set would make it false with nothing to show for it.
- *
- * **It is deliberately NOT narrowed server-side by the page's filter.** The
- * bucket table answers "how many claims in every bucket, for this source" —
- * so a bucket filter must not narrow the counts, and the source and domain
- * chips must offer every value the view carries and not just the ones that
- * survived the current narrowing. One whole-set read, and `selectClaims` does
- * every narrowing. If the view ever outgrows `ROW_CAP` the read refuses with
- * the real number (§4.3's rule, and raising the cap is then a decision with
- * evidence behind it) rather than rendering a partial count as a total.
- *
- * `in_window` is excluded in the query, so it is not even transported.
+ * The parked bucket is excluded UNCONDITIONALLY, whatever the filter says, so
+ * the one exclusion trap 4 asks for is a property of this function rather than
+ * of each call site; a `filter.bucket` narrows on top of it and can only ever
+ * take rows away. `source_id` and `domain` reach here already derived from the
+ * URL by the one derivation each value class owns (`lib/claims/filters.ts`),
+ * so what is compared at the database is what the page spells on screen.
  */
-function claimsQuery(db: SupabaseClient, cap: number) {
-  return db
-    .from(T.pendingClaims)
-    .select(PENDING_CLAIM_COLUMNS, { count: "exact" })
-    .neq("bucket", UNRENDERABLE_BUCKET)
-    .order("bucket", { ascending: true })
-    .order("observation_id", { ascending: true })
-    .range(0, cap - 1) as unknown as PromiseLike<
-    DbCountedResponse<PendingClaimRow[]>
-  >;
+function narrowed(query: unknown, filter: ClaimsFilter = {}): ClaimQuery {
+  let narrowedQuery = (query as ClaimQuery).neq("bucket", UNRENDERABLE_BUCKET);
+  if (filter.bucket !== undefined) {
+    narrowedQuery = narrowedQuery.eq("bucket", filter.bucket);
+  }
+  if (filter.source_id !== undefined) {
+    narrowedQuery = narrowedQuery.eq("source_id", filter.source_id);
+  }
+  if (filter.domain !== undefined) {
+    narrowedQuery = narrowedQuery.eq("domain", filter.domain);
+  }
+  return narrowedQuery;
 }
 
-/** The instants behind a set of claims — the join's second leg (§4.2). */
-function readClaimInstants(
-  ids: readonly string[],
+/**
+ * The builder methods these reads use, and nothing else — the chain as a shape
+ * rather than as `supabase-js`'s own generic type.
+ *
+ * Written out because the alternative does not compile: a narrowing function
+ * generic over the real `PostgrestFilterBuilder` re-instantiates that type on
+ * every conditional `.eq()` and `tsc` gives up (`TS2589`, type instantiation
+ * excessively deep). This is the same seam every read in this layer already
+ * takes at the end of its chain — one `as unknown as` where the builder meets
+ * our own `DbResponse` — moved one step earlier so that ONE narrowing function
+ * serves the window read and the count reads (a second copy is what drifts,
+ * LESSONS 5). The names and arities are checked against the chain each call
+ * site builds, and the offline stub records exactly these steps.
+ */
+interface ClaimQuery {
+  eq(column: string, value: string): ClaimQuery;
+  neq(column: string, value: string): ClaimQuery;
+  order(
+    column: string,
+    options: { ascending: boolean; nullsFirst?: boolean },
+  ): ClaimQuery;
+  limit(rows: number): ClaimQuery;
+}
+
+/**
+ * The `n` longest-waiting claims under a narrowing — ONE request, ordered in
+ * the DATABASE.
+ *
+ * A WINDOW read (ARCHITECTURE.md §4.3 kind 2): its rows are never a total, and
+ * nothing re-sorts them — the page renders them in the order they arrived, so
+ * "the longest-waiting 50" is a fact of the query rather than of a comparator
+ * over a set somebody had to fetch whole first.
+ *
+ * `observed_at asc, nullsFirst: false` is the page's stated order: oldest
+ * first, an unknown instant last. `observation_id` breaks every tie, so the
+ * order is total and two claims made on one instant never swap between
+ * renders — which is what makes membership of the window itself deterministic
+ * when the cap falls inside a tie.
+ */
+export function readClaimWindow(
+  options: { filter?: ClaimsFilter; limit: number },
   db?: SupabaseClient,
-): Promise<DbResult<{ observation_id: string; observed_at: string }[]>> {
-  return readRowsByIds<{ observation_id: string; observed_at: string }>(
-    T.observations,
-    ids,
-    (client, chunkIds) =>
-      client
-        .from(T.observations)
-        .select(CLAIM_INSTANT_COLUMNS)
-        .in("observation_id", chunkIds)
-        // At most one row per id — `observation_id` is the table's key — so
-        // the leg can never ask for more rows than the ids it filtered on.
-        .limit(chunkIds.length) as unknown as PromiseLike<
-        DbResponse<{ observation_id: string; observed_at: string }[]>
+): Promise<DbResult<ClaimRow[]>> {
+  return readRows<ClaimRow>(
+    T.pendingClaims,
+    (client) =>
+      narrowed(client.from(T.pendingClaims).select(CLAIM_COLUMNS), options.filter)
+        .order("observed_at", { ascending: true, nullsFirst: false })
+        .order("observation_id", { ascending: true })
+        .limit(options.limit) as unknown as PromiseLike<DbResponse<ClaimRow[]>>,
+    db,
+  ).then((drawn) =>
+    // The exclusion again, in code: the returned set is decided by one rule
+    // whether or not the server narrowed (§6 trap 4). Only the parked bucket
+    // is dropped — a bucket string this app has never heard of is a row of the
+    // view and stays, or the list would quietly stop showing what the count
+    // counted. It is `selectClaims` and not a second predicate, and it is
+    // bounded by the window rather than by the table.
+    drawn.kind === "ok" ? { kind: "ok", data: selectClaims(drawn.data) } : drawn,
+  );
+}
+
+/**
+ * How many claims a narrowing holds — a `head: true, count: "exact"` request
+ * through `readCount`, so `ROW_CAP` cannot reach it and a null count is a
+ * refusal, never a zero (§4.3; common violations row 2).
+ *
+ * `filter.bucket` undefined counts every RENDERABLE bucket. It is one count
+ * per question and NOT a grouped read, because PostgREST refuses aggregates on
+ * this deployment: `select=bucket,count()` answers `PGRST123 "Use of aggregate
+ * functions is not allowed"` (measured against staging 2026-09-09, 84 ms —
+ * admin-window/BUG-0138). There is no grouped read to choose.
+ */
+export function readClaimCount(
+  filter?: ClaimsFilter,
+  db?: SupabaseClient,
+): Promise<DbResult<number>> {
+  return readCount(
+    T.pendingClaims,
+    (client) =>
+      narrowed(
+        client.from(T.pendingClaims).select("*", { head: true, count: "exact" }),
+        filter,
+      ) as unknown as PromiseLike<{ count: number | null; error: unknown }>,
+    db,
+  );
+}
+
+/**
+ * The oldest instant in ONE bucket under a narrowing: a `limit 1` window read
+ * ordered `observed_at asc`, issued with the rest.
+ *
+ * `ok` carries `null` when the bucket holds nothing — an absence, never "now"
+ * — and also when the one row it holds carries no instant, which is the same
+ * absence from the reader's side: the table's dash says the bucket has no age
+ * to show, and the count beside it says whether it has claims.
+ */
+export function readBucketOldest(
+  bucket: PendingClaimBucket,
+  filter?: ClaimsFilter,
+  db?: SupabaseClient,
+): Promise<DbResult<string | null>> {
+  return readRows<{ bucket: string; observed_at: string | null }>(
+    T.pendingClaims,
+    (client) =>
+      narrowed(client.from(T.pendingClaims).select(BUCKET_INSTANT_COLUMNS), {
+        ...filter,
+        bucket,
+      })
+        .order("observed_at", { ascending: true, nullsFirst: false })
+        .limit(1) as unknown as PromiseLike<
+        DbResponse<{ bucket: string; observed_at: string | null }[]>
       >,
     db,
-  );
+  ).then((oldest) => {
+    if (oldest.kind !== "ok") return oldest;
+    // The bucket comes back so the answer can be checked against what was
+    // asked (§6 trap 4, the code half): a server that ignored the narrowing
+    // would put another bucket's age — the parked bucket's included — in this
+    // row.
+    const row = oldest.data[0];
+    if (row === undefined || row.bucket !== bucket) return { kind: "ok", data: null };
+    return { kind: "ok", data: row.observed_at ?? null };
+  });
 }
 
+/* ── the one predicate ───────────────────────────────────────────────────── */
+
 /**
- * Every claim the view holds, with its age's instant. The Claims page's read.
+ * The claims a filter keeps — the app's ONE claim predicate over rows already
+ * in hand.
  *
- * Both legs report separately: `not_provisioned` from either names THAT object
- * (`pending_claims` or `observations`), so the card says which one is absent.
- * A claim whose observation did not come back keeps a `null` instant rather
- * than being dropped — dropping it would make the rendered count disagree with
- * the view, which is the one thing this page may not do.
- */
-export async function listClaims(db?: SupabaseClient): Promise<DbResult<ClaimRow[]>> {
-  const claims = await readComplete<PendingClaimRow>(
-    T.pendingClaims,
-    (client, cap) => claimsQuery(client, cap),
-    db,
-  );
-  if (claims.kind !== "ok") return claims;
-
-  // The exclusion again, in code: the returned set is decided by one rule
-  // whether or not the server narrowed — the reason `lib/db/review-items.ts`
-  // re-applies its own filter. Only the parked bucket is dropped here; a
-  // bucket string this app has never heard of is a row of the view and stays,
-  // or the count on screen would quietly stop matching the database.
-  const rows = claims.data.filter((claim) => claim.bucket !== UNRENDERABLE_BUCKET);
-
-  const instants = await readClaimInstants(
-    [...new Set(rows.map((claim) => claim.observation_id))],
-    db,
-  );
-  if (instants.kind !== "ok") return instants;
-
-  const observedAt = new Map(
-    instants.data.map((row) => [row.observation_id, row.observed_at]),
-  );
-  return {
-    kind: "ok",
-    data: rows.map((claim) => ({
-      ...claim,
-      observed_at: observedAt.get(claim.observation_id) ?? null,
-    })),
-  };
-}
-
-/* ── the one predicate, and the one order ────────────────────────────────── */
-
-/**
- * The claims a filter keeps — the app's ONE claim predicate, so "the rendered
- * counts equal the view's counts, per bucket and per source filter" is a
- * property of one function rather than of every surface that filters.
+ * It is no longer what narrows the Claims page: every read above narrows at
+ * the database, which is the whole of admin-window/BUG-0138. It stays because
+ * the exclusion has to be expressible in code as well as in a query — a server
+ * that ignored the filter must not be able to leak the parked bucket into a
+ * rendering — and because the gauges select over row sets they already hold.
  *
  * The parked bucket is dropped here too, whatever was asked for.
  *
@@ -277,49 +360,4 @@ export function selectClaims(
     if (filter.domain !== undefined && claim.domain !== filter.domain) return false;
     return true;
   });
-}
-
-/**
- * The display order, and the only one: **oldest first** — the longest-waiting
- * claim is the one that is stuck, and this page answers "what is stuck".
- *
- * A claim whose instant is unknown sorts last: it cannot claim a position in
- * an age order it does not carry. `observation_id` breaks every tie, so the
- * order is total and two claims made on the same instant never swap between
- * renders.
- */
-export function claimOrder(claims: readonly ClaimRow[]): ClaimRow[] {
-  return [...claims].sort((a, b) => {
-    const at = a.observed_at === null ? null : Date.parse(a.observed_at);
-    const bt = b.observed_at === null ? null : Date.parse(b.observed_at);
-    const aKnown = at !== null && !Number.isNaN(at);
-    const bKnown = bt !== null && !Number.isNaN(bt);
-    if (aKnown && bKnown && at !== bt) return (at as number) - (bt as number);
-    if (aKnown !== bKnown) return aKnown ? -1 : 1;
-    return a.observation_id < b.observation_id ? -1 : 1;
-  });
-}
-
-/**
- * The values a facet may take, from the claims the view holds: every source
- * and every domain present, sorted, plus the buckets — the renderable ones in
- * the view's own order, followed by any bucket the rows carry that this app
- * has no name for (a seventh bucket a later migration adds shows up under its
- * own name rather than vanishing from a count).
- */
-export function facetOptions(claims: readonly ClaimRow[]): {
-  bucket: readonly string[];
-  source_id: readonly string[];
-  domain: readonly string[];
-} {
-  const distinct = (values: readonly string[]) => [...new Set(values)].sort();
-  const known = new Set<string>(RENDERABLE_BUCKETS);
-  const unknown = distinct(
-    claims.map((claim) => claim.bucket).filter((bucket) => !known.has(bucket)),
-  ).filter((bucket) => bucket !== UNRENDERABLE_BUCKET);
-  return {
-    bucket: [...RENDERABLE_BUCKETS, ...unknown],
-    source_id: distinct(claims.map((claim) => claim.source_id)),
-    domain: distinct(claims.map((claim) => claim.domain)),
-  };
 }

@@ -34,6 +34,18 @@ import {
  * because the rule it states is unchanged — if the read regresses, this file
  * goes red again and that red is the signal, never a reason to soften it.
  *
+ * **And it is red again on purpose, for a second handoff**
+ * (admin-window/BUG-0138, 2026-09-10). The page reads no claim population any
+ * more: the list is ONE window read ordered `observed_at asc` in the database,
+ * and that column reaches `public.pending_claims` only through a scraper
+ * migration Ben applies. Until he has applied it to STAGING, the precondition
+ * case below — `pending_claims carries observed_at` — FAILS naming the handoff
+ * file, and the cases that read the view fail with it. That red is the ticket
+ * working as designed: it does not skip, it does not pass, nothing here falls
+ * back to the two-step read, and the receipt records a refusal rather than a
+ * pass. The offline suite proves the whole change independently and consults
+ * no database at all.
+ *
  * Before this rewrite it did the opposite: **4 of 6 cases PASSED against a
  * page in its error state**, because the fallback branch only asked that the
  * markup contain the string `pending_claims` — which the red error line
@@ -61,8 +73,7 @@ import {
  *  - the drawn ids are exactly the first `CLAIM_WINDOW` of the matching set in
  *    the page's stated order — oldest first, an unknown instant last,
  *    `observation_id` breaking every tie — where that order is computed here
- *    from THIS FILE's own two-leg read (the view carries no instant), not from
- *    `lib/db/claims.ts`;
+ *    from THIS FILE's own read of the view, not from `lib/db/claims.ts`;
  *  - no claim left undrawn is older than a claim drawn, which is the same
  *    property again without the tie-break, so a window taken from the wrong
  *    end fails even where every instant is equal (staging's first 60 claims
@@ -201,13 +212,6 @@ function listCount(tab?: string): Promise<number> {
  */
 const VIEW_READ_CAP = 5000;
 
-/**
- * How many ids one instant query names. A single request naming every claim
- * would put ~32KB of uuids in a URL; the chunking is this file's own, and
- * nothing about it is shared with the app's read.
- */
-const INSTANT_CHUNK = 200;
-
 /** A claim as this test reads it: its id, and the instant its age comes from. */
 interface ClaimInstant {
   id: string;
@@ -217,16 +221,18 @@ interface ClaimInstant {
 
 /**
  * The claims the list on `tab` matches, with their instants — THIS TEST's own
- * two-leg read, written without `lib/db/claims.ts`.
+ * read of the view, written without `lib/db/claims.ts`.
  *
- * Two legs because the view carries no age at all (migration
- * `20260901000004`): the ids come from `pending_claims`, the instants from
- * `observations` by id. A claim with no instant row keeps a `null` and is not
- * dropped — dropping it would silently shorten what this test expects.
+ * **ONE leg since admin-window/BUG-0138**, because the view carries the
+ * instant itself: the scraper handoff carries `observations.observed_at`
+ * through `public.pending_claims`. This file does NOT fall back to the old
+ * two-step join against `observations` when the column is absent — a fallback
+ * here would grade the page against a shape the page does not have, and hide
+ * the very refusal the precondition case exists to report.
  */
 async function claimsFromDatabase(tab?: string): Promise<ClaimInstant[]> {
   const db = independentClient();
-  const scoped = db.from(T.pendingClaims).select("observation_id");
+  const scoped = db.from(T.pendingClaims).select("observation_id, observed_at");
   const { data, error } = await (
     tab === "standing"
       ? scoped.eq("bucket", STANDING_BUCKET)
@@ -235,35 +241,14 @@ async function claimsFromDatabase(tab?: string): Promise<ClaimInstant[]> {
     .order("observation_id", { ascending: true })
     .limit(VIEW_READ_CAP);
   if (error) throw new Error(`the claim query failed: ${JSON.stringify(error)}`);
-  const ids = ((data ?? []) as { observation_id: string }[]).map(
-    (row) => row.observation_id,
-  );
+  const rows = (data ?? []) as { observation_id: string; observed_at: string | null }[];
   expect(
-    ids.length,
+    rows.length,
     `this test read ${VIEW_READ_CAP} claims, so its own read of the view is ` +
       `truncated and cannot say what the oldest ones are`,
   ).toBeLessThan(VIEW_READ_CAP);
 
-  const observedAt = new Map<string, string | null>();
-  for (let from = 0; from < ids.length; from += INSTANT_CHUNK) {
-    const chunk = ids.slice(from, from + INSTANT_CHUNK);
-    const { data: instants, error: failed } = await db
-      .from(T.observations)
-      .select("observation_id, observed_at")
-      .in("observation_id", chunk)
-      .limit(chunk.length);
-    if (failed) {
-      throw new Error(`the instant query failed: ${JSON.stringify(failed)}`);
-    }
-    for (const row of (instants ?? []) as {
-      observation_id: string;
-      observed_at: string | null;
-    }[]) {
-      observedAt.set(row.observation_id, row.observed_at);
-    }
-  }
-
-  return ids.map((id) => ({ id, observedAt: observedAt.get(id) ?? null }));
+  return rows.map((row) => ({ id: row.observation_id, observedAt: row.observed_at }));
 }
 
 /**
@@ -347,6 +332,46 @@ function gradeWindow(markup: string, held: readonly ClaimInstant[], whole: numbe
   expect(line.held).toBe(whole);
   expect(line.truncated).toBe(whole > CLAIM_WINDOW);
 }
+
+/**
+ * The COLUMN this whole page now rests on (admin-window/BUG-0138, criterion
+ * 10).
+ *
+ * `/claims` reads no claim population any more: the list is one window read
+ * ordered `observed_at asc` IN THE DATABASE, and that column reaches
+ * `public.pending_claims` only through the scraper handoff Ben applies. So
+ * this case is a precondition, not a nicety — every case below grades a page
+ * whose reads select that column.
+ *
+ * **It FAILS when the column is absent. It does not skip and it does not
+ * pass**, and no case in this file falls back to the old two-step join against
+ * `observations`: a red here is the honest signal that the migration has not
+ * been applied to staging, and the receipt records it as a refusal rather than
+ * as a pass (the same discipline the banner above records for
+ * admin-window/TASK-0031's index).
+ */
+const HANDOFF = "agenticflow/tracker/for-human/M2-handoff-pending-claims-observed-at.md";
+
+describe("the column the Claims page rests on", () => {
+  it("pending_claims carries observed_at", async () => {
+    const { error } = await independentClient()
+      .from(T.pendingClaims)
+      .select("observation_id, observed_at")
+      .limit(1);
+
+    const code = (error as { code?: string } | null)?.code;
+    if (code === "42703" || code === "PGRST204") {
+      throw new Error(
+        `staging's ${T.pendingClaims} does not expose observed_at (${code}). ` +
+          `The Claims page reads it in every query it makes, so this file is ` +
+          `RED until the handoff migration is applied: ${HANDOFF} ` +
+          `(target repo "kspace Scraper", apply with supabase db push, ` +
+          `STAGING only). Nothing here falls back to the two-step read.`,
+      );
+    }
+    if (error) throw new Error(`the view could not be read: ${JSON.stringify(error)}`);
+  });
+});
 
 describe("the Claims page's surface hooks against staging", () => {
   it("names every surface on the page once, on both tabs", async () => {
@@ -523,10 +548,11 @@ describe("the classification buckets against staging", () => {
     });
     if (state !== "ok") return;
 
-    // The read behind the list is still COMPLETE — what is bounded is the
-    // drawing (admin-window/BUG-0041, admin-window/BUG-0057). Both halves are
-    // graded: `whole` is this test's own count of the matching set, and the
-    // ids come from this test's own two-leg read of it.
+    // The read behind the list is a WINDOW and its `held` is a COUNT
+    // (admin-window/BUG-0138): the page draws at most `CLAIM_WINDOW` rows and
+    // states a figure the database counted. Both halves are graded here from
+    // this test's own reads — `whole` is its own count of the matching set,
+    // and the expected ids come from its own read of the view.
     gradeWindow(markup, await claimsFromDatabase(), await countRows(() => claimCount()));
   });
 

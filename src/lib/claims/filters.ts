@@ -35,6 +35,7 @@
  */
 
 import { canonicalRecordId } from "@/lib/records/id";
+import { canonicalUrlText } from "@/lib/url/text";
 import {
   isSurfaceNarrowed,
   type SurfacePopulation,
@@ -52,11 +53,30 @@ export const CLAIM_FACETS = ["bucket", "source_id", "domain"] as const;
 
 export type ClaimFacet = (typeof CLAIM_FACETS)[number];
 
+/**
+ * The facets that render a CHIP ROW — a bounded vocabulary the page can offer
+ * (admin-window/BUG-0138, Ben's ruling of 2026-09-10).
+ *
+ * Two of the three, and the missing one is `domain`. A chip row is an
+ * ENUMERATION, and the page has no bounded read of "the domains in play": the
+ * chips used to be the distinct domains of the whole claim population, which
+ * cost a read of every row of the view on every request, and `domain_target`
+ * is a function taking a domain name rather than an enumerable registry, so
+ * there is nothing to ask instead. `?domain=` therefore stays a REAL narrowing
+ * — applied server-side by `.eq("domain", …)` on every count and on the window
+ * read, named in the window line's scope and in the bucket caption's narrowed
+ * arm — and simply offers no chips. Spec §4's "filterable by source / domain /
+ * bucket" is unchanged; what went is the enumeration the page never read.
+ */
+export const CHIP_FACETS = ["bucket", "source_id"] as const;
+
+export type ChipFacet = (typeof CHIP_FACETS)[number];
+
 /** The narrowing a URL asks for. Every field optional; absent means unnarrowed. */
 export type ClaimsFilter = Partial<Record<ClaimFacet, string>>;
 
-/** Every value each facet may take, in the order its chips render. */
-export type FacetOptions = Readonly<Record<ClaimFacet, readonly string[]>>;
+/** Every value a CHIP facet offers, in the order its chips render. */
+export type FacetOptions = Readonly<Record<ChipFacet, readonly string[]>>;
 
 /**
  * The two tabs. `standing` is the standing-disagreements subset — the same
@@ -94,10 +114,8 @@ function firstValue(value: ParamValue): string | undefined {
 }
 
 /**
- * The value if the offered vocabulary holds it, else nothing — the TAB's
- * reader (`filterFrom` asks `named` below, which answers the same question of
- * a facet whose values may be identifiers).
- *
+ * The value if the offered vocabulary holds it, else nothing — the reader for
+ * the two CLOSED vocabularies this page has: the tab, and the bucket facet.
  *
  * A value outside the set constrains NOTHING rather than narrowing to an empty
  * list — the rule `queue-filters.ts` and `browse/views.ts` already apply to a
@@ -118,51 +136,54 @@ function chosen(allowed: readonly string[], raw: ParamValue): string | undefined
 }
 
 /**
- * The offered value a URL value NAMES — the same question `chosen` asks, of a
- * facet whose values may be identifiers (campaign admin-window/DEBT-0009).
+ * The narrowing the URL asked for — one DERIVATION per facet, and each is the
+ * one its value class already owns (ARCHITECTURE.md §7; LESSONS 4 and 5).
  *
- * `source_id` is a uuid column, and the two comparisons a narrowed claims page
- * makes only agree on values that were put in one spelling first: Postgres
- * matches every spelling of one uuid at the gauge's `.eq`, JavaScript matches
- * exactly one in `selectClaims` and in the chip's `active` test. Compared RAW,
- * a real source's id uppercased or with its hyphens left out selected nothing,
- * was reported as a dropped parameter, and the page rendered unnarrowed —
- * admin-window/BUG-0140's defect, still shipping on `/claims` because the
- * grammar lived in `lib/db/records.ts` where no leaf could reach it.
+ * `filterFrom({}, buckets)` is every claim.
  *
- * So BOTH sides are canonicalised and canonical is compared to canonical
- * (LESSONS 4). The one grammar answers it — `canonicalRecordId`, which also
- * strips the padding a paste brings, by INK rather than by whitespace
- * (admin-window/BUG-0145, BUG-0146) — and a value
- * it says is no id at all compares as ITSELF, which is every value of the two
- * word facets and is byte for byte what this function did before. No second
- * uuid pattern is written here, and no facet needs naming: the values decide.
+ * **The three facets are read three different ways, and the reason is what
+ * each value IS**, not a preference:
  *
- * What it RETURNS is always the OFFERED value — the vocabulary's own spelling,
- * which for `source_id` is the id the database printed — so the filter, every
- * chip href and every row link carry one spelling of one id, whatever the URL
- * arrived in.
- */
-function named(allowed: readonly string[], raw: ParamValue): string | undefined {
-  const value = firstValue(raw);
-  if (value === undefined) return undefined;
-  const asked = canonicalRecordId(value) ?? value;
-  return allowed.find((candidate) => (canonicalRecordId(candidate) ?? candidate) === asked);
-}
-
-/**
- * The narrowing the URL asked for, against the vocabularies the page offers.
- * `filterFrom({}, options)` is every claim.
+ *  - `bucket` is a CLOSED vocabulary this app declares — `RENDERABLE_BUCKETS`
+ *    in `lib/db/claims.ts`, handed in because this leaf may not reach
+ *    `lib/db/**` — so a value outside it narrows NOTHING, which is what keeps
+ *    the parked bucket out of the markup on a hand-typed URL: it is not a
+ *    narrowing, not the active chip, and not carried forward into the href of
+ *    every other chip on the page (§6 trap 4, LOOK_AND_FEEL bar 3).
+ *  - `source_id` is a uuid COLUMN, so its derivation is `canonicalRecordId` —
+ *    the app's one uuid grammar (admin-window/BUG-0140, BUG-0145, BUG-0146).
+ *    A value it says is no id at all narrows nothing and is reported on the
+ *    dropped-parameter line, and that guard is load-bearing rather than
+ *    tidy: the narrowing is a `.eq()` on a `uuid` column now, and Postgres
+ *    answers a non-uuid with `22P02` — a page-wide error state for a typo.
+ *  - `domain` is FREE TEXT, so its derivation is `canonicalUrlText` — the free
+ *    text class's one derivation (admin-window/BUG-0155), which strips the
+ *    padding a paste brought, refuses a value this app may not spell, and
+ *    returns the single string that both reaches the query and is spelled in
+ *    every sentence about it.
+ *
+ * **Neither of the two value facets is checked against a vocabulary any more**
+ * (admin-window/BUG-0138). They used to be checked against the distinct
+ * sources and domains of the whole claim population — which is exactly the
+ * read this page no longer makes, and cannot make concurrently with the reads
+ * it narrows. So a well-formed value the view holds no row for now NARROWS,
+ * honestly, and the page renders the "nothing matched" card with a window line
+ * holding 0 rather than the unnarrowed page under a line saying the parameter
+ * was dropped: the narrowing happened, and the page says where it looked. What
+ * is still DROPPED — and still named — is a value that names nothing at all
+ * for its class.
  */
 export function filterFrom(
   params: SearchParams = {},
-  options: FacetOptions,
+  buckets: readonly string[],
 ): ClaimsFilter {
   const filter: ClaimsFilter = {};
-  for (const facet of CLAIM_FACETS) {
-    const value = named(options[facet], params[facet]);
-    if (value !== undefined) filter[facet] = value;
-  }
+  const bucket = chosen(buckets, params.bucket);
+  if (bucket !== undefined) filter.bucket = bucket;
+  const sourceId = canonicalRecordId(firstValue(params.source_id) ?? "");
+  if (sourceId !== null) filter.source_id = sourceId;
+  const domain = canonicalUrlText(firstValue(params.domain));
+  if (domain !== null) filter.domain = domain;
   return filter;
 }
 
@@ -356,11 +377,16 @@ export function facetChips(
 }
 
 /**
- * Every facet's chips, in `CLAIM_FACETS` order — **except the bucket facet on
- * the standing tab**, because that tab IS a bucket
+ * Every CHIP facet's chips, in `CHIP_FACETS` order — **except the bucket facet
+ * on the standing tab**, because that tab IS a bucket
  * (`bucket = 'standing_disagreement'`, resolver.md §7). A bucket chip there
  * would look like a narrowing and do nothing, which is worse than not offering
  * it: the tab strip above already says which bucket you are in.
+ *
+ * `domain` has no chip row at all (`CHIP_FACETS`, admin-window/BUG-0138) and
+ * still narrows: a facet the page cannot ENUMERATE is not a facet the page
+ * cannot APPLY, and the two questions are answered separately here and at the
+ * query.
  */
 export function filterBar(
   path: string,
@@ -369,7 +395,7 @@ export function filterBar(
   options: FacetOptions,
   labelOf?: FacetLabel,
 ): FilterFacet[] {
-  return CLAIM_FACETS.filter(
+  return CHIP_FACETS.filter(
     (facet) => !(tab === "standing" && facet === "bucket"),
   ).map((facet) => facetChips(path, filter, tab, facet, options[facet], labelOf));
 }

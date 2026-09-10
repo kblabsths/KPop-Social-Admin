@@ -426,6 +426,15 @@ export interface PendingClaimRow {
   bucket: PendingClaimBucket;
   /** Named only on `awaiting_row`; null in every other bucket. */
   unmet_requirement: string | null;
+  /**
+   * The instant the source observed the claim, carried through the view from
+   * `observations` (the scraper handoff of admin-window/BUG-0138).
+   *
+   * `NOT NULL` upstream, so a null here is the DEFENSIVE case rather than an
+   * expected one — a claim of unknown age, which sorts last and renders the
+   * app's dash, never "now".
+   */
+  observed_at: string | null;
 }
 
 export function pendingClaimRow(
@@ -443,6 +452,7 @@ export function pendingClaimRow(
     source_id: ID.sourceTicketmaster,
     bucket,
     unmet_requirement: awaitingRow ? "at least one linked performer" : null,
+    observed_at: "2026-08-20T00:00:00Z",
     ...overrides,
   };
 }
