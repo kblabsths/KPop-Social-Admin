@@ -24280,3 +24280,50 @@
 2026-09-10T21:10:04Z	agent	-	-	-	-
 # STRANDED	2026-09-10T21:10:27Z	qa-adversary	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0163.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0163.md
 2026-09-10T21:10:27Z	qa-adversary	BUG-0163	29983	844	147776
+2026-09-10T21:12:30Z	strategist	BUG-0138	spawned
+# STRANDED	2026-09-10T21:13:01Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-10T21:13:01Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:13:32Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-10T21:13:32Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:14:04Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-10T21:14:04Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:14:35Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-10T21:14:35Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:15:06Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-10T21:15:06Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:15:37Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-10T21:15:37Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:16:09Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-10T21:16:09Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:16:40Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-10T21:16:40Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:17:11Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-10T21:17:11Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:17:43Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-10T21:17:43Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:18:44Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/milestones/M2.md
+2026-09-10T21:18:44Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:19:16Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/tracker/milestones/M2.md
+2026-09-10T21:19:16Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:19:47Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/tracker/milestones/M2.md
+2026-09-10T21:19:47Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:20:18Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/tracker/milestones/M2.md
+2026-09-10T21:20:18Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:20:50Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/tracker/milestones/M2.md
+2026-09-10T21:20:50Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:21:21Z	agent	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/tracker/milestones/M2.md, agenticflow/visions/admin-window/tracker/milestones/M3.md
+2026-09-10T21:21:21Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:21:53Z	agent	6 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/tracker/milestones/M2.md, agenticflow/visions/admin-window/tracker/milestones/M3.md, agenticflow/visions/admin-window/tracker/tickets/FEAT-0014.md
+2026-09-10T21:21:53Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:22:24Z	agent	7 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/tracker/milestones/M2.md, agenticflow/visions/admin-window/tracker/milestones/M3.md, agenticflow/visions/admin-window/tracker/tickets/FEAT-0014.md
+2026-09-10T21:22:24Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:22:56Z	agent	9 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/tracker/milestones/M2.md, agenticflow/visions/admin-window/tracker/milestones/M3.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0164.md
+2026-09-10T21:22:56Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:23:28Z	agent	12 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/tracker/milestones/M2.md, agenticflow/visions/admin-window/tracker/milestones/M3.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0164.md
+2026-09-10T21:23:28Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:23:59Z	agent	13 uncommitted in primary checkout: .env.example, agenticflow/docs/DECISIONS.md, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/tracker/milestones/M2.md, agenticflow/visions/admin-window/tracker/milestones/M3.md
+2026-09-10T21:23:59Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:24:31Z	agent	13 uncommitted in primary checkout: .env.example, agenticflow/docs/DECISIONS.md, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/tracker/milestones/M2.md, agenticflow/visions/admin-window/tracker/milestones/M3.md
+2026-09-10T21:24:31Z	agent	-	-	-	-
+# STRANDED	2026-09-10T21:25:01Z	strategist	13 uncommitted in primary checkout: .env.example, agenticflow/docs/DECISIONS.md, agenticflow/visions/admin-window/docs/ROADMAP.md, agenticflow/visions/admin-window/docs/SPEC.md, agenticflow/visions/admin-window/tracker/milestones/M2.md, agenticflow/visions/admin-window/tracker/milestones/M3.md
+2026-09-10T21:25:01Z	strategist	BUG-0138	27851	750	111603

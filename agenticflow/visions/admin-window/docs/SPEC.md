@@ -459,6 +459,82 @@ Observable behavior:
   the parity check for this surface asserts the not-provisioned state, which is
   the honest oracle.
 
+## F14 — Paging past the window, on Claims and on Browse *(M3, added 2026-09-10)*
+
+Ben, 2026-09-10: *"not being able to load all claims if I want to is a huge
+oversight."* This extends F5 and F7; it contradicts nothing they say.
+
+- The **first screen does not change**: it is the same server-rendered window,
+  with the same window line, the same figures and the same not-provisioned
+  behavior it has today. Paging is what the operator can do *after* that screen
+  exists, never a change to what arrives first.
+- **Asking for more is a client request against a route handler**, on demand.
+  Not a full server round trip per page, not a re-render of the page, and not an
+  unbounded read: each request is one bounded page, and the request states what
+  it asked for.
+- The affordance is offered **only when there is more**, and never claims a
+  total the read did not establish. When the set is exhausted the surface says
+  so; when a page refuses, it refuses the way every other read in this app
+  refuses — naming the object, never half-filling the list.
+- **Absent the tables**, the surface renders its not-provisioned state and no
+  paging affordance is offered at all: a control that cannot be honoured is
+  never drawn (F10's rule, applied here).
+- Claims and Browse **only**. No third surface gains paging on the team's
+  initiative, and no page gains a "load everything" control — the operator asks
+  for more, a bounded page at a time.
+- The route handler is gated exactly as the pages are: unauthenticated requests
+  never reach it, and no service-role material crosses to the client.
+- **Paging is not whole-table browsing and does not reopen it.** M2's
+  out-of-scope list still stands in full: Browse keeps its one curated view
+  (recent events) and its column selector, and paging lets the operator walk
+  further down *that* view. A second view, a table picker, a SQL runner and a
+  search box all remain out.
+- **ARCHITECTURE §4.3 forbids paging today** (*"Paging is not the answer to a
+  cap and none is built"*), and §4/§5 forbid a component fetching. Those
+  contracts are the **architect's** to amend at the start of M3, before any page
+  is touched. A builder that finds the contract in its way files, it does not
+  interpret.
+
+## F15 — Every windowed figure is true about the read that produced it *(M3, added 2026-09-10)*
+
+Three landed instances of the rule `LESSONS.md` 2 already states, made honest.
+This adds no surface; it corrects sentences and bounds that are wrong today.
+
+- **Two figures on one page never silently disagree.** The Claims tab gauge
+  transports a 1,000-row window; past 1,000 claims its bucket figures diverge
+  from the head counts printed above them on the same page, with nothing saying
+  so. Either they are read the same way, or the page says which is the window
+  and which is the total — never both presented as the same kind of fact.
+- **A window line names the narrowing its read actually carried.** `/sources`'
+  two scan-window lines name none while their read carries one; `/claims` was
+  fixed for exactly this (BUG-0163) and is the model.
+- **A count and the scan it is printed beside share their bounds.**
+  `readClaimCountSince` has no upper bound while its partner scan is
+  `[since, until]` and capped at 1,000. A count over a different interval than
+  the rows beside it is a false relationship, whichever way it is resolved.
+- **Constraint, carried from the M2 close:** if this work touches the window
+  line's scope contract, `DrawnWindow.scope`'s comma-joined string (split back
+  apart by the line that renders it) is fixed **structurally** at that point.
+  A facet value containing `", "` could forge a segment; it is unreachable
+  today, and it is not a separate ticket.
+
+## F16 — The second leg of a two-step join runs its chunks concurrently *(M3, added 2026-09-10)*
+
+The unbuilt half of BUG-0138's **Answer B**, a decision already taken and half
+shipped. No behavior changes; only the wall clock.
+
+- `readRowsByIds` (`src/lib/db/result.ts`) issues its chunks of 100
+  concurrently instead of one after another, bounded so the app never opens an
+  unbounded fan-out at the database.
+- **Every guarantee it makes today survives**: no ids means no round trip; the
+  first non-`ok` result comes back unchanged so a missing table still reaches
+  the page as `not_provisioned` naming that table; a chunk that errors never
+  yields a half-filled `ok`. Concurrency must not turn a refusal into a partial
+  answer — that is the one way this change can be wrong.
+- Its three callers — `/claims`, `/queues` and the review item — are measured
+  warm before and after, over HTTP against a production build, not in a stub.
+  `/claims` is the named target: ~2.4 s today, ~1 s the estimate.
+
 ## M2's own out-of-scope, additional to M1's
 
 - **Installing either migration**, from any code path, by any agent. A third

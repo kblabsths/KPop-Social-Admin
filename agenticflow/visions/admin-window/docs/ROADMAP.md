@@ -14,13 +14,46 @@ the resolver campaign closes there.
 | milestone | the slice | schema footprint | acceptance tests | status |
 | --- | --- | --- | --- | --- |
 | **M1** | read surfaces + the pre-cutover edit surface | **zero** | 1, 2, 3, 4, 5, 7 (pre-cutover half), 9, 10, 11, 12, 13 | **SHIPPED** 2026-09-04, tag `m1` at 26cec8d |
-| **M2** | the verdict slice: UI built, both migrations authored as handoffs | **zero installed** | (M1's, still green) + both handoffs complete and reviewed | **final milestone of this campaign** |
+| **M2** | the verdict slice: UI built, both migrations authored as handoffs | **zero installed** | (M1's, still green) + both handoffs complete and reviewed | **SHIPPED** 2026-09-10, tag `m2` at f194991 |
+| **M3** | completeness of the read slice: paging past the window, and every windowed figure honest | **zero** (one handoff already installed by Ben) | (M1's and M2's, still green) + M3's own | **PLANNED 2026-09-10** — Ben's ruling, below |
 | **patch run** (deferred) | live proof of the §7 actions, after Ben installs the handoffs | the two §9 items, installed by Ben | 6, 8, 7 (override half) | after Ben installs |
 
-**There is no M3.** VISION's own words define satisfaction — "The campaign is
-satisfied when the verdict UI is built and both handoffs are complete and
-reviewed" — so when M2 closes, the run stops and Ben verifies. Planning an M3 to
-keep the team busy would be scope this campaign never bought.
+## Is the vision satisfied? Not yet — and M3 exists because Ben said so
+
+**Stated plainly, at the M2 close (2026-09-10).** VISION's satisfaction sentence
+is *"the verdict UI is built and both handoffs are complete and reviewed."* The
+verifier walked the first half green and the second half is **half met**: both
+artifacts are authored complete, with target paths, apply commands, seven
+columns, RLS on with zero policies and the `wont_fix` refusal inside the
+function — but "reviewed" is Ben's word and he has not said it. Two acceptance
+tests (6, 8) and half of a third (7) remain deliberately deferred to the patch
+run after he installs them. **So the campaign is not satisfied, and the reason
+is not a hole in the build.**
+
+Through M2's close this roadmap said "There is no M3," and the verifier's EC14
+paragraph repeats it. **Ben overruled that on 2026-09-10**, and his word is the
+authority a roadmap does not argue with:
+
+> *"Not being able to load all claims if I want to is a huge oversight."*
+> Paging past the window, on Claims and on Browse, through on-demand
+> client-side fetching against a route handler, **is a next-milestone item.**
+
+and, on the shape of the rest:
+
+> *"As long as everything is complete is good."*
+
+That is M3, and it is genuinely this vision's work rather than new scope: VISION
+already requires six pages "showing real staging rows **whose numbers match what
+the database says**" and an investigation that "never leaves the app." A surface
+that caps at 1,000 rows with no way past it, and a gauge whose bucket figures
+silently diverge from the head counts printed above them on the same page, both
+fail that sentence today. M3 pays exactly those and nothing else.
+
+**Its size is deliberately three features.** M3 opens no new front, adds no
+page, adds no schema, and returns the app to a verified shippable state quickly.
+When it closes, the campaign's satisfaction still rests where it rests now — on
+Ben's review of the two handoffs and the deferred patch run — and the run stops
+there unless he says otherwise.
 
 ---
 
@@ -137,6 +170,89 @@ or responsive work; every parked section, in full.
 
 Exit criteria: `agenticflow/tracker/milestones/M2.md`.
 
+---
+
+## M3 — completeness of the read slice — PLANNED 2026-09-10
+
+**Precisely: the operator can reach every row the window shows him a slice of,
+and every figure on every page is true about the read that produced it.** Zero
+schema. No new page. No new front.
+
+Ordered by dependency, because F16 is what makes F14 feel like anything:
+
+1. **F14 — Paging past the window, on Claims and on Browse.** On-demand
+   **client-side** fetching against a route handler: the first screen is still
+   the server-rendered window it is today, and asking for more is a request the
+   client makes, not a server round trip per page and not an unbounded read.
+   This is the first thing in the campaign that crosses ARCHITECTURE §4's
+   "components never fetch" line and §5's one-async-boundary rule, and §4.3
+   currently reads *"Paging is not the answer to a cap and none is built:
+   nothing in the spec asks for it."* **The architect amends that contract when
+   M3 starts — a builder never does**, and the amendment is the first ticket of
+   the milestone, before any page changes. Ben asked for Claims and Browse by
+   name; no third surface is added on the team's initiative.
+2. **F15 — Every windowed figure names its window, and no two figures on one
+   page silently disagree.** The Claims tab gauge transports a 1,000-row window
+   whose bucket figures diverge from the head counts above them past 1,000 rows
+   (staging is at 877, so this is live within months, not theoretical);
+   `/sources`' two scan-window lines name no narrowing while their read carries
+   one — the same defect BUG-0163 fixed one page over; and `readClaimCountSince`
+   has no upper bound while the scan it is printed beside is `[since, until]`
+   and capped. Three instances of `LESSONS.md` 2, on the one page and its
+   neighbour.
+3. **F16 — The second leg of a two-step join runs its chunks concurrently.**
+   `readRowsByIds` (`src/lib/db/result.ts`) walks chunks of 100 sequentially and
+   is shared by `/claims`, `/queues` and the review item. This is the unbuilt
+   half of BUG-0138's **Answer B**, a decision already taken; the built half
+   plus Ben's own `pending_claims.observed_at` install took `/claims` from
+   2.9–3.8 s to ~2.4 s warm, and this is estimated to take it to ~1 s. Ben's
+   original complaint on that page was wall-clock, and F14's paged fetches
+   inherit whatever this leg costs.
+
+**Out — M3 must not build any of it:** search, on any surface (below); a second
+Browse view; whole-table browsing; any door onto `groups`/`idols`; any schema,
+in this repo or the sibling; installing either §9 migration; any dial or
+threshold control; phone and responsive work; every parked section. Paging is
+added to **Claims and Browse only**.
+
+**Preconditions:** M2's, unchanged, plus nothing new. `public.walk_sandbox`
+remains the standing ask that narrows every walk until it exists.
+
+Exit criteria: `agenticflow/tracker/milestones/M3.md`. Behavior:
+`agenticflow/docs/vision/SPEC.md` F14–F16.
+
+## Search — a vision ADDITION, held for Ben, with the evidence
+
+Ben ruled on 2026-09-10 that **search is an addition to the vision, not in scope
+unless he runs `/ship revise`.** It is therefore not planned, not ticketed and
+not designed, and M3 does not build it. The evidence is recorded here so the
+decision stays his and stays informed:
+
+- **Two independent user-sim strangers, unprompted, named a search box as their
+  first condition for returning.** Priya: *"if my event hadn't been in the newest
+  50 I would have gone straight to `psql` and never come back."* Devin's §5 is
+  the same finding from a different table. Both are in
+  `tracker/for-human/M2-usersim-judgment.md`.
+- M1's stranger walk ended in a SQL client after fifteen minutes for the same
+  reason.
+- F14's paging removes one of the two routes out of the app (the cap); search
+  would remove the other (finding a known row). They are complements, not
+  substitutes — paging does not make search unnecessary, and the strategist is
+  not arguing that it does.
+
+## Two findings carried to Ben from the M2 close
+
+1. **The installed migration is untracked in the repo that owns the schema.**
+   `kspace Scraper` carries
+   `?? supabase/migrations/20260910000001_a_pending_claim_carries_its_instant.sql`
+   — live on staging, not in git. Nothing in this campaign may commit it
+   (write-by-size: a migration is major in every case). It is a one-command fix
+   in the sibling and it is Ben's.
+2. **`README.md` in this repo still describes the retired dashboard** (scraper
+   operations, reconciliation review, `.env.local`, port 3000). Nothing it names
+   is reachable; the accurate instructions are in `agenticflow/docs/STACK.md` §5.
+   Filed as a patch-lane task at this close.
+
 ## The deferred patch run — live proof of the §7 actions
 
 Named here so nobody mistakes it for a hole. **After** Ben installs the two §9
@@ -193,7 +309,9 @@ and what it cost.**
 ## Not on this roadmap, ever, under this campaign
 
 Production as a target; repointing the deployed service; any schema beyond the
-two handoff items; the parked operator, free-form tickets, recommendations,
+**three** handoff items (the two §9 pieces, plus `pending_claims.observed_at`,
+which arose in M2 from BUG-0138 and which Ben installed on staging 2026-09-10 —
+authored here, applied by him, never by this campaign); the parked operator, free-form tickets, recommendations,
 incidents, agent runs, commands, registry mirror, severity formula, AI calls;
 the mobile app, the scrapers, the pipeline's rules, app-user social data; a
 count of unprovenanced catalog rows on Browse (no vision trace); phone and
