@@ -2897,6 +2897,70 @@ describe("an evidence cell with nothing in it", () => {
     }
   });
 
+  /**
+   * All three ways the registry can name a source, on ONE page
+   * (admin-window/BUG-0156, QA's attack on the landed fix).
+   *
+   * The two pins above take one odd name at a time. The rule this fix rests on
+   * is that ONE predicate decides the question everywhere, so the interesting
+   * page is the mixed one: a row whose registry name is an em dash beside a row
+   * whose registry name has no ink, and the same em-dash row beside a source
+   * the registry holds NO row for. Each row keeps the operator's one route to
+   * its source (LOOK_AND_FEEL bar 10), says the label the rule answered
+   * verbatim, stays addressable, and is never announced as an absence — and the
+   * page's dash-meaning line is printed exactly when a dash is really on
+   * screen, which on the second fixture it is (that claim's source has no
+   * registry row, so its TIER is genuinely absent and its cell dashes).
+   */
+  it("keeps every source's link and words on a page that mixes all three kinds of name", async () => {
+    const item = reviewItemDataConflict();
+    for (const [what, registry] of [
+      [
+        "a row named an em dash beside a row whose name has no ink",
+        [
+          sourceRow({ source: EM_DASH }),
+          sourceRow({ source_id: ID.sourceBandsintown, source: "\u200b", tier: "standard" }),
+        ],
+      ],
+      [
+        "a row named an em dash beside a source the registry has no row for",
+        [sourceRow({ source: EM_DASH })],
+      ],
+    ] as const) {
+      const markup = await renderItem(
+        conflictScript({ [T.sources]: { data: [...registry] } }),
+        item.review_item_id,
+      );
+      const $ = cheerio.load(markup);
+      const names = sourceNamesOf(
+        registry.map((row) => ({ source_id: row.source_id, source: row.source })),
+      );
+      for (const claim of [CLAIM_A, CLAIM_B]) {
+        const label = sourceLabel(names, claim.source_id);
+        const cell = $(`[data-evidence="${claim.observation_id}"]`)
+          .closest("tr")
+          .find("[data-claim-source]");
+        const where = `${what}: ${claim.observation_id}`;
+        expect(cell, where).toHaveLength(1);
+        expect(cell.is("a"), `${where} — the operator's one route to that source`).toBe(true);
+        expect(cell.attr("href"), where).toBe(`/sources?source_id=${claim.source_id}`);
+        expect(cell.text().trim(), `${where} — the label the rule answered, verbatim`).toBe(label);
+        expect(cell.attr("data-claim-source"), `${where} — the row's source hook`).not.toBe("");
+        expect(
+          cell.find('[aria-label="no value"]'),
+          `${where} — announced as no value`,
+        ).toHaveLength(0);
+      }
+      // The sentence and the markup agree: the line is on the page exactly when
+      // a dash is (admin-window/BUG-0132's rule, read from the outside).
+      const drawn = $(EVIDENCE_HOOK).find('[aria-label="no value"]').length;
+      expect(
+        $(EVIDENCE_HOOK).find('[data-absence-note="dash"]').length,
+        `${what} — the dash-meaning line, with ${drawn} dash(es) on screen`,
+      ).toBe(drawn > 0 ? 1 : 0);
+    }
+  });
+
   /* ── the four columns, one absent and one present (LESSONS 3) ─────────── */
 
   /** The hook each nullable cell is addressed by; the value cell's is the row's. */
@@ -3124,6 +3188,78 @@ describe("an evidence cell with nothing in it", () => {
     const note = $(EVIDENCE_HOOK).find("[data-absence-note]");
     expect(note).toHaveLength(1);
     expect(note.text()).toContain(EM_DASH);
+  });
+
+  /**
+   * The other half of "only while one is on screen", on the one view that
+   * carries the RECORD column (`shape-views.tsx`'s folded-records table).
+   *
+   * `recordColumn.absent` (`evidence-cells.tsx`) is `isAbsent(entityId or
+   * externalRef)`, but its cell draws the app's dash only when it returns
+   * `null` — when NEITHER identity is there. For a claim with no canonical row
+   * whose source published a reference of its own that `isAbsent` calls an
+   * absence (a bare em dash, or zero-widths), the cell renders that reference
+   * verbatim, no dash reaches the table, and the page prints the sentence
+   * anyway: "A — is a value this row does not carry", about a value the row
+   * does carry. It is BUG-0156's divergence one column over — the same
+   * predicate answering a rendering's question — and it predates that fix.
+   *
+   * admin-window/BUG-0157. Landed `it.fails` (strict: the day the divergence
+   * goes this XPASSes and sends the reader to the ticket); the fix flips it to
+   * a plain `it`. Watched RED first as a plain `it` on this tree.
+   *
+   * Non-vacuity is the test above and the arm below it: a claim with NEITHER
+   * identity draws the dash and does get the line.
+   */
+  it.fails("says a dash is on screen only when one is, in the folded-records table", async () => {
+    const item = reviewItemSourcePattern();
+    const refOnly = observationRow({
+      observation_id: ID.observationB,
+      source_id: ID.sourceBandsintown,
+      status: "pending",
+      // No canonical row yet — the state most of a source-pattern item's
+      // evidence is in — and the source's own reference is a bare em dash.
+      entity_id: null,
+      external_ref: EM_DASH,
+    });
+    const $ = cheerio.load(
+      await renderItem(
+        patternScript({ [T.observations]: [{ data: [refOnly] }, { data: [] }] }),
+        item.review_item_id,
+      ),
+    );
+    // What the cell actually renders: the source's own reference, verbatim.
+    expect($("[data-record]").text().trim(), "the source's own reference").toBe(EM_DASH);
+    const drawn = $(EVIDENCE_HOOK).find('[aria-label="no value"]').length;
+    expect(
+      $(EVIDENCE_HOOK).find('[data-absence-note="dash"]').length,
+      `the dash-meaning line, with ${drawn} dash(es) on screen`,
+    ).toBe(drawn > 0 ? 1 : 0);
+  });
+
+  it.fails("draws SOMETHING for a claim whose only identity has no ink", async () => {
+    // The neighbouring arm of the same defect: an ink-less reference renders
+    // as an evidence cell with nothing in it — no dash, no words — which is
+    // the rendering admin-window/BUG-0152 and BUG-0154 were filed to remove.
+    const item = reviewItemSourcePattern();
+    const inkLess = observationRow({
+      observation_id: ID.observationB,
+      source_id: ID.sourceBandsintown,
+      status: "pending",
+      entity_id: null,
+      external_ref: "\u200b",
+    });
+    const $ = cheerio.load(
+      await renderItem(
+        patternScript({ [T.observations]: [{ data: [inkLess] }, { data: [] }] }),
+        item.review_item_id,
+      ),
+    );
+    const cell = $("[data-record]");
+    expect(cell, "the record cell").toHaveLength(1);
+    const readable =
+      cell.find('[aria-label="no value"]').length > 0 || cell.text().replace(/\s|\u200b/gu, "") !== "";
+    expect(readable, "a cell a person can read: the app's dash, or words").toBe(true);
   });
 });
 

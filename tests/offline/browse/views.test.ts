@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
 import {
   BROWSE_VIEWS,
   COLUMNS_PARAM,
@@ -353,6 +354,38 @@ describe("the join", () => {
       sources: [],
     });
     expect(rows[0].sources).toEqual(["s9"]);
+  });
+
+  /**
+   * The same answer for the OTHER way the registry names no source: a row that
+   * EXISTS and whose name has no ink in it (admin-window/BUG-0158, QA attack on
+   * BUG-0156).
+   *
+   * `sourceLabel` (`lib/sources/names.ts`) is the app's one rule for what a
+   * source is called, and it decides "names nothing" by INK — that is what
+   * BUG-0154 fixed, because `??` catches only `null` and lets a blank registry
+   * name through as a name. This join asks `??` (`lib/browse/rows.ts:222`), so
+   * a blank name reaches the browse table as the row's source and the operator
+   * reads nothing where every other row names one. Measured: `sources: [{
+   * source_id: "s1", source: "" }]` yields `[""]` here while the rule answers
+   * `"s1"`.
+   *
+   * Landed `it.fails` (strict) while the divergence stands; the fix flips it to
+   * a plain `it`. Non-vacuity is the test above (no registry row at all) and
+   * the two below it, which the rule and this join already agree on.
+   */
+  it.fails("says what the label rule says for a registry row that names nothing readable", () => {
+    for (const name of ["", "   ", "\u200b"]) {
+      const rows = joinBrowseRows({
+        events: [event("e1")],
+        venues: [],
+        provenance: [decision("e1", "title", "s1")],
+        sources: [{ source_id: "s1", source: name }],
+      });
+      expect(rows[0].sources, JSON.stringify(name)).toEqual([
+        sourceLabel(sourceNamesOf([{ source_id: "s1", source: name }]), "s1"),
+      ]);
+    }
   });
 
   it("attributes provenance to the row it belongs to and no other", () => {
