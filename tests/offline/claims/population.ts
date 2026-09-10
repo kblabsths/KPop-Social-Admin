@@ -279,7 +279,11 @@ export function claimsInBucket(bucket: string): PendingClaimRow[] {
  *  - a `timestamptz` is compared by VALUE, so `…T00:00:00Z` and
  *    `…T00:00:00+00:00` are one instant and the tie-break decides between
  *    them, exactly as Postgres does;
- *  - `nullsFirst: false` puts a null instant last whatever the direction is.
+ *  - `nullsFirst: false` puts a null instant last whatever the direction is;
+ *  - a `.gte()` lower bound narrows by VALUE and drops a null outright, so a
+ *    claim of unknown instant is outside every window (`null >= x` is null) —
+ *    which is what a windowed read of this view really returns
+ *    (admin-window/TASK-0074).
  *
  * And one that is this fixture's own: the response carries ONLY the columns
  * the `.select()` named, so a page reading a column its query did not ask for
@@ -315,6 +319,19 @@ export function claimView(
     for (const step of steps("in")) {
       const wanted = step.args[1] as unknown[];
       rows = rows.filter((row) => wanted.includes(row[String(step.args[0])]));
+    }
+    for (const step of steps("gte")) {
+      // A WINDOW's lower bound, compared the way the column's type is compared
+      // — and a NULL is outside every window, because `null >= x` is null and a
+      // row a predicate cannot decide is not returned. That is the same claim
+      // the `observations` scan cannot see either
+      // (admin-window/TASK-0074, admin-window/BUG-0163).
+      const bound = step.args[1];
+      rows = rows.filter((row) => {
+        const value = row[String(step.args[0])];
+        if (value === null || value === undefined) return false;
+        return compareScalar(value, bound) >= 0;
+      });
     }
 
     const orders = steps("order").map((step) => ({

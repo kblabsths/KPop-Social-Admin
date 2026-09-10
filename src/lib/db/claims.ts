@@ -151,8 +151,59 @@ const CLAIM_COLUMNS = [PENDING_CLAIM_COLUMNS, "observed_at"].join(", ");
 const BUCKET_INSTANT_COLUMNS = ["bucket", "observed_at"].join(", ");
 
 /**
- * The buckets of a set of claims, by `observation_id` — the gauges' second leg
- * (they window on `observations`, the side that carries the timestamp).
+ * The live pending claims of a WINDOW, read from the view's own instant — the
+ * gauges' claims leg, and a SIBLING of their `observations` scan rather than
+ * its second step (admin-window/TASK-0074).
+ *
+ * It exists because the view carries `observed_at` now (scraper migration
+ * `20260910000001` carries `observations.observed_at` through unchanged, one
+ * row per live pending claim), so the claims a window holds are expressible
+ * against this view alone. `readClaimCountSince` already windows this side by
+ * the same column on the same page; this is the row read beside it.
+ *
+ * **What it is FOR is depth, not round trips.** The gauge used to await its
+ * `observations` scan and then feed the ids it returned into
+ * `readPendingClaimRows` — four sequential waits on `/claims`, and the
+ * largest part of a 1.714 s warm page (admin-window/TASK-0062's census). This
+ * read needs nothing from the scan, so the two are issued together and the
+ * page's longest chain is one wait.
+ *
+ * The narrowing, the parked-bucket exclusion and the columns are the ones
+ * every other query of this view carries — `narrowed` applies them all. The
+ * order is the scan's: **oldest first**, so a truncated read keeps the
+ * longest-waiting claims, with `observation_id` breaking every tie so
+ * membership at the cap is deterministic (the scan's own order, plus the
+ * total-order tiebreak `readClaimWindow` takes for the same reason).
+ *
+ * A null instant is outside every window (`null >= x` is null), which is the
+ * same claim the `observations` scan cannot see either.
+ */
+export function readPendingClaimsInWindow(
+  bounds: { since: string; limit: number },
+  filter: PendingClaimsFilter = {},
+  db?: SupabaseClient,
+): Promise<DbResult<PendingClaimRow[]>> {
+  return readRows<PendingClaimRow>(
+    T.pendingClaims,
+    (client) =>
+      narrowed(client.from(T.pendingClaims).select(PENDING_CLAIM_COLUMNS), filter)
+        .gte("observed_at", bounds.since)
+        .order("observed_at", { ascending: true })
+        .order("observation_id", { ascending: true })
+        .limit(bounds.limit) as unknown as PromiseLike<DbResponse<PendingClaimRow[]>>,
+    db,
+  );
+}
+
+/**
+ * The buckets of a set of claims, by `observation_id` — an id-set lookup over
+ * this view.
+ *
+ * It is the REVIEW ITEM's read (`app/queues/[reviewItemId]/page.tsx`), which
+ * holds the claim ids of one item and asks what bucket each landed in. The
+ * gauges took their second leg from it until admin-window/TASK-0074 gave them
+ * `readPendingClaimsInWindow` above; a page that already has its ids still
+ * wants this one.
  *
  * Moved here from `lib/db/gauges.ts` with the vocabulary: one module owns
  * every query of this view, so the exclusion below cannot be forgotten by the

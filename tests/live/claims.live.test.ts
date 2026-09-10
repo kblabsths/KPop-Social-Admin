@@ -373,6 +373,122 @@ describe("the column the Claims page rests on", () => {
   });
 });
 
+/**
+ * THE COLLAPSE, CHECKED AGAINST THE REAL VIEW (admin-window/TASK-0074).
+ *
+ * The pending-claims gauge used to read its claims as the SECOND step of a
+ * two-step join — scan `observations` for the window, then look the view up by
+ * the ids that came back. It now WINDOWS the view directly on `observed_at`,
+ * beside that scan instead of after it, and the whole change rests on one
+ * claim about this database: **the two shapes select the same claims.**
+ *
+ * That claim is a fact about staging's schema (the view carries
+ * `observations.observed_at` through unchanged — scraper migration
+ * `20260910000001`), so it is checked HERE, against staging, and not assumed
+ * from the SQL. The offline suite proves the app's half — that the shapes
+ * agree exactly while the instants agree, and differ by exactly the drifting
+ * claim where they do not (`tests/offline/gauges/pending-claims.test.ts`).
+ *
+ * Both queries are written out in this file, from the migration, without
+ * `src/lib/db/claims.ts` — the rule the whole file follows.
+ */
+describe("the two shapes of the pending-claims gauge against staging", () => {
+  /** The gauge's own bounds: 90 days back, capped at the platform's row cap. */
+  const GAUGE_DAYS = 90;
+  const GAUGE_CAP = 1000;
+  const ID_CHUNK = 100;
+
+  interface Claim {
+    observation_id: string;
+    bucket: string;
+    source_id: string;
+    domain: string;
+  }
+
+  /** The aggregate the page renders off a claim set: buckets, sources, domains. */
+  function aggregateOf(claims: readonly Claim[]) {
+    const buckets: Record<string, number> = {};
+    for (const bucket of RENDERED_BUCKETS) buckets[bucket] = 0;
+    for (const claim of claims) {
+      buckets[claim.bucket] = (buckets[claim.bucket] ?? 0) + 1;
+    }
+    return {
+      claims: claims.length,
+      buckets,
+      sources: [...new Set(claims.map((claim) => claim.source_id))].sort(),
+      domains: [...new Set(claims.map((claim) => claim.domain))].sort(),
+      ids: claims.map((claim) => claim.observation_id).sort(),
+    };
+  }
+
+  it("the windowed claims read and the id-list join select the same claims", async () => {
+    const db = independentClient();
+    const since = new Date(Date.now() - GAUGE_DAYS * 86_400_000).toISOString();
+
+    // SHAPE A — what the gauge does now: one window over the view's own instant.
+    const windowed = await db
+      .from(T.pendingClaims)
+      .select("observation_id, bucket, source_id, domain")
+      .neq("bucket", PARKED_BUCKET)
+      .gte("observed_at", since)
+      .order("observed_at", { ascending: true })
+      .order("observation_id", { ascending: true })
+      .limit(GAUGE_CAP);
+    if (windowed.error) {
+      throw new Error(`the windowed claims read failed: ${JSON.stringify(windowed.error)}`);
+    }
+    const fromWindow = (windowed.data ?? []) as Claim[];
+
+    // SHAPE B — what it used to do: scan `observations`, then look the view up
+    // by the ids, in chunks of 100, the way `readRowsByIds` chunks them.
+    const scan = await db
+      .from(T.observations)
+      .select("observation_id, observed_at")
+      .eq("status", "pending")
+      .gte("observed_at", since)
+      .order("observed_at", { ascending: true })
+      .limit(GAUGE_CAP);
+    if (scan.error) throw new Error(`the scan failed: ${JSON.stringify(scan.error)}`);
+    const scanned = (scan.data ?? []) as { observation_id: string }[];
+
+    // Neither leg may be at its cap: a truncated read would make this a
+    // question about where two windows were cut, not about which claims they
+    // hold (the rule `VIEW_READ_CAP` states above).
+    expect(
+      fromWindow.length,
+      `the windowed claims read returned its cap (${GAUGE_CAP}), so this ` +
+        `comparison would be about the cap rather than about the two shapes`,
+    ).toBeLessThan(GAUGE_CAP);
+    expect(
+      scanned.length,
+      `the observations scan returned its cap (${GAUGE_CAP}), same reason`,
+    ).toBeLessThan(GAUGE_CAP);
+    // …and non-vacuous: staging really holds pending claims in this window.
+    expect(fromWindow.length).toBeGreaterThan(0);
+
+    const ids = scanned.map((row) => row.observation_id);
+    const fromJoin: Claim[] = [];
+    for (let start = 0; start < ids.length; start += ID_CHUNK) {
+      const chunkIds = ids.slice(start, start + ID_CHUNK);
+      const leg = await db
+        .from(T.pendingClaims)
+        .select("observation_id, bucket, source_id, domain")
+        .in("observation_id", chunkIds)
+        .neq("bucket", PARKED_BUCKET)
+        .limit(chunkIds.length);
+      if (leg.error) throw new Error(`an id-list leg failed: ${JSON.stringify(leg.error)}`);
+      fromJoin.push(...((leg.data ?? []) as Claim[]));
+    }
+
+    // The identity the collapse rests on, stated twice: the claim set, and
+    // every figure the gauge renders off it.
+    expect(aggregateOf(fromWindow).ids).toEqual(aggregateOf(fromJoin).ids);
+    expect(aggregateOf(fromWindow)).toEqual(aggregateOf(fromJoin));
+    // And the parked bucket is in neither, on a database that spells it.
+    expect(fromWindow.map((claim) => claim.bucket)).not.toContain(PARKED_BUCKET);
+  });
+});
+
 describe("the Claims page's surface hooks against staging", () => {
   it("names every surface on the page once, on both tabs", async () => {
     // The oracle's addressing itself, asserted before it is used: each hook
