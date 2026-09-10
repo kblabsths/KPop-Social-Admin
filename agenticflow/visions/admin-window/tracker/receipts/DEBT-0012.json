@@ -1,0 +1,35 @@
+{
+ "id": "DEBT-0012",
+ "created": "2026-09-10T00:46:07Z",
+ "green": true,
+ "git_head": "d5b16d42dab88fb96fc613f171a90a8582d39bb5",
+ "scope": [
+  "src/lib/db/review-items.ts",
+  "tests/offline/review/review-items.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "8d196fc79089c046dae119e08541ee9f5ba10ed00e8263754777b132e334eaa1",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review tests/offline/queues",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-93944\n\n \u2713 |offline| tests/offline/review/review-items.test.ts (51 tests) 34ms\n \u2713 |offline| tests/offline/review/one-place.test.ts (16 tests) 158ms\n \u2713 |offline| tests/offline/review/shapes.test.ts (42 tests) 16ms\n \u2713 |offline| tests/offline/review-item/signal-actions.test.ts (27 tests) 47ms\n \u2713 |offline| tests/offline/review-item/close-slot.test.ts (34 tests) 53ms\n \u2713 |offline| tests/offline/review-item/link-actions.test.ts (32 tests) 71ms\n \u2713 |offline| tests/offline/review-item/conflict-actions.test.ts (47 tests) 92ms\n \u2713 |offline| tests/offline/queues/verdict-log.test.ts (29 tests) 263ms\n \u2713 |offline| tests/offline/review-item/verdict-inline.test.ts (34 tests) 247ms\n \u2713 |offline| tests/offline/queues/filters.test.ts (41 tests) 14ms\n \u2713 |offline| tests/offline/review-item/read.test.ts (18 tests) 11ms\n \u2713 |offline| tests/offline/review-item/page.test.ts (116 tests) 765ms\n \u2713 |offline| tests/offline/queues/page.test.ts (117 tests) 2941ms\n   \u2713 a zero that a filter produced > decides the scope claim from the value the URL actually selected  320ms\n   \u2713 a zero that a filter produced > leaves a block untouched by EVERY value its kind implies, and by no other  362ms\n\n Test Files  13 passed (13)\n      Tests  604 passed (604)\n   Start at  17:45:49\n   Duration  3.98s (transform 1.93s, setup 0ms, collect 6.16s, tests 4.71s, environment 2ms, prepare 1.24s)\n\n(node:93951) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit\"",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "grep -q \"kindsNarrowedBy(filter)\" src/lib/db/review-items.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"kind: \\\"not_asked\\\"\" src/lib/db/review-items.ts",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
