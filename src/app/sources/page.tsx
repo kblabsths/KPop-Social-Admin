@@ -186,7 +186,11 @@ export default async function SourcesPage({
   // app's one rule for what a source is called (`lib/sources/names.ts`): this
   // page hands over the registry's answer and decides nothing about it
   // (admin-window/BUG-0158 — the per-row `find(...)?.source ?? null` this
-  // replaced could not tell a missing row from a blank name).
+  // replaced could not tell a missing row from a blank name). The narrowing
+  // CHIPS take the same map (admin-window/BUG-0159): a chip is a source
+  // labelled by its id too, and it spelled `source.source` raw — no fallback
+  // at all — so one blank registry row made this page give two answers for one
+  // source in one render.
   const names = sourceNamesOf(held);
 
   // Which emptiness this is, from TWO facts and not from the URL alone
@@ -212,7 +216,7 @@ export default async function SourcesPage({
   return (
     <Page title="Sources">
       {sources.kind === "ok" && held.length > 0 ? (
-        <SourceChips sources={held} filter={filter} />
+        <SourceChips sources={held} names={names} filter={filter} />
       ) : null}
 
       <Section title="Registry" surface={REGISTRY_SURFACE}>

@@ -539,14 +539,16 @@ describe("a source's links", () => {
    * the id, its named sibling must still say its registry name and never a
    * uuid.
    *
-   * **`it.fails` while the divergence stands — admin-window/BUG-0159.** The
+   * **Fixed and flipped to a plain `it` by admin-window/BUG-0159**, which gave
+   * `SourceChips` the page's registry names map and the app's one rule
+   * (`sourceLabel`). It stood here as `it.fails` while the divergence did: the
    * three cases were watched RED as a plain `it` on the tree that landed
-   * BUG-0158 (`expected '' to be '01920000-...0101'`); the fix flips them back
-   * to a plain `it`, and until then a passing chip turns this red and sends
-   * the reader to the ticket.
+   * BUG-0158 (`expected '' to be '01920000-...0101'`), and the `it.fails` was
+   * watched red again — `Error: Expect test to fail` — the moment the fix
+   * landed, which is what flipped it.
    */
   for (const blank of ["", "   ", "\u200b"]) {
-    it.fails(`names a chip whose registry row names ${JSON.stringify(blank)} by its id`, async () => {
+    it(`names a chip whose registry row names ${JSON.stringify(blank)} by its id`, async () => {
       const blanked = SOURCES.map((row) =>
         row.source_id === SOURCE.ticketmaster ? { ...row, source: blank } : row,
       );

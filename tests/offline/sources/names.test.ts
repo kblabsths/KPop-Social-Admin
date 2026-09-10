@@ -195,6 +195,20 @@ describe("what a source is called on screen", () => {
  * nothing, which the dash rule then owns) and `series?.threshold ??
  * stuckPatternThreshold(sourceId)` (a different fact entirely) are both
  * legitimate and both stay green; each is a fixture below.
+ *
+ * **What that narrowness cannot see, and what covers it instead**
+ * (admin-window/BUG-0159). The regex reads a RETYPED fallback, so a
+ * labelling site with NO fallback of any spelling is invisible to it:
+ * `/sources`' narrowing chips said `label={source.source}` — the registry
+ * string raw — and passed this describe untouched while a blank-named row
+ * rendered a control with nothing to read beside a trend row naming that same
+ * source by its id. A scan for "a source label that is not `sourceLabel`"
+ * would have to read intent out of every `.source` in the tree (the registry
+ * TABLE renders its own row's name column, which is a different question), so
+ * the answer is the ratchet below rather than a wider regex: the caller list
+ * names each site the class has been found on, and each is asserted to call
+ * the rule. A site that leaves the list, or stops calling `sourceLabel`,
+ * reddens here.
  */
 describe("what a source is called has one owner", () => {
   /**
@@ -245,6 +259,9 @@ describe("what a source is called has one owner", () => {
       "src/app/claims/page.tsx",
       "src/lib/records/provenance.ts",
       "src/lib/db/review-item.ts",
+      // The narrowing chips: a source labelled by its id, and the one site of
+      // the class that carried NO fallback at all (admin-window/BUG-0159).
+      "src/components/sources/source-chips.tsx",
     ]) {
       expect(files, caller).toContain(caller);
       expect(codeText(caller), caller).toContain("sourceLabel");
