@@ -8,6 +8,7 @@ import {
   type PendingClaimRow,
   type SourceRow,
 } from "../../fixtures/rows";
+import type { RecordedCall, ScriptedResponse } from "../../fixtures/stub-client";
 
 /**
  * The claim population the Claims suite reads (campaign
@@ -215,6 +216,11 @@ export const CLAIMS: readonly PendingClaimRow[] = SPECS.map((spec) =>
     field: spec.field,
     source_id: spec.source,
     unmet_requirement: spec.requirement ?? null,
+    // The view carries the instant itself now (admin-window/BUG-0138). The one
+    // claim whose spec states none carries `null` here as well as having no
+    // `observations` row: it is the claim of unknown age, whichever side of
+    // the handoff a reader comes at it from.
+    observed_at: spec.observedAt ?? null,
   }),
 );
 
@@ -244,4 +250,140 @@ export const OBSERVED_AT: ReadonlyMap<string, string> = new Map(
 /** The claim carrying each bucket's name, for a test that needs one. */
 export function claimsInBucket(bucket: string): PendingClaimRow[] {
   return CLAIMS.filter((claim) => claim.bucket === bucket);
+}
+
+/* ── the view, as a database would answer it ─────────────────────────────── */
+
+/**
+ * A `pending_claims` that answers the QUERY it was asked (campaign
+ * admin-window/BUG-0138).
+ *
+ * The Claims page issues up to twelve reads of this one view in a single
+ * `Promise.all` — one window, six `head: true` counts and five `limit 1`
+ * seeks. A fixed scripted response answers all twelve with one answer, so
+ * every count on the page would read the same number and a test asserting on
+ * them would be asserting on the script; a queue would pin the suite to the
+ * order the promises happen to be built in, which is not a property of the
+ * product. So this reads the chain the query built — `.select()`, `.eq()`,
+ * `.neq()`, `.in()`, `.order()`, `.limit()`, and the `{ head, count }` options
+ * — and answers it the way PostgREST would.
+ *
+ * It is a FIXTURE DATABASE, not an expectation: it knows nothing about the
+ * page, and every test still computes what it expects from `CLAIMS` with its
+ * own predicates.
+ *
+ * Three behaviours are the database's and are reproduced deliberately:
+ *
+ *  - `{ head: true }` returns NO rows and a count of everything that matched,
+ *    before any `.limit()` — which is what makes a count a count;
+ *  - a `timestamptz` is compared by VALUE, so `…T00:00:00Z` and
+ *    `…T00:00:00+00:00` are one instant and the tie-break decides between
+ *    them, exactly as Postgres does;
+ *  - `nullsFirst: false` puts a null instant last whatever the direction is.
+ *
+ * And one that is this fixture's own: the response carries ONLY the columns
+ * the `.select()` named, so a page reading a column its query did not ask for
+ * reads `undefined` here rather than passing on a fixture's generosity.
+ */
+export function claimView(
+  claims: readonly PendingClaimRow[] = CLAIMS,
+  /**
+   * A builder step this database IGNORES — the shape of a server that did not
+   * do what the query asked. `{ ignoring: "neq" }` is the one the claims suite
+   * needs: a database whose bucket exclusion did nothing, which is what leaves
+   * the CODE-side exclusion (§6 trap 4) the only thing standing between the
+   * parked bucket and the markup.
+   */
+  options: { ignoring?: string } = {},
+): (call: RecordedCall) => ScriptedResponse {
+  return (call) => {
+    const steps = (method: string) =>
+      method === options.ignoring
+        ? []
+        : call.steps.filter((step) => step.method === method);
+    const select = steps("select")[0];
+    const columns = String(select?.args[0] ?? "*");
+    const asked = (select?.args[1] ?? {}) as { head?: boolean; count?: string };
+
+    let rows = claims as readonly unknown[] as readonly Record<string, unknown>[];
+    for (const step of steps("eq")) {
+      rows = rows.filter((row) => row[String(step.args[0])] === step.args[1]);
+    }
+    for (const step of steps("neq")) {
+      rows = rows.filter((row) => row[String(step.args[0])] !== step.args[1]);
+    }
+    for (const step of steps("in")) {
+      const wanted = step.args[1] as unknown[];
+      rows = rows.filter((row) => wanted.includes(row[String(step.args[0])]));
+    }
+
+    const orders = steps("order").map((step) => ({
+      column: String(step.args[0]),
+      ...(step.args[1] as { ascending?: boolean; nullsFirst?: boolean }),
+    }));
+    rows = [...rows].sort((left, right) => {
+      for (const order of orders) {
+        const decided = compareValues(left[order.column], right[order.column], order);
+        if (decided !== 0) return decided;
+      }
+      return 0;
+    });
+
+    const matched = rows.length;
+    const count = asked.count === "exact" ? matched : null;
+    if (asked.head === true) return { data: null, count };
+
+    const limit = steps("limit")[0]?.args[0] as number | undefined;
+    const drawn = limit === undefined ? rows : rows.slice(0, limit);
+    return { data: drawn.map((row) => project(row, columns)), count };
+  };
+}
+
+/** One `.order()` clause, applied to two values the way Postgres applies it. */
+function compareValues(
+  left: unknown,
+  right: unknown,
+  order: { ascending?: boolean; nullsFirst?: boolean },
+): number {
+  const ascending = order.ascending !== false;
+  const leftNull = left === null || left === undefined;
+  const rightNull = right === null || right === undefined;
+  if (leftNull || rightNull) {
+    if (leftNull && rightNull) return 0;
+    // Postgres's own default is NULLS LAST ascending, NULLS FIRST descending;
+    // an explicit `nullsFirst` overrides it in either direction.
+    const nullsFirst = order.nullsFirst ?? !ascending;
+    return (leftNull ? 1 : -1) * (nullsFirst ? -1 : 1);
+  }
+  const decided = compareScalar(left, right);
+  return ascending ? decided : -decided;
+}
+
+/** Two column values, compared as the column's type is compared. */
+function compareScalar(left: unknown, right: unknown): number {
+  if (typeof left === "string" && typeof right === "string") {
+    const leftAt = Date.parse(left);
+    const rightAt = Date.parse(right);
+    // A timestamp is compared by VALUE, not by spelling: two instants written
+    // `Z` and `+00:00` are equal and the next `.order()` decides between them.
+    if (!Number.isNaN(leftAt) && !Number.isNaN(rightAt) && /[TZ:+]/.test(left)) {
+      return leftAt === rightAt ? 0 : leftAt < rightAt ? -1 : 1;
+    }
+    return left === right ? 0 : left < right ? -1 : 1;
+  }
+  if (typeof left === "number" && typeof right === "number") return left - right;
+  return String(left) === String(right) ? 0 : String(left) < String(right) ? -1 : 1;
+}
+
+/** The row as the `.select()` list asked for it, and nothing else. */
+function project(
+  row: Record<string, unknown>,
+  columns: string,
+): Record<string, unknown> {
+  if (columns.trim() === "*") return { ...row };
+  const asked: Record<string, unknown> = {};
+  for (const column of columns.split(",").map((name) => name.trim())) {
+    asked[column] = row[column] ?? null;
+  }
+  return asked;
 }

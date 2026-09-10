@@ -3,17 +3,16 @@ import {
   PENDING_CLAIM_BUCKETS,
   RENDERABLE_BUCKETS,
   UNRENDERABLE_BUCKET,
-  claimOrder,
-  facetOptions,
   isRenderableBucket,
-  listClaims,
+  readBucketOldest,
+  readClaimCount,
+  readClaimWindow,
   readPendingClaimRows,
   selectClaims,
   type ClaimRow,
 } from "@/lib/db/claims";
-import { ROW_CAP } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
-import { CLAIMS, OBSERVATIONS, OBSERVED_AT, SOURCE } from "./population";
+import { CLAIMS, OBSERVED_AT, SOURCE, claimView } from "./population";
 import { pendingClaimRow } from "../../fixtures/rows";
 import {
   permissionDenied,
@@ -26,14 +25,19 @@ import { codeText, sourceFiles } from "../source-tree";
 
 /**
  * `src/lib/db/claims.ts` — the classification view's one reader (campaign
- * admin-window/TASK-0012).
+ * admin-window/TASK-0012, rebuilt by admin-window/BUG-0138).
  *
- * What is asserted here rather than through the page: the read is COMPLETE and
- * says so (ARCHITECTURE.md §4.3), the parked bucket is excluded twice — in the
- * query AND in code, so the returned set is decided by one rule whether or not
- * the server narrowed (§6 trap 4) — the age join is the two-step §4.2
- * describes, and every failure arrives as a `DbResult` naming the object it
- * was reading.
+ * What is asserted here rather than through the page: the reads are a WINDOW
+ * and a set of head COUNTS (ARCHITECTURE.md §4.3) rather than a transport of
+ * the population; the parked bucket is excluded in every query AND in the
+ * predicate, so the returned set is decided by one rule whether or not the
+ * server narrowed (§6 trap 4); the order is the DATABASE's; and every failure
+ * arrives as a `DbResult` naming the object it was reading.
+ *
+ * The database these read is `claimView` (`./population.ts`) — a fixture that
+ * answers the query it was asked. Nothing here asks `lib/db/claims.ts` what to
+ * expect: every expectation is computed from `CLAIMS` with this file's own
+ * predicates.
  */
 
 /** The parked bucket, spelled here so this file states what it is testing. */
@@ -45,10 +49,7 @@ function scripted(script: Script): StubClient {
 
 /** A database holding the whole fixture population, `in_window` included. */
 function wholeView(): Script {
-  return {
-    [T.pendingClaims]: { data: [...CLAIMS], count: CLAIMS.length },
-    [T.observations]: { data: [...OBSERVATIONS] },
-  };
+  return { [T.pendingClaims]: claimView(CLAIMS) };
 }
 
 /** Every step one query recorded, by method name. */
@@ -64,6 +65,29 @@ function argsOf(stub: StubClient, table: string, method: string, nth = 0) {
     .map((step) => step.args);
 }
 
+/** Every claim the UI may show, under this file's own reading of the fixture. */
+const SHOWABLE = CLAIMS.filter((claim) => claim.bucket !== PARKED);
+
+/** The instant a claim carries, as the fixture states it. */
+function instantOf(id: string): string | null {
+  return OBSERVED_AT.get(id) ?? null;
+}
+
+/** Oldest first, an unknown instant last, the id breaking every tie. */
+function longestWaiting(claims: readonly { observation_id: string }[]): string[] {
+  return [...claims]
+    .sort((a, b) => {
+      const at = instantOf(a.observation_id);
+      const bt = instantOf(b.observation_id);
+      if (at !== null && bt !== null && Date.parse(at) !== Date.parse(bt)) {
+        return Date.parse(at) - Date.parse(bt);
+      }
+      if ((at === null) !== (bt === null)) return at === null ? 1 : -1;
+      return a.observation_id < b.observation_id ? -1 : 1;
+    })
+    .map((claim) => claim.observation_id);
+}
+
 describe("the bucket vocabulary", () => {
   it("is the view's six, and the UI may render five of them", () => {
     expect(PENDING_CLAIM_BUCKETS).toHaveLength(6);
@@ -77,156 +101,259 @@ describe("the bucket vocabulary", () => {
   });
 });
 
-describe("the classification read", () => {
-  it("is a complete read: exact count, a total order, and the cap", async () => {
+describe("the claim window read", () => {
+  it("is ONE request that asks the database for the order and the bound", async () => {
     const stub = scripted(wholeView());
-    const result = await listClaims(stub.asSupabaseClient());
+    const result = await readClaimWindow(
+      { limit: 3 },
+      stub.asSupabaseClient(),
+    );
     expect(result.kind).toBe("ok");
+
+    // One request over the view, and no second leg anywhere: the instant is a
+    // column of the view now (admin-window/BUG-0138).
+    expect(stub.tablesRead()).toEqual([T.pendingClaims]);
 
     const steps = stepsOf(stub, T.pendingClaims);
     expect(steps[0].method).toBe("select");
-    expect(steps[0].args[1]).toEqual({ count: "exact" });
-    // A total server order ending in the view's key, so the row set — and any
-    // refusal — is deterministic.
+    expect(String(steps[0].args[0])).toContain("observed_at");
     expect(argsOf(stub, T.pendingClaims, "order")).toEqual([
-      ["bucket", { ascending: true }],
+      ["observed_at", { ascending: true, nullsFirst: false }],
       ["observation_id", { ascending: true }],
     ]);
-    expect(argsOf(stub, T.pendingClaims, "range")).toEqual([[0, ROW_CAP - 1]]);
+    expect(argsOf(stub, T.pendingClaims, "limit")).toEqual([[3]]);
   });
 
-  it("excludes the parked bucket in the query", async () => {
+  it("draws the longest-waiting claims, in the order the database returned", async () => {
     const stub = scripted(wholeView());
-    await listClaims(stub.asSupabaseClient());
-    expect(argsOf(stub, T.pendingClaims, "neq")).toEqual([["bucket", PARKED]]);
-  });
-
-  it("excludes it again in code, so a server that ignored the filter cannot leak it", async () => {
-    const stub = scripted(wholeView());
-    const result = await listClaims(stub.asSupabaseClient());
+    const result = await readClaimWindow({ limit: 4 }, stub.asSupabaseClient());
     if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
 
-    // The stub answers with the WHOLE population, parked row included — the
-    // shape of a server that did not narrow.
-    expect(CLAIMS.some((claim) => claim.bucket === PARKED)).toBe(true);
-    expect(result.data.map((claim) => claim.bucket)).not.toContain(PARKED);
-    expect(result.data).toHaveLength(CLAIMS.length - 1);
-  });
-
-  it("refuses rather than truncating when the view outgrows the cap", async () => {
-    const result = await listClaims(
-      scripted({
-        [T.pendingClaims]: { data: [...CLAIMS], count: CLAIMS.length + 4000 },
-        [T.observations]: { data: [] },
-      }).asSupabaseClient(),
+    expect(result.data.map((claim) => claim.observation_id)).toEqual(
+      longestWaiting(SHOWABLE).slice(0, 4),
     );
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    expect(result.reading).toBe(T.pendingClaims);
-    expect(result.message).toContain(String(CLAIMS.length + 4000));
-    expect(result.message).toContain(String(ROW_CAP));
-  });
-
-  it("joins the age from observations, by observation_id, in TypeScript", async () => {
-    const stub = scripted(wholeView());
-    const result = await listClaims(stub.asSupabaseClient());
-    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
-
-    // The second leg filters on the ids the first leg produced, and asks for no
-    // more rows than the ids it filtered on.
-    const ids = argsOf(stub, T.observations, "in")[0];
-    expect(ids[0]).toBe("observation_id");
-    const asked = (ids[1] as string[]).length;
-    expect(argsOf(stub, T.observations, "limit")).toEqual([[asked]]);
-
     for (const claim of result.data) {
       expect(claim.observed_at, claim.observation_id).toBe(
-        OBSERVED_AT.get(claim.observation_id) ?? null,
+        instantOf(claim.observation_id),
       );
     }
   });
 
-  it("keeps a claim whose observation did not come back, with no age at all", async () => {
-    // A claim of unknown age is not a claim that arrived this instant — and
-    // dropping it would make the rendered count disagree with the view.
-    const result = await listClaims(scripted(wholeView()).asSupabaseClient());
+  it("keeps a claim whose instant is unknown, at the END and with no age", async () => {
+    // A claim of unknown age is not a claim that arrived this instant, and it
+    // may not take a position in an age order it does not carry.
+    const stub = scripted(wholeView());
+    const result = await readClaimWindow(
+      { limit: SHOWABLE.length },
+      stub.asSupabaseClient(),
+    );
     if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
 
-    const unobserved = CLAIMS.filter((claim) => !OBSERVED_AT.has(claim.observation_id));
-    expect(unobserved.length).toBeGreaterThan(0);
-    for (const claim of unobserved) {
-      if (claim.bucket === PARKED) continue;
-      const row = result.data.find((r) => r.observation_id === claim.observation_id);
-      expect(row?.observed_at, claim.observation_id).toBeNull();
+    const unknown = SHOWABLE.filter(
+      (claim) => instantOf(claim.observation_id) === null,
+    );
+    expect(unknown.length).toBeGreaterThan(0);
+    const drawn = result.data.map((claim) => claim.observation_id);
+    for (const claim of unknown) {
+      const at = drawn.indexOf(claim.observation_id);
+      expect(at, claim.observation_id).toBeGreaterThanOrEqual(
+        drawn.length - unknown.length,
+      );
     }
   });
 
-  it("makes no second query when the first leg returned nothing", async () => {
-    const stub = scripted({
-      [T.pendingClaims]: { data: [], count: 0 },
-      [T.observations]: { data: [] },
-    });
-    const result = await listClaims(stub.asSupabaseClient());
-    expect(result).toEqual({ kind: "ok", data: [] });
-    expect(stub.tablesRead()).toEqual([T.pendingClaims]);
+  it("excludes the parked bucket in the query, and narrows by every facet at the query", async () => {
+    const stub = scripted(wholeView());
+    const result = await readClaimWindow(
+      {
+        limit: 50,
+        filter: { bucket: "awaiting_row", source_id: SOURCE.first, domain: "events" },
+      },
+      stub.asSupabaseClient(),
+    );
+    expect(argsOf(stub, T.pendingClaims, "neq")).toEqual([["bucket", PARKED]]);
+    expect(argsOf(stub, T.pendingClaims, "eq")).toEqual([
+      ["bucket", "awaiting_row"],
+      ["source_id", SOURCE.first],
+      ["domain", "events"],
+    ]);
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+    expect(result.data.map((claim) => claim.observation_id)).toEqual(
+      SHOWABLE.filter(
+        (claim) =>
+          claim.bucket === "awaiting_row" &&
+          claim.source_id === SOURCE.first &&
+          claim.domain === "events",
+      ).map((claim) => claim.observation_id),
+    );
   });
 
-  it("chunks the second leg, so no request carries an unbounded id list", async () => {
-    const many = Array.from({ length: 250 }, (_, index) =>
+  it("reads no more claims than the window, whatever the view holds", async () => {
+    // The property the whole ticket rests on: the request the page issues does
+    // not grow with the table (admin-window/BUG-0138).
+    const many = Array.from({ length: 2000 }, (_, index) =>
       pendingClaimRow("agreeing", {
-        observation_id: `claim-${index}`,
-        entity_id: `entity-${index}`,
+        observation_id: `0192aaaa-0000-7000-8000-${String(index).padStart(12, "0")}`,
+        observed_at: new Date(Date.UTC(2026, 0, 1) + index * 1000).toISOString(),
       }),
     );
-    const stub = scripted({
-      [T.pendingClaims]: { data: many, count: many.length },
-      [T.observations]: { data: [] },
-    });
-    await listClaims(stub.asSupabaseClient());
+    const stub = scripted({ [T.pendingClaims]: claimView(many) });
+    const result = await readClaimWindow({ limit: 50 }, stub.asSupabaseClient());
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
 
-    const legs = stub.calls.filter((call) => call.table === T.observations);
-    expect(legs.length).toBeGreaterThan(1);
-    for (const leg of legs) {
-      const ids = leg.steps.find((step) => step.method === "in")?.args[1] as string[];
-      expect(ids.length).toBeLessThanOrEqual(100);
-    }
+    expect(stub.calls).toHaveLength(1);
+    expect(result.data).toHaveLength(50);
+    expect(
+      stepsOf(stub, T.pendingClaims).some((step) => step.method === "range"),
+    ).toBe(false);
   });
 
-  it("names the object that is absent, per leg, and never throws", async () => {
-    const claimsAbsent = await listClaims(
+  it("names the view when it is absent, and never throws", async () => {
+    const result = await readClaimWindow(
+      { limit: 50 },
       scripted({
         [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
-        [T.observations]: { data: [] },
       }).asSupabaseClient(),
     );
-    expect(claimsAbsent).toEqual({
-      kind: "not_provisioned",
-      missing: T.pendingClaims,
-    });
-
-    const observationsAbsent = await listClaims(
-      scripted({
-        [T.pendingClaims]: { data: [...CLAIMS], count: CLAIMS.length },
-        [T.observations]: { error: tableNotInSchemaCache(T.observations) },
-      }).asSupabaseClient(),
-    );
-    expect(observationsAbsent).toEqual({
-      kind: "not_provisioned",
-      missing: T.observations,
-    });
+    expect(result).toEqual({ kind: "not_provisioned", missing: T.pendingClaims });
   });
 
   it("surfaces any other failure as the database's own words", async () => {
-    const result = await listClaims(
+    const result = await readClaimWindow(
+      { limit: 50 },
       scripted({
         [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
-        [T.observations]: { data: [] },
       }).asSupabaseClient(),
     );
     expect(result.kind).toBe("error");
     if (result.kind !== "error") return;
     expect(result.reading).toBe(T.pendingClaims);
     expect(result.message).toContain("permission denied");
+  });
+});
+
+describe("the claim count read", () => {
+  it("is a head request carrying the narrowing, and reads no row at all", async () => {
+    const stub = scripted(wholeView());
+    const result = await readClaimCount(
+      { bucket: "awaiting_row" },
+      stub.asSupabaseClient(),
+    );
+
+    const steps = stepsOf(stub, T.pendingClaims);
+    expect(steps[0].method).toBe("select");
+    expect(steps[0].args[1]).toEqual({ head: true, count: "exact" });
+    expect(argsOf(stub, T.pendingClaims, "neq")).toEqual([["bucket", PARKED]]);
+    expect(argsOf(stub, T.pendingClaims, "eq")).toEqual([["bucket", "awaiting_row"]]);
+    // No cap can reach it: a head count carries no bound and no order.
+    expect(steps.some((step) => step.method === "range")).toBe(false);
+    expect(steps.some((step) => step.method === "limit")).toBe(false);
+
+    expect(result).toEqual({
+      kind: "ok",
+      data: SHOWABLE.filter((claim) => claim.bucket === "awaiting_row").length,
+    });
+  });
+
+  it("counts every renderable bucket when no bucket is named", async () => {
+    const result = await readClaimCount(
+      {},
+      scripted(wholeView()).asSupabaseClient(),
+    );
+    expect(result).toEqual({ kind: "ok", data: SHOWABLE.length });
+    expect(SHOWABLE.length).toBeLessThan(CLAIMS.length);
+  });
+
+  it("answers a real zero with a real zero", async () => {
+    const result = await readClaimCount(
+      { source_id: "0192cccc-0000-7000-8000-000000000000" },
+      scripted(wholeView()).asSupabaseClient(),
+    );
+    expect(result).toEqual({ kind: "ok", data: 0 });
+  });
+
+  it("treats a count the database did not give as a REFUSAL, never as a zero", async () => {
+    // Exactly what a select written without `{ head: true, count: "exact" }`
+    // comes back with (ARCHITECTURE.md §4.3, common violations row 2).
+    const result = await readClaimCount(
+      {},
+      scripted({
+        [T.pendingClaims]: { data: null, count: null, error: null },
+      }).asSupabaseClient(),
+    );
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.reading).toBe(T.pendingClaims);
+  });
+
+  it("names the view when it is absent", async () => {
+    const result = await readClaimCount(
+      {},
+      scripted({
+        [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
+      }).asSupabaseClient(),
+    );
+    expect(result).toEqual({ kind: "not_provisioned", missing: T.pendingClaims });
+  });
+});
+
+describe("one bucket's oldest claim", () => {
+  it("is a limit 1 seek in the database's own order", async () => {
+    const stub = scripted(wholeView());
+    const result = await readBucketOldest(
+      "standing_disagreement",
+      {},
+      stub.asSupabaseClient(),
+    );
+
+    expect(argsOf(stub, T.pendingClaims, "order")).toEqual([
+      ["observed_at", { ascending: true, nullsFirst: false }],
+    ]);
+    expect(argsOf(stub, T.pendingClaims, "limit")).toEqual([[1]]);
+    expect(argsOf(stub, T.pendingClaims, "eq")).toEqual([
+      ["bucket", "standing_disagreement"],
+    ]);
+
+    const held = SHOWABLE.filter((claim) => claim.bucket === "standing_disagreement")
+      .map((claim) => instantOf(claim.observation_id))
+      .filter((at): at is string => at !== null)
+      .sort();
+    expect(result).toEqual({ kind: "ok", data: held[0] });
+  });
+
+  it("carries null — an absence, never 'now' — for a bucket holding nothing", async () => {
+    const result = await readBucketOldest(
+      "escalated",
+      { source_id: "0192cccc-0000-7000-8000-000000000000" },
+      scripted(wholeView()).asSupabaseClient(),
+    );
+    expect(result).toEqual({ kind: "ok", data: null });
+  });
+
+  it("carries null for a bucket whose only claim has no instant", async () => {
+    const noInstant = [
+      pendingClaimRow("escalated", {
+        observation_id: "0192dddd-0000-7000-8000-000000000001",
+        observed_at: null,
+      }),
+    ];
+    const result = await readBucketOldest(
+      "escalated",
+      {},
+      scripted({ [T.pendingClaims]: claimView(noInstant) }).asSupabaseClient(),
+    );
+    expect(result).toEqual({ kind: "ok", data: null });
+  });
+
+  it("names the view when it is absent", async () => {
+    const result = await readBucketOldest(
+      "escalated",
+      {},
+      scripted({
+        [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
+      }).asSupabaseClient(),
+    );
+    expect(result).toEqual({ kind: "not_provisioned", missing: T.pendingClaims });
   });
 });
 
@@ -247,7 +374,7 @@ describe("the id-set read the gauges use", () => {
 describe("the one predicate", () => {
   const rows: ClaimRow[] = CLAIMS.map((claim) => ({
     ...claim,
-    observed_at: OBSERVED_AT.get(claim.observation_id) ?? null,
+    observed_at: instantOf(claim.observation_id),
   }));
 
   it("drops the parked bucket whatever was asked for", () => {
@@ -274,54 +401,6 @@ describe("the one predicate", () => {
         (claim) => claim.bucket === "awaiting_row" && claim.domain === "events",
       ).map((claim) => claim.observation_id),
     );
-  });
-
-  it("orders oldest first, unknown ages last, ties broken by the claim's id", () => {
-    const ordered = claimOrder(selectClaims(rows));
-    const instants = ordered.map((claim) => claim.observed_at);
-
-    const known = instants.filter((at): at is string => at !== null);
-    expect(known.map((at) => Date.parse(at))).toEqual(
-      [...known].map((at) => Date.parse(at)).sort((a, b) => a - b),
-    );
-    // Everything without an instant sits after everything with one.
-    expect(instants.slice(known.length).every((at) => at === null)).toBe(true);
-
-    // Two claims on the same instant, spelled `Z` and `+00:00`: the id decides,
-    // and it decides the same way every render.
-    const sameInstant = ordered.filter(
-      (claim) =>
-        claim.observed_at !== null &&
-        Date.parse(claim.observed_at) === Date.parse("2026-08-21T00:00:00Z"),
-    );
-    expect(sameInstant.length).toBe(2);
-    expect(sameInstant.map((claim) => claim.observation_id)).toEqual(
-      [...sameInstant.map((claim) => claim.observation_id)].sort(),
-    );
-  });
-
-  it("offers every bucket the app may render, and every value the rows carry", () => {
-    const options = facetOptions(rows);
-    expect(options.bucket).toEqual([...RENDERABLE_BUCKETS]);
-    expect(options.bucket).not.toContain(PARKED);
-    expect(options.source_id).toEqual(
-      [...new Set(CLAIMS.map((claim) => claim.source_id))].sort(),
-    );
-    expect(options.domain).toEqual(
-      [...new Set(CLAIMS.map((claim) => claim.domain))].sort(),
-    );
-  });
-
-  it("still offers a bucket string this app has never heard of", () => {
-    // A seventh bucket from a later migration must appear under its own name:
-    // a count that silently dropped rows would stop matching the view, which
-    // is the one thing this page may not do. The parked one is still gone.
-    const options = facetOptions([
-      ...rows,
-      { ...rows[0], bucket: "invented" as ClaimRow["bucket"] },
-    ]);
-    expect(options.bucket).toEqual([...RENDERABLE_BUCKETS, "invented"]);
-    expect(options.bucket).not.toContain(PARKED);
   });
 });
 

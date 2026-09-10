@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { TABLE_NAMES } from "@/lib/db/tables";
-import { stubClient, tableNotInSchemaCache, type Script } from "../../fixtures/stub-client";
+import {
+  stubClient,
+  tableNotInSchemaCache,
+  type RecordedCall,
+  type Script,
+  type ScriptedResponse,
+} from "../../fixtures/stub-client";
 
 /**
  * The parked bucket appears NOWHERE in the window (campaign
@@ -112,7 +118,16 @@ describe("the parked bucket", () => {
     const claims = SURFACES.find((surface) => surface.route === "/claims");
     if (claims === undefined) throw new Error("no /claims surface");
     const script = populatedScript(claims);
-    expect(JSON.stringify(script["pending_claims"])).toContain(PARKED);
+    // The claims fixture is a database that answers the QUERY it is asked
+    // (admin-window/BUG-0138), so the way to show it holds a parked claim is
+    // to ask it: a select with no exclusion on it at all.
+    const view = script["pending_claims"];
+    expect(typeof view, "the claims fixture answers no query").toBe("function");
+    const everything = (view as (call: RecordedCall) => ScriptedResponse)({
+      table: "pending_claims",
+      steps: [{ method: "select", args: ["*"] }],
+    });
+    expect(JSON.stringify(everything.data)).toContain(PARKED);
 
     // …and the page really reads that view, so a clean scan means the page
     // dropped the bucket rather than never having seen it.

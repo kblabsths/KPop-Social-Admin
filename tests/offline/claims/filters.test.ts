@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ANY_LABEL,
+  CHIP_FACETS,
   CLAIM_FACETS,
   DEFAULT_TAB,
   TABS,
@@ -40,13 +41,23 @@ const BUCKETS = [
   "agreeing",
 ];
 
-const SOURCES = ["source-a", "source-b"];
-const DOMAINS = ["events", "venues"];
+/**
+ * The sources the CHIP ROW offers — real uuids, because that is what the
+ * column is and what the registry read hands over (admin-window/BUG-0138).
+ *
+ * They used to be word-shaped (`source-a`), which was readable while the facet
+ * was checked against a vocabulary. It is not any more: `?source_id=` is
+ * derived by the app's uuid grammar and applied at the query, so a word-shaped
+ * fixture would only ever exercise the arm that narrows NOTHING.
+ */
+const SOURCES = [
+  "0192a000-0000-7000-8000-00000000000a",
+  "0192a000-0000-7000-8000-00000000000b",
+];
 
 const OPTIONS: FacetOptions = {
   bucket: BUCKETS,
   source_id: SOURCES,
-  domain: DOMAINS,
 };
 
 /**
@@ -61,12 +72,6 @@ const OPTIONS: FacetOptions = {
  * the same rule.
  */
 const SOURCE_ID = "259e2030-00bd-4200-8730-4669e46a0c04";
-
-const ID_OPTIONS: FacetOptions = {
-  bucket: BUCKETS,
-  source_id: [SOURCE_ID],
-  domain: DOMAINS,
-};
 
 /** Every spelling of `SOURCE_ID` a URL can carry that Postgres would match. */
 const ID_SPELLINGS = [
@@ -92,14 +97,14 @@ const ID_SPELLINGS = [
 describe("a source id in another spelling", () => {
   it.each(ID_SPELLINGS)("narrows to the id the view holds, for %o", (spelling) => {
     expect(spelling).not.toBe(SOURCE_ID);
-    expect(filterFrom({ source_id: spelling }, ID_OPTIONS)).toEqual({
+    expect(filterFrom({ source_id: spelling }, BUCKETS)).toEqual({
       source_id: SOURCE_ID,
     });
   });
 
   it("spells the narrowing back in the one canonical form", () => {
     for (const spelling of ID_SPELLINGS) {
-      const filter = filterFrom({ source_id: spelling }, ID_OPTIONS);
+      const filter = filterFrom({ source_id: spelling }, BUCKETS);
       // What the chips and the row links carry is the id the DATABASE prints,
       // never the spelling the URL arrived in.
       expect(claimsHref(PATH, filter)).toBe(`/claims?source_id=${SOURCE_ID}`);
@@ -113,7 +118,7 @@ describe("a source id in another spelling", () => {
   it("says nothing was dropped once the id narrowed", () => {
     for (const spelling of ID_SPELLINGS) {
       const params = { source_id: spelling };
-      expect(droppedParams(params, filterFrom(params, ID_OPTIONS))).toEqual({
+      expect(droppedParams(params, filterFrom(params, BUCKETS))).toEqual({
         named: [],
         withheld: 0,
       });
@@ -121,22 +126,47 @@ describe("a source id in another spelling", () => {
   });
 
   /**
-   * The second fixture the guard owes (LESSONS 8). Neither of these is an id
-   * this page offers, so each narrows NOTHING and is named by the
-   * dropped-parameter line exactly as before — a well-formed id the view does
-   * not hold, and a value that is no id at all.
+   * The second fixture the guard owes (LESSONS 8): a value that is no source
+   * id AT ALL narrows nothing and is named by the dropped-parameter line.
+   *
+   * The guard is the id GRAMMAR now, not a vocabulary (admin-window/BUG-0138).
+   * That is a narrower gate than the one this case used to state, and it is
+   * the gate that matters: the narrowing is a `.eq()` on a `uuid` column, so a
+   * value Postgres cannot read as a uuid is `22P02` — a page-wide error state
+   * for one typed character — while a well-formed id nothing carries is a
+   * question the database can answer, and answers with zero (the case below).
    */
   it.each([
-    "01920000-0000-7000-8000-0000000000a1",
     "not-a-uuid",
     `${SOURCE_ID.slice(0, 20)} ${SOURCE_ID.slice(20)}`,
+    "259e2030-00bd-4200-8730-4669e46a0c0", // one character short
   ])("narrows nothing for %o, and is reported", (asked) => {
     const params = { source_id: asked };
-    expect(filterFrom(params, ID_OPTIONS)).toEqual({});
-    expect(droppedParams(params, filterFrom(params, ID_OPTIONS))).toEqual({
+    expect(filterFrom(params, BUCKETS)).toEqual({});
+    expect(droppedParams(params, filterFrom(params, BUCKETS))).toEqual({
       named: ["source_id"],
       withheld: 0,
     });
+  });
+
+  /**
+   * **EXPECTED CHANGE, admin-window/BUG-0138**: a well-formed id this database
+   * holds no claim for now NARROWS, and is not reported as dropped.
+   *
+   * It used to be checked against the distinct sources of the whole claim
+   * population — the read this page no longer makes and cannot make
+   * concurrently with the reads it narrows — so the page rendered unnarrowed
+   * under a line saying the parameter was dropped. The narrowing really
+   * happens now: the counts and the window all carry `.eq("source_id", …)`,
+   * every figure comes back 0, and the page renders the "nothing matched"
+   * card. That is the same answer criterion 7 rules for `?domain=`, on the
+   * other facet the page can no longer enumerate.
+   */
+  it("narrows for a well-formed id nothing carries, and does NOT report it", () => {
+    const params = { source_id: "01920000-0000-7000-8000-0000000000a1" };
+    const filter = filterFrom(params, BUCKETS);
+    expect(filter).toEqual({ source_id: params.source_id });
+    expect(droppedParams(params, filter)).toEqual({ named: [], withheld: 0 });
   });
 
   /**
@@ -145,11 +175,11 @@ describe("a source id in another spelling", () => {
    * say about either and the value compares as itself.
    */
   it("leaves a facet whose values are words comparing as words", () => {
-    expect(filterFrom({ bucket: "escalated", domain: "venues" }, ID_OPTIONS)).toEqual({
+    expect(filterFrom({ bucket: "escalated", domain: "venues" }, BUCKETS)).toEqual({
       bucket: "escalated",
       domain: "venues",
     });
-    expect(filterFrom({ bucket: " escalated", domain: "VENUES" }, ID_OPTIONS)).toEqual({});
+    expect(filterFrom({ bucket: " escalated" }, BUCKETS)).toEqual({});
   });
 });
 
@@ -160,29 +190,33 @@ describe("the facets", () => {
 
   it("reads each facet out of the URL", () => {
     const filter = filterFrom(
-      { bucket: "escalated", source_id: "source-b", domain: "venues" },
-      OPTIONS,
+      { bucket: "escalated", source_id: SOURCES[1], domain: "venues" },
+      BUCKETS,
     );
     expect(filter).toEqual({
       bucket: "escalated",
-      source_id: "source-b",
+      source_id: SOURCES[1],
       domain: "venues",
     });
     expect(hasNarrowingFacet(filter)).toBe(true);
   });
 
   it("narrows nothing for an absent, repeated or unrecognised parameter", () => {
-    expect(filterFrom({}, OPTIONS)).toEqual({});
+    expect(filterFrom({}, BUCKETS)).toEqual({});
     expect(hasNarrowingFacet({})).toBe(false);
     // The first value wins, as URLSearchParams.get() does.
-    expect(filterFrom({ bucket: ["escalated", "agreeing"] }, OPTIONS)).toEqual({
+    expect(filterFrom({ bucket: ["escalated", "agreeing"] }, BUCKETS)).toEqual({
       bucket: "escalated",
     });
-    expect(filterFrom({ bucket: [] }, OPTIONS)).toEqual({});
-    // A value outside the offered set constrains nothing, so a typo shows the
-    // unfiltered page rather than an empty one that reads as an empty database.
-    expect(filterFrom({ source_id: "not-a-source" }, OPTIONS)).toEqual({});
-    expect(filterFrom({ bucket: "invented" }, OPTIONS)).toEqual({});
+    expect(filterFrom({ bucket: [] }, BUCKETS)).toEqual({});
+    expect(filterFrom({ source_id: [] }, BUCKETS)).toEqual({});
+    // A bucket outside the vocabulary this app declares constrains nothing, so
+    // a typo shows the unfiltered page rather than an empty one that reads as
+    // an empty database — and a value that is no source id at all narrows
+    // nothing either, because the column it would be compared against is a
+    // uuid and Postgres refuses the comparison (`22P02`).
+    expect(filterFrom({ source_id: "not-a-source" }, BUCKETS)).toEqual({});
+    expect(filterFrom({ bucket: "invented" }, BUCKETS)).toEqual({});
   });
 
   it("treats the parked bucket as no narrowing, so it never re-enters an href", () => {
@@ -192,8 +226,8 @@ describe("the facets", () => {
     // not carried into the href of every other chip on the page
     // (LOOK_AND_FEEL quality bar 3).
     const parked = "in_" + "window";
-    const filter = filterFrom({ bucket: parked, source_id: "source-a" }, OPTIONS);
-    expect(filter).toEqual({ source_id: "source-a" });
+    const filter = filterFrom({ bucket: parked, source_id: SOURCES[0] }, BUCKETS);
+    expect(filter).toEqual({ source_id: SOURCES[0] });
 
     const rendered = [
       claimsHref(PATH, filter, "buckets"),
@@ -216,11 +250,11 @@ describe("the tabs", () => {
   });
 
   it("keeps the filter when crossing between them", () => {
-    const filter: ClaimsFilter = { source_id: "source-b" };
+    const filter: ClaimsFilter = { source_id: SOURCES[1] };
     const [buckets, standing] = tabLinks(PATH, filter, "standing");
 
-    expect(buckets.href).toBe("/claims?source_id=source-b");
-    expect(standing.href).toBe("/claims?source_id=source-b&tab=standing");
+    expect(buckets.href).toBe(`/claims?source_id=${SOURCES[1]}`);
+    expect(standing.href).toBe(`/claims?source_id=${SOURCES[1]}&tab=standing`);
     expect(standing.active).toBe(true);
     expect(buckets.active).toBe(false);
   });
@@ -236,21 +270,23 @@ describe("the URL a state has", () => {
   it("writes the facets in one fixed order", () => {
     const href = claimsHref(
       PATH,
-      { domain: "events", source_id: "source-a", bucket: "escalated" },
+      { domain: "events", source_id: SOURCES[0], bucket: "escalated" },
       "buckets",
     );
-    expect(href).toBe("/claims?bucket=escalated&source_id=source-a&domain=events");
+    expect(href).toBe(
+      `/claims?bucket=escalated&source_id=${SOURCES[0]}&domain=events`,
+    );
   });
 
   it("round-trips every filter it writes", () => {
     const filter: ClaimsFilter = {
       bucket: "awaiting_row",
-      source_id: "source-b",
+      source_id: SOURCES[1],
       domain: "venues",
     };
     const query = new URL(claimsHref(PATH, filter, "standing"), "https://x");
     const params = Object.fromEntries(query.searchParams.entries());
-    expect(filterFrom(params, OPTIONS)).toEqual(filter);
+    expect(filterFrom(params, BUCKETS)).toEqual(filter);
     expect(tabFrom(params)).toBe("standing");
   });
 });
@@ -258,10 +294,10 @@ describe("the URL a state has", () => {
 describe("one facet at a time", () => {
   it("changes one and keeps the others", () => {
     const filter: ClaimsFilter = { bucket: "escalated", domain: "events" };
-    expect(withFacet(filter, "source_id", "source-a")).toEqual({
+    expect(withFacet(filter, "source_id", SOURCES[0])).toEqual({
       bucket: "escalated",
       domain: "events",
-      source_id: "source-a",
+      source_id: SOURCES[0],
     });
     expect(withFacet(filter, "bucket", undefined)).toEqual({ domain: "events" });
     // The input is untouched — a pure function over a filter.
@@ -283,9 +319,60 @@ describe("one facet at a time", () => {
     expect(group.choices[0].href).toBe("/claims");
   });
 
-  it("builds one group per facet, in facet order", () => {
+  /**
+   * The facet that narrows without a chip row — Ben's ruling of 2026-09-10
+   * (admin-window/BUG-0138, criterion 7).
+   *
+   * `domain` has no bounded vocabulary Admin can read: the chips used to be
+   * the distinct domains of the whole claim population, which is the read this
+   * page no longer makes, and `domain_target` is a function taking a domain
+   * name rather than an enumerable registry. So the chip row goes and the
+   * NARROWING stays — a facet the page cannot enumerate is not a facet it
+   * cannot apply.
+   *
+   * This is the leaf's half: the value is derived and applied, no chip group
+   * is built for it, and the page may not call it dropped. The other half —
+   * that the applied value reaches EVERY count read and the window read as
+   * `.eq("domain", …)`, and that the window line and the bucket caption name
+   * it — is graded where the queries are: `tests/offline/claims/page.test.ts`
+   * ("narrows every count and the window server-side") and
+   * `tests/offline/claims/read.test.ts`.
+   */
+  it("domain narrows every count and the window, with no chip row", () => {
+    const params = { domain: "venues" };
+    const filter = filterFrom(params, BUCKETS);
+
+    // Applied: the page carries it into every read (see the page's own pin).
+    expect(filter).toEqual({ domain: "venues" });
+    expect(hasNarrowingFacet(filter)).toBe(true);
+    // ...so it was not dropped, and the line may not say it was.
+    expect(droppedParams(params, filter)).toEqual({ named: [], withheld: 0 });
+    // ...and it still travels in every URL this page writes.
+    expect(claimsHref(PATH, filter)).toBe("/claims?domain=venues");
+
+    // No chip row: not a group, not an eyebrow, not an "all" chip.
+    const bar = filterBar(PATH, filter, "buckets", OPTIONS);
+    expect(bar.map((group) => group.facet)).not.toContain("domain");
+    expect(bar.map((group) => group.facet)).toEqual([...CHIP_FACETS]);
+
+    // The padding a paste brings is stripped by the free-text class's own one
+    // derivation, so what is queried is what is spelled; a value this app may
+    // not spell narrows nothing and IS reported.
+    expect(filterFrom({ domain: " venues " }, BUCKETS)).toEqual({ domain: "venues" });
+    // ...and padding this app may not SPELL is refused rather than laundered,
+    // which is the free-text class's landed rule (admin-window/BUG-0155).
+    expect(filterFrom({ domain: "venues\n" }, BUCKETS)).toEqual({});
+    expect(filterFrom({ domain: "  " }, BUCKETS)).toEqual({});
+    expect(filterFrom({ domain: "\u202Evenues" }, BUCKETS)).toEqual({});
+    expect(droppedParams({ domain: "\u202Evenues" }, {})).toEqual({
+      named: ["domain"],
+      withheld: 0,
+    });
+  });
+
+  it("builds one group per CHIP facet, in facet order", () => {
     expect(filterBar(PATH, {}, "buckets", OPTIONS).map((group) => group.facet)).toEqual([
-      ...CLAIM_FACETS,
+      ...CHIP_FACETS,
     ]);
   });
 });

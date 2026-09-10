@@ -31,10 +31,11 @@ import { factKey, hasVisibleContent } from "@/lib/verdict/decision";
  * record does not exist yet has no provenance link and says why in the same
  * row, which is the honest half of that bar.
  *
- * It re-derives nothing: rows arrive already narrowed by the app's one
- * predicate and already in `claimOrder` (`src/lib/db/claims.ts`), and this
- * component neither filters, sorts nor pages them. Machine identifiers render
- * verbatim, in the table's mono `data` cells.
+ * It re-derives nothing: rows arrive narrowed and ordered BY THE DATABASE —
+ * `readClaimWindow` (`src/lib/db/claims.ts`) asks for the longest-waiting
+ * `CLAIM_WINDOW` of them and this component neither filters, sorts nor pages
+ * what it is handed. Machine identifiers render verbatim, in the table's mono
+ * `data` cells.
  *
  * A pure component: plain props, no fetching (ARCHITECTURE.md §4 rule 1).
  * Nothing here settles anything — every control in this markup is a link.
@@ -70,13 +71,12 @@ export interface ClaimLine {
 /**
  * The list's BOUND — campaign admin-window/BUG-0041.
  *
- * The claims read is complete on purpose (`src/lib/db/claims.ts`: the bucket
- * counts must equal the view's), but rendering every row it holds made the
- * page a function of the backlog: 877 claims on staging rendered a 30,079px
- * page with the pending-claims gauge's heading at y=29,486, so the gauge's
- * position moved by tens of thousands of pixels as the resolver drained the
- * queue — the operator relearnt where it sat every morning (LOOK_AND_FEEL,
- * Interaction, "Repeat use").
+ * Rendering every row the view holds made the page a function of the backlog:
+ * 877 claims on staging rendered a 30,079px page with the pending-claims
+ * gauge's heading at y=29,486, so the gauge's position moved by tens of
+ * thousands of pixels as the resolver drained the queue — the operator
+ * relearnt where it sat every morning (LOOK_AND_FEEL, Interaction, "Repeat
+ * use").
  *
  * So the LIST is a window, in the app's existing idiom (`/cycles`, `/browse`,
  * the four gauges): at most this many rows, the longest-waiting ones, with the
@@ -88,34 +88,15 @@ export interface ClaimLine {
  * 50, the same bound `/browse` puts on a list of records: at the ~33px per row
  * this table measures, a full window is ~1,650px of list, so every section
  * heading keeps a position the backlog cannot move by thousands of pixels.
+ *
+ * **Since admin-window/BUG-0138 it is also the `.limit()` the QUERY carries.**
+ * It used to be a slice taken in TypeScript off a complete read of the view,
+ * beside a `held` counted from the array that read returned; the read is a
+ * window now and `held` is a `head: true` count of its own, so this number is
+ * spelled ONCE — here — and the page hands it to the read and to the window
+ * line from this one declaration.
  */
 export const CLAIM_WINDOW = 50;
-
-/** A bounded list: the rows drawn, how many were held, whether it filled. */
-export interface ClaimWindow {
-  /** The rows to draw — at most `limit`, in the order they arrived in. */
-  rows: ClaimLine[];
-  /** How many rows the caller had — the honest figure the sentence states. */
-  held: number;
-  /** Did the window fill its cap, leaving rows undrawn? */
-  truncated: boolean;
-}
-
-/**
- * The first `limit` rows, and the truth about the rest. Pure: it re-orders
- * nothing, so the window is the HEAD of whatever order it was handed —
- * `claimOrder`'s oldest-first, which makes it the longest-waiting claims.
- */
-export function claimWindow(
-  rows: readonly ClaimLine[],
-  limit: number = CLAIM_WINDOW,
-): ClaimWindow {
-  return {
-    rows: rows.slice(0, limit),
-    held: rows.length,
-    truncated: rows.length > limit,
-  };
-}
 
 export function ClaimList({
   rows,

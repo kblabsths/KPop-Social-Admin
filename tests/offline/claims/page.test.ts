@@ -4,6 +4,7 @@ import { CLAIM_WINDOW } from "@/components/claims";
 import { ANY_LABEL } from "@/lib/claims/filters";
 import { count } from "@/lib/format";
 import { STANDING_BUCKET } from "@/lib/gauges/standing-disagreements";
+import { ROW_CAP } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
 import {
   implicitInterElementSpaces,
@@ -30,6 +31,7 @@ import {
   REGISTRY,
   SOURCE,
   SOURCE_NAME,
+  claimView,
   nameOf,
 } from "./population";
 import { oneEach, surfaceHooks } from "../../live/parity";
@@ -43,7 +45,9 @@ import {
   stubClient,
   tableNotInSchemaCache,
   transportFailure,
+  type RecordedCall,
   type Script,
+  type StubClient,
 } from "../../fixtures/stub-client";
 
 /**
@@ -74,17 +78,30 @@ const readWith = vi.hoisted(() => ({ client: undefined as unknown }));
 
 vi.mock("@/lib/db/claims", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/db/claims")>();
-  return { ...actual, listClaims: () => actual.listClaims(readWith.client as never) };
+  return {
+    ...actual,
+    readClaimWindow: (options: Parameters<typeof actual.readClaimWindow>[0]) =>
+      actual.readClaimWindow(options, readWith.client as never),
+    readClaimCount: (filter?: Parameters<typeof actual.readClaimCount>[0]) =>
+      actual.readClaimCount(filter, readWith.client as never),
+    readBucketOldest: (
+      bucket: Parameters<typeof actual.readBucketOldest>[0],
+      filter?: Parameters<typeof actual.readBucketOldest>[1],
+    ) => actual.readBucketOldest(bucket, filter, readWith.client as never),
+  };
 });
 
-// The label leg (admin-window/BUG-0043) is its own module and its own read,
-// so it is stubbed at its own boundary like every other one.
+// The registry leg (admin-window/BUG-0043) is its own module and its own read,
+// so it is stubbed at its own boundary like every other one. It is
+// `readSources` since admin-window/BUG-0138: the page cannot know which ids to
+// ask for before its list read returns, and asking afterwards would put the
+// sequential round trip back — so the registry is BOTH the labels and the chip
+// vocabulary, read concurrently with everything else.
 vi.mock("@/lib/db/sources", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/db/sources")>();
   return {
     ...actual,
-    readSourceNames: (ids: readonly string[]) =>
-      actual.readSourceNames(ids, readWith.client as never),
+    readSources: () => actual.readSources(readWith.client as never),
   };
 });
 
@@ -173,14 +190,16 @@ function oldestFirst(claims: readonly PendingClaimRow[]): string[] {
 
 function healthyScript(overrides: Script = {}): Script {
   return {
-    // The whole view, `in_window` included: the shape of a database whose
-    // server-side exclusion did nothing.
-    [T.pendingClaims]: { data: [...CLAIMS], count: CLAIMS.length },
+    // The view, answering the QUERY it is asked — a window, six counts and
+    // five `limit 1` seeks are twelve different questions of one object
+    // (`claimView`, ./population.ts), and it holds the parked claim, so the
+    // exclusion is still asked of a database that carries one.
+    [T.pendingClaims]: claimView(CLAIMS),
     [T.observations]: { data: [...OBSERVATIONS] },
     // Two of the three sources are registered; `SOURCE.third` is not, so every
     // label assertion has a row it must name and a row it must not
     // (admin-window/BUG-0043).
-    [T.sources]: { data: [...REGISTRY] },
+    [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
     ...overrides,
   };
 }
@@ -189,13 +208,32 @@ async function renderClaims(
   script: Script,
   params: Record<string, string | string[]> = {},
 ): Promise<string> {
-  readWith.client = stubClient(script).asSupabaseClient();
-  return render(await ClaimsPage({ searchParams: Promise.resolve(params) }));
+  return (await renderWithStub(script, params)).markup;
+}
+
+/** The same render, with the call log the page's reads left behind. */
+async function renderWithStub(
+  script: Script,
+  params: Record<string, string | string[]> = {},
+): Promise<{ markup: string; stub: StubClient }> {
+  const stub = stubClient(script);
+  readWith.client = stub.asSupabaseClient();
+  return {
+    markup: render(await ClaimsPage({ searchParams: Promise.resolve(params) })),
+    stub,
+  };
 }
 
 /* ── reading the markup, structurally ────────────────────────────────────── */
 
-/** The bucket rows: the bucket, its count and its source count, in order. */
+/**
+ * The bucket rows: the bucket and its count, in order.
+ *
+ * The distinct-SOURCES figure is gone with the column (admin-window/BUG-0138,
+ * Ben's A2): a distinct count needs an aggregate PostgREST refuses, and the
+ * only other way to it was the read of the whole population this page no
+ * longer makes.
+ */
 function bucketRows(markup: string) {
   const $ = cheerio.load(markup);
   return $("[data-bucket]")
@@ -207,7 +245,6 @@ function bucketRows(markup: string) {
         active: $(element).attr("aria-current") === "true",
         href: $(element).attr("href") ?? "",
         claims: Number(row.find("[data-bucket-claims]").attr("data-bucket-claims")),
-        sources: Number(row.find("[data-bucket-sources]").attr("data-bucket-sources")),
       };
     });
 }
@@ -264,10 +301,29 @@ describe("the classification view, rendered", () => {
     const markup = await renderClaims(healthyScript());
     for (const row of bucketRows(markup)) {
       expect(row.claims, row.bucket).toBe(inBucket(row.bucket).length);
-      expect(row.sources, `${row.bucket} sources`).toBe(
-        new Set(inBucket(row.bucket).map((claim) => claim.source_id)).size,
-      );
     }
+  });
+
+  /**
+   * **EXPECTED CHANGE, admin-window/BUG-0138 (Ben's A2, 2026-09-10)**: three
+   * column headers, not four.
+   *
+   * The `sources` column — distinct sources holding a claim in that bucket —
+   * is gone, with every row's figure and hook. A distinct count needs an
+   * aggregate and PostgREST refuses aggregates on this deployment (`PGRST123`,
+   * measured), so the only way to it was the read of the whole claim
+   * population this page no longer makes. It was the builder's addition rather
+   * than the spec's: §4 asks for "buckets with counts, age".
+   */
+  it("draws three columns, and no distinct-source figure anywhere", async () => {
+    const markup = await renderClaims(healthyScript());
+    const $ = cheerio.load(markup);
+    const table = $('[data-surface="buckets"] table');
+    expect(table.find("thead th").length).toBe(3);
+    expect(markup).not.toContain("data-bucket-sources");
+    // Not vacuous: the two figures that stayed are still hooked and drawn.
+    expect($("[data-bucket]").length).toBe(RENDERED_BUCKETS.length);
+    expect($("[data-bucket-claims]").length).toBe(RENDERED_BUCKETS.length);
   });
 
   it("counts each bucket exactly as the view holds it, per source filter", async () => {
@@ -613,6 +669,7 @@ describe("the claim list's window", () => {
           entity_id: bucket === "awaiting_row" ? null : ENTITY.event,
           field: "title",
           source_id: source,
+          observed_at: observedAt,
         }),
       );
       observations.push(
@@ -657,7 +714,7 @@ describe("the claim list's window", () => {
   function crowdedScript(size: number): Script {
     const population = crowd(size);
     return {
-      [T.pendingClaims]: { data: population.claims, count: population.claims.length },
+      [T.pendingClaims]: claimView(population.claims),
       [T.observations]: { data: population.observations },
       [T.sources]: { data: [] },
     };
@@ -742,12 +799,26 @@ describe("the claim list's window", () => {
    * `crowd()` above spells `awaiting_row`/`awaiting_link` only, so the tab-only
    * narrowing has never met a truncated window.
    */
-  function standingCrowd(size: number): Script {
+  /** The same crowd, scripted as a database that answers the query. */
+  function standingScript(size: number): Script {
+    const population = standingCrowd(size);
+    return {
+      [T.pendingClaims]: claimView(population.claims),
+      [T.observations]: { data: population.observations },
+      [T.sources]: { data: [], count: 0 },
+    };
+  }
+
+  function standingCrowd(size: number): {
+    claims: PendingClaimRow[];
+    observations: ReturnType<typeof observationRow>[];
+  } {
     const claims: PendingClaimRow[] = [];
     const observations: ReturnType<typeof observationRow>[] = [];
     for (let index = 0; index < size; index += 1) {
       const id = `01920000-0000-7000-8000-0000000${(80000 + index).toString()}`;
       const source = index % 3 === 0 ? SOURCE.first : SOURCE.second;
+      const observedAt = new Date(Date.UTC(2026, 0, 1) + index * 3_600_000).toISOString();
       claims.push(
         pendingClaimRow("standing_disagreement", {
           observation_id: id,
@@ -755,6 +826,7 @@ describe("the claim list's window", () => {
           entity_id: ENTITY.otherEvent,
           field: "title",
           source_id: source,
+          observed_at: observedAt,
         }),
       );
       observations.push(
@@ -764,16 +836,12 @@ describe("the claim list's window", () => {
           domain: "events",
           field: "title",
           source_id: source,
-          observed_at: new Date(Date.UTC(2026, 0, 1) + index * 3_600_000).toISOString(),
+          observed_at: observedAt,
           status: "pending",
         }),
       );
     }
-    return {
-      [T.pendingClaims]: { data: claims, count: claims.length },
-      [T.observations]: { data: observations },
-      [T.sources]: { data: [] },
-    };
+    return { claims, observations };
   }
 
   it("states the count of a FILLED window over the narrowing it actually read (admin-window/BUG-0118)", async () => {
@@ -788,11 +856,11 @@ describe("the claim list's window", () => {
 
     // Same window, same page, unfilled: the not-filled and zero arms name the
     // bucket, and now the filled one does too — one window, one population.
-    const unfilled = windowLine(await renderClaims(standingCrowd(4), { tab: "standing" }));
+    const unfilled = windowLine(await renderClaims(standingScript(4), { tab: "standing" }));
     expect(unfilled.truncated).toBe(false);
     expect(unfilled.text).toContain(STANDING_BUCKET);
 
-    const filled = windowLine(await renderClaims(standingCrowd(size), { tab: "standing" }));
+    const filled = windowLine(await renderClaims(standingScript(size), { tab: "standing" }));
     expect(filled.truncated).toBe(true);
     // The number is the standing bucket's own count, and the sentence now says
     // so: what it is a count OF is stated where the count is stated.
@@ -826,7 +894,7 @@ describe("the claim list's window", () => {
     // acceptance criterion 3).
     const size = CLAIM_WINDOW * 3 + 9;
     const both = windowLine(
-      await renderClaims(standingCrowd(size), {
+      await renderClaims(standingScript(size), {
         tab: "standing",
         source_id: SOURCE.first,
       }),
@@ -906,22 +974,14 @@ describe("the claim list's window", () => {
    * beside a number (admin-window/BUG-0118).
    */
   function standingAmong(standingSize: number, otherSize: number): Script {
-    const rowsOf = (script: Script, table: string): unknown[] => {
-      const response = script[table];
-      return Array.isArray(response) ? [] : ((response.data ?? []) as unknown[]);
-    };
     const standing = standingCrowd(standingSize);
-    const others = crowdedScript(otherSize);
-    const claims = [
-      ...rowsOf(standing, T.pendingClaims),
-      ...rowsOf(others, T.pendingClaims),
-    ];
+    const others = crowd(otherSize);
     return {
-      [T.pendingClaims]: { data: claims, count: claims.length },
+      [T.pendingClaims]: claimView([...standing.claims, ...others.claims]),
       [T.observations]: {
-        data: [...rowsOf(standing, T.observations), ...rowsOf(others, T.observations)],
+        data: [...standing.observations, ...others.observations],
       },
-      [T.sources]: { data: [] },
+      [T.sources]: { data: [], count: 0 },
     };
   }
 
@@ -984,9 +1044,6 @@ describe("the claim list's window", () => {
     for (const row of bucketRows(markup)) {
       const held = population.claims.filter((claim) => claim.bucket === row.bucket);
       expect(row.claims, row.bucket).toBe(held.length);
-      expect(row.sources, `${row.bucket} sources`).toBe(
-        new Set(held.map((claim) => claim.source_id)).size,
-      );
     }
     expect(
       bucketRows(markup).reduce((total, row) => total + row.claims, 0),
@@ -1024,14 +1081,14 @@ describe("the claim list's window", () => {
     // what would fill the surface, the line says where the app looked.
     const cases: Array<[string, Script, Record<string, string>]> = [
       // The view holds nothing at all.
-      ["the view holds nothing", healthyScript({ [T.pendingClaims]: { data: [], count: 0 } }), {}],
+      ["the view holds nothing", healthyScript({ [T.pendingClaims]: claimView([]) }), {}],
       // The view holds claims; this narrowing matches none of them — the one
       // escalated claim in the population belongs to another source.
       ["the filter matched nothing", healthyScript(), MATCHES_NOTHING],
       // The standing tab's own subset, empty while the view is not.
       [
         "the standing subset is empty",
-        healthyScript({ [T.pendingClaims]: { data: NO_STANDING, count: NO_STANDING.length } }),
+        healthyScript({ [T.pendingClaims]: claimView(NO_STANDING) }),
         { tab: "standing" },
       ],
     ];
@@ -1077,12 +1134,12 @@ describe("the claim list's window", () => {
         .trim();
     };
     const holdsNothing = await cardText(
-      healthyScript({ [T.pendingClaims]: { data: [], count: 0 } }),
+      healthyScript({ [T.pendingClaims]: claimView([]) }),
       {},
     );
     const matchedNothing = await cardText(healthyScript(), MATCHES_NOTHING);
     const standingEmpty = await cardText(
-      healthyScript({ [T.pendingClaims]: { data: NO_STANDING, count: NO_STANDING.length } }),
+      healthyScript({ [T.pendingClaims]: claimView(NO_STANDING) }),
       { tab: "standing" },
     );
     for (const [label, text] of [
@@ -1099,16 +1156,15 @@ describe("the claim list's window", () => {
     const size = CLAIM_WINDOW + 9;
     const standing = crowd(size);
     const script: Script = {
-      [T.pendingClaims]: {
-        data: standing.claims.map((claim) => ({
+      [T.pendingClaims]: claimView(
+        standing.claims.map((claim) => ({
           ...claim,
           bucket: "standing_disagreement" as PendingClaimRow["bucket"],
           unmet_requirement: null,
         })),
-        count: size,
-      },
+      ),
       [T.observations]: { data: standing.observations },
-      [T.sources]: { data: [] },
+      [T.sources]: { data: [], count: 0 },
     };
     const markup = await renderClaims(script, { tab: "standing" });
     expect(claimIds(markup)).toHaveLength(CLAIM_WINDOW);
@@ -1167,7 +1223,8 @@ describe("the standing-disagreements tab", () => {
     const markup = await renderClaims(healthyScript(), { tab: "standing" });
     expect(chipsOf(markup, "bucket")).toEqual([]);
     expect(chipsOf(markup, "source_id").length).toBeGreaterThan(1);
-    expect(chipsOf(markup, "domain").length).toBeGreaterThan(1);
+    // The domain facet has no chip row on either tab (admin-window/BUG-0138).
+    expect(chipsOf(markup, "domain")).toEqual([]);
     // And a bucket asked for by hand does not travel in the tab's own URLs.
     const handTyped = await renderClaims(healthyScript(), {
       tab: "standing",
@@ -1292,14 +1349,33 @@ describe("absence and failure", () => {
     }
   });
 
-  it("names the OTHER object when only the observations side is absent", async () => {
+  /**
+   * **EXPECTED CHANGE, admin-window/BUG-0138.** `observations` used to be the
+   * list's second leg — the view carried no age, so an absent `observations`
+   * took the whole list down with it. The view carries the instant now, so the
+   * only leg that reads that table is the tab's GAUGE: it names it, in its own
+   * Section, and every claim still renders beside it.
+   */
+  it("names the gauge's own object when observations is absent, and still lists every claim", async () => {
     const markup = await renderClaims({
-      [T.pendingClaims]: { data: [...CLAIMS], count: CLAIMS.length },
+      [T.pendingClaims]: claimView(CLAIMS),
       [T.observations]: { error: tableNotInSchemaCache(T.observations) },
-      [T.sources]: { data: [] },
+      [T.sources]: { data: [], count: 0 },
     });
-    expect(markup).toContain(T.observations);
-    expect(claimIds(markup)).toEqual([]);
+    const $ = cheerio.load(markup);
+    expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
+    // The absence is reported, on the gauge's surface and nowhere else.
+    expect($(`[data-not-provisioned="${T.observations}"]`)).toHaveLength(1);
+    expect(
+      $('[data-surface="gauge"]').find(`[data-not-provisioned="${T.observations}"]`),
+    ).toHaveLength(1);
+    expect($('[data-surface="claims"]').find("[data-not-provisioned]")).toHaveLength(0);
+    // ...and every age is still on screen, from the view's own column.
+    for (const claim of SHOWABLE) {
+      if (OBSERVED_AT.has(claim.observation_id)) {
+        expect(claimRow(markup, claim.observation_id).titles.length).toBeGreaterThan(0);
+      }
+    }
   });
 
   it("shows the database's own words when a read fails", async () => {
@@ -1475,14 +1551,12 @@ describe("absence and failure", () => {
 
   it("renders the gauge's own state when its window cannot be read", async () => {
     const markup = await renderClaims({
-      [T.pendingClaims]: { data: [...CLAIMS], count: CLAIMS.length },
-      // The list's own legs answer; the gauge's window read is the one that
-      // refuses, and it says so without taking the list down with it.
-      [T.observations]: [
-        { data: [...OBSERVATIONS] },
-        { error: permissionDenied(T.observations) },
-      ],
-      [T.sources]: { data: [] },
+      [T.pendingClaims]: claimView(CLAIMS),
+      // The list's own read answers; the gauge's window read over
+      // `observations` is the one that refuses, and it says so without taking
+      // the list down with it.
+      [T.observations]: { error: permissionDenied(T.observations) },
+      [T.sources]: { data: [], count: 0 },
     });
     expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
     expect(markup).toContain("permission denied");
@@ -1550,7 +1624,7 @@ describe("absence and failure", () => {
     const emptyView: Script = {
       [T.pendingClaims]: { data: [], count: 0 },
       [T.observations]: { data: [] },
-      [T.sources]: { data: [...REGISTRY] },
+      [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
     };
     for (const [label, script, params] of [
       ["rows, bare", healthyScript(), {}],
@@ -1581,7 +1655,7 @@ describe("absence and failure", () => {
         {
           [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
           [T.observations]: { data: [] },
-          [T.sources]: { data: [...REGISTRY] },
+          [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
         },
       ],
       [
@@ -1590,20 +1664,23 @@ describe("absence and failure", () => {
         {
           [T.pendingClaims]: { error: transportFailure("bad port") },
           [T.observations]: { data: [] },
-          [T.sources]: { data: [...REGISTRY] },
+          [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
         },
       ],
       [
-        // A complete read that came back TRUNCATED refuses with the real
-        // number rather than returning a partial array (ARCHITECTURE.md §4.3),
-        // so the rows it did fetch are never a count, and no sentence stands
-        // over them either.
-        "outgrew the cap",
+        // A count the database did not GIVE — exactly what a select written
+        // without `{ head: true, count: "exact" }` comes back with — is a
+        // refusal and never a zero (ARCHITECTURE.md §4.3, common violations
+        // row 2). The rows it did return are not a count either, so no
+        // sentence stands over them. This replaces the truncated-complete-read
+        // case admin-window/BUG-0138 retired: no read this page makes can
+        // reach `ROW_CAP` any more.
+        "no count at all",
         "error",
         {
-          [T.pendingClaims]: { data: [...CLAIMS], count: 4096 },
+          [T.pendingClaims]: { data: null, count: null, error: null },
           [T.observations]: { data: [...OBSERVATIONS] },
-          [T.sources]: { data: [...REGISTRY] },
+          [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
         },
       ],
       [
@@ -1614,7 +1691,7 @@ describe("absence and failure", () => {
         {
           [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
           [T.observations]: { data: [] },
-          [T.sources]: { data: [...REGISTRY] },
+          [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
         },
       ],
     ];
@@ -1692,7 +1769,7 @@ describe("which arm the bucket caption takes", () => {
     /** The same view with every claim moved onto one value of `facet`. */
     const allOn = (facet: "source_id" | "domain", value: string): Script => {
       const rows = CLAIMS.map((claim) => ({ ...claim, [facet]: value }));
-      return healthyScript({ [T.pendingClaims]: { data: rows, count: rows.length } });
+      return healthyScript({ [T.pendingClaims]: claimView(rows) });
     };
 
     for (const [facet, value] of [
@@ -1704,8 +1781,14 @@ describe("which arm the bucket caption takes", () => {
       const markup = await renderClaims(script, { [facet]: value });
       const label = `${facet}=${value}`;
 
-      // Applied, and current: the chip bar shows the facet, nothing dropped.
-      expect(chipsOf(markup, facet).filter((chip) => chip.active), label).toHaveLength(1);
+      // Applied, and current: the facet that HAS a chip row shows it as the
+      // active one, and neither facet is reported as dropped — `domain` has no
+      // chip row since admin-window/BUG-0138 and narrows all the same.
+      if (facet === "source_id") {
+        expect(chipsOf(markup, facet).filter((chip) => chip.active), label).toHaveLength(1);
+      } else {
+        expect(chipsOf(markup, facet), label).toEqual([]);
+      }
       expect(droppedLine(markup).lines, label).toBe(0);
       // It removed nothing, so the caption is the bare page's.
       expect(bucketRows(markup).map((row) => row.claims), label).toEqual(
@@ -1797,9 +1880,9 @@ describe("which emptiness this is", () => {
   function withoutBucket(bucket: string): Script {
     const kept = CLAIMS.filter((claim) => claim.bucket !== bucket);
     return {
-      [T.pendingClaims]: { data: kept, count: kept.length },
+      [T.pendingClaims]: claimView(kept),
       [T.observations]: { data: [...OBSERVATIONS] },
-      [T.sources]: { data: [...REGISTRY] },
+      [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
     };
   }
 
@@ -1808,7 +1891,7 @@ describe("which emptiness this is", () => {
     return {
       [T.pendingClaims]: { data: [], count: 0 },
       [T.observations]: { data: [] },
-      [T.sources]: { data: [...REGISTRY] },
+      [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
     };
   }
 
@@ -1886,18 +1969,72 @@ describe("which emptiness this is", () => {
 /* ── the filter bar ──────────────────────────────────────────────────────── */
 
 describe("the filters", () => {
-  it("offers every source and domain the view carries, and 'all' first", async () => {
+  /**
+   * **EXPECTED CHANGE, admin-window/BUG-0138 (Ben's A2, 2026-09-10).**
+   *
+   * The source chip row's MEMBERSHIP is the REGISTRY's rows now, not the
+   * distinct sources of the claim population — the page cannot read that
+   * population any more, and the registry read it already makes runs
+   * concurrently with everything else. So a registered source holding no claim
+   * is a real chip (and a real zero when you narrow to it), and a source the
+   * registry has no row for is not offered as a chip even where the view
+   * carries its claims — its id still renders verbatim in every row, and
+   * `?source_id=` still narrows by it.
+   *
+   * The DOMAIN chip row is gone: there is no bounded read of "the domains in
+   * play" (`domain_target` is a function, not an enumerable registry).
+   * `?domain=` narrows server-side, which its own pin covers.
+   *
+   * The spelling and the sort rule do not change: the registry's name, in the
+   * order those names sort, with the id breaking the tie.
+   */
+  it("offers every REGISTERED source, 'all' first, and no domain chips at all", async () => {
     const markup = await renderClaims(healthyScript());
     expect(chipsOf(markup, "source_id").map((chip) => chip.label)).toEqual([
       "all",
-      // Named, and in the order those names sort — the same facet `/sources`
-      // renders, reading the same way (admin-window/BUG-0043).
-      ...[...new Set(CLAIMS.map((claim) => claim.source_id))].map(nameOf).sort(),
+      // The registry's rows, named, in the order those names sort — the same
+      // facet `/sources` renders, reading the same way (admin-window/BUG-0043).
+      ...REGISTRY.map((source) => source.source).sort(),
     ]);
-    expect(chipsOf(markup, "domain").map((chip) => chip.label)).toEqual([
-      "all",
-      ...[...new Set(CLAIMS.map((claim) => claim.domain))].sort(),
-    ]);
+    expect(chipsOf(markup, "domain")).toEqual([]);
+    expect(cheerio.load(markup)('[data-facet="domain"]')).toHaveLength(0);
+    // Not vacuous in either direction: the view carries a source the registry
+    // does not name, and it is not a chip...
+    expect(CLAIMS.some((claim) => !SOURCE_NAME.has(claim.source_id))).toBe(true);
+    expect(chipsOf(markup, "source_id").map((chip) => chip.href).join(" ")).not.toContain(
+      SOURCE.third,
+    );
+    // ...and the view carries domains, which no chip row offers.
+    expect(new Set(CLAIMS.map((claim) => claim.domain)).size).toBeGreaterThan(1);
+  });
+
+  it("gives a registered source with no claim a real chip and a real zero", async () => {
+    // The other half of that change, and the reason it is an improvement: a
+    // source that has filed nothing is a fact about the registry, and the page
+    // says so with a counted zero rather than by hiding the chip.
+    const idle = REGISTRY[0].source_id;
+    const markup = await renderClaims(
+      healthyScript({
+        [T.pendingClaims]: claimView(
+          CLAIMS.filter((claim) => claim.source_id !== idle),
+        ),
+      }),
+    );
+    const chip = chipsOf(markup, "source_id").find(
+      (candidate) => candidate.label === nameOf(idle),
+    );
+    expect(chip, `${nameOf(idle)} has no chip`).toBeDefined();
+
+    const narrowed = await renderClaims(
+      healthyScript({
+        [T.pendingClaims]: claimView(
+          CLAIMS.filter((claim) => claim.source_id !== idle),
+        ),
+      }),
+      { source_id: idle },
+    );
+    expect(claimIds(narrowed)).toEqual([]);
+    for (const row of bucketRows(narrowed)) expect(row.claims, row.bucket).toBe(0);
   });
 
   it("marks the chip the URL is on, and offers the others from there", async () => {
@@ -1919,17 +2056,21 @@ describe("the filters", () => {
     expect(chips.length).toBeGreaterThan(2);
   });
 
-  it("still offers all three facets when nothing matched", async () => {
+  it("still offers both chip facets when nothing matched, and a way out of the one that emptied it", async () => {
     const markup = await renderClaims(healthyScript(), {
-      source_id: SOURCE.third,
-      domain: "venues",
+      source_id: SOURCE.first,
+      domain: "groups",
     });
     expect(claimIds(markup)).toEqual([]);
-    for (const facet of ["bucket", "source_id", "domain"]) {
+    for (const facet of ["bucket", "source_id"]) {
       expect(chipsOf(markup, facet).length, facet).toBeGreaterThan(1);
     }
-    // The way out is on screen: the "all" chip of the facet that emptied it.
-    expect(chipsOf(markup, "domain")[0].href).not.toContain("domain=");
+    // The way out of the facet that has no chip row is still on screen: every
+    // chip of every other facet drops the narrowing that emptied the page...
+    expect(chipsOf(markup, "source_id")[0].href).not.toContain("source_id=");
+    // ...and the domain narrowing the page really applied is still carried by
+    // the chips that keep it, so it is visible in the URL rather than lost.
+    expect(chipsOf(markup, "bucket")[0].href).toContain("domain=groups");
   });
 });
 
@@ -2020,7 +2161,6 @@ describe("a source id in another spelling", () => {
    * spellings of a REAL id are understood and nothing else.
    */
   it.each([
-    ["a well-formed id no claim carries", "01920000-0000-7000-8000-0000000009f9"],
     ["a value that is no id at all", "not-a-uuid"],
     ["whitespace INSIDE an otherwise real id", `${CANONICAL.slice(0, 20)} ${CANONICAL.slice(20)}`],
   ])("narrows nothing for %s, and says so", async (_label, asked) => {
@@ -2029,6 +2169,29 @@ describe("a source id in another spelling", () => {
     expect(droppedLine(markup).names).toEqual(["source_id"]);
     expect(chipsOf(markup, "source_id").filter((chip) => chip.active).map((chip) => chip.label))
       .toEqual([ANY_LABEL]);
+  });
+
+  /**
+   * **EXPECTED CHANGE, admin-window/BUG-0138.** A well-formed id nothing
+   * carries used to be checked against the sources of the whole claim
+   * population — the read this page no longer makes — and reported as dropped
+   * over an unnarrowed page. It NARROWS now: the value goes to the query, every
+   * figure comes back 0, and the page says where it looked.
+   */
+  it("narrows to nothing for a well-formed id no claim carries", async () => {
+    const asked = "01920000-0000-7000-8000-0000000009f9";
+    const markup = await renderClaims(healthyScript(), { source_id: asked });
+    const $ = cheerio.load(markup);
+
+    expect(claimIds(markup)).toEqual([]);
+    expect(droppedLine(markup).lines).toBe(0);
+    expect($('[data-empty="narrowing"]')).toHaveLength(1);
+    expect(Number($('[data-window="claims"]').attr("data-window-held"))).toBe(0);
+    for (const row of bucketRows(markup)) expect(row.claims, row.bucket).toBe(0);
+    // No chip claims to be the state we are in — the registry has no row for
+    // this id, so there is no chip that could — and "all" is not on either,
+    // because a narrowing really is applied.
+    expect(chipsOf(markup, "source_id").filter((chip) => chip.active)).toEqual([]);
   });
 
   /**
@@ -2175,9 +2338,22 @@ describe("a source is named", () => {
       // guess (LOOK_AND_FEEL Voice bar 5).
       expect(claimRow(markup, claim.observation_id).sourceLabel).toBe(claim.source_id);
     }
-    // The same id, as the chip that narrows to it.
+    // **EXPECTED CHANGE, admin-window/BUG-0138**: it is no longer a CHIP.
+    // The chip row is the registry's rows, so a source the registry has no row
+    // for is not offered as a narrowing to click — its id still renders
+    // verbatim in every row above, and `?source_id=<that id>` still narrows.
     const labels = chipsOf(markup, "source_id").map((chip) => chip.label);
-    expect(labels).toContain(unregistered[0].source_id);
+    expect(labels).not.toContain(unregistered[0].source_id);
+    const narrowed = await renderClaims(healthyScript(), {
+      source_id: unregistered[0].source_id,
+    });
+    expect(new Set(claimIds(narrowed))).toEqual(
+      new Set(
+        matching({ source_id: unregistered[0].source_id }).map(
+          (claim) => claim.observation_id,
+        ),
+      ),
+    );
   });
 
   it("names the chips exactly as the same facet on /sources does", async () => {
@@ -2337,7 +2513,10 @@ describe("a hand-edited URL", () => {
     ["bucket=escalated%20", {}],
     ["domain=", {}],
     ["source_id=", {}],
-    ["domain=standing_disagreement", {}],
+    // A domain nothing carries NARROWS now, and matches nothing
+    // (admin-window/BUG-0138): the page has no domain vocabulary left to check
+    // it against, so it goes to the query and every figure comes back 0.
+    ["domain=standing_disagreement", { domain: "standing_disagreement" }],
     [`source_id=${"x".repeat(10_000)}`, {}],
     // The parked bucket, spelled every way a URL can carry it.
     [`bucket=${PARKED}`, {}],
@@ -2883,6 +3062,7 @@ const QA_CLAIMS: readonly PendingClaimRow[] = QA_SPECS.map((spec) =>
     field: spec.field,
     source_id: spec.source,
     unmet_requirement: spec.requirement ?? null,
+    observed_at: spec.observedAt ?? null,
   }),
 );
 
@@ -2936,10 +3116,14 @@ function qaApplied(
 
 function qaScript(overrides: Script = {}): Script {
   return {
-    // Every read hands the parked rows over: a server that ignored the `neq`.
-    [T.pendingClaims]: { data: [...QA_CLAIMS], count: QA_CLAIMS.length },
+    // The view, answering the query — and holding the parked rows, so every
+    // assertion below is made against a database that really carries them.
+    [T.pendingClaims]: claimView(QA_CLAIMS),
     [T.observations]: { data: [...QA_OBSERVATIONS] },
-    [T.sources]: { data: [] },
+    // A registry that holds no row — read completely, so the chip row is
+    // honestly empty rather than a refusal (admin-window/BUG-0138: the chips
+    // are the registry's rows now).
+    [T.sources]: { data: [], count: 0 },
     ...overrides,
   };
 }
@@ -2991,16 +3175,29 @@ describe("QA: the whole tab x bucket x source x domain cross-product", () => {
             //    in the one encoding a URL can smuggle its underscore through.
             expect(markup, where).not.toContain(PARKED);
             expect(markup, where).not.toContain("in%5Fwindow");
-            // 2. Nor the source and the domain that exist only on parked rows.
-            expect(markup, where).not.toContain(QA_SOURCE.parkedOnly);
+            // 2. Nor the source that exists only on parked rows — unless
+            //    THIS URL asked to narrow by it, in which case the page really
+            //    did narrow by it and every chip and tab link carries the
+            //    state you are in (admin-window/BUG-0138). What it may never
+            //    do is learn that source from the parked ROWS, which is what
+            //    every unnarrowed and differently-narrowed case here checks.
+            if (source !== QA_SOURCE.parkedOnly) {
+              expect(markup, where).not.toContain(QA_SOURCE.parkedOnly);
+            }
 
             // 3. The claims rendered are exactly the ones QA's own predicate
             //    keeps — the standing tab being that predicate with the bucket
             //    the tab IS, whatever the URL asked for.
+            // What the page really applies (admin-window/BUG-0138): the
+            // BUCKET is still checked against the closed vocabulary this app
+            // declares, so a hostile or unknown bucket narrows nothing; the
+            // source and the domain have no vocabulary left to check against
+            // and are applied AS ASKED at the query, so a value nothing
+            // carries narrows to nothing rather than being ignored.
             const applied = {
               bucket: qaApplied(RENDERED_BUCKETS, bucket),
-              source_id: qaApplied(QA_SOURCE_VOCAB, source),
-              domain: qaApplied(QA_DOMAIN_VOCAB, domain),
+              source_id: source,
+              domain,
             };
             const expected = qaMatching(
               tab === "standing"
@@ -3028,9 +3225,6 @@ describe("QA: the whole tab x bucket x source x domain cross-product", () => {
               for (const row of rows) {
                 const held = qaMatching({ ...scope, bucket: row.bucket });
                 expect(row.claims, `${where} / ${row.bucket}`).toBe(held.length);
-                expect(row.sources, `${where} / ${row.bucket} sources`).toBe(
-                  new Set(held.map((spec) => spec.source)).size,
-                );
               }
               // The table is the WHOLE classification under this scope: its
               // counts sum to every claim in scope, and — when no bucket
@@ -3053,11 +3247,22 @@ describe("QA: the whole tab x bucket x source x domain cross-product", () => {
               );
               for (const [key, value] of query) {
                 if (key === "bucket") {
+                  // The closed vocabulary: no href may ever carry a bucket
+                  // this app does not render, the parked one above all.
                   expect(RENDERED_BUCKETS, `${where} -> ${href}`).toContain(value);
                 } else if (key === "source_id") {
-                  expect(QA_SOURCE_VOCAB, `${where} -> ${href}`).toContain(value);
+                  // A narrowing the page APPLIED travels forward — otherwise
+                  // every chip would silently drop the state you are in. What
+                  // may not travel is a value the page did not apply.
+                  expect(
+                    [...QA_SOURCE_VOCAB, applied.source_id],
+                    `${where} -> ${href}`,
+                  ).toContain(value);
                 } else if (key === "domain") {
-                  expect(QA_DOMAIN_VOCAB, `${where} -> ${href}`).toContain(value);
+                  expect(
+                    [...QA_DOMAIN_VOCAB, applied.domain],
+                    `${where} -> ${href}`,
+                  ).toContain(value);
                 } else {
                   expect(["tab"], `${where} -> ${href}`).toContain(key);
                 }
@@ -3071,36 +3276,56 @@ describe("QA: the whole tab x bucket x source x domain cross-product", () => {
 });
 
 describe("QA: what the parked bucket alone carries", () => {
-  it("offers no chip for a source or a domain only parked rows have", async () => {
+  it("offers no chip built from a parked row, and none for the domain facet at all", async () => {
     const markup = await renderClaims(qaScript());
-    expect(chipsOf(markup, "source_id").map((chip) => chip.label)).toEqual([
-      "all",
-      ...QA_SOURCE_VOCAB,
-    ]);
-    expect(chipsOf(markup, "domain").map((chip) => chip.label)).toEqual([
-      "all",
-      ...QA_DOMAIN_VOCAB,
-    ]);
+    // The source chips are the REGISTRY's rows since admin-window/BUG-0138,
+    // and this database's registry is empty — so the row offers "all" and
+    // nothing else. The property that mattered here is unchanged and stronger:
+    // no chip is built from a CLAIM row, so a source only parked rows carry
+    // cannot become one.
+    expect(chipsOf(markup, "source_id").map((chip) => chip.label)).toEqual(["all"]);
+    // The domain chip row is gone entirely (Ben's A2, 2026-09-10).
+    expect(chipsOf(markup, "domain")).toEqual([]);
     expect(markup).not.toContain(QA_SOURCE.parkedOnly);
     expect(markup).not.toContain(PARKED);
   });
 
-  it("narrows nothing when the URL names one of them", async () => {
+  it("narrows to NOTHING when the URL names one of them, and says where it looked", async () => {
+    // **EXPECTED CHANGE, admin-window/BUG-0138.** These used to narrow nothing
+    // — they were outside the vocabularies the page read off the population —
+    // and the page rendered every claim under a dropped-parameter line. The
+    // page has no such vocabulary now, so the narrowing really happens at the
+    // query: a source and a domain that only parked rows carry match no
+    // RENDERABLE claim, so the honest answer is the "nothing matched" card
+    // over a window line holding 0. The parked bucket is unchanged: its
+    // vocabulary is still closed, and it still narrows nothing.
     const hostile: Record<string, string>[] = [
       { source_id: QA_SOURCE.parkedOnly },
       { domain: QA_PARKED_DOMAIN },
       { source_id: QA_SOURCE.parkedOnly, domain: QA_PARKED_DOMAIN },
-      { bucket: PARKED, source_id: QA_SOURCE.parkedOnly },
     ];
     for (const params of hostile) {
       const markup = await renderClaims(qaScript(), params);
       const where = new URLSearchParams(params).toString();
-      // Every showable claim, not an empty page that would read as an empty
-      // database — and no trace of what the URL asked for.
-      expect(claimIds(markup), where).toHaveLength(QA_SHOWABLE.length);
-      expect(markup, where).not.toContain(QA_SOURCE.parkedOnly);
+      const $ = cheerio.load(markup);
+      expect(claimIds(markup), where).toEqual([]);
+      expect($('[data-empty="narrowing"]'), where).toHaveLength(1);
+      expect(
+        Number($('[data-window="claims"]').attr("data-window-held")),
+        where,
+      ).toBe(0);
+      // Every bucket row is a real, counted zero — not a blank and not a hole.
+      for (const row of bucketRows(markup)) {
+        expect(row.claims, `${where} / ${row.bucket}`).toBe(0);
+      }
       expect(markup, where).not.toContain(PARKED);
     }
+
+    // The bucket the URL cannot use narrows nothing, exactly as before.
+    const parkedBucket = await renderClaims(qaScript(), { bucket: PARKED });
+    expect(claimIds(parkedBucket)).toHaveLength(QA_SHOWABLE.length);
+    expect(parkedBucket).not.toContain(PARKED);
+    expect(parkedBucket).not.toContain(QA_SOURCE.parkedOnly);
   });
 
   it("takes the first value of every repeated parameter, hostile ones included", async () => {
@@ -3110,27 +3335,44 @@ describe("QA: what the parked bucket alone carries", () => {
       domain: [QA_PARKED_DOMAIN, "events"],
       tab: ["standing", "buckets"],
     });
-    // First values: all three unusable, so nothing narrows; the tab is standing.
-    expect(new Set(claimIds(markup))).toEqual(
-      new Set(qaMatching({ bucket: "standing_disagreement" }).map((spec) => spec.id)),
-    );
+    // First values: the bucket is unusable so it narrows nothing, the source
+    // and the domain are applied as asked and match no renderable claim, and
+    // the tab is standing.
+    expect(claimIds(markup)).toEqual([]);
     expect(bucketRows(markup)).toHaveLength(0);
     expect(markup).not.toContain(PARKED);
-    expect(markup).not.toContain(QA_SOURCE.parkedOnly);
+    // The SECOND value of each parameter never reaches the page at all.
+    expect(markup).not.toContain(QA_SOURCE.a);
+    expect(markup).not.toContain("domain=events");
   });
 
-  it("shows no count at all when the view outgrew the cap, only the real number", async () => {
-    const markup = await renderClaims(
-      qaScript({
-        // The database holds far more than the read could return: a complete
-        // read must refuse with that number, never render the rows it got as
-        // if they were the whole set.
-        [T.pendingClaims]: { data: [...QA_CLAIMS], count: 4096 },
+  /**
+   * **EXPECTED CHANGE, admin-window/BUG-0138 (criterion 4).** A view larger
+   * than `ROW_CAP` used to refuse the whole page: the read was COMPLETE, so a
+   * count above the cap was a refusal carrying the real number, and `/claims`
+   * rendered nothing but that line. No read this page makes can reach the cap
+   * now — the list is a `limit 50` window and every figure is a `head: true`
+   * count — so a view of any size renders its window and states the true
+   * number beside it. That is the point of the fix, not a regression.
+   */
+  it("renders a view far larger than the row cap, and states its real size", async () => {
+    const crowd = Array.from({ length: ROW_CAP * 4 }, (_, index) =>
+      pendingClaimRow("agreeing", {
+        observation_id: `0192bbbb-0000-7000-8000-${String(index).padStart(12, "0")}`,
+        observed_at: new Date(Date.UTC(2026, 0, 1) + index * 1000).toISOString(),
       }),
     );
-    expect(markup).toContain("4096");
-    expect(cheerio.load(markup)("[data-bucket-claims]")).toHaveLength(0);
-    expect(claimIds(markup)).toEqual([]);
+    const markup = await renderClaims(qaScript({ [T.pendingClaims]: claimView(crowd) }));
+    const $ = cheerio.load(markup);
+
+    expect(claimIds(markup)).toHaveLength(CLAIM_WINDOW);
+    expect(Number($('[data-window="claims"]').attr("data-window-held"))).toBe(
+      ROW_CAP * 4,
+    );
+    expect($('[data-window="claims"]').attr("data-window-truncated")).toBe("true");
+    expect(
+      bucketRows(markup).find((row) => row.bucket === "agreeing")?.claims,
+    ).toBe(ROW_CAP * 4);
     expect(markup).not.toContain(PARKED);
   });
 });
@@ -3325,7 +3567,7 @@ describe("the surface hooks the live parity oracle addresses", () => {
         [
           "empty",
           await renderClaims(
-            healthyScript({ [T.pendingClaims]: { data: [], count: 0 } }),
+            healthyScript({ [T.pendingClaims]: claimView([]) }),
             { tab },
           ),
         ],
@@ -3390,5 +3632,295 @@ describe("the surface hooks the live parity oracle addresses", () => {
     expect($(SURFACE_HOOKS.buckets).find("[data-claim], [data-window]").length).toBe(0);
     expect($(SURFACE_HOOKS.claims).find("[data-bucket]").length).toBe(0);
     expect($(SURFACE_HOOKS.gauge).find("[data-claim], [data-bucket]").length).toBe(0);
+  });
+});
+
+/* ── what this page COSTS, and what each read of it may claim ────────────── */
+
+/**
+ * The reads themselves (campaign admin-window/BUG-0138).
+ *
+ * The bug was never a slow query: `/claims` awaited a COMPLETE read of the
+ * view, then a second leg over `observations` chunked 100 ids at a time, then
+ * the registry, then the gauge — ~14 requests in a chain, 2.9-3.8 s of warm
+ * server time on staging's 877 claims (Ben, walking the M2 endgame instance,
+ * 2026-09-09). What is graded here is therefore the SHAPE of the read, on the
+ * one artefact that can show it offline: the stub's own call log.
+ */
+describe("the reads this page makes", () => {
+  /** Every step one call recorded, as `method(arg, …)` — readable in a diff. */
+  function shapeOf(call: RecordedCall): string {
+    return call.steps
+      .map((step) => `${step.method}(${step.args.map((arg) => JSON.stringify(arg)).join(", ")})`)
+      .join(".");
+  }
+
+  const callsOver = (stub: StubClient, table: string) =>
+    stub.calls.filter((call) => call.table === table);
+
+  /**
+   * Criterion 1's pin, and the fixture that would have caught the defect: the
+   * same page, over a view holding 20 claims and over one holding 2,000.
+   */
+  function viewOf(size: number): Script {
+    const claims = Array.from({ length: size }, (_, index) =>
+      pendingClaimRow(index % 2 === 0 ? "agreeing" : "awaiting_row", {
+        observation_id: `0192eeee-0000-7000-8000-${String(index).padStart(12, "0")}`,
+        source_id: index % 3 === 0 ? SOURCE.first : SOURCE.second,
+        domain: index % 2 === 0 ? "events" : "groups",
+        observed_at: new Date(Date.UTC(2026, 0, 1) + index * 1000).toISOString(),
+      }),
+    );
+    return {
+      [T.pendingClaims]: claimView(claims),
+      [T.observations]: { data: [] },
+      [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
+    };
+  }
+
+  it("page cost is invariant to the size of the view", async () => {
+    // `Date` is frozen for the pair, and that is this assertion's own doing:
+    // the gauge's window read carries the instant it was made over, so two
+    // renders a few milliseconds apart differ in the last digits of one `gte`
+    // and in nothing else.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-10T12:00:00.000Z"));
+    const small = await renderWithStub(viewOf(20));
+    const large = await renderWithStub(viewOf(2000));
+    vi.useRealTimers();
+
+    // The same requests, in the same shapes, over a view a hundred times
+    // bigger. Not "about the same number" — the same log.
+    expect(large.stub.calls.map(shapeOf)).toEqual(small.stub.calls.map(shapeOf));
+    expect(large.stub.tablesRead()).toEqual(small.stub.tablesRead());
+
+    // No read over the view is a `range` — the complete read and its ROW_CAP
+    // are gone — and none of them asks for more claim rows than the window.
+    for (const call of callsOver(large.stub, T.pendingClaims)) {
+      const steps = call.steps.map((step) => step.method);
+      expect(steps, shapeOf(call)).not.toContain("range");
+      const limit = call.steps.find((step) => step.method === "limit")?.args[0];
+      if (limit !== undefined) expect(Number(limit)).toBeLessThanOrEqual(CLAIM_WINDOW);
+    }
+
+    // And the 2,000-row view really did render: the window's rows, and a count
+    // far larger than them.
+    expect(claimIds(large.markup)).toHaveLength(CLAIM_WINDOW);
+    expect(
+      Number(cheerio.load(large.markup)('[data-window="claims"]').attr("data-window-held")),
+    ).toBe(2000);
+  });
+
+  it("issues one window read, six counts and five oldest seeks, and no more", async () => {
+    const { stub } = await renderWithStub(viewOf(200));
+    const overView = callsOver(stub, T.pendingClaims);
+
+    const counts = overView.filter((call) =>
+      call.steps.some(
+        (step) =>
+          step.method === "select" &&
+          JSON.stringify(step.args[1]) === JSON.stringify({ head: true, count: "exact" }),
+      ),
+    );
+    const rowReads = overView.filter((call) => !counts.includes(call));
+    // The renderable total plus one per bucket — one count per question,
+    // because PostgREST refuses the grouped read (PGRST123, measured).
+    expect(counts).toHaveLength(1 + RENDERED_BUCKETS.length);
+    // One window, and one `limit 1` seek per bucket.
+    expect(rowReads).toHaveLength(1 + RENDERED_BUCKETS.length);
+    expect(
+      rowReads.filter(
+        (call) => call.steps.find((step) => step.method === "limit")?.args[0] === 1,
+      ),
+    ).toHaveLength(RENDERED_BUCKETS.length);
+
+    // The registry is read once, and the observations table only by the gauge.
+    expect(callsOver(stub, T.sources)).toHaveLength(1);
+    expect(stub.tablesRead().filter((name) => name === T.observations).length).toBe(1);
+  });
+
+  it("narrows every count and the window server-side, and re-sorts nothing", async () => {
+    const { stub } = await renderWithStub(viewOf(200), {
+      source_id: SOURCE.first,
+      domain: "events",
+    });
+    const overView = callsOver(stub, T.pendingClaims);
+    expect(overView.length).toBeGreaterThan(1);
+
+    // The unnarrowed POPULATION count is the one read that must NOT carry the
+    // facets: it answers "what does this surface hold with no URL facet at
+    // all", and narrowing it would make every population equal its rendered
+    // set and no surface would ever name its scope again (BUG-0141's rule on
+    // `/queues`). Every other read of the view carries the whole narrowing.
+    const population = overView.filter(
+      (call) => !call.steps.some((step) => step.method === "eq"),
+    );
+    expect(population, "the unnarrowed population count").toHaveLength(1);
+
+    for (const call of overView.filter((call) => !population.includes(call))) {
+      const eqs = call.steps
+        .filter((step) => step.method === "eq")
+        .map((step) => `${step.args[0]}=${step.args[1]}`);
+      // Every read of the view — count, window and seek alike — carries the
+      // page's narrowing as `.eq()` on the query, never as a filter over rows.
+      expect(eqs, shapeOf(call)).toContain(`source_id=${SOURCE.first}`);
+      expect(eqs, shapeOf(call)).toContain("domain=events");
+      // ...and the parked bucket is excluded on every one of them.
+      expect(
+        call.steps.some(
+          (step) =>
+            step.method === "neq" && step.args[0] === "bucket" && step.args[1] === PARKED,
+        ),
+        shapeOf(call),
+      ).toBe(true);
+    }
+
+    // The population count DEBT-0008's fact 2 needs is issued only where a
+    // facet could have removed a row, and it carries no facet of its own —
+    // the shape `/queues` landed on (admin-window/DEBT-0012, BUG-0135).
+    const bare = await renderWithStub(viewOf(200));
+    expect(callsOver(bare.stub, T.pendingClaims).length).toBeLessThan(overView.length);
+  });
+
+  it("draws the list in the order the DATABASE returned it", async () => {
+    // A database that answers the window read in a deliberately wrong order:
+    // if the page re-sorted, this would come out right anyway. It must not.
+    const claims = CLAIMS.filter((claim) => claim.bucket !== PARKED);
+    const reversed = (call: RecordedCall) => {
+      const answer = claimView(claims)(call);
+      return Array.isArray(answer.data)
+        ? { ...answer, data: [...answer.data].reverse() }
+        : answer;
+    };
+    const markup = await renderClaims(
+      healthyScript({ [T.pendingClaims]: reversed }),
+    );
+    expect(claimIds(markup)).toEqual([...oldestFirst(SHOWABLE)].reverse());
+  });
+});
+
+/* ── one refused leg never takes another leg's rows down ─────────────────── */
+
+/**
+ * Criterion 5 (admin-window/BUG-0138): the legs are independent, so each keeps
+ * its own `DbResult` and its own rendering. A page that composed them into one
+ * result would fail every case here by rendering one refusal for all of them —
+ * the shape ARCHITECTURE.md's common violations row 14 names.
+ */
+describe("each read answers for itself", () => {
+  /** A `pending_claims` whose COUNT reads refuse while its row reads answer. */
+  function countsRefuse(refusal: unknown, only?: string): (call: RecordedCall) => ReturnType<ReturnType<typeof claimView>> {
+    return (call) => {
+      const head = call.steps.some(
+        (step) =>
+          step.method === "select" &&
+          (step.args[1] as { head?: boolean } | undefined)?.head === true,
+      );
+      const bucket = call.steps.find(
+        (step) => step.method === "eq" && step.args[0] === "bucket",
+      )?.args[1];
+      if (head && (only === undefined || bucket === only)) {
+        return { data: null, error: refusal };
+      }
+      return claimView(CLAIMS)(call);
+    };
+  }
+
+  it("renders ONE bucket's refusal in its own row, and the others' counts", async () => {
+    const markup = await renderClaims(
+      healthyScript({
+        [T.pendingClaims]: countsRefuse(permissionDenied(T.pendingClaims), "escalated"),
+      }),
+    );
+    const $ = cheerio.load(markup);
+
+    // Every bucket still has a row...
+    expect(
+      $("[data-bucket]").toArray().map((element) => $(element).attr("data-bucket")),
+    ).toEqual(RENDERED_BUCKETS);
+    // ...the four that answered carry their real counts...
+    for (const row of bucketRows(markup).filter((row) => row.bucket !== "escalated")) {
+      expect(row.claims, row.bucket).toBe(inBucket(row.bucket).length);
+    }
+    // ...and the one that refused says so, in that row, naming the view.
+    const escalated = $('[data-bucket="escalated"]').closest("tr");
+    expect(escalated.find("[data-bucket-claims]")).toHaveLength(0);
+    expect(escalated.find(`[data-read-failed="${T.pendingClaims}"]`)).toHaveLength(1);
+    // The list is untouched: every claim still renders.
+    expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
+  });
+
+  it("renders a bucket's refusal rather than a zero when the count is absent", async () => {
+    // `{count: null, error: null}` is what a select written WITHOUT
+    // `{ head: true, count: "exact" }` returns — a refusal, never a zero
+    // (ARCHITECTURE.md §4.3, common violations row 2).
+    const markup = await renderClaims(
+      healthyScript({
+        [T.pendingClaims]: (call: RecordedCall) => {
+          const head = call.steps.some(
+            (step) =>
+              step.method === "select" &&
+              (step.args[1] as { head?: boolean } | undefined)?.head === true,
+          );
+          const bucket = call.steps.find(
+            (step) => step.method === "eq" && step.args[0] === "bucket",
+          )?.args[1];
+          if (head && bucket === "agreeing") return { data: null, count: null, error: null };
+          return claimView(CLAIMS)(call);
+        },
+      }),
+    );
+    const $ = cheerio.load(markup);
+    const agreeing = $('[data-bucket="agreeing"]').closest("tr");
+    expect(agreeing.find("[data-bucket-claims]")).toHaveLength(0);
+    expect(agreeing.find('[data-state="error"]')).toHaveLength(1);
+
+    // The other four are real numbers, and one of them is a real ZERO — the
+    // second fixture the rule owes (LESSONS 8): a counted zero renders as a
+    // zero, an absent count renders as the refusal.
+    const narrowed = await renderClaims(healthyScript(), { source_id: SOURCE.second });
+    const zero = bucketRows(narrowed).find((row) => row.bucket === "escalated");
+    expect(zero?.claims).toBe(0);
+    expect(
+      cheerio.load(narrowed)('[data-bucket="escalated"]').closest("tr").text(),
+    ).toContain("0");
+  });
+
+  it("keeps the rows when the count that would state the window line refuses", async () => {
+    const markup = await renderClaims(
+      healthyScript({
+        [T.pendingClaims]: countsRefuse(permissionDenied(T.pendingClaims)),
+      }),
+    );
+    const $ = cheerio.load(markup);
+    // The window read answered, so the claims render...
+    expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
+    // ...but the LINE does not stand: a `held` nobody counted is not a number
+    // this page may print, and the rows' own length is exactly what a window
+    // line may never be (§4.3).
+    expect($('[data-window="claims"]')).toHaveLength(0);
+    // The refusal is reported on its own sub-surface, inside the list.
+    expect($('[data-surface="claims_count"]')).toHaveLength(1);
+    expect(
+      $('[data-surface="claims"]').find('[data-surface="claims_count"]'),
+    ).toHaveLength(1);
+  });
+
+  it("costs the LABELS and the chip vocabulary, and nothing else, when the registry refuses", async () => {
+    const markup = await renderClaims(
+      healthyScript({ [T.sources]: { error: permissionDenied(T.sources) } }),
+    );
+    const $ = cheerio.load(markup);
+    expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
+    for (const claim of SHOWABLE) {
+      expect(claimRow(markup, claim.observation_id).sourceLabel).toBe(claim.source_id);
+    }
+    expect($(`[data-read-failed="${T.sources}"]`)).toHaveLength(1);
+    // Every count and the window still stand: the registry names nothing they
+    // needed.
+    expect($('[data-window="claims"]')).toHaveLength(1);
+    for (const row of bucketRows(markup)) {
+      expect(row.claims, row.bucket).toBe(inBucket(row.bucket).length);
+    }
   });
 });

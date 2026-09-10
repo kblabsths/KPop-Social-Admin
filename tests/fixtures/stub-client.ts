@@ -50,13 +50,32 @@ export interface StubClient {
 }
 
 /**
- * A script: one response per OBJECT, or a queue of responses per object.
+ * How an object answers: one response for every read of it, a QUEUE consumed
+ * one per read, or a FUNCTION that reads the query and answers it.
+ *
+ * The third arm arrived with admin-window/BUG-0138, and the page that needed
+ * it says why: `/claims` issues up to twelve reads of ONE view in a single
+ * `Promise.all` — a window, six counts and five `limit 1` seeks — so a fixed
+ * response answers eleven questions with one answer, and a queue pins the test
+ * to the order the promises happen to be built in. An answerer is handed the
+ * call as it was recorded (its `.select()`, `.eq()`, `.order()`, `.limit()` …)
+ * and returns what a database would have returned for THAT query, so the test
+ * asserts on figures the page computed rather than on figures the script fed
+ * it. It is the same object the assertions read back from `calls`.
+ */
+export type ScriptedAnswer =
+  | ScriptedResponse
+  | ScriptedResponse[]
+  | ((call: RecordedCall) => ScriptedResponse);
+
+/**
+ * A script: one answer per OBJECT.
  *
  * The key is the name the query names — a table or view for `.from(name)`, a
  * function for `.rpc(name)`. One namespace, because PostgREST answers both
  * over the same connection and a test scripting a call scripts one answer.
  */
-export type Script = Record<string, ScriptedResponse | ScriptedResponse[]>;
+export type Script = Record<string, ScriptedAnswer>;
 
 function settled(response: ScriptedResponse) {
   return {
@@ -71,11 +90,17 @@ function settled(response: ScriptedResponse) {
 export function stubClient(script: Script): StubClient {
   const calls: RecordedCall[] = [];
   const queues: Record<string, ScriptedResponse[]> = {};
+  const answerers: Record<string, (call: RecordedCall) => ScriptedResponse> = {};
   for (const [table, scripted] of Object.entries(script)) {
-    queues[table] = Array.isArray(scripted) ? [...scripted] : [scripted];
+    if (typeof scripted === "function") answerers[table] = scripted;
+    else queues[table] = Array.isArray(scripted) ? [...scripted] : [scripted];
   }
 
-  function nextResponse(table: string): ScriptedResponse {
+  function nextResponse(table: string, call: RecordedCall): ScriptedResponse {
+    const answerer = answerers[table];
+    // An answerer reads the whole chain, so it is called once the query is
+    // built — which is here, at the await, with every step recorded.
+    if (answerer !== undefined) return answerer(call);
     const queue = queues[table];
     if (queue === undefined) {
       throw new Error(
@@ -94,7 +119,7 @@ export function stubClient(script: Script): StubClient {
   ): unknown {
     const call: RecordedCall = { table, steps: initial ? [initial] : [], kind };
     calls.push(call);
-    const resolve = () => Promise.resolve(settled(nextResponse(table)));
+    const resolve = () => Promise.resolve(settled(nextResponse(table, call)));
 
     const proxy: unknown = new Proxy(
       {},
