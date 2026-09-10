@@ -175,18 +175,27 @@ export function PageMore({
 }): ReactNode {
   const exhausted = state.status === "exhausted";
   const nextBound = pageBound(String(state.held), size);
+  const drawsControl = !exhausted && nextBound.kind === "ok";
   const label = askFor(size, holds);
 
   return (
     <div className="flex flex-col gap-2">
       {state.refusal === null ? null : (
-        <Refusal reason={state.refusal.reason} object={state.refusal.object} retryable={!exhausted} />
+        // The fix a refusal offers is only ever one the operator can take, so
+        // it is decided by whether a control is DRAWN and not by the status
+        // alone: "press it again" beside no control is an instruction to press
+        // nothing (LESSONS 1, CONTENT — the fix is never wishful).
+        <Refusal
+          reason={state.refusal.reason}
+          object={state.refusal.object}
+          retryable={drawsControl}
+        />
       )}
       {exhausted ? (
         <p data-paging="exhausted" className="type-body text-ink-secondary">
           All {holds} in this view are shown.
         </p>
-      ) : nextBound.kind !== "ok" ? (
+      ) : !drawsControl ? (
         <p data-paging="limit" className="type-body text-ink-secondary">
           This view shows no further rows.
         </p>
