@@ -526,6 +526,61 @@ describe("a source's links", () => {
   });
 
   /**
+   * A narrowing chip is a source LABELLED BY ITS ID — its whole href is
+   * `?source_id=<uuid>` — so what it is called is `sourceLabel`'s one rule
+   * (`src/lib/sources/names.ts`), the same rule the trend rows below it obey
+   * since admin-window/BUG-0158. `SourceChips` still spells the label as the
+   * registry's raw `source.source`, so a registry row that EXISTS with an
+   * ink-less name renders a chip with nothing to read and nothing visible to
+   * click — BUG-0154's harm on a CONTROL — on the same page and in the same
+   * render where the trend row for that very source now names it by its id.
+   *
+   * Both directions in one render (LESSONS 8): the blank-named chip must say
+   * the id, its named sibling must still say its registry name and never a
+   * uuid.
+   *
+   * **`it.fails` while the divergence stands — admin-window/BUG-0159.** The
+   * three cases were watched RED as a plain `it` on the tree that landed
+   * BUG-0158 (`expected '' to be '01920000-...0101'`); the fix flips them back
+   * to a plain `it`, and until then a passing chip turns this red and sends
+   * the reader to the ticket.
+   */
+  for (const blank of ["", "   ", "\u200b"]) {
+    it.fails(`names a chip whose registry row names ${JSON.stringify(blank)} by its id`, async () => {
+      const blanked = SOURCES.map((row) =>
+        row.source_id === SOURCE.ticketmaster ? { ...row, source: blank } : row,
+      );
+      const markup = await renderSources(
+        healthyScript({
+          [T.sources]: [
+            { data: blanked, count: blanked.length },
+            { data: blanked },
+          ],
+        }),
+      );
+      const chipFor = (id: string) =>
+        chips(markup).find((chip) => chip.href === `/sources?source_id=${id}`);
+
+      // The page's OTHER answer for this same source, in this same render: the
+      // trend row names it by its id. Non-vacuity, and the inconsistency.
+      expect(trendRow(markup, AWAITING_BY_SOURCE, SOURCE.ticketmaster)[0]).toBe(
+        SOURCE.ticketmaster,
+      );
+
+      const blankNamed = chipFor(SOURCE.ticketmaster);
+      expect(blankNamed, "the blank-named chip did not render").toBeDefined();
+      expect((blankNamed as { label: string }).label).toBe(SOURCE.ticketmaster);
+
+      // The sibling chip is unchanged: this is a per-ROW fallback.
+      const named = chipFor(SOURCE.bandsintown);
+      expect(named, "the named chip did not render").toBeDefined();
+      expect((named as { label: string }).label).toBe(
+        SOURCE_NAME[SOURCE.bandsintown],
+      );
+    });
+  }
+
+  /**
    * Bar 10: the registry's ten routes — each source's own narrowing, its
    * review items and its runs — were drawn in plain ink with no decoration
    * until admin-window/BUG-0108, so the "links" column read as two words and
