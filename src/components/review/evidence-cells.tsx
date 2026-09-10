@@ -332,20 +332,59 @@ export const heldColumn: EvidenceColumn = nullableColumn({
  *  - no canonical row yet: the SOURCE's reference for that record, verbatim in
  *    the table's mono `data` cell and NOT a link. This app links nothing whose
  *    address it does not hold, and a record with no row has no address;
- *  - neither: `null`, so `DataTable`'s own `orDash` draws the app's one dash.
- *    An absence is rendered, never blanked and never filled with a borrowed id.
+ *  - neither identity has any INK in it: the app's one dash, labelled
+ *    `no value`. `null` (no reference at all) returns `null` so `DataTable`'s
+ *    own `orDash` draws it; a reference that EXISTS but is unreadable keeps the
+ *    cell's hook and draws the same dash inside it, so the row stays
+ *    addressable by the reference it holds. An absence is rendered, never
+ *    blanked and never filled with a borrowed id.
+ *
+ * Which of the two identities the cell would SHOW is `recordIdentity` below,
+ * read once by the cell and by `absent` — the two cannot part again
+ * (admin-window/BUG-0157).
  */
+
+/**
+ * The identity this cell would put on screen: the canonical id when there is a
+ * row to link to, and otherwise the source's own reference for the record.
+ *
+ * One accessor, because `absent` and the cell must answer "is a dash on screen"
+ * about the SAME value (LESSONS 4/11). `recordColumn.absent` used to run
+ * `isAbsent` over it while the cell dashed only by returning `null`, and the two
+ * expressions coincided in one case only: an `external_ref` of a bare em dash
+ * rendered as the producer's own reference while the table printed
+ * `DASH_MEANS` about a dash nobody had drawn (admin-window/BUG-0157).
+ */
+function recordIdentity(row: EvidenceRow): string | null {
+  return row.entityId !== null && row.recordHref !== null ? row.entityId : row.externalRef;
+}
+
 export const recordColumn: EvidenceColumn = {
   key: "record",
   label: "record",
-  // The cell's third state — neither identity — is the one that dashes, in the
-  // same words its body reads them, so the dash-meaning line counts this
-  // column too (admin-window/BUG-0132).
-  absent: (row) =>
-    isAbsent(
-      row.entityId !== null && row.recordHref !== null ? row.entityId : row.externalRef,
-    ),
+  // The condition the cell branches on, in the one spelling it branches on it:
+  // an identity with no ink in it is no identity, so the cell draws the app's
+  // dash and the dash-meaning line counts this column (admin-window/BUG-0132,
+  // admin-window/BUG-0157). It is the LABEL question — `hasVisibleContent`,
+  // the app's ONE definition of blank (`lib/verdict/decision.ts`) — and never
+  // `isAbsent`, whose dash branch would call a producer's own `—` reference an
+  // absence and explain away a value the row does carry (admin-window/BUG-0156
+  // made the source column the same way).
+  absent: (row) => !hasVisibleContent(recordIdentity(row)),
   cell: (row) => {
+    const identity = recordIdentity(row);
+    if (!hasVisibleContent(identity)) {
+      // **No anchor and no bare id around nothing** (admin-window/BUG-0154):
+      // nothing here is readable, so the app draws its own dash. With no
+      // reference at all there is nothing to key the hook by, so the body is
+      // `null` and `DataTable`'s `orDash` draws it (the rendering
+      // admin-window/BUG-0122 pinned); an unreadable reference the row DOES
+      // hold keeps the hook and draws the same dash inside it, rather than the
+      // empty cell BUG-0152/BUG-0154 were filed to remove.
+      return identity === null ? null : (
+        <span data-record={identity}>{orDash(identity)}</span>
+      );
+    }
     if (row.entityId !== null && row.recordHref !== null) {
       return (
         <a href={row.recordHref} data-record={row.entityId} className={IN_PAGE_LINK}>
@@ -353,8 +392,7 @@ export const recordColumn: EvidenceColumn = {
         </a>
       );
     }
-    if (row.externalRef === null) return null;
-    return <span data-record={row.externalRef}>{row.externalRef}</span>;
+    return <span data-record={identity}>{identity}</span>;
   },
 };
 
