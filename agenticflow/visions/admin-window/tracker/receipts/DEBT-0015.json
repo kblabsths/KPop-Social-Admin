@@ -1,0 +1,34 @@
+{
+ "id": "DEBT-0015",
+ "created": "2026-09-10T17:37:13Z",
+ "green": true,
+ "git_head": "0ee743cd5c6a0cc81f82018ca540d4be1d9b830e",
+ "scope": [
+  "src/lib/db/claims.ts",
+  "src/lib/gauges/pending-claims.ts",
+  "src/lib/db/gauges.ts",
+  "src/app/claims/page.tsx",
+  "src/app/queues/[reviewItemId]/page.tsx",
+  "tests/offline/url/narrowing.test.ts",
+  "tests/offline/claims/read.test.ts",
+  "tests/offline/gauges/pending-claims.test.ts",
+  "tests/offline/review-item/page.test.ts",
+  "tests/offline/review-item/verdict-inline.test.ts",
+  "tests/offline/claims/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "89a59d86df4fc3d7024b02d31149e525d6748c438a0aa7d30a724f630fd636e0",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/url/narrowing.test.ts tests/offline/claims tests/offline/gauges tests/offline/review-item",
+   "exit": 0,
+   "output_tail": "line.test.ts (34 tests) 610ms\n \u2713 |offline| tests/offline/review-item/read.test.ts (18 tests) 84ms\n \u2713 |offline| tests/offline/gauges/standing-disagreements.test.ts (14 tests) 11ms\n \u2713 |offline| tests/offline/gauges/gauge.test.ts (42 tests) 78ms\n \u2713 |offline| tests/offline/claims/filters.test.ts (34 tests) 12ms\n \u2713 |offline| tests/offline/gauges/resolution-latency.test.ts (25 tests) 14ms\n \u2713 |offline| tests/offline/gauges/cycle-health.test.ts (20 tests) 12ms\n \u2713 |offline| tests/offline/gauges/settled-values.test.ts (15 tests) 43ms\n \u2713 |offline| tests/offline/review-item/page.test.ts (122 tests) 2675ms\n   \u2713 every evidence id resolves to a claim > renders every folded record of a large source-pattern item  315ms\n \u2713 |offline| tests/offline/claims/page.test.ts (148 tests) 8204ms\n   \u2713 a parameter the page did not apply > ignores a key with no visible content the way it ignores an empty value, and moves nothing else  332ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=(absent)  627ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=standing_disagreement  546ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=awaiting_row  600ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=agreeing  507ms\n\n Test Files  20 passed (20)\n      Tests  772 passed (772)\n   Start at  10:36:47\n   Duration  10.44s (transform 5.03s, setup 0ms, collect 15.62s, tests 13.39s, environment 3ms, prepare 4.05s)\n\n(node:86555) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit\"",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
