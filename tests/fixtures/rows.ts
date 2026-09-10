@@ -819,6 +819,7 @@ export function evidenceRow(overrides: Override<EvidenceRow> = {}): EvidenceRow 
     observationId: ID.observationA,
     value: "TWICE 5TH WORLD TOUR",
     source: "ticketmaster",
+    sourceId: ID.sourceTicketmaster,
     sourceHref: `/sources/${ID.sourceTicketmaster}`,
     tier: "official",
     observedAt: "2026-08-31T22:10:00Z",

@@ -280,6 +280,7 @@ function evidenceRow(
     observationId: observation.observation_id,
     value: claimValueText(observation.value),
     source: claim.source,
+    sourceId: observation.source_id,
     sourceHref: sourceHref(observation.source_id),
     tier: claim.tier,
     observedAt: observation.observed_at,

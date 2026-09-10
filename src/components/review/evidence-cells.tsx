@@ -1,6 +1,7 @@
 import type { Column } from "@/components/ui";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { EM_DASH, isAbsent, orDash, relativeAge } from "@/lib/format";
+import { hasVisibleContent } from "@/lib/verdict/decision";
 
 /**
  * The shared evidence anatomy, one column at a time (campaign
@@ -43,6 +44,15 @@ export interface EvidenceRow {
    * (admin-window/BUG-0154).
    */
   source: string;
+  /**
+   * `observations.source_id` — how the machine keys that source, and the hook
+   * this cell is addressed by. It travels beside the label so the cell can
+   * stay addressable by the source it holds even when the label it was handed
+   * is unreadable, which is the spelling `/claims`' own source cell already
+   * had (admin-window/BUG-0156). It is never rendered as the cell's words:
+   * what a source is CALLED is `sourceLabel`'s one rule.
+   */
+  sourceId: string;
   /** That source's own page. */
   sourceHref: string;
   /** `sources.tier` — the tier the source carries NOW. Null when unknown. */
@@ -88,27 +98,34 @@ export interface EvidenceRow {
 }
 
 /**
- * An evidence column, plus the row value it draws (campaign
- * admin-window/BUG-0132).
+ * An evidence column, plus the ONE condition under which its own cell draws
+ * the app's dash (campaign admin-window/BUG-0132, admin-window/BUG-0156).
  *
- * `value` is the SAME accessor the cell reads, exposed so the block around the
- * table can ask whether a dash reaches the screen without a second spelling of
- * which columns can be absent — two spellings is how a rule and its rendering
- * drift apart. A column with no `value` carries nothing nullable (`observed`,
+ * `absent` is the SAME condition the cell branches on, exposed so the block
+ * around the table can ask whether a dash reaches the screen without a second
+ * spelling of when one does — two spellings is how a rule and its rendering
+ * drift apart. A column with no `absent` carries nothing nullable (`observed`,
  * `status`, `fact`) and can never dash.
  *
- * **`source` was on that list and did not belong there** (admin-window/BUG-0154).
- * Its cell drew whatever label reached it inside an anchor, so a registry row
- * with a blank name rendered an EMPTY cell — a link with nothing to read and
- * nothing visible to click — while this sentence said the column could never
- * dash. The label rule (`sourceLabel`) now answers the id for a name with no
- * ink, so the cell's own guard fires only for a caller that hands it an
- * unreadable label anyway; it carries a `value` accessor so that if it ever
- * does, the dash it draws is counted by `drawsDash` and explained like every
- * other one.
+ * **It is a predicate and not the cell's VALUE run through `isAbsent`**
+ * (admin-window/BUG-0156). It used to be the value, which forced every column
+ * to answer "is a dash on screen" with the one predicate `isAbsent` — and that
+ * predicate answers a body's question, "would React draw nothing, or is this
+ * one of the app's own formatters' em dashes". The source column draws a
+ * LABEL, whose absence rule is the label rule's own — `hasVisibleContent`,
+ * the app's ONE definition of blank (`lib/verdict/decision.ts`), which is what
+ * `sourceLabel` asks of the registry: a source the registry NAMES `—` is a name and its
+ * cell draws a LINK, yet the value it returned was a bare em dash, so the page
+ * printed the dash-meaning line about a source it holds the name of. Each
+ * column now states its own condition, and each states exactly the one its
+ * cell uses.
+ *
+ * **`source` can dash at all, which BUG-0154 established**: its cell refuses
+ * to wrap an anchor around a label with no ink, and when it does the dash it
+ * draws is counted here and explained like every other one.
  */
 export type EvidenceColumn = Column<EvidenceRow> & {
-  value?: (row: EvidenceRow) => string | null;
+  absent?: (row: EvidenceRow) => boolean;
 };
 
 /**
@@ -151,7 +168,10 @@ function nullableColumn({
   return {
     key,
     label,
-    value,
+    // The cell draws `orDash(value(row))`, so it dashes exactly when `isAbsent`
+    // says that value is one — the same expression, read once
+    // (admin-window/BUG-0156).
+    absent: (row) => isAbsent(value(row)),
     cell: (row) => <span {...{ [hook]: hookValue(row) }}>{orDash(value(row))}</span>,
   };
 }
@@ -187,8 +207,8 @@ export function drawsDash(
   columns: readonly EvidenceColumn[],
 ): boolean {
   return columns.some((column) => {
-    const value = column.value;
-    return value !== undefined && rows.some((row) => isAbsent(value(row)));
+    const absent = column.absent;
+    return absent !== undefined && rows.some((row) => absent(row));
   });
 }
 
@@ -220,10 +240,12 @@ export const valueColumn: EvidenceColumn = nullableColumn({
 export const sourceColumn: EvidenceColumn = {
   key: "source",
   label: "source",
-  // A label with no ink is no label: the value the cell draws is `null` then,
-  // so the dash-meaning line counts this column too (admin-window/BUG-0154,
-  // the rule `nullableColumn` above already carries).
-  value: (row) => (isAbsent(row.source) ? null : row.source),
+  // A label with no ink is no label: the cell dashes then, and the dash-meaning
+  // line counts this column too (admin-window/BUG-0154). Which labels those are
+  // is the label rule's own question and never `isAbsent`'s — a source the
+  // registry NAMES `—` is a name, its cell draws the link, and the page does
+  // not explain a dash that is not on screen (admin-window/BUG-0156).
+  absent: (row) => !hasVisibleContent(row.source),
   cell: (row) =>
     // **No anchor around nothing.** The app links nothing whose words it does
     // not hold — the same ruling `recordColumn` below makes for a record with
@@ -232,8 +254,17 @@ export const sourceColumn: EvidenceColumn = {
     // cell by. It does NOT invent the id here: what a source is CALLED is
     // `sourceLabel`'s one rule (`lib/sources/names.ts`), and a second owner of
     // that fallback is the drift this ticket removed (LESSONS 5).
-    isAbsent(row.source) ? (
-      <span data-claim-source="">{orDash(row.source)}</span>
+    //
+    // "Unreadable" is the question `sourceLabel` itself asked —
+    // `hasVisibleContent`, the app's ONE definition of "is there anything here
+    // a person could read" (`lib/verdict/decision.ts`) — and never `isAbsent`,
+    // whose dash branch recognises the app's own formatter output. Asking
+    // `isAbsent` of a LABEL made a source the registry names `—` render as an
+    // absence with its link gone (admin-window/BUG-0156; LESSONS 4). The hook
+    // carries the id, so the row stays addressable by the source it holds even
+    // in this arm — the spelling `/claims`' own source cell already had.
+    !hasVisibleContent(row.source) ? (
+      <span data-claim-source={row.sourceId}>{orDash(row.source)}</span>
     ) : (
       <a href={row.sourceHref} data-claim-source={row.source} className={IN_PAGE_LINK}>
         {row.source}
@@ -307,10 +338,13 @@ export const heldColumn: EvidenceColumn = nullableColumn({
 export const recordColumn: EvidenceColumn = {
   key: "record",
   label: "record",
-  // The value the cell draws, in the same three states its body does — so the
-  // dash-meaning line counts this column too (admin-window/BUG-0132).
-  value: (row) =>
-    row.entityId !== null && row.recordHref !== null ? row.entityId : row.externalRef,
+  // The cell's third state — neither identity — is the one that dashes, in the
+  // same words its body reads them, so the dash-meaning line counts this
+  // column too (admin-window/BUG-0132).
+  absent: (row) =>
+    isAbsent(
+      row.entityId !== null && row.recordHref !== null ? row.entityId : row.externalRef,
+    ),
   cell: (row) => {
     if (row.entityId !== null && row.recordHref !== null) {
       return (

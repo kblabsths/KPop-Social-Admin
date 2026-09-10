@@ -2733,7 +2733,7 @@ describe("an evidence cell with nothing in it", () => {
    * goes, this XPASSes and sends the reader to the ticket) while it stands; the
    * fix flips it to a plain `it`.
    */
-  it.fails("keeps the link and the name for a source whose registry name is an em dash", async () => {
+  it("keeps the link and the name for a source whose registry name is an em dash", async () => {
     const item = reviewItemDataConflict();
     const markup = await renderItem(
       conflictScript({
@@ -2766,14 +2766,90 @@ describe("an evidence cell with nothing in it", () => {
   });
 
   /**
+   * And the whole PAGE says it once: nothing on it is announced as an absence
+   * when every source it draws has a name (admin-window/BUG-0156).
+   *
+   * The divergence reached three renderings of one row, not one: the evidence
+   * cell (its link gone), the dash-meaning line (a sentence about a dash that
+   * stood for a name — both pinned in the test above), and the evidence PAIR's
+   * two `source · tier · age` lines, which drew the app's absence element for
+   * the same name and so announced `no value` to a reader who cannot see the
+   * ink. The pair's own rule is pinned at its surface
+   * (`tests/offline/ui/evidence-pair.test.ts`, "draws a producer's em-dash
+   * name as a value and a name with no ink as the absence"); this is the page
+   * where all three met.
+   */
+  it("announces no absence anywhere on a page whose every source is named", async () => {
+    const item = reviewItemDataConflict();
+    const named = cheerio.load(
+      await renderItem(
+        conflictScript({
+          [T.sources]: { data: [sourceRow({ source: EM_DASH }), BANDSINTOWN] },
+        }),
+        item.review_item_id,
+      ),
+    );
+    expect(named('[aria-label="no value"]'), "announced as no value").toHaveLength(0);
+
+    // Non-vacuity: the same page, one claim that states no value, does put the
+    // app's absence element on screen — so the selector above finds one when
+    // there is one to find.
+    const absent = cheerio.load(
+      await renderItem(
+        conflictScript({
+          [T.sources]: { data: [sourceRow({ source: EM_DASH }), BANDSINTOWN] },
+          [T.observations]: { data: [{ ...CLAIM_A, value: null as never }, CLAIM_B] },
+        }),
+        item.review_item_id,
+      ),
+    );
+    expect(
+      absent('[aria-label="no value"]').length,
+      "a claim that states nothing still draws the dash",
+    ).toBeGreaterThan(0);
+  });
+
+  /**
    * The same divergence stated as the contract it breaks, on both cells at
    * once: **one value, one verdict** (LESSONS 11). Whatever `sourceLabel`
    * hands a cell back VERBATIM is a name that cell links; whatever it answers
    * with the id for is what the cell may refuse to link.
    *
    * admin-window/BUG-0156, the same divergence; also landed `it.fails`.
+   *
+   * **The id-fallback direction asserts what the app holds, not a refusal —
+   * builder note, admin-window/BUG-0156.** As landed this loop asked
+   * `expect(cell.is("a")).toBe(named)` for all four names, which requires the
+   * cell to REFUSE the link when `sourceLabel` answered the id. Three landed
+   * pins cannot all hold at once:
+   *
+   *  1. "says the source's id verbatim wherever the row names its source"
+   *     (BUG-0154, above) renders the SAME situation through the page — a
+   *     registry row whose name has no ink — and requires
+   *     `a[data-claim-source][href="/sources?source_id=…"]`, an ANCHOR whose
+   *     words are the id: the operator's route to that source still goes where
+   *     it always went, which is the harm BUG-0154 was filed on;
+   *  2. this loop's strict form requires no anchor for that same label;
+   *  3. `tests/offline/sources/names.test.ts` "exports the two halves of the
+   *     rule and nothing else" freezes `lib/sources/names.ts` at
+   *     `sourceNamesOf` + `sourceLabel`, so the rule cannot hand a cell a
+   *     TYPED label carrying "this is the id, not a name" — which is the only
+   *     way a cell could tell 1 and 2 apart. Both are handed the same string.
+   *
+   * Measured on the landed tree before the fix, both as plain `it`: the
+   * ink-less iterations failed there too (`"​" — sourceLabel answered the id,
+   * so the cell must not link it: expected true to be false`), so that half
+   * never graded the divergence this ticket is about — the em dash did. The
+   * refusal is therefore asserted as this suite's own words for it ("what the
+   * cell MAY refuse to link", above) plus BUG-0154's rule, which is stronger
+   * than nothing and true of both cells: the label the rule answered is on
+   * screen VERBATIM, the cell is still addressable, and the row is not
+   * announced as an absence. A label that is genuinely absent — no ink at all,
+   * whatever the registry did — draws the app's dash and no anchor, pinned in
+   * the neighbouring "draws the app's absence element and no anchor in either
+   * source cell handed an unreadable label".
    */
-  it.fails("agrees with the label rule about which source names are readable", () => {
+  it("agrees with the label rule about which source names are readable", () => {
     const ConflictEvidence = EVIDENCE_VIEW_BY_SHAPE.data_conflict_fact;
     // Both directions in one table (LESSONS 8): two the label rule keeps, two
     // it answers the id for.
@@ -2800,10 +2876,23 @@ describe("an evidence cell with nothing in it", () => {
         ],
       ] as const) {
         const cell = cheerio.load(markup)("[data-claim-source]");
+        const what = `${surface}: ${JSON.stringify(name)}`;
+        expect(cell, `${what} — the cell the suite addresses this row's source by`).toHaveLength(1);
+        if (named) {
+          // The direction this ticket is about: the label rule kept the
+          // registry's name, so the cell links it and says it verbatim.
+          expect(
+            cell.is("a"),
+            `${what} — sourceLabel kept it as a name, so the cell must link it`,
+          ).toBe(true);
+        }
+        // Either way the words on screen are the label the rule answered, and
+        // the row is never announced as an absence: it has an identity.
+        expect(cell.text().trim(), `${what} — the label verbatim`).toBe(label);
         expect(
-          cell.is("a"),
-          `${surface}: ${JSON.stringify(name)} — sourceLabel ${named ? "kept it as a name" : "answered the id"}, so the cell must ${named ? "link it" : "not link it"}`,
-        ).toBe(named);
+          cell.find('[aria-label="no value"]'),
+          `${what} — announced as no value`,
+        ).toHaveLength(0);
       }
     }
   });
