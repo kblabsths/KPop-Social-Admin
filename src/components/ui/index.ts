@@ -14,6 +14,13 @@ export { Loading } from "./loading";
 export { Eyebrow, type MicroLabel, microLabelText } from "./micro-label";
 export { NotProvisioned } from "./not-provisioned";
 export { Page } from "./page";
+// `PageMore` is a COMPONENT out of a "use client" module, and that is the only
+// thing this server barrel may re-export from one: a re-export hands the binding
+// to every server module importing the barrel, so `usePageRows` and `fetchJson`
+// — values, and 500s on the server — are imported straight from
+// `@/components/ui/paging` by the client modules that need them
+// (admin-window/BUG-0094, tests/offline/shell/client-boundary.test.ts).
+export { PageMore } from "./paging";
 export { Section } from "./section";
 export {
   ARRIVES_WITH,
