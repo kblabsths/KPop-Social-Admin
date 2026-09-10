@@ -157,11 +157,19 @@ src/
     sources/           LEAF: names.ts (a source's display name); routes.ts — the
                        `/sources`, `/queues?source_id=` and
                        `/cycles?source=` URLs, spelled once (BUG-0141)
-    url/               LEAF: dropped-params.ts — the ONE "parameters this page did
+    url/               LEAF: what a REQUEST VALUE means, for every route.
+                       dropped-params.ts — the ONE "parameters this page did
                        not apply" rule; `/claims` and `/queues` both render it
-                       from here, never from a copy (BUG-0141, common violation 9)
-                       IN FLIGHT under BUG-0141 — the only forward entry in this
-                       map; everything else here is what the tree holds
+                       from here, never from a copy (BUG-0141, common violation 9).
+                       narrowing.ts — the two-fact rule (DEBT-0008).
+                       spellable.ts — the ONE allowlist for a URL value inside
+                       a sentence this app wrote (BUG-0153).
+                       text.ts — the ONE derivation of a free-text facet value
+                       (`canonicalUrlText`) and the ONE ends-only ink-padding
+                       strip (`trimInkPadding`, which `canonicalRecordId` also
+                       calls). IN FLIGHT under BUG-0155 — the only forward
+                       entry in this map; everything else here is what the
+                       tree holds
     verdict/           LEAF: decision.ts — the decision envelope (§9.2), the app's
                        ONE definition of visible content, and `ADMIN_SOURCE`.
                        Imports nothing; `lib/format.ts`, `lib/claims/filters.ts`
@@ -693,6 +701,51 @@ in `src/components/ui/`. Tailwind 4 is CSS-first: there is no
   never widened for a rendering question**: it answers "did the operator type
   anything?" for the edit surface, where U+FE0F and U+2800 are CONTENT and a
   draft of them commits. Two questions, two answers, one owner each.
+
+- **What is SHOWN is what was USED: one derivation per URL value class**
+  (earned by seven bugs on one family — BUG-0137, 0143, 0145, 0146, 0147,
+  0153, 0155; common violations row 20). The allowlist above answers *may I
+  spell this*. It cannot answer *is this the value I used*, and a facet value
+  is used twice: it is SENT to PostgREST and it is SPELLED in the app's own
+  sentences. Six of those seven bugs each closed ONE property of the value —
+  no markup, no bidi, some ink, bounded length, a canonical spelling, padding
+  stripped by ink — and the property none of them stated is this one. Both
+  questions are answered where the value is DERIVED from the request, **once
+  per value class**, and the derived value is the only string that reaches the
+  query, the facet's own box, and every sentence that names it — or there is
+  no facet at all and the shared dropped-parameter line says so.
+  - **A uuid** → `canonicalRecordId` (`src/lib/records/id.ts`).
+  - **A free-text name** — `?source=` today, and the next facet of its kind →
+    `canonicalUrlText` (`src/lib/url/text.ts`). It strips the padding a paste
+    carries, by INK and at the ENDS only — the same one strip
+    `canonicalRecordId` uses (`trimInkPadding`, one declaration, called by
+    both: a rule in prose is retyped, LESSONS 5) — refuses what the allowlist
+    refuses, and refuses what a browser would RE-SPELL, which inside
+    printable ASCII is exactly a run of two or more spaces. What it returns is
+    the string that is both sent and spelled; what it refuses is spelled
+    nowhere and is reported as a parameter the page did not apply.
+  - **A value that reaches PROSE ONLY and asserts nothing about a queried set
+    is not in this rule.** `?cycle=`'s unmatched-paste arm spells a paste in
+    full through the allowlist and queries nothing, so "not among the 200
+    newest cycles" is true of every spelling of it; that arm is deliberate and
+    unchanged (BUG-0147).
+  - **A seam that re-asks the question asks the DERIVATION, not the
+    allowlist**: a component handed a facet value renders it only when the
+    value is already its own canonical form (`canonicalUrlText(v) === v`), so
+    a second caller cannot reintroduce the defect by handing it a raw
+    parameter. That is the same reason the allowlist is re-asked at the seam
+    today, one question later.
+
+  Why the interior case is REFUSED and not boxed in `white-space: pre`. The
+  box would put a non-wrapping foreign run inside six authored sentences of
+  one page (the runs window line's four clauses, the facet paragraph, the
+  empty card) to preserve a spelling no registered source uses, while the
+  family's answer for "cannot be spelled faithfully" — counted, not spelled,
+  on the dropped line — already exists and renders nothing new. Measured
+  before ruling: QA's own strict pin collapses the rendered text the way a
+  browser does *before* comparing it to the queried value
+  (`tests/offline/cycles/page.test.ts`, the BUG-0155 pin), so the `pre` box
+  cannot pass it and refusal is the only arm that can.
 
 ## 8. The gauges
 
@@ -1454,6 +1507,7 @@ decomposition brief of every ticket touching that surface.
 | 18 | **One exported identifier, two meanings — the narrowing vocabulary with no owner** | 3 | `narrowedTo` is exported twice with unrelated types: `src/components/ui/window-line.tsx:279` joins narrowing PHRASES into a scope sentence (and is re-exported from the `@/components/ui` barrel), `src/lib/db/runs.ts:198` canonicalises the `?source=` FACET for a query. Adjacent pages import different ones — `src/app/cycles/page.tsx:38` the db one, `src/app/claims/page.tsx:28` the ui one. `isNarrowed` is exported twice with two different definitions (`src/lib/claims/filters.ts:132`, `src/lib/review/queue-filters.ts:302`), and the second means two things by arity: with `within` it is "narrowed relative to this block's own scope" (BUG-0129/0131's question), with its default `within = {}` it collapses to the claims meaning — **and no production call site uses the default**; its only one-argument callers are `tests/offline/queues/filters.test.ts:85,102,143`, grading a meaning the app never asks | **PROMOTED at 3, 2026-09-09** (architect, M2 structure walk) — §11's "contract vocabulary is the app's vocabulary, in code as in copy" gets teeth: **no identifier is exported twice from `src/` with two meanings, and a predicate has one signature per question.** The narrowing vocabulary is the most-touched idea of M2 (nine bugs: 0109/0114/0118/0123/0124/0128/0129/0131/0133) and it is where a reader most needs one word to mean one thing. A default parameter kept alive by its tests is the mechanism row 15's ruling named — a shared predicate widened by whichever question broke last — one step earlier. DEBT-0010 carries it as a rename with a byte-for-byte criterion; no behaviour changes |
 | 19 | **A read answering questions the URL did not ask** | 3 | BUG-0138 (`/claims` reads the whole claim population every request: ~14 sequential round trips, 2.9-3.8s warm); BUG-0139 (`/sources` reads runs once per registered source then waits for both gauges: ~9 round trips, 2.0-2.3s warm); `readPopulation` in `src/lib/db/review-items.ts:203-231` maps over all three `SHAPES` unconditionally, so `/queues?kind=signal` issues two counts for shapes it will not render (found at the M2 structure walk; bounded `head: true` counts in parallel, so 2 extra round trips, no wrong number — DEBT-0012, P3) | **Count 3, note only — NOT promoted, deliberately.** The rule this would become ("read what the URL asked for") is one Ben has open decisions in front of: paging past the window on Claims and Browse through on-demand client fetching against a route handler, search, retention on `runs`, the `runs` row-cap horizon on `/sources`, and BUG-0138's own A/B (`observations.observed_at` through the `pending_claims` view). Writing a read-shape rule into the contract before those land would pin a shape the answers may not want; §4.3's complete-or-refuse contract is what governs until then. Recorded here so the count is not lost and so the next architect promotes it *after* the rulings, not before |
 
+| 20 | **A URL facet value whose rendered spelling is not the value the read used — one property of "a URL value inside a sentence this app wrote", per bug, seven bugs deep** | 7 | One family, one property each: BUG-0137 (no bidi in a key), BUG-0143 (a uuid in any spelling Postgres matches → `canonicalRecordId`), BUG-0145 (the padding a paste brought, by whitespace), BUG-0146 (the same padding by INK), BUG-0147 (`?cycle=` spelled through the allowlist), BUG-0153 (`?source=` the same), BUG-0155 (`?source=%20ticketmaster` narrows by `" ticketmaster"` and says, in the app's own words, "found no runs from ticketmaster at all" — over a source the same page draws five runs for one invisible character away, with nothing on the dropped-parameter line). Six of the seven are one value class getting one property; the seventh is the property no predicate can answer | **PROMOTED at 7, 2026-09-09** (architect, BUG-0155 ruling) — §7 gains "What is SHOWN is what was USED: one derivation per URL value class". Row 15 is the same family's OTHER half and stays as recorded: 15 is *may I spell it* (answered by an allowlist, once), 20 is *is this what I used* (answered by a derivation, once per value class). The class survived six fixes because the two questions were answered in different places and only one of them had a single home: `canonicalRecordId` was the uuid class's derivation from BUG-0143 on, and the free-text class never got one — its "derivation" was `sourceNarrowing`, four lines in `src/lib/db/runs.ts` that returned the value VERBATIM with a comment explaining why trimming would be wrong. BUG-0155 lands `canonicalUrlText` (`src/lib/url/text.ts`) as that home and retires `sourceNarrowing`, which also closes row 17's second instance (a pure function parked in `lib/db/**`) and the last half of row 18. Cited in the decomposition brief of every ticket that derives a value from a URL |
 | 3 (re-count) | A list read with no `.range()`, no `.limit()` and no `.order()` | **0 new** | — | **The rule held.** M1 structure walk, 2026-09-03: every `.select(` in `src/lib/db/**` was traced. Fourteen chains a crude scan flagged are all either `.maybeSingle()` by primary key or by-id chunks bounded with `.limit(ids.length)`; every list read goes through `readComplete` / `readRows` with a total order and a bound. Count stays 1 (the original, fixed under TASK-0026). |
 
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
@@ -1463,6 +1517,42 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-09, BUG-0155 ruling (architect).** **§7 gains a rule** — "What is
+  SHOWN is what was USED: one derivation per URL value class" — and **Common
+  violations gains row 20**, promoted at seven bugs (BUG-0137, 0143, 0145,
+  0146, 0147, 0153, 0155). Why now: six fixes on this family each closed one
+  property of a URL value inside an app-authored sentence, and the seventh
+  defect is the property a *spelling* predicate cannot answer at all. The
+  uuid class has had a single derivation since BUG-0143 (`canonicalRecordId`,
+  which is why a padded `?cycle=` changes no page); the free-text class never
+  had one, so `?source=%20ticketmaster` reached `.eq("source", " ticketmaster")`
+  while every sentence naming it rendered `ticketmaster`. The rule names the
+  home — `canonicalUrlText` in `src/lib/url/text.ts`, beside the allowlist it
+  calls — and the invariant: the derived value is the only string that reaches
+  the query, the facet box and the prose, or the facet is not applied and the
+  shared dropped-parameter line says so. **Two decisions inside it, both
+  made rather than left to the builder.** (1) The interior case
+  (`?source=tic%20%20ketmaster`) is REFUSED, not boxed in `white-space: pre`:
+  measured, QA's own pin collapses the rendered text before comparing it, so
+  the box arm cannot pass, and the box would put a non-wrapping foreign run
+  inside six authored sentences to preserve a spelling no registered source
+  uses. (2) The ends-only ink-padding strip gets ONE declaration
+  (`trimInkPadding`), called by `canonicalRecordId` and `canonicalUrlText`
+  both — without that, the second derivation is a hand-copy of the first, which
+  is row 9's class and how this family grew. `sourceNarrowing` is retired in
+  the same move: it is row 17's named second instance (a pure function parked
+  in `lib/db/**`) and the last half of row 18, and once its body is one call to
+  the derivation it is a second name for one question. **§3's module map** now
+  records what `lib/url/` holds (`narrowing.ts`, `spellable.ts`, and `text.ts`
+  as the map's one forward entry) instead of `dropped-params.ts` alone. No
+  other section changed; §4's leaf list already carries `lib/url/**`.
+  BUG-0155 criteria amended and its milestone set to `patch` (P3, the same
+  price and family as BUG-0152 and BUG-0154, both already `patch`; M2's tag is
+  the verdict slice, and the bidi harm on this sentence is closed).
+  DEBT-0014 set to `patch` and BUG-0155 chained behind it — both write the
+  OWNER map in `tests/offline/url/narrowing.test.ts`, and consolidation-shaped
+  work is serial at its destination.
 
 - **2026-09-09, M2 structure walk (architect).** The `src/` tree walked
   against §3 and §4 on run/admin-window. **Amendments, each with its why:**
