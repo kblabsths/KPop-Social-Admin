@@ -217,3 +217,4 @@
 2026-09-10T22:08:36Z	artifact_gate	blocked write outside repo: /api/auth/callback/google`
 2026-09-10T23:06:29Z	artifact_gate	blocked write outside repo: /tmp/x
 2026-09-10T23:19:10Z	artifact_gate	blocked write outside repo: /tmp/lintout
+2026-09-10T23:21:42Z	supply_gate	blocked npx of tsx
