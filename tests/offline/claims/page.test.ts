@@ -39,6 +39,7 @@ import { oneEach, surfaceHooks } from "../../live/parity";
 import {
   observationRow,
   pendingClaimRow,
+  type PendingClaimBucket,
   type PendingClaimRow,
 } from "../../fixtures/rows";
 import {
@@ -2408,6 +2409,159 @@ describe("the way out of a narrowing", () => {
     // so it offers to undo nothing.
     expect(card(markup)).toBe(card(bare));
     expect(card(markup)).not.toContain(theExit(markup, "?tab=standing&domain=events").label);
+  });
+});
+
+/* ── what a filled window promises (admin-window/BUG-0162) ───────────────── */
+
+/**
+ * **A filled window names no remedy this page cannot perform** —
+ * admin-window/BUG-0162.
+ *
+ * Measured on staging (designer, 2026-09-10): the line ended every filled
+ * window by telling the operator to narrow with the filters above to get at
+ * the rest, and no state of the two chip rows gets there. The list is a hard
+ * `CLAIM_WINDOW` window since admin-window/BUG-0138, so narrowing reveals a
+ * row past the last one only where it takes the matching count BELOW the cap —
+ * and the narrowest state on offer still held 108 claims against the same 50
+ * rows (877 unnarrowed, 769 / 108 by bucket, unchanged by the one source that
+ * holds any claim).
+ *
+ * The premise is graded here rather than asserted: the first case walks EVERY
+ * chip state the page draws, over a population every one of them leaves above
+ * the cap, and reads the window's own truncation hook in each — so this is a
+ * fixture in which "narrow to reach the rest" is false at every combination,
+ * and the second case reads what the line says in exactly those states.
+ *
+ * The states are reached by FOLLOWING the chips' own hrefs, not by spelling
+ * facets here, so a page that adds a third chip row is walked by this test
+ * without it being edited.
+ */
+describe("what a filled window promises", () => {
+  const line = (markup: string): string =>
+    cheerio.load(markup)('[data-window="claims"]').text().replace(/\s+/g, " ").trim();
+
+  /** Did the window say it filled its cap? Structurally, from its own hook. */
+  const filledItsCap = (markup: string): boolean =>
+    cheerio.load(markup)('[data-window="claims"]').attr("data-window-truncated") ===
+    "true";
+
+  /** The search params of an href the page wrote, as a page takes them. */
+  const paramsOf = (href: string): Record<string, string> =>
+    Object.fromEntries(new URL(href, "http://admin.invalid").searchParams);
+
+  /**
+   * A population that leaves EVERY chip combination above the cap: every
+   * rendered bucket, under every registered source, holds more claims than one
+   * window can draw. That is the staging shape — no facet the page offers
+   * takes the count under 50 — and it is what makes the promise false rather
+   * than merely unhelpful.
+   */
+  function overflowingEverywhere(): Script {
+    const claims: PendingClaimRow[] = [];
+    const observations: ReturnType<typeof observationRow>[] = [];
+    let index = 0;
+    for (const bucket of RENDERED_BUCKETS) {
+      for (const source of REGISTRY) {
+        for (let n = 0; n < CLAIM_WINDOW + 3; n += 1) {
+          const observedAt = new Date(
+            Date.UTC(2026, 0, 1) + index * 60_000,
+          ).toISOString();
+          const claim = pendingClaimRow(bucket as PendingClaimBucket, {
+            observation_id: `01920000-0000-7000-8000-${(700000 + index)
+              .toString()
+              .padStart(12, "0")}`,
+            // Two domains, so `?domain=` is a narrowing that really removes
+            // rows here — the state the shared clause could not be said in.
+            domain: index % 4 === 0 ? "groups" : "events",
+            field: "name",
+            source_id: source.source_id,
+            observed_at: observedAt,
+          });
+          claims.push(claim);
+          observations.push(
+            observationRow({
+              observation_id: claim.observation_id,
+              entity_id: claim.entity_id,
+              domain: claim.domain,
+              field: claim.field,
+              source_id: claim.source_id,
+              observed_at: observedAt,
+              status: "pending",
+            }),
+          );
+          index += 1;
+        }
+      }
+    }
+    return {
+      [T.pendingClaims]: claimView(claims),
+      [T.observations]: { data: observations },
+      [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
+    };
+  }
+
+  /** Every combination of the two chip rows, taken from the chips themselves. */
+  async function everyChipState(): Promise<
+    Array<{ params: Record<string, string>; markup: string }>
+  > {
+    const script = overflowingEverywhere();
+    const unnarrowed = await renderClaims(script);
+    const buckets = chipsOf(unnarrowed, "bucket");
+    const sources = chipsOf(unnarrowed, "source_id");
+    expect(buckets.length).toBeGreaterThan(1);
+    expect(sources.length).toBeGreaterThan(1);
+    const states: Array<{ params: Record<string, string>; markup: string }> = [];
+    for (const bucket of buckets) {
+      for (const source of sources) {
+        const params = { ...paramsOf(bucket.href), ...paramsOf(source.href) };
+        states.push({ params, markup: await renderClaims(script, params) });
+      }
+    }
+    return states;
+  }
+
+  it("cannot reach past the cap from any state its own chips offer", async () => {
+    for (const { params, markup } of await everyChipState()) {
+      const where = new URLSearchParams(params).toString() || "no facet";
+      // The narrowing really applied — the page dropped nothing and drew the
+      // window it was asked for — and it still filled its cap, so there are
+      // claims this state holds and does not show.
+      expect(droppedLine(markup).lines, where).toBe(0);
+      expect(claimIds(markup).length, where).toBe(CLAIM_WINDOW);
+      expect(filledItsCap(markup), where).toBe(true);
+    }
+  });
+
+  it("says what it is not showing and offers no way to it", async () => {
+    for (const { params, markup } of await everyChipState()) {
+      const where = new URLSearchParams(params).toString() || "no facet";
+      const said = line(markup);
+      // Non-vacuous: this is the truncated clause, over the count the page
+      // read and the cap it drew.
+      expect(said, where).toContain(count(CLAIM_WINDOW));
+      // No instruction, at a control or at anything else. The clause the
+      // ticket removed had two wordings — the shared one aimed at the filters,
+      // and the page's own for the state with no chip set — and the property
+      // is that neither kind of promise comes back in any state above.
+      for (const remedy of ["narrow", "Narrow", "reach", "widen", "Widen"]) {
+        expect(said, `${where} / ${remedy}`).not.toContain(remedy);
+      }
+      // What it says instead: which rows are missing from the page.
+      expect(said, where).toMatch(/not shown\.$/);
+    }
+  });
+
+  it("says the same of a state no chip can undo", async () => {
+    // The control-less facet, which admin-window/BUG-0160 gave its own wording
+    // of the same promise: it is not a special case any more, because the
+    // sentence no longer names a control in either arm.
+    const script = overflowingEverywhere();
+    const domained = await renderClaims(script, { domain: "events" });
+    expect(filledItsCap(domained)).toBe(true);
+    for (const remedy of ["narrow", "Narrow", "reach", "widen", "Widen"]) {
+      expect(line(domained), remedy).not.toContain(remedy);
+    }
   });
 });
 

@@ -1036,7 +1036,12 @@ describe("WindowLine", () => {
     // never twice, when the window carries it too (admin-window/BUG-0118).
     const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
     const bare = textOf(drawn(matched, { ...DRAWN, truncated: true }));
-    expect(bare).toContain("filters");
+    // An UNNARROWED window mentions no filter at all — not beside the count
+    // (admin-window/BUG-0123), and not at the end of the sentence either,
+    // where this arm used to send the operator to "the filters above" for the
+    // rows it held back (admin-window/BUG-0162). The next lines are the other
+    // direction: a window the filters really narrowed says so, once.
+    expect(bare).not.toContain("filters");
     for (const scope of [
       NARROWED_BY_FILTERS,
       narrowedTo([NARROWED, NARROWED_BY_FILTERS]),
@@ -1105,6 +1110,50 @@ describe("WindowLine", () => {
     expect(tail(unnarrowed).length).toBeGreaterThan(20);
     expect(tail(unnarrowed)).toBe(tail(filled(NARROWED_BY_FILTERS)));
     expect(tail(tabbed)).toBe(tail(filled(NARROWED_BY_FILTERS)));
+  });
+
+  it("ends a filled matched window on what is missing, not on a way to it (admin-window/BUG-0162)", () => {
+    // `/claims` draws a hard `limit` window over a complete matching set, so
+    // the rows past the cap are reachable only by a narrowing that takes the
+    // whole count under it — which no state of that page can do (measured on
+    // staging 2026-09-10: the narrowest state its chips reach still held 108
+    // claims against 50 rows). This arm nonetheless ended every filled window
+    // by naming a remedy, in both of its branches. It now states the read and
+    // stops: the count, the cap, and the fact that the rest is not below.
+    const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
+    const filled = (scope: string | null) =>
+      textOf(drawn(matched, { ...DRAWN, truncated: true, scope }));
+
+    for (const scope of [
+      null,
+      NARROWED,
+      NARROWED_BY_FILTERS,
+      narrowedTo([NARROWED, NARROWED_BY_FILTERS]),
+    ]) {
+      const text = filled(scope);
+      // Non-vacuous: this is the truncated clause, and it still carries the
+      // two figures the window is made of.
+      expect(text, String(scope)).toContain(count(DRAWN.held));
+      expect(text, String(scope)).toContain(`at most ${count(DRAWN.limit)}`);
+      // No instruction to the operator, in any narrowing: the arm cannot see
+      // what controls its caller draws, so it directs them at none.
+      for (const remedy of ["narrow", "Narrow", "reach", "widen", "Widen"]) {
+        expect(text, `${String(scope)} / ${remedy}`).not.toContain(remedy);
+      }
+      // What it says instead — and the whole sentence ends there.
+      expect(text.trimEnd(), String(scope)).toMatch(/not shown\.$/);
+    }
+
+    // The clause is the arm's own, not the window's: it does not move with the
+    // narrowing, which is what lets a page's two states be compared byte for
+    // byte above.
+    const tail = (text: string) => text.slice(text.lastIndexOf("—"));
+    expect(tail(filled(null))).toBe(tail(filled(NARROWED_BY_FILTERS)));
+
+    // And a window that did NOT fill says nothing of the kind: there is no
+    // rest to be missing, so the arm's other branch is untouched by all this.
+    const open = textOf(drawn(matched, { ...DRAWN, held: 5, truncated: false }));
+    expect(open).not.toContain("not shown");
   });
 
   it("renders an unnarrowed window exactly as it did before facets existed", () => {
