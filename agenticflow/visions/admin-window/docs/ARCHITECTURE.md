@@ -497,7 +497,7 @@ of what to read and the traps in it. Columns verified against migrations
 | Dashboard, Queues, item detail | `review_items` | `review_item_id, queue, source_id, domain, entity_id, field, severity(low\|high), status(open\|settled), summary, evidence uuid[], folded_count, opened_at, last_evidence_at` |
 | item detail evidence | `observations` | `observation_id, entity_id, field, domain, value jsonb, schema_version, source_id, external_ref, payload_ref, observed_at, last_confirmed_at, status, rejected_at, rejected_by` — **no `entity_type`** (see trap 1) |
 | item detail canonical side, Browse | `field_provenance` | `provenance_id, entity_type, entity_id, field, source_id, observation_id, tier_at_apply, applied_at, admin_locked` |
-| Claims | **view** `pending_claims` | `observation_id, domain, entity_id, field, source_id, bucket, unmet_requirement` |
+| Claims | **view** `pending_claims` | `observation_id, domain, entity_id, field, source_id, bucket, unmet_requirement` + `observed_at` — **pending Ben's install on staging** (BUG-0138 Answer A, ruled 2026-09-10; handoff `agenticflow/tracker/for-human/M2-handoff-pending-claims-observed-at.md`). Until it is installed the column is not there and a read naming it fails `42703` |
 | Sources | `sources` | `source_id, source, kind, lifecycle, tier, checkpoint, note, created_at, updated_at` |
 | Cycles | `resolution_runs` | `run_id, started_at, ended_at, outcome, facts_examined, applied, held, escalated, entities_created, claims_linked, claims_rerejected, errors, error_summary` |
 | Runs | `runs` | `run_id, source(text), started_at, ended_at, outcome, failure_class, checkpoint_before/after, error_summary, + 12 counts` |
@@ -531,8 +531,29 @@ down:**
    `pending_claims` filtered to `bucket = 'standing_disagreement'`
    (resolver §7: "the standing-disagreements view is this view filtered to
    contradictions"). Do not go looking for a missing object.
-3. **`pending_claims` carries no age and no value.** Age comes from joining
-   `observations.observed_at` by `observation_id` (§4.2's two-step).
+3. **`pending_claims` carries no value, and carries age only once the 2026-09-10
+   handoff is installed.** It never carries the claim's `value` — that is
+   `observations.value`, and §6 trap 8 governs it.
+
+   **Age**: until Ben applies
+   `agenticflow/tracker/for-human/M2-handoff-pending-claims-observed-at.md` to
+   staging, the view has no age column and age comes from joining
+   `observations.observed_at` by `observation_id` (§4.2's two-step) — the
+   nine-chunk second leg BUG-0138 exists to delete. **After it is applied**, the
+   view carries `observed_at` itself (`timestamp with time zone`, appended last,
+   `NOT NULL` upstream), the two-step is gone from `/claims`, and the claim list
+   is ordered in the DATABASE (`observed_at asc, observation_id asc, limit 50`).
+   Do not add a second age derivation: one column, one order, one place.
+
+   Two things that stay true either way, both measured read-only against staging
+   2026-09-09 and neither fixed by the column: PostgREST exposes **no
+   relationship** between this view and `observations` (`PGRST200` on all three
+   embed shapes — no `observations!inner(...)`, in either direction), and it
+   **refuses aggregates** on this deployment (`PGRST123` on `select=bucket,count()`).
+   So there is no grouped read and no distinct-count here, ever: bucket figures
+   are one `readCount` head request per bucket, and a figure that would need an
+   aggregate is dropped rather than computed over a truncated population
+   (DECISIONS.md, 2026-09-10).
 4. **`in_window` is a real bucket string in the view and must never reach the
    UI** — not as a row, not as a filter option, not as a zero (spec §4, M1
    EC5). Filter it out at the data layer, in `lib/db/claims.ts`, once.
