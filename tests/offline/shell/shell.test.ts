@@ -42,6 +42,12 @@ const RETIRED_PATHS = [
   "/database",
   "/data-management",
   "/data-management/completeness",
+  // The legacy pipeline's two dashboards, retired 2026-08-26 with it
+  // (`AGENTS.md`). They predate this rebuild and were never in the sidebar,
+  // but a stale bookmark and — until admin-window/TASK-0061 — the README
+  // still pointed at them, so they belong in the same 404 set as the rest.
+  "/scrapers",
+  "/review",
   "/no-such-surface-here",
 ];
 
@@ -65,6 +71,131 @@ describe("the sidebar's routes", () => {
       const file = path.join(repoRoot, "src", "app", segment, "page.tsx");
       expect(fs.existsSync(file), `${href} has no page.tsx`).toBe(true);
     }
+  });
+});
+
+/**
+ * The README, the repo's front door (campaign admin-window/TASK-0061).
+ *
+ * It is navigation too — the first thing a new reader follows — so it is held
+ * to the same honesty the not-found surface is: it may not send anyone at a
+ * page that 404s, or at a file or a script that is not here. The assertions
+ * below are structural on purpose. None of them pins a sentence, a heading or
+ * a word of the prose; what they pin is that every ADDRESS the prose offers
+ * resolves, which is the property the doc drift broke.
+ */
+describe("the README's front door", () => {
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+
+  /**
+   * The backticked tokens that look like a path: no spaces, and carrying a
+   * `/` or a `.`. Commands (`npm …`, `npx …`) are words, not paths, and are
+   * covered by their own assertion below; a bare identifier like a table or
+   * an environment-variable name has neither separator and never lands here.
+   */
+  const backticked = [...readme.matchAll(/`([^`]+)`/g)].map(([, token]) => token);
+  const pathLike = [
+    ...new Set(
+      backticked.filter(
+        (token) => /^[\w.@/-]+$/.test(token) && /[./]/.test(token) && !/^np[mx]$/.test(token),
+      ),
+    ),
+  ];
+
+  /**
+   * Files the repo deliberately does not track. `.env` holds the values whose
+   * NAMES live in `.env.example` (which is tracked, and is asserted below like
+   * every other path) — naming it is the point of the environment section, and
+   * it exists on a developer's machine, never in a checkout.
+   */
+  const UNTRACKED_BY_DESIGN = new Set([".env"]);
+
+  it("names every one of the six pages", () => {
+    for (const href of NAV_ITEMS.map((item) => item.href)) {
+      if (href === "/") continue; // the root is not a searchable token
+      expect(readme.includes(`\`${href}\``), `README does not name ${href}`).toBe(true);
+    }
+  });
+
+  /** Which retired surfaces a piece of prose sends a reader at, if any. */
+  const retiredNamedBy = (text: string): string[] =>
+    RETIRED_PATHS.filter((retired) => text.includes(retired));
+
+  it("sends nobody at a surface that 404s", () => {
+    expect(retiredNamedBy(readme)).toEqual([]);
+    // …and the check has teeth: the same predicate flags prose that does send
+    // a reader at one, which is the drift this ticket found in the README.
+    expect(retiredNamedBy("run the scraper dashboard at /scrapers")).toEqual(["/scrapers"]);
+  });
+
+  it("names no run instruction that has moved on", () => {
+    // The two the retired dashboard's README carried: an env file this app has
+    // never read, and a hard-coded port. Where the app actually listens, and
+    // under which names, is STACK.md §5's to say — and the README points there
+    // rather than keeping a second copy that can drift from it.
+    expect(readme).not.toContain(".env.local");
+    expect(readme).not.toContain(":3000");
+    expect(readme).toContain("agenticflow/docs/STACK.md");
+  });
+
+  it("names only paths that are in the repo", () => {
+    // Relative paths only: a leading `/` is an app route, checked against
+    // `src/app` by the assertion below rather than against the repo root.
+    const files = pathLike.filter((token) => !token.startsWith("/"));
+    expect(files.length).toBeGreaterThan(10);
+    const missing = files.filter(
+      (token) =>
+        !UNTRACKED_BY_DESIGN.has(token) && !fs.existsSync(path.join(repoRoot, token)),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it("names only app routes that have a page on disk", () => {
+    // A route is `/…` rather than a relative path, so it is checked against
+    // `src/app` and not the repo root. `/records/` is a parameterised segment:
+    // the directory is what exists, the page lives under its two params.
+    const routes = pathLike.filter((token) => token.startsWith("/"));
+    expect(routes.length).toBeGreaterThan(0);
+    const missing = routes.filter(
+      (route) => !fs.existsSync(path.join(repoRoot, "src", "app", route.replace(/\/$/, ""))),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it("names only scripts that package.json defines", () => {
+    const scripts = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"),
+    ).scripts as Record<string, string>;
+    const named = [...new Set(backticked.filter((token) => token.startsWith("npm run ")))];
+    expect(named.length).toBeGreaterThan(3);
+    for (const command of named) {
+      const script = command.slice("npm run ".length).split(" ")[0];
+      expect(Object.keys(scripts), `${command} is not a script`).toContain(script);
+    }
+    // `npm test` is the one script npm runs without `run`.
+    if (readme.includes("`npm test`")) expect(Object.keys(scripts)).toContain("test");
+  });
+
+  it("carries a name from .env.example for every variable it documents, and no value", () => {
+    const declared = new Set(
+      [...fs.readFileSync(path.join(repoRoot, ".env.example"), "utf8").matchAll(
+        /^([A-Z][A-Z0-9_]*)=/gm,
+      )].map(([, name]) => name),
+    );
+    const documented = [
+      ...new Set(backticked.filter((token) => /^[A-Z][A-Z0-9_]{3,}$/.test(token))),
+    ].filter((token) => declared.has(token) || token.startsWith("SUPABASE") || token.startsWith("AUTH"));
+    expect(documented.length).toBeGreaterThan(5);
+    const assigned = (text: string, name: string): boolean =>
+      new RegExp(`${name}\\s*=\\s*\\S`).test(text);
+    for (const name of documented) {
+      expect([...declared], `${name} is not declared in .env.example`).toContain(name);
+      // A name is documented; a value is never printed beside it.
+      expect(assigned(readme, name), `README assigns a value to ${name}`).toBe(false);
+    }
+    // Teeth: the same predicate flags an assignment, so the zero above is a
+    // read that could have found one.
+    expect(assigned('AUTH_URL="http://example.invalid"', "AUTH_URL")).toBe(true);
   });
 });
 
