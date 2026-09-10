@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-10T22:39:16Z — do not edit)
+# Tracker index (regenerated 2026-09-10T22:46:52Z — do not edit)
 
 ## open
 - FEAT-0014 [P1][feat][M3] F16 — the second leg of a two-step join runs its chunks concurrently  (scope:src/lib/db/result.ts,src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/db/verdict.ts,tests/offline/db/result.test.ts,tests/live/claims.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts)
@@ -19,7 +19,7 @@
 - DEBT-0016 [P3][debt][patch] newestFirst is exported twice over different key columns  (deps:TASK-0063(unmet:1) scope:src/lib/db/verdict.ts,src/lib/db/cycles.ts,tests/offline/db/layering.test.ts from:DEBT-0015)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - TASK-0063 [P1][task][M3] The paging leaf: the bound value class, the page answer, and the pure one-press driver  (deps:TASK-0062 scope:src/lib/paging/bounds.ts,src/lib/paging/machine.ts,src/lib/db/paging.ts,tests/offline/paging,tests/offline/db/layering.test.ts @builder-246)
 
-Totals — claimed:1, done:3, open:17. Archived: 252.
+Totals — built:1, done:3, open:17. Archived: 252.
