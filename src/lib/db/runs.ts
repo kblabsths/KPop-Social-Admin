@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { newestFirst } from "./cycles";
+import { NEWEST_RUN_FIRST } from "./cycles";
+import { newestFirst } from "../order/newest-first";
 import type { DashboardRunRow } from "./dashboard";
 import { ROW_CAP, readRows, type DbResponse, type DbResult } from "./result";
 import { objectKindOf, T, type ObjectKind } from "./tables";
@@ -225,7 +226,8 @@ function windowSize(limit: number): number {
  * The order is total — `started_at` descending then the primary key — so two
  * runs that started on the same instant cannot swap places between reloads and
  * the window is the same window twice running. It is re-applied to the rows in
- * TypeScript (`newestFirst`, shared with the cycles half) because the page's
+ * TypeScript (`newestFirst` over `NEWEST_RUN_FIRST`, the column pair shared
+ * with the cycles half) because the page's
  * order is a stated property of the page and must not depend on a transport
  * keeping its promise.
  */
@@ -253,7 +255,7 @@ export async function readRuns(
   return {
     kind: "ok",
     data: {
-      rows: newestFirst(result.data),
+      rows: newestFirst(result.data, NEWEST_RUN_FIRST),
       limit: size,
       truncated: result.data.length >= size,
       source,

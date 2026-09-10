@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { instantOf } from "../cycles/state";
+import { newestFirst } from "../order/newest-first";
 import { type ResolutionRunRow } from "./gauges";
 import { ROW_CAP, readRows, type DbResponse, type DbResult } from "./result";
 import { objectKindOf, T, type ObjectKind } from "./tables";
@@ -136,39 +136,29 @@ function windowSize(limit: number): number {
 }
 
 /**
- * The display order: **newest first by `started_at`**, `run_id` descending
- * where two cycles share an instant.
+ * The display order of BOTH halves of the Cycles & runs page: **newest first
+ * by `started_at`**, `run_id` descending where two runs share an instant.
  *
- * The query already asks for exactly this order, so this sort normally changes
- * nothing — it is here because the page's order is a stated property of the
- * page (spec §4) and must not depend on a transport keeping its promise. A
- * timestamp that will not parse sorts last rather than poisoning the
- * comparison: the row still renders, at the end, where an unreadable
- * `started_at` is visible instead of silently reordering the cycles above it.
+ * The query already asks for exactly this order, so re-applying it normally
+ * changes nothing — it is done because the page's order is a stated property
+ * of the page (spec §4) and must not depend on a transport keeping its
+ * promise. A `started_at` that will not parse sorts last rather than poisoning
+ * the comparison: the row still renders, at the end, where the unreadable
+ * stamp is visible instead of silently reordering the cycles above it.
  *
- * The input is not mutated.
+ * Exported because both halves order off these SAME two columns —
+ * `resolution_runs` here and the adapter framework's `runs` in
+ * `src/lib/db/runs.ts` (admin-window/TASK-0016), which imports this rather
+ * than naming the pair a second time. The two tables therefore cannot come to
+ * disagree about what "newest first" means.
  *
- * Generic over the row because BOTH halves of the Cycles & runs page order
- * their table this way, off the same two columns: `resolution_runs` here and
- * the adapter framework's `runs` in `src/lib/db/runs.ts`
- * (admin-window/TASK-0016). One comparator, so the two tables cannot come to
- * disagree about what "newest first" means; the constraint is the two columns
- * it reads, not which table they came from.
+ * The RULE is `newestFirst` (`src/lib/order/newest-first.ts`), the app's one
+ * "newest first"; this names only the two columns it reads here. Until
+ * admin-window/DEBT-0016 the rule itself lived in this module, with a second
+ * declaration under the same name in `src/lib/db/verdict.ts` over
+ * `created_at` / `verdict_id`.
  */
-export function newestFirst<Row extends Pick<ResolutionRunRow, "run_id" | "started_at">>(
-  rows: readonly Row[],
-): Row[] {
-  return [...rows].sort((a, b) => {
-    const left = instantOf(a.started_at);
-    const right = instantOf(b.started_at);
-    if (left !== right) {
-      if (left === null) return 1;
-      if (right === null) return -1;
-      return right - left;
-    }
-    return a.run_id < b.run_id ? 1 : a.run_id > b.run_id ? -1 : 0;
-  });
-}
+export const NEWEST_RUN_FIRST = { instant: "started_at", key: "run_id" } as const;
 
 /**
  * The newest cycles, newest first.
@@ -197,7 +187,7 @@ export async function readCycles(
   return {
     kind: "ok",
     data: {
-      rows: newestFirst(result.data),
+      rows: newestFirst(result.data, NEWEST_RUN_FIRST),
       limit: size,
       truncated: result.data.length >= size,
     },

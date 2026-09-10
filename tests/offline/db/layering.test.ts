@@ -456,6 +456,21 @@ const LEAF_MODULES = [
   // precisely a pure function no leaf could reach (common violations row 17),
   // and an import of `lib/db/**` from here would put it back there.
   "src/lib/url/text.ts",
+  // The app's ONE "newest first" ordering, and the ONE derivation of "epoch ms,
+  // or null when the stamp will not parse" it reads the instant through
+  // (admin-window/DEBT-0016; §4 rule 7's leaf list already names
+  // `lib/cycles/**`). The ordering was declared TWICE under one name — over
+  // `created_at`/`verdict_id` in `src/lib/db/verdict.ts` and
+  // `started_at`/`run_id` in `src/lib/db/cycles.ts` — which is common
+  // violation 17 (a pure function parked in `lib/db/**` because that is where
+  // its first caller was) in the shape common violation 18 takes: one name,
+  // two bodies, nothing keeping them in step. Its home is a leaf BECAUSE it
+  // touches no client, no env and no table name; an import of `lib/db/**` from
+  // either file would put it back where no leaf can reach it, and `state.ts`
+  // is here as well because the closed allowlist above is what permits that
+  // one leaf-to-leaf edge.
+  "src/lib/cycles/state.ts",
+  "src/lib/order/newest-first.ts",
   ...pagingLeaves(),
 ];
 

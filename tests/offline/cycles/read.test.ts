@@ -3,10 +3,11 @@ import { cycleState, instantOf } from "@/lib/cycles/state";
 import {
   CYCLE_COUNTERS,
   CYCLE_WINDOW,
-  newestFirst,
+  NEWEST_RUN_FIRST,
   readCycles,
   type ResolutionRunRow,
 } from "@/lib/db/cycles";
+import { newestFirst } from "@/lib/order/newest-first";
 import { T } from "@/lib/db/tables";
 import { ROW_CAP } from "@/lib/db/result";
 import { RESOLVER_CADENCE_SECONDS } from "@/lib/gauges/gauge";
@@ -162,10 +163,17 @@ describe("the cycles window read", () => {
   });
 });
 
+/**
+ * The cycles half's display order — the app's ONE `newestFirst`
+ * (`src/lib/order/newest-first.ts`) over the column pair this module exports.
+ * The RULE's own cases, over both column pairs in the app, live with the rule
+ * in `tests/offline/order/newest-first.test.ts` (admin-window/DEBT-0016);
+ * these grade what THIS module orders its window by.
+ */
 describe("the display order", () => {
   it("does not mutate what it was given", () => {
     const given = [...CYCLES];
-    newestFirst(given);
+    newestFirst(given, NEWEST_RUN_FIRST);
     expect(given).toEqual(CYCLES);
   });
 
@@ -176,14 +184,31 @@ describe("the display order", () => {
       { ...SUCCEEDED, run_id: "ccc", started_at: instant },
       { ...SUCCEEDED, run_id: "bbb", started_at: instant },
     ];
-    expect(newestFirst(tied).map((row) => row.run_id)).toEqual(["ccc", "bbb", "aaa"]);
+    expect(newestFirst(tied, NEWEST_RUN_FIRST).map((row) => row.run_id)).toEqual([
+      "ccc",
+      "bbb",
+      "aaa",
+    ]);
   });
 
   it("sorts a timestamp it cannot read last, and keeps the row", () => {
     const unreadable: ResolutionRunRow = { ...SUCCEEDED, run_id: "junk", started_at: "" };
-    const sorted = newestFirst([unreadable, ...CYCLES]);
+    const sorted = newestFirst([unreadable, ...CYCLES], NEWEST_RUN_FIRST);
     expect(sorted).toHaveLength(CYCLES.length + 1);
     expect(sorted[sorted.length - 1].run_id).toBe("junk");
+  });
+
+  it("re-sorts by the same two columns the query itself asked for", async () => {
+    const stub = stubClient({ [T.resolutionRuns]: { data: CYCLES } });
+    await readCycles(undefined, stub.asSupabaseClient());
+    // The re-sort exists to be independent of the transport, not to be a
+    // second opinion about the order: the pair it reads must be the pair the
+    // query ordered BY, or a filled window is sorted on a column the database
+    // never ranked (admin-window/DEBT-0016).
+    expect(steps(stub.calls[0], "order").map((args) => args[0])).toEqual([
+      NEWEST_RUN_FIRST.instant,
+      NEWEST_RUN_FIRST.key,
+    ]);
   });
 });
 
