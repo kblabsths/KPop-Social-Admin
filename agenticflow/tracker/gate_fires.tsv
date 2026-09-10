@@ -211,3 +211,5 @@
 2026-09-10T19:09:06Z	artifact_gate	blocked write outside repo: /tmp/x
 2026-09-10T19:51:15Z	artifact_gate	blocked write outside repo: /tmp/x.py
 2026-09-10T20:14:04Z	artifact_gate	blocked write outside repo: /tmp/insert.mjs
+2026-09-10T20:21:11Z	artifact_gate	blocked write outside repo: /tmp/x1
+2026-09-10T20:28:47Z	artifact_gate	blocked write outside repo: /tmp_lint.log
