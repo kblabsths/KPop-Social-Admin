@@ -1,0 +1,33 @@
+{
+ "id": "BUG-0162",
+ "created": "2026-09-10T20:38:51Z",
+ "green": true,
+ "git_head": "4401006b7cd4ef110ef86686ba14856484aef01f",
+ "scope": [
+  "src/components/ui/window-line.tsx",
+  "src/app/claims/page.tsx",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/ui/copy.test.ts",
+  "tests/offline/url/narrowing.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "03b9cb762e42ccf89f772e4a7eda43c74ffa80b940b6057981804bb35f546417",
+ "commands": [
+  {
+   "cmd": "cd \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\" && ! grep -q \"narrow with the filters above to reach the rest\" src/components/ui/window-line.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "cd \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\" && ./node_modules/.bin/vitest run --project=offline tests/offline/claims/page.test.ts tests/offline/claims/filters.test.ts tests/offline/ui/copy.test.ts tests/offline/url/narrowing.test.ts tests/offline/absence/pages.test.ts tests/offline/gauges/bounded.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\n\n \u2713 |offline| tests/offline/claims/filters.test.ts (45 tests) 15ms\n \u2713 |offline| tests/offline/gauges/bounded.test.ts (48 tests) 34ms\n \u2713 |offline| tests/offline/ui/copy.test.ts (12 tests) 101ms\n \u2713 |offline| tests/offline/url/narrowing.test.ts (21 tests) 367ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (275 tests) 2283ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  396ms\n   \u2713 a surface offers a control only where the read behind it answered > puts no control inside a card that says a read did not happen, and gains none  818ms\n \u2713 |offline| tests/offline/claims/page.test.ts (177 tests) 3714ms\n   \u2713 what a filled window promises > cannot reach past the cap from any state its own chips offer  410ms\n\n Test Files  6 passed (6)\n      Tests  578 passed (578)\n   Start at  13:38:35\n   Duration  4.68s (transform 1.71s, setup 0ms, collect 2.43s, tests 6.51s, environment 1ms, prepare 434ms)\n\n(node:28034) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "cd \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\" && bash -c \"rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit\"",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
