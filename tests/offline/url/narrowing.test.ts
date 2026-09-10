@@ -17,6 +17,13 @@ import { codeLines, codeLinesIn, codeText, sourceFiles } from "../source-tree";
  * the type checker stood between them — and only because the shapes happened
  * to differ.
  *
+ * The map has since taken every name the same class was found on — the claim
+ * predicates (admin-window/DEBT-0014), the pending-claims reads
+ * (admin-window/DEBT-0015) and the app's one "newest first"
+ * (admin-window/DEBT-0016) — so it is the vocabulary's guard rather than the
+ * narrowing words' alone. The rule it asserts is unchanged: one name, one
+ * question, one declaring module.
+ *
  * The names are apart now. This is what keeps them apart: a rule in prose is
  * retyped, a rule with a guard is not (LESSONS 5; ARCHITECTURE.md Common
  * violations row 9). It is asserted over the source tree, through the one
@@ -73,6 +80,17 @@ const OWNER: Readonly<Record<string, string>> = {
    * the gauge façade, beside its `fetchPendingClaims` /
    * `aggregatePendingClaims` siblings (admin-window/DEBT-0015). */
   readPendingClaims: "src/lib/gauges/pending-claims.ts",
+  /** The app's ONE "newest first": descending by an instant column, an
+   * unreadable stamp last, the key column descending on a tie
+   * (admin-window/DEBT-0016). It was declared twice under this one name, over
+   * DIFFERENT key columns — `created_at`/`verdict_id` in `src/lib/db/verdict.ts`
+   * and `started_at`/`run_id` in `src/lib/db/cycles.ts` — with the same body
+   * written out twice. It was never two rules, so the columns are handed in
+   * (`NEWEST_VERDICT_FIRST`, `NEWEST_RUN_FIRST`) and the rule is one exported
+   * thing: two windows cannot come to disagree about what "newest first"
+   * means. A second declaration of this name, wherever it is, is that
+   * disagreement starting again. */
+  newestFirst: "src/lib/order/newest-first.ts",
 };
 
 /**
@@ -189,6 +207,41 @@ export { narrowedTo };
       expect(declares("narrowedTo", codeLinesIn(fixture)), spelling).toBe(true);
     });
   }
+
+  /**
+   * The same two fixtures on the name admin-window/DEBT-0016 added, spelled the
+   * way its module and its CALLERS really spell it: the declaration is generic
+   * (`export function newestFirst<`) and every caller both imports it and calls
+   * it with a column pair. A detector that flagged the caller would name two
+   * owners for a name that has one, and one that missed the generic
+   * declaration would grade the rule vacuously.
+   */
+  const NEWEST_FIRST_DECLARATION = `
+export function newestFirst<
+  Instant extends string,
+  Key extends string,
+  Row extends Readonly<Record<Instant, string | null>>,
+>(rows: readonly Row[], columns: { instant: Instant; key: Key }): Row[] {
+  return [...rows];
+}
+`;
+
+  const NEWEST_FIRST_CALLER = `
+import { newestFirst } from "../order/newest-first";
+
+const NEWEST_VERDICT_FIRST = { instant: "created_at", key: "verdict_id" } as const;
+
+export const ordered = (rows: readonly VerdictLogRow[]) =>
+  newestFirst(rows, NEWEST_VERDICT_FIRST);
+`;
+
+  it("flags the generic declaration of `newestFirst`", () => {
+    expect(declares("newestFirst", codeLinesIn(NEWEST_FIRST_DECLARATION))).toBe(true);
+  });
+
+  it("leaves a module that imports and CALLS `newestFirst` alone", () => {
+    expect(declares("newestFirst", codeLinesIn(NEWEST_FIRST_CALLER))).toBe(false);
+  });
 
   it("does not flag a NAMED FUNCTION EXPRESSION bound to another name", () => {
     // `narrowedTo` here is only in scope inside its own body; the module

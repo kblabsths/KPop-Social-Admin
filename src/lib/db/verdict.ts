@@ -12,6 +12,7 @@ import {
 import { FN, T, objectKindOf, type ObjectKind } from "./tables";
 import type { DbClient } from "./gauges";
 import { decisionRefusals, type VerdictDecision } from "../verdict/decision";
+import { newestFirst } from "../order/newest-first";
 
 /**
  * The settlement seam — the ONE place in `src/` that calls a database
@@ -356,28 +357,25 @@ function windowSize(limit: number): number {
 }
 
 /**
- * The display order: **newest first by `created_at`**, `verdict_id` descending
- * where two verdicts share an instant.
+ * The log's display order: **newest first by `created_at`**, `verdict_id`
+ * descending where two verdicts share an instant.
  *
- * The query already asks for exactly this order, so this sort normally changes
- * nothing — it is here because "newest first" is a stated property of the
- * surface (spec F13) and must not depend on a transport keeping its promise.
- * A timestamp that will not parse sorts last rather than poisoning the
- * comparison, so the row still renders, at the end, where the unreadable
- * `created_at` is visible instead of silently reordering the verdicts above
- * it. The input is not mutated.
+ * The query already asks for exactly this order, so re-applying it normally
+ * changes nothing — it is done because "newest first" is a stated property of
+ * the surface (spec F13) and must not depend on a transport keeping its
+ * promise. A `created_at` that will not parse sorts last rather than poisoning
+ * the comparison, so the verdict still renders, at the end, where the
+ * unreadable stamp is visible instead of silently reordering the verdicts
+ * above it.
+ *
+ * The RULE is `newestFirst` (`src/lib/order/newest-first.ts`), the app's one
+ * "newest first"; this names only the two columns it reads here. Until
+ * admin-window/DEBT-0016 the rule itself was written out again in this module,
+ * over these columns, beside a second copy in `src/lib/db/cycles.ts` over
+ * `started_at` / `run_id` — one name, two declarations, and nothing keeping
+ * them in step.
  */
-export function newestFirst(rows: readonly VerdictLogRow[]): VerdictLogRow[] {
-  return [...rows].sort((a, b) => {
-    const left = Date.parse(a.created_at);
-    const right = Date.parse(b.created_at);
-    const leftBad = Number.isNaN(left);
-    const rightBad = Number.isNaN(right);
-    if (leftBad !== rightBad) return leftBad ? 1 : -1;
-    if (!leftBad && !rightBad && left !== right) return right - left;
-    return a.verdict_id < b.verdict_id ? 1 : a.verdict_id > b.verdict_id ? -1 : 0;
-  });
-}
+const NEWEST_VERDICT_FIRST = { instant: "created_at", key: "verdict_id" } as const;
 
 /** The facts behind a set of observation ids — the join's second leg (§4.2). */
 function readObservationFacts(
@@ -442,7 +440,7 @@ export async function readVerdictLog(
   );
   if (result.kind !== "ok") return result;
 
-  const rows = newestFirst(result.data);
+  const rows = newestFirst(result.data, NEWEST_VERDICT_FIRST);
   const ids = [
     ...new Set(
       rows
@@ -513,8 +511,9 @@ export interface ItemVerdict {
  *
  * `verdicts.review_item_id` carries no uniqueness — it is nullable precisely
  * so an item-less override can share the table (`contracts/admin-observability.md`
- * §7) — so this returns the NEWEST of whatever it read, through the log's own
- * `newestFirst`. Re-sorting the complete set is what makes the choice
+ * §7) — so this returns the NEWEST of whatever it read, by the app's one
+ * `newestFirst` over the log's own columns (`NEWEST_VERDICT_FIRST` above).
+ * Re-sorting the complete set is what makes the choice
  * independent of the transport keeping its `.order()` promise; a `.limit(1)`
  * would have had to trust it.
  *
@@ -546,7 +545,7 @@ export async function readItemVerdict(
   );
   if (result.kind !== "ok") return result;
 
-  const verdict = newestFirst(result.data)[0];
+  const verdict = newestFirst(result.data, NEWEST_VERDICT_FIRST)[0];
   if (verdict === undefined) return { kind: "ok", data: null };
 
   const observationId = verdict.observation_id;
