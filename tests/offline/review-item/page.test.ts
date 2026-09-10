@@ -2684,6 +2684,13 @@ describe("an evidence cell with nothing in it", () => {
       expect(cell.closest("td"), surface).toHaveLength(1);
       expect(cell.is("a"), `${surface}: an anchor around nothing`).toBe(false);
       expect(cell.closest("td").find("a"), `${surface}: any anchor`).toHaveLength(0);
+      // And the cell stays ADDRESSABLE by the source it holds: the hook carries
+      // the id, never the empty string the review item's arm used to hardcode
+      // (admin-window/BUG-0156). The id is not the label here — the label has
+      // no ink — so a cell that echoed its words would fail this.
+      expect(cell.attr("data-claim-source"), `${surface}: the row's source hook`).toBe(
+        ID.sourceTicketmaster,
+      );
       // The app's one absence element, announced to a reader who cannot see it.
       expect(cell.find('[aria-label="no value"]'), surface).toHaveLength(1);
       expect(cell.text().trim(), surface).toBe(EM_DASH);
