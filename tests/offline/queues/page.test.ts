@@ -161,31 +161,101 @@ function idsOf(items: ReviewItemRow[]): string[] {
  * The `review_items` legs of ONE render, for a table holding exactly `rows`
  * (campaign admin-window/BUG-0135).
  *
- * A faceted URL makes FIVE reads of that one table: the queue lists' own row
- * read, the health gauge's window, then one HEAD count per shape in spec §6's
- * order — the counts each block's population is summed from. The stub answers
- * every read of a table from one script entry unless the entry is a QUEUE, so
- * a single response would hand the same count to all five and a block whose
- * queue is empty would read a population it does not have. An unfiltered URL
- * never reaches the count entries; the queue's LAST entry answers every read
- * past it, so a page making fewer reads is scripted by the same list.
+ * A faceted URL makes up to FIVE reads of that one table: the queue lists' own
+ * row read, the health gauge's window, then one HEAD count per COUNTED shape in
+ * spec §6's order — the counts each block's population is summed from. The stub
+ * answers every read of a table from one script entry unless the entry is a
+ * QUEUE, so a single response would hand the same count to all five and a block
+ * whose queue is empty would read a population it does not have.
+ *
+ * **`counted` is which shapes this URL's read actually counts, and it is not
+ * always all three** (campaign admin-window/DEBT-0012). The read now skips the
+ * count of a kind the URL does not structurally narrow, and the stub dispenses
+ * BY POSITION — so a script listing a shape the read skips hands that shape's
+ * count to the NEXT leg. On `?kind=decision` — the one URL of the whole facet
+ * vocabulary that counts a single shape — an all-three list answers the signal
+ * count with the `data_conflict_fact` count, and a table full of signals then
+ * renders the signal block as its own zero instead of a narrowed one: BUG-0133's
+ * conflation, manufactured by the fixture. It defaults to all three, which is
+ * what every URL narrowing both kinds costs, and `countedUnder` below spells
+ * which URLs are the exceptions.
+ *
+ * An unfiltered URL never reaches the count entries; the queue's LAST entry
+ * answers every read past it.
  *
  * The counts are computed HERE, from this file's own `shapeName`, like every
  * other expectation in this file.
  */
-function tableHolding(rows: ReviewItemRow[]): ScriptedResponse[] {
+function tableHolding(
+  rows: ReviewItemRow[],
+  counted: readonly string[] = SHAPE_NAMES,
+): ScriptedResponse[] {
   return [
     // The two ROW readers of the queues tab, in the order the page issues
     // them: the queue lists' own read, then the queue-health gauge's window.
     // Both see the same table.
     { data: rows, count: rows.length },
     { data: rows, count: rows.length },
-    ...SHAPE_NAMES.map((shape) => ({
+    ...counted.map((shape) => ({
       // A head count returns no rows at all.
       data: null,
       count: rows.filter((row) => shapeName(row) === shape).length,
     })),
   ];
+}
+
+/**
+ * **The facet values each KIND implies** — spec §6, spelled here rather than
+ * imported, like every other expectation in this file.
+ *
+ * The decision kind spans both queues and both fact shapes, so its own kind
+ * value is all it implies. Every signal row is an `entity_link_source_pattern`
+ * in the `entity_link` queue, so a URL naming either of those selects exactly
+ * the signal block's set and removes not one row from it.
+ */
+const IMPLIED_BY_KIND: Record<string, Record<string, string>> = {
+  decision: { kind: "decision" },
+  signal: { kind: "signal", queue: QUEUE_NAMES[1], shape: SHAPE_NAMES[2] },
+};
+
+/**
+ * Which shapes a URL's population read COUNTS (campaign admin-window/DEBT-0012).
+ *
+ * A kind's population is consulted only where the URL narrows that kind BEYOND
+ * what its own kind already implies — `isSurfaceNarrowed` ANDs the two facts, so
+ * for a kind no facet of this URL can touch, fact 1 is already false and no
+ * count could change a word the block renders. So the counted shapes are the
+ * shapes of the kinds the URL narrows, in spec §6's order.
+ */
+function countedUnder(params: Record<string, string | string[]>): string[] {
+  const asked = (key: string): string | undefined => {
+    const raw = params[key];
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    if (value === undefined) return undefined;
+    // A value outside the offered vocabulary narrows nothing at all.
+    const vocabulary: Record<string, readonly string[]> = {
+      kind: KIND_NAMES,
+      queue: QUEUE_NAMES,
+      shape: SHAPE_NAMES,
+      status: STATUS_NAMES,
+    };
+    const allowed = vocabulary[key];
+    if (allowed !== undefined && !allowed.includes(value)) return undefined;
+    return value;
+  };
+  const narrows = (kind: string) =>
+    ["kind", "queue", "shape", "status"].some((facet) => {
+      const value = asked(facet);
+      return value !== undefined && value !== IMPLIED_BY_KIND[kind][facet];
+    });
+  return SHAPE_NAMES.filter((shape) => narrows(kindOf(probeOf(shape))));
+}
+
+/** A row of the named shape, so `kindOf` can answer for the shape itself. */
+function probeOf(shape: string): ReviewItemRow {
+  const row = POPULATION.find((item) => shapeName(item) === shape);
+  if (row === undefined) throw new Error(`fixture holds no ${shape}`);
+  return row;
 }
 
 function healthyScript(overrides: Script = {}): Script {
@@ -276,6 +346,30 @@ function blockHtml(markup: string, kind: string): string {
 /** The text of one block's rows region — its table, or the card standing in for it. */
 function rowsRegion(markup: string, kind: string): string {
   return squash(cheerio.load(markup)(`[data-queue="${kind}"] [data-rows]`).text());
+}
+
+/**
+ * WHICH emptiness the named block says it is in — the hook that tells "this
+ * queue holds nothing" from "your filter matched nothing" without reading a
+ * word of copy (admin-window/BUG-0133, admin-window/BUG-0141). Absent when the
+ * block is not empty.
+ */
+function emptyArmOf(markup: string, kind: string): string | undefined {
+  return cheerio.load(markup)(`[data-queue="${kind}"] [data-empty]`).attr("data-empty");
+}
+
+/**
+ * Every population sub-surface the render opened. A population leg REFUSING
+ * reports itself here (admin-window/BUG-0135); a population never asked for
+ * reports nothing at all, and the two may not share a rendering
+ * (admin-window/DEBT-0012).
+ */
+function populationSurfacesIn(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("[data-surface]")
+    .toArray()
+    .map((element) => $(element).attr("data-surface") ?? "")
+    .filter((name) => name.endsWith("_queue_population"));
 }
 
 /** Which of the four states the named queue block says it is in. */
@@ -1315,6 +1409,50 @@ describe("a zero that a filter produced", () => {
     },
   );
 
+  // Filed by QA on admin-window/DEBT-0012, red before this file's own
+  // `tableHolding` was made leg-accurate: the read stopped issuing all three
+  // counts, the script kept listing all three, and the stub dispenses BY
+  // POSITION — so on `?kind=decision`, the one URL of the whole facet
+  // vocabulary that counts a SINGLE shape, the signal population was answered
+  // with the `data_conflict_fact` count. Over a table holding signals only that
+  // reads as 0, and the signal block rendered its own zero (`data-empty="queue"`)
+  // for a zero the FILTER produced — BUG-0133's forbidden conflation,
+  // manufactured by the fixture rather than by the app.
+  it("tells the two emptinesses apart on a URL that skips a count (admin-window/DEBT-0012)", async () => {
+    // One render, one table, both arms: a table holding signals ONLY, read
+    // under `?kind=decision`.
+    const signals = matching({ kind: "signal" });
+    expect(signals.length).toBeGreaterThan(0);
+    const params = paramsOf("kind=decision");
+    // The URL counts exactly one shape, and it is the SIGNAL kind's — the kind
+    // this URL empties is the kind whose zero has to be explained.
+    expect(countedUnder(params)).toEqual([SHAPE_NAMES[2]]);
+
+    const markup = await renderQueues(
+      { [T.reviewItems]: tableHolding(signals, countedUnder(params)) },
+      params,
+    );
+    const plain = await renderQueues({ [T.reviewItems]: tableHolding(signals) });
+
+    // Both blocks are empty, for OPPOSITE reasons, and never share a rendering.
+    expect(stateOf(markup, "decision")).toBe("empty");
+    expect(stateOf(markup, "signal")).toBe("empty");
+    // The decision queue holds nothing at all: no facet removed a row from it,
+    // so its zero is its own and reads exactly as it does unfiltered.
+    expect(emptyArmOf(markup, "decision")).toBe("queue");
+    expect(emptyArmOf(markup, "decision")).toBe(emptyArmOf(plain, "decision"));
+    expect(rowsRegion(markup, "decision")).toBe(rowsRegion(plain, "decision"));
+    // The signal queue is FULL and the filter is what hid it — the one arm the
+    // misaligned leg turned into the other.
+    expect(emptyArmOf(markup, "signal")).toBe("narrowing");
+    expect(emptyArmOf(plain, "signal")).toBeUndefined(); // it has rows unfiltered
+    expect(rowsRegion(markup, "signal")).not.toBe(rowsRegion(plain, "signal"));
+    // And a count nobody asked for reports nothing: not-asked is not a refusal,
+    // so no block opens a population sub-surface (admin-window/BUG-0135's
+    // reporting is for a REFUSAL alone).
+    expect(populationSurfacesIn(markup)).toEqual([]);
+  });
+
   it("scopes the zero of a queue that has rows but nothing open, too", async () => {
     // `?status=settled` leaves rows on screen and a real zero above them.
     const markup = await renderQueues(healthyScript(), { status: "settled" });
@@ -1996,17 +2134,29 @@ describe("each tab reads only what it renders", () => {
     // population, and the health gauge's window is the second read. A faceted
     // URL adds one HEAD count per shape — reads that return no rows, which is
     // why no row cap can refuse them.
-    for (const [params, expected] of [
-      [{}, 2],
-      [paramsOf("queue=data_conflict"), 2 + SHAPE_NAMES.length],
-    ] as [Record<string, string | string[]>, number][]) {
-      const stub = stubClient(healthyScript());
+    //
+    // And WHICH counts, not merely how many (campaign admin-window/DEBT-0012):
+    // the read skips the count of a kind the URL does not structurally narrow,
+    // so a `?kind=` URL costs one count fewer than a `?queue=data_conflict` one
+    // — `?kind=decision` a single count, the SIGNAL kind's, because the kind a
+    // URL empties is the kind whose zero has to be explained. Extended by QA
+    // from the two rows it carried: the URLs that skip a count are exactly the
+    // ones this cost claim never drove.
+    for (const query of ["", "queue=data_conflict", "kind=decision", "kind=signal",
+                         "queue=entity_link", "shape=entity_link_source_pattern",
+                         "status=open", "kind=bogus"]) {
+      const params = paramsOf(query);
+      const counted = countedUnder(params);
+      // The bare URL's own rows ARE the whole table, so it is its own
+      // population and issues no count at all.
+      const expected = query === "" || counted.length === 0 ? 2 : 2 + counted.length;
+      const stub = stubClient({ [T.reviewItems]: tableHolding(POPULATION, counted) });
       readWith.client = stub.asSupabaseClient();
       render(await QueuesPage({ searchParams: Promise.resolve(params) }));
 
       expect(
         stub.tablesRead().filter((table) => table === T.reviewItems),
-        JSON.stringify(params),
+        `?${query}: ${counted.length} count(s)`,
       ).toHaveLength(expected);
     }
   });

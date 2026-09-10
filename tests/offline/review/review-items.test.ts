@@ -987,6 +987,105 @@ describe("readReviewQueues counts only the kinds the URL narrows", () => {
     expect([...DECISION_SHAPES, ...SIGNAL_SHAPES]).toEqual([...SHAPES]);
   });
 
+  /**
+   * **The facet values each KIND implies** — spec §6, spelled here rather than
+   * read out of `narrowingOfKind`, so the exhaustive claim below grades the app
+   * instead of asking it what it expects.
+   *
+   * The decision kind spans both queues and both fact shapes, so its own kind
+   * value is all it implies. Every signal row is an `entity_link_source_pattern`
+   * in the `entity_link` queue, so a URL naming either selects exactly the
+   * signal block's set and removes not one row from it.
+   */
+  const IMPLIED: Record<string, Record<string, string | undefined>> = {
+    decision: { kind: "decision" },
+    signal: { kind: "signal", queue: "entity_link", shape: "entity_link_source_pattern" },
+  };
+
+  it("counts, over EVERY url the facet vocabulary can spell, only the kinds it narrows", async () => {
+    // Added by QA on admin-window/DEBT-0012. The table above names nine URLs;
+    // the vocabulary spells 216, and the ticket's saving is a claim about all
+    // of them. A facet COMBINATION that skipped a count it needs — or paid for
+    // one it does not — is reachable from no row of that table, and this is the
+    // one vantage that sees them together.
+    const values = {
+      kind: [undefined, "decision", "signal"],
+      queue: [undefined, "data_conflict", "entity_link"],
+      shape: [undefined, ...SHAPES],
+      status: [undefined, "open", "settled"],
+      source_id: [undefined, CARRIED],
+    } as const;
+
+    const seen = new Map<number, number>();
+    let urls = 0;
+    for (const kind of values.kind)
+      for (const queue of values.queue)
+        for (const shape of values.shape)
+          for (const status of values.status)
+            for (const source_id of values.source_id) {
+              const filter: Record<string, string> = {};
+              if (kind !== undefined) filter.kind = kind;
+              if (queue !== undefined) filter.queue = queue;
+              if (shape !== undefined) filter.shape = shape;
+              if (status !== undefined) filter.status = status;
+              if (source_id !== undefined) filter.source_id = source_id;
+              urls += 1;
+
+              // This file's own reading of which kinds the URL narrows: some
+              // facet it carries holds a value that kind does not imply.
+              const narrows = (of: string) =>
+                (["kind", "queue", "shape", "status", "source_id"] as const).some(
+                  (facet) =>
+                    filter[facet] !== undefined && filter[facet] !== IMPLIED[of][facet],
+                );
+              const asked = ["decision", "signal"].filter(narrows);
+              const shapes = [
+                ...(asked.includes("decision") ? DECISION_SHAPES : []),
+                ...(asked.includes("signal") ? SIGNAL_SHAPES : []),
+              ];
+              const where = `/queues?${new URLSearchParams(filter).toString() || "(bare)"}`;
+
+              const stub = withRows(population());
+              const result = await readReviewQueues(filter as never, stub.asSupabaseClient());
+
+              // One row leg, plus one count leg per shape of a narrowed kind —
+              // and the bare URL's own rows ARE its population, so it counts
+              // nothing (criterion 2).
+              const reads = readsOfReviewItems(stub);
+              expect(reads, where).toBe(1 + shapes.length);
+              // ...and each leg is the shape it claims to be, so no count can
+              // answer for another (the stub dispenses BY POSITION).
+              expect(
+                countedShapes(stub),
+                `${where}: which counts`,
+              ).toEqual(
+                shapes.map((shape) =>
+                  shape === "data_conflict_fact"
+                    ? DATA_CONFLICT_FACT
+                    : shape === "entity_link_fact"
+                      ? ENTITY_LINK_FACT
+                      : SOURCE_PATTERN,
+                ),
+              );
+              // The kinds it skipped answer `not_asked` and the kinds it asked
+              // answer a number — never the other way round.
+              if (result.kind !== "ok") throw new Error(`${where}: ${result.kind}`);
+              for (const of of ["decision", "signal"] as const) {
+                expect(result.data.population[of].kind, `${where}: ${of}`).toBe(
+                  // An unnarrowed URL is its own population, so both kinds are
+                  // counted off the rows it already holds.
+                  shapes.length === 0 || asked.includes(of) ? "ok" : "not_asked",
+                );
+              }
+              seen.set(reads, (seen.get(reads) ?? 0) + 1);
+            }
+
+    // The measured shape of the saving, so a change to it has to be restated
+    // here: 8 of the 216 URLs now cost less, and 207 are unchanged at four.
+    expect(urls).toBe(216);
+    expect([...seen.entries()].sort()).toEqual([[1, 1], [2, 1], [3, 7], [4, 207]]);
+  });
+
   it("issues exactly the reads each URL shape needs, and no others", async () => {
     for (const { where, filter, reads, counts } of COST) {
       const rows = population();
