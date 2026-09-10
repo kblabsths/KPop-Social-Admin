@@ -216,3 +216,4 @@
 2026-09-10T20:42:05Z	artifact_gate	blocked write outside repo: /tmp/x.py
 2026-09-10T22:08:36Z	artifact_gate	blocked write outside repo: /api/auth/callback/google`
 2026-09-10T23:06:29Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-10T23:19:10Z	artifact_gate	blocked write outside repo: /tmp/lintout

@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-10T23:14:41Z — do not edit)
+# Tracker index (regenerated 2026-09-10T23:20:20Z — do not edit)
 
 ## open
 - FEAT-0014 [P1][feat][M3] F16 — the second leg of a two-step join runs its chunks concurrently  (scope:src/lib/db/result.ts,src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/db/verdict.ts,tests/offline/db/result.test.ts,tests/live/claims.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts)
@@ -9,7 +9,6 @@
 - TASK-0067 [P1][task][M3] /claims draws the affordance only where it can be honoured, and pages past the window  (deps:TASK-0064,TASK-0066(unmet:2) scope:src/app/claims/page.tsx,src/components/claims/paged-claim-list.tsx,src/components/claims/index.ts,src/lib/claims/filters.ts,tests/offline/claims/page.test.ts,tests/offline/claims/filters.test.ts,tests/offline/absence/pages.test.ts,tests/live/claims.live.test.ts)
 - TASK-0068 [P1][task][M3] Browse: the events window takes an offset, and its paging route handler answers one page  (deps:TASK-0066(unmet:1) scope:src/lib/db/browse.ts,src/lib/paging/bounds.ts,src/app/api/admin/browse/rows/route.ts,tests/offline/browse/browse-read.test.ts,tests/offline/paging/browse-route.test.ts,tests/http/paging.http.test.ts)
 - TASK-0069 [P1][task][M3] /browse pages further down its one curated view, and says so honestly  (deps:TASK-0067,TASK-0068(unmet:2) scope:src/app/browse/page.tsx,src/components/browse/paged-browse-table.tsx,src/lib/browse/views.ts,tests/offline/browse/page.test.ts,tests/offline/browse/views.test.ts,tests/offline/absence/pages.test.ts,tests/live/browse.live.test.ts)
-- BUG-0166 [P2][bug][M3] pageUrl appends the bound instead of overriding one the facets already spell, so a stale offset is the one the handler reads  (deps:TASK-0063 scope:src/lib/paging/machine.ts,tests/offline/paging/machine.test.ts from:TASK-0063)
 - FEAT-0016 [P2][feat][M3] F15 — every windowed figure is true about the read that produced it  (scope:src/app/claims/page.tsx,src/app/sources/page.tsx,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/gauges,src/components/claims,src/components/sources,src/components/ui/window-line.tsx,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/sources/read.test.ts,tests/offline/gauges,tests/live/claims.live.test.ts,tests/live/sources.live.test.ts)
 - TASK-0070 [P2][task][M3] A scan and the count printed beside it read the same window: ReadBounds carries both edges, and all five scans apply them  (deps:TASK-0067(unmet:1) scope:src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/gauges,src/app/claims/page.tsx,tests/offline/gauges,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/live/claims.live.test.ts,tests/live/sources.live.test.ts,tests/live/cycles.live.test.ts,tests/live/queues.live.test.ts)
 - TASK-0071 [P2][task][M3] Two figures on /claims never silently disagree: each says whether it is a window or a total  (deps:TASK-0070(unmet:1) scope:src/app/claims/page.tsx,src/components/claims/bucket-table.tsx,src/components/claims/tabs.tsx,tests/offline/claims/page.test.ts,tests/offline/gauges-ui,tests/live/claims.live.test.ts)
@@ -20,6 +19,9 @@
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
 ## built
+- BUG-0166 [P2][bug][M3] pageUrl appends the bound instead of overriding one the facets already spell, so a stale offset is the one the handler reads  (deps:TASK-0063 scope:src/lib/paging/machine.ts,tests/offline/paging/machine.test.ts @builder-248 from:TASK-0063)
+
+## qa
 - TASK-0074 [P1][task][M3] The /claims critical path: the pending-claims gauge stops being a four-deep read  (deps:TASK-0062 scope:src/lib/gauges/pending-claims.ts,src/lib/gauges/standing-disagreements.ts,src/lib/db/claims.ts,src/lib/db/result.ts,src/app/claims/page.tsx,tests/offline/gauges/pending-claims.test.ts,tests/offline/gauges/bounded.test.ts,tests/offline/gauges/standing-disagreements.test.ts,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/review-item/page.test.ts,tests/offline/absence/pages.test.ts,tests/live/claims.live.test.ts,tests/live/sources.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts,agenticflow/tracker/evidence @builder-247 from:TASK-0062)
 
-Totals — built:1, done:4, open:17. Archived: 252.
+Totals — built:1, done:4, open:16, qa:1. Archived: 252.
