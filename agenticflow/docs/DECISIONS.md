@@ -1202,3 +1202,43 @@ re-exporting so `/claims` does not move. `/queues` needs the line anyway — for
 without the four fixes that landed on that one sentence
 (BUG-0123/0127/0136/0137). That is common violation 9's promoted rule applied to
 a bug fix rather than to a decomposition.
+
+## 2026-09-09 — one derivation per URL value class, and a value a browser would re-spell is REFUSED rather than boxed (BUG-0155)
+
+Seven bugs have now landed on one shape — a URL value inside a sentence this
+app wrote (BUG-0137, 0143, 0145, 0146, 0147, 0153, 0155) — and each of the
+first six closed one PROPERTY of the value: no markup, no bidi, some ink,
+bounded length, a canonical uuid spelling, padding stripped by ink. The
+property none of them stated is that what is SHOWN is what was USED, and no
+"may I spell it" predicate can answer it, because a facet value is used twice:
+it is sent to PostgREST and it is spelled in the app's own prose. The door
+closed: from here a free-text URL facet value has exactly ONE derivation,
+`canonicalUrlText` (`src/lib/url/text.ts`), the way a uuid has had exactly one
+since BUG-0143 (`canonicalRecordId`), and the derived value is the only string
+that reaches the query, the facet's own box and every sentence naming it — or
+the facet is not applied and the shared dropped-parameter line says so. The
+ends-only ink-padding strip that both derivations need gets one declaration
+(`trimInkPadding`), called by both; `sourceNarrowing` — four lines in
+`src/lib/db/runs.ts` that returned the value verbatim, and the free-text class's
+whole "derivation" — is retired, which also closes ARCHITECTURE.md common
+violations row 17's second instance and row 18's last half.
+
+The door this deliberately closes the other way: the interior case
+(`?source=tic%20%20ketmaster`) is REFUSED and reported dropped, NOT preserved
+in an `Identifier` box carrying `white-space: pre`. The box arm would put a
+non-wrapping foreign run inside six authored sentences of one page — the runs
+window line's four clauses, the facet paragraph, the empty card — to preserve a
+spelling no registered source uses, and it cannot pass QA's own strict pin,
+which collapses the rendered text the way a browser does before comparing it to
+the queried value (measured before ruling). Refusal reuses the arm BUG-0153
+already built and renders nothing new. The consequence accepted with it: a
+source name a browser would re-spell is unqueryable from a URL, and a
+`/sources` link built from such a registry name lands on a page that says it
+did not apply the facet — honest, and a `/sources` question (BUG-0154's class)
+rather than a `/cycles` one.
+
+Not closed: a value that reaches PROSE ONLY and asserts nothing about a queried
+set stays under the allowlist alone. `?cycle=`'s unmatched-paste arm spells a
+paste in full and queries nothing, so "not among the 200 newest cycles" is true
+of every spelling of it (BUG-0147), and forcing it through a derivation would
+buy nothing and cost the page its answer to a half-typed URL.
