@@ -33,6 +33,7 @@ import {
 } from "@/lib/db/cycles";
 import { canonicalRecordId } from "@/lib/records/id";
 import { canSpellUrlValue } from "@/lib/url/spellable";
+import { canonicalUrlText } from "@/lib/url/text";
 import type { DbUnavailable } from "@/lib/db/result";
 import {
   RUNS_OBJECT,
@@ -40,7 +41,6 @@ import {
   RUN_COUNTS,
   RUN_WINDOW,
   readRuns,
-  sourceNarrowing,
 } from "@/lib/db/runs";
 import { duration } from "@/lib/format";
 import { droppedParams } from "@/lib/url/dropped-params";
@@ -206,19 +206,21 @@ const RUN_FACET = "run";
  * parameter silently — which is what it did until admin-window/TASK-0016 —
  * or pretending the cycles above were narrowed too.
  *
- * **A name this page may not SPELL narrows nothing and earns no sentence**
- * (admin-window/BUG-0153) — the answer `?cycle=` above already gives, applied
- * to the facet BUG-0147's builder named as the same class left open. It is
- * decided at ONE edge, `sourceNarrowing` (`src/lib/db/runs.ts`), because for
- * this facet the allowlist question and the narrowing question are one
- * question: the value is not merely spelled, it is SENT, and what comes back
- * on `RunWindow.source` is what the runs window line interpolates into its
- * own paragraph as bare text. `?source=%E2%80%AEbandsintown` reversed 87
- * characters of the app's own words there — a `<p>` is not a bidi isolate, so
- * an unterminated U+202E's scope is the paragraph — while the facet
- * paragraph's box contained the reorder on screen and still carried the
- * control in `data-source-facet` and in the text an operator copies out.
- * Gated at the edge, `askedSource` is `undefined` for such a value, so no
+ * **What this page SHOWS for the facet is what its read USED** — one
+ * derivation, `canonicalUrlText` (`src/lib/url/text.ts`; ARCHITECTURE.md §7,
+ * common violations row 20; admin-window/BUG-0155). The value is not merely
+ * spelled, it is SENT: what comes back on `RunWindow.source` is what the runs
+ * window line interpolates into its own paragraph as bare text, so the string
+ * the `.eq` carried and the string six authored sentences spell have to be one
+ * string. The derivation strips the padding a paste brought — by INK, at the
+ * ENDS only, through the app's one `trimInkPadding`, so `?source=%20ticketmas`
+ * `ter` answers exactly as `?source=ticketmaster` does, which is BUG-0145 and
+ * BUG-0146's answer for `?cycle=` and `?run=` — and REFUSES what it cannot
+ * hand over unchanged: a name this page may not spell (`canSpellUrlValue`,
+ * admin-window/BUG-0153 — `?source=%E2%80%AEbandsintown` reversed 87
+ * characters of the app's own words, a `<p>` being no bidi isolate), and a
+ * name a browser would RE-SPELL, which inside printable ASCII is a run of two
+ * or more spaces. A refused value leaves `askedSource` `undefined`: no
  * sentence names it, no `.eq` carries it, and the line below reports `source`
  * as a parameter this page did not apply.
  */
@@ -282,13 +284,15 @@ export default async function CyclesPage({
   const askedFor =
     markedCycle ??
     (askedRaw !== undefined && canSpellUrlValue(askedRaw) ? askedRaw : undefined);
-  // A `?source=` carrying nothing narrows nothing and earns no sentence: it is
-  // half a typed URL, not a request for the runs of the empty name. Nor does a
-  // name this app may not SPELL (admin-window/BUG-0153): `sourceNarrowing`
-  // asks `canSpellUrlValue` where the facet becomes a query value, so ONE
-  // derived value decides the narrowing, all four sentences that name it, and
-  // the dropped-parameter line below — this page adds no second opinion.
-  const askedSource = sourceNarrowing(firstValue(params[SOURCE_FACET])) ?? undefined;
+  // ONE derived value for the `?source=` facet (admin-window/BUG-0155):
+  // `canonicalUrlText` decides the narrowing, all six sentences that name it
+  // and the dropped-parameter line below, and `readRuns` re-derives the SAME
+  // function from the same raw value, so the name this page spells is the name
+  // its read used. A `?source=` carrying nothing narrows nothing and earns no
+  // sentence — half a typed URL, not a request for the runs of the empty name
+  // — and neither does a name this app may not spell or a name a browser would
+  // re-spell. This page adds no second opinion to any of it.
+  const askedSource = canonicalUrlText(firstValue(params[SOURCE_FACET])) ?? undefined;
   // The run the Dashboard's run line named, in the database's own spelling, or
   // null when the URL carried none and when what it carried is not a run id.
   const askedRun = firstValue(params[RUN_FACET]);

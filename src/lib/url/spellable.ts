@@ -17,8 +17,9 @@
  * answer** (admin-window/BUG-0153). A rule in prose is retyped and the copies
  * drift (LESSONS 5; ARCHITECTURE.md common violations row 9): this is the ONE
  * declaration, imported by the `?cycle=` sentence's seam gate and by
- * `sourceNarrowing` (`src/lib/db/runs.ts`), where a `?source=` becomes both a
- * query value and four clauses of the runs window line.
+ * `canonicalUrlText` (`./text.ts`), the free-text class's ONE derivation,
+ * where a `?source=` becomes both a query value and four clauses of the runs
+ * window line.
  *
  * A PURE DOMAIN LEAF (ARCHITECTURE.md §4 rule 7): it imports nothing, reaches
  * no database and no `process.env`, so every layer may ask it.
@@ -65,13 +66,22 @@ const INK = /[\x21-\x7E]/;
 /**
  * May a sentence this app wrote spell this URL value verbatim?
  *
- * Asked where the value is DERIVED from the request, beside the app's other
- * canonicalisers (`canonicalRecordId`, `sourceNarrowing`), so ONE derived
- * value decides the sentence, the narrowing and the dropped-parameter line
- * together — a page can then never both answer a parameter and report it as
- * dropped, nor silently drop one it never named. A value this refuses is
- * spelled NOWHERE and is reported on the shared dropped-parameter line, which
- * is the "counted, not spelled" arm §7 rules.
+ * Asked where the value is DERIVED from the request — inside one of the app's
+ * two canonicalisers (`canonicalRecordId`, `canonicalUrlText`) or at a seam
+ * that re-asks one of them — so ONE derived value decides the sentence, the
+ * narrowing and the dropped-parameter line together: a page can then never
+ * both answer a parameter and report it as dropped, nor silently drop one it
+ * never named. A value this refuses is spelled NOWHERE and is reported on the
+ * shared dropped-parameter line, which is the "counted, not spelled" arm §7
+ * rules.
+ *
+ * **It answers "may I spell it" and NOT "is this what I used"** (§7, common
+ * violations row 20; admin-window/BUG-0155). It admits `" ticketmaster"`,
+ * which a browser then re-spells as `ticketmaster` in every sentence naming it
+ * while the query still carried the space — a predicate over one string cannot
+ * see that, and widening this one to try would be a predicate answering two
+ * questions (LESSONS 4). The second question belongs to the DERIVATION that
+ * calls this, one per value class.
  */
 export function canSpellUrlValue(value: string): boolean {
   return PRINTABLE.test(value) && INK.test(value);

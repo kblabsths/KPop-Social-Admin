@@ -10,10 +10,12 @@
  * owes.
  *
  * Its ONE import is another leaf, which rule 7 ¶2 permits and this file is a
- * reason for: `visibleContent` in `lib/verdict/decision.ts` is the app's one
- * definition of "is there anything here a person could read", and
- * `canonicalRecordId` below asks it rather than answering the question a
- * fourth time (admin-window/BUG-0146).
+ * reason for: `trimInkPadding` in `lib/url/text.ts` is the app's one ends-only
+ * ink-padding strip, and `canonicalRecordId` below CALLS it rather than
+ * holding a second copy of it (admin-window/BUG-0155, criterion 3). It was a
+ * private `trimPad` here until then; its behaviour did not change in the move,
+ * and the definition of blank it rests on is still `hasVisibleContent` in
+ * `lib/verdict/decision.ts`, one leaf further down (admin-window/BUG-0146).
  *
  * **It moved here from `lib/db/records.ts`, where these two functions had
  * always been pure and had always been out of reach** (the M2 structure walk,
@@ -32,7 +34,7 @@
  * request value (`canonicalRecordId`).
  */
 
-import { hasVisibleContent } from "@/lib/verdict/decision";
+import { trimInkPadding } from "@/lib/url/text";
 
 /**
  * Postgres's own uuid syntax, as `uuid_in` accepts it — the grammar this
@@ -92,30 +94,6 @@ export function isRecordId(id: string): boolean {
 }
 
 /**
- * `text` with its leading and trailing INK-LESS code points removed — the
- * padding a paste carries, by the app's one definition of blank rather than by
- * `trim()`'s narrower one (admin-window/BUG-0146).
- *
- * Read by CODE POINT (`Array.from`), not by UTF-16 unit, so an astral
- * character at either end is weighed whole rather than as two halves — none of
- * the ink-less class is astral today, and a guard that splits a surrogate pair
- * would be wrong the moment one is.
- *
- * It asks `hasVisibleContent` of each end character instead of holding a
- * character class of its own: the class lives in ONE file
- * (`lib/verdict/decision.ts`), and this is a caller of it, not a second copy.
- * Bounded to the ends on purpose — see `canonicalRecordId`'s note below.
- */
-function trimPad(text: string): string {
-  const points = Array.from(text);
-  let start = 0;
-  let end = points.length;
-  while (start < end && !hasVisibleContent(points[start])) start += 1;
-  while (end > start && !hasVisibleContent(points[end - 1])) end -= 1;
-  return points.slice(start, end).join("");
-}
-
-/**
  * The id a REQUEST VALUE names, in the ONE spelling Postgres itself prints —
  * lowercase, hyphenated, 8-4-4-4-12 — or `null` when the value names no record
  * id at all (campaign admin-window/BUG-0140).
@@ -147,9 +125,12 @@ function trimPad(text: string): string {
  * FILLER. All eight lay out at 0px (measured in Chromium for
  * admin-window/BUG-0136), so the denial again read character-for-character
  * like the drawn row. The class is not re-enumerated here — that would be the
- * fourth list, and a list is what BUG-0089/BUG-0136 ruled against. `trimPad`
- * above asks `hasVisibleContent`, the app's ONE definition of blank
- * (`lib/verdict/decision.ts`), of one code point at a time.
+ * fourth list, and a list is what BUG-0089/BUG-0136 ruled against.
+ * `trimInkPadding` (`lib/url/text.ts`) asks `hasVisibleContent`, the app's ONE
+ * definition of blank (`lib/verdict/decision.ts`), of one code point at a
+ * time — and it is the app's ONE strip, shared with the free-text class's
+ * derivation `canonicalUrlText`, so the two value classes cannot drift apart
+ * on what padding IS (admin-window/BUG-0155).
  *
  * The strip is bounded to the ENDS, and that bound is the invariant's: the app's
  * ink test removes ink-less characters ANYWHERE, so a whole-string
@@ -186,7 +167,7 @@ function trimPad(text: string): string {
  * from a row is already canonical and passing it through changes nothing.
  */
 export function canonicalRecordId(id: string): string | null {
-  const value = trimPad(id);
+  const value = trimInkPadding(id);
   if (!isRecordId(value)) return null;
   const hex = value.replace(/-/g, "").toLowerCase();
   return [
