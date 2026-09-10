@@ -1,0 +1,33 @@
+{
+ "id": "DEBT-0014",
+ "created": "2026-09-10T01:06:08Z",
+ "green": true,
+ "git_head": "711f09b4e4e12543646b71024734d4880eeadd97",
+ "scope": [
+  "src/lib/db/claims.ts",
+  "src/lib/gauges/pending-claims.ts",
+  "src/lib/gauges/standing-disagreements.ts",
+  "src/app/claims/page.tsx",
+  "tests/offline/url/narrowing.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "fb88b7d69457c8e65d9d9fe7ed3a1da487b60bfb988ba1db46653830d994e738",
+ "commands": [
+  {
+   "cmd": "test \"$(grep -rlE 'export function selectClaims' src | wc -l)\" -eq 1",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/url/narrowing.test.ts tests/offline/claims tests/offline/gauges",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-5160\n\n \u2713 |offline| tests/offline/gauges/cycle-health.test.ts (20 tests) 9ms\n \u2713 |offline| tests/offline/gauges/settled-values.test.ts (15 tests) 8ms\n \u2713 |offline| tests/offline/gauges/resolution-latency.test.ts (25 tests) 11ms\n \u2713 |offline| tests/offline/gauges/gauge.test.ts (42 tests) 12ms\n \u2713 |offline| tests/offline/claims/read.test.ts (18 tests) 28ms\n \u2713 |offline| tests/offline/gauges/bounded.test.ts (48 tests) 29ms\n \u2713 |offline| tests/offline/url/narrowing.test.ts (22 tests) 317ms\n \u2713 |offline| tests/offline/claims/filters.test.ts (34 tests) 8ms\n \u2713 |offline| tests/offline/gauges/standing-disagreements.test.ts (14 tests) 12ms\n \u2713 |offline| tests/offline/gauges/pending-claims.test.ts (25 tests) 13ms\n \u2713 |offline| tests/offline/gauges/queue-health.test.ts (16 tests) 11ms\n \u2713 |offline| tests/offline/gauges-ui/cards.test.ts (32 tests) 50ms\n \u2713 |offline| tests/offline/claims/page.test.ts (144 tests) 3174ms\n\n Test Files  13 passed (13)\n      Tests  455 passed (455)\n   Start at  18:05:49\n   Duration  4.22s (transform 1.19s, setup 0ms, collect 3.25s, tests 3.68s, environment 2ms, prepare 1.10s)\n\n(node:5183) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit\"",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
