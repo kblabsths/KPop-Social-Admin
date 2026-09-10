@@ -1,0 +1,35 @@
+{
+ "id": "BUG-0166",
+ "created": "2026-09-10T23:25:43Z",
+ "green": true,
+ "git_head": "04b618c2284ffafb7295ca0db2941a257472a270",
+ "scope": [
+  "src/lib/paging/machine.ts",
+  "tests/offline/paging/machine.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "6f32fe2473dfa6c4833f12a80296a612bca4c55ae4ba63924ea295442ebb2bf3",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/paging",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-94167\n\n \u2713 |offline| tests/offline/paging/bounds.test.ts (8 tests) 5ms\n \u2713 |offline| tests/offline/paging/answer.test.ts (7 tests) 3ms\n \u2713 |offline| tests/offline/paging/machine.test.ts (26 tests) 8ms\n\n Test Files  3 passed (3)\n      Tests  41 passed (41)\n   Start at  16:25:41\n   Duration  310ms (transform 101ms, setup 0ms, collect 151ms, tests 17ms, environment 0ms, prepare 196ms)\n\n(node:94174) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db/layering.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-94167\n\n \u2713 |offline| tests/offline/db/layering.test.ts (29 tests) 735ms\n\n Test Files  1 passed (1)\n      Tests  29 passed (29)\n   Start at  16:25:42\n   Duration  997ms (transform 43ms, setup 0ms, collect 44ms, tests 735ms, environment 0ms, prepare 53ms)\n\n(node:94203) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -q \"carries THIS press\" tests/offline/paging/machine.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q \"it.fails\" tests/offline/paging/machine.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
