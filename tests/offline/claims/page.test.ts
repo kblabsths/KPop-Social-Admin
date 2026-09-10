@@ -1497,6 +1497,50 @@ describe("the gauge's window line", () => {
       steps.filter((step) => step.method === "eq").map((step) => step.args[0]),
     ).toEqual([]);
   });
+
+  /**
+   * …and what it costs when that read REFUSES.
+   *
+   * Fact 2 is a count that renders no figure: it only decides which words an
+   * empty card takes. So a refusal of it may cost the operator those words and
+   * nothing else — the window line, the figures and the cards the gauge read
+   * DID answer all stay on screen, and the refusal is published beside them,
+   * named, rather than standing in for the section (the rule the list's own
+   * population takes, admin-window/BUG-0135). Nothing here was covered until
+   * the QA pass on admin-window/BUG-0163: this leg is the section's only
+   * read whose failure could take a healthy gauge down.
+   */
+  it("keeps the gauge on screen when its population count refuses, and names the refusal", async () => {
+    const refusingCount: Script = {
+      ...healthyScript(),
+      // Healthy for every read of the view EXCEPT the windowed count — the one
+      // carrying the window's lower bound (admin-window/BUG-0163).
+      [T.pendingClaims]: (call: RecordedCall) =>
+        call.steps.some(
+          (step) => step.method === "gte" && step.args[0] === "observed_at",
+        )
+          ? { error: permissionDenied(T.pendingClaims) }
+          : claimView(CLAIMS)(call),
+    };
+
+    for (const tab of ["buckets", "standing"]) {
+      const markup = await renderClaims(refusingCount, { tab, domain: "idols" });
+      const $ = cheerio.load(markup);
+      // The gauge still states the window it read, narrowing and all.
+      expect($('[data-surface="gauge"] [data-window]'), tab).toHaveLength(1);
+      // The refusal is published, on its own surface, naming the object.
+      const refusal = $('[data-surface="gauge_population"]');
+      expect(refusal, tab).toHaveLength(1);
+      expect(refusal.text(), tab).toContain(T.pendingClaims);
+      // Non-vacuous: a healthy page publishes that surface never.
+      expect(
+        cheerio.load(await renderClaims(healthyScript(), { tab, domain: "idols" }))(
+          '[data-surface="gauge_population"]',
+        ),
+        tab,
+      ).toHaveLength(0);
+    }
+  });
 });
 
 /* ── the four states ─────────────────────────────────────────────────────── */
