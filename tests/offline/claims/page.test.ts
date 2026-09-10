@@ -2391,6 +2391,35 @@ describe("the way out of a narrowing", () => {
     expect(markup).not.toContain(UNRENDERABLE_BUCKET);
   });
 
+  /**
+   * Criterion 2's other half, which the cases above cannot reach: a narrowing
+   * with no chip row is un-clearable in EVERY state it reaches, not only the
+   * one where it emptied the list. `?domain=` over a domain the view does
+   * carry still draws rows, still moves every figure on the page, and still
+   * has nothing on screen that drops it — measured on staging 2026-09-10
+   * against this landed tree, `/claims?domain=events`: 50 rows, gauge 849
+   * against 877 unnarrowed, and one exit whose href is the bare path.
+   *
+   * Graded from the rows the page drew rather than from the URL, so a page
+   * that hid the exit whenever the read came back non-empty fails here.
+   */
+  it("is on the screen while the narrowing still leaves rows to draw", async () => {
+    const markup = await renderClaims(healthyScript(), { domain: "events" });
+    // Non-vacuous: this narrowing removed claims without emptying the list.
+    const narrowed = claimIds(markup);
+    const all = claimIds(await renderClaims(healthyScript(), {}));
+    expect(narrowed.length).toBeGreaterThan(0);
+    expect(narrowed.length).toBeLessThan(all.length);
+
+    // No empty card to name it, so the bar is the only place it can be...
+    expect(emptyHook(markup)).toBeUndefined();
+    const exit = theExit(markup, "?domain=events with rows drawn");
+    // ...and it still drops the facet no chip row carries.
+    expect(paramsOf(exit.href)).toEqual({});
+    const arrived = await renderClaims(healthyScript(), paramsOf(exit.href));
+    expect(claimIds(arrived)).toEqual(all);
+  });
+
   it("says nothing about an exit where no filter is what emptied the page", async () => {
     // Criterion 4, from the other side: with the tab's own population empty,
     // no facet removed a row, so the card is the "nothing here yet" one and
