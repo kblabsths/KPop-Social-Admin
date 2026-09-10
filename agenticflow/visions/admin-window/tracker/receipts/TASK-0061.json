@@ -1,0 +1,25 @@
+{
+ "id": "TASK-0061",
+ "created": "2026-09-10T22:37:30Z",
+ "green": true,
+ "git_head": "96fb59df8da52a8f59f5f626c3dcbf1507ef0807",
+ "scope": [
+  "README.md",
+  "agenticflow/docs/STACK.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "8609db0c99bcc71e643c9e99bb6281fa59cf3e9002a9b1685d9dd14905f7022e",
+ "commands": [
+  {
+   "cmd": "! grep -nE '/scrapers|/review|\\.env\\.local|:3000' README.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
