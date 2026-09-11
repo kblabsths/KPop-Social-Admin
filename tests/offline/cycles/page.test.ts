@@ -1985,7 +1985,11 @@ describe("the resolution-latency gauge", () => {
     const markup = await renderCycles(
       healthyScript({ [T.fieldProvenance]: { data: [] }, [T.observations]: { data: [] } }),
     );
-    expect(readNumber(markup, "Applies in this window")).toBe(0);
+    // No decision in the window at all, so no figure counts one: the panel's
+    // own empty state stands where its four figures stood
+    // (admin-window/BUG-0206, pinned whole in "renders no latency figure where
+    // the window holds no decisions" below).
+    expect(() => readNumber(markup, "Applies in this window")).toThrow();
     // No rows and a stated reason: the trend is replaced by its empty card
     // rather than rendering a header row over nothing.
     expect(tableRows(markup, BY_DOMAIN)).toEqual([]);
@@ -3446,6 +3450,28 @@ function emptyWindows(): Script {
 }
 
 /**
+ * The one decision in `oneDecision()`'s window, taken from the shared
+ * population by the SHAPE `population.ts` documents as a verdict unset — it
+ * names no claim — rather than by index, so a reordered fixture carries this
+ * with it. Asserted to be exactly one row where it is used.
+ */
+const ONE_UNSET = APPLIES.filter((row) => row.observation_id === null).slice(0, 1);
+
+/**
+ * A latency window that HOLDS a decision, and exactly one: an unset, which
+ * names no claim. `applies` and `unmatchedApplies` are then real counts of
+ * zero, `verdictUnsets` is the one that explains them, and the wait has
+ * nothing to measure from — the grain LESSONS 7 is pinned at on this panel now
+ * that a window holding NOTHING states no figure (admin-window/BUG-0206).
+ */
+function oneDecision(): Script {
+  return healthyScript({
+    [T.fieldProvenance]: { data: [...ONE_UNSET] },
+    [T.observations]: { data: [] },
+  });
+}
+
+/**
  * The state cards inside a surface that no gauge block rendered — the
  * surface's OWN, in the order it drew them. These are exactly the cards the
  * live oracle still grades once the blocks are excluded.
@@ -3487,36 +3513,40 @@ const GAUGE_SURFACES = [
 
 describe("the state a gauge surface is in, at the grain the oracle reads it", () => {
   /**
-   * The rule is unchanged and the two gauges now answer it differently, which
-   * is the point of reading the state at this grain.
+   * The rule is unchanged, and since admin-window/BUG-0206 the two gauges
+   * answer it the same way — which is what that ticket settled for the second
+   * of them, the first having been admin-window/BUG-0203.
    *
    * A surface's state is the state of the read behind its FIGURES, and a card
-   * a BLOCK draws carries the marker and is excluded from it. Latency still
-   * states four figures over an empty window, so the only cards inside it are
-   * its blocks', it is excluded down to nothing, and it grades `ok`.
-   * Cycle health no longer renders a figure there at all
-   * (admin-window/BUG-0203): the card standing where its figures stood is the
-   * SURFACE's own, carries no marker, and is what the surface is graded on.
+   * a BLOCK draws carries the marker and is excluded from it. Over a window
+   * that holds nothing, neither gauge states a figure at all: the card
+   * standing where each one's figures stood is that SURFACE's own, carries no
+   * marker, and is the ONE card of the three inside it that the surface is
+   * graded on. That narrowing is what is measured below.
+   *
+   * What the exclusion changes about the VERDICT is proved where the kinds
+   * differ, which is no longer here: both gauges' own cards and both gauges'
+   * blocks' cards say `empty` over this window. The refusal case at the end of
+   * this block is where an exclusion drawn one selector wider swallows a
+   * surface's own account of itself and grades a broken page green
+   * (admin-window/BUG-0036).
    */
   it("grades each gauge on the read behind its own figures, block cards excluded", async () => {
     const markup = await renderCycles(emptyWindows());
     const $ = cheerio.load(markup);
 
-    // Cycle health: no figures over an empty window, so the emptiness is the
-    // surface's and the oracle reads it as the surface's.
-    expect(stateOf(markup, SURFACE_HOOKS.cycle_health, GAUGE_BLOCKS)).toBe("empty");
-    expect(ownCards(markup, SURFACE_HOOKS.cycle_health)).toEqual(["empty"]);
-
-    // Latency: figures over the same empty window, so nothing it draws itself
-    // is a state card and the exclusion is what keeps it graded on them.
-    expect(stateOf(markup, SURFACE_HOOKS.resolution_latency, GAUGE_BLOCKS)).toBe("ok");
-    expect(ownCards(markup, SURFACE_HOOKS.resolution_latency)).toEqual([]);
-    // Not vacuous: drop the marker and its blocks' cards decide its state.
-    expect(stateOf(markup, SURFACE_HOOKS.resolution_latency)).toBe("empty");
-
     for (const hook of GAUGE_SURFACES) {
-      // Both gauges really did put their blocks' cards up.
+      // No figure over an empty window, so the emptiness is the surface's own
+      // and the oracle reads it off the surface's own card.
+      expect(stateOf(markup, hook, GAUGE_BLOCKS), hook).toBe("empty");
+      expect(ownCards(markup, hook), hook).toEqual(["empty"]);
+      // Both gauges really did put their blocks' cards up, so the exclusion is
+      // doing work rather than matching nothing: the surface holds strictly
+      // more state cards than the one it is graded on.
       expect($(`${hook} ${GAUGE_BLOCKS} [data-state]`).length, hook).toBeGreaterThanOrEqual(2);
+      expect($(`${hook} [data-state]`).length, hook).toBeGreaterThan(
+        ownCards(markup, hook).length,
+      );
     }
 
     // …and neither gauge got there by refusing a read: an emptiness is not an
@@ -3525,11 +3555,27 @@ describe("the state a gauge surface is in, at the grain the oracle reads it", ()
     expect(readsFailed(markup)).toEqual([]);
   });
 
+  /**
+   * LESSONS 7 on the latency panel, at the grain it still states figures: a
+   * window that HOLDS a decision. That one decision names no claim, so two of
+   * the three labelled counts are a real `0` beside their label rather than an
+   * absence or a blank, the third is the `1` that explains them, and the wait
+   * — which measures rather than counts — is the app's dash with its reason.
+   * What a window holding NO decision renders is the case below, and only that
+   * case changed (admin-window/BUG-0206).
+   */
   it("states every labelled count as a real 0, and the wait it cannot measure as an absence", async () => {
-    const markup = await renderCycles(emptyWindows());
+    // The fixture is what this case says it is: one decision, naming no claim.
+    expect(ONE_UNSET).toHaveLength(1);
+    const markup = await renderCycles(oneDecision());
+    const expected: Record<string, number> = {
+      "Applies in this window": 0,
+      "Unset by a human decision": 1,
+      "Applies with no claim found": 0,
+    };
 
     for (const label of LATENCY_COUNTS) {
-      expect(readNumber(markup, label), label).toBe(0);
+      expect(readNumber(markup, label), label).toBe(expected[label]);
       // Read a second way, structurally: the label really does stand beside a
       // figure, so none of these is a 0 that only a sentence holds.
       expect(figureLabels(markup), label).toContain(label);
@@ -3651,23 +3697,78 @@ describe("the state a gauge surface is in, at the grain the oracle reads it", ()
    * found 0` two inches under the 69-row cycles table — the zeros exclude
    * 1,712 rows and name none of them (LOOK_AND_FEEL, Zeroes).
    *
-   * Strict: the day the divergence goes, this XPASSes and sends the reader to
-   * the ticket. Flipping it to a plain `it(...)` is part of that fix, and so
-   * is narrowing `LATENCY_COUNTS` out of the "states every labelled count as a
-   * real 0" case above, the way BUG-0203 narrowed `HEALTH_COUNTS` out of it.
+   * Filed strict (`it.fails`) and flipped to a plain `it(...)` by the fix,
+   * which also narrowed `LATENCY_COUNTS` out of the "states every labelled
+   * count as a real 0" case above — that case now runs over a window holding
+   * one decision, the way BUG-0203 moved `HEALTH_COUNTS` onto a window holding
+   * one cycle.
+   *
+   * Behaviour, not copy: the four figures are absent and the panel's own empty
+   * state is present with its two lines; which words those lines use is the
+   * designer's and is not pinned here.
    */
-  it.fails(
-    "renders no latency figure where the window holds no decisions (admin-window/BUG-0206)",
-    async () => {
-      const markup = await renderCycles(emptyWindows());
+  it("renders no latency figure where the window holds no decisions (admin-window/BUG-0206)", async () => {
+    const markup = await renderCycles(emptyWindows());
+    const $ = cheerio.load(markup);
+    const latency = $(SURFACE_HOOKS.resolution_latency);
 
-      for (const label of LATENCY_COUNTS) {
-        expect(figureLabels(markup), label).not.toContain(label);
-      }
-      // In their place, ONE card of the surface's own — not its two blocks'.
-      expect(ownCards(markup, SURFACE_HOOKS.resolution_latency)).toEqual(["empty"]);
-    },
-  );
+    for (const label of LATENCY_COUNTS) {
+      expect(figureLabels(markup), label).not.toContain(label);
+      // Neither the figure nor the sub-line derived from it is on the page.
+      expect(() => readNumber(markup, label), label).toThrow();
+      expect(latency.text(), label).not.toContain(label);
+    }
+    // The wait goes with the three counts: a window holding no decision holds
+    // no wait to measure either, so its dash and its reason go too.
+    expect(latency.text()).not.toContain(MEDIAN_WAIT);
+
+    // In their place, ONE card of the surface's own — not its two blocks'.
+    expect(ownCards(markup, SURFACE_HOOKS.resolution_latency)).toEqual(["empty"]);
+    const own = latency
+      .find('[data-state="empty"]')
+      .toArray()
+      .filter((element) => $(element).closest(GAUGE_BLOCKS).length === 0);
+    expect(own).toHaveLength(1);
+    // What it holds, and the one thing that fills it: two distinct, non-empty
+    // lines.
+    const lines = $(own[0])
+      .find("p")
+      .toArray()
+      .map((line) => $(line).text().replace(/\s+/g, " ").trim());
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).not.toBe("");
+    expect(lines[1]).not.toBe("");
+    expect(lines[0]).not.toBe(lines[1]);
+
+    // The window line is untouched and still the first thing under the
+    // heading: it names the interval this read carried, and the card stands
+    // after it.
+    const line = latency.find('[data-window="resolution_latency"]');
+    expect(line).toHaveLength(1);
+    expect(line.attr("data-window-since")).toBeDefined();
+    const order = latency
+      .find('[data-window="resolution_latency"], [data-state]')
+      .toArray();
+    expect(order[0]).toBe(line[0]);
+
+    // Nothing about the emptiness is a verdict: no tone, no severity word, no
+    // second reading of the same fact.
+    expect(latency.find("[data-outcome-tone]")).toHaveLength(0);
+
+    // …and a window that holds decisions renders exactly what it rendered
+    // before: all four figures, all four sub-lines, the wait spread, the
+    // domain table — and no card of the surface's own.
+    const filled = await renderCycles(healthyScript());
+    for (const label of LATENCY_COUNTS) {
+      expect(figureLabels(filled), label).toContain(label);
+    }
+    for (const label of [...LATENCY_COUNTS, MEDIAN_WAIT]) {
+      expect(cardSubLine(filled, label), label).not.toBe("");
+    }
+    expect(ownCards(filled, SURFACE_HOOKS.resolution_latency)).toEqual([]);
+    expect(tableRows(filled, WAITS).length).toBeGreaterThan(0);
+    expect(tableRows(filled, BY_DOMAIN).length).toBeGreaterThan(0);
+  });
 
   it("explains every card it excludes from two facts, not one", async () => {
     const markup = await renderCycles(emptyWindows());
