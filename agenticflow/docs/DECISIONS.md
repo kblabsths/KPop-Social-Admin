@@ -1568,3 +1568,63 @@ quotes nothing — not the type, not the status, not a byte of the body — and
 the client never derives a second account out of foreign text, and the one
 place a reduction of a foreign document happens stays `errorMessage` in
 `lib/db/result.ts` (BUG-0170) — a path this fetch never touches.
+
+## 2026-09-11 — a paged surface's window line is a client statement, and its truncation verdict is the paging state's (architect, admin-window/BUG-0172)
+
+QA measured both paged surfaces publishing two answers to one question after a
+walk: `/browse` at `[data-paging="exhausted"]` with 120 rows drawn, under a
+server-rendered line still saying earlier arrivals are not shown; `/claims` at
+616 rows under "the 50 longest-waiting are below — the rest are not shown". The
+cause is structural, not a builder's slip: §5's byte-identity amendment made the
+first server screen immovable and the window line sits ABOVE the client wrapper,
+so a press changes the rows underneath a sentence nothing can reach. **Ruled:
+the line of a paged surface is ONE element rendered inside client-land** — a
+zero-markup provider (`PagingProvider`, `src/components/ui/paging.tsx`)
+publishes the press's state and a client line (`PagedWindowLine`) renders the
+same shared `WindowLine` primitive with the facts the page composes, so the
+first server render stays byte-identical while the sentence stops lying after a
+press. `truncated` is `status !== "exhausted"` and nothing else, shared with the
+control below it; `held` keeps each surface's own meaning (rows on screen on
+`/browse`, the matching count on `/claims`, which a live oracle grades the paged
+walk against); no `data-window-*` attribute is added, because an added attribute
+is itself a first-screen change. **Two alternatives were rejected on the
+record.** A second, client-rendered continuation line below the rows leaves the
+false sentence where the operator reads it first and gives the page two
+`[data-window]` elements, which `stateOf` and the absence sweep both grade as a
+defect. Rewording the truncated clause ("the first screen shows…") does not
+touch the hooks, where the contradiction is actually published — copy never
+fixes a machine-readable verdict (LESSONS 11). The door this closes: no surface
+in this app states a fact about a read in markup that the read's own later
+answers cannot reach.
+
+## 2026-09-11 — a live oracle is sized by its assertion, and `whileStill` is fixed by shrinking the make (architect, admin-window/TASK-0077, from QA's TASK-0075 residuals)
+
+Staging holds 877 pending claims against PostgREST's 1,000-row ceiling and was
+measured touching 887 in a burst; three helpers in `claims.live.test.ts` read
+the whole view to tally it, so the file's every case refuses permanently the day
+the view crosses the ceiling — a stored check of five tickets going red on a day
+the product is fine. **Ruled:** an oracle's "whole" figure comes from the
+database's own exact count taken on the SAME request as the rows (a count has no
+ceiling; a second read is a second race), a row set is bounded by what the
+assertion compares, and a per-group census counts instead of tallying rows; the
+identity proof takes a day window measured to sit at half the cap and refuses,
+with an instruction, at 80% of it. **On the paged walk:** no new device — a
+smaller shape. `whileStill` decays with the DURATION of the make, and a 7–20 s
+make (render + ~14-request walk + enumeration) cannot hold still against a
+scraper that churns in bursts; more attempts buy more long windows. The walk
+therefore runs a narrowing chosen at RUN TIME — the smallest matching set still
+larger than one window — with the unnarrowed page keeping a first-screen +
+one-press assertion. TASK-0075's "one round trip" rule is amended in one line:
+what it protects is the still window's duration, so concurrent bounded counts in
+one `Promise.all` are one wait and are permitted where a single read would have
+to carry the whole table; sequential reads inside a held shape stay banned. No
+tolerance, no `--retry`, no skip — 2026-09-10 rule 3 is untouched — but
+exhaustion gains its own voice: `whileStill`'s message opens with a marker
+naming the database as what moved, because an honest refusal and a product
+defect otherwise arrive identically in a downstream lane's stored check.
+**Accepted, and recorded so it is not copied:** `claims.live`'s `source_id` chip
+case compares page labels to the sources registry outside `whileStill`; the
+registry is 3 static rows, both sides are keyed on ids the page itself rendered,
+and a new source arrives with a deploy rather than a scraper cycle. It carries a
+comment stating exactly that, and refuses if that read ever comes back larger
+than the small bound the comment names.

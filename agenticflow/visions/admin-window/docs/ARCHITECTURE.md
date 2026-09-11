@@ -531,6 +531,36 @@ may do:
   a bounded read at the instant it was issued, and neither surface says
   otherwise.
 
+- **The window line of a paged surface states the read the operator NOW
+  HOLDS, and its truncation verdict is the paging state's** (amended
+  2026-09-11, architect, from QA's TASK-0069 measurement — admin-window/BUG-0172).
+  A press is a read on these two surfaces, so the sentence describing it
+  cannot be a server-rendered constant sitting above a client wrapper: after a
+  walk to the end of the set `/browse` published `data-paging="exhausted"`
+  under 120 drawn rows and `data-window-truncated="true"` over them, and
+  `/claims` said "the 50 longest-waiting are below — the rest are not shown"
+  under 616 rows. Three rules, and they hold on both surfaces at once:
+  1. **ONE `[data-window]` element, rendered inside client-land.** A second,
+     continuation line is not a fix — it leaves the false sentence where the
+     operator reads it first, and it breaks the one-element rule
+     `tests/offline/absence/pages.test.ts` and every `stateOf` selector rest
+     on. The surface's paging state is published by a provider that renders no
+     markup of its own (`PagingProvider`, `src/components/ui/paging.tsx`), so
+     the first SERVER render is byte-identical to the unpaged one — which is
+     what makes this compatible with §5's byte-identity amendment rather than
+     an exception to it.
+  2. **`truncated` has ONE derivation and it is the status**
+     (`status !== "exhausted"`), shared with the control below. Nothing
+     re-derives it by counting rows, and no rewording substitutes for it: the
+     contradiction is published in the HOOKS, and copy cannot fix a
+     machine-readable verdict (LESSONS 11, one row one verdict).
+  3. **Each surface's other facts keep their own meaning.** `held` is what the
+     surface's own reads established — the rows on screen where the window read
+     IS the population (`/browse`), the matching COUNT where a count read
+     established it (`/claims`, whose `data-window-held` a live oracle grades
+     the paged walk against). No `data-window-*` attribute is added, because an
+     added attribute is a first-screen change.
+
 What paging may **not** do, stated so it is not inferred: it does not raise
 `ROW_CAP`; it does not turn a window read into a complete read; it does not
 reopen whole-table browsing (Browse keeps its one curated view — a second view,
@@ -591,6 +621,16 @@ it is a pure synchronous component that takes plain props.**
   paging control of `/claims` and `/browse`. They receive data as props and
   fetch nothing, with the single framed exception §4 rule 1 now names: a paging
   control calls this app's own paging route handler, and nothing else.
+
+  **Amended 2026-09-11 (architect, admin-window/BUG-0172): a paged surface's
+  WINDOW LINE joins that list**, through the zero-markup provider that
+  publishes the press's state (`PagingProvider`) and the client line that reads
+  it (`PagedWindowLine`). The line renders the same shared `WindowLine`
+  primitive with the same facts the page composes, so the first server render
+  is byte-identical; what it gains is the ability to stop lying after a press.
+  The page's other children — the column selector, the first-screen leg notes —
+  stay SERVER components handed through the provider as children, so nothing
+  else moves into the client bundle.
 - **State lives in the URL** (LOOK_AND_FEEL bar 11): every filter, sort, tab
   and page position is a `searchParams` value. No client-only filter state, no
   `useState` filter that a reload forgets.
@@ -1472,6 +1512,34 @@ already ships.
      grades carries `data-surface="<name>"`, unique on the page, and the
      oracle selects on that. Five files still address by position: DEBT-0002.
 
+- **A live oracle is sized by the ASSERTION, not by the data** (added
+  2026-09-11, architect, from QA's TASK-0075 residual — admin-window/TASK-0077).
+  PostgREST stops at 1,000 rows whatever a `.limit()` asks, so an oracle that
+  reads a whole table to tally it has a lifespan: `claims.live.test.ts` read
+  `pending_claims` three ways at 877 rows, and at 1,000 every case in the file
+  refuses permanently — a stored check of five tickets going red on the day the
+  product is fine. So: a "whole" figure comes from the database's own exact
+  count, taken **on the same request as the rows** it accompanies (a count is
+  not subject to the row ceiling and a second read is a second race); a row set
+  is bounded by what the assertion compares (the page's own window, plus a
+  margin); a per-group census counts rather than tallies rows. The cap guard
+  stays and is what makes the failure legible when a bound is genuinely
+  reached.
+- **`whileStill` decays with the DURATION of the make, so shrink the make**
+  (same date, same ruling). The device reads, makes, reads again and needs the
+  two reads to agree; a make of 7–20 s (a render plus a ~14-request paged walk
+  plus an enumeration) cannot hold still against a scraper that churns in
+  bursts, and more attempts only buy more long windows. The lever is the SIZE
+  of what is walked — a narrowing chosen at run time, small enough to hold
+  still and still larger than one window — never a tolerance, a retry or a
+  skip (DECISIONS 2026-09-10 rule 3). What TASK-0075's "one round trip" rule
+  protects is that duration and not the request count: concurrent bounded
+  counts in one `Promise.all` are one wait and are permitted where a single
+  read would have to carry the whole table; sequential reads inside a held
+  shape stay banned. And exhaustion says so in its own voice — its message
+  opens with a marker naming the database as what moved, because an honest
+  refusal and a product defect otherwise share one exit code in a downstream
+  lane's stored check.
 - **Every live test sweeps what it wrote** (acceptance test 13), in a `finally`,
   restoring the prior value. M1's only writer is the edit-surface test, and it
   writes **only `groups` / `idols`** — one field of an existing row, prior value
@@ -1719,6 +1787,8 @@ decomposition brief of every ticket touching that surface.
 
 | 20 | **A URL facet value whose rendered spelling is not the value the read used — one property of "a URL value inside a sentence this app wrote", per bug, seven bugs deep** | 7 | One family, one property each: BUG-0137 (no bidi in a key), BUG-0143 (a uuid in any spelling Postgres matches → `canonicalRecordId`), BUG-0145 (the padding a paste brought, by whitespace), BUG-0146 (the same padding by INK), BUG-0147 (`?cycle=` spelled through the allowlist), BUG-0153 (`?source=` the same), BUG-0155 (`?source=%20ticketmaster` narrows by `" ticketmaster"` and says, in the app's own words, "found no runs from ticketmaster at all" — over a source the same page draws five runs for one invisible character away, with nothing on the dropped-parameter line). Six of the seven are one value class getting one property; the seventh is the property no predicate can answer | **PROMOTED at 7, 2026-09-09** (architect, BUG-0155 ruling) — §7 gains "What is SHOWN is what was USED: one derivation per URL value class". Row 15 is the same family's OTHER half and stays as recorded: 15 is *may I spell it* (answered by an allowlist, once), 20 is *is this what I used* (answered by a derivation, once per value class). The class survived six fixes because the two questions were answered in different places and only one of them had a single home: `canonicalRecordId` was the uuid class's derivation from BUG-0143 on, and the free-text class never got one — its "derivation" was `sourceNarrowing`, four lines in `src/lib/db/runs.ts` that returned the value VERBATIM with a comment explaining why trimming would be wrong. BUG-0155 lands `canonicalUrlText` (`src/lib/url/text.ts`) as that home and retires `sourceNarrowing`, which also closes row 17's second instance (a pure function parked in `lib/db/**`) and the last half of row 18. Cited in the decomposition brief of every ticket that derives a value from a URL |
 | 3 (re-count) | A list read with no `.range()`, no `.limit()` and no `.order()` | **0 new** | — | **The rule held.** M1 structure walk, 2026-09-03: every `.select(` in `src/lib/db/**` was traced. Fourteen chains a crude scan flagged are all either `.maybeSingle()` by primary key or by-id chunks bounded with `.limit(ids.length)`; every list read goes through `readComplete` / `readRows` with a total order and a bound. Count stays 1 (the original, fixed under TASK-0026). |
+
+| 21 | **A server-rendered sentence stating a fact about rows a CLIENT press then changes** | 2 (one class, both paged surfaces) | `/browse`: `[data-window-truncated="true"]` ("events that arrived before the ones below are not shown") standing over 120 drawn rows beside `[data-paging="exhausted"]`, and `data-window-held` stuck at `"50"` under 100 rows; `/claims`: 616 rows under "the 50 longest-waiting are below — the rest are not shown", both measured in a browser by QA on 2026-09-11 (BUG-0172) | **PROMOTED at 2, 2026-09-11 (architect, BUG-0172's ruling) — and it is DESIGN-shaped, so it is fixed as design rather than left to accumulate**: §4.3 read kind 3 gains "the window line of a paged surface states the read the operator now holds", and §5 names the provider + client line as the mechanism. The class exists because two correct rules met: §5's byte-identical first screen (which froze the line server-side) and §4.3's "a window line states the read that happened" (which the press then falsified). Neither rule is wrong; what was missing was where the line LIVES on a surface whose read continues. Cited in the decomposition brief of every ticket that adds a client-updated region under a server-rendered statement — and the general form, for the next reader: **if a press can change the rows, the sentence about those rows renders where the press can reach it.** |
 
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
 findings on TASK-0001/0003/0006; rows 4–5 at the second pass the same day,
