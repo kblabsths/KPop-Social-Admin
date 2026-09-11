@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T12:01:23Z — do not edit)
+# Tracker index (regenerated 2026-09-11T12:12:28Z — do not edit)
 
 ## open
 - BUG-0189 [P2][bug][M3] The queue-health live case takes its ABSENCE from the markup, so a not-provisioned page passes it vacuously  (scope:tests/live/queues.live.test.ts from:TASK-0070)
@@ -14,7 +14,7 @@
 - DEBT-0020 [P3][debt][patch] The transport account states its cause sentence twice: postgrest-js appends cause.stack, whose head repeats the Caused-by line  (deps:BUG-0179,BUG-0182,BUG-0187 scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0173)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - TASK-0071 [P2][task][M3] Two figures on /claims never silently disagree: each says whether it is a window or a total  (deps:TASK-0070,BUG-0174,BUG-0183,BUG-0186 scope:src/app/claims/page.tsx,src/components/claims/bucket-table.tsx,src/components/claims/tabs.tsx,tests/offline/claims/page.test.ts,tests/offline/gauges-ui,tests/live/claims.live.test.ts @builder-281)
 
-Totals — claimed:1, done:40, open:12. Archived: 252.
+Totals — built:1, done:40, open:12. Archived: 252.
