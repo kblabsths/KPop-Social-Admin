@@ -1,7 +1,8 @@
-# Tracker index (regenerated 2026-09-11T08:37:05Z — do not edit)
+# Tracker index (regenerated 2026-09-11T08:45:48Z — do not edit)
 
 ## open
 - BUG-0176 [P2][bug][M3] A paged not-provisioned answer renders red, stutters its object and tells the operator to press again for a table that does not exist — /claims and /browse  (deps:BUG-0175 scope:src/lib/paging/machine.ts,src/components/ui/paging.tsx,src/components/ui/not-provisioned.tsx,tests/offline/paging/machine.test.ts,tests/offline/ui/paging.test.ts,tests/offline/ui/primitives.test.ts from:BUG-0172)
+- BUG-0181 [P2][bug][M3] A foreign column-absent envelope makes the app name an intermediary's own text as the missing object — classify()'s mined column is admitted unvalidated  (deps:BUG-0179(unmet:1) scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0175)
 - DEBT-0017 [P2][debt][M3] Three paging-leaf truths: a ceiling-false invariant, a stale test title, and a closure guard that stops at a barrel  (deps:BUG-0176(unmet:1) scope:src/lib/paging/machine.ts,tests/offline/paging/machine.test.ts,tests/offline/claims/read.test.ts from:BUG-0168)
 - DEBT-0018 [P2][debt][M3] Two vitest runs in one checkout redden the layering suite: its self-guards write a FIXED probe path and remove the shared parent  (scope:tests/offline/db/layering.test.ts,tests/isolated/probe-race.isolated.test.ts from:BUG-0170)
 - FEAT-0016 [P2][feat][M3] F15 — every windowed figure is true about the read that produced it  (scope:src/app/claims/page.tsx,src/app/sources/page.tsx,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/gauges,src/components/claims,src/components/sources,src/components/ui/window-line.tsx,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/sources/read.test.ts,tests/offline/gauges,tests/live/claims.live.test.ts,tests/live/sources.live.test.ts)
@@ -22,4 +23,4 @@
 ## qa
 - BUG-0179 [P2][bug][M3] The account's one derivation, applied evenly: the code arm, a body with no words, and a document one line down  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts @builder-268 from:BUG-0173)
 
-Totals — claimed:1, done:27, open:14, qa:1. Archived: 252.
+Totals — claimed:1, done:27, open:15, qa:1. Archived: 252.
