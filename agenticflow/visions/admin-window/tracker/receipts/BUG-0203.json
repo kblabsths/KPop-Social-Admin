@@ -1,0 +1,40 @@
+{
+ "id": "BUG-0203",
+ "created": "2026-09-11T18:09:58Z",
+ "green": true,
+ "git_head": "239e77c4bac50f4aa56b569bdda28b650ade9e36",
+ "scope": [
+  "src/components/cycles/cycle-health.tsx",
+  "tests/offline/cycles/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "79e79ff4277f603724065b4ab6947cca3061a04c78e08addaaaddf3b392c15d8",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "riments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 4.5s\n  Running TypeScript ...\n  Finished TypeScript in 7.1s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 176ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/browse/rows\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-99520/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:99815) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -q 'renders no health figure where the window holds no cycles' tests/offline/cycles/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/cycles/page.test.ts tests/offline/gauges/cycle-health.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-99520\n\n \u2713 |offline| tests/offline/gauges/cycle-health.test.ts (20 tests) 10ms\n \u2713 |offline| tests/offline/cycles/page.test.ts (175 tests) 4031ms\n\n Test Files  2 passed (2)\n      Tests  195 passed (195)\n   Start at  11:09:45\n   Duration  5.04s (transform 499ms, setup 0ms, collect 993ms, tests 4.04s, environment 0ms, prepare 147ms)\n\n(node:99965) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/cycles.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-99520\n\n \u2713 |live| tests/live/cycles.live.test.ts (7 tests) 5182ms\n   \u2713 the resolver's cycles against staging > names every surface on the page once, whatever order they are in  1142ms\n   \u2713 the resolver's cycles against staging > renders the newest cycles, newest first, as the table holds them  582ms\n   \u2713 the resolver's cycles against staging > renders every count and every error line the row carries  1977ms\n   \u2713 the resolver's cycles against staging > reads a running, a skipped and a dead cycle as what they are  342ms\n   \u2713 the resolver's cycles against staging > marks the cycle a Dashboard link asks for  410ms\n   \u2713 the two gauges on this page against staging > separates the applies it measured from the decisions that name no claim  456ms\n\n Test Files  1 passed (1)\n      Tests  7 passed (7)\n   Start at  11:09:51\n   Duration  6.57s (transform 520ms, setup 45ms, collect 924ms, tests 5.18s, environment 0ms, prepare 187ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/cycles.live.test.ts\n(node:513) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
