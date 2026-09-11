@@ -475,10 +475,33 @@ function refusalFor(thrown: unknown): { reason: string; reasonFrom: ReasonAuthor
  * it decides whether this is the page this press asked for, and `held` still
  * grows by the rows that actually arrived, so a server echoing some other
  * bound can never make this surface claim rows it does not hold. Under rule 2
- * those rows are exactly one window on every continuing page, which is what
- * keeps the invariant true: after any press, either
- * `pageBound(String(held), deps.size)` is `ok` or the status is `exhausted` —
- * `held` leaves the bound grid only on the final page.
+ * those rows are exactly ONE WINDOW on every continuing page, so `held` walks
+ * the grid `pageBound` (`./bounds`) enforces instead of wandering off it.
+ *
+ * **The two places `held` may sit OFF that grid** — both of them honest, and
+ * neither of them this module's to repair (admin-window/DEBT-0017; the
+ * sentence that stood here named only the first and was false at the second):
+ *
+ *  1. **The FINAL page**, short or empty, which ends `exhausted`. There is no
+ *     next bound to serve, so a refused `pageBound(String(held), deps.size)`
+ *     is the honest answer and the widget's exhausted arm is what is drawn.
+ *  2. **The CEILING.** `pageBound` refuses every bound above
+ *     `MAX_PAGE_OFFSET`, and a full window served AT that ceiling appends by
+ *     rule 2 like any other page: `held` becomes `MAX_PAGE_OFFSET +
+ *     deps.size`, the answer's `exhausted` is false, and the status is
+ *     `idle`. Nothing here clamps it and nothing here may: the set is not
+ *     over, and a driver that said it was would be inventing the end of a set
+ *     from a number — the very defect rule 2 exists to stop. `PageMore`
+ *     (`src/components/ui/paging.tsx`) asks `pageBound` of that next bound and
+ *     draws its LIMIT arm, which withdraws the control without claiming the
+ *     set finished; that is where this state is answered, by the ruling of
+ *     2026-09-10 (admin-window/TASK-0067).
+ *
+ * So the rule that HOLDS after any press is: `held` grew by one window, by a
+ * short final page, or not at all, and the bound the next press would carry
+ * is servable unless the status is `exhausted` or the bound is past
+ * `MAX_PAGE_OFFSET`. Both escapes are driven in
+ * `tests/offline/paging/machine.test.ts`.
  */
 export async function requestPage<Row>(
   state: PageState<Row>,
@@ -582,8 +605,10 @@ export async function requestPage<Row>(
       return {
         rows: [...state.rows, ...answer.rows],
         // By the WINDOW on every continuing page, so the next bound is on the
-        // grid `pageBound` enforces BY CONSTRUCTION; only a final page — which
-        // ends `exhausted` — may leave it.
+        // grid `pageBound` enforces BY CONSTRUCTION — except at the two places
+        // the header names: a final page, which ends `exhausted`, and the
+        // `MAX_PAGE_OFFSET` ceiling, where a full window still lands and the
+        // widget's limit arm is the answer.
         held: state.held + served,
         status: answer.exhausted ? "exhausted" : "idle",
         refusal: null,
