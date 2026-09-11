@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { Badge, type Column, DataTable } from "@/components/ui";
+import type { ClaimLine } from "@/lib/claims/lines";
 import { orDash, relativeAge } from "@/lib/format";
 import { factKey, hasVisibleContent } from "@/lib/verdict/decision";
 
@@ -39,34 +40,15 @@ import { factKey, hasVisibleContent } from "@/lib/verdict/decision";
  *
  * A pure component: plain props, no fetching (ARCHITECTURE.md §4 rule 1).
  * Nothing here settles anything — every control in this markup is a link.
+ *
+ * **`ClaimLine` is declared in `src/lib/claims/lines.ts`** since
+ * admin-window/TASK-0065, with every docstring it had here: the claims route
+ * handler must hand back rows shaped exactly as the first screen's, and a
+ * second copy of the shape is LESSONS 5. This file imports the type and
+ * re-exports it, so `@/components/claims` still carries the name for the
+ * importers that already ask it for one.
  */
-export interface ClaimLine {
-  /** `pending_claims.observation_id` — the claim, and the row's key. */
-  observationId: string;
-  bucket: string;
-  domain: string;
-  field: string;
-  /** The canonical row this claim is about; null while it has none. */
-  entityId: string | null;
-  /** The claim's source, as the machine keys it — what the link narrows by. */
-  sourceId: string;
-  /**
-   * What that source is CALLED: the registry's `sources.source`, which is the
-   * name `/sources`, `/browse` and every provenance line already show — or the
-   * id verbatim when the registry names nothing readable for it: no row, or a
-   * row whose name has no ink in it (admin-window/BUG-0043, BUG-0154;
-   * `sourceLabel` in `lib/sources/names.ts`).
-   */
-  source: string;
-  /** When the claim was made — `observations.observed_at`; null if unknown. */
-  observedAt: string | null;
-  /** What an `awaiting_row` claim still needs, named. Null in other buckets. */
-  unmetRequirement: string | null;
-  /** The source's page, narrowed to it. */
-  sourceHref: string;
-  /** Where the fact's provenance is shown, or null when there is no row yet. */
-  provenanceHref: string | null;
-}
+export type { ClaimLine };
 
 /**
  * The list's BOUND — campaign admin-window/BUG-0041.

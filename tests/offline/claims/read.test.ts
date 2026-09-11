@@ -12,7 +12,8 @@ import {
   type ClaimRow,
 } from "@/lib/db/claims";
 import { T } from "@/lib/db/tables";
-import { CLAIMS, OBSERVED_AT, SOURCE, claimView } from "./population";
+import { claimLines } from "@/lib/claims/lines";
+import { CLAIMS, OBSERVED_AT, SOURCE, SOURCE_NAME, claimView } from "./population";
 import { pendingClaimRow } from "../../fixtures/rows";
 import {
   permissionDenied,
@@ -121,7 +122,105 @@ describe("the claim window read", () => {
       ["observed_at", { ascending: true, nullsFirst: false }],
       ["observation_id", { ascending: true }],
     ]);
-    expect(argsOf(stub, T.pendingClaims, "limit")).toEqual([[3]]);
+    // An omitted offset is offset 0, spelled as the range it is: PostgREST's
+    // `.range()` is inclusive at both ends (admin-window/TASK-0065).
+    expect(argsOf(stub, T.pendingClaims, "range")).toEqual([[0, 2]]);
+    expect(argsOf(stub, T.pendingClaims, "limit")).toEqual([]);
+  });
+
+  it.each([
+    { offset: undefined, from: 0, to: 49 },
+    { offset: 0, from: 0, to: 49 },
+    { offset: 50, from: 50, to: 99 },
+  ])(
+    "asks for range($from, $to) at offset $offset, in the same total order and with the parked bucket excluded",
+    async ({ offset, from, to }) => {
+      const stub = scripted(wholeView());
+      const result = await readClaimWindow(
+        offset === undefined ? { limit: 50 } : { limit: 50, offset },
+        stub.asSupabaseClient(),
+      );
+      expect(result.kind).toBe("ok");
+
+      // The bound moves; nothing else about the request does. The order is
+      // what makes a window at offset 50 the CONTINUATION of the one at 0
+      // rather than a second arbitrary set (admin-window/TASK-0065).
+      expect(argsOf(stub, T.pendingClaims, "order")).toEqual([
+        ["observed_at", { ascending: true, nullsFirst: false }],
+        ["observation_id", { ascending: true }],
+      ]);
+      expect(argsOf(stub, T.pendingClaims, "range")).toEqual([[from, to]]);
+      expect(argsOf(stub, T.pendingClaims, "limit")).toEqual([]);
+      // §6 trap 4 at EVERY offset: a paged read is the same narrowing further
+      // down the order, so a page that dropped this would leak the parked
+      // bucket into a rendering the first screen never showed.
+      expect(argsOf(stub, T.pendingClaims, "neq")).toEqual([["bucket", PARKED]]);
+      if (result.kind !== "ok") return;
+      expect(result.data.map((claim) => claim.bucket)).not.toContain(PARKED);
+    },
+  );
+
+  it("pages the SAME order: two windows meet exactly, with nothing repeated or dropped", async () => {
+    // The property paging rests on. The fixture population is small, so the
+    // pages are small — what is asserted is that page 2 begins where page 1
+    // ended in the one order the query states, over claims the exclusion has
+    // already taken the parked bucket out of.
+    const expected = longestWaiting(SHOWABLE);
+    const first = await readClaimWindow(
+      { limit: 4 },
+      scripted(wholeView()).asSupabaseClient(),
+    );
+    const second = await readClaimWindow(
+      { limit: 4, offset: 4 },
+      scripted(wholeView()).asSupabaseClient(),
+    );
+    if (first.kind !== "ok" || second.kind !== "ok") {
+      throw new Error("expected both pages to be ok");
+    }
+    expect(first.data.map((claim) => claim.observation_id)).toEqual(
+      expected.slice(0, 4),
+    );
+    expect(second.data.map((claim) => claim.observation_id)).toEqual(
+      expected.slice(4, 8),
+    );
+  });
+
+  it("keeps the parked bucket out of a page at offset 50, over a view that really has one", async () => {
+    // The offset-50 chain above is asserted on a fixture too small to fill a
+    // second page, so the EXCLUSION there is a claim about the query alone.
+    // This is the same claim about the rows: 120 claims, every fourth one
+    // parked, read at offset 50 — the page must be the 51st to 100th
+    // RENDERABLE claim of the order, with no `in_window` row anywhere in it.
+    const many = Array.from({ length: 120 }, (_, index) =>
+      pendingClaimRow(index % 4 === 0 ? "in_window" : "agreeing", {
+        observation_id: `0192bbbb-0000-7000-8000-${String(index).padStart(12, "0")}`,
+        observed_at: new Date(Date.UTC(2026, 0, 1) + index * 1000).toISOString(),
+      }),
+    );
+    const showable = many.filter((claim) => claim.bucket !== PARKED);
+    expect(showable.length).toBeGreaterThan(50);
+
+    const stub = scripted({ [T.pendingClaims]: claimView(many) });
+    const result = await readClaimWindow(
+      { limit: 50, offset: 50 },
+      stub.asSupabaseClient(),
+    );
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+
+    expect(result.data.map((claim) => claim.bucket)).not.toContain(PARKED);
+    expect(result.data.map((claim) => claim.observation_id)).toEqual(
+      showable.slice(50, 100).map((claim) => claim.observation_id),
+    );
+  });
+
+  it("answers an offset past the end with an empty page, not a refusal", async () => {
+    // An exhausted page is an empty page: PostgREST answers a range beyond the
+    // set with the rows that are there and no error.
+    const result = await readClaimWindow(
+      { limit: 50, offset: 500 },
+      scripted(wholeView()).asSupabaseClient(),
+    );
+    expect(result).toEqual({ kind: "ok", data: [] });
   });
 
   it("draws the longest-waiting claims, in the order the database returned", async () => {
@@ -203,9 +302,9 @@ describe("the claim window read", () => {
 
     expect(stub.calls).toHaveLength(1);
     expect(result.data).toHaveLength(50);
-    expect(
-      stepsOf(stub, T.pendingClaims).some((step) => step.method === "range"),
-    ).toBe(false);
+    // The bound is a range of exactly the window, not of the 2,000 rows the
+    // view holds — the request does not grow with the table at any offset.
+    expect(argsOf(stub, T.pendingClaims, "range")).toEqual([[0, 49]]);
   });
 
   it("names the view when it is absent, and never throws", async () => {
@@ -420,5 +519,124 @@ describe("the view has exactly one reader", () => {
       /\.from\(T\.pendingClaims\)/.test(codeText(file)),
     );
     expect(readers).toEqual(["src/lib/db/claims.ts"]);
+  });
+});
+
+/* ── the leaf the reads and the route handler share ──────────────────────── */
+
+/**
+ * `src/lib/claims/lines.ts` — the row shaping, moved out of
+ * `src/app/claims/page.tsx` (campaign admin-window/TASK-0065).
+ *
+ * It is tested HERE, beside the read whose rows it shapes, rather than in a
+ * file of its own: the two halves are one answer to "what does a claims
+ * surface show", and `/claims` and the route handler that continues its list
+ * must hand back the same shape.
+ */
+describe("the claim line shaping", () => {
+  const rows: ClaimRow[] = CLAIMS.map((claim) => ({
+    ...claim,
+    observed_at: instantOf(claim.observation_id),
+  }));
+
+  it("keeps the order it was handed, and shapes every row", () => {
+    const lines = claimLines(rows, SOURCE_NAME);
+    expect(lines.map((line) => line.observationId)).toEqual(
+      rows.map((claim) => claim.observation_id),
+    );
+  });
+
+  it("NAMES a registered source and leaves an unregistered one as its id", () => {
+    // Two fixtures, as a guard needs (LESSONS 8): the registry names
+    // `SOURCE.first` and deliberately does not name `SOURCE.third`.
+    const lines = claimLines(rows, SOURCE_NAME);
+    const named = lines.find((line) => line.sourceId === SOURCE.first);
+    const unnamed = lines.find((line) => line.sourceId === SOURCE.third);
+    expect(named?.source).toBe(SOURCE_NAME.get(SOURCE.first));
+    expect(unnamed?.source).toBe(SOURCE.third);
+    // Whichever it says, the LINK still narrows by the machine value.
+    expect(named?.sourceHref).toContain(encodeURIComponent(SOURCE.first));
+    expect(unnamed?.sourceHref).toContain(encodeURIComponent(SOURCE.third));
+  });
+
+  it("carries a provenance link only where there is a canonical row", () => {
+    const lines = claimLines(rows, SOURCE_NAME);
+    const withRow = lines.find((line) => line.entityId !== null);
+    const without = lines.find((line) => line.entityId === null);
+    expect(withRow?.provenanceHref).toContain(
+      encodeURIComponent(withRow?.entityId as string),
+    );
+    expect(without?.provenanceHref).toBeNull();
+  });
+
+  it("carries the claim's own instant through, absence included", () => {
+    const lines = claimLines(rows, SOURCE_NAME);
+    for (const line of lines) {
+      expect(line.observedAt, line.observationId).toBe(instantOf(line.observationId));
+    }
+    expect(lines.some((line) => line.observedAt === null)).toBe(true);
+  });
+});
+
+/**
+ * ARCHITECTURE.md §4 rule 7 for the ONE leaf this ticket added — asserted over
+ * its whole transitive import closure, not just its own import lines.
+ *
+ * `tests/offline/db/layering.test.ts` owns the rule for the registered leaf
+ * SET; this is the same property for `src/lib/claims/lines.ts`, whose row
+ * types `src/lib/db/claims.ts` imports back. A leaf that reached `lib/db/**`
+ * — even through a module two hops away, even type-only — would write the
+ * directory cycle rule 7 forbids and put the row shape back out of reach of
+ * the route handler that has to share it.
+ */
+describe("the claims leaf reaches nothing that can reach a database", () => {
+  const LEAF = "src/lib/claims/lines.ts";
+  const FORBIDDEN = /@supabase\/supabase-js|process\s*\.\s*env/;
+
+  /** The `src/**` modules a file imports, by the four spellings that reach one. */
+  function importsOf(file: string): string[] {
+    return codeText(file)
+      .split("\n")
+      .filter((line) => /^\s*import\b|\brequire\s*\(|\bimport\s*\(|\bfrom\s+["']/.test(line))
+      .map((line) => line.match(/["']([^"']*)["']/)?.[1])
+      .filter((specifier): specifier is string => specifier !== undefined)
+      .map((specifier) =>
+        specifier.startsWith("@/")
+          ? `src/${specifier.slice(2)}`
+          : specifier.startsWith(".")
+            ? `${file.replace(/\/[^/]*$/, "")}/${specifier}`
+            : specifier,
+      )
+      .map((target) =>
+        target.startsWith("src/")
+          ? `${target.replace(/\.tsx?$/, "").replace(/\/\.\//g, "/")}.ts`
+          : target,
+      );
+  }
+
+  it("is a real file with real imports, so nothing below passes vacuously", () => {
+    expect(sourceFiles()).toContain(LEAF);
+    expect(importsOf(LEAF).length).toBeGreaterThan(0);
+  });
+
+  it("never reaches lib/db, supabase-js or process.env, at any depth", () => {
+    const seen = new Set<string>([LEAF]);
+    const queue = [LEAF];
+    while (queue.length > 0) {
+      const file = queue.shift() as string;
+      expect(codeText(file), `${file} names a client or a credential`).not.toMatch(
+        FORBIDDEN,
+      );
+      for (const target of importsOf(file)) {
+        expect(target, `${file} imports it`).not.toMatch(/^src\/lib\/db\//);
+        expect(target, `${file} imports it`).not.toMatch(FORBIDDEN);
+        if (target.startsWith("src/") && !seen.has(target)) {
+          seen.add(target);
+          queue.push(target);
+        }
+      }
+    }
+    // The closure really was walked: the leaf's three direct imports at least.
+    expect(seen.size).toBeGreaterThan(3);
   });
 });
