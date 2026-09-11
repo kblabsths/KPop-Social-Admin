@@ -885,7 +885,7 @@ describe("the claim list's window", () => {
     expect(windowLine(many).text).not.toBe(windowLine(few).text);
   });
 
-  it.fails("names the rows ON SCREEN when the COUNT read came back SMALLER than the rows drawn [admin-window/BUG-0186]", async () => {
+  it("names the rows ON SCREEN when the COUNT read came back SMALLER than the rows drawn [admin-window/BUG-0186]", async () => {
     // THE OTHER DIRECTION OF THE SAME TWO-READS DIVERGENCE (QA, off the
     // admin-window/BUG-0183 close). `/claims` counts its matching set and
     // draws its rows in TWO reads, and a claim the resolver applies between
