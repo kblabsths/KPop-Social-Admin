@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 import {
   CHUNK_FANOUT,
@@ -373,6 +373,71 @@ describe("classify", () => {
     // MUST FLAG (the twin, LESSONS 8): the honest operator message on the
     // same read still refuses the absence.
     expect(classify(missingOperator(), SETTLE_FUNCTION, "function").kind).toBe("error");
+  });
+
+  /**
+   * The same rule where the envelope actually COMES FROM, rather than where a
+   * fixture hands it over: the real `@supabase/supabase-js` client over a
+   * stubbed transport, whose 400 body is the whole error object postgrest-js
+   * gives back — no `message` key is required of it, which is what made the
+   * fabricated column reachable end to end (admin-window/BUG-0185). Every
+   * other case in this file hands `classify` an error directly, so nothing
+   * else here proves the shape a real client produces is the shape the rule
+   * was written for. No network: `fetch` is stubbed, the host is `.invalid`.
+   */
+  it("takes no column out of a message-less 400 body a real client parsed", async () => {
+    const answering = (body: unknown): SupabaseClient =>
+      createClient("https://stub.invalid", "stub-key", {
+        auth: { persistSession: false },
+        global: {
+          fetch: async () =>
+            new Response(JSON.stringify(body), {
+              status: 400,
+              headers: { "content-type": "application/json" },
+            }),
+        },
+      }) as unknown as SupabaseClient;
+
+    // MUST NOT ADMIT: the field names are the BODY AUTHOR's, and their order
+    // is too — neither may become the column half of `missing`.
+    for (const [shape, body] of [
+      ["no message field at all", { code: "42703" }],
+      ["a null message", { code: "42703", message: null }],
+      ["a foreign field name ahead of the code", { contact_support_at_evil_example: 1, code: "42703" }],
+      ["a message that is itself an object", { code: "42703", message: { text: 'column "severity" does not exist' } }],
+      ["an empty message the database really authored", { code: "42703", message: "" }],
+      ["a schema-cache code with no message", { code: "PGRST204" }],
+    ] as ReadonlyArray<[string, unknown]>) {
+      expect(
+        await readRows(T.reviewItems, (db) => db.from(T.reviewItems).select("id"), answering(body)),
+        shape,
+      ).toEqual({ kind: "not_provisioned", missing: T.reviewItems });
+    }
+
+    // MUST ADMIT (the twin): the same transport carrying a message the
+    // database really wrote still names its column.
+    expect(
+      await readRows(
+        T.reviewItems,
+        (db) => db.from(T.reviewItems).select("id"),
+        answering({ code: "42703", message: 'column "severity" does not exist' }),
+      ),
+    ).toEqual({ kind: "not_provisioned", missing: `${T.reviewItems}.severity` });
+
+    // And the function arm over the same transport: a silent 42883 is still
+    // the absent function, an honest operator sentence is still an error.
+    expect(
+      await callFunction(SETTLE_FUNCTION, (db) => db.rpc(SETTLE_FUNCTION, {}), answering({ code: "42883" })),
+    ).toEqual({ kind: "not_provisioned", missing: SETTLE_FUNCTION });
+    expect(
+      (
+        await callFunction(
+          SETTLE_FUNCTION,
+          (db) => db.rpc(SETTLE_FUNCTION, {}),
+          answering({ code: "42883", message: "operator does not exist: timestamp with time zone ~~* unknown" }),
+        )
+      ).kind,
+    ).toBe("error");
   });
 
   it("carries the database's own message verbatim for any other failure", () => {
