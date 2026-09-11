@@ -464,9 +464,19 @@ function askFor(size: number, holds: string): string {
  *    sentence calling it a row count would disagree with the line beside it.
  *    Naming the app's refusal out loud is §4.3 read kind 3 — "refused with the
  *    reason named — never clamped in silence";
- *  - **what the operator can do** is narrow the view and page the smaller set,
- *    which is the one thing this app offers and how `/claims` is meant to be
- *    worked anyway. It is the whole fix, and it is deliberately not "press it
+ *  - **what the operator can do next, WHERE THE SURFACE SUPPLIED ONE** — the
+ *    `nextStep` prop, and never a word this file chose
+ *    (admin-window/BUG-0198). The noun this arm reads was always per-surface;
+ *    the next step is too, and this module cannot know it. `/claims` carries
+ *    facet chips, so narrowing really is how that surface is worked and it
+ *    supplies that sentence itself (`../claims/paged-claim-list.tsx`);
+ *    `/browse` has one parameter, `columns`, which "chooses which COLUMNS
+ *    render and never which rows are read" (`src/app/browse/page.tsx`), so it
+ *    supplies NONE and the arm ends on the half above. A next step kept here
+ *    as a default and opted out of by the surfaces that cannot honour it is
+ *    ruled out (architect, 2026-09-11): a surface added later would inherit
+ *    advice nobody checked it can take, which is this defect with a longer
+ *    fuse. Whatever a surface supplies, it is deliberately not "press it
  *    again": no control is drawn here (LESSONS 1, CONTENT — the fix is never
  *    wishful).
  *
@@ -480,11 +490,11 @@ function askFor(size: number, holds: string): string {
  * answers one question twice (LESSONS 11, the stutter
  * `./window-line`'s `THE_READ_FOUND_NO_MORE` names).
  */
-function stoppedAtTheCeiling(holds: string): string {
-  return (
+function stoppedAtTheCeiling(holds: string, nextStep: string | null): string {
+  const stopped =
     `This app serves no bound past ${count(MAX_PAGE_OFFSET)} ${holds}, so paging stops ` +
-    `here and not at the end of the set. Narrow the view and page the smaller set.`
-  );
+    `here and not at the end of the set.`;
+  return nextStep === null ? stopped : `${stopped} ${nextStep}`;
 }
 
 /**
@@ -537,6 +547,7 @@ export function PageMore({
   holds,
   size,
   readsAgree: agree,
+  nextStep,
   onPress,
 }: {
   state: PageState<unknown>;
@@ -560,6 +571,25 @@ export function PageMore({
    * a surface that has not decided this has nothing for this element to say.
    */
   readsAgree: boolean;
+  /**
+   * WHAT THE OPERATOR CAN DO NEXT once this app has stopped paging, in the
+   * SURFACE's words — or `null` where this surface has nothing to offer
+   * (admin-window/BUG-0198).
+   *
+   * It is read by one arm only, the bound ceiling below, and it is a REQUIRED
+   * prop rather than a defaulted one for the same reason `readsAgree` is: a
+   * default would be advice this module chose on behalf of a surface it knows
+   * nothing about. Only the surface knows whether its own URL can remove a
+   * row — `/claims` has facet chips and says so, `/browse` has `columns`,
+   * which changes which columns render and never which rows are read, and
+   * says nothing — so a surface that has not answered the question has
+   * nothing for this element to say on its behalf, and `null` is that answer
+   * written down rather than forgotten.
+   *
+   * The wording is the surface's too: this file compares it to nothing,
+   * appends it verbatim, and every other arm ignores it.
+   */
+  nextStep: string | null;
   onPress: () => void;
 }): ReactNode {
   const exhausted = state.status === "exhausted";
@@ -595,10 +625,11 @@ export function PageMore({
         )
       ) : !drawsControl ? (
         // The app refusing, said in the app's own voice: what stopped the
-        // paging, then what to do about it (admin-window/BUG-0178). One
+        // paging, then what this SURFACE offers to do about it, where it
+        // offers anything (admin-window/BUG-0178, admin-window/BUG-0198). One
         // expression, so no transform can drop a space inside the sentence.
         <p data-paging="limit" className="type-body text-ink-secondary">
-          {stoppedAtTheCeiling(holds)}
+          {stoppedAtTheCeiling(holds, nextStep)}
         </p>
       ) : (
         // `self-start` is the whole of the shape fix (admin-window/BUG-0177):
