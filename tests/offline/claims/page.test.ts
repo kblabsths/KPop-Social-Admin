@@ -5625,6 +5625,73 @@ describe("the affordance that continues the claim list", () => {
     expect(shapeOf(zero)).not.toBe(shapeOf(agreeing));
   });
 
+  it.fails("does not tell the operator every claim is shown while its own count says more are not [admin-window/BUG-0180]", async () => {
+    // The other half of admin-window/BUG-0174 criterion 5, one element down.
+    // The WINDOW LINE refuses to call a diverged set complete — "a count of
+    // claims answered 877; the reads returned the 50 below" — and the sentence
+    // under the table, drawn from the same paging state, still asserts the
+    // completeness the line just declined to assert. Two answers to one
+    // question on one screen (LESSONS 11), and the answer the operator acts on
+    // is the one beside the control.
+    //
+    // Reachable on live data: the count and the rows are two reads, so a press
+    // that ends the set short of the count is what a claim resolved between
+    // the two reads produces.
+    //
+    // No word of either sentence is pinned. The two renders are compared
+    // against EACH OTHER: the state where one read established completeness,
+    // and the state where none did, may not draw the same sentence.
+    const script = pagedScript(877);
+    await renderClaims(script);
+    const diverging = paging.calls[0].initial as unknown as PageState<ClaimLine>;
+    const divergedState = await requestPage<ClaimLine>(diverging, {
+      ...depsOf(),
+      fetchJson: () =>
+        Promise.resolve({ kind: "ok" as const, rows: [], offset: CLAIM_WINDOW, exhausted: true }),
+    });
+    paging.override = divergedState;
+    const diverged = await renderClaims(script);
+
+    const whole = longPopulation(130);
+    const wholeScript = pagedScript(130);
+    await renderClaims(wholeScript);
+    const from = paging.calls[0].initial as unknown as PageState<ClaimLine>;
+    const second = await requestPage<ClaimLine>(from, {
+      ...depsOf(),
+      fetchJson: () =>
+        Promise.resolve({
+          kind: "ok" as const,
+          rows: claimLines(whole.slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
+          offset: CLAIM_WINDOW,
+          exhausted: false,
+        }),
+    });
+    paging.override = await requestPage<ClaimLine>(second, {
+      ...depsOf(),
+      fetchJson: () =>
+        Promise.resolve({
+          kind: "ok" as const,
+          rows: claimLines(whole.slice(CLAIM_WINDOW * 2, 130), new Map()),
+          offset: CLAIM_WINDOW * 2,
+          exhausted: true,
+        }),
+    });
+    const agreeing = await renderClaims(wholeScript);
+
+    // Non-vacuity, from the driver and the page's own hooks rather than from
+    // any word: both reads ENDED, one drew every claim its count found and the
+    // other drew 827 fewer than its own count publishes.
+    expect(divergedState.status).toBe("exhausted");
+    expect(claimIds(diverged)).toHaveLength(CLAIM_WINDOW);
+    expect(windowFigures(diverged).held).toBe(877);
+    expect(claimIds(agreeing)).toHaveLength(130);
+    expect(windowFigures(agreeing).held).toBe(130);
+
+    const sentence = (markup: string): string =>
+      cheerio.load(markup)("[data-paging]").toString();
+    expect(sentence(diverged)).not.toBe(sentence(agreeing));
+  });
+
   it("the window line in every state a press can end in", async () => {
     // admin-window/BUG-0174, criterion 6: offered, loading, refused, refused at
     // the bound ceiling, and exhausted — every one driven by the REAL driver
