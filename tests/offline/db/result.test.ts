@@ -1031,27 +1031,25 @@ describe("an account carries the parts the database authored", () => {
     // The wrapper is still said once, not twice, after the reduction.
     expect(transport.message.split("TypeError: fetch failed")).toHaveLength(2);
 
-    // The kept lines are re-asked questions 1-2. This part opens with prose,
-    // so the document question passes over it; the document is on the line
-    // BELOW, above a frame. Dropping the frame must not hand that line to an
-    // operator — it is counted where it stands, and the prose around it stays.
+    // A part that carries a DOCUMENT on ANY line is not the database's words
+    // (admin-window/BUG-0187): it is replaced WHOLE by one clause counted at
+    // the length the client delivered, the appended frame included. So the
+    // intermediary's own `upstream said:` no longer crosses, and no count of
+    // frames is said — nothing was read past the document. This is QA's
+    // residual (ii) of admin-window/BUG-0182, dissolved rather than patched.
     const page = "<html><body>504 Gateway Time-out</body></html>";
+    const framedDocument = `upstream said:\n${page}\n    at Object.parse (${POSTGREST}:41:11)`;
     const documentInside = classify(
-      {
-        code: "",
-        details: `upstream said:\n${page}\n    at Object.parse (${POSTGREST}:41:11)`,
-        hint: "",
-        message: "read failed",
-      },
+      { code: "", details: framedDocument, hint: "", message: "read failed" },
       T.pendingClaims,
     );
     expect(documentInside.kind).toBe("error");
     if (documentInside.kind !== "error") return;
-    expect(documentInside.message).toContain("upstream said:");
+    expect(documentInside.message).not.toContain("upstream said:");
     expect(documentInside.message).not.toContain("<");
     expect(documentInside.message).not.toContain("Gateway Time-out");
-    expect(documentInside.message).toContain(String(page.length));
-    expect(documentInside.message).toMatch(/\b1\b[^)]{0,40}frame/);
+    expect(documentInside.message).toContain(String(framedDocument.length));
+    expect(documentInside.message).not.toMatch(/frame/i);
 
     // MUST NOT TOUCH — a database message whose indented line begins "at "
     // and is not a frame. It crosses whole: same newline, same indentation,
@@ -1358,27 +1356,25 @@ describe("an account carries the parts the database authored", () => {
 
   it("counts a document on any line of a part, framed or not", () => {
     // REDUCED — a FRAMELESS two-line part: the client's prose on the first
-    // line, a whole intermediary page on the second. The identical part one
-    // line above a stack frame was already counted; the question is the same
-    // at both granularities, so the answer is too.
+    // line, a whole intermediary page on the second. The part carries a
+    // document, so the WHOLE part is foreign and is replaced by one clause
+    // counted at the part's length (admin-window/BUG-0187) — the same answer
+    // the identical bytes get as a whole part or beside a frame.
     const page = "<html><body>504 Gateway Time-out</body></html>";
+    const part = `reference 8f3c1\n${page}`;
     const below = classify(
-      {
-        code: "",
-        details: `reference 8f3c1\n${page}`,
-        hint: "",
-        message: "read failed",
-      },
+      { code: "", details: part, hint: "", message: "read failed" },
       T.pendingClaims,
     );
     expect(below.kind).toBe("error");
     if (below.kind !== "error") return;
     expect(below.message).toContain("read failed");
-    // The prose line beside it is kept — only the document line is counted.
-    expect(below.message).toContain("reference 8f3c1");
+    // The line beside the document is the INTERMEDIARY's, not the database's,
+    // and no line of a part carrying a document crosses.
+    expect(below.message).not.toContain("reference 8f3c1");
     expect(below.message).not.toContain("<");
     expect(below.message).not.toContain("Gateway Time-out");
-    expect(below.message).toContain(String(page.length));
+    expect(below.message).toContain(String(part.length));
     // And no count of frames nobody dropped.
     expect(below.message).not.toMatch(/frame/i);
 
@@ -1508,7 +1504,9 @@ describe("an account carries the parts the database authored", () => {
     if (below.kind !== "error") return;
     // What the rule already gets right, and must keep getting right.
     expect(below.message).toContain("read failed");
-    expect(below.message).toContain("reference 8f3c1");
+    // The line above the document is the intermediary's own reference id, and
+    // no line of a part carrying a document crosses (admin-window/BUG-0187).
+    expect(below.message).not.toContain("reference 8f3c1");
     expect(below.message).not.toContain("<");
     expect(below.message).not.toContain("Sorry, you have been blocked");
     // An account that counted a document cannot be longer than the document.
@@ -1726,15 +1724,17 @@ describe("an account carries the parts the database authored", () => {
       expect(result.kind, shape.label).toBe("error");
       if (result.kind !== "error") continue;
 
-      // ONE document, counted ONCE, at the length of the run as it arrived —
-      // the same clause the whole-part arm owes the same bytes, which is the
-      // two granularities of one question agreeing.
+      // ONE clause for the whole PART, counted at the length the client
+      // delivered it — the part carries a document, so the part is foreign
+      // whole and the clause is the one the app owes those exact bytes
+      // (admin-window/BUG-0187).
       expect(clausesIn(result.message), shape.label).toBe(1);
-      expect(result.message, shape.label).toContain(documentClause(shape.document));
+      expect(result.message, shape.label).toContain(documentClause(shape.part));
       // An account that COUNTED a document is shorter than what it counted.
       expect(result.message.length, shape.label).toBeLessThan(shape.part.length);
-      // The prose standing beside the document still crosses verbatim.
-      expect(result.message, shape.label).toContain(shape.prose);
+      // The line standing beside the document is the INTERMEDIARY's own, and
+      // it no longer crosses: nothing of a foreign part is said.
+      expect(result.message, shape.label).not.toContain(shape.prose);
 
       // COUNTED, NEVER QUOTED — on the DbResult and on the rendered card,
       // read back with its entities decoded so an escaped leak cannot hide.
@@ -1746,10 +1746,13 @@ describe("an account carries the parts the database authored", () => {
         expect(read, shape.label).not.toContain("html");
         expect(read, shape.label).not.toContain("div");
       }
-      const printed = shape.document
+      // Graded as the BAR rather than as a list of strings: NO non-blank line
+      // of the part reaches the account or the card, so the next text node a
+      // WAF prints is covered by this same assertion.
+      const printed = shape.part
         .split("\n")
         .map((line) => line.trim())
-        .filter((line) => line.length > 6);
+        .filter((line) => line.length > 0);
       expect(printed.length, shape.label).toBeGreaterThan(3);
       for (const line of printed) {
         expect(result.message, `${shape.label} quotes ${line}`).not.toContain(line);
@@ -1759,12 +1762,125 @@ describe("an account carries the parts the database authored", () => {
   });
 
   /**
-   * THE OVER-GROUPING TWIN (LESSONS 8), which forbids the lazy fix: a rule
-   * that folds a whole part into one clause, or that counts everything after
-   * the first `<` as one document, says ONE here and loses the line of the
-   * database's own prose standing between the two.
+   * RESIDUAL (i) of admin-window/BUG-0182's close, folded into the bar rather
+   * than filed as a ticket: a line of the DOCUMENT'S OWN TEXT that is shaped
+   * like a V8 frame — it begins "at " and ends in ")" — printed on its own
+   * line inside a `<Message>`. Question 3 is never asked of a part carrying a
+   * document, so there is no split and no frames clause: ONE clause, at the
+   * part's length, and no line of the page.
    */
-  it("counts two documents in one part as two, not as one", () => {
+  it("counts a document whose own text is frame-shaped as one clause, saying no frames (admin-window/BUG-0187)", () => {
+    const page = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      "<Error>",
+      "<Code>InvalidRequest</Code>",
+      "<Message>",
+      "at least one parameter is required (see docs)",
+      "</Message>",
+      "</Error>",
+    ].join("\n");
+    const frameShaped = "at least one parameter is required (see docs)";
+
+    // Both placements of the same bytes — the document AS the whole part, and
+    // the document one line below the client's own prose, which is where QA
+    // measured it (part 128 -> account 219, split around a frames clause).
+    for (const part of [page, `upstream refused:\n${page}`]) {
+      const result = classify(
+        { code: "", details: part, hint: "", message: "read failed" },
+        T.pendingClaims,
+      );
+      expect(result.kind, part.slice(0, 16)).toBe("error");
+      if (result.kind !== "error") continue;
+      expect(clausesIn(result.message), part.slice(0, 16)).toBe(1);
+      expect(result.message).toContain(documentClause(part));
+      expect(result.message).toContain(String(part.length));
+      // No "(1 runtime stack frame dropped)" and no split: nothing was read
+      // past the document, so the page's own frame-shaped sentence is neither
+      // dropped nor counted.
+      expect(result.message).not.toMatch(/frame/i);
+      const card = cardTextOf(result);
+      for (const read of [result.message, card]) {
+        expect(read).not.toContain("<");
+        expect(read).not.toContain(frameShaped);
+        for (const line of part.split("\n")) {
+          expect(read, `quotes ${line}`).not.toContain(line.trim());
+        }
+      }
+    }
+  });
+
+  /**
+   * RESIDUAL (ii): a document with V8 frames APPENDED. The answer is the SAME
+   * whether the document IS the whole part, carries a stack after it, or
+   * sits one line below prose — one clause, counted at the length of the PART
+   * as delivered, with no frames clause and no line crossing. That is the
+   * granularity disagreement admin-window/BUG-0182 left behind, dissolved by
+   * asking question 2 once per part (admin-window/BUG-0187).
+   */
+  it("counts a document with frames appended once, at the whole part's length (admin-window/BUG-0187)", () => {
+    const page = [
+      "<!DOCTYPE html>",
+      '<html lang="en-US">',
+      "<body>",
+      "<h1>Sorry, you have been blocked</h1>",
+      "</body>",
+      "</html>",
+    ].join("\n");
+    const frames = [
+      `    at Object.parse (${POSTGREST}:41:11)`,
+      `    at async readRows (${DEPLOY}/src/lib/db/result.ts:476:20)`,
+    ].join("\n");
+    const withFrames = `${page}\n${frames}`;
+    const belowProseToo = `upstream said:\n${withFrames}`;
+
+    const accountOf = (part: string) => {
+      const result = classify(
+        { code: "", details: part, hint: "", message: "read failed" },
+        T.pendingClaims,
+      );
+      if (result.kind !== "error") throw new Error("a failed read is an error");
+      return result;
+    };
+
+    // Each placement of the same bytes: ONE clause, at ITS OWN part's length,
+    // and never a frames clause or a line of what arrived.
+    for (const part of [page, withFrames, belowProseToo]) {
+      const result = accountOf(part);
+      expect(clausesIn(result.message), part.slice(0, 20)).toBe(1);
+      expect(result.message).toContain(documentClause(part));
+      expect(result.message).toContain(String(part.length));
+      expect(result.message).not.toMatch(/frame/i);
+      expect(result.message).toContain("read failed");
+      const card = cardTextOf(result);
+      for (const read of [result.message, card]) {
+        expect(read).not.toContain("<");
+        expect(read).not.toContain("Sorry, you have been blocked");
+        expect(read).not.toContain("node_modules");
+        expect(read).not.toContain(DEPLOY);
+        expect(read).not.toContain("upstream said:");
+      }
+    }
+    // The number counts the part as delivered, frames included — the document
+    // alone is shorter than the part that carried it and its stack.
+    expect(withFrames.length).toBeGreaterThan(page.length);
+    expect(accountOf(withFrames).message).not.toContain(String(page.length));
+  });
+
+  /**
+   * THE SUPERSEDED TWIN (admin-window/BUG-0182 criterion 3, rewritten by
+   * admin-window/BUG-0187 rather than deleted). Two documents separated by a
+   * line of prose used to be counted as TWO with that line crossing between
+   * them; under the bar a part carrying a document ANYWHERE is ONE foreign
+   * part, so the answer is one clause at the whole part's length and the line
+   * between them — the intermediary's own, like every prose line this suite
+   * ever measured beside markup — no longer crosses.
+   *
+   * Its MUST-NOT direction lives in the same case (LESSONS 8) and is what
+   * forbids the greedy reading of the bar: a DATABASE message spanning two
+   * lines and carrying no document crosses byte-identical, indentation and
+   * all. Multi-line is not foreign; carrying markup is.
+   */
+  it("counts two documents in one part as two documents in ONE foreign part, no line quoted (admin-window/BUG-0187)", () => {
     const first = [
       "<!DOCTYPE html>",
       '<html lang="en-US">',
@@ -1794,25 +1910,46 @@ describe("an account carries the parts the database authored", () => {
     expect(result.kind).toBe("error");
     if (result.kind !== "error") return;
 
-    // TWO documents, each counted at its OWN length.
-    expect(clausesIn(result.message)).toBe(2);
-    expect(result.message).toContain(documentClause(first));
-    expect(result.message).toContain(documentClause(second));
-    // With the database's prose crossing verbatim BETWEEN them, and the
-    // client's own line still ahead of both.
-    expect(result.message).toContain(between);
-    expect(result.message).toContain("upstream said:");
+    // ONE clause, at the WHOLE part's length — not one per document and not
+    // one per line.
+    expect(clausesIn(result.message)).toBe(1);
+    expect(result.message).toContain(documentClause(part));
+    expect(result.message).toContain(String(part.length));
+    // The client's own line still crosses; nothing of the foreign part does,
+    // the line standing BETWEEN the two documents included.
     expect(result.message).toContain("read failed");
-    const at = (words: string) => result.message.indexOf(words);
-    expect(at("upstream said:")).toBeLessThan(at(documentClause(first)));
-    expect(at(documentClause(first))).toBeLessThan(at(between));
-    expect(at(between)).toBeLessThan(at(documentClause(second)));
-    // Still counted, never quoted, and still shorter than what it counted.
-    expect(result.message).not.toContain("<");
-    expect(result.message).not.toContain("AccessDenied");
-    expect(result.message).not.toContain("Sorry, you have been blocked");
+    expect(result.message).not.toContain("upstream said:");
+    expect(result.message).not.toContain(between);
+    // Counted, never quoted — on the result and on the rendered card.
+    const card = cardTextOf(result);
+    for (const read of [result.message, card]) {
+      expect(read).not.toContain("<");
+      expect(read).not.toContain("AccessDenied");
+      expect(read).not.toContain("Sorry, you have been blocked");
+    }
+    // And still shorter than what it counted.
     expect(result.message.length).toBeLessThan(part.length);
-    expect(cardTextOf(result)).not.toContain("<");
+
+    // MUST NOT TOUCH — a DATABASE message spanning two lines, carrying no
+    // document at all: both lines cross byte-identical, the newline and the
+    // four leading spaces included, and no clause counts anything.
+    const prose = {
+      code: "23514",
+      message:
+        'new row for relation "resolution_runs" violates check constraint "runs_window_ck"',
+      details:
+        "Failing row contains (7f3a, 2026-09-11, open).\n" +
+        "    at the end of the statement the window was still open",
+      hint: null,
+    };
+    const untouched = classify(prose, T.resolutionRuns);
+    expect(untouched.kind).toBe("error");
+    if (untouched.kind !== "error") return;
+    expect(untouched.message).toContain(prose.message);
+    expect(untouched.message).toContain(prose.details);
+    expect(clausesIn(untouched.message)).toBe(0);
+    expect(untouched.message).not.toMatch(/frame/i);
+    expect(untouched.message.endsWith("(23514)")).toBe(true);
   });
 
   /**
@@ -1834,7 +1971,7 @@ describe("an account carries the parts the database authored", () => {
    * The two assertions are the two faces of that one property, and neither
    * names a mechanism: the fix is a ruling, not a builder's choice.
    */
-  it.fails("counts a pretty-printed document whose text sits on its own lines (admin-window/BUG-0187)", () => {
+  it("counts a pretty-printed document whose text sits on its own lines (admin-window/BUG-0187)", () => {
     const interstitial = [
       "<!DOCTYPE html>",
       '<html lang="en-US">',
@@ -1889,7 +2026,10 @@ describe("an account carries the parts the database authored", () => {
     if (below.kind !== "error") return;
     // What the rule already gets right, and must keep getting right.
     expect(below.message).toContain("read failed");
-    expect(below.message).toContain("reference 8f3c1");
+    // The part carries a document, so it is foreign WHOLE: the intermediary's
+    // own reference id above it no longer crosses either
+    // (admin-window/BUG-0187).
+    expect(below.message).not.toContain("reference 8f3c1");
     expect(below.message).not.toContain("<");
 
     // COUNTED, NEVER QUOTED — on the result and on the rendered card.
@@ -1901,6 +2041,108 @@ describe("an account carries the parts the database authored", () => {
     }
     // And an account that COUNTED a document is shorter than what it counted.
     expect(below.message.length).toBeLessThan(part.length);
+  });
+
+  /**
+   * The rest of what QA measured on that shape (admin-window/BUG-0187): the
+   * GROWTH ladder — 4, 16 and 64 text nodes — and the same bytes arriving
+   * CRLF-separated through the real `@supabase/supabase-js` client over a
+   * stubbed 400 transport, which is where a part like this actually comes
+   * from. No network: the host is `.invalid` and `fetch` is stubbed.
+   *
+   * Graded as the BAR rather than as a list of strings: ONE clause at the
+   * PART's length, no non-blank line of the part on the result or the
+   * rendered card, and an account bounded by the clause instead of growing
+   * with the page's text nodes.
+   */
+  it("bounds the account by the clause at every text-node count, CRLF included (admin-window/BUG-0187)", async () => {
+    /** A pretty-printed interstitial whose TEXT sits on its own lines. */
+    const interstitial = (nodes: number, newline: string): string =>
+      [
+        "<!DOCTYPE html>",
+        '<html lang="en-US">',
+        "<body>",
+        ...Array.from({ length: nodes }, (_unused, node) => node).flatMap(
+          (node) => [
+            `<p class="cf-note-${node}">`,
+            `Sorry, you have been blocked (${node})`,
+            "</p>",
+          ],
+        ),
+        "</body>",
+        "</html>",
+      ].join(newline);
+
+    /** Every non-blank line of a part, trimmed — what may never be quoted. */
+    const linesOf = (part: string): string[] =>
+      part
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+
+    const accounts: number[] = [];
+    for (const nodes of [4, 16, 64]) {
+      const part = `reference 8f3c1\n${interstitial(nodes, "\n")}`;
+      const result = classify(
+        { code: "", details: part, hint: "", message: "read failed" },
+        T.pendingClaims,
+      );
+      expect(result.kind, `${nodes} text nodes`).toBe("error");
+      if (result.kind !== "error") continue;
+      expect(clausesIn(result.message), `${nodes} text nodes`).toBe(1);
+      expect(result.message, `${nodes} text nodes`).toContain(documentClause(part));
+      expect(result.message.length, `${nodes} text nodes`).toBeLessThan(part.length);
+      const card = cardTextOf(result);
+      expect(card, `${nodes} text nodes`).toContain(result.message);
+      for (const read of [result.message, card]) {
+        for (const line of linesOf(part)) {
+          expect(read, `${nodes} text nodes quotes ${line}`).not.toContain(line);
+        }
+      }
+      accounts.push(result.message.length);
+    }
+    // Bounded by the CLAUSE, not by the page: sixteen times the text nodes
+    // moves the account by the digits of one number, not by thousands of
+    // characters (QA measured 527 -> 6,881 before this).
+    expect(accounts).toHaveLength(3);
+    expect(accounts[2] - accounts[0]).toBeLessThan(10);
+
+    // The same bytes where they actually come from: CRLF-separated, through
+    // the real client over a stubbed 400 transport.
+    const crlfPart = `reference 8f3c1\r\n${interstitial(16, "\r\n")}`;
+    const client = createClient("https://stub.invalid", "stub-key", {
+      auth: { persistSession: false },
+      global: {
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              code: "",
+              message: "read failed",
+              details: crlfPart,
+              hint: "",
+            }),
+            { status: 400, headers: { "content-type": "application/json" } },
+          ),
+      },
+    }) as unknown as SupabaseClient;
+
+    const read = await readRows(
+      T.pendingClaims,
+      (db) => db.from(T.pendingClaims).select("id"),
+      client,
+    );
+    expect(read.kind).toBe("error");
+    if (read.kind !== "error") return;
+    expect(clausesIn(read.message)).toBe(1);
+    expect(read.message).toContain(documentClause(crlfPart));
+    expect(read.message).toContain(String(crlfPart.length));
+    expect(read.message.length).toBeLessThan(crlfPart.length);
+    const card = cardTextOf(read);
+    for (const surface of [read.message, card]) {
+      for (const line of linesOf(crlfPart)) {
+        expect(surface, `quotes ${line}`).not.toContain(line);
+      }
+    }
   });
 });
 
