@@ -1,0 +1,45 @@
+{
+ "id": "BUG-0184",
+ "created": "2026-09-11T13:06:14Z",
+ "green": true,
+ "git_head": "7fcc48af7fd63b77077b783a0c3b664a0dd9db40",
+ "scope": [
+  "src/lib/paging/machine.ts",
+  "src/lib/verdict/decision.ts",
+  "src/lib/format.ts",
+  "src/components/edit-refusal.ts",
+  "tests/offline/paging/machine.test.ts",
+  "tests/offline/verdict/decision.test.ts",
+  "tests/offline/format.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "cf4727caa3b1340136642e29c315719b89f3b2d95123754f683dafb72a572e93",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/paging/machine.test.ts tests/offline/ui/paging.test.ts tests/offline/verdict/decision.test.ts tests/offline/format.test.ts tests/offline/db/layering.test.ts tests/offline/ui/editable-cell.test.ts tests/offline/absence/blank-cells.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-6728\n\n \u2713 |offline| tests/offline/format.test.ts (46 tests) 33ms\n \u2713 |offline| tests/offline/verdict/decision.test.ts (76 tests) 56ms\n \u2713 |offline| tests/offline/paging/machine.test.ts (63 tests) 26ms\n \u2713 |offline| tests/offline/ui/paging.test.ts (64 tests) 130ms\n \u2713 |offline| tests/offline/ui/editable-cell.test.ts (161 tests) 147ms\n \u2713 |offline| tests/offline/absence/blank-cells.test.ts (10 tests) 127ms\n \u2713 |offline| tests/offline/db/layering.test.ts (46 tests) 1365ms\n\n Test Files  7 passed (7)\n      Tests  466 passed (466)\n   Start at  06:06:01\n   Duration  1.82s (transform 2.06s, setup 0ms, collect 2.73s, tests 1.88s, environment 1ms, prepare 495ms)\n\n(node:6735) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -qF 'export const EM_DASH = \"\u2014\";' src/lib/verdict/decision.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF isAbsentText src/lib/paging/machine.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF 'it(\"words a reason the app itself calls an absence' tests/offline/paging/machine.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
