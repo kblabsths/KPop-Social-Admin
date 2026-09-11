@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as barrel from "@/components/ui";
+import { EM_DASH } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import {
   ANSWERED_BY_SOMETHING_ELSE,
@@ -153,7 +154,11 @@ describe("PageMore draws its five states from props", () => {
 
   it("a refusal: the line names its object and the control STAYS, because a refusal is retryable", () => {
     const html = more({
-      refusal: { reason: 'no relation "pending_claims" exists', object: "pending_claims" },
+      refusal: {
+        reason: 'no relation "pending_claims" exists',
+        object: "pending_claims",
+        reasonFrom: "the machine",
+      },
     });
     expect(html).toContain("data-paging-refusal");
     // Both halves: the object the answer named, the words it used, and what
@@ -170,7 +175,11 @@ describe("PageMore draws its five states from props", () => {
     // `PageRefusal.object` is null for a bound refusal: the bound the server
     // refused is the one this state already holds.
     const html = more({
-      refusal: { reason: "that bound is not one this view serves", object: null },
+      refusal: {
+        reason: "that bound is not one this view serves",
+        object: null,
+        reasonFrom: "this app",
+      },
     });
     expect(html).toContain("data-paging-refusal");
     expect(html).toContain("that bound is not one this view serves");
@@ -180,7 +189,7 @@ describe("PageMore draws its five states from props", () => {
   it("a refusal on an exhausted set draws the line, and still no control", () => {
     const html = more({
       status: "exhausted",
-      refusal: { reason: "the read failed", object: "pending_claims" },
+      refusal: { reason: "the read failed", object: "pending_claims", reasonFrom: "the machine" },
     });
     expect(html).toContain("data-paging-refusal");
     expect(controls(html)).toBe(0);
@@ -194,7 +203,7 @@ describe("PageMore draws its five states from props", () => {
     // instruction to press nothing.
     const html = more({
       held: MAX_PAGE_OFFSET + SIZE,
-      refusal: { reason: "the read failed", object: "pending_claims" },
+      refusal: { reason: "the read failed", object: "pending_claims", reasonFrom: "the machine" },
     });
     expect(html).toContain("data-paging-refusal");
     expect(html).toContain('data-paging="limit"');
@@ -224,7 +233,13 @@ describe("PageMore draws its five states from props", () => {
     const clean = listOf(surface({}));
     expect(clean).toContain("<li>a</li>");
     for (const over of [
-      { refusal: { reason: "the read failed", object: "pending_claims" } },
+      {
+        refusal: {
+          reason: "the read failed",
+          object: "pending_claims",
+          reasonFrom: "the machine" as const,
+        },
+      },
       { status: "loading" as const },
       { status: "exhausted" as const },
       { held: MAX_PAGE_OFFSET + SIZE },
@@ -242,11 +257,42 @@ describe("the affordance's look", () => {
     { name: "limit", html: more({ held: MAX_PAGE_OFFSET + SIZE }) },
     {
       name: "refused",
-      html: more({ refusal: { reason: "no relation exists", object: "pending_claims" } }),
+      html: more({
+        refusal: {
+          reason: "no relation exists",
+          object: "pending_claims",
+          reasonFrom: "the machine",
+        },
+      }),
     },
     {
       name: "refused/exhausted",
-      html: more({ status: "exhausted", refusal: { reason: "no relation exists", object: null } }),
+      html: more({
+        status: "exhausted",
+        refusal: { reason: "no relation exists", object: null, reasonFrom: "the machine" },
+      }),
+    },
+    {
+      // Both faces are sampled, so the guards below scan the branch this app's
+      // own prose renders through too (admin-window/BUG-0175).
+      name: "refused/app-authored",
+      html: more({
+        refusal: {
+          reason: ANSWERED_BY_SOMETHING_ELSE,
+          object: PAGE_ROUTES.claims,
+          reasonFrom: "this app",
+        },
+      }),
+    },
+    {
+      name: "refused/app-authored, nothing to name",
+      html: more({
+        refusal: {
+          reason: "a bound of 61 is not a multiple of the 50-row window",
+          object: null,
+          reasonFrom: "this app",
+        },
+      }),
     },
   ];
 
@@ -943,7 +989,11 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
         "refused",
         {
           ...initialPage<Row>(SIZE, true),
-          refusal: { reason: "the view is not provisioned", object: "pending_claims" },
+          refusal: {
+            reason: "the view is not provisioned",
+            object: "pending_claims",
+            reasonFrom: "this app",
+          },
         },
       ],
     ];
@@ -1166,5 +1216,261 @@ describe("a page that arrives short of the window", () => {
     );
     expect(controls(html)).toBe(1);
     expect(html).toContain('data-paging="more"');
+  });
+});
+
+
+/**
+ * WHICH WORDS ARE THE MACHINE'S — admin-window/BUG-0175.
+ *
+ * Mono carries every value the database produced; sans carries every word the
+ * app wrote, and that split IS the typographic idea (LOOK_AND_FEEL → The Look
+ * → Typography; ARCHITECTURE.md §7). This line put both authors in the one
+ * mono span, so an operator reading `canceling statement due to statement
+ * timeout` and `the page request answered something this app cannot read` saw
+ * the same 11px mono red run and could not tell who was talking.
+ *
+ * Every arm below is driven END TO END — a stubbed `fetch`, the real
+ * `fetchJson`, the real driver, the rendered markup — so what is graded is
+ * what an operator reads, not what a fixture asserts about itself.
+ */
+describe("the refusal line says who wrote the words", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const AS_JSON = { status: 200, headers: { "content-type": "application/json" } };
+  const DEPS = { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson };
+  const BEFORE: PageState<Row> = {
+    rows: [{ id: "a" }],
+    held: SIZE,
+    status: "idle",
+    refusal: null,
+    notes: null,
+  };
+
+  /** One press against a stubbed wire, rendered. */
+  async function pressed(body: BodyInit | null, init: ResponseInit): Promise<string> {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response(body, init)));
+    const next = await requestPage<Row>(BEFORE, DEPS);
+    expect(next.refusal, String(body)).not.toBeNull();
+    // A refusal never half-fills the list, moves the bound or ends the set.
+    expect(next.rows.map((row) => row.id)).toEqual(["a"]);
+    expect(next.held).toBe(SIZE);
+    expect(next.status).toBe("idle");
+    return render(h(PageMore, { state: next, holds: HOLDS, size: SIZE, onPress: () => {} }));
+  }
+
+  /**
+   * The refusal line, read by type step: what is mono, what is sans, what the
+   * bidi isolation wraps, and the whole line AS READ — cheerio decodes the
+   * entities React writes, so an apostrophe in one of the app's own sentences
+   * does not hide the sentence from a substring check.
+   */
+  function faces(html: string): {
+    mono: string;
+    sans: string;
+    isolated: string[];
+    read: string;
+  } {
+    const $ = cheerio.load(html);
+    const line = $("[data-paging-refusal]");
+    expect(line).toHaveLength(1);
+    const step = (name: string): string =>
+      line
+        .find(`span.${name}`)
+        .toArray()
+        .map((element) => $(element).text())
+        .join(" ");
+    return {
+      mono: step("type-data"),
+      sans: step("type-body"),
+      isolated: line
+        .find("[dir='ltr']")
+        .toArray()
+        .map((element) => $(element).text()),
+      read: line.text(),
+    };
+  }
+
+  /** The five arms the designer measured, as the wire delivers each one. */
+  const ARMS: ReadonlyArray<{
+    name: string;
+    body: BodyInit | null;
+    init: ResponseInit;
+    /** The words on the line beside the identifier, and who wrote them. */
+    reason: string;
+    author: "this app" | "the machine";
+    /** The machine identifier that must stay mono on every arm. */
+    identifier: string | null;
+  }> = [
+    {
+      name: "(a) something other than this app's route answered",
+      body: "<!doctype html><html><body>Sign in</body></html>",
+      init: { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
+      reason: ANSWERED_BY_SOMETHING_ELSE,
+      author: "this app",
+      identifier: PAGE_ROUTES.claims,
+    },
+    {
+      name: "(b) a truncated body declared application/json",
+      body: '{"kind":"ok","rows":[{"id":',
+      init: AS_JSON,
+      reason: UNREADABLE_ANSWER,
+      author: "this app",
+      identifier: PAGE_ROUTES.claims,
+    },
+    {
+      name: "(c) a body that is not a page answer",
+      body: '{"rows":[{"id":"c"}]}',
+      init: AS_JSON,
+      reason: "the page request answered something this app cannot read",
+      author: "this app",
+      identifier: PAGE_ROUTES.claims,
+    },
+    {
+      name: "(d) the route's own bound refusal",
+      body: JSON.stringify({
+        kind: "refused",
+        reason: "a bound of 61 is not a multiple of the 50-row window",
+        bound: "61",
+      }),
+      init: { status: 400, headers: { "content-type": "application/json" } },
+      reason: "a bound of 61 is not a multiple of the 50-row window",
+      author: "this app",
+      // A bound refusal is about the bound this state already holds, so there
+      // is no third thing to name.
+      identifier: null,
+    },
+    {
+      name: "(e) the database's own error string",
+      body: JSON.stringify({
+        kind: "error",
+        reading: "pending_claims",
+        message: "canceling statement due to statement timeout",
+      }),
+      init: { status: 500, headers: { "content-type": "application/json" } },
+      reason: "canceling statement due to statement timeout",
+      author: "the machine",
+      identifier: "pending_claims",
+    },
+  ];
+
+  it("a reason this app wrote reads in sans, a reason the answer carried reads in mono", async () => {
+    // The two faces pinned SIDE BY SIDE, on the two arms the designer measured
+    // one press apart: the app's 22-word sentence about a page it could not
+    // read, and Postgres' own timeout string.
+    const [answeredByElse] = ARMS;
+    const app = faces(await pressed(answeredByElse.body, answeredByElse.init));
+    expect(app.sans).toContain(ANSWERED_BY_SOMETHING_ELSE);
+    expect(app.mono).not.toContain(ANSWERED_BY_SOMETHING_ELSE);
+
+    const failed = ARMS[4];
+    const machine = faces(await pressed(failed.body, failed.init));
+    expect(machine.mono).toContain("canceling statement due to statement timeout");
+    expect(machine.sans).not.toContain("canceling statement due to statement timeout");
+  });
+
+  it("grades every arm a press can reach: four sentences this app wrote, and one it did not", async () => {
+    const authors = new Set<string>();
+    for (const arm of ARMS) {
+      const face = faces(await pressed(arm.body, arm.init));
+      const wrote = arm.author === "this app" ? face.sans : face.mono;
+      const other = arm.author === "this app" ? face.mono : face.sans;
+      expect(wrote, arm.name).toContain(arm.reason);
+      expect(other, arm.name).not.toContain(arm.reason);
+      authors.add(arm.author);
+    }
+    expect([...authors].sort()).toEqual(["the machine", "this app"]);
+    // Four of the five are the app's own prose, which is what the ticket says.
+    expect(ARMS.filter((arm) => arm.author === "this app")).toHaveLength(4);
+  });
+
+  it("the identifier stays mono on every arm, and dir=ltr isolates exactly the run this app did not write", async () => {
+    for (const arm of ARMS) {
+      const html = await pressed(arm.body, arm.init);
+      const face = faces(html);
+      if (arm.identifier === null) {
+        // Nothing to name, so no dangling em dash either.
+        expect(face.read, arm.name).not.toContain(EM_DASH);
+        continue;
+      }
+      // The route path and the object the answer named are machine
+      // identifiers: mono in every arm, never in the app's sans run.
+      expect(face.mono, arm.name).toContain(arm.identifier);
+      expect(face.sans, arm.name).not.toContain(arm.identifier);
+      // One em dash, separating the identifier from the reason.
+      expect(face.read.split(EM_DASH), arm.name).toHaveLength(2);
+      // The isolated run is the foreign one — the identifier alone where the
+      // reason is ours, the identifier and the reason where it is not.
+      expect(face.isolated, arm.name).toHaveLength(1);
+      expect(face.isolated[0], arm.name).toContain(arm.identifier);
+      if (arm.author === "this app") {
+        expect(face.isolated[0].trim(), arm.name).toBe(arm.identifier);
+      } else {
+        expect(face.isolated[0], arm.name).toContain(arm.reason);
+      }
+    }
+  });
+
+  it("the order, the markers, the red and the control are what they were", async () => {
+    for (const arm of ARMS) {
+      const html = await pressed(arm.body, arm.init);
+      // Identifier, then reason, then the fix in the app's voice.
+      const { read } = faces(html);
+      const at = (needle: string): number => read.indexOf(needle);
+      if (arm.identifier !== null) {
+        expect(at(arm.identifier), arm.name).toBeLessThan(at(arm.reason));
+      }
+      expect(at(arm.reason), arm.name).toBeLessThan(at("Press it again"));
+      // The line itself: same marker, same role, same red, still above the
+      // control, and the control is still there because a refusal is
+      // retryable at the same bound.
+      expect(html, arm.name).toContain("data-paging-refusal");
+      expect(html, arm.name).toContain('role="alert"');
+      expect(classesOf(html), arm.name).toContain("text-broken");
+      expect(html.indexOf("data-paging-refusal"), arm.name).toBeLessThan(html.indexOf("<button"));
+      expect(controls(html), arm.name).toBe(1);
+      expect(html, arm.name).toContain('data-paging="more"');
+      // Only the five type steps, on the line and around it.
+      for (const className of classesOf(html).filter((c) => c.startsWith("type-"))) {
+        expect(["type-figure", "type-title", "type-body", "type-data", "type-micro"]).toContain(
+          className,
+        );
+      }
+    }
+  });
+
+  it("derives the face from the fact alone: the words never decide it here", () => {
+    // The component is handed a refusal whose words say one thing and whose
+    // `reasonFrom` says the other, BOTH ways round. A component comparing the
+    // reason to one of this module's constants fails both halves; one reading
+    // the carried fact passes both. No string comparison can survive this.
+    const asMachine = faces(
+      more({
+        refusal: {
+          reason: ANSWERED_BY_SOMETHING_ELSE,
+          object: "pending_claims",
+          reasonFrom: "the machine",
+        },
+      }),
+    );
+    expect(asMachine.mono).toContain(ANSWERED_BY_SOMETHING_ELSE);
+    expect(asMachine.sans).not.toContain(ANSWERED_BY_SOMETHING_ELSE);
+
+    const asApp = faces(
+      more({
+        refusal: {
+          reason: "canceling statement due to statement timeout",
+          object: "pending_claims",
+          reasonFrom: "this app",
+        },
+      }),
+    );
+    expect(asApp.sans).toContain("canceling statement due to statement timeout");
+    expect(asApp.mono).not.toContain("canceling statement due to statement timeout");
+    // And the identifier did not move either way.
+    expect(asMachine.mono).toContain("pending_claims");
+    expect(asApp.mono).toContain("pending_claims");
   });
 });
