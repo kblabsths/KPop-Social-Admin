@@ -189,6 +189,117 @@ describe("classify", () => {
     ).toEqual({ kind: "not_provisioned", missing: T.sources });
   });
 
+  /**
+   * A column-absent envelope is not necessarily the DATABASE'S: postgrest-js
+   * hands the parsed body back as the error object for any non-2xx, so an
+   * intermediary can author `code` and `message` both — and the column half of
+   * `missing` is mined out of that message. `missing` is an object name the
+   * app renders in its own sentence (the records and settle routes inline it
+   * into `"<missing> is not present in this database"`), so a mined column is
+   * admitted only when it matches the app's object grammar; otherwise the
+   * verdict names the table the query asked for
+   * (campaign admin-window/BUG-0181, the architect's four measured envelopes).
+   */
+  const FOREIGN_COLUMN_ABSENT_ENVELOPES: ReadonlyArray<[string, unknown, string]> = [
+    [
+      "a quoted fragment that closes the quote and keeps going",
+      {
+        code: "42703",
+        message: `column 'severity" OR 1=1 --  <script>alert(1)</script> ' does not exist`,
+      },
+      `severity" OR 1=1`,
+    ],
+    [
+      "a quoted run in a refusal that never says 'column' at all",
+      {
+        code: "PGRST204",
+        message:
+          'Access denied by policy "your request was blocked; contact support@evil.example for reference 8f3c1"',
+      },
+      "for reference 8f3c1",
+    ],
+    [
+      "a whole document between the quotes",
+      {
+        code: "42703",
+        message:
+          'blocked "<!DOCTYPE html><html><head><title>Attention Required!</title></head></html>"',
+      },
+      "Attention Required!",
+    ],
+    [
+      "an unterminated right-to-left override inside the value",
+      { code: "42703", message: 'column "‮gnitset" does not exist' },
+      "‮",
+    ],
+  ];
+
+  it("spells a column only when the message named one this app could have named", () => {
+    // MUST NOT ADMIT: four envelopes whose quoted run is an intermediary's own
+    // text. Each stays an absence naming the object the QUERY asked for, and
+    // carries no character of that text.
+    for (const [shape, error, foreign] of FOREIGN_COLUMN_ABSENT_ENVELOPES) {
+      const result = classify(error, T.reviewItems);
+      expect(result, shape).toEqual({
+        kind: "not_provisioned",
+        missing: T.reviewItems,
+      });
+      const named = (result as { missing: string }).missing;
+      expect(named, shape).not.toContain(foreign);
+      // Whatever it names is an object name: a table, or a table qualified by
+      // one column, in the grammar this app spells itself.
+      expect(named, shape).toMatch(/^[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)?$/);
+    }
+
+    // MUST ADMIT (the twin, LESSONS 8): the four spellings a real
+    // Postgres/PostgREST column-absent message uses still qualify, byte for
+    // byte, qualifier dropped.
+    const HONEST: ReadonlyArray<[unknown, string, string]> = [
+      [
+        {
+          code: "PGRST204",
+          message: `Could not find the 'severity' column of 'review_items' in the schema cache`,
+        },
+        T.reviewItems,
+        `${T.reviewItems}.severity`,
+      ],
+      [
+        { code: "42703", message: 'column "severity" does not exist' },
+        T.reviewItems,
+        `${T.reviewItems}.severity`,
+      ],
+      [
+        {
+          code: "42703",
+          message: 'column "severity" of relation "review_items" does not exist',
+        },
+        T.reviewItems,
+        `${T.reviewItems}.severity`,
+      ],
+      [
+        { code: "42703", message: "column events.badcol does not exist" },
+        T.events,
+        `${T.events}.badcol`,
+      ],
+    ];
+    for (const [error, asked, named] of HONEST) {
+      expect(classify(error, asked), named).toEqual({
+        kind: "not_provisioned",
+        missing: named,
+      });
+    }
+  });
+
+  it("still classifies a foreign column-absent envelope as an absence, not an error", () => {
+    // The KIND is not this ticket's to move: an envelope that was an absence
+    // before is an absence after — nothing becomes a red error card on the way
+    // past, and the database's message is neither scrubbed nor counted, only
+    // left unmined.
+    for (const [shape, error] of FOREIGN_COLUMN_ABSENT_ENVELOPES) {
+      expect(classify(error, T.reviewItems).kind, shape).toBe("not_provisioned");
+    }
+  });
+
   it("carries the database's own message verbatim for any other failure", () => {
     const error = permissionDenied(T.verdicts);
     expect(classify(error, T.verdicts)).toEqual({
