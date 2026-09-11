@@ -1945,6 +1945,34 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
         expect(restates(line, control), `${name}: "${line}" / "${control}"`).toBe(false);
       }
     });
+
+    it("cannot be drawn by a surface that has not answered the question", () => {
+      // CRITERION 8, at the one place the ruling actually BINDS a surface
+      // added later (QA, admin-window/BUG-0198). The ruled-out road is a next
+      // step kept here as a default and opted out of; the assertion above
+      // catches the one default we know the wording of, and this catches every
+      // other one, because a DEFAULTED prop is an OPTIONAL prop. A surface
+      // that says nothing about its own URL therefore does not compile, which
+      // is what makes `null` an answer rather than a thing forgotten.
+      //
+      // The pin holds in BOTH directions by construction: `tsc --noEmit` runs
+      // over this file (`ci_command`) and fails if the omission below is ever
+      // allowed, AND fails on the unused `@ts-expect-error` if the prop is
+      // ever made optional. The runtime half keeps the case honest — it must
+      // still be a set of props this component really draws from.
+      const unanswered = {
+        state: state({ held: CEILING }),
+        holds: HOLDS,
+        size: SIZE,
+        readsAgree: true,
+        onPress: () => {},
+      };
+      // @ts-expect-error `nextStep` is required of every surface that draws this control.
+      const bare: Parameters<typeof PageMore>[0] = unanswered;
+      expect(ceilingArm(render(h(PageMore, { ...bare, nextStep: null })))).toBe(
+        ceilingArm(widget(HOLDS, null)),
+      );
+    });
   });
 
   it("refuses to draw a paged surface outside its provider", () => {
