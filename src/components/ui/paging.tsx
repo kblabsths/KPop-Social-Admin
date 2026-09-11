@@ -103,11 +103,18 @@ function asError(thrown: unknown): Error {
  *
  * Nothing here throws: `requestPage` turns a rejection into a refusal on the
  * next state and answers instead of raising.
+ *
+ * **It hands the window back out** (admin-window/BUG-0168). `deps.size` is the
+ * number the driver grades a page against; `PageMore` needs the same number to
+ * label the control and to ask `pageBound` whether the next press can be
+ * honoured. Returning it is what lets a surface spell the window ONCE — the
+ * widget's `size` prop is fed from here rather than retyped from the constant,
+ * so the two copies that used to be reconciled nowhere are one value.
  */
 export function usePageRows<Row>(
   initial: PageState<Row>,
   deps: Omit<PageDeps, "fetchJson">,
-): { state: PageState<Row>; press: () => void } {
+): { state: PageState<Row>; press: () => void; size: number } {
   const [state, setState] = useState<PageState<Row>>(initial);
   const latest = useRef<PageState<Row>>(initial);
 
@@ -126,7 +133,7 @@ export function usePageRows<Row>(
     void requestPage<Row>(before, { ...deps, fetchJson }).then(publish);
   };
 
-  return { state, press };
+  return { state, press, size: deps.size };
 }
 
 /** What one press asks for, in the operator's words. */
@@ -141,7 +148,13 @@ function askFor(size: number, holds: string): string {
  * Five states, drawn from props alone, in this order:
  *
  *  1. **exhausted** — no control, and one sentence saying this view holds no
- *     more. The set really is finished; the read said so.
+ *     more. The set really is finished; the read said so. **This arm is FIRST
+ *     and the order is load-bearing** (admin-window/BUG-0168): a legitimate
+ *     final page is short, so an exhausted state's `held` may sit off the grid
+ *     `pageBound` enforces (80 against a window of 50) — honestly so, because
+ *     there is no next bound to honour. Read in the other order it would draw
+ *     arm 2 and tell the operator the view "shows no further rows" about a set
+ *     the read established IS complete.
  *  2. **the next bound cannot be honoured** — no control either, and one
  *     sentence that does NOT claim the set is finished. Past
  *     `MAX_PAGE_OFFSET` a bound refusal returns the state to `idle` by design
@@ -169,7 +182,11 @@ export function PageMore({
   state: PageState<unknown>;
   /** What the surface holds, in the app's own noun: "claims", "events". */
   holds: string;
-  /** The window's size — what one press asks for. */
+  /**
+   * The window's size — what one press asks for, and the grid the next bound
+   * must sit on. It comes from `usePageRows`, which hands back the very number
+   * the driver graded the last page against; it is never retyped beside it.
+   */
   size: number;
   onPress: () => void;
 }): ReactNode {

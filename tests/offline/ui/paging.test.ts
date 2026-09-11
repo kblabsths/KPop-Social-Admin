@@ -47,6 +47,9 @@ function state(over: Partial<PageState<Row>> = {}): PageState<Row> {
 const more = (over: Partial<PageState<Row>> = {}): string =>
   render(h(PageMore, { state: state(over), holds: HOLDS, size: SIZE, onPress: () => {} }));
 
+/** A page of rows, as a stub would serve it. A FULL window is `pageOf(SIZE)`. */
+const pageOf = (count: number): Row[] => Array.from({ length: count }, (_, i) => ({ id: `r${i}` }));
+
 /** How many controls the markup drew. The control is a button; nothing else here is. */
 const controls = (html: string): number => (html.match(/<button/g) ?? []).length;
 
@@ -87,6 +90,25 @@ describe("PageMore draws its five states from props", () => {
     // One sentence, and it names what the surface holds.
     expect((html.match(/<p/g) ?? []).length).toBe(1);
     expect(html).toContain(HOLDS);
+  });
+
+  it("exhausted on a bound that is off the grid — the legitimate FINAL page — still says the set is complete", () => {
+    // admin-window/BUG-0168, the arm-ordering trap. A final page is allowed to
+    // be short, so an exhausted surface's `held` may sit between two windows:
+    // 80 against a window of 50. `pageBound` refuses that bound — and it
+    // should, there is no next press to serve — but the sentence the operator
+    // reads must be the set's completion, not "this view shows no further
+    // rows", which is the very sentence this ticket exists to remove.
+    const held = SIZE + 30;
+    // Non-vacuity: the fixture really is the collision — a bound `pageBound`
+    // refuses, on a state whose set really is finished.
+    expect(pageBound(String(held), SIZE).kind).toBe("refused");
+
+    const html = more({ status: "exhausted", held });
+    expect(controls(html)).toBe(0);
+    expect(html).toContain('data-paging="exhausted"');
+    expect(html).not.toContain('data-paging="limit"');
+    expect((html.match(/<p/g) ?? []).length).toBe(1);
   });
 
   it("a next bound past the ceiling: no control either, and it does NOT say the set is finished", () => {
@@ -484,15 +506,19 @@ describe("usePageRows binds the driver to a press", () => {
   });
 
   it("a press after the answer lands asks for the NEXT bound, never the same one twice", async () => {
-    const urls = answering({ kind: "ok", rows: [{ id: "c" }], offset: SIZE, exhausted: false });
+    // A FULL window, and the bound grows by the window (admin-window/BUG-0168,
+    // ruled full-or-exhausted): the answer used to carry one row and the bound
+    // used to grow by one, which is the very step that walked `held` off the
+    // grid `pageBound` enforces. What this case grades is unchanged — the
+    // second press asks for a bound the first press produced, never the same
+    // one twice — and the answer's own `offset` still never reaches the state.
+    const urls = answering({ kind: "ok", rows: pageOf(SIZE), offset: 999, exhausted: false });
     const { press } = probe(initialPage<Row>(SIZE, true));
     press();
     await settle();
     press();
     await settle();
-    // One row arrived, so the bound grew by one — by what actually arrived,
-    // never by what the answer claimed its offset was.
-    expect(urls.map(boundOf)).toEqual([String(SIZE), String(SIZE + 1)]);
+    expect(urls.map(boundOf)).toEqual([String(SIZE), String(SIZE * 2)]);
   });
 
   it("presses no further once the answer says the set is exhausted", async () => {
@@ -518,6 +544,70 @@ describe("usePageRows binds the driver to a press", () => {
     await settle();
     expect(urls).toHaveLength(2);
     expect(urls[1]).toBe(urls[0]);
+  });
+
+  /** The control's own words, without pinning the sentence around them. */
+  const controlText = (html: string): string =>
+    /<button[^>]*>([^]*?)<\/button>/.exec(html)?.[1]?.replace(/<[^>]*>/g, "") ?? "";
+
+  it("a surface spells the window ONCE: the driver grades against the number the control renders", async () => {
+    // QA residual 4, folded into admin-window/BUG-0168: `PageDeps.size` was
+    // never read, so the window was supplied twice — once to the driver, once
+    // to `PageMore` — and reconciled nowhere. The surface below spells it in
+    // ONE place and feeds the widget from the hook's own return, and the two
+    // halves are then read off ONE fixture: the same 7-row answer LANDS
+    // against a window of 7 (the next press moves on to 14) and is REFUSED
+    // against a window of 8 (the next press asks for 8 again) — so the number
+    // the driver graded the page against is the number the control names.
+    const SERVED = 7;
+    const consumer = async (
+      windowSize: number,
+    ): Promise<{ bounds: (string | null)[]; label: string }> => {
+      const urls = answering({
+        kind: "ok",
+        rows: pageOf(SERVED),
+        offset: windowSize,
+        exhausted: false,
+      });
+      const captured: { press: (() => void) | null } = { press: null };
+      const html = render(
+        h(function Surface() {
+          // The ONE spelling of this surface's window.
+          const bound = usePageRows<Row>(initialPage<Row>(windowSize, true), {
+            route: PAGE_ROUTES.claims,
+            params: "",
+            size: windowSize,
+          });
+          captured.press = bound.press;
+          // …and the widget is fed from the hook, never retyped beside it.
+          return h(PageMore, {
+            state: bound.state,
+            holds: HOLDS,
+            size: bound.size,
+            onPress: bound.press,
+          });
+        }),
+      );
+      const { press } = captured;
+      if (press === null) throw new Error("the hook returned no press");
+      press();
+      await settle();
+      press();
+      await settle();
+      return { bounds: urls.map(boundOf), label: controlText(html) };
+    };
+
+    const landed = await consumer(SERVED);
+    const refused = await consumer(SERVED + 1);
+
+    expect(landed.bounds).toEqual([String(SERVED), String(SERVED * 2)]);
+    expect(refused.bounds).toEqual([String(SERVED + 1), String(SERVED + 1)]);
+    // The control names the same window the driver just graded against — the
+    // number, not the sentence around it.
+    expect(landed.label).toContain(String(SERVED));
+    expect(landed.label).not.toContain(String(SERVED + 1));
+    expect(refused.label).toContain(String(SERVED + 1));
+    expect(refused.label).not.toContain(String(SERVED));
   });
 
   it("fires its request from a ref, never from inside a setState updater", () => {
@@ -590,43 +680,55 @@ describe("a page that arrives short of the window", () => {
    *
    * Filed as admin-window/BUG-0168.
    */
-  const short = (count: number, exhausted: boolean): Promise<PageState<Row>> =>
-    requestPage<Row>(
+  /** The answer the stub serves, and the state the driver reached from it. */
+  type ServedPage = Extract<PageAnswer<Row>, { kind: "ok" }>;
+  const short = async (
+    count: number,
+    exhausted: boolean,
+  ): Promise<{ answer: ServedPage; next: PageState<Row> }> => {
+    const answer: ServedPage = {
+      kind: "ok",
+      rows: pageOf(count),
+      offset: SIZE,
+      exhausted,
+    };
+    const next = await requestPage<Row>(
       { rows: [], held: SIZE, status: "idle", refusal: null },
       {
         route: PAGE_ROUTES.claims,
         params: "",
         size: SIZE,
-        fetchJson: async () => ({
-          kind: "ok",
-          rows: Array.from({ length: count }, (_, i) => ({ id: `r${i}` })),
-          offset: SIZE,
-          exhausted,
-        }),
+        fetchJson: async () => answer,
       },
     );
+    return { answer, next };
+  };
 
-  // STRICT xfail — admin-window/BUG-0168. `it.fails` is red the day this
-  // starts passing, which sends the next reader to the ticket instead of
-  // letting the pin rot: flip it back to `it` as part of the fix.
-  it.fails("still offers a way to the rest of the set, or says the set is complete", async () => {
-    const next = await short(30, false);
-    // Non-vacuity: the answer really did say the set continues, and the rows
-    // really did arrive.
-    expect(next.rows).toHaveLength(30);
-    expect(next.status).not.toBe("exhausted");
+  // The pin, flipped back to a plain `it` by the fix — admin-window/BUG-0168,
+  // RULED (b): the route contract is full-or-exhausted and the driver refuses
+  // anything else out loud.
+  it("still offers a way to the rest of the set, or says the set is complete", async () => {
+    const { answer, next } = await short(30, false);
+    // Non-vacuity, re-expressed against the ANSWER the stub served rather than
+    // the resulting state, because the ruled ending appends nothing: under (b)
+    // a short continuing page is REFUSED, so `next.rows` is empty by design and
+    // the original `expect(next.rows).toHaveLength(30)` would now assert the
+    // fix away. What the fixture has to be is unchanged — a page short of the
+    // window that says the set continues — and that is what is checked here.
+    expect(answer.rows).toHaveLength(30);
+    expect(answer.exhausted).toBe(false);
 
     const html = render(
       h(PageMore, { state: next, holds: HOLDS, size: SIZE, onPress: () => {} }),
     );
-    // One of the two honest endings, never the silent one.
+    // One of the two honest endings, never the silent one. (Unchanged.)
     expect(controls(html) === 1 || html.includes('data-paging="exhausted"')).toBe(true);
     expect(html).not.toContain('data-paging="limit"');
   });
 
   it("a full window still pages on, so the case above is about the short page alone", async () => {
     // The must-NOT-flag fixture (LESSONS 8): the same path, one window wide.
-    const next = await short(SIZE, false);
+    const { next } = await short(SIZE, false);
     expect(next.held).toBe(SIZE * 2);
     const html = render(
       h(PageMore, { state: next, holds: HOLDS, size: SIZE, onPress: () => {} }),

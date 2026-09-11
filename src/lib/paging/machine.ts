@@ -102,7 +102,15 @@ export interface PageDeps {
   readonly route: string;
   /** The surface's own facets, already serialized (`a=1&b=2`, or empty). */
   readonly params: string;
-  /** The window the SERVER decides. It is never read from the URL. */
+  /**
+   * The window the SERVER decides. It is never read from the URL.
+   *
+   * READ HERE, by rule 2: it is the number a page is graded full-or-short
+   * against, and the one the invariant on `held` is checked with. A surface
+   * spells it ONCE and hands the same value to the widget through
+   * `usePageRows` — a second copy typed beside this one is what let `held`
+   * leave the grid in the first place (admin-window/BUG-0168).
+   */
   readonly size: number;
   /** One request, already parsed. It may reject; a refusal is the answer. */
   readonly fetchJson: (url: string) => Promise<unknown>;
@@ -139,6 +147,24 @@ function refuse<Row>(state: PageState<Row>, reason: string, object: string | nul
   return { rows: state.rows, held: state.held, status: "idle", refusal: { reason, object } };
 }
 
+/**
+ * The three ways an `ok` answer is not a page this view may hold — campaign
+ * admin-window/BUG-0168, the client half of full-or-exhausted (ARCHITECTURE.md
+ * §4.3 read kind 3).
+ *
+ * They carry no figure on purpose. This module is a pure leaf and cannot reach
+ * `lib/format`'s `counted`, which is the app's ONE pluralisation rule, and a
+ * hand-written "1 rows" beside a window of one is exactly the disagreement
+ * that rule exists to stop. The window is the surface's own number and the
+ * operator is already told it by the control's label.
+ */
+const SHORT_PAGE =
+  "the page arrived short of this view's window and did not say the set had ended, so it may be missing rows";
+const OVERLONG_PAGE =
+  "the page arrived with more rows than this view's window, so it is not the page this view asked for";
+const WINDOWLESS =
+  "this view has no window size to read a page by, so no page can be honoured";
+
 /** The words a thrown or rejected value carries, without asking it to be an Error. */
 function reasonOf(thrown: unknown): string {
   if (thrown instanceof Error && thrown.message.length > 0) return thrown.message;
@@ -155,8 +181,15 @@ function reasonOf(thrown: unknown): string {
  *     `exhausted` this calls `fetchJson` ZERO times and returns the state
  *     unchanged — the same object, so a caller comparing identity sees that
  *     nothing happened. From `idle` it makes exactly ONE call.
- *  2. **An `ok` answer appends in the order received**, `held` grows by the
- *     row count, and the refusal is cleared.
+ *  2. **An `ok` answer is FULL-OR-EXHAUSTED, or it is refused out loud**
+ *     (ruled 2026-09-10, admin-window/BUG-0168; DECISIONS.md, "a paged answer
+ *     is full-or-exhausted"). A full window — `rows.length === deps.size` —
+ *     appends in the order received, grows `held` by the WINDOW and clears the
+ *     refusal. A page that says the set has ended may be shorter, and appends
+ *     what it carries. Anything else — short and still continuing, or longer
+ *     than the window — is a refusal by rule 4, because the alternative is
+ *     inferring the end of a set from a row count and telling the operator a
+ *     truncated read is the whole of it.
  *  3. **An `ok` answer with zero rows is exhaustion**, not a refusal: the end
  *     of a set is an answer, and the rows are unchanged.
  *  4. **A refusal never extends the list** (M3 EC5): the rows come back with
@@ -169,7 +202,11 @@ function reasonOf(thrown: unknown): string {
  *
  * The answer's own `offset` is not read into the state: `held` grows by the
  * rows that actually arrived, so a server echoing some other bound can never
- * make this surface claim rows it does not hold.
+ * make this surface claim rows it does not hold. Under rule 2 those rows are
+ * exactly one window on every continuing page, which is what keeps the
+ * invariant true: after any press, either `pageBound(String(held), deps.size)`
+ * is `ok` or the status is `exhausted` — `held` leaves the bound grid only on
+ * the final page.
  */
 export async function requestPage<Row>(
   state: PageState<Row>,
@@ -191,13 +228,43 @@ export async function requestPage<Row>(
 
   switch (answer.kind) {
     case "ok": {
-      const rows = answer.rows.length > 0 ? [...state.rows, ...answer.rows] : state.rows;
+      const served = answer.rows.length;
+
+      // A window that is not a window grades nothing: no page can be checked
+      // against it, and `pageBound` refuses every bound built from it, so the
+      // honest answer is a refusal rather than a list grown by an amount
+      // nobody can check.
+      if (!Number.isInteger(deps.size) || deps.size <= 0) {
+        return refuse(state, WINDOWLESS, deps.route);
+      }
+
+      // An empty page is the end of the set, and is the ONE row count this
+      // arm still reads that way: there is no row to append, no bound to move,
+      // and a page past the end is an answer rather than a refusal (rule 3).
+      // Unchanged by admin-window/BUG-0168.
+      if (served === 0) {
+        return { rows: state.rows, held: state.held, status: "exhausted", refusal: null };
+      }
+
+      // Full-or-exhausted, the client half (rule 2). Neither refusal is
+      // reachable from this app's own route, which derives `exhausted` from
+      // the read it just made and never serves a partial or over-long window:
+      // they exist for foreign data on a wire, exactly as `isPageAnswer`'s arm
+      // does.
+      if (served > deps.size) {
+        return refuse(state, OVERLONG_PAGE, deps.route);
+      }
+      if (served < deps.size && !answer.exhausted) {
+        return refuse(state, SHORT_PAGE, deps.route);
+      }
+
       return {
-        rows,
-        held: state.held + answer.rows.length,
-        // A short or empty page is the end of the set, whichever of the two
-        // said so first.
-        status: answer.exhausted || answer.rows.length === 0 ? "exhausted" : "idle",
+        rows: [...state.rows, ...answer.rows],
+        // By the WINDOW on every continuing page, so the next bound is on the
+        // grid `pageBound` enforces BY CONSTRUCTION; only a final page — which
+        // ends `exhausted` — may leave it.
+        held: state.held + served,
+        status: answer.exhausted ? "exhausted" : "idle",
         refusal: null,
       };
     }
