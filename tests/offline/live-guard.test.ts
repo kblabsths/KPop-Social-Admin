@@ -1365,6 +1365,61 @@ describe("QA: whileStill, attacked", () => {
     );
     expect(outcome.held).toEqual({ rows: 9 });
   });
+
+  /**
+   * The exhaustion message must name WHAT moved (admin-window/TASK-0075
+   * criterion 6). It used to report the two shapes' BYTE LENGTHS, and for a
+   * count moving 877 -> 878 those are identical: the only thing a red live run
+   * left behind was `117 then 117 bytes`, which named nothing and cost a QA
+   * round to decode. A diagnostic that says nothing regresses silently, so it
+   * is pinned here rather than only in the live file that made it necessary.
+   *
+   * Each shape below is one this file's live callers really hold still: a
+   * record of counts (`bucketCensus`), a list of claims whose LENGTH moved
+   * (`claimsFromDatabase`), and a list of the same length in which one claim
+   * was resolved while another was filed — the case byte lengths provably
+   * cannot describe.
+   */
+  it("says what moved and what it moved to, never a byte count", async () => {
+    const exhaust = async (read: () => Promise<unknown>): Promise<string> => {
+      try {
+        await whileStill(read, async () => "markup");
+      } catch (error) {
+        return (error as Error).message;
+      }
+      throw new Error("whileStill handed back a pair the read moved under");
+    };
+
+    // A record of counts: the first differing KEY and its two values.
+    let whole = 877;
+    const counts = await exhaust(async () => ({
+      whole: (whole += 1),
+      buckets: { agreeing: whole, standing: 0 },
+    }));
+    expect(counts).not.toContain("bytes");
+    expect(counts).toMatch(/whole \d+ → \d+/);
+
+    // A list that GREW: the length, and which length it became.
+    let extra = 0;
+    const grew = await exhaust(async () =>
+      Array.from({ length: 877 + extra++ }, (_, index) => ({ id: `id-${index}` })),
+    );
+    expect(grew).not.toContain("bytes");
+    expect(grew).toMatch(/length \d+ → \d+/);
+
+    // One claim resolved, one filed: same length, same byte width, different
+    // set. The message names the index and the two ids.
+    let swap = 0;
+    const swapped = await exhaust(async () => {
+      swap += 1;
+      return Array.from({ length: 877 }, (_, index) =>
+        index === 400 ? { id: `filed-${swap}` } : { id: `id-${index}` },
+      );
+    });
+    expect(swapped).not.toContain("bytes");
+    expect(swapped).toContain("[400].id");
+    expect(swapped).toContain("filed-");
+  });
 });
 
 describe("QA: surfaceHooks, attacked", () => {
