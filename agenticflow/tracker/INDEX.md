@@ -1,10 +1,9 @@
-# Tracker index (regenerated 2026-09-11T00:20:43Z — do not edit)
+# Tracker index (regenerated 2026-09-11T00:22:57Z — do not edit)
 
 ## open
-- BUG-0168 [P1][bug][M3] A short non-exhausted page ends paging silently: held leaves the bound grid and PageMore draws 'no further rows'  (scope:src/lib/paging/machine.ts,src/components/ui/paging.tsx,tests/offline/ui/paging.test.ts,tests/offline/paging/machine.test.ts from:TASK-0064)
 - FEAT-0014 [P1][feat][M3] F16 — the second leg of a two-step join runs its chunks concurrently  (scope:src/lib/db/result.ts,src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/db/verdict.ts,tests/offline/db/result.test.ts,tests/live/claims.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts)
 - FEAT-0015 [P1][feat][M3] F14 — paging past the window, on Claims and on Browse  (deps:FEAT-0014(unmet:1) scope:src/app/claims/page.tsx,src/app/browse/page.tsx,src/app/api,src/components/claims,src/components/browse,src/lib/db/claims.ts,src/lib/db/browse.ts,src/lib/db/result.ts,tests/offline/claims/page.test.ts,tests/offline/browse/page.test.ts,tests/offline/absence/pages.test.ts,tests/live/claims.live.test.ts,tests/live/browse.live.test.ts)
-- TASK-0066 [P1][task][M3] The claims paging route handler: gated like a page, bound-checked out loud, one page per request  (deps:TASK-0065,BUG-0168(unmet:2) scope:src/app/api/admin/claims/rows/route.ts,tests/offline/paging/claims-route.test.ts,tests/http/paging.http.test.ts,tests/http/auth.http.test.ts)
+- TASK-0066 [P1][task][M3] The claims paging route handler: gated like a page, bound-checked out loud, one page per request  (deps:TASK-0065,BUG-0168(unmet:1) scope:src/app/api/admin/claims/rows/route.ts,tests/offline/paging/claims-route.test.ts,tests/http/paging.http.test.ts,tests/http/auth.http.test.ts)
 - TASK-0067 [P1][task][M3] /claims draws the affordance only where it can be honoured, and pages past the window  (deps:TASK-0064,TASK-0066,BUG-0168(unmet:2) scope:src/app/claims/page.tsx,src/components/claims/paged-claim-list.tsx,src/components/claims/index.ts,src/lib/claims/filters.ts,tests/offline/claims/page.test.ts,tests/offline/claims/filters.test.ts,tests/offline/absence/pages.test.ts,tests/live/claims.live.test.ts)
 - TASK-0068 [P1][task][M3] Browse: the events window takes an offset, and its paging route handler answers one page  (deps:TASK-0066(unmet:1) scope:src/lib/db/browse.ts,src/lib/paging/bounds.ts,src/app/api/admin/browse/rows/route.ts,tests/offline/browse/browse-read.test.ts,tests/offline/paging/browse-route.test.ts,tests/http/paging.http.test.ts)
 - TASK-0069 [P1][task][M3] /browse pages further down its one curated view, and says so honestly  (deps:TASK-0067,TASK-0068(unmet:2) scope:src/app/browse/page.tsx,src/components/browse/paged-browse-table.tsx,src/lib/browse/views.ts,tests/offline/browse/page.test.ts,tests/offline/browse/views.test.ts,tests/offline/absence/pages.test.ts,tests/live/browse.live.test.ts)
@@ -18,7 +17,7 @@
 - BUG-0164 [P3][bug][patch] /queues still carries the exit copy BUG-0161 replaced on /claims  (deps:TASK-0072(unmet:1) scope:src/app/queues/page.tsx,tests/offline/queues/page.test.ts,tests/offline/ui/copy.test.ts from:designer:endgame-walk)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## qa
-- TASK-0065 [P1][task][M3] Claims: the window read takes an explicit offset, and the row shaping becomes an importable leaf  (deps:TASK-0063,TASK-0074,BUG-0166 scope:src/lib/db/claims.ts,src/lib/claims/lines.ts,src/components/claims/claim-list.tsx,src/app/claims/page.tsx,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/offline/claims/population.ts @builder-251)
+## claimed
+- BUG-0168 [P1][bug][M3] A short non-exhausted page ends paging silently: held leaves the bound grid and PageMore draws 'no further rows'  (scope:src/lib/paging/machine.ts,src/components/ui/paging.tsx,tests/offline/ui/paging.test.ts,tests/offline/paging/machine.test.ts @builder-252 from:TASK-0064)
 
-Totals — done:8, open:16, qa:1. Archived: 252.
+Totals — claimed:1, done:9, open:15. Archived: 252.
