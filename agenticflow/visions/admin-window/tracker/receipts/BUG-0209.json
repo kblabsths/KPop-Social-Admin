@@ -1,18 +1,18 @@
 {
  "id": "BUG-0209",
- "created": "2026-09-11T21:41:58Z",
- "green": false,
- "git_head": "f6c5106243c1ca99f18ea4273e25d02c50670ce3",
+ "created": "2026-09-11T23:29:21Z",
+ "green": true,
+ "git_head": "1e5d3e92e783d5eb8e6696d6bc062835f3755ae6",
  "scope": [
   "agenticflow/tracker/tickets"
  ],
  "isolation": "worktree",
- "foreign_files": 3,
- "tree_hash": "9d88a11d350da4e6a93af170756cfa296b20fe6c4000bcde3fdb316b88039e6a",
+ "foreign_files": 4,
+ "tree_hash": "b54957cb8b9b9a99055d34580c2ff6fdba6e9a3c513e14ada9851188212b0ec6",
  "commands": [
   {
    "cmd": "grep -qF \"EC1 live-tier ruling (architect, 2026-09-11)\" agenticflow/tracker/milestones/M3.md",
-   "exit": 1,
+   "exit": 0,
    "output_tail": ""
   },
   {
@@ -25,6 +25,5 @@
    "exit": 0,
    "output_tail": "fatal: cannot change to '../kspace Scraper': No such file or directory\n"
   }
- ],
- "failure_sig": "3d9ef6f0396b"
+ ]
 }

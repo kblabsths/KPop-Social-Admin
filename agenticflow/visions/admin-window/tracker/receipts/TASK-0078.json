@@ -1,13 +1,13 @@
 {
  "id": "TASK-0078",
- "created": "2026-09-11T21:42:44Z",
+ "created": "2026-09-11T23:29:20Z",
  "green": true,
- "git_head": "f6c5106243c1ca99f18ea4273e25d02c50670ce3",
+ "git_head": "1e5d3e92e783d5eb8e6696d6bc062835f3755ae6",
  "scope": [
   "docs/build_judgments.md"
  ],
  "isolation": "worktree",
- "foreign_files": 6,
+ "foreign_files": 3,
  "tree_hash": "47605d9e2c9b7464a27dbb0e2034c51481a096a5a89e549d843d96bc897b0eb9",
  "commands": [
   {
