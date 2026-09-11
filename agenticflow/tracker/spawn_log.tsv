@@ -31153,3 +31153,11 @@
 2026-09-11T17:28:51Z	designer	BUG-0138	40279	1023	180341
 # STRANDED	2026-09-11T17:29:01Z	agent	7 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0200.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0201.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0202.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0203.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0204.md
 2026-09-11T17:29:01Z	agent	-	-	-	-
+# STRANDED	2026-09-11T17:29:32Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T17:29:32Z	agent	-	-	-	-
+# STRANDED	2026-09-11T17:30:03Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T17:30:03Z	agent	-	-	-	-
+# STRANDED	2026-09-11T17:30:35Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0200.md
+2026-09-11T17:30:35Z	agent	-	-	-	-
+# STRANDED	2026-09-11T17:30:45Z	builder	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0200.md
+2026-09-11T17:30:45Z	builder	BUG-0200	13730	385	88625
