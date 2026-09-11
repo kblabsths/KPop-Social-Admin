@@ -1,8 +1,8 @@
 "use client";
 
 import { createContext, type ReactNode, useContext, useRef, useState } from "react";
-import { EM_DASH, isAbsent } from "@/lib/format";
-import { pageBound } from "@/lib/paging/bounds";
+import { EM_DASH, count, isAbsent } from "@/lib/format";
+import { MAX_PAGE_OFFSET, pageBound } from "@/lib/paging/bounds";
 import {
   AppAuthoredError,
   type PageDeps,
@@ -438,6 +438,56 @@ function askFor(size: number, holds: string): string {
 }
 
 /**
+ * WHY THIS APP STOPPED PAGING, and the one thing the operator can do next —
+ * campaign admin-window/BUG-0178.
+ *
+ * The sentence this replaces said that this VIEW showed no further rows, and
+ * it was read as exhaustion: the arm beside it says "All {holds} in this view
+ * are shown", the two render in the same face in the same position with no
+ * control under either, and the only difference on screen was the words. An
+ * operator who reached the ceiling read it as the set being finished and
+ * stopped — a false totality, which ARCHITECTURE.md §4.3 exists to make
+ * impossible ("a concatenation is still not a total"). It also named nothing
+ * to do, against LOOK_AND_FEEL copy bar 3 ("what failed, then what to do, with
+ * no apology"), and stated a fact about THIS APP in the passive voice as a
+ * fact about the data. Its exact words are deliberately not quoted anywhere in
+ * this file: this ticket's checks grade their absence from it (LESSONS 12).
+ *
+ * So the two halves, in that order:
+ *
+ *  - **what stopped the paging is this app**, named as this app and given the
+ *    app's own number — `MAX_PAGE_OFFSET`, imported rather than retyped
+ *    (LESSONS 5) and rendered through the app's one thousands-separated count.
+ *    It is stated as what it IS, the largest BOUND this app serves, and never
+ *    as a count of rows on screen: the surface at the ceiling holds one window
+ *    MORE than the ceiling (100,050 under a bound ceiling of 100,000), so a
+ *    sentence calling it a row count would disagree with the line beside it.
+ *    Naming the app's refusal out loud is §4.3 read kind 3 — "refused with the
+ *    reason named — never clamped in silence";
+ *  - **what the operator can do** is narrow the view and page the smaller set,
+ *    which is the one thing this app offers and how `/claims` is meant to be
+ *    worked anyway. It is the whole fix, and it is deliberately not "press it
+ *    again": no control is drawn here (LESSONS 1, CONTENT — the fix is never
+ *    wishful).
+ *
+ * **It asserts nothing about the read**, which is the rule both terminal
+ * sentences of this file are written under (architect, 2026-09-11): the
+ * exhausted arms say what the READ established, and this arm is the one case
+ * where the read established nothing at all, so the sentence is about the app.
+ * That is also what keeps it off the window line's closing clause — the line
+ * states the WINDOW's verdict (what the read came back with) and this states
+ * the CONTROL's (that this app has stopped asking), so one screen never
+ * answers one question twice (LESSONS 11, the stutter
+ * `./window-line`'s `THE_READ_FOUND_NO_MORE` names).
+ */
+function stoppedAtTheCeiling(holds: string): string {
+  return (
+    `This app serves no bound past ${count(MAX_PAGE_OFFSET)} ${holds}, so paging stops ` +
+    `here and not at the end of the set. Narrow the view and page the smaller set.`
+  );
+}
+
+/**
  * The affordance itself: the control, the refusal, and the two sentences that
  * replace a control nothing could honour.
  *
@@ -449,8 +499,8 @@ function askFor(size: number, holds: string): string {
  *     short, so an exhausted state's `held` may sit off the grid `pageBound`
  *     enforces (80 against a window of 50) — honestly so, because there is no
  *     next bound to honour. Read in the other order it would draw arm 2 and
- *     tell the operator the view "shows no further rows" about a set the read
- *     established IS complete.
+ *     tell the operator that this app stopped at its own ceiling, about a set
+ *     the read established IS complete.
  *
  *     **WHICH terminal sentence is the WINDOW's verdict, handed in already
  *     decided** (admin-window/BUG-0180). Where the surface's two reads agree,
@@ -463,12 +513,14 @@ function askFor(size: number, holds: string): string {
  *     left to press). It then says what the read did establish and no more,
  *     while the window line three lines above states each read as its own.
  *  2. **the next bound cannot be honoured** — no control either, and one
- *     sentence that does NOT claim the set is finished. Past
- *     `MAX_PAGE_OFFSET` a bound refusal returns the state to `idle` by design
- *     (the driver's rule 4), so without this arm the surface would draw a
- *     control every press is refused for, forever — precisely what SPEC F10
- *     forbids. `pageBound` is the one place that answers the question and it
- *     is asked here, of the bound the NEXT press would carry.
+ *     sentence that does NOT claim the set is finished: `stoppedAtTheCeiling`
+ *     below, which names THIS APP as what stopped and what the operator can
+ *     do next (admin-window/BUG-0178). Past `MAX_PAGE_OFFSET` a bound refusal
+ *     returns the state to `idle` by design (the driver's rule 4), so without
+ *     this arm the surface would draw a control every press is refused for,
+ *     forever — precisely what SPEC F10 forbids. `pageBound` is the one place
+ *     that answers the question and it is asked here, of the bound the NEXT
+ *     press would carry.
  *  3. **loading** — the same control, inert. A second press cannot happen from
  *     the markup, and cannot happen from the driver either.
  *  4. **idle** — the control.
@@ -542,8 +594,11 @@ export function PageMore({
           </p>
         )
       ) : !drawsControl ? (
+        // The app refusing, said in the app's own voice: what stopped the
+        // paging, then what to do about it (admin-window/BUG-0178). One
+        // expression, so no transform can drop a space inside the sentence.
         <p data-paging="limit" className="type-body text-ink-secondary">
-          This view shows no further rows.
+          {stoppedAtTheCeiling(holds)}
         </p>
       ) : (
         // `self-start` is the whole of the shape fix (admin-window/BUG-0177):

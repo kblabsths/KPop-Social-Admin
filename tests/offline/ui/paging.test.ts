@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as barrel from "@/components/ui";
-import { EM_DASH } from "@/lib/format";
+import { EM_DASH, count } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Identifier } from "@/components/ui/identifier";
 import { NotProvisioned } from "@/components/ui/not-provisioned";
@@ -1328,6 +1328,101 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     };
   };
 
+  const MATCHED: DrawnSentence = { of: "matched", lede: "Longest-waiting first.", rows: HOLDS };
+
+  /** A whole paged surface — the line, then the control, from one provider. */
+  const surface = (state: PageState<Row>, window: DrawnWindow): string =>
+    render(
+      h(
+        PagingProvider,
+        {
+          initial: state,
+          window,
+          deps: { route: PAGE_ROUTES.claims, params: "", size: SIZE },
+          children: null,
+        },
+        h(function Body() {
+          const published = usePaging<Row>();
+          return h(
+            "div",
+            null,
+            h(PagedWindowLine, { gauge: "claims", shows: MATCHED }),
+            h(PageMore, {
+              state: published.state,
+              holds: HOLDS,
+              size: published.size,
+              readsAgree: published.readsAgree,
+              onPress: published.press,
+            }),
+          );
+        }),
+      ),
+    );
+  const ended = (held: number): PageState<Row> => ({
+    rows: [],
+    held,
+    status: "exhausted",
+    refusal: null,
+    notes: null,
+  });
+  const counted = (total: number): DrawnWindow => ({
+    ...WINDOW,
+    held: total,
+    heldFrom: "a count read",
+  });
+  const hook = (html: string, name: string): string | undefined =>
+    cheerio.load(html)("[data-window]").attr(name);
+  const sentence = (html: string): string => cheerio.load(html)("[data-paging]").toString();
+
+  /**
+   * The state the driver leaves a surface in PAST the ceiling: `idle`, at a
+   * bound `pageBound` refuses (a bound refusal returns the state to `idle` by
+   * design, the driver's rule 4). Reached here through the real driver rather
+   * than by the 2,000 presses and 100,000 DOM rows a browser would need
+   * (admin-window/BUG-0178, criterion 5).
+   */
+  const pastTheCeiling = (): PageState<Row> => ({
+    rows: [],
+    held: MAX_PAGE_OFFSET + SIZE,
+    status: "idle",
+    refusal: null,
+    notes: null,
+  });
+
+  /** What one element of a rendered surface SAYS — its text, whitespace collapsed. */
+  const saidBy = (html: string, selector: string): string =>
+    cheerio.load(html)(selector).text().replace(/\s+/g, " ").trim();
+
+  /**
+   * Two strings compared the way a reader meets them: case and a trailing stop
+   * are not the difference between two sentences (LESSONS 4 — compare on a
+   * normalized form, never on the spellings someone thought of).
+   */
+  const asRead = (text: string): string =>
+    text.replace(/\s+/g, " ").trim().toLowerCase().replace(/[.;]+$/, "");
+
+  /**
+   * THE CLAUSE THE WINDOW LINE ENDS ON, taken from the RENDERED line and from
+   * no constant — the window's own verdict, in whatever words it is written
+   * today (admin-window/BUG-0178, criterion 9). The last CLAUSE, not the last
+   * sentence: the line's verdict is regularly the tail of a longer sentence
+   * ("… are below — the rest are not shown"), and grading the tail is the
+   * stricter of the two.
+   */
+  const closingClause = (html: string): string => {
+    const clauses = asRead(saidBy(html, "[data-window]"))
+      .split(/[.;]\s+|\s+—\s+/)
+      .filter((clause) => clause.trim().length > 0);
+    return clauses[clauses.length - 1] ?? "";
+  };
+
+  /** THE CONTROL'S TERMINAL SENTENCE — whatever its `[data-paging]` arm renders. */
+  const terminalSentence = (html: string): string => asRead(saidBy(html, "[data-paging]"));
+
+  /** Does either of these answer the other's question a second time? */
+  const restates = (line: string, control: string): boolean =>
+    line.includes(control) || control.includes(line);
+
   it("renders no markup of its own: the children are the whole output", () => {
     const child = h("span", { "data-probe": "" }, "rows");
     const wrapped = render(
@@ -1463,52 +1558,6 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     // rows and the sentence below them each read what they are handed. The
     // control holds no count, no row count and no `held` to compare, which is
     // why the two elements cannot answer one question two ways (LESSONS 11).
-    const MATCHED: DrawnSentence = { of: "matched", lede: "Longest-waiting first.", rows: HOLDS };
-
-    /** A whole paged surface — the line, then the control, from one provider. */
-    const surface = (state: PageState<Row>, window: DrawnWindow): string =>
-      render(
-        h(
-          PagingProvider,
-          {
-            initial: state,
-            window,
-            deps: { route: PAGE_ROUTES.claims, params: "", size: SIZE },
-            children: null,
-          },
-          h(function Body() {
-            const published = usePaging<Row>();
-            return h(
-              "div",
-              null,
-              h(PagedWindowLine, { gauge: "claims", shows: MATCHED }),
-              h(PageMore, {
-                state: published.state,
-                holds: HOLDS,
-                size: published.size,
-                readsAgree: published.readsAgree,
-                onPress: published.press,
-              }),
-            );
-          }),
-        ),
-      );
-    const ended = (held: number): PageState<Row> => ({
-      rows: [],
-      held,
-      status: "exhausted",
-      refusal: null,
-      notes: null,
-    });
-    const counted = (count: number): DrawnWindow => ({
-      ...WINDOW,
-      held: count,
-      heldFrom: "a count read",
-    });
-    const hook = (html: string, name: string): string | undefined =>
-      cheerio.load(html)("[data-window]").attr(name);
-    const sentence = (html: string): string => cheerio.load(html)("[data-paging]").toString();
-
     // (a) The two reads AGREE: every claim the count found is drawn.
     const agreeing = surface(ended(130), counted(130));
     // (b) They DIVERGE: the press ended the set with SIZE rows on screen under
@@ -1564,6 +1613,105 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     // the sentence it draws is the completeness one, byte for byte.
     expect(hook(single, "data-window-held")).toBe(String(SIZE * 3));
     expect(sentence(single)).toBe(sentence(agreeing));
+  });
+
+  it("the bound ceiling does not claim the data ran out: it names this app as what stopped, and one thing to do next [admin-window/BUG-0178]", () => {
+    // The arm QA graded offline, for the reason this does: MAX_PAGE_OFFSET is
+    // 100,000 against a window of 50, so a browser reaches it in 2,000 presses
+    // and 100,000 DOM rows. The driver reaches it here, and every assertion
+    // below is on the markup one rendered surface really emits.
+    const state = pastTheCeiling();
+    // Non-vacuity: the next press really is one this app refuses, and the
+    // status really is the one that would otherwise draw a control.
+    expect(pageBound(String(state.held), SIZE).kind).toBe("refused");
+    expect(state.status).toBe("idle");
+
+    const ceiling = surface(state, counted(MAX_PAGE_OFFSET * 2));
+    const $ = cheerio.load(ceiling);
+    // Criterion 3's invariants: the arm still draws no control, still carries
+    // its hook, and is still ONE paragraph in the same position.
+    expect($("[data-paging]").attr("data-paging")).toBe("limit");
+    expect($("[data-paging]").prop("tagName")?.toLowerCase()).toBe("p");
+    expect($("[data-paging]").length).toBe(1);
+    expect(controls(ceiling)).toBe(0);
+    // Criterion 4: the window line beside it is untouched — it still says rows
+    // are not shown, because they are (admin-window/BUG-0172 criterion 6).
+    expect(hook(ceiling, "data-window-truncated")).toBe("true");
+
+    const said = saidBy(ceiling, '[data-paging="limit"]');
+    // WHAT STOPPED THE PAGING is this app, named with this app's own ceiling —
+    // read off the constant and through the app's own thousands-separated
+    // formatter, so a ceiling that moves moves the sentence and this assertion
+    // together rather than reddening it (criterion 2, first half).
+    expect(said).toContain(count(MAX_PAGE_OFFSET));
+    // THEN WHAT TO DO: a second sentence, and no apology (copy bar 3). The
+    // SHAPE is graded, never the words — the words are the designer's.
+    expect(
+      said.split(/(?<=\.)\s+/).filter((half) => half.trim().length > 0).length,
+      said,
+    ).toBeGreaterThanOrEqual(2);
+    expect(said).not.toMatch(/sorry|oops|unfortunately|went wrong|apolog/i);
+    // …and what it offers is not a press: no control is drawn here.
+    expect(said).not.toMatch(/press it again/i);
+
+    // CRITERION 1, at the SAME bound: an exhausted read draws a sentence that
+    // asserts something else, and neither is a spelling of the other. BOTH of
+    // the exhausted arm's sentences are graded, because either may be what the
+    // operator reads beside it (admin-window/BUG-0180).
+    for (const [reads, window] of [
+      ["the two reads agree", counted(state.held)],
+      ["the two reads diverge", counted(877)],
+    ] as const) {
+      const ranOut = surface({ ...state, status: "exhausted" }, window);
+      expect(cheerio.load(ranOut)("[data-paging]").attr("data-paging"), reads).toBe("exhausted");
+      const exhausted = saidBy(ranOut, '[data-paging="exhausted"]');
+      expect(asRead(exhausted), reads).not.toBe(asRead(said));
+      expect(restates(asRead(exhausted), asRead(said)), reads).toBe(false);
+    }
+  });
+
+  it("does not restate the window line's closing clause, in any state of a paged surface [admin-window/BUG-0178]", () => {
+    // ONE surface, one provider, the line and the control rendered together —
+    // and two strings read off that markup: the clause the LINE ends on (the
+    // window's verdict, what the read came back with) and the sentence the
+    // CONTROL renders (its own verdict — what a press would now do, or that
+    // this app has stopped asking). Neither may contain the other, in any
+    // state (admin-window/BUG-0178 criterion 9, LESSONS 11). Nothing here pins
+    // a word: both strings come off the rendered surface, so a rewording moves
+    // this test with it rather than reddening it, and whether the wording is
+    // GOOD is the designer's walk.
+    //
+    // MUST FLAG, or the states below pass vacuously (LESSONS 8): the stutter
+    // this exists for is a control ending on the line's own clause.
+    expect(restates("the read found no more", "the read found no more")).toBe(true);
+    expect(restates("the rest are not shown", "press on — the rest are not shown")).toBe(true);
+    expect(restates("the read found no more", "all claims in this view are shown")).toBe(false);
+
+    const states: [string, string, PageState<Row>, DrawnWindow][] = [
+      // BUG-0180's two exhausted states: the reads agree, and the reads diverge.
+      ["exhausted, the two reads agree", "exhausted", ended(130), counted(130)],
+      ["exhausted, the two reads diverge", "exhausted", ended(130), counted(877)],
+      // Still offering: the control is the button, and what it says is what a
+      // press would do.
+      ["still offering", "more", initialPage<Row>(SIZE, true), counted(877)],
+      // This ticket's own arm, in both verdicts the window can carry there.
+      ["the bound ceiling", "limit", pastTheCeiling(), counted(MAX_PAGE_OFFSET * 2)],
+      ["the bound ceiling, the two reads diverge", "limit", pastTheCeiling(), counted(877)],
+    ];
+
+    for (const [name, arm, state, window] of states) {
+      const html = surface(state, window);
+      // Non-vacuity: the state really is the arm it claims to be, and both
+      // elements really are on the one surface.
+      expect(cheerio.load(html)("[data-paging]").attr("data-paging"), name).toBe(arm);
+      expect(cheerio.load(html)("[data-window]").length, name).toBe(1);
+
+      const line = closingClause(html);
+      const control = terminalSentence(html);
+      expect(line.length, name).toBeGreaterThan(0);
+      expect(control.length, name).toBeGreaterThan(0);
+      expect(restates(line, control), `${name}: "${line}" / "${control}"`).toBe(false);
+    }
   });
 
   it("refuses to draw a paged surface outside its provider", () => {
