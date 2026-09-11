@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T13:07:25Z — do not edit)
+# Tracker index (regenerated 2026-09-11T13:18:46Z — do not edit)
 
 ## open
 - BUG-0192 [P2][bug][M3] A narrowing clause names what a facet DID, not that it is set — /claims' chip clause  (deps:TASK-0072(unmet:1) scope:src/lib/url/narrowing.ts,src/lib/claims/filters.ts,src/app/claims/page.tsx,tests/offline/url/narrowing.test.ts,tests/offline/claims,tests/live/claims.live.test.ts from:BUG-0191)
@@ -10,7 +10,7 @@
 - DEBT-0020 [P3][debt][patch] The transport account states its cause sentence twice: postgrest-js appends cause.stack, whose head repeats the Caused-by line  (deps:BUG-0179,BUG-0182,BUG-0187 scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0173)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - TASK-0072 [P2][task][M3] One home for the narrowing vocabulary, and a window's scope stops being a string somebody splits  (deps:TASK-0071,BUG-0169,BUG-0174,BUG-0183,BUG-0186,BUG-0191 scope:src/components/ui/window-line.tsx,src/lib/url/narrowing.ts,src/lib/claims/filters.ts,src/app/claims/page.tsx,src/app/cycles/page.tsx,src/app/queues/page.tsx,src/app/browse/page.tsx,src/app/page.tsx,src/components/cycles,src/components/review/shape-views.tsx,src/components/records/entity-picker.tsx,src/components/sources/trends.tsx,tests/offline/url/narrowing.test.ts,tests/offline/ui,tests/offline/claims,tests/offline/cycles,tests/offline/queues,tests/offline/browse,tests/offline/sources @builder-287)
 
-Totals — claimed:1, done:46, open:8. Archived: 252.
+Totals — built:1, done:46, open:8. Archived: 252.
