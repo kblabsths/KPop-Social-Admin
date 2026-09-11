@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { EM_DASH, isAbsent } from "@/lib/format";
 import { OFFSET_PARAM, PAGE_ROUTES, pageBound, type PageAnswer } from "@/lib/paging/bounds";
 import {
   AppAuthoredError,
@@ -995,6 +996,50 @@ describe("requestPage", () => {
         condition: "not provisioned",
         missing: "pending_claims",
       });
+    });
+
+    /**
+     * THE APP'S OWN ABSENCE GLYPH IS NOT A REASON EITHER — admin-window/BUG-0176
+     * criterion 14(c), pinned by QA.
+     *
+     * Criterion 14 names the app's ONE definition of blank by file and
+     * function: `isAbsent` (`src/lib/format.ts`), under which a lone em dash IS
+     * an absence — that is the whole reason the app has a dash primitive at all
+     * (LESSONS 7). `refuse()` asks `hasVisibleContent` instead, the leaf
+     * `isAbsent` delegates to and the only one a leaf may reach, so the dash
+     * counts as words and reaches the operator as the whole of an alert.
+     *
+     * MEASURED on a production build against staging (walk of 2026-09-11,
+     * `{kind:"refused",reason:"\u2014"}` forced onto /claims' rows request):
+     * the line read "\u2014 / Press it again to ask for the same rows." in
+     * rgb(193,0,7), `role="alert"` — the exact shape criterion 14 exists to
+     * kill, one input short.
+     */
+    // PINNED RED, admin-window/BUG-0184: `it.fails` is this runner's strict
+    // xfail — it passes only while the divergence stands, and the day
+    // `refuse()` words the dash it reddens as an XPASS and sends the reader
+    // here. The fix flips it back to `it` in the same diff.
+    it.fails("words a reason the app itself calls an absence [admin-window/BUG-0184]", async () => {
+      // Every spelling the APP's own predicate calls absent, asked of the app's
+      // own predicate rather than retyped as a list of characters (LESSONS 4).
+      for (const absentReason of ["", "   ", EM_DASH, ` ${EM_DASH} `]) {
+        expect(isAbsent(absentReason), JSON.stringify(absentReason)).toBe(true);
+        const { deps } = answering({ kind: "refused", reason: absentReason, bound: "75" });
+        const said = broken((await requestPage(held, deps)).refusal);
+        expect(said.reason, JSON.stringify(absentReason)).toMatch(/refus/i);
+        expect(said.reasonFrom, JSON.stringify(absentReason)).toBe("this app");
+      }
+
+      // MUST-NOT-FLAG twin (LESSONS 8): a dash the answer wrote INSIDE words of
+      // its own is the machine talking and is carried through untouched.
+      const kept = answering({
+        kind: "error",
+        reading: "pending_claims",
+        message: `column events.badcol ${EM_DASH} does not exist`,
+      });
+      const theirs = broken((await requestPage(held, kept.deps)).refusal);
+      expect(theirs.reason).toBe(`column events.badcol ${EM_DASH} does not exist`);
+      expect(theirs.reasonFrom).toBe("the machine");
     });
 
     it("is cleared by the next press that succeeds", async () => {
