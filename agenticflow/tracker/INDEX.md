@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T12:26:29Z — do not edit)
+# Tracker index (regenerated 2026-09-11T12:27:12Z — do not edit)
 
 ## open
 - BUG-0191 [P2][bug][-] /claims?bucket=X&domain=Y: the bucket caption blames "the filters above" and denies the only filter above, in one sentence  (scope:src/app/claims/page.tsx,tests/offline/claims/page.test.ts from:TASK-0071)
