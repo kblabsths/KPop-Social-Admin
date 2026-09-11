@@ -1018,6 +1018,138 @@ describe("an account carries the parts the database authored", () => {
   );
 
   /**
+   * The same ONE derivation, applied evenly (admin-window/BUG-0179): to the
+   * `code` arm, to an account where nothing survived, and to every line of a
+   * part rather than to framed lines alone. Each case grades an input the rule
+   * MUST answer and its twin, which it must not touch (LESSONS 8).
+   */
+  it("asks the code the same questions as every other part", () => {
+    // REDUCED — a document arriving in `code` BESIDE a real database message.
+    // postgrest-js hands the parsed body back as the error object for any
+    // non-2xx, so an intermediary authors this field exactly as it authors the
+    // envelope QA measured. The message is the database's and crosses whole;
+    // the code is counted, in the parentheses it has always rendered in.
+    const page = `<!DOCTYPE html>\n<html><body>${"x".repeat(600)}</body></html>`;
+    const denied = "permission denied for view pending_claims";
+    const documentCode = classify({ code: page, message: denied }, T.pendingClaims);
+    expect(documentCode.kind).toBe("error");
+    if (documentCode.kind !== "error") return;
+    expect(documentCode.reading).toBe(T.pendingClaims);
+    expect(documentCode.message).toContain(denied);
+    expect(documentCode.message).not.toMatch(/<!DOCTYPE/i);
+    expect(documentCode.message).not.toMatch(/<\/?html[\s>]/);
+    expect(documentCode.message).not.toContain("<");
+    expect(documentCode.message).toContain(String(page.length));
+    expect(documentCode.message.length).toBeLessThan(400);
+
+    // MUST NOT TOUCH (1) — a 300-character code that answers NO question
+    // crosses VERBATIM, however long it is. The bar is the same derivation as
+    // every other part, not a shorter one for this field: a cap here would be
+    // the fourth question.
+    const longCode = "R".repeat(300);
+    const bland = classify(
+      { code: longCode, message: "canceling statement due to statement timeout" },
+      T.pendingClaims,
+    );
+    expect(bland.kind).toBe("error");
+    if (bland.kind !== "error") return;
+    expect(bland.message).toContain("canceling statement due to statement timeout");
+    expect(bland.message).toContain(`(${longCode})`);
+    expect(bland.message.endsWith(`(${longCode})`)).toBe(true);
+
+    // MUST NOT TOUCH (2) — the four-field PostgREST refusal, byte for byte:
+    // every field in order and the code still last, still in parentheses.
+    const refusal = {
+      code: "42501",
+      message: "permission denied for view pending_claims",
+      details: "the read used the anon role",
+      hint: "GRANT SELECT ON pending_claims TO service_role.",
+    };
+    const postgrest = classify(refusal, T.pendingClaims);
+    expect(postgrest.kind).toBe("error");
+    if (postgrest.kind !== "error") return;
+    const at = (part: string) => postgrest.message.indexOf(part);
+    expect(at(refusal.message)).toBeGreaterThanOrEqual(0);
+    expect(at(refusal.details)).toBeGreaterThan(at(refusal.message));
+    expect(at(refusal.hint)).toBeGreaterThan(at(refusal.details));
+    expect(postgrest.message.endsWith("(42501)")).toBe(true);
+  });
+
+  it("says the read was refused when the client said nothing at all", () => {
+    // A non-2xx with an EMPTY body: postgrest-js's JSON.parse throws on it and
+    // its catch builds `{message: body}`. That is what every bodiless 502, 503
+    // and 429 looks like here, and what a head-shaped count read gets. Every
+    // part is blank and no code survives, so the account used to be "" and the
+    // error line named no failure at all.
+    const blank = classify({ message: "" }, T.pendingClaims);
+    expect(blank.kind).toBe("error");
+    if (blank.kind !== "error") return;
+    expect(blank.reading).toBe(T.pendingClaims);
+    // The app's own words, and enough of them to read as a sentence.
+    expect(blank.message.trim()).toBe(blank.message);
+    expect(blank.message.split(/\s+/).length).toBeGreaterThan(3);
+    expect(blank.message).toMatch(/refus/i);
+    // Nothing invented: no number of any kind, and no generic apology.
+    expect(blank.message).not.toMatch(/\d/);
+    expect(blank.message.toLowerCase()).not.toContain("something went wrong");
+    expect(blank.message.toLowerCase()).not.toContain("sorry");
+
+    // MUST NOT TOUCH — the same empty message beside a code says the code and
+    // nothing else. The clause is for the state where NOTHING survived.
+    const coded = classify({ code: "42883", message: "" }, T.pendingClaims);
+    expect(coded.kind).toBe("error");
+    if (coded.kind !== "error") return;
+    expect(coded.message).toBe("(42883)");
+  });
+
+  it("counts a document on any line of a part, framed or not", () => {
+    // REDUCED — a FRAMELESS two-line part: the client's prose on the first
+    // line, a whole intermediary page on the second. The identical part one
+    // line above a stack frame was already counted; the question is the same
+    // at both granularities, so the answer is too.
+    const page = "<html><body>504 Gateway Time-out</body></html>";
+    const below = classify(
+      {
+        code: "",
+        details: `reference 8f3c1\n${page}`,
+        hint: "",
+        message: "read failed",
+      },
+      T.pendingClaims,
+    );
+    expect(below.kind).toBe("error");
+    if (below.kind !== "error") return;
+    expect(below.message).toContain("read failed");
+    // The prose line beside it is kept — only the document line is counted.
+    expect(below.message).toContain("reference 8f3c1");
+    expect(below.message).not.toContain("<");
+    expect(below.message).not.toContain("Gateway Time-out");
+    expect(below.message).toContain(String(page.length));
+    // And no count of frames nobody dropped.
+    expect(below.message).not.toMatch(/frame/i);
+
+    // MUST NOT TOUCH — a multi-line part in which no line is a document and no
+    // line is a frame comes back byte-identical: same newline, same four
+    // leading spaces, same words.
+    const prose = {
+      code: "23514",
+      message:
+        'new row for relation "resolution_runs" violates check constraint "runs_window_ck"',
+      details:
+        "Failing row contains (7f3a, 2026-09-11, open).\n" +
+        "    at the end of the statement the window was still open",
+      hint: null,
+    };
+    const untouched = classify(prose, T.resolutionRuns);
+    expect(untouched.kind).toBe("error");
+    if (untouched.kind !== "error") return;
+    expect(untouched.message).toContain(prose.message);
+    expect(untouched.message).toContain(prose.details);
+    expect(untouched.message).not.toMatch(/frame/i);
+    expect(untouched.message.endsWith("(23514)")).toBe(true);
+  });
+
+  /**
    * PIN — QA, admin-window/BUG-0179. An account carries the parts the
    * DATABASE authored, and the `code` arm is the one field of the client's
    * account that is never asked that question: it trails in parentheses
@@ -1036,26 +1168,40 @@ describe("an account carries the parts the database authored", () => {
    * Expected: the account counts the envelope and quotes no value of it.
    * Found: the envelope is counted AND its `code` is appended whole.
    */
-  it.fails(
-    "never trails a foreign code verbatim after the clause that counted its body (admin-window/BUG-0179)",
-    () => {
-      const page = `<!DOCTYPE html>\n<html><body>${"x".repeat(4400)}</body></html>`;
-      const refused = { success: false, ray: "8f3c1attack", code: page };
-      const serialised = JSON.stringify(refused);
+  it("never trails a foreign code verbatim after the clause that counted its body (admin-window/BUG-0179)", () => {
+    const page = `<!DOCTYPE html>\n<html><body>${"x".repeat(4400)}</body></html>`;
+    const refused = { success: false, ray: "8f3c1attack", code: page };
+    const serialised = JSON.stringify(refused);
 
-      const result = classify(refused, T.pendingClaims);
-      expect(result.kind).toBe("error");
-      if (result.kind !== "error") return;
+    const result = classify(refused, T.pendingClaims);
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
 
-      // The counted clause is right and stays right.
-      expect(result.message).toContain(String(serialised.length));
-      // Nothing of what arrived may sit inside it — the code included.
-      expect(result.message).not.toContain("<!DOCTYPE");
-      expect(result.message).not.toMatch(/<\/?html[\s>]/);
-      // And the account stays a line an operator can read.
-      expect(result.message.length).toBeLessThan(400);
-    },
-  );
+    // The counted clause is right and stays right.
+    expect(result.message).toContain(String(serialised.length));
+    // Nothing of what arrived may sit inside it — the code included.
+    expect(result.message).not.toContain("<!DOCTYPE");
+    expect(result.message).not.toMatch(/<\/?html[\s>]/);
+    // And the account stays a line an operator can read.
+    expect(result.message.length).toBeLessThan(400);
+
+    // Nor any key or value of the envelope, which the same clause counted
+    // whole (admin-window/BUG-0179's fix: the code is not appended again).
+    for (const quoted of ["success", "ray", "8f3c1attack", "false", "{"]) {
+      expect(result.message, `quotes ${quoted}`).not.toContain(quoted);
+    }
+
+    // QA's blander shape takes the same path, for the same reason: one
+    // counted clause, and no run of the intermediary's own characters.
+    const blander = { blocked: true, code: "R".repeat(300) };
+    const counted = classify(blander, T.pendingClaims);
+    expect(counted.kind).toBe("error");
+    if (counted.kind !== "error") return;
+    expect(counted.message).toContain(String(JSON.stringify(blander).length));
+    expect(counted.message).not.toContain("RRR");
+    expect(counted.message).not.toContain("blocked");
+    expect(counted.message.length).toBeLessThan(400);
+  });
 });
 
 /**
