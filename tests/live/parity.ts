@@ -906,6 +906,20 @@ export function snapshotAsOf(settleMs = 5_000): string {
  * `attempts` (to at most 5) buys more independent still windows; it never
  * widens a comparison, and it is not a substitute for a small shape.
  */
+/**
+ * The first words of `whileStill`'s exhaustion error — the fixed marker that
+ * says THE DATABASE MOVED, before the what-moved report (admin-window/
+ * TASK-0077).
+ *
+ * An honest refusal and a product defect still share one channel: the runner's
+ * exit code, which is the runner's to own. What they no longer share is the
+ * MESSAGE. A stored check of this file runs in every downstream lane, and a
+ * builder meeting a red in one needs to tell in one glance whether the page is
+ * wrong or staging simply would not hold still — so exhaustion opens with this
+ * and nothing else does. `tests/offline/live-guard.test.ts` pins it.
+ */
+export const STAGING_MOVED = "STAGING MOVED:";
+
 export async function whileStill<Held, Made>(
   read: () => Promise<Held>,
   make: () => Promise<Made>,
@@ -920,9 +934,10 @@ export async function whileStill<Held, Made>(
     moved = firstDifference(before, held);
   }
   throw new Error(
-    `the database changed under this comparison on all ${attempts} attempts ` +
-      `(${moved}), so the page and the query were never looking at the same ` +
-      `rows. This is a statement about staging, not a verdict on the page.`,
+    `${STAGING_MOVED} the database changed under this comparison on all ` +
+      `${attempts} attempts (${moved}), so the page and the query were never ` +
+      `looking at the same rows. This is a statement about staging, not a ` +
+      `verdict on the page.`,
   );
 }
 
