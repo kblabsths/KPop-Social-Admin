@@ -566,16 +566,46 @@ function errorMessage(error: unknown): string {
 }
 
 /**
+ * What this app is willing to call a column — the object grammar `missing`
+ * admits, spelled ONCE for this module.
+ *
+ * `missing` is an OBJECT NAME, and the table half of it is the app's own (the
+ * string `tables.ts` gave the query). The column half is mined out of the
+ * DATABASE'S message, and that message is not necessarily the database's: for
+ * any non-2xx, postgrest-js hands the parsed response body back AS the error
+ * object, so an intermediary refusing with a JSON envelope authors `code` and
+ * `message` both. Foreign text therefore reaches an app-authored sentence
+ * here only through an ALLOWLIST — this bounded identifier class, the same
+ * shape `UNQUOTED_COLUMN_REFERENCE` below is built from, capped at Postgres's
+ * own 63-byte identifier limit (admin-window/BUG-0181; ARCHITECTURE.md Common
+ * violations rows 15 and 20: one derivation per value class, in one home).
+ *
+ * It is an allowlist and not a scrub: a message this grammar refuses to take
+ * a column out of is neither scrubbed, truncated nor counted — it is simply
+ * not mined, and `classify` falls back to naming the object the query asked
+ * for. The message itself still crosses into the `error` arm byte-identical
+ * (admin-window/BUG-0173, admin-window/BUG-0179).
+ */
+const COLUMN_NAME_GRAMMAR = "[A-Za-z_][\\w$]{0,62}";
+
+/** The whole of a mined column must BE that grammar, or it is not a column. */
+const COLUMN_NAME = new RegExp(`^${COLUMN_NAME_GRAMMAR}$`);
+
+/**
  * A column-absent message's UNQUOTED column reference.
  *
  * Postgres quotes an unqualified reference (`column "severity" does not
  * exist`) but spells a QUALIFIED one bare: `column events.badcol does not
  * exist` — the form a page selecting an explicit column list gets. The
  * trailing `does not exist` is required so that a message carrying no column
- * at all cannot have a word of its prose read as one.
+ * at all cannot have a word of its prose read as one. Each dot-segment is
+ * `COLUMN_NAME_GRAMMAR`, so this spelling and the admission gate cannot drift
+ * apart.
  */
-const UNQUOTED_COLUMN_REFERENCE =
-  /\bcolumn\s+([A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*)\s+does not exist/i;
+const UNQUOTED_COLUMN_REFERENCE = new RegExp(
+  `\\bcolumn\\s+(${COLUMN_NAME_GRAMMAR}(?:\\.${COLUMN_NAME_GRAMMAR})*)\\s+does not exist`,
+  "i",
+);
 
 /** The last dot-segment of a possibly-qualified name — the column itself. */
 function lastSegment(name: string): string | null {
@@ -585,7 +615,8 @@ function lastSegment(name: string): string | null {
 }
 
 /**
- * The column a column-absent message names, or `null` if it names none.
+ * The column a column-absent message names, or `null` if it names none this
+ * app could have named itself.
  *
  * Both spellings must resolve, because both reach us:
  *  - quoted — Postgres `column "severity" does not exist` and `column
@@ -599,27 +630,44 @@ function lastSegment(name: string): string | null {
  *
  * Either way any qualifier is dropped: the table `classify` reports is the one
  * the query asked for, from `tables.ts` (ARCHITECTURE.md §4.1).
+ *
+ * The quoted spelling is a first quoted run ANYWHERE in the message, with no
+ * `column` word required of it — that is what makes the honest PostgREST form
+ * resolve, and it is also what let a foreign envelope's own prose be named as
+ * the missing object (admin-window/BUG-0181). So the mined name is ADMITTED
+ * only if it matches `COLUMN_NAME`: `null` here is not a refusal to report,
+ * it is `classify` falling back to the arm it already has, naming the table
+ * alone.
  */
 function columnFromMessage(message: string): string | null {
   const quoted = /'([^']+)'|"([^"]+)"/.exec(message);
-  const quotedName = quoted?.[1] ?? quoted?.[2];
-  if (quotedName) return lastSegment(quotedName);
+  const unquoted = quoted ? null : UNQUOTED_COLUMN_REFERENCE.exec(message);
+  const name = quoted?.[1] ?? quoted?.[2] ?? unquoted?.[1];
+  if (name === undefined) return null;
 
-  const unquoted = UNQUOTED_COLUMN_REFERENCE.exec(message);
-  const unquotedName = unquoted?.[1];
-  return unquotedName ? lastSegment(unquotedName) : null;
+  // The ONE point a mined column enters `missing`, and so the one place the
+  // grammar is asked. No consumer re-asks it: what they receive is already an
+  // object name.
+  const column = lastSegment(name);
+  return column !== null && COLUMN_NAME.test(column) ? column : null;
 }
 
 /**
  * Turn a database error into a `DbResult`.
  *
- * `missing` is the name from `tables.ts` the query used, so the rendered
- * not-provisioned card names the same string the query did. For a
- * column-absent code the column read out of the database's own message is
- * appended (`review_items.severity`), so the card names the column while still
- * carrying the table — in whichever spelling the message used, quoted or bare
- * and qualified. When the message names no column at all, the card falls back
- * to the object the query asked for rather than guessing a column out of it.
+ * `missing` is an OBJECT NAME, always: either the name from `tables.ts` the
+ * query used — so the rendered not-provisioned card names the same string the
+ * query did — or that name qualified by a column (`review_items.severity`),
+ * so the card names the column while still carrying the table, in whichever
+ * spelling the message used, quoted or bare and qualified.
+ *
+ * The column half is the only part of `missing` that comes from OUTSIDE this
+ * app, so it is admitted only when it matches the app's own object grammar
+ * (`COLUMN_NAME`). A message naming no column, or naming something that is
+ * not a column name this app could have spelled, falls back to the object the
+ * query asked for rather than putting a stranger's text where an object name
+ * belongs (admin-window/BUG-0181). Consumers inherit an object name and are
+ * asked to isolate nothing.
  *
  * A function-absent code names nothing further: `missing` is the name the
  * caller passed, which is the name it called (admin-window/TASK-0047).
