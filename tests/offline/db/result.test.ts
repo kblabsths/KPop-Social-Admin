@@ -2149,22 +2149,24 @@ describe("an account carries the parts the database authored", () => {
    * ONE SENTENCE, ONCE — and the twin that forbids the greedy rule
    * (admin-window/DEBT-0020, LESSONS 8).
    *
-   * MEASURED on the pre-ticket tree before a line of the fix was written:
+   * MEASURED through the real client before a line of the fix was written:
    * this shape's account read `TypeError: fetch failed Caused by: Error:
-   * getaddrinfo ENOTFOUND db.invalid Error: getaddrinfo ENOTFOUND db.invalid
-   * (1 runtime stack frame dropped)` — one true sentence the database
-   * authored, stated twice. postgrest-js writes `Caused by: ${cause.name}:
-   * ${cause.message}` and then appends the cause's whole `stack`, whose FIRST
-   * line is `${cause.name}: ${cause.message}` again, so the repeat is a
-   * SUFFIX of the line that already said it. `errorMessage`'s part-level
-   * dedup cannot see it: both copies live inside the ONE reduced `details`.
+   * getaddrinfo ENOTFOUND db.invalid (ENOTFOUND) Error: getaddrinfo ENOTFOUND
+   * db.invalid (1 runtime stack frame dropped)` — 158 characters, one true
+   * sentence the database authored, stated twice. postgrest-js writes
+   * `Caused by: ${cause.name}: ${cause.message}`, then ` (${cause.code})` on
+   * that same line when the cause carries one (node's always do), and then
+   * appends the cause's whole `stack`, whose FIRST line is
+   * `${cause.name}: ${cause.message}` again. `errorMessage`'s part-level dedup
+   * cannot see it: both copies live inside the ONE reduced `details`.
    *
    * The twin is the half that keeps the fix honest. A rule that dropped any
-   * line another kept line CONTAINS would also delete a database message
-   * wrapped onto a continuation line that opens with the first line's own
-   * words — so both directions are graded here, on the same code path (each
-   * twin part carries a frame, which is the only state in which this file
-   * reshapes a part at all).
+   * line another kept line CONTAINS ANYWHERE would also delete a database
+   * message wrapped onto a continuation line that opens with the first line's
+   * own words — so the rule spares exactly that case (an earlier line BEGINS
+   * with this one) and both directions are graded here, on the same code path
+   * (each twin part carries a frame, which is the only state in which this
+   * file reshapes a part at all).
    */
   it("says a repeated cause sentence once, and a prefix-sharing line twice", () => {
     /** Occurrences of `needle` in `haystack` — the whole grading below. */
@@ -2173,42 +2175,61 @@ describe("an account carries the parts the database authored", () => {
 
     // The measured transport shape, built exactly as postgrest-js builds it:
     // the wrapper line, a BLANK line, the attributed cause, the cause's stack
-    // (head line first), and V8 frames.
+    // (head line first), and V8 frames. `attribution` is the ONE line that
+    // differs between a cause that carries a `code` and one that does not —
+    // postgrest-js appends ` (${cause.code})` to it, BETWEEN the two copies
+    // of the sentence, and node's causes always carry one
+    // (admin-window/BUG-0199: the ends-with rule this replaced saw the
+    // code-less line only, which is the shape production never produces).
     const sentence = "Error: getaddrinfo ENOTFOUND db.invalid";
-    const repeated = {
-      code: "",
-      message: "TypeError: fetch failed",
-      details: [
+    const detailsWith = (attribution: string): string =>
+      [
         "TypeError: fetch failed",
         "",
-        `Caused by: ${sentence}`,
+        attribution,
         sentence,
         "    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:120:26)",
         `    at async readRows (${DEPLOY}/src/lib/db/result.ts:476:20)`,
-      ].join("\n"),
-      hint: "",
-    };
+      ].join("\n");
 
-    const transport = classify(repeated, T.pendingClaims);
-    expect(transport.kind).toBe("error");
-    if (transport.kind !== "error") return;
+    for (const attribution of [
+      // What node's own DNS failure produces, and the one to believe.
+      `Caused by: ${sentence} (ENOTFOUND)`,
+      // A cause carrying no code at all — the same bar, one line shorter.
+      `Caused by: ${sentence}`,
+    ]) {
+      const transport = classify(
+        {
+          code: "",
+          message: "TypeError: fetch failed",
+          details: detailsWith(attribution),
+          hint: "",
+        },
+        T.pendingClaims,
+      );
+      expect(transport.kind, attribution).toBe("error");
+      if (transport.kind !== "error") continue;
 
-    // ONCE, and STILL THERE — the attributing line is the copy that survives,
-    // so the account still says who caused what.
-    expect(transport.message).toContain(sentence);
-    expect(occurrences(transport.message, sentence)).toBe(1);
-    expect(transport.message).toContain(`Caused by: ${sentence}`);
-    // Nothing else about the account moved: it still names the object read,
-    // still carries the wrapper once, still counts the frames in the app's
-    // own words, and still carries no runtime and no filesystem.
-    expect(transport.reading).toBe(T.pendingClaims);
-    expect(occurrences(transport.message, "TypeError: fetch failed")).toBe(1);
-    expect(transport.message).toMatch(/\b2\b[^)]{0,40}frame/);
-    expect(transport.message).not.toContain("node:dns:");
-    expect(transport.message).not.toContain("GetAddrInfoReqWrap");
-    expect(transport.message).not.toContain(DEPLOY);
-    // And the operator reads that one sentence once off the rendered card.
-    expect(occurrences(cardTextOf(transport), sentence)).toBe(1);
+      // ONCE, and STILL THERE — the attributing line is the copy that
+      // survives, so the account still says who caused what, code and all.
+      expect(transport.message, attribution).toContain(sentence);
+      expect(occurrences(transport.message, sentence), attribution).toBe(1);
+      expect(transport.message, attribution).toContain(attribution);
+      // Nothing else about the account moved: it still names the object read,
+      // still carries the wrapper once, still counts the frames in the app's
+      // own words, and still carries no runtime and no filesystem.
+      expect(transport.reading, attribution).toBe(T.pendingClaims);
+      expect(
+        occurrences(transport.message, "TypeError: fetch failed"),
+        attribution,
+      ).toBe(1);
+      expect(transport.message, attribution).toMatch(/\b2\b[^)]{0,40}frame/);
+      expect(transport.message, attribution).not.toContain("node:dns:");
+      expect(transport.message, attribution).not.toContain("GetAddrInfoReqWrap");
+      expect(transport.message, attribution).not.toContain(DEPLOY);
+      // And the operator reads that one sentence once off the rendered card.
+      expect(occurrences(cardTextOf(transport), sentence), attribution).toBe(1);
+    }
 
     // THE TWIN — two lines that share a prefix but are not the same line.
     // Each pair is the database's own words twice over and BOTH lines cross
@@ -2279,11 +2300,13 @@ describe("an account carries the parts the database authored", () => {
    * that REJECTS the way node's `fetch` rejects, so the `details` string is
    * postgrest-js's own and not a fixture's idea of it. No network: the host is
    * `.invalid` and the stub throws before any socket.
-   * STRICT PIN: this is `it.fails` while admin-window/BUG-0199 stands, so
-   * the day the repetition goes the XPASS turns this file red and sends
-   * the reader to the ticket. Flip it back to a plain `it(...)` then.
+   * FIXED by admin-window/DEBT-0020's second attempt: `saidOnce` drops a line
+   * an earlier kept line already carries whole somewhere other than at its
+   * own START, so the code between the two copies no longer hides the repeat.
+   * QA pinned this `it.fails` while the defect stood; it is a plain `it` again
+   * and grades the shape a deployed instance actually produces.
    */
-  it.fails("says the cause sentence once when the cause carries a code, as node's do", async () => {
+  it("says the cause sentence once when the cause carries a code, as node's do", async () => {
     const occurrences = (haystack: string, needle: string): number =>
       haystack.split(needle).length - 1;
 
