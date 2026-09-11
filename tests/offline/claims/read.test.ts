@@ -483,6 +483,26 @@ describe("the windowed claim count read", () => {
     });
   });
 
+  it("counts [since, until) — a claim AT until is out, a claim AT since is in", async () => {
+    // QA (admin-window/TASK-0070): every fixture instant above is strictly
+    // inside the window or strictly outside it, so the EDGES themselves are
+    // unpinned — a count written `.lte("observed_at", until)` passes all of
+    // them. The figure printed beside the scan must be over the same
+    // half-open interval the scan reads: `until` exclusive, `since`
+    // inclusive.
+    //
+    // The edge is 8 claims wide on staging today: measured 2026-09-11, the
+    // view's 877 claims sit on five distinct instants, and the largest tie
+    // holds 8 rows at one of them — `.lt(that instant)` counts 847 where
+    // `.lt(that instant + 1ms)` counts 855.
+    const atSince = claimAt("at-since", WINDOW.since);
+    const atUntil = claimAt("at-until", WINDOW.until);
+    expect(await countIn([...INSIDE, atSince, atUntil])).toEqual({
+      kind: "ok",
+      data: INSIDE.length + 1,
+    });
+  });
+
   it("leaves out a claim before since, and one carrying no instant at all", async () => {
     // The lower edge is unchanged, and a claim of unknown instant is outside
     // every window however many edges it has (`null >= x` and `null < x` are

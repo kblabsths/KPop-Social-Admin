@@ -805,6 +805,39 @@ describe("every scan reads the window its line prints", () => {
       expect(ids, `${scan.read} population`).toHaveLength(IN_WINDOW.length);
     });
 
+    it(`reads [since, until) — a row AT until is out, a row AT since is in — ${scan.read}`, async () => {
+      // QA (admin-window/TASK-0070): the two cases above place every fixture
+      // instant STRICTLY inside the window or strictly after it, so nothing
+      // yet pins the edges themselves — `.lte(until)` and `.gt(since)` both
+      // pass them. The interval the contract states is half-open, and it is
+      // the boundary instant that says which: `until` is EXCLUSIVE (the
+      // instant the read was resolved at is not in the window it bounds) and
+      // `since` is INCLUSIVE.
+      //
+      // Not hypothetical on this data: staging's 877 pending claims sit on
+      // FIVE distinct instants, the largest tie holding 8 rows at
+      // 2026-08-31T19:23:13.178601+00:00 — measured 2026-09-11, where
+      // `.lt(that instant)` counts 847 and `.lt(that instant + 1ms)` counts
+      // 855. Which side of the edge a tie falls on is 8 claims wide.
+      const edges: Scanned[] = [
+        { id: "at-since", at: BOTH_EDGES.since },
+        { id: "at-until", at: BOTH_EDGES.until },
+      ];
+      const { ids } = await idsFrom(scan, [...inWindow, ...edges]);
+
+      expect(
+        ids,
+        `${scan.read}: ${scan.column} = ${BOTH_EDGES.since} is the window's ` +
+          `INCLUSIVE lower edge`,
+      ).toContain("at-since");
+      expect(
+        ids,
+        `${scan.read}: ${scan.column} = ${BOTH_EDGES.until} is the window's ` +
+          `EXCLUSIVE upper edge — .lt(until), never .lte(until)`,
+      ).not.toContain("at-until");
+      expect(ids, `${scan.read} population`).toHaveLength(IN_WINDOW.length + 1);
+    });
+
     it(`leaves out nothing when no row is dated after until — ${scan.read}`, async () => {
       // The non-vacuous twin (LESSONS 8): the same four-row table, its fourth
       // row INSIDE the window. A read that dropped its last row, or capped at
