@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as cheerio from "cheerio";
 import { EM_DASH, UTC_ZONE, absoluteUtc } from "@/lib/format";
 import { T } from "@/lib/db/tables";
@@ -10,8 +10,18 @@ import {
   shownColumns,
   type BrowseColumnKey,
 } from "@/lib/browse/views";
+import type { BrowseRow } from "@/lib/browse/rows";
+import {
+  OFFSET_PARAM,
+  PAGE_ROUTES,
+  type NotedPageAnswer,
+  type PageNote,
+} from "@/lib/paging/bounds";
+import { requestPage, type PageState } from "@/lib/paging/machine";
 import { recordHref } from "@/lib/records/routes";
 import { BrowseTable } from "@/components/browse/browse-table";
+import { PagedBrowseTable } from "@/components/browse/paged-browse-table";
+import { codeLinesIn, sourceText } from "../source-tree";
 import { h, render, textOf } from "../ui/markup";
 import {
   classesOf,
@@ -62,6 +72,52 @@ vi.mock("@/lib/db/browse", async (importActual) => {
     ...actual,
     readRecentEvents: (v: Parameters<typeof actual.readRecentEvents>[0]) =>
       actual.readRecentEvents(v, readWith.client as never),
+  };
+});
+
+/**
+ * The paging hook, SPIED rather than replaced — campaign
+ * admin-window/TASK-0069, the arrangement `tests/offline/claims/page.test.ts`
+ * established for the first paged surface.
+ *
+ * Three things this tier cannot do on its own, and one it can:
+ *
+ *  - it has NO DOM, so the control the page renders cannot be clicked. The
+ *    press is taken from the widget's own `onPress` prop as the wrapper hands
+ *    it over, which is the same function a click would call;
+ *  - `renderToStaticMarkup` renders ONCE, so a state published after the
+ *    render never reaches markup. `override` is the one substitution this file
+ *    makes: the state the hook publishes is replaced by a state the REAL
+ *    driver produced from the REAL deps the wrapper built, and the wrapper is
+ *    rendered again with it. Nothing else is faked — the deps, the driver, the
+ *    widget, the row markup and the request are all the app's;
+ *  - what it CAN do is watch the wire: `usePageRows` reaches the network
+ *    through `fetch`, so "one press, one request" is read off a stubbed global
+ *    and needs no DOM at all.
+ *
+ * By default it DELEGATES, so every other render in this file is unchanged.
+ */
+const paging = vi.hoisted(() => ({
+  calls: [] as {
+    initial: { rows: readonly unknown[]; held: number; status: string; notes: unknown };
+    deps: { route: string; params: string; size: number };
+  }[],
+  press: null as null | (() => void),
+  override: null as unknown,
+}));
+
+vi.mock("@/components/ui/paging", async (importActual) => {
+  const actual = await importActual<typeof import("@/components/ui/paging")>();
+  return {
+    ...actual,
+    usePageRows: (initial: never, deps: never) => {
+      paging.calls.push({ initial, deps });
+      const bound = actual.usePageRows(initial, deps);
+      paging.press = bound.press;
+      return paging.override === null
+        ? bound
+        : { ...bound, state: paging.override as typeof bound.state };
+    },
   };
 });
 
@@ -128,7 +184,24 @@ async function renderBrowse(
   params: Record<string, string | string[] | undefined> = {},
 ): Promise<string> {
   readWith.client = stubClient(script).asSupabaseClient();
-  return render(await BrowsePage({ searchParams: Promise.resolve(params) }));
+  const markup = render(await BrowsePage({ searchParams: Promise.resolve(params) }));
+  // THE SWEEP OVER EVERY FIRST SCREEN THIS FILE RENDERS (campaign
+  // admin-window/TASK-0069, the rule QA took off the admin-window/BUG-0168
+  // close). Every render of /browse in this suite goes through here, so the
+  // rule is graded on every fixture at once rather than on the ones someone
+  // remembered.
+  //
+  // `data-paging="limit"` is `PageMore`'s honest answer to a state that has
+  // walked to the ceiling `pageBound` enforces: no control, and a sentence
+  // that does not claim the set has ended. On a FIRST screen it is neither —
+  // it is a dead end the operator was handed before pressing anything, which
+  // is what a state built off the bound grid produces. This surface's drawing
+  // rule keeps `held` on the grid by construction, and this is the proof.
+  expect(
+    markup.includes('data-paging="limit"'),
+    `a first screen of /browse drew the limit arm for ${JSON.stringify(params)}`,
+  ).toBe(false);
+  return markup;
 }
 
 /** The table's header labels, in document order. */
@@ -501,16 +574,23 @@ function windowLine(markup: string) {
   };
 }
 
-/** `count` events, newest arrival first, a day apart — a window that fills. */
-function arrivals(count: number) {
-  return Array.from({ length: count }, (_, index) =>
-    eventRow({
+/**
+ * `count` events, newest arrival first, a day apart — a window that fills.
+ *
+ * `from` is where in that one descending run the slice starts, so the PAGE a
+ * press brings back (admin-window/TASK-0069) is the continuation of the first
+ * screen rather than a second population that happens to have other ids.
+ */
+function arrivals(count: number, from = 0) {
+  return Array.from({ length: count }, (_, offset) => {
+    const index = from + offset;
+    return eventRow({
       event_id: `01920000-0000-7000-8000-0000000b${String(index).padStart(4, "0")}`,
       title: `arrival ${index}`,
       created_at: new Date(Date.parse("2026-09-01T00:00:00Z") - index * 86_400_000)
         .toISOString(),
-    }),
-  );
+    });
+  });
 }
 
 /**
@@ -896,5 +976,593 @@ describe("the surface hooks the live parity oracle addresses", () => {
     expect(legsBroken("[data-state]").length).toBeGreaterThan(0);
     expect(legsBroken(EVENTS_HOOK).find("[data-state]").length).toBe(0);
     expect(legsBroken(EVENTS_HOOK).find("tbody tr").length).toBeGreaterThan(0);
+  });
+});
+
+/* ── the affordance that continues the one curated view ──────────────────── */
+
+/**
+ * `/browse` pages further down its one curated view — campaign
+ * admin-window/TASK-0069, SPEC F14.
+ *
+ * What is asserted HERE is what this surface decides. The five states
+ * `PageMore` draws, the driver's rules and the bound guard are pinned where
+ * they live (`tests/offline/ui/paging.test.ts`, `tests/offline/paging/
+ * machine.test.ts`, `tests/offline/paging/bounds.test.ts`); this file grades
+ * the page's drawing rule, what it hands down, where the pieces SIT, and what
+ * a press does to the markup.
+ *
+ * **The drawing rule is a FULL first window.** Browse's events read is a
+ * WINDOW read with no count beside it at all, so there is no total to compare
+ * against and a `total`-derived affordance would never be reachable. The
+ * honest signal is that the window came back full, asked of `pageBound` — the
+ * one function that answers "is this `held` a bound this surface can page
+ * from" — so a short window is never `more: true` and no state is ever built
+ * off the bound grid (QA, admin-window/BUG-0168). `renderBrowse` sweeps every
+ * first screen in this file for the `limit` arm, which is what that state
+ * would produce.
+ */
+
+/** Every paging element in the markup, by the arm it drew. */
+function pagingArms(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("[data-paging]")
+    .toArray()
+    .map((element) => $(element).attr("data-paging") ?? "");
+}
+
+/** How many times the paging hook is spelled at all — refusals included. */
+function pagingOccurrences(markup: string): number {
+  return (markup.match(/data-paging/g) ?? []).length;
+}
+
+/** The control's own words, without pinning the sentence around them. */
+function controlText(markup: string): string {
+  const found = markup.match(/<button[^>]*>([^]*?)<\/button>/);
+  return found?.[1]?.replace(/<[^>]*>/g, "") ?? "";
+}
+
+/** The bound one request carried. */
+function boundOf(url: string): string | null {
+  return new URLSearchParams(url.split("?")[1]).get(OFFSET_PARAM);
+}
+
+/** The event ids the page RENDERED, read off each row's own record link. */
+function eventIds(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("tbody tr")
+    .toArray()
+    .flatMap((tr) => {
+      const href = $(tr).find('a[href^="/records/events/"]').first().attr("href");
+      return href ? [decodeURIComponent(href.slice("/records/events/".length))] : [];
+    });
+}
+
+/** A recording stub for the ONE network call this app makes. */
+function recordingFetch(answer: unknown): string[] {
+  const urls: string[] = [];
+  vi.stubGlobal("fetch", (url: string) => {
+    urls.push(url);
+    // `Response.json`, because that is what `/api/admin/browse/rows` really
+    // answers with, and `fetchJson` reads the DECLARED content type before it
+    // reads a body (admin-window/TASK-0076).
+    return Promise.resolve(Response.json(answer));
+  });
+  return urls;
+}
+
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** A database whose events window answers `count` rows, legs all fine. */
+function windowScript(count: number, overrides: Script = {}): Script {
+  const events = arrivals(count);
+  const listings = events.map((event) =>
+    eventListingRow({ event_id: event.event_id, venue_name: "Crypto.com Arena" }),
+  );
+  return {
+    [T.events]: { data: events },
+    [T.eventListings]: { data: listings, count: listings.length },
+    [T.fieldProvenance]: { data: [], count: 0 },
+    [T.sources]: { data: [], count: 0 },
+    ...overrides,
+  };
+}
+
+/** The shaped rows a PAGE of the same view carries over the wire. */
+function pageRows(count: number, from: number): BrowseRow[] {
+  return arrivals(count, from).map((event) => ({
+    event_id: event.event_id,
+    title: event.title,
+    description: event.description,
+    poster_url: event.poster_url,
+    starts_at: event.starts_at,
+    created_at: event.created_at,
+    venue_name: "Crypto.com Arena",
+    sources: [],
+  }));
+}
+
+/** An `ok` page answer with this surface's own leg notes on it. */
+function pageAnswer(
+  from: number,
+  notes: Record<string, PageNote | null>,
+  rows = view.window,
+): NotedPageAnswer<BrowseRow, Record<string, PageNote | null>> {
+  return {
+    kind: "ok",
+    rows: pageRows(rows, from),
+    offset: from,
+    exhausted: rows < view.window,
+    notes,
+  };
+}
+
+/**
+ * The state the REAL driver reaches from the REAL deps the wrapper built, fed
+ * `answers` in order. Only React's second render is substituted — see the
+ * spy's comment above.
+ */
+async function pressedWith(...answers: unknown[]): Promise<PageState<BrowseRow>> {
+  const call = paging.calls[0];
+  if (call === undefined) throw new Error("the page drew no paging wrapper");
+  let state = call.initial as unknown as PageState<BrowseRow>;
+  for (const answer of answers) {
+    state = await requestPage<BrowseRow>(state, {
+      ...(call.deps as { route: string; params: string; size: number }),
+      fetchJson: () => Promise.resolve(answer),
+    });
+  }
+  return state;
+}
+
+describe("the affordance that continues the recent-events view", () => {
+  beforeEach(() => {
+    paging.calls = [];
+    paging.press = null;
+    paging.override = null;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("draws exactly one control on a FULL first window, and leaves the first screen alone", async () => {
+    const markup = await renderBrowse(windowScript(view.window));
+
+    // The first screen: the window read's own rows, in its own arrival order,
+    // under the same window line and the same columns the page drew before
+    // this ticket — the four things the criterion names.
+    expect(eventIds(markup)).toEqual(arrivals(view.window).map((row) => row.event_id));
+    const line = windowLine(markup);
+    expect(line.lines).toBe(1);
+    expect(line.limit).toBe(String(view.window));
+    expect(line.held).toBe(String(view.window));
+    expect(line.truncated).toBe("true");
+    expect(headers(markup)).toEqual(configuredKeys(view).map((key) => labelOf(key)));
+
+    // …and ONE addition below it.
+    expect(pagingArms(markup)).toEqual(["more"]);
+    expect(controlText(markup)).toContain(String(view.window));
+
+    const $ = cheerio.load(markup);
+    // Below the rows, OUTSIDE the surface the live oracle grades, and outside
+    // the table: the row markup is untouched and the control is not a row.
+    expect($(EVENTS_HOOK).find("[data-paging]")).toHaveLength(0);
+    expect($("table").find("[data-paging]")).toHaveLength(0);
+    expect($(EVENTS_HOOK).find("table")).toHaveLength(1);
+  });
+
+  it("draws none where the window came back SHORT, empty, absent or refused", async () => {
+    // 1. A SHORT window — the read that filled this screen is the read that
+    //    says the set has ended, and the window line states it in its own
+    //    numbers. No control, and no sentence claiming there is more.
+    const short = await renderBrowse(windowScript(view.window - 1));
+    expect(eventIds(short)).toHaveLength(view.window - 1);
+    expect(windowLine(short).truncated).toBe("false");
+    expect(pagingOccurrences(short)).toBe(0);
+
+    // 2. An EMPTY `ok` window: the Empty card and the window line stand
+    //    exactly as they did, and no control is offered for rows that do not
+    //    exist.
+    const empty = await renderBrowse({ [T.events]: { data: [] } });
+    expect(windowLine(empty).held).toBe("0");
+    expect(pagingOccurrences(empty)).toBe(0);
+
+    // 3. and 4. The two states that carry no rows at all.
+    for (const [why, error] of [
+      ["an absent events table", tableNotInSchemaCache(T.events)],
+      ["a refused events read", permissionDenied(T.events)],
+    ] as const) {
+      const broken = await renderBrowse({ [T.events]: { error } });
+      expect(pagingOccurrences(broken), why).toBe(0);
+    }
+
+    // The wrapper was never rendered in any of them, so nothing downstream
+    // had to be honest about a state that cannot be honoured.
+    expect(paging.calls).toEqual([]);
+  });
+
+  it("hands the hook the rows it RENDERED, at this app's own route and window", async () => {
+    await renderBrowse(windowScript(view.window));
+    expect(paging.calls).toHaveLength(1);
+    const { initial, deps } = paging.calls[0];
+    // `held` is the rendered row count; there is no count on this surface and
+    // nothing here is derived from the limit the read asked for.
+    expect(initial.held).toBe(view.window);
+    expect(initial.rows).toEqual([]);
+    expect(initial.status).toBe("idle");
+    // A first screen renders its OWN legs; this state holds no note at all.
+    expect(initial.notes).toBeNull();
+    expect(deps.route).toBe(PAGE_ROUTES.browse);
+    expect(deps.size).toBe(view.window);
+  });
+
+  it("carries the COLUMN STATE the page rendered, and writes no offset into any URL", async () => {
+    const shownNow: BrowseColumnKey[] = ["title", "venue"];
+    const urls = recordingFetch(pageAnswer(view.window, { venues: null, provenance: null }));
+    const markup = await renderBrowse(windowScript(view.window), {
+      [COLUMNS_PARAM]: columnsParamValue(shownNow),
+    });
+
+    // The screen really is the narrowed one, and it still pages.
+    expect(headers(markup)).toEqual(shownNow.map((key) => labelOf(key)));
+    expect(pagingArms(markup)).toEqual(["more"]);
+
+    const carried = new URLSearchParams(paging.calls[0].deps.params);
+    expect(carried.get(COLUMNS_PARAM)).toBe(columnsParamValue(shownNow));
+    expect([...carried.keys()]).toEqual([COLUMNS_PARAM]);
+
+    // …and the same state reaches the wire, with the bound beside it.
+    paging.press?.();
+    await settle();
+    const asked = new URLSearchParams(urls[0].split("?")[1]);
+    expect(asked.get(COLUMNS_PARAM)).toBe(columnsParamValue(shownNow));
+    expect(asked.get(OFFSET_PARAM)).toBe(String(view.window));
+
+    // PAGING NEVER REWRITES THE URL: no link this page offers — the column
+    // selector's included — carries an offset, so changing a column re-renders
+    // the first screen from the server and the paged-in rows are discarded.
+    for (const href of hrefs(markup)) {
+      expect(
+        new URLSearchParams(href.split("?")[1] ?? "").get(OFFSET_PARAM),
+        href,
+      ).toBeNull();
+    }
+
+    // The default column set spells no state at all, so a bookmark of the
+    // default screen carries nothing redundant.
+    paging.calls = [];
+    await renderBrowse(windowScript(view.window));
+    expect(paging.calls[0].deps.params).toBe("");
+  });
+
+  it("one press issues one request at an explicit bound; no press issues none", async () => {
+    const urls = recordingFetch(pageAnswer(view.window, { venues: null, provenance: null }));
+
+    await renderBrowse(windowScript(view.window));
+    // Zero presses, zero requests: the first screen is the server's.
+    expect(urls).toEqual([]);
+
+    const press = paging.press;
+    if (press === null) throw new Error("the wrapper handed the widget no press");
+    press();
+    await settle();
+
+    expect(urls).toHaveLength(1);
+    expect(boundOf(urls[0])).toBe(String(view.window));
+    expect(urls[0].startsWith(PAGE_ROUTES.browse)).toBe(true);
+  });
+
+  it("a refused page leaves the rendered rows exactly as they were and names the object", async () => {
+    // TWO fixtures, the way a guard proves itself (LESSONS 8): a page that
+    // MUST refuse, and one that must not. Both states are produced by the REAL
+    // driver from the REAL deps this page handed it.
+    const script = windowScript(view.window);
+    const firstScreen = await renderBrowse(script);
+    const first = eventIds(firstScreen);
+    expect(first).toHaveLength(view.window);
+
+    // A. the page that must REFUSE — the table went away between two reads.
+    paging.override = await pressedWith({ kind: "not_provisioned", missing: T.events });
+    const afterRefusal = await renderBrowse(script);
+    expect(eventIds(afterRefusal)).toEqual(first);
+    const $ = cheerio.load(afterRefusal);
+    const refusal = $("[data-paging-refusal]");
+    expect(refusal).toHaveLength(1);
+    expect(refusal.text()).toContain(T.events);
+    // Beside the rows, never inside the table and never inside the surface
+    // the live oracle grades as the events read.
+    expect($("table").find("[data-paging-refusal]")).toHaveLength(0);
+    expect($(EVENTS_HOOK).find("[data-paging-refusal]")).toHaveLength(0);
+    // …and the control is still there, because the same bound is retryable.
+    expect(pagingArms(afterRefusal)).toContain("more");
+
+    // B. the page that must NOT refuse — a full window, appended in order.
+    paging.calls = [];
+    paging.override = null;
+    await renderBrowse(script);
+    paging.override = await pressedWith(
+      pageAnswer(view.window, { venues: null, provenance: null }),
+    );
+    const afterPage = await renderBrowse(script);
+    expect(cheerio.load(afterPage)("[data-paging-refusal]")).toHaveLength(0);
+    expect(eventIds(afterPage)).toEqual([
+      ...first,
+      ...pageRows(view.window, view.window).map((row) => row.event_id),
+    ]);
+    // The first screen's rows are untouched, and the new ones are BELOW them.
+    expect(eventIds(afterPage).slice(0, view.window)).toEqual(first);
+  });
+
+  it("renders a PAGED leg's report below the table, in the same hook and words the first screen uses", async () => {
+    // The account the PAGE's own card carries for the same object, on a
+    // first-screen fixture where the same table is absent. The paged note must
+    // reach the operator as the same sentence — read off the app, never pinned
+    // here as a literal.
+    const onFirstScreen = cheerio.load(
+      await renderBrowse(
+        windowScript(view.window, {
+          [T.fieldProvenance]: { error: tableNotInSchemaCache(T.fieldProvenance) },
+        }),
+      ),
+    );
+    const asTheCardSaysIt = onFirstScreen(`[data-not-provisioned="${T.fieldProvenance}"]`);
+    expect(asTheCardSaysIt).toHaveLength(1);
+
+    // …and now a page whose FIRST-screen legs all answered, whose PAGED read
+    // finds `field_provenance` absent.
+    paging.calls = [];
+    const script = windowScript(view.window);
+    await renderBrowse(script);
+    paging.override = await pressedWith(
+      pageAnswer(view.window, {
+        venues: null,
+        provenance: { kind: "not_provisioned", missing: T.fieldProvenance },
+      }),
+    );
+    const markup = await renderBrowse(script);
+    const $ = cheerio.load(markup);
+
+    // The page's rows landed…
+    expect(eventIds(markup)).toHaveLength(view.window * 2);
+    // …and the leg that refused is reported, once, through the SAME hook and
+    // in the same words.
+    const note = $(`[data-not-provisioned="${T.fieldProvenance}"]`);
+    expect(note).toHaveLength(1);
+    expect(note.text().replace(/\s+/g, " ").trim()).toBe(
+      asTheCardSaysIt.text().replace(/\s+/g, " ").trim(),
+    );
+    // OUTSIDE the surface the oracle grades — a `StateOf` inside it carries
+    // `data-state` and would grade an unreadable provenance leg as an
+    // unreadable events window — and ABOVE the control.
+    expect($(EVENTS_HOOK).find("[data-state]")).toHaveLength(0);
+    const at = markup.indexOf(`data-not-provisioned="${T.fieldProvenance}"`);
+    expect(at).toBeGreaterThan(markup.indexOf('data-surface="events"'));
+    expect(at).toBeLessThan(markup.indexOf("data-paging"));
+  });
+
+  it("renders a FAILED paged leg through data-read-failed, carrying the database's own account", async () => {
+    const failure = permissionDenied(T.eventListings);
+    const script = windowScript(view.window);
+    await renderBrowse(script);
+    paging.override = await pressedWith(
+      pageAnswer(view.window, {
+        venues: { kind: "error", reading: T.eventListings, message: failure.message },
+        provenance: null,
+      }),
+    );
+    const markup = await renderBrowse(script);
+    const $ = cheerio.load(markup);
+
+    const note = $(`[data-read-failed="${T.eventListings}"]`);
+    expect(note).toHaveLength(1);
+    // The answer's own message, neither reworded nor truncated by this surface.
+    expect(note.text()).toContain(failure.message);
+    expect($(EVENTS_HOOK).find("[data-state]")).toHaveLength(0);
+    // Red means broken: it is an error line, not a not-provisioned card.
+    expect(alerts(markup).some((line) => line.includes(T.eventListings))).toBe(true);
+  });
+
+  it("reports ONE OBJECT ONCE: a leg the page named is not named again below the rows", async () => {
+    // `field_provenance` is absent for the FIRST screen and for the PAGED
+    // read. The page names it above the table, so the wrapper does not.
+    const script = windowScript(view.window, {
+      [T.fieldProvenance]: { error: tableNotInSchemaCache(T.fieldProvenance) },
+    });
+    await renderBrowse(script);
+    paging.override = await pressedWith(
+      pageAnswer(view.window, {
+        venues: null,
+        provenance: { kind: "not_provisioned", missing: T.fieldProvenance },
+      }),
+    );
+    const markup = await renderBrowse(script);
+    const $ = cheerio.load(markup);
+
+    expect(eventIds(markup)).toHaveLength(view.window * 2);
+    expect($(`[data-not-provisioned="${T.fieldProvenance}"]`)).toHaveLength(1);
+    // …and the one occurrence is the PAGE's, above the table where it has
+    // always stood.
+    expect(markup.indexOf(`data-not-provisioned="${T.fieldProvenance}"`)).toBeLessThan(
+      markup.indexOf('data-surface="events"'),
+    );
+  });
+
+  it("keeps a refused leg reported after a later page whose legs answered", async () => {
+    // The rows the refused leg left unfilled are still on screen, so the note
+    // that explains them may not vanish one press later.
+    const script = windowScript(view.window);
+    await renderBrowse(script);
+    paging.override = await pressedWith(
+      pageAnswer(view.window, {
+        venues: null,
+        provenance: { kind: "not_provisioned", missing: T.fieldProvenance },
+      }),
+      pageAnswer(view.window * 2, { venues: null, provenance: null }),
+    );
+    const markup = await renderBrowse(script);
+
+    expect(eventIds(markup)).toHaveLength(view.window * 3);
+    expect(
+      cheerio.load(markup)(`[data-not-provisioned="${T.fieldProvenance}"]`),
+    ).toHaveLength(1);
+  });
+
+  it("renders no note at all from a state that has taken in no page, or from legs that answered", async () => {
+    // A first screen, unpressed: the wrapper holds no note, and the page's own
+    // legs answered, so nothing is reported anywhere.
+    const first = await renderBrowse(windowScript(view.window));
+    const $first = cheerio.load(first);
+    expect($first("[data-not-provisioned]")).toHaveLength(0);
+    expect($first("[data-read-failed]")).toHaveLength(0);
+
+    // A page whose legs ANSWERED reports nothing either.
+    paging.override = await pressedWith(
+      pageAnswer(view.window, { venues: null, provenance: null }),
+    );
+    const after = cheerio.load(await renderBrowse(windowScript(view.window)));
+    expect(after("[data-not-provisioned]")).toHaveLength(0);
+    expect(after("[data-read-failed]")).toHaveLength(0);
+  });
+
+  it("gives the events surface exactly one element wrapping the table alone, in every PAGED state", async () => {
+    // The same pin the unpaged states carry, over the states this ticket adds:
+    // one element, never nested, holding the table and no `[data-state]`.
+    const script = windowScript(view.window);
+    const states: [string, string][] = [];
+
+    await renderBrowse(script);
+    states.push(["paged, legs fine", await renderBrowse(script)]);
+
+    paging.calls = [];
+    await renderBrowse(script);
+    paging.override = await pressedWith(
+      pageAnswer(view.window, {
+        venues: { kind: "error", reading: T.eventListings, message: "refused" },
+        provenance: { kind: "not_provisioned", missing: T.fieldProvenance },
+      }),
+    );
+    states.push(["paged, both legs broken", await renderBrowse(script)]);
+    states.push([
+      "paged, both legs broken on the first screen too",
+      await renderBrowse(
+        windowScript(view.window, {
+          [T.eventListings]: { error: permissionDenied(T.eventListings) },
+          [T.fieldProvenance]: { error: tableNotInSchemaCache(T.fieldProvenance) },
+        }),
+      ),
+    ]);
+
+    paging.override = await pressedWith({
+      kind: "error",
+      reading: T.events,
+      message: "refused",
+    });
+    states.push(["paged, the page refused", await renderBrowse(script)]);
+
+    for (const [name, markup] of states) {
+      expect(surfaceHooks(markup, [EVENTS_HOOK]), name).toEqual({
+        counts: oneEach([EVENTS_HOOK]),
+        nested: [],
+      });
+      const $ = cheerio.load(markup);
+      expect($(EVENTS_HOOK).find("[data-state]").length, name).toBe(0);
+      expect($(EVENTS_HOOK).find("tbody tr").length, name).toBeGreaterThan(0);
+      expect($(EVENTS_HOOK).children().length, name).toBe(1);
+    }
+  });
+
+  it("spells the window ONCE: the control names the number the driver grades against", async () => {
+    // The window is a PROP here, so the wrapper is driven at a window that is
+    // NOT 50 and the same 7-row answer is read twice: it LANDS against a
+    // window of 7 (the next press moves on to 14) and is REFUSED against a
+    // window of 8 (the next press asks for 8 again) — so the number the driver
+    // graded the page against is the number the control renders in its label.
+    const consumer = async (
+      windowSize: number,
+    ): Promise<{ bounds: (string | null)[]; label: string }> => {
+      const served = 7;
+      const urls = recordingFetch({
+        kind: "ok",
+        rows: pageRows(served, windowSize),
+        offset: windowSize,
+        exhausted: false,
+        notes: { venues: null, provenance: null },
+      });
+      const markup = render(
+        h(PagedBrowseTable, {
+          surface: "events",
+          view,
+          shown: configuredKeys(view),
+          initial: pageRows(windowSize, 0),
+          params: "",
+          size: windowSize,
+          reported: [],
+        }),
+      );
+      paging.press?.();
+      await settle();
+      paging.press?.();
+      await settle();
+      return { bounds: urls.map(boundOf), label: controlText(markup) };
+    };
+
+    const landed = await consumer(7);
+    const refused = await consumer(8);
+
+    expect(landed.bounds).toEqual(["7", "14"]);
+    expect(refused.bounds).toEqual(["8", "8"]);
+    expect(landed.label).toContain("7");
+    expect(landed.label).not.toContain("8");
+    expect(landed.label).not.toContain(String(view.window));
+    expect(refused.label).toContain("8");
+    expect(refused.label).not.toContain("7");
+  });
+
+  it("draws no control from a SHORT first window, and says the set is complete rather than claiming a ceiling", async () => {
+    // Where the wrapper is rendered off the page's own drawing rule — which
+    // `/browse` never does, because that rule IS this question — a short
+    // window starts `exhausted` and never `limit`: the read that returned 37
+    // of 50 rows is the read that ended the set, so there is no ceiling to
+    // announce and no dead end to hand the operator.
+    recordingFetch({ kind: "ok", rows: [], offset: view.window, exhausted: true });
+    const markup = render(
+      h(PagedBrowseTable, {
+        surface: "events",
+        view,
+        shown: configuredKeys(view),
+        initial: pageRows(37, 0),
+        params: "",
+        size: view.window,
+        reported: [],
+      }),
+    );
+    expect(eventIds(markup)).toHaveLength(37);
+    expect(pagingArms(markup)).toEqual(["exhausted"]);
+    expect(/<button/.test(markup)).toBe(false);
+  });
+
+  it("spells no leg key and imports no lib/db type", async () => {
+    // The wrapper renders the non-null notes the record HOLDS, in the record's
+    // own order, so its output cannot drift from the route's key spelling —
+    // and it sits below the `StateOf` seam (ARCHITECTURE.md §4).
+    const WRAPPER = "src/components/browse/paged-browse-table.tsx";
+    const whole = sourceText(WRAPPER);
+    // Read off the WHOLE file, comments included, exactly as this ticket's
+    // structural checks read it: a docstring that merely NAMES the spelling it
+    // avoids reddens the check and stays green under a comment-stripped read,
+    // which is how a check and its test come to disagree (LESSONS 12).
+    expect(whole).not.toContain("@/lib/db");
+    expect(whole).not.toContain("BROWSE_VIEWS");
+    expect(whole).not.toContain("view.window");
+
+    // The LEG KEYS are read off the code alone: the docstring has every right
+    // to explain that this surface has a venue leg and a provenance leg. What
+    // it may not do is SPELL one, because the record's keys are the route's
+    // and this file renders whatever the record holds.
+    const code = codeLinesIn(whole).join("\n");
+    for (const key of ["venues", "provenance"]) {
+      expect(code, `the wrapper spells the leg key ${key}`).not.toContain(key);
+    }
   });
 });

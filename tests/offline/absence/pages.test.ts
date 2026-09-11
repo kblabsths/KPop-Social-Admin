@@ -9,7 +9,8 @@ import {
   type Script,
   type ScriptedAnswer,
 } from "../../fixtures/stub-client";
-import { pendingClaimRow } from "../../fixtures/rows";
+import { eventListingRow, eventRow, pendingClaimRow } from "../../fixtures/rows";
+import { RECENT_EVENTS } from "@/lib/browse/views";
 import { claimView } from "../claims/population";
 
 /**
@@ -1015,6 +1016,37 @@ function countDisagrees(): ScriptedAnswer {
   };
 }
 
+/**
+ * A `/browse` events window that came back FULL — the one state that surface's
+ * drawing rule offers a control in (admin-window/TASK-0069).
+ *
+ * Browse's events read is a WINDOW read with no count beside it, so "there is
+ * more" is "the window filled". `populatedScript` holds ONE event, which is a
+ * short window and correctly draws nothing — so without this fixture the
+ * `/browse` half of the leg below could not fail.
+ */
+function fullEventWindow(): ScriptedAnswer {
+  const events = Array.from({ length: RECENT_EVENTS.window }, (_, index) =>
+    eventRow({
+      event_id: `01920000-0000-7000-8000-0000000e${String(index).padStart(4, "0")}`,
+      title: `arrival ${index}`,
+      created_at: new Date(Date.UTC(2026, 8, 1) - index * 86_400_000).toISOString(),
+    }),
+  );
+  return { data: events, count: events.length };
+}
+
+/** The listings the window above joins to, so every row has a venue name. */
+function listingsForFullWindow(): ScriptedAnswer {
+  const rows = Array.from({ length: RECENT_EVENTS.window }, (_, index) =>
+    eventListingRow({
+      event_id: `01920000-0000-7000-8000-0000000e${String(index).padStart(4, "0")}`,
+      venue_name: "Crypto.com Arena",
+    }),
+  );
+  return { data: rows, count: rows.length };
+}
+
 describe("a paging affordance is only drawn where it can be honoured", () => {
   it.each(SURFACES.map((surface) => [surface.route, surface] as const))(
     "%s draws no paging element against a database that holds none of its objects",
@@ -1082,5 +1114,35 @@ describe("a paging affordance is only drawn where it can be honoured", () => {
     scriptDatabase({ ...populatedScript(claims), [T.pendingClaims]: overOneWindow() });
     const answered = await renderSurface(claims);
     expect(pagingArms(answered)).toEqual(["more"]);
+  });
+
+  it("/browse says not_provisioned instead, and draws the control when the window fills", async () => {
+    const browse = SURFACES.find((surface) => surface.route === "/browse");
+    if (browse === undefined) throw new Error("no /browse surface");
+
+    // The state EC5 names, off PostgREST's own schema-cache miss: the page
+    // renders its not-provisioned state and the control appears zero times.
+    const script: Script = {};
+    for (const name of TABLE_NAMES) script[name] = { error: tableNotInSchemaCache(name) };
+    scriptDatabase(script);
+    const absent = await renderSurface(browse);
+    expect(cheerio.load(absent)('[data-state="not_provisioned"]').length).toBeGreaterThan(0);
+    expect(pagingOccurrences(absent)).toBe(0);
+
+    // …and the same surface, against a database whose events window comes back
+    // FULL: the control is drawn. Without this half the case above would pass
+    // against a page that lost the affordance entirely.
+    scriptDatabase({
+      ...populatedScript(browse),
+      [T.events]: fullEventWindow(),
+      [T.eventListings]: listingsForFullWindow(),
+    });
+    const answered = await renderSurface(browse);
+    expect(pagingArms(answered)).toEqual(["more"]);
+
+    // A SHORT window is the honest no-control state, and it is the one
+    // `populatedScript` already builds: one event against a window of fifty.
+    scriptDatabase(populatedScript(browse));
+    expect(pagingOccurrences(await renderSurface(browse))).toBe(0);
   });
 });

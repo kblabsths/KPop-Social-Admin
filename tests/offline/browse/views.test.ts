@@ -5,6 +5,7 @@ import {
   COLUMNS_PARAM,
   RECENT_EVENTS,
   columnOptions,
+  browseQuery,
   columnsHref,
   columnsParamValue,
   configuredKeys,
@@ -180,10 +181,11 @@ describe("the column selector", () => {
   });
 });
 
-describe("the selector's state in the URL", () => {
-  const routePath = "/browse";
-  const origin = "https://admin.invalid";
+/** This route's own path, and an origin to resolve a relative href against. */
+const routePath = "/browse";
+const origin = "https://admin.invalid";
 
+describe("the selector's state in the URL", () => {
   it("round-trips a non-default set through the query string", () => {
     const chosen: BrowseColumnKey[] = ["title", "sources"];
     const url = new URL(columnsHref(view, routePath, chosen), origin);
@@ -232,6 +234,61 @@ describe("the selector's state in the URL", () => {
     expect(columnsHref(view, routePath, ["title", "sources"])).toBe(
       `${routePath}?${COLUMNS_PARAM}=${encodeURIComponent(value)}`,
     );
+  });
+});
+
+/**
+ * What a paged request repeats — campaign admin-window/TASK-0069.
+ *
+ * `browseQuery` is the screen's own state, serialized, and it is the SAME
+ * state `columnsHref` writes into a link: a press continues what is on screen,
+ * so the two spellings are read back with `shownColumns`, which is how the
+ * page resolves the URL in the first place.
+ */
+describe("the state a paged request repeats", () => {
+  it("spells the default set as nothing at all", () => {
+    // The default state is written by OMITTING the param, so a default screen
+    // carries no redundant state onto the wire.
+    expect(browseQuery(view, view.defaultColumns)).toBe("");
+    // …and the same holds for the default set in another order, because the
+    // order is not part of the state.
+    expect(browseQuery(view, [...view.defaultColumns].reverse())).toBe("");
+  });
+
+  it("round-trips every non-default set the selector can reach", () => {
+    for (const key of configuredKeys(view)) {
+      const query = browseQuery(view, [key]);
+      expect(query, key).not.toBe("");
+      const carried = new URLSearchParams(query);
+      expect([...carried.keys()], key).toEqual([COLUMNS_PARAM]);
+      expect(
+        shownColumns(view, carried.get(COLUMNS_PARAM) ?? undefined),
+        key,
+      ).toEqual([key]);
+    }
+  });
+
+  it("says the same thing the selector's own href says", () => {
+    // One spelling, read two ways (LESSONS 5): the query a press carries and
+    // the query a link carries are the same parameter with the same value.
+    for (const keys of [["title", "sources"], ["venue"], configuredKeys(view)] as const) {
+      const fromHref = new URL(
+        columnsHref(view, routePath, [...keys]),
+        origin,
+      ).searchParams.get(COLUMNS_PARAM);
+      const fromQuery = new URLSearchParams(browseQuery(view, [...keys])).get(
+        COLUMNS_PARAM,
+      );
+      expect(fromQuery, keys.join(",")).toBe(fromHref);
+    }
+  });
+
+  it("carries no offset: a bound is the press's, never the screen's", () => {
+    // Paging never rewrites the URL, so nothing this function spells can put a
+    // bound in front of the one `pageUrl` appends.
+    for (const keys of [view.defaultColumns, ["title"]] as const) {
+      expect(browseQuery(view, [...keys])).not.toContain("offset");
+    }
   });
 });
 

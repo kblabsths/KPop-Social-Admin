@@ -225,6 +225,31 @@ export function columnsHref(
   return `${path}?${COLUMNS_PARAM}=${encodeURIComponent(columnsParamValue(keys))}`;
 }
 
+/**
+ * The view + column state a rendered screen carries, serialized — what a paged
+ * request repeats so a continuation continues WHAT IS ON SCREEN (SPEC F14,
+ * campaign admin-window/TASK-0069).
+ *
+ * The only state this surface has is which columns are shown, and it is
+ * spelled here through the SAME pieces `columnsHref` spells it with —
+ * `COLUMNS_PARAM`, the view's own order, and the default set written by
+ * OMITTING the param — so a default screen carries no redundant state and the
+ * two spellings cannot drift (LESSONS 5).
+ *
+ * The VIEW is deliberately not in it. Browse ships exactly one curated view,
+ * named in code on both sides: the page reads `RECENT_EVENTS`, and so does the
+ * paging route, which takes no `view` parameter at all. Serializing one would
+ * invent a parameter nothing reads and make this surface look like the view
+ * picker it is not.
+ */
+export function browseQuery(
+  view: BrowseView,
+  shown: readonly BrowseColumnKey[],
+): string {
+  if (sameKeys(shown, view.defaultColumns)) return "";
+  return `${COLUMNS_PARAM}=${encodeURIComponent(columnsParamValue(shown))}`;
+}
+
 /** One entry of the column selector. */
 export interface BrowseColumnOption {
   readonly key: BrowseColumnKey;
