@@ -1,10 +1,9 @@
-# Tracker index (regenerated 2026-09-11T04:35:22Z — do not edit)
+# Tracker index (regenerated 2026-09-11T04:49:30Z — do not edit)
 
 ## open
 - FEAT-0014 [P1][feat][M3] F16 — the second leg of a two-step join runs its chunks concurrently  (scope:src/lib/db/result.ts,src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/db/verdict.ts,tests/offline/db/result.test.ts,tests/live/claims.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts)
 - FEAT-0015 [P1][feat][M3] F14 — paging past the window, on Claims and on Browse  (deps:FEAT-0014(unmet:1) scope:src/app/claims/page.tsx,src/app/browse/page.tsx,src/app/api,src/components/claims,src/components/browse,src/lib/db/claims.ts,src/lib/db/browse.ts,src/lib/db/result.ts,tests/offline/claims/page.test.ts,tests/offline/browse/page.test.ts,tests/offline/absence/pages.test.ts,tests/live/claims.live.test.ts,tests/live/browse.live.test.ts)
 - TASK-0069 [P1][task][M3] /browse pages further down its one curated view, and says so honestly  (deps:TASK-0067,TASK-0068,TASK-0076(unmet:1) scope:src/app/browse/page.tsx,src/components/browse/paged-browse-table.tsx,src/lib/browse/views.ts,tests/offline/browse/page.test.ts,tests/offline/browse/views.test.ts,tests/offline/absence/pages.test.ts,tests/live/browse.live.test.ts)
-- TASK-0076 [P1][task][M3] The paging driver carries a page's leg notes to the state, and the one fetch refuses in the app's own words  (scope:src/lib/paging/bounds.ts,src/lib/paging/machine.ts,src/components/ui/paging.tsx,tests/offline/paging/bounds.test.ts,tests/offline/paging/machine.test.ts,tests/offline/ui/paging.test.ts from:TASK-0068)
 - BUG-0167 [P2][bug][M3] the gauge's two legs truncate on different orders, so at the row cap a tie on the boundary instant drops claims the id list kept  (deps:TASK-0075(unmet:1) scope:src/lib/db/gauges.ts,src/lib/gauges/pending-claims.ts,tests/offline/gauges/pending-claims.test.ts,tests/live/claims.live.test.ts from:TASK-0074)
 - BUG-0169 [P2][bug][M3] the /cycles gauges render Empty at a counted zero while the live oracle grades them emptyAtZero:false, so cycles.live is red on the run branch  (scope:tests/live/cycles.live.test.ts,src/components/gauges/state.tsx,tests/offline/cycles/page.test.ts from:TASK-0075)
 - BUG-0170 [P2][bug][M3] a failed read carries an INTERMEDIARY's HTML error page verbatim into the app's account, onto the claims card and through the paging route's error arm  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:TASK-0066)
@@ -19,6 +18,9 @@
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
 ## built
+- TASK-0076 [P1][task][M3] The paging driver carries a page's leg notes to the state, and the one fetch refuses in the app's own words  (scope:src/lib/paging/bounds.ts,src/lib/paging/machine.ts,src/components/ui/paging.tsx,tests/offline/paging/bounds.test.ts,tests/offline/paging/machine.test.ts,tests/offline/ui/paging.test.ts @builder-257 from:TASK-0068)
+
+## qa
 - TASK-0075 [P1][task][M3] claims.live stops racing the scraper: one snapshot instant for the identity proofs, whileStill for the page-vs-database ones  (scope:tests/live/claims.live.test.ts,tests/live/parity.ts @builder-253 from:TASK-0064)
 
-Totals — built:1, done:13, open:16. Archived: 252.
+Totals — built:1, done:13, open:15, qa:1. Archived: 252.
