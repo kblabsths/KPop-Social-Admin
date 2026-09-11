@@ -72,14 +72,15 @@ import { searchParamsOf } from "@/lib/url/search-params";
  * theirs went unfilled.
  *
  * **A GATED ANSWER IS NEVER STORABLE, AND THIS ROUTE SAYS SO ITSELF.** Every
- * dynamically rendered page here already answers
- * `private, no-cache, no-store, max-age=0, must-revalidate` because Next sets
- * it; a Route Handler answers with NO `Cache-Control` unless it writes one, so
- * without this the first screen and its continuation would be one surface
- * under two cache policies. `PAGE_ANSWER_CACHE_CONTROL` is the value, declared
- * once in `lib/paging/bounds.ts` and never a second string typed here, and it
- * goes on EVERY arm — the `ok` page, `not_provisioned`, `error` and the 400
- * refusal alike.
+ * dynamically rendered page here already answers the gated-answer directives
+ * because Next sets them; a Route Handler answers with NO `Cache-Control`
+ * unless it writes one, so without this the first screen and its continuation
+ * would be one surface under two cache policies.
+ * `PAGE_ANSWER_CACHE_CONTROL` is the value — the directives themselves are
+ * spelled ONCE, in `lib/paging/bounds.ts`, and this file quotes them nowhere,
+ * not even in prose (admin-window/BUG-0171: the one literal under `src/` is
+ * that declaration) — and it goes on EVERY arm: the `ok` page,
+ * `not_provisioned`, `error` and the 400 refusal alike.
  *
  * **GET only.** No POST, no PATCH, no DELETE — this route reads, and Next
  * answers any other method 405.

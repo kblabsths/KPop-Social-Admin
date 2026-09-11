@@ -248,8 +248,14 @@ describe("the browse paging route, gated like a page", () => {
  * caller (see the suite docstring above). The gate's own 403 is not one of the
  * handler's four arms, so the handler's four arms are UNREACHABLE from this
  * tier. The header is asserted on every one of them against a recording stub
- * in `tests/offline/paging/browse-route.test.ts`, where the database's side is
+ * in `tests/offline/paging/browse-route.test.ts` and
+ * `tests/offline/paging/claims-route.test.ts`, where the database's side is
  * observable. The two tiers together are the criterion; neither is it alone.
+ *
+ * **Both paging surfaces are checked here, each against its OWN page**
+ * (admin-window/BUG-0171). What the constant must equal is what a gated page
+ * on the same surface really answers, read off the same running server in the
+ * same run — never a string a ticket typed into a test.
  */
 describe("a gated answer is never storable", () => {
   /** Anything that would let a store keep a copy. */
@@ -261,33 +267,62 @@ describe("a gated answer is never storable", () => {
     return /(^|[^-])max-age=\s*[1-9]/.test(directives);
   }
 
+  /**
+   * BOTH pages, each the first screen of a route asserted below it: `/browse`
+   * for `/api/admin/browse/rows`, `/claims` for `/api/admin/claims/rows`. The
+   * two routes are graded against what their OWN surface answers, in one run
+   * on one server, so neither is graded against a string this suite invented.
+   */
+  const PAGES: ReadonlyArray<readonly [string, string]> = [
+    ["/browse", "/browse"],
+    ["/claims", "/claims"],
+  ];
+
   it("is spelled exactly as the built server spells it on a gated page", async () => {
     const { child } = await startServer();
     try {
-      const response = await fetch(`${base}/browse`, {
-        headers: { cookie: await signedInCookie() },
-        redirect: "manual",
-      });
+      const cookie = await signedInCookie();
+      for (const [what, page] of PAGES) {
+        const response = await fetch(`${base}${page}`, {
+          headers: { cookie },
+          redirect: "manual",
+        });
 
-      // The page renders (its panels name their own refusals — no database
-      // here) and Next answers it with the directives every gated screen gets.
-      expect(response.status).toBe(200);
-      expect(response.headers.get("cache-control")).toBe(PAGE_ANSWER_CACHE_CONTROL);
-      await response.text();
+        // The page renders (its panels name their own refusals — no database
+        // here) and Next answers it with the directives every gated screen
+        // gets.
+        expect(response.status, what).toBe(200);
+        expect(response.headers.get("cache-control"), what).toBe(PAGE_ANSWER_CACHE_CONTROL);
+        await response.text();
+      }
     } finally {
       await stopServer(child);
     }
   });
 
+  /**
+   * The two routes, each asked for a bound it would SERVE and a bound it would
+   * REFUSE, on the real server.
+   *
+   * The gate answers both 403 on this tier (no `admin_allowed_emails` to
+   * vouch for anyone), so what is provable here is the negative one: nothing
+   * either route puts on the wire — the gate's own refusal included — is
+   * anything a store may keep. Which of the handler's four arms carries which
+   * header is the offline tier's claim, against a recording stub.
+   */
+  const ROUTE_ASKS: ReadonlyArray<readonly [string, string]> = [
+    ["the browse route, a signed-in GET", `${browseRoute}?${OFFSET_PARAM}=${RECENT_EVENTS.window}`],
+    ["the browse route, a refused bound", `${browseRoute}?${OFFSET_PARAM}=abc`],
+    ["the claims route, a signed-in GET", `${route}?${OFFSET_PARAM}=${CLAIM_WINDOW}`],
+    ["the claims route, a refused bound", `${route}?${OFFSET_PARAM}=abc`],
+  ];
+
   it("answers a signed-in GET and a refused bound with nothing a store may keep", async () => {
     const { child } = await startServer();
     try {
       const cookie = await signedInCookie();
-      for (const [what, query] of [
-        ["a signed-in GET", `?${OFFSET_PARAM}=${RECENT_EVENTS.window}`],
-        ["a refused bound", `?${OFFSET_PARAM}=abc`],
-      ] as const) {
-        const response = await fetch(`${browseRoute}${query}`, {
+      for (const [what, url] of ROUTE_ASKS) {
+        const response = await fetch(url, {
           headers: { cookie },
           redirect: "manual",
         });
@@ -297,5 +332,22 @@ describe("a gated answer is never storable", () => {
     } finally {
       await stopServer(child);
     }
+  });
+
+  /**
+   * The guard on `isStorable` itself: a predicate that never saw an input it
+   * MUST flag passes vacuously (LESSONS 8). These are the spellings a cache
+   * would act on, and none of them may read as unstorable.
+   */
+  it("would flag a storable answer, so the assertion above is not vacuous", () => {
+    for (const storable of [
+      "public, max-age=600",
+      "max-age=60",
+      "private, s-maxage=30",
+      "PUBLIC, MAX-AGE=1",
+    ]) {
+      expect(isStorable(storable), storable).toBe(true);
+    }
+    expect(isStorable(PAGE_ANSWER_CACHE_CONTROL)).toBe(false);
   });
 });
