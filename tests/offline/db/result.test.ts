@@ -300,6 +300,50 @@ describe("classify", () => {
     }
   });
 
+  /**
+   * `messageOf`'s own contract (src/lib/db/result.ts): the column-absent arm
+   * reads the `message` field ALONE, "so it must see exactly what the database
+   * put in `message`. A `details` payload quoting some other identifier would
+   * otherwise be read as the missing column." An envelope whose `message` is
+   * not a string put no column anywhere, so the verdict names the object the
+   * QUERY asked for rather than a name taken out of the app's own rendering of
+   * the error record (campaign admin-window/BUG-0185).
+   *
+   * PINNED `it.fails` while admin-window/BUG-0185 is open — it is RED against
+   * the current derivation (`missing` comes back `review_items.code`, mined
+   * out of `JSON.stringify(error)`). The day the divergence goes, this turns
+   * red the other way and sends the reader to that ticket; lifting the pin
+   * back to `it(` is part of its fix.
+   */
+  it.fails("mines a column only out of what the database put in message", () => {
+    // MUST NOT ADMIT: no `message` string means no column was named.
+    const NO_MESSAGE: ReadonlyArray<[string, unknown]> = [
+      ["no message field at all", { code: "42703" }],
+      ["a null message", { code: "42703", message: null }],
+      ["a numeric message", { code: "PGRST204", message: 12 }],
+      [
+        "a message that is itself an object",
+        { code: "42703", message: { text: 'column "severity" does not exist' } },
+      ],
+      [
+        "a foreign field name ahead of the code",
+        { contact_support_at_evil_example: 1, code: "42703" },
+      ],
+    ];
+    for (const [shape, error] of NO_MESSAGE) {
+      expect(classify(error, T.reviewItems), shape).toEqual({
+        kind: "not_provisioned",
+        missing: T.reviewItems,
+      });
+    }
+
+    // MUST ADMIT (the twin, LESSONS 8): a message the database really put
+    // there still names its column.
+    expect(
+      classify({ code: "42703", message: 'column "severity" does not exist' }, T.reviewItems),
+    ).toEqual({ kind: "not_provisioned", missing: `${T.reviewItems}.severity` });
+  });
+
   it("carries the database's own message verbatim for any other failure", () => {
     const error = permissionDenied(T.verdicts);
     expect(classify(error, T.verdicts)).toEqual({
