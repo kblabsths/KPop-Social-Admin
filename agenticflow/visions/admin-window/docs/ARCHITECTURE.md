@@ -458,11 +458,31 @@ A window read's rows must never become a figure presented as a total.
 
 **And no read helper substitutes a number the database did not give.**
 `readCount` returned `count ?? 0`, so a query written without
-`{ head: true, count: "exact" }` — `error: null`, `count: null` — rendered a
+`{ count: "exact" }` — `error: null`, `count: null` — rendered a
 confident `0` for a table holding 47 rows. That is BUG-0007's defect on the
 user-visible path; a null count is a refusal, never a zero. The same rule is
 why the complete read refuses a null count instead of returning the rows it
 happens to hold.
+
+**A count read is `countRead`, and it is a GET — AMENDED 2026-09-11
+(architect, from BUG-0210's measurement; DECISIONS.md, same date).** Everywhere
+this contract said a count is a `head: true` count, the shape is now
+`countRead` in `src/lib/db/result.ts`: `select("*", { count: "exact" })` with
+`.limit(COUNT_ROWS)` — a GET that returns no rows but does return a BODY. The
+`head: true` spelling is retired for shipped reads and survives in this file
+only where it records a measurement actually taken that way (§6 trap 12, the
+2026-09-02 `pending_claims` probe). Why the shape had to change: **a HEAD
+response carries no body, so PostgREST's absence code never arrives** —
+supabase-js rewrites a bodyless 404 to a 204 with `error: null, count: null`,
+which the count leg then reports as "the query returned no count" instead of
+`not_provisioned`. Against a real database answering `PGRST205` to every read,
+`/claims` told the operator `a count read requires { head: true, count:
+"exact" }` — this app talking to its own developer on a user-facing surface
+(BUG-0210). The same bodylessness defeats error parsing in the live tier
+(§10: `code=undefined, msg=""` on a 57014). One consequence to keep in mind
+when reading the rest of this section: a count read now costs a response body
+of zero rows, not zero bytes, and it is still not a row read — `ROW_CAP` can
+never reach it.
 
 > **A window line states a read that HAPPENED, and an empty window is still a
 > window** (promoted 2026-09-04, third instance of the class: BUG-0063 on
@@ -578,7 +598,7 @@ may do:
 - **A concatenation is still not a total.** No sentence on either surface may
   claim that what the operator has paged through is the whole set. The only
   totality claim on these pages remains what it is today: their own exact
-  `head: true` count, read once, labelled as the count it is (§4.3 kind 1,
+  `countRead` count, read once, labelled as the count it is (§4.3 kind 1,
   SPEC F15). The app promises no snapshot across presses either — each page is
   a bounded read at the instant it was issued, and neither surface says
   otherwise.
@@ -655,7 +675,7 @@ surface deciding which arm it renders needs both:
 implementation and its docstring is the longest statement of the rule.
 **Fact 2 is a read the page almost always already has** — an unnarrowed
 count, or the unnarrowed rows themselves — so this costs a comparison, not a
-query; where it does cost a query, that query is a bounded `head: true`
+query; where it does cost a query, that query is a bounded `countRead`
 count, never a row read (BUG-0135). Every surface with an empty state owes
 both facts: `/queues` has them, `/claims` and `/sources` decide from fact 1
 alone today and DEBT-0008 is open against that.
@@ -695,7 +715,7 @@ Three corollaries, so this costs almost no reads:
    clause's subject is the chip bar collectively: where the only facets in
    force are chips, the surface's own two-fact answer IS the family's effect;
    where none are, the clause is not said; only where BOTH families are in
-   force is a fact missing, and there it is one bounded `head: true` count of
+   force is a fact missing, and there it is one bounded `countRead` count of
    the same read with the family's facets dropped, issued only where it can
    change a word (§4.3's own allowance, BUG-0135; the issue-gating of
    DEBT-0012).
@@ -1103,6 +1123,44 @@ unit-tested offline. Every gauge query carries an explicit `limit` and an
 explicit time window; an unbounded fetch is a defect. At this catalog's
 pre-launch scale that is the honest engineering, and it is why the gauge
 functions are pure: when a row count outgrows it, the fix is one function.
+
+**An empty window: a FIGURE states its zero, a BLOCK states its emptiness, and
+the surface explains it ONCE** (ruled 2026-09-11, architect, from QA's BUG-0206
+residual and the designer's M3 walk; extends the 2026-09-10 BUG-0169 rule, "a
+state card belongs to the BLOCK that rendered it; a surface's state is the
+state of its FIGURES"). Four parts, because three readers have now filed the
+same shape from three directions:
+
+1. **A figure never disappears.** "Claims in this window 0", "Buckets holding
+   claims 0" over an empty window is the truth and LOOK_AND_FEEL bar 1 requires
+   it on screen. `/claims` and `/sources` showing real zeros is CORRECT; it is
+   not a "zero wall" to be replaced by an Empty state.
+2. **A block that renders rows draws its Empty card** instead of a row of
+   zeros — `/cycles`' two gauges are correct too.
+3. **The split is figure-versus-block, never page-versus-page.** Two pages
+   answering emptiness two ways is what you see if you compare surfaces instead
+   of elements, and it is why this is written down rather than ticketed: the
+   next reader who compares `/claims` to `/cycles` will file a fourth bug.
+4. **The narrowing sentence belongs to the surface's window line and is said
+   ONCE.** A block card may say it holds nothing; it may not restate the
+   surface's window sentence. The same empty-window sentence three times in one
+   `/cycles` panel (surface Empty plus two block cards) is one rule broken, not
+   three defects — and every zero figure still owes, once per surface, the
+   sentence naming what would fill it (§4.3's two facts).
+
+**A repeated URL key has ONE reading, decided once** (promoted 2026-09-11 from
+Common violations row 26 at count 2 — QA's BUG-0201 and BUG-0202 residuals).
+`?source_id=&source_id=x` and `?cols=&cols=banana` meet two readers in this app
+that answer differently: the page JOINS the repeated values (`namedColumns`),
+while `droppedParams` judges the FIRST value, sees a blank, and concludes the
+operator asked nothing (BUG-0127's arm). Either reading is defensible; holding
+both is not — the surface then either narrows by a value no sentence explains,
+or explains a value no read used. A facet's values are canonicalised ONCE, in
+the module that owns that facet, and every consumer — rows, window line,
+dropped-params line — reads the canonical value rather than `searchParams`.
+Today the divergence is visible only as a MISSING explanatory line on a
+hand-built URL, so it is recorded and not ticketed; it becomes a bug the moment
+the two readings produce different ROWS, or at a third instance.
 
 ## 9. The edit surface
 
@@ -1610,6 +1668,30 @@ already ships.
   A `head: true` count carries no body, so supabase-js parses no error out of
   it (measured: `code=undefined, msg=""` on a 57014) — the helper that reports
   a failed parity count issues a GET-shaped count, or says it could not tell.
+  **This is why the shipped count read is `countRead` and not a HEAD at all**
+  (amended 2026-09-11, BUG-0210): the same missing body hides `PGRST205` from a
+  page, not only from an oracle.
+- **A guard over a tree this repo does not own compares DECLARED FACTS, never
+  text** (promoted 2026-09-11 at count 3 — BUG-0207 → BUG-0212 → BUG-0213, one
+  file, one day, three rounds; Common violations row 25). The KS-code guard asks
+  "does the sibling mean something else by a code our handoff allocates?" and
+  answered it by matching LINES against a corpus of our own paste blocks. That
+  oracle failed three times at three scales: round 1 counted our own installed
+  handoff against us and turned `npm test` red for every builder precisely
+  because the campaign's satisfaction condition was being met; round 2 missed
+  the sibling's own raise idiom (`using errcode = 'KS029',` — the grammar all 32
+  of its codes use) because our note carries that same line; round 3 called the
+  sibling's NEXT allocation a claim on ours, because one of our paste "blocks"
+  is two lines long and KS033 lands on one of them. **Identity comes from a
+  declaration both sides spell**, not from similarity: the sibling's own
+  `tests/helpers/ks_codes.py` names every code (`UNREADABLE_VERDICT = "KS029"`),
+  so the comparison is a set of (code → meaning) pairs — same code and same
+  meaning is our installed artifact, same code and a different meaning is the
+  collision, everything else is not our business. Two corollaries: a
+  corpus-similarity oracle is spelling enumeration in disguise (§4's normalise-
+  then-compare rule, LESSONS 4) and gets one round, not three; and **a check
+  whose red depends on what a human does in another repo does not belong in the
+  offline default project** every builder runs before every push.
 - **A state card belongs to the BLOCK that rendered it; a surface's state is
   the state of its FIGURES** (added 2026-09-10, admin-window/BUG-0169;
   DECISIONS.md, same date). A gauge surface holds two kinds of thing: figures,
@@ -1944,6 +2026,10 @@ decomposition brief of every ticket touching that surface.
 
 | 24 | **A clause gated on a facet's PRESENCE while the sentence beside it is gated on EFFECT — one chip, two opposite verdicts** | 2 (both on `/claims`' narrowing vocabulary) | TASK-0071's instance: the bucket caption said "nothing above narrows these counts" with the bucket chip active, because the table drops that facet — fixed by STATING the standing facet (`everyBucket`). BUG-0191's QA residual, measured on staging 2026-09-11: `?source_id=<ticketmaster>` removes zero rows and takes the unnarrowed arm, `?source_id=<ticketmaster>&domain=events` draws `?domain=events`' own counts and says "under the filters above" — `bucketsNarrowed` (two facts) ANDed with `hasChipNarrowing` (a `!== undefined`), as though they asked one question about one subject | **PROMOTED at 2, 2026-09-11** (architect ruling, DECISIONS of the same day) — §4.3 gains "a clause NAMES a facet's effect, never its presence", with the three corollaries that keep it read-cheap. Cited in the decomposition brief of every ticket touching a narrowing sentence. Carried by BUG-0192 (the rendered arms, chained after TASK-0072) and by TASK-0072 (the vocabulary half: `hasChipNarrowing` → `hasChipFacet`, so the presence question and the effect question stop sharing a word) |
 
+| 25 | **A guard identifying "ours" in a tree this repo does not own by TEXT MATCHING rather than by a declaration both sides spell** | 3 (all `tests/offline/handoff/settle-review-item.test.ts`, all 2026-09-11) | BUG-0207: `ksCodesUnder(SIBLING_ROOT)` read every `KSnnn` next door as text, so our OWN installed handoff reddened the offline suite for every builder. BUG-0212: attribution moved to per-line corpus matching and went blind to the sibling's own raise idiom — a stranger's `using errcode = 'KS029',` is a line our handoff note also carries (measured next door: that idiom raises all of KS001–KS032). BUG-0213: the corpus's smallest "block" is TWO lines, and the sibling's next code (KS033) lands on the second of them, so the sibling allocating a code of its own reddens our suite | **Promoted to a rule 2026-09-11 (architect)** — §10, "a guard over a tree this repo does not own compares DECLARED FACTS, never text", with the (code → meaning) comparison spelled out and the corollary that a check a human's action next door can redden does not belong in the offline default project. BUG-0213's criteria were rewritten to that design rather than to a fourth patch |
+
+| 26 | **A repeated URL key read two ways in one request — one consumer joins the values, another judges the first** | 2 (both `/claims`, QA residuals) | BUG-0201: `?source_id=&source_id=deadbeef` — the page reads the whole registry (first value empty = "asked nothing", BUG-0127's arm) and no line explains it. BUG-0202: `?cols=&cols=banana` — the page JOINS repeated keys (`namedColumns`) while `droppedParams` judges the blank first value, so no dropped-params line is drawn for a column name that is not a column | **Promoted to a rule 2026-09-11 (architect)** — §8, "a repeated URL key has ONE reading, decided once": canonicalise in the module that owns the facet, every consumer reads the canonical value. Recorded and NOT ticketed: today the only visible effect is a missing explanatory line on a hand-built URL. Trigger for a ticket: the two readings producing different ROWS, or a third instance |
+
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
 findings on TASK-0001/0003/0006; rows 4–5 at the second pass the same day,
 from measurement of the open tickets' own checks; row 6 at the third pass, from
@@ -1951,6 +2037,29 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-11, M3 endgame ruling pass (architect).** Four amendments, all from
+  the endgame's own findings, none of them a new feature. **§4.3 gains the
+  count-read shape**: a count is `countRead` (a GET with `{ count: "exact" }`
+  and `limit 0`), not `head: true`, because a HEAD carries no body and
+  supabase-js rewrites a bodyless 404 into a 204 with `error: null, count:
+  null` — so a real `PGRST205` never reached the count leg, and `/claims` told
+  the operator `a count read requires { head: true, count: "exact" }` against a
+  database that simply has no table (BUG-0210). Four `head: true` mentions in
+  §4.3 and §7-adjacent prose are refreshed; the one in §6 trap 12 is left
+  alone because it records a probe that really was a HEAD. **§8 gains the
+  empty-window rule** — a figure states its zero, a block states its emptiness,
+  the split is figure-versus-block and never page-versus-page, and the surface's
+  window sentence is said ONCE (BUG-0206's residual and the designer's walk;
+  no ticket, because both pages are behaving correctly and what was missing was
+  the sentence that says so). **§8 also gains the repeated-URL-key rule**,
+  promoted at count 2 from BUG-0201/0202: one reading per facet, canonicalised
+  where the facet is owned. **§10 gains the cross-repo guard rule**, promoted at
+  count 3 from the BUG-0207 → 0212 → 0213 chain: identity in a tree we do not
+  own comes from a declaration both sides spell, never from text similarity, and
+  a check a human's action next door can redden does not belong in the offline
+  default project. Common violations gains rows 25 and 26; BUG-0213's criteria
+  were rewritten to the declared-facts design rather than to a fourth patch.
 
 - **2026-09-11, M3 §4.3 — a narrowing clause names a facet's EFFECT, never
   its presence (architect ruling, from QA's residual on

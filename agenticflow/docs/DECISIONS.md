@@ -1945,3 +1945,114 @@ stricter validator would turn a hand-forced `{kind,reading,message}` answer
 into "the page request answered something this app cannot read", breaking every
 forced-arm probe the walks and the live tier depend on, and would put a fourth
 question on the wire. Tolerant there, exact at the author.
+
+## 2026-09-11 — EC1's live-tier clause grades the tree, not the closed tickets' paperwork
+
+M3 EC1 carried a second machine-check from M2: every ticket closed in the
+milestone whose `touch_scope` names `src/app/**` or `src/components/ui/**` has
+an `npm run test:live` invocation in its `## Checks`, zero exceptions. The
+verifier found 14 exceptions; the builder on BUG-0209 measured the rest. The
+clause has never held in any milestone of this campaign — in-scope tickets
+carrying the live tier are M1 6/62, M2 14/51, M3 22/38 — and it caught nothing:
+the live tier run at HEAD over those 14 tickets is green, 11 files and 121
+tests. The repair available was a verified one-move script that re-states each
+ticket's checks and appends the live tier. **It was not run, and the criterion
+was amended instead.** The door this closes: **a closed ticket's `## Checks` are
+the bar it was graded against and are never rewritten to green a later
+measurement.** `amend-checks` deletes the receipt — so greening history here
+meant destroying 14 honest green receipts and re-earning them against a
+network-dependent tier that BUG-0208 had just proved can flake, after which 14
+closed receipts would redden forever on any unrelated live red. What replaces
+it: the live tier is graded ON THE SETTLED TREE at the close (where a
+regression is actually visible), plus a forward-looking authoring rule — a
+ticket authored after 2026-09-11T21:30Z in that scope carries a TARGETED
+`npm run test:live -- tests/live/<page>.live.test.ts`, the form 22 of M3's
+tickets already use, never the whole tier in a per-ticket receipt. Recorded in
+`agenticflow/tracker/milestones/M3.md` under EC1 and in BUG-0209's History.
+
+## 2026-09-11 — A criterion a stranger can redden is not a criterion
+
+EC10 asserted "no sibling write" with
+`git -C "../kspace Scraper" log --all --grep=admin-window` returning zero
+commits. It returned one: Ben's own commit in the sibling's `entity-linking`
+campaign, whose message merely mentions this campaign as context. A substring
+grep over commit MESSAGES is satisfied or broken by anyone who talks about us,
+so it can neither pass honestly nor fail informatively. Corrected in place to
+the anchored form —
+`test "$(git -C "../kspace Scraper" log --all --format=%s | grep -c '^admin-window/')" -eq 0`
+— which keys on the factory's own commit stamp: a commit this campaign makes
+BEGINS `admin-window/<TICKET>`, and prose about us does not. The general door
+this closes: **a criterion is written against a fact only the graded party can
+produce.** Presence of our stamp, not presence of our name.
+
+## 2026-09-11 — Identity in a repo we do not own is a declaration, never a text match
+
+The handoff guard (`tests/offline/handoff/settle-review-item.test.ts`) asks
+whether the sibling scraper repo means something else by the SQLSTATE codes this
+campaign's handoff allocates. It answered by matching text next door, and failed
+three times in one day at three scales: it counted our own installed handoff as
+a collision and turned `npm test` red for every builder exactly when the
+campaign's satisfaction condition was being met (BUG-0207); it then went blind
+to the sibling's own raise idiom, which our handoff note quotes verbatim
+(BUG-0212); and it then called the sibling's next legitimate allocation a claim
+on ours, because one paste "block" in the corpus is two lines long and KS033
+lands on one of them (BUG-0213). The door this closes: **no cross-repo guard in
+this codebase attributes a spelling by similarity to a corpus.** Identity comes
+from a declaration both sides spell — the sibling's `tests/helpers/ks_codes.py`
+names every code — so the guard compares (code → meaning) pairs: same code and
+same meaning is our own installed artifact, same code and a different meaning is
+the collision. Second door, same ruling: **a check whose red depends on what a
+human does in another repo does not belong in the offline default project**
+every builder runs before every push. BUG-0213's criteria were rewritten to this
+design rather than to a fourth patch of the matcher.
+
+## 2026-09-11 — A count read is a GET, because a HEAD has no body to carry the refusal
+
+`readCount` issued `head: true, count: "exact"`. A HEAD response carries no
+body, so PostgREST's `PGRST205` for a missing table never arrives:
+supabase-js rewrites the bodyless 404 to a 204 with `error: null, count: null`,
+and the count leg reported "the query returned no count" — on a user-facing
+surface, in the app's own developer-facing words (BUG-0210). The shipped shape
+is now `countRead`: `select("*", { count: "exact" })` with `limit 0` — a GET
+that returns no rows and does return a body. The door this closes: **no shipped
+read in this app is a HEAD.** The bodylessness that defeats the page defeats the
+live tier's error parsing too (`code=undefined, msg=""` on a 57014), so the rule
+is one rule, not two. ARCHITECTURE §4.3, §8 and §10 refreshed the same day; the
+`head: true` spelling survives in the contract only where it records a probe
+that really was one.
+
+## 2026-09-11 — Emptiness is answered per ELEMENT, not per page
+
+Three readers filed the same shape from three directions: `/cycles`' gauges show
+an Empty state over an empty window, `/claims` shows "Claims in this window 0 /
+Buckets holding claims 0", and BUG-0194's criteria bless real zeros on
+`/sources` — read as pages, that is three answers to one question. Ruled: the
+split is **figure versus block**, and both behaviours are correct. A figure
+states its real number in every counted state (LOOK_AND_FEEL bar 1); a block
+that renders rows draws its Empty card instead of a row of zeros (the 2026-09-10
+BUG-0169 rule); and the surface's empty-window sentence is said ONCE, by the
+window line — a block card may say it holds nothing, it may not restate the
+surface's sentence, which is why one `/cycles` panel carrying that sentence
+three times is one rule broken and not three defects. The door this closes: **no
+future ticket replaces an honest zero figure with an Empty state**, and no
+ticket is filed from a page-to-page comparison of emptiness without first asking
+which elements it is comparing. Recorded in ARCHITECTURE §8; no ticket filed.
+
+## 2026-09-11 — Machinery defects of the M3 endgame: recorded, not built around
+
+Three factory gaps surfaced in M3 and all three are the human's kit to fix, not
+this campaign's code: a QA-committed pin lands on the run branch without passing
+`ci_command` (three TS2345s rode four commits and one land — BUG-0195;
+`proposals/2026-09-11-qa-pins-land-on-the-run-branch-ungated.md`); `receipt.py`
+runs every check in a detached worktree at HEAD, so a check naming a gitignored
+evidence path can never be green and a check naming a tracker file is red until
+the tracker is committed (TASK-0062;
+`proposals/2026-09-10-receipt-cannot-grade-evidence-paths.md`); and
+`lib_ticket.checks_commands()` splits the `## Checks` fence one command per
+line, so a multi-line heredoc becomes N broken shell commands and the receipt is
+RED whatever the ticket delivered (TASK-0078, BUG-0209 — both verifier-authored).
+The door this closes for the campaign: **nothing in `agenticflow/scripts/` is
+repaired from inside a run**, and no ticket is written to work around a
+machinery defect — the incident is recorded, the proposal is filed, and the
+authoring rule that avoids it goes in LESSONS (single-line checks; a check must
+be answerable in a detached worktree at HEAD).

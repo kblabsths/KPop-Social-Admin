@@ -1,0 +1,30 @@
+{
+ "id": "BUG-0209",
+ "created": "2026-09-11T21:41:58Z",
+ "green": false,
+ "git_head": "f6c5106243c1ca99f18ea4273e25d02c50670ce3",
+ "scope": [
+  "agenticflow/tracker/tickets"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "9d88a11d350da4e6a93af170756cfa296b20fe6c4000bcde3fdb316b88039e6a",
+ "commands": [
+  {
+   "cmd": "grep -qF \"EC1 live-tier ruling (architect, 2026-09-11)\" agenticflow/tracker/milestones/M3.md",
+   "exit": 1,
+   "output_tail": ""
+  },
+  {
+   "cmd": "python3 -c \"import re,glob,sys,os; T=[(p,open(p).read()) for p in glob.glob('agenticflow/tracker/tickets/*.md')+glob.glob('agenticflow/tracker/archive/*.md')]; op=lambda t:((re.search(r'^- (20\\d\\d-\\d\\d-\\d\\dT[0-9:]+Z)',t,re.M) or [None,''])[1]); sc=lambda t:((re.search(r'^touch_scope:\\s*(.*)$',t,re.M) or [None,''])[1]); ck=lambda t:((re.search(r'^## Checks\\n(.*?)(?=\\n## |\\Z)',t,re.S|re.M) or [None,''])[1]); bad=sorted(os.path.basename(p)[:-3] for p,t in T if op(t)>'2026-09-11T21:30:00Z' and re.search(r'src/app/|src/components/ui/',sc(t)) and 'test:live' not in ck(t)); print('authored after the EC1 ruling, in scope, no live tier:',bad); sys.exit(1 if bad else 0)\"",
+   "exit": 0,
+   "output_tail": "authored after the EC1 ruling, in scope, no live tier: []\n"
+  },
+  {
+   "cmd": "test \"$(git -C \"../kspace Scraper\" log --all --format=%s | grep -c '^admin-window/')\" -eq 0",
+   "exit": 0,
+   "output_tail": "fatal: cannot change to '../kspace Scraper': No such file or directory\n"
+  }
+ ],
+ "failure_sig": "3d9ef6f0396b"
+}

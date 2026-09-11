@@ -1,55 +1,24 @@
 {
  "id": "TASK-0078",
- "created": "2026-09-11T21:17:40Z",
- "green": false,
- "git_head": "a0cfc1f514ca5bb269ee5103b9a1539a7af804e5",
+ "created": "2026-09-11T21:42:44Z",
+ "green": true,
+ "git_head": "f6c5106243c1ca99f18ea4273e25d02c50670ce3",
  "scope": [
   "docs/build_judgments.md"
  ],
  "isolation": "worktree",
- "foreign_files": 4,
- "tree_hash": "9509a5224395a70a8fff6c3b3b8c25ad46ca0888ddf1350245f9cd04662f8203",
+ "foreign_files": 6,
+ "tree_hash": "47605d9e2c9b7464a27dbb0e2034c51481a096a5a89e549d843d96bc897b0eb9",
  "commands": [
   {
-   "cmd": "python3 - <<'PY'",
+   "cmd": "python3 -c \"import re,sys; t=open('docs/build_judgments.md').read(); b=re.split(r'^## ',t,flags=re.M)[1:]; n=len(b); ok=[s for s in b if ('Silent at' in s or 'Contradictory at' in s) and 'Decided by' in s and 'Recorded' in s]; print('entries:',n,'| entries naming the silent contract location, decider and record:',len(ok)); sys.exit(0 if (n==len(ok) and 0<n<=8 and 'M3 edition' in t) else 1)\"",
    "exit": 0,
-   "output_tail": ""
+   "output_tail": "entries: 8 | entries naming the silent contract location, decider and record: 8\n"
   },
   {
-   "cmd": "import re,sys",
-   "exit": 127,
-   "output_tail": "/bin/sh: import: command not found\n"
-  },
-  {
-   "cmd": "t=open(\"docs/build_judgments.md\").read()",
-   "exit": 2,
-   "output_tail": "/bin/sh: -c: line 0: syntax error near unexpected token `('\n/bin/sh: -c: line 0: `t=open(\"docs/build_judgments.md\").read()'\n"
-  },
-  {
-   "cmd": "n=len(re.findall(r'^## ',t,re.M))",
-   "exit": 2,
-   "output_tail": "/bin/sh: -c: line 0: syntax error near unexpected token `('\n/bin/sh: -c: line 0: `n=len(re.findall(r'^## ',t,re.M))'\n"
-  },
-  {
-   "cmd": "is_m3 = \"M3 edition\" in t",
-   "exit": 127,
-   "output_tail": "/bin/sh: is_m3: command not found\n"
-  },
-  {
-   "cmd": "print(\"entries:\",n,\"| names itself the M3 edition:\",is_m3)",
-   "exit": 2,
-   "output_tail": "/bin/sh: -c: line 0: syntax error near unexpected token `\"entries:\",n,\"| names itself the M3 edition:\",is_m3'\n/bin/sh: -c: line 0: `print(\"entries:\",n,\"| names itself the M3 edition:\",is_m3)'\n"
-  },
-  {
-   "cmd": "sys.exit(0 if (is_m3 and n<=8) else 1)",
-   "exit": 2,
-   "output_tail": "/bin/sh: -c: line 0: syntax error near unexpected token `0'\n/bin/sh: -c: line 0: `sys.exit(0 if (is_m3 and n<=8) else 1)'\n"
-  },
-  {
-   "cmd": "PY",
-   "exit": 127,
-   "output_tail": "/bin/sh: PY: command not found\n"
+   "cmd": "python3 -c \"import re,sys; t=open('docs/build_judgments.md').read(); n=len(re.findall(r'^## ',t,re.M)); m='M3 edition' in t; print('entries:',n,'| names itself the M3 edition:',m); sys.exit(0 if (m and n<=8) else 1)\"",
+   "exit": 0,
+   "output_tail": "entries: 8 | names itself the M3 edition: True\n"
   }
- ],
- "failure_sig": "28f31c53efbf"
+ ]
 }
