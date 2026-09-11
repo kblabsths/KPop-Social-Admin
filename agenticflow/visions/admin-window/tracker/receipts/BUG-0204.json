@@ -1,0 +1,45 @@
+{
+ "id": "BUG-0204",
+ "created": "2026-09-11T18:25:40Z",
+ "green": true,
+ "git_head": "7e38b6d94a1ac556320258c8c26be915b259c3a4",
+ "scope": [
+  "src/app/claims/page.tsx",
+  "tests/offline/claims/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "b2296bc627cd370805e8ff9aa5149668741cb973ba5012f82df9bec08fd295d8",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "periments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 4.7s\n  Running TypeScript ...\n  Finished TypeScript in 7.1s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 160ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/browse/rows\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-5817/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:6128) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "! grep -q 'says so by saying nothing' src/app/claims/page.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q 'says the bucket filter does not narrow the gauge' tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": "p row > says a chip narrowed the list in exactly the states a chip removed a row  315ms\n   \u2713 what a filled window promises > says what it is not showing and offers no way to it  388ms\n   \u2713 a parameter the page did not apply > ignores a key with no visible content the way it ignores an empty value, and moves nothing else  787ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=(absent)  436ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=standing_disagreement  472ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=awaiting_row  475ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=agreeing  340ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=in_window  505ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=ESCALATED  314ms\n   \u2713 the affordance that continues the claim list > an exhausted window that appended nothing names the rows on screen  359ms\n   \u2713 two figures on one page never silently disagree > prints each bucket's two figures under a label saying which kind it is  334ms\n\n Test Files  1 passed (1)\n      Tests  222 passed (222)\n   Start at  11:24:36\n   Duration  12.39s (transform 512ms, setup 0ms, collect 855ms, tests 11.20s, environment 0ms, prepare 76ms)\n\n(node:6257) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/claims.live.test.ts",
+   "exit": 0,
+   "output_tail": "th tabs  2002ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it  2978ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it, per source filter  6719ms\n   \u2713 the classification buckets against staging > narrows the same way for every spelling of one source id  12145ms\n   \u2713 the classification buckets against staging > draws the view's longest-waiting window, and states the whole it came from  1902ms\n   \u2713 the classification buckets against staging > renders the standing tab as the window of exactly that bucket's subset  902ms\n   \u2713 which kind of fact a bucket figure is, against staging > labels each place a bucket count stands, on both tabs  1909ms\n   \u2713 the parked bucket against staging > is a string the database still spells, and the page never does  5784ms\n   \u2713 the parked bucket against staging > holds no row in the view either, so nothing was hidden that exists  337ms\n   \u2713 a source is named against staging > says the registry's name in every SOURCE cell, and still links by the id  1851ms\n   \u2713 a source is named against staging > names the source_id chips the same way, each still narrowing by its id  1332ms\n   \u2713 paging past the first window, against staging > reaches every claim the walked narrowing holds, once each, and no more  3584ms\n   \u2713 paging past the first window, against staging > answers ONE press past the unnarrowed first screen, from the oldest end  2149ms\n\n Test Files  1 passed (1)\n      Tests  17 passed (17)\n   Start at  11:24:49\n   Duration  50.84s (transform 459ms, setup 49ms, collect 881ms, tests 49.45s, environment 0ms, prepare 119ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/claims.live.test.ts\n(node:6463) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
