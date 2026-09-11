@@ -337,6 +337,44 @@ describe("the credential guard itself", () => {
     }
   });
 
+  // EXPECTED FAILURE while admin-window/BUG-0188 stands: this run cannot tell
+  // its own probe from a corpse wearing the same pid, so the assertion below
+  // is red on purpose. THE FIX FLIPS THIS BACK TO A PLAIN `it` — leave it as
+  // `it.fails` and the day the bug is fixed vitest reddens here and sends the
+  // reader to the ticket.
+  it.fails("is blind to a probe left behind by a dead run that had this pid", () => {
+    // admin-window/BUG-0188. A run killed mid-scan leaves its probe directory on disk, and since
+    // admin-window/DEBT-0018 nothing ever removes it: each run removes only
+    // its OWN directory, and the shared parent — the one thing a run used to
+    // sweep — is deliberately never removed. pids are reused, so a later run
+    // whose worker fork draws the dead run's number adopts the corpse as its
+    // OWN probe and GRADES it. A probe holds
+    // `process.env.SUPABASE_SERVICE_ROLE_KEY` on purpose, so the credential
+    // rule then reports a violation in a lane that planted nothing.
+    //
+    // A dead run's directory name was derived from its pid ALONE, so the path
+    // below is exactly what it left behind: a run's identity has to carry
+    // more than the pid for it to tell its own probe from a corpse wearing
+    // the same number.
+    const corpse = `${PROBE_PARENT}/credential-guard-${process.pid}/__credential_guard_probe__.ts`;
+    const corpsePath = path.join(repoRoot, corpse);
+    fs.mkdirSync(path.dirname(corpsePath), { recursive: true });
+    fs.writeFileSync(
+      corpsePath,
+      "export const key = process.env.SUPABASE_SERVICE_ROLE_KEY;\n",
+      "utf8",
+    );
+    try {
+      // Non-vacuous: the walk really lists it, so the blindness below is the
+      // filter doing its job rather than the corpse being absent.
+      expect(allSourceFiles()).toContain(corpse);
+      expect(gradedSourceFiles()).not.toContain(corpse);
+      expect(withoutDeprecated(filesWhereCodeMatches(SERVICE_ROLE_KEY_READ))).toEqual([CLIENT]);
+    } finally {
+      fs.rmSync(path.dirname(corpsePath), { force: true, recursive: true });
+    }
+  });
+
   it("still reaches the scanner from there, and leaves nothing behind", () => {
     // Non-vacuous both ways: dot-hidden did not mean invisible to the walker,
     // and the probe directory does not survive the scan.
