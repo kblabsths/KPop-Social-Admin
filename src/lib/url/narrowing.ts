@@ -70,3 +70,81 @@ export function isSurfaceNarrowed(
 ): boolean {
   return structural && surface.rendered !== surface.population;
 }
+
+/* ── the narrowings a surface renders NO control for ──────────────────────── */
+
+/**
+ * One narrowing a read carried that its surface renders no control for — the
+ * facet, the value the query used, and the app's words around it.
+ *
+ * **It lives here, in the leaf that owns URL meaning, and not in one page's
+ * filter module** (admin-window/TASK-0072). It was `src/lib/claims/filters.ts`'
+ * alone, so `/sources` — whose two scan lines carry the same defect one page
+ * over (admin-window/FEAT-0016) — could not say the same sentence without
+ * retyping the shape, and a retyped spelling is the class that has already
+ * taken five bugs on this family (LESSONS 5). The facet VOCABULARY stays each
+ * surface's own (`CLAIMS_UNCHIPPED_FACETS`); the shape is one declaration.
+ *
+ * The words are handed back in THREE pieces rather than as one sentence
+ * because the same phrase is rendered through two channels: a window line's
+ * `scope` is prose the line joins at render, while a caption or an empty card
+ * is markup, where the value is a machine identifier and takes the app's one
+ * identifier face (`ui/Identifier`, LOOK_AND_FEEL Voice bar 5). One spelling,
+ * two faces — never two spellings.
+ */
+export interface UnchippedNarrowing {
+  /** The parameter it narrows, as the URL spells it. */
+  facet: string;
+  /** The value, verbatim as the query carried it. */
+  value: string;
+  /** The words before it, so the phrase reads straight after the row noun. */
+  before: string;
+  /** The words after it. */
+  after: string;
+}
+
+/**
+ * One facet a surface renders no control for: how to read it off that
+ * surface's own filter, and what to call it in a sentence.
+ *
+ * Generic over the FILTER rather than over a facet union, which is what keeps
+ * this leaf free of every filter type in the app — the same reason
+ * `isSurfaceNarrowed` takes a boolean. A surface declares its table once,
+ * beside its filters, where the type checker can still hold it total over that
+ * surface's own facet set.
+ */
+export interface UnchippedFacet<Filter> {
+  /** The parameter's name — what the sentence spells and the URL carries. */
+  facet: string;
+  /** The words before the value. */
+  before: string;
+  /** The words after it. */
+  after: string;
+  /** This facet's value on that filter, or `undefined` where it is not set. */
+  value: (filter: Filter) => string | undefined;
+}
+
+/**
+ * Every narrowing this filter applied that the surface renders no control for,
+ * in the order its facets were declared — empty when it carries none.
+ *
+ * It answers what the READ carried, not whether the read came back smaller: a
+ * surface asks `isSurfaceNarrowed` that second question and decides from both
+ * whether to say any of this at all (admin-window/DEBT-0008).
+ */
+export function unchippedNarrowings<Filter>(
+  filter: Filter,
+  facets: readonly UnchippedFacet<Filter>[],
+): UnchippedNarrowing[] {
+  return facets.flatMap((facet) => {
+    const value = facet.value(filter);
+    return value === undefined
+      ? []
+      : [{ facet: facet.facet, value, before: facet.before, after: facet.after }];
+  });
+}
+
+/** The same narrowing as one phrase — what a window line's `scope` takes. */
+export function unchippedPhrase(narrowing: UnchippedNarrowing): string {
+  return `${narrowing.before}${narrowing.value}${narrowing.after}`;
+}

@@ -800,7 +800,13 @@ describe("WindowLine", () => {
     drawn: 50,
   };
 
-  /** A window whose read saw one facet of its object, and says which. */
+  /**
+   * The PHRASE a window whose read saw one facet of its object says.
+   *
+   * A `scope` is a LIST of these (admin-window/TASK-0072), joined once where
+   * the line renders, so every case below hands it as `[NARROWED]` and the
+   * text assertions go on reading the phrase itself.
+   */
   const NARROWED = "from bandsintown";
 
   /**
@@ -1011,7 +1017,7 @@ describe("WindowLine", () => {
     // them on the same page without the facet.
     const held = cameBackShort(5);
     for (const shows of EVERY_KIND) {
-      const narrowed = textOf(drawn(shows, { ...held, scope: NARROWED }));
+      const narrowed = textOf(drawn(shows, { ...held, scope: [NARROWED] }));
       // The floor is still stated — it is the floor of what the read saw —
       // and every clause that names it names the narrowing with it.
       expect(narrowed, shows.of).toContain(absoluteUtc(DRAWN.oldest));
@@ -1028,7 +1034,7 @@ describe("WindowLine", () => {
     // the window holds "runs from <name>".
     const empty = cameBackShort(0, { oldest: null });
     for (const shows of EVERY_KIND) {
-      const narrowed = textOf(drawn(shows, { ...empty, scope: NARROWED }));
+      const narrowed = textOf(drawn(shows, { ...empty, scope: [NARROWED] }));
       expect(narrowed, shows.of).toContain(`no ${shows.rows} ${NARROWED} at all`);
       expect(narrowed, shows.of).not.toContain(`no ${shows.rows} at all`);
     }
@@ -1048,8 +1054,8 @@ describe("WindowLine", () => {
     // say which population it is a window of: the reader who cannot see the
     // facet cannot check the cap either.
     for (const shows of EVERY_KIND) {
-      const open = textOf(drawn(shows, cameBackShort(5, { scope: NARROWED })));
-      const narrowed = textOf(drawn(shows, { ...DRAWN, truncated: true, scope: NARROWED }));
+      const open = textOf(drawn(shows, cameBackShort(5, { scope: [NARROWED] })));
+      const narrowed = textOf(drawn(shows, { ...DRAWN, truncated: true, scope: [NARROWED] }));
       expect(narrowed, shows.of).toContain(NARROWED);
       // Not just in the window's own sentence: the clause truncation ADDS —
       // everything past the prefix the two directions share — names the
@@ -1069,7 +1075,7 @@ describe("WindowLine", () => {
     // direction: a window the filters really narrowed says so, once.
     expect(bare).not.toContain("filters");
     for (const scope of [
-      NARROWED_BY_FILTERS,
+      [NARROWED_BY_FILTERS],
       narrowedTo([NARROWED, NARROWED_BY_FILTERS]),
     ]) {
       const text = textOf(drawn(matched, { ...DRAWN, truncated: true, scope }));
@@ -1082,7 +1088,7 @@ describe("WindowLine", () => {
     // filter narrowed no longer says "match these filters" at all — that is
     // admin-window/BUG-0123, pinned both ways in its own case below.
     const filtersOnly = textOf(
-      drawn(matched, { ...DRAWN, truncated: true, scope: NARROWED_BY_FILTERS }),
+      drawn(matched, { ...DRAWN, truncated: true, scope: [NARROWED_BY_FILTERS] }),
     );
     expect(
       textOf(drawn(matched, {
@@ -1103,7 +1109,7 @@ describe("WindowLine", () => {
     // statement about the READ, so it rides on the window's own `scope` like
     // every other clause in this file.
     const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
-    const filled = (scope: string | null) =>
+    const filled = (scope: readonly string[] | null) =>
       textOf(drawn(matched, { ...DRAWN, truncated: true, scope }));
 
     // Unnarrowed: the count stands over the population the window itself names,
@@ -1116,14 +1122,14 @@ describe("WindowLine", () => {
     // the same read with the same empty chip bar: the sentence names the tab's
     // population and still claims no filter (admin-window/BUG-0118's shape,
     // with the assertion removed rather than moved).
-    const tabbed = filled(NARROWED);
+    const tabbed = filled([NARROWED]);
     expect(tabbed).not.toContain("match these filters");
     expect(tabbed).toContain(`${matched.rows} ${NARROWED}`);
 
     // …and the other way: the moment the filters really are a narrowing this
     // read carried, the phrase is back, once, exactly as it always read.
     for (const scope of [
-      NARROWED_BY_FILTERS,
+      [NARROWED_BY_FILTERS],
       narrowedTo([NARROWED, NARROWED_BY_FILTERS]),
     ]) {
       expect(filled(scope).split("match these filters").length - 1, String(scope)).toBe(1);
@@ -1134,8 +1140,55 @@ describe("WindowLine", () => {
     // only thing the filters change is the phrase beside the count.
     const tail = (text: string) => text.slice(text.indexOf(";"));
     expect(tail(unnarrowed).length).toBeGreaterThan(20);
-    expect(tail(unnarrowed)).toBe(tail(filled(NARROWED_BY_FILTERS)));
-    expect(tail(tabbed)).toBe(tail(filled(NARROWED_BY_FILTERS)));
+    expect(tail(unnarrowed)).toBe(tail(filled([NARROWED_BY_FILTERS])));
+    expect(tail(tabbed)).toBe(tail(filled([NARROWED_BY_FILTERS])));
+  });
+
+  it("cannot have a segment FORGED into its scope by a facet value (admin-window/TASK-0072)", () => {
+    // The M2 close's ruling 4, structurally: `scope` used to be one
+    // comma-joined STRING that this file split back apart to ask which
+    // narrowings a read carried (`narrows`) and to subtract the one a clause
+    // says itself (`besides`). A facet value carrying the join string was
+    // therefore indistinguishable from two narrowings — and one of the
+    // segments it could forge is the phrase the `matched` arm gates its
+    // "match these filters" claim on, which is the one sentence bar 13
+    // forbids a screen to make about a read no filter touched.
+    //
+    // A scope is a LIST now, so a value is one phrase whatever is inside it.
+    const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
+    // A source name nobody would register, in the shape `/cycles` composes
+    // its scope in (`from <source>`), and exactly what the old round trip
+    // could not survive: the value carries the join string with the gated
+    // phrase straight after it.
+    const FORGED = `from bandsintown${", "}${NARROWED_BY_FILTERS}`;
+
+    // NON-VACUOUS: this really is a value that forges a segment under the old
+    // shape. Joined and split back apart the way the string scope was, it
+    // becomes TWO narrowings, and the second is the phrase the arm gates on.
+    const asTheStringDid = [FORGED].join(", ").split(", ");
+    expect(asTheStringDid).toHaveLength(2);
+    expect(asTheStringDid).toContain(NARROWED_BY_FILTERS);
+
+    // The list keeps it whole: one phrase in, one phrase rendered…
+    const forged = textOf(drawn(matched, { ...DRAWN, truncated: true, scope: [FORGED] }));
+    expect(forged).toContain(`${matched.rows} ${FORGED}`);
+    // …and the claim it tried to forge is not made, because no narrowing of
+    // this read IS that phrase.
+    expect(forged).not.toContain("match these filters");
+    expect(forged).toContain(`${count(DRAWN.held)} ${matched.rows} ${FORGED} in all`);
+
+    // And the subtraction is whole too: with the filters REALLY carried
+    // beside it, the clause says them once and names the other narrowing
+    // entire — never half of it.
+    const both = textOf(
+      drawn(matched, {
+        ...DRAWN,
+        truncated: true,
+        scope: narrowedTo([FORGED, NARROWED_BY_FILTERS]),
+      }),
+    );
+    expect(both.split("match these filters").length - 1).toBe(1);
+    expect(both).toContain(`${matched.rows} ${FORGED} match these filters`);
   });
 
   it("ends a filled matched window on what is missing, not on a way to it (admin-window/BUG-0162)", () => {
@@ -1147,13 +1200,13 @@ describe("WindowLine", () => {
     // by naming a remedy, in both of its branches. It now states the read and
     // stops: the count, the cap, and the fact that the rest is not below.
     const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
-    const filled = (scope: string | null) =>
+    const filled = (scope: readonly string[] | null) =>
       textOf(drawn(matched, { ...DRAWN, truncated: true, scope }));
 
     for (const scope of [
       null,
-      NARROWED,
-      NARROWED_BY_FILTERS,
+      [NARROWED],
+      [NARROWED_BY_FILTERS],
       narrowedTo([NARROWED, NARROWED_BY_FILTERS]),
     ]) {
       const text = filled(scope);
@@ -1174,7 +1227,7 @@ describe("WindowLine", () => {
     // narrowing, which is what lets a page's two states be compared byte for
     // byte above.
     const tail = (text: string) => text.slice(text.lastIndexOf("—"));
-    expect(tail(filled(null))).toBe(tail(filled(NARROWED_BY_FILTERS)));
+    expect(tail(filled(null))).toBe(tail(filled([NARROWED_BY_FILTERS])));
 
     // And a window that did NOT fill says nothing of the kind: there is no
     // rest to be missing, so the arm's other branch is untouched by all this.
@@ -1194,7 +1247,7 @@ describe("WindowLine", () => {
     for (const shows of EVERY_KIND) {
       for (const [state, drew] of cases) {
         const text = textOf(drawn(shows, drew));
-        const narrowed = textOf(drawn(shows, { ...drew, scope: NARROWED }));
+        const narrowed = textOf(drawn(shows, { ...drew, scope: [NARROWED] }));
         // Nothing of the facet leaks into the unnarrowed rendering…
         expect(text, `${shows.of} ${state}`).not.toContain(NARROWED);
         // …and the narrowing really did change what this state says, so the
@@ -1426,7 +1479,7 @@ describe("WindowLine", () => {
           held: 108,
           truncated: false,
           drawn: 108,
-          scope: NARROWED_BY_FILTERS,
+          scope: [NARROWED_BY_FILTERS],
         },
       ),
     );

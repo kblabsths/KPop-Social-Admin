@@ -6,8 +6,8 @@ import {
   CLEARED_BY,
   CLEAR_LABEL,
   DEFAULT_TAB,
+  CLAIMS_UNCHIPPED_FACETS,
   TABS,
-  UNCHIPPED_FACETS,
   claimsHref,
   claimsQuery,
   clearNarrowing,
@@ -15,14 +15,12 @@ import {
   facetChips,
   filterBar,
   filterFrom,
-  hasChipNarrowing,
+  hasChipFacet,
   hasNarrowingFacet,
   listFilterOf,
   sourceHref,
   tabFrom,
   tabLinks,
-  unchippedNarrowings,
-  unchippedPhrase,
   withFacet,
   type ClaimFacet,
   type ClaimsFilter,
@@ -30,6 +28,9 @@ import {
   type FacetOptions,
 } from "@/lib/claims/filters";
 import { recordHref } from "@/lib/records/routes";
+// The vocabulary's own home (admin-window/TASK-0072): the shape and the two
+// functions over it are the URL leaf's, the facet TABLE below is this page's.
+import { unchippedNarrowings, unchippedPhrase } from "@/lib/url/narrowing";
 
 /**
  * The Claims page's URL state (campaign admin-window/TASK-0012) — the pure
@@ -43,6 +44,28 @@ import { recordHref } from "@/lib/records/routes";
  */
 
 const PATH = "/claims";
+
+/**
+ * This page's control-less narrowings — the shared reader over THIS page's own
+ * facet table (admin-window/TASK-0072).
+ *
+ * The pairing is spelled once here for the same reason the page spells it
+ * once: the function is generic over a filter and the table is the claims
+ * surface's, and a second hand-built table in a test would grade a vocabulary
+ * the page does not use.
+ */
+const unchippedOf = (filter: ClaimsFilter) =>
+  unchippedNarrowings(filter, CLAIMS_UNCHIPPED_FACETS);
+
+/**
+ * The facets of that table, as `ClaimFacet`s — derived by intersection rather
+ * than cast, so a table entry naming a parameter this page does not have would
+ * silently shrink this list and redden the identity case below rather than
+ * type-erroring somewhere unrelated.
+ */
+const UNCHIPPED_NAMES: readonly ClaimFacet[] = CLAIM_FACETS.filter((facet) =>
+  CLAIMS_UNCHIPPED_FACETS.some((unchipped) => unchipped.facet === facet),
+);
 
 const BUCKETS = [
   "standing_disagreement",
@@ -477,20 +500,29 @@ describe("one facet at a time", () => {
    */
   describe("a domain narrowing is named on the page that applied it", () => {
     it("is the facet set CLAIM_FACETS has that CHIP_FACETS does not", () => {
-      expect([...UNCHIPPED_FACETS]).toEqual(
+      expect(CLAIMS_UNCHIPPED_FACETS.map((facet) => facet.facet)).toEqual(
         CLAIM_FACETS.filter((facet) => !(CHIP_FACETS as readonly string[]).includes(facet)),
       );
       // Non-vacuous in both directions, which is the whole point of the split:
       // there really is a facet with no chip row, and it is not every facet.
-      expect(UNCHIPPED_FACETS).toContain("domain");
-      expect(UNCHIPPED_FACETS.length).toBeGreaterThan(0);
-      expect(UNCHIPPED_FACETS.length).toBeLessThan(CLAIM_FACETS.length);
+      expect(UNCHIPPED_NAMES).toContain("domain");
+      expect(UNCHIPPED_NAMES.length).toBeGreaterThan(0);
+      expect(UNCHIPPED_NAMES.length).toBeLessThan(CLAIM_FACETS.length);
+      // Every entry can read its own facet off a filter, which is the half of
+      // the table the shared function calls (LESSONS 8: one input it must
+      // find, one it must not).
+      for (const unchipped of CLAIMS_UNCHIPPED_FACETS) {
+        expect(unchipped.value({ [unchipped.facet]: "a-value" }), unchipped.facet).toBe(
+          "a-value",
+        );
+        expect(unchipped.value({}), unchipped.facet).toBeUndefined();
+      }
     });
 
     it("names every facet that narrows with no chip, and no facet that has one", () => {
       // The facet with no control: named, with the value the query carried.
-      const named = unchippedNarrowings(filterFrom({ domain: "events" }, BUCKETS));
-      expect(named.map((narrowing) => narrowing.facet)).toEqual([...UNCHIPPED_FACETS]);
+      const named = unchippedOf(filterFrom({ domain: "events" }, BUCKETS));
+      expect(named.map((narrowing) => narrowing.facet)).toEqual([...UNCHIPPED_NAMES]);
       expect(named.map((narrowing) => narrowing.value)).toEqual(["events"]);
       // The value reaches the sentence VERBATIM — never re-cased, never
       // prettified (LOOK_AND_FEEL Voice bar 5), and never a label the page
@@ -511,11 +543,11 @@ describe("one facet at a time", () => {
       // subtraction exists to prevent (admin-window/BUG-0118).
       for (const facet of CHIP_FACETS) {
         const filter: ClaimsFilter = { [facet]: BUCKETS[0] };
-        expect(unchippedNarrowings(filter), facet).toEqual([]);
+        expect(unchippedOf(filter), facet).toEqual([]);
       }
 
       // And an unnarrowed URL names nothing at all.
-      expect(unchippedNarrowings(filterFrom({}, BUCKETS))).toEqual([]);
+      expect(unchippedOf(filterFrom({}, BUCKETS))).toEqual([]);
     });
 
     it("says whether a filter the operator can SEE is set, which is a different question", () => {
@@ -525,19 +557,19 @@ describe("one facet at a time", () => {
       // so — which is exactly why the two questions may not share an answer.
       const domainOnly = filterFrom({ domain: "events" }, BUCKETS);
       expect(hasNarrowingFacet(domainOnly)).toBe(true);
-      expect(hasChipNarrowing(domainOnly)).toBe(false);
-      expect(unchippedNarrowings(domainOnly)).toHaveLength(1);
+      expect(hasChipFacet(domainOnly)).toBe(false);
+      expect(unchippedOf(domainOnly)).toHaveLength(1);
 
       for (const facet of CHIP_FACETS) {
         const chipped = { ...domainOnly, [facet]: BUCKETS[0] };
-        expect(hasChipNarrowing(chipped), facet).toBe(true);
+        expect(hasChipFacet(chipped), facet).toBe(true);
         // Both kinds at once: the sentence has to be true of both, so both
         // are still on offer.
-        expect(unchippedNarrowings(chipped), facet).toHaveLength(1);
+        expect(unchippedOf(chipped), facet).toHaveLength(1);
       }
 
       const bare = filterFrom({}, BUCKETS);
-      expect(hasChipNarrowing(bare)).toBe(false);
+      expect(hasChipFacet(bare)).toBe(false);
       expect(hasNarrowingFacet(bare)).toBe(false);
     });
 
@@ -548,7 +580,7 @@ describe("one facet at a time", () => {
       // phrase, and the value is the one the href writes back.
       for (const value of ["events", "venues", "groups"]) {
         const filter = filterFrom({ domain: value }, BUCKETS);
-        const [narrowing] = unchippedNarrowings(filter);
+        const [narrowing] = unchippedOf(filter);
         expect(claimsHref(PATH, filter)).toContain(
           `${narrowing.facet}=${narrowing.value}`,
         );
@@ -636,8 +668,8 @@ describe("the empty card names an exit that clears every narrowing the page appl
       const cleared = appliedBy(exitFrom(filter).href);
       expect(cleared, facet).toEqual({});
       expect(hasNarrowingFacet(cleared), facet).toBe(false);
-      expect(hasChipNarrowing(cleared), facet).toBe(false);
-      expect(unchippedNarrowings(cleared), facet).toEqual([]);
+      expect(hasChipFacet(cleared), facet).toBe(false);
+      expect(unchippedOf(cleared), facet).toEqual([]);
     }
 
     // Every facet at once — the state where clearing one at a time is exactly
@@ -655,7 +687,7 @@ describe("the empty card names an exit that clears every narrowing the page appl
       { source_id: SOURCE_ID, domain: A_VALUE.domain },
       BUCKETS,
     );
-    for (const facet of UNCHIPPED_FACETS) {
+    for (const facet of UNCHIPPED_NAMES) {
       expect(filter[facet], facet).toBeDefined();
     }
 
@@ -666,7 +698,7 @@ describe("the empty card names an exit that clears every narrowing the page appl
       // correct behaviour for a chip that clears ONE facet, and is why it can
       // never be the exit (the page's criterion 3: the chip rows keep their
       // present job).
-      for (const facet of UNCHIPPED_FACETS) {
+      for (const facet of UNCHIPPED_NAMES) {
         expect(appliedBy(any?.href ?? "")[facet], `${group.facet} / ${facet}`).toBe(
           filter[facet],
         );
