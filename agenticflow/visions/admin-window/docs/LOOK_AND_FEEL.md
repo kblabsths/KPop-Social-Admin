@@ -311,9 +311,13 @@ header's `animate-pulse` stale dot is gone).
     states how many rows the surface now holds — so "where am I in this list"
     is graded against those two, not against the address bar, and a walk states
     that instead of calling the bar stale. **This clause retires itself the day
-    page position enters the URL**: if a `?page=`/`?size=` value (or any other
-    search param) ever decides which rows a cold load renders, delete the clause
-    and grade bar 11 by its own sentence again.
+    page position enters the URL**: if a search param naming a position in the
+    list or its window size (`?page=`, `?offset=`, `?cursor=`, `?size=`) ever
+    decides which rows a cold load renders, delete the clause and grade bar 11
+    by its own sentence again. Params that narrow the set without naming a
+    position (`?source_id=`, `?domain=`, `?columns=`) do **not** trigger the
+    retirement — they are filters, which this bar's first sentence already
+    requires in the URL and which the app already puts there.
 12. **Both themes, clean console.** Every page renders in light and dark with
     nothing invisible, and every string a person reads to act measures ≥4.5:1
     against the fill behind it — `page`, `surface` or `chrome`; the active nav
@@ -350,14 +354,26 @@ header's `animate-pulse` stale dot is gone).
     him at breakfast. This ruling **closes** the designer's M3 proposal "a
     control that extends a list is still on screen after it acts": Ben's bar is
     about where the control sits in the first place, the proposal is superseded,
-    and no walker re-raises it. Known failing surface at the time of writing,
-    measured on the landed M3 tree at 1440×900: `/claims`' "show the next 50"
-    control goes viewport y=434 → **2,066** on the first press with `scrollY`
-    unchanged — 1,166px below a 900px fold (2,084 on presses 2 and 3); the same
-    control on `/browse` stays at y=852 because the browser's scroll anchoring
-    holds it. No BUG is filed for `/claims` by the pass that wrote this bar: the
-    fix is whichever paging shape Ben picks, and that decision is open
-    (`tracker/for-human/M3-paging-shape-for-ben.md`).)*
+    and no walker re-raises it. **Both paged surfaces FAIL this bar** on the
+    landed M3 tree, graded by this bar's own rule — where the non-row element
+    sits relative to the last row: `/claims` and `/browse` render the same
+    `PageMore` control as the last child, after the last row
+    (`src/components/claims/paged-claim-list.tsx:107-115`;
+    `src/components/browse/paged-browse-table.tsx:156-177`), and both lists run
+    past the 1440×900 fold at a 50-row window. Corrected 2026-09-11
+    (admin-window/BUG-0217): the pass that wrote this bar named `/claims` as the
+    only failing surface because it graded `/browse` by the SUPERSEDED
+    proposal's metric — whether the control stays on screen after a press. Both
+    y-measurements, taken at 1440×900, measure only that superseded thing and
+    are kept as measurements of it: on `/claims` the control goes viewport
+    y=434 → **2,066** on the first press with `scrollY` unchanged (2,084 on
+    presses 2 and 3), 1,166px below a 900px fold — so it also leaves the screen;
+    on `/browse` it stays at y=852 because the browser's scroll anchoring holds
+    it — so it stays on screen and still sits below the rows, which is the
+    failure. Staying visible is not a bar-14 pass. No BUG is filed against `src/`
+    for either surface by the pass that wrote this bar or the one that corrected
+    it: the fix is whichever paging shape Ben picks, for both surfaces, and that
+    decision is open (`tracker/for-human/M3-paging-shape-for-ben.md`).)*
 
 ### Key screens
 
