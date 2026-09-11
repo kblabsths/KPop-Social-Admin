@@ -2724,6 +2724,48 @@ describe("a narrowing with no chip row", () => {
   const FACET = "domain";
   const NARROWING = "venues";
 
+  /**
+   * A SECOND pair, where the chip facet really removes rows — the state a
+   * chip-clause derivation has to be read in since admin-window/BUG-0192.
+   *
+   * `NARROWING` is served by `SOURCE.first` ALONE in this fixture, so
+   * `{source_id: SOURCE.first, domain: NARROWING}` draws exactly the rows
+   * `{domain: NARROWING}` draws: the domain did all of it, and under the
+   * attribution rule those renders carry NO chip clause at all. A derivation
+   * that subtracted them would be subtracting two identical sentences and
+   * would grade the rule vacuously (`expect(chipClause).not.toBe("")` is what
+   * catches that). `SHARED_DOMAIN` is served by two sources, so
+   * `PARTIAL_SOURCE` really removes rows of it and the clause is there to be
+   * read off. Both figures are computed from the fixture below, never typed.
+   */
+  const SHARED_DOMAIN = "events";
+  const PARTIAL_SOURCE = SOURCE.second;
+
+  /** The two renders a chip clause is read off, and their non-vacuity. */
+  const chipClauseOf = async (
+    read: (markup: string) => string,
+  ): Promise<string> => {
+    // The chip facet really removes rows here — the fixture's own arithmetic,
+    // so a fixture edit that made this pair vacuous fails loudly rather than
+    // quietly grading nothing.
+    expect(
+      matching({ source_id: PARTIAL_SOURCE, domain: SHARED_DOMAIN }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      matching({ source_id: PARTIAL_SOURCE, domain: SHARED_DOMAIN }).length,
+    ).toBeLessThan(matching({ domain: SHARED_DOMAIN }).length);
+    const [, clause] = differingClause(
+      read(await renderClaims(healthyScript(), { domain: SHARED_DOMAIN })),
+      read(
+        await renderClaims(healthyScript(), {
+          source_id: PARTIAL_SOURCE,
+          domain: SHARED_DOMAIN,
+        }),
+      ),
+    );
+    return clause;
+  };
+
   /** Every claim of the fixture that the UI may show, by domain. */
   const inDomain = (domain: string) =>
     SHOWABLE.filter((claim) => claim.domain === domain);
@@ -2872,16 +2914,9 @@ describe("a narrowing with no chip row", () => {
    */
   it("claims no filter above when the only chip set narrows this table by nothing", async () => {
     // The clause a CHIP narrowing adds to this caption, in the app's own
-    // words, with the domain held constant across both renders.
-    const [, chipClause] = differingClause(
-      bucketCaption(await renderClaims(healthyScript(), { domain: NARROWING })),
-      bucketCaption(
-        await renderClaims(healthyScript(), {
-          source_id: SOURCE.first,
-          domain: NARROWING,
-        }),
-      ),
-    );
+    // words, with the domain held constant across both renders — read in the
+    // state where that chip really removes rows (admin-window/BUG-0192).
+    const chipClause = await chipClauseOf(bucketCaption);
     // Non-vacuous: there really is a clause to look for.
     expect(chipClause).not.toBe("");
 
@@ -2926,16 +2961,9 @@ describe("a narrowing with no chip row", () => {
    */
   it("says what the gauge says about a chip narrowing, in both directions", async () => {
     // The clause a CHIP narrowing adds to this caption, in the app's own
-    // words, with the domain held constant across both renders.
-    const [, chipClause] = differingClause(
-      bucketCaption(await renderClaims(healthyScript(), { domain: NARROWING })),
-      bucketCaption(
-        await renderClaims(healthyScript(), {
-          source_id: SOURCE.first,
-          domain: NARROWING,
-        }),
-      ),
-    );
+    // words, with the domain held constant across both renders — read in the
+    // state where that chip really removes rows (admin-window/BUG-0192).
+    const chipClause = await chipClauseOf(bucketCaption);
     expect(chipClause).not.toBe("");
 
     const gaugeLine = (markup: string) =>
@@ -3031,22 +3059,216 @@ describe("a narrowing with no chip row", () => {
     expect(line(markup)).not.toBe(line(await renderClaims(healthyScript(), { domain: NARROWING })));
   });
 
+  /**
+   * A CLAUSE THAT POINTS AT A CONTROL RENDERS ONLY WHERE THAT CONTROL REMOVED
+   * ROWS (admin-window/BUG-0192; the architect's ruling of 2026-09-11,
+   * ARCHITECTURE.md §4.3).
+   *
+   * QA measured one chip earning two opposite verdicts on staging on
+   * 2026-09-11: `/claims?source_id=<a source the whole view carries>` removes
+   * no row, so the caption took its unnarrowed arm and said nothing above
+   * narrows these counts — TRUE — while `?source_id=…&domain=events` drew
+   * exactly the figures `?domain=events` draws alone and still said "under the
+   * filters above". Both sentences were true of their own reading: the first
+   * of EFFECT, the second of PRESENCE. Presence is never evidence of effect.
+   *
+   * The fixture's own arithmetic supplies both directions, and every figure
+   * here is computed from it rather than typed: `NARROWING` is served by
+   * `SOURCE.first` ALONE, so that source removes not one row of it; the domain
+   * `SHARED_DOMAIN` is served by two, so `PARTIAL_SOURCE` really removes rows
+   * of it. Neither clause is typed either — the caption's is read off the app
+   * with `differingClause`, and the window line's and the card's are the app's
+   * own exported phrase for a chip narrowing.
+   */
+  it("points at the chip bar only where the chip bar removed rows of the surface saying so", async () => {
+    const chipClause = await chipClauseOf(bucketCaption);
+    expect(chipClause).not.toBe("");
+
+    /** The chip set beside a domain that drew every one of these rows alone. */
+    const didNothing = { source_id: SOURCE.first, domain: NARROWING };
+    /** …and the chip that really took rows away from the same two surfaces. */
+    const didSomething = { source_id: PARTIAL_SOURCE, domain: SHARED_DOMAIN };
+
+    // Non-vacuous, from the fixture: the first source narrows this domain by
+    // NOTHING and the second really narrows its own — so one state has an
+    // honest clause to lose and the other has one to keep.
+    expect(matching(didNothing).length).toBe(matching({ domain: NARROWING }).length);
+    expect(matching(didNothing).length).toBeGreaterThan(0);
+    expect(matching(didSomething).length).toBeLessThan(
+      matching({ domain: SHARED_DOMAIN }).length,
+    );
+    expect(matching(didSomething).length).toBeGreaterThan(0);
+
+    for (const [state, params, claimsOne] of [
+      ["the chip that removed nothing", didNothing, false],
+      ["the chip that removed rows", didSomething, true],
+    ] as [string, Record<string, string>, boolean][]) {
+      const markup = await renderClaims(healthyScript(), params);
+      // Non-vacuous the other way: the source chip really IS active above both
+      // surfaces, and the page threw no parameter away.
+      expect(
+        chipsOf(markup, "source_id").filter((chip) => chip.active).map((chip) => chip.label),
+        state,
+      ).toEqual([nameOf(params.source_id)]);
+      expect(droppedLine(markup).lines, state).toBe(0);
+      // …and both surfaces are on their NARROWED arm, naming the domain that
+      // did the narrowing, in both states.
+      expect(bucketCaption(markup), state).toContain(params.domain);
+      expect(line(markup), state).toContain(params.domain);
+
+      // The two clauses that point at the chip bar, each read off the app.
+      expect(bucketCaption(markup).includes(chipClause), state).toBe(claimsOne);
+      expect(line(markup).includes(NARROWED_BY_FILTERS), state).toBe(claimsOne);
+    }
+
+    // The figures behind those verdicts: identical to the domain's own where
+    // the chip did nothing, different where it did.
+    const figures = (markup: string) => bucketRows(markup).map((row) => row.claims);
+    expect(figures(await renderClaims(healthyScript(), didNothing))).toEqual(
+      figures(await renderClaims(healthyScript(), { domain: NARROWING })),
+    );
+    expect(figures(await renderClaims(healthyScript(), didSomething))).not.toEqual(
+      figures(await renderClaims(healthyScript(), { domain: SHARED_DOMAIN })),
+    );
+  });
+
+  /**
+   * THE THIRD SURFACE: the empty card, which points at the same chip bar and
+   * is graded on the same rule (admin-window/BUG-0192).
+   *
+   * Both states are reached on the standing tab, where a domain facet really
+   * can empty the list — and the tab's OWN bucket is not a control above, so
+   * the widened count keeps it and the comparison stays inside this tab's set
+   * (`withoutChipFacets`). The card's chip clause is the app's own exported
+   * phrase, never typed here.
+   */
+  it("blames the chip bar for an empty list only where the chip bar emptied it", async () => {
+    const standing = (params: Record<string, string>) =>
+      matching({ ...params, bucket: STANDING_BUCKET });
+
+    for (const [state, domain, claimsOne] of [
+      ["a domain no standing claim carries at all", NARROWING, false],
+      ["a domain a standing claim of ANOTHER source carries", "groups", true],
+    ] as [string, string, boolean][]) {
+      const params = { tab: "standing", source_id: SOURCE.first, domain };
+      // Non-vacuous, from the fixture: the list really is empty in both
+      // states, and the source is what emptied it in exactly one of them —
+      // dropping the source leaves no standing claim in the first and a real
+      // one in the second.
+      expect(standing({ source_id: SOURCE.first, domain }), state).toHaveLength(0);
+      expect(standing({ domain }).length > 0, state).toBe(claimsOne);
+
+      const markup = await renderClaims(healthyScript(), params);
+      expect(claimIds(markup), state).toEqual([]);
+      // The card is the NARROWED one in both states — it names the domain the
+      // read carried, which is the clause that states what the read did, not
+      // what a control did.
+      expect(card(markup), state).toContain(domain);
+      // …and it points at the chip bar only where a chip emptied it.
+      expect(card(markup).includes(NARROWED_BY_FILTERS), state).toBe(claimsOne);
+    }
+  });
+
+  /**
+   * WHAT THE ATTRIBUTION FACT COSTS, IN REQUESTS (LESSONS 10,
+   * admin-window/DEBT-0012).
+   *
+   * The single state the two facts cannot answer is both families in force, so
+   * that is the only state that buys a count — and it buys a bounded
+   * `head: true` one, in the composition the page already awaits, never a
+   * second round trip. The four states are graded by the SHAPE of every count
+   * the page issued over the view: which facets it carried, and whether it
+   * carried the gauge window's edges. A shape census rather than a total, so a
+   * leg that moved from one question to another cannot pass as the same cost.
+   */
+  it("buys the attribution fact with one head count per surface, and only where both families are in force", async () => {
+    /** Every `head: true` count over the view, as `kind:facets` — sorted, so
+     *  the census is about which questions were asked and not their order. */
+    const countShapes = (stub: StubClient): string[] =>
+      stub.calls
+        .filter(
+          (call) =>
+            call.table === T.pendingClaims &&
+            call.steps.some(
+              (step) =>
+                step.method === "select" &&
+                (step.args[1] as { head?: boolean } | undefined)?.head === true,
+            ),
+        )
+        .map((call) => {
+          const windowed = call.steps.some(
+            (step) => step.method === "gte" && step.args[0] === "observed_at",
+          );
+          const facets = call.steps
+            .filter((step) => step.method === "eq")
+            .map((step) => `${step.args[0]}=${step.args[1]}`)
+            .sort();
+          return `${windowed ? "window" : "view"}:${facets.join(",")}`;
+        })
+        .sort();
+
+    /** The same spelling, for an expectation built from a filter. */
+    const shape = (kind: "view" | "window", facets: Record<string, string>) =>
+      `${kind}:${Object.entries(facets)
+        .map(([facet, value]) => `${facet}=${value}`)
+        .sort()
+        .join(",")}`;
+
+    const SOURCE_ONLY = { source_id: PARTIAL_SOURCE };
+    const DOMAIN_ONLY = { domain: SHARED_DOMAIN };
+    const BOTH = { ...SOURCE_ONLY, ...DOMAIN_ONLY };
+
+    for (const [state, params, attribution] of [
+      ["bare", {}, []],
+      ["a chip facet alone", SOURCE_ONLY, []],
+      ["an unchipped facet alone", DOMAIN_ONLY, []],
+      // The one state the two facts cannot separate: one count for the list,
+      // the caption and the empty card at once, and one for the gauge's
+      // window. Both carry the domain — the family that is NOT being
+      // subtracted — and neither carries the chip facet.
+      ["both families", BOTH, [shape("view", DOMAIN_ONLY), shape("window", DOMAIN_ONLY)]],
+    ] as [string, Record<string, string>, string[]][]) {
+      const { stub } = await renderWithStub(healthyScript(), params);
+      const narrowing = Object.keys(params).length > 0;
+      const gaugeNarrowing = params.source_id !== undefined || params.domain !== undefined;
+      expect(countShapes(stub), state).toEqual(
+        [
+          // The page's own counts: the matching total, one per bucket...
+          shape("view", params),
+          ...RENDERED_BUCKETS.map((bucket) => shape("view", { ...params, bucket })),
+          // ...fact 2 for the list and the table, and fact 2 for the gauge's
+          // window, each issued only where a facet can narrow that surface.
+          ...(narrowing ? [shape("view", {})] : []),
+          ...(gaugeNarrowing ? [shape("window", {})] : []),
+          // ...and the attribution fact, in the one state that needs it.
+          ...attribution,
+        ].sort(),
+      );
+    }
+  });
+
   it("is true of both kinds of narrowing when both are set", async () => {
     // A chip AND the control-less facet. The chip narrowing keeps its own
     // clause — it is a control the operator can see — and the domain is named
     // beside it, once.
-    const both = await renderClaims(
-      healthyScript(),
-      { source_id: SOURCE.first, domain: NARROWING },
-    );
-    expect(claimIds(both)).toEqual(
-      oldestFirst(matching({ source_id: SOURCE.first, domain: NARROWING })),
-    );
+    //
+    // The chip is one that really REMOVES rows here (`PARTIAL_SOURCE` over
+    // `SHARED_DOMAIN`): since admin-window/BUG-0192 the chip clause is that
+    // facet's effect on these rows, so a source the domain's whole set already
+    // carries earns no clause and would grade this vacuously — the state the
+    // sibling below pins on purpose.
+    const state = { source_id: PARTIAL_SOURCE, domain: SHARED_DOMAIN };
+    const both = await renderClaims(healthyScript(), state);
+    expect(claimIds(both)).toEqual(oldestFirst(matching(state)));
     expect(claimIds(both).length).toBeGreaterThan(0);
-    expect(line(both)).toContain(NARROWING);
+    // Non-vacuous: the source really took rows of this domain away.
+    expect(matching(state).length).toBeLessThan(
+      matching({ domain: SHARED_DOMAIN }).length,
+    );
+    expect(line(both)).toContain(SHARED_DOMAIN);
     expect(line(both)).toContain(FACET);
-    expect(times(line(both), NARROWING)).toBe(1);
-    expect(bucketCaption(both)).toContain(NARROWING);
+    expect(times(line(both), SHARED_DOMAIN)).toBe(1);
+    expect(bucketCaption(both)).toContain(SHARED_DOMAIN);
     expect(bucketCaption(both)).toContain("the filters above");
   });
 
@@ -5359,7 +5581,48 @@ describe("the reads this page makes", () => {
     ).toHaveLength(1);
     expect(windowed, "the unnarrowed population count inside the gauge window").toHaveLength(1);
 
-    for (const call of overView.filter((call) => !population.includes(call))) {
+    // …and the reads that carry the narrowing MINUS ONE FAMILY, which is the
+    // other kind of read that must not carry the whole of it
+    // (admin-window/BUG-0192). They answer "did the chip family remove any of
+    // these rows", so the chip facets are exactly what they drop and the
+    // control-less ones are exactly what they keep — a count carrying the
+    // source as well could never differ from the rendered set, and the clause
+    // it decides would never render again. There are two, for the same two
+    // sets the two population counts above answer for, told apart the same
+    // way.
+    const withoutChips = overView.filter((call) => {
+      const eqs = call.steps
+        .filter((step) => step.method === "eq")
+        .map((step) => String(step.args[0]));
+      return eqs.length > 0 && !eqs.includes("source_id") && !eqs.includes("bucket");
+    });
+    for (const call of withoutChips) {
+      const eqs = call.steps
+        .filter((step) => step.method === "eq")
+        .map((step) => `${step.args[0]}=${step.args[1]}`);
+      expect(eqs, shapeOf(call)).toEqual(["domain=events"]);
+      // A bounded head count and never a row read — the shape the two-fact
+      // rule prescribes for a fact it costs a query.
+      expect(
+        call.steps.find((step) => step.method === "select")?.args[1],
+        shapeOf(call),
+      ).toEqual({ head: true, count: "exact" });
+    }
+    const windowedWithoutChips = withoutChips.filter((call) =>
+      call.steps.some((step) => step.method === "gte" && step.args[0] === "observed_at"),
+    );
+    expect(
+      withoutChips.filter((call) => !windowedWithoutChips.includes(call)),
+      "the chip-family-dropped count over the view",
+    ).toHaveLength(1);
+    expect(
+      windowedWithoutChips,
+      "the chip-family-dropped count inside the gauge window",
+    ).toHaveLength(1);
+
+    for (const call of overView.filter(
+      (call) => !population.includes(call) && !withoutChips.includes(call),
+    )) {
       const eqs = call.steps
         .filter((step) => step.method === "eq")
         .map((step) => `${step.args[0]}=${step.args[1]}`);
