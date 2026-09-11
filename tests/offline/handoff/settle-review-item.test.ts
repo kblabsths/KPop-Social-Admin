@@ -14,6 +14,7 @@ import {
   dollarQuoteMarks,
   fencedBlocks,
   forbiddenConstructs,
+  HANDOFF_DIR,
   privilegesHeld,
   readHandoffNote,
   ROLES_BORN_HOLDING_ALL,
@@ -23,6 +24,7 @@ import {
   TABLE_PRIVILEGES,
   type SqlArtifact,
 } from "./extract";
+import { repoRoot } from "../source-tree";
 
 /**
  * The `settle_review_item` handoff artifact — campaign admin-window/TASK-0046.
@@ -176,7 +178,8 @@ const SIBLING_PRESENT = fs.existsSync(SIBLING_ROOT);
 const UNSCANNED_NEXT_DOOR = new Set(["node_modules", "agenticflow", "__pycache__"]);
 
 /**
- * Every `KSnnn` spelled anywhere under `root`, read as text.
+ * Every `KSnnn` spelled anywhere under `root`, read as text, WITH the files
+ * that spell it.
  *
  * Deliberately broader than "raised": a code the sibling merely NAMES in
  * `tests/helpers/ks_codes.py`, pins in a witness or writes into a receipt is
@@ -184,9 +187,15 @@ const UNSCANNED_NEXT_DOOR = new Set(["node_modules", "agenticflow", "__pycache__
  * one. A path that vanishes or refuses to read is skipped rather than thrown
  * on — which would make an empty result a silent pass, so the caller asserts a
  * code it MUST find before it trusts an absence.
+ *
+ * The files come back too (admin-window/BUG-0207): "is this code spelled next
+ * door" stopped being the whole question on the day Ben installed THIS
+ * campaign's own handoff next door, because our artifact spells the four codes
+ * it allocates. WHICH file spells a code is what tells our own installed
+ * artifact from a stranger's claim on the same number.
  */
-function ksCodesUnder(root: string): Set<string> {
-  const found = new Set<string>();
+function ksCodeSpellingsUnder(root: string): Map<string, string[]> {
+  const found = new Map<string, string[]>();
   const pending = [root];
   while (pending.length > 0) {
     const dir = pending.pop() as string;
@@ -209,10 +218,94 @@ function ksCodesUnder(root: string): Set<string> {
       } catch {
         continue;
       }
-      for (const match of text.matchAll(/KS\d{3}/g)) found.add(match[0]);
+      for (const code of new Set([...text.matchAll(/KS\d{3}/g)].map((match) => match[0]))) {
+        const spellers = found.get(code) ?? [];
+        spellers.push(full);
+        found.set(code, spellers);
+      }
     }
   }
   return found;
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Telling our own installed handoff from a stranger's claim — admin-window/BUG-0207.
+ *
+ * The scan above asks the sibling what codes its tree holds. Until 2026-09-11
+ * that answer was entirely about the sibling: anything it spelled, it meant.
+ * Then Ben installed this campaign's two handoff artifacts into that tree —
+ * `20260908000002_the_verdict_settles_the_item.sql` and §1a's four entries in
+ * `tests/helpers/ks_codes.py` / `tests/live_safety/test_codes_named_once.py` —
+ * and the guard reported `KS029`–`KS032` "already taken next door" against the
+ * file that allocates them. The campaign's satisfaction condition being met is
+ * what turned the suite red; that is the bug.
+ *
+ * What the guard must still stop is unchanged: allocating a number the sibling
+ * already means something else by. So attribution is per LINE, not per file and
+ * not per path — a spelling next door is ours when the line carrying it is a
+ * line one of this campaign's handoff notes carries verbatim. Both installed
+ * halves pass that test for the honest reason: the migration IS the note's one
+ * fenced block (its file on disk is that block plus a trailing newline,
+ * measured 2026-09-11), and the registry entries ARE §1a's python block,
+ * pasted. A stranger writing `ITEM_NOT_OPEN = "KS031"` with its own meaning
+ * writes a line no note of ours contains, and still fails.
+ *
+ * Path-based attribution was the obvious alternative and is weaker: it would
+ * clear whatever came to sit at the target path, including a later rewrite of
+ * our own file that re-pointed one of these codes at something else.
+ */
+
+/** The `target file` row of a for-human note, when it names a sibling migration. */
+const INSTALLED_TARGET_ROW = /\|\s*target file\s*\|\s*`[^`]*?(supabase\/migrations\/[^`]+)`/;
+
+/**
+ * This campaign's installed handoff artifacts: every note under
+ * `agenticflow/tracker/for-human/` that declares a `target file` inside the
+ * sibling's `supabase/migrations/`. Derived from the notes themselves rather
+ * than listed here, so a fourth handoff is covered the day it is written and
+ * no list can go stale in silence.
+ */
+function installedHandoffNotes(): { note: string; target: string; text: string }[] {
+  const dir = path.join(repoRoot, HANDOFF_DIR);
+  return fs
+    .readdirSync(dir)
+    .filter((name) => name.endsWith(".md"))
+    .sort()
+    .map((name) => ({ note: name, text: fs.readFileSync(path.join(dir, name), "utf8") }))
+    .map(({ note, text }) => ({ note, text, row: INSTALLED_TARGET_ROW.exec(text) }))
+    .filter((entry) => entry.row !== null)
+    .map(({ note, text, row }) => ({ note, text, target: (row as RegExpExecArray)[1] }));
+}
+
+/** Every non-blank line of those notes, trimmed — the corpus a spelling is attributed to. */
+const HANDOFF_LINES: ReadonlySet<string> = new Set(
+  installedHandoffNotes()
+    .flatMap((handoff) => handoff.text.split("\n"))
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0),
+);
+
+/**
+ * The lines of `text` that spell one of `codes` and that no handoff note of
+ * this campaign carries — the spellings next door that are NOT ours.
+ *
+ * Empty means every spelling in that file arrived through our own handoff.
+ * A non-empty answer is the collision the guard exists to catch, and it comes
+ * back as the offending lines rather than as a bare `false`, so the failure
+ * names what to look at.
+ */
+function unattributedSpellings(
+  text: string,
+  codes: readonly string[],
+  attributed: ReadonlySet<string> = HANDOFF_LINES,
+): string[] {
+  if (codes.length === 0) return [];
+  const spelled = new RegExp(codes.join("|"));
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => spelled.test(line) && !attributed.has(line));
 }
 
 /* ── reading the artifact ─────────────────────────────────────────────────── */
@@ -844,14 +937,114 @@ describe("the settle_review_item migration", () => {
    * It runs only where the sibling is present. On a machine without that
    * checkout there is nothing to read and nothing this check could honestly
    * say, so the dated snapshot above — which always runs — is the floor.
+   *
+   * **The two checks are still two checks** (admin-window/BUG-0207). The
+   * snapshot stays a literal `KS001`–`KS028` and is never re-derived from the
+   * scan; the scan stays a read of the real tree and is never narrowed to the
+   * snapshot. They disagree today — the tree holds four codes the snapshot does
+   * not name — and the disagreement is answered here, out loud, by saying WHO
+   * spelled each one rather than by editing either side into agreement.
+   *
+   * What changed on 2026-09-11: this campaign's own handoff now lives next
+   * door, so "the sibling's tree holds `KS029`" became true BECAUSE the
+   * artifact this file grades was installed there. Attribution (see
+   * `unattributedSpellings`) is per line against the handoff notes, so the
+   * collision arm is intact — a stranger's line spelling one of these four
+   * fails exactly as before, pinned on a fixture in the grader suite below —
+   * while our own pasted artifact no longer counts against us.
    */
   it.runIf(SIBLING_PRESENT)("allocates no code the sibling's tree holds today", () => {
-    const inUse = ksCodesUnder(SIBLING_ROOT);
-    expect(inUse.has("KS027"), `${SIBLING_ROOT} read`).toBe(true);
-    expect(inUse.has("KS028"), `${SIBLING_ROOT} read`).toBe(true);
+    const spellings = ksCodeSpellingsUnder(SIBLING_ROOT);
+    expect(spellings.has("KS027"), `${SIBLING_ROOT} read`).toBe(true);
+    expect(spellings.has("KS028"), `${SIBLING_ROOT} read`).toBe(true);
     const allocated = allocatedCodes();
     expect(allocated.length).toBeGreaterThan(0);
-    expect(allocated.filter((code) => inUse.has(code))).toEqual([]);
+
+    // Every file next door that spells one of the four, and every line of it
+    // that this campaign's handoff notes do not carry. Empty is the only
+    // acceptable answer: an allocated code is either absent next door (before
+    // the paste) or present only through our own artifact (after it).
+    const spellers = new Set(allocated.flatMap((code) => spellings.get(code) ?? []));
+    const foreign = [...spellers].sort().flatMap((file) =>
+      unattributedSpellings(fs.readFileSync(file, "utf8"), allocated).map(
+        (line) => `${path.relative(SIBLING_ROOT, file)}: ${line}`,
+      ),
+    );
+    // Distinct lines: one offending spelling repeated twenty times is one
+    // thing to go and look at, and the failure should read like it.
+    expect([...new Set(foreign)]).toEqual([]);
+  });
+
+  /**
+   * Where the attribution corpus comes from — the non-vacuity half of the pair
+   * below. A corpus assembled from nothing would attribute nothing, and the
+   * collision arm would then fail on our own artifact again; a corpus
+   * assembled from every note in the directory would attribute a line any
+   * walk report happened to quote. It is exactly the notes that INSTALL a file
+   * in the sibling, read off their own `target file` row.
+   */
+  it("attributes a spelling against the notes that install a file next door", () => {
+    const notes = installedHandoffNotes();
+    expect(notes.map((handoff) => handoff.note)).toContain(NOTE);
+    expect(notes.find((handoff) => handoff.note === NOTE)?.target).toBe(TARGET_PATH);
+    // This note is not the only one: the verdicts artifact installs a file too,
+    // so the derivation is a rule and not a one-file special case.
+    expect(notes.length).toBeGreaterThan(1);
+    // And the corpus really carries the artifact's own lines: a line of the
+    // shipped block that spells an allocated code is in it, so an empty or
+    // mis-read corpus cannot pass this by being silently small.
+    const spelling = shipped.text
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.includes(allocatedCodes()[0]));
+    expect(spelling).toBeDefined();
+    expect(HANDOFF_LINES.has(spelling as string), spelling).toBe(true);
+  });
+
+  /**
+   * The collision arm, proved on fixtures rather than on whatever the sibling
+   * happens to hold today (LESSONS 8; and admin-window/BUG-0207 asks for this
+   * arm to be pinned, so that making the suite green did not quietly delete the
+   * protection). Three fixtures:
+   *
+   *  - what the handoff itself puts next door — the pasted migration (this
+   *    block, verbatim) and §1a's registry entries — must NOT be flagged; that
+   *    is the text that turned the suite red on 2026-09-11;
+   *  - a stranger claiming one of the same four codes, in the sibling's own
+   *    grammar, MUST be flagged, line by line;
+   *  - a stranger claiming a code this artifact does NOT allocate is none of
+   *    this guard's business and is not flagged.
+   *
+   * All in memory: they answer the same on a machine where the sibling is not
+   * checked out at all, and nothing here writes or reads next door.
+   */
+  it("tells this handoff's own spellings from a stranger's claim on the same codes", () => {
+    const allocated = allocatedCodes();
+    expect(allocated.length).toBeGreaterThan(0);
+
+    // Half one of what Ben installs: the migration file's whole content.
+    expect(unattributedSpellings(shipped.text, allocated)).toEqual([]);
+
+    // Half two: §1a's companion edit to the sibling's code registry.
+    const companionEdit = fencedBlocks(noteText)
+      .filter((block) => block.info.toLowerCase() === "python")
+      .map((block) => block.text)
+      .join("\n");
+    for (const code of allocated) expect(companionEdit, code).toContain(code);
+    expect(unattributedSpellings(companionEdit, allocated)).toEqual([]);
+
+    // A stranger's claim on the first allocated code: same file, same grammar,
+    // a meaning of its own, and lines no note of ours carries.
+    const claim = allocated[0];
+    const stranger = [
+      `# ${claim}: a staging lease the repair door could not renew.`,
+      `LEASE_NOT_RENEWED = "${claim}"`,
+    ];
+    expect(unattributedSpellings(stranger.join("\n"), allocated)).toEqual(stranger);
+
+    // And a code this artifact does not allocate stays the sibling's own
+    // business: the guard speaks about these four and nothing else.
+    expect(unattributedSpellings('LEASE_HELD_BY_ANOTHER = "KS027"', allocated)).toEqual([]);
   });
 
   /**
