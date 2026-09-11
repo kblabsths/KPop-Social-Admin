@@ -156,18 +156,29 @@ export function hasChipFacet(filter: ClaimsFilter): boolean {
 }
 
 /**
- * The same read with every CHIP facet **the URL carried** dropped — the widened
- * narrowing whose count answers "did the chip family remove any of these rows"
- * (`isFamilyNarrowing`, `lib/url/narrowing.ts`; admin-window/BUG-0192).
+ * The same read with every CHIP facet **the URL contributed to it** dropped —
+ * the widened narrowing whose count answers "did the chip family remove any of
+ * these rows" (`isFamilyNarrowing`, `lib/url/narrowing.ts`;
+ * admin-window/BUG-0192).
  *
- * Two arguments and not one, and that is the whole rule: `applied` is the
- * filter a surface's read was really given, `asked` is what the URL asked for.
- * The subtraction takes the chip facets out of `asked`, so a facet a SURFACE
- * merged in of its own accord survives it. The one such facet today is the
- * standing tab's own bucket (`listFilterOf`): it is not a control above,
- * nothing on screen offers it, and dropping it would compare this tab's rows
- * against the OTHER tab's population — an attribution answered off the wrong
- * set, which is the class this function is part of fixing.
+ * THREE arguments, and the third one is the whole rule
+ * (admin-window/BUG-0193): `applied` is the filter a surface's read was really
+ * given, `asked` is what the URL asked for, and `own` is what that surface
+ * merged in OF ITS OWN ACCORD (`tabFacetsOf`). A facet in `own` survives the
+ * subtraction whatever the URL carried, because it is not a control above: the
+ * one such facet today is the standing tab's own bucket, merged by
+ * `listFilterOf`, offered by nothing on screen — and dropping it would compare
+ * this tab's rows against the OTHER tab's population, an attribution answered
+ * off the wrong set, which is the class this function is part of fixing.
+ *
+ * **`own` is a parameter rather than a value comparison**, and the reason is
+ * measurable: `standing_disagreement` is itself a `RENDERABLE_BUCKET`, so
+ * `?bucket=standing_disagreement` + the standing tab is ONE CLICK from the
+ * buckets tab (`claimsQuery` carries the bucket into the tab href), and there
+ * `applied.bucket === asked.bucket` while the applied bucket is still the
+ * TAB's. Equal values are a coincidence; membership in `own` is the fact. The
+ * equality below is the second half of the same question — the URL contributed
+ * a facet only where the applied read really carries what the URL asked for.
  *
  * It is this page's vocabulary applied to a shared rule, which is why it lives
  * here and the rule does not: `CHIP_FACETS` is the claims page's own set, and
@@ -177,10 +188,14 @@ export function hasChipFacet(filter: ClaimsFilter): boolean {
 export function withoutChipFacets(
   applied: ClaimsFilter,
   asked: ClaimsFilter,
+  own: ClaimsFilter,
 ): ClaimsFilter {
   const widened: ClaimsFilter = { ...applied };
   for (const facet of CHIP_FACETS) {
-    if (asked[facet] !== undefined) delete widened[facet];
+    if (own[facet] !== undefined) continue;
+    if (asked[facet] !== undefined && applied[facet] === asked[facet]) {
+      delete widened[facet];
+    }
   }
   return widened;
 }
@@ -335,8 +350,33 @@ export function listFilterOf(
   tab: ClaimsTab,
   standingBucket: string,
 ): ClaimsFilter {
-  if (tab !== "standing") return asked;
-  return { ...withFacet(asked, "bucket", undefined), bucket: standingBucket };
+  const own = tabFacetsOf(tab, standingBucket);
+  const merged = Object.keys(own) as ClaimFacet[];
+  if (merged.length === 0) return asked;
+  // A facet the tab merges in REPLACES the URL's own spelling of it, so a
+  // bucket nobody can see does not travel in the URL — driven off `own` rather
+  // than off the tab name, so a tab that gains a merged facet gains both
+  // halves in one edit.
+  let carried = asked;
+  for (const facet of merged) carried = withFacet(carried, facet, undefined);
+  return { ...carried, ...own };
+}
+
+/**
+ * The facets a claims surface merges into its own read **of its own accord** —
+ * the tab's own subset, and never a control the page draws
+ * (admin-window/BUG-0193).
+ *
+ * The standing tab IS a bucket (`listFilterOf` above), so its read carries
+ * `bucket = standingBucket` whatever the URL asked for. Two callers need that
+ * one fact — the read itself, and `withoutChipFacets`, which must leave it
+ * alone while it drops the chip facets the URL contributed — so it is spelled
+ * ONCE here and both read it (LESSONS 5). Handed `standingBucket` for the same
+ * reason `listFilterOf` is: this file is a pure domain leaf and the constant
+ * lives beside the gauge that is that bucket.
+ */
+export function tabFacetsOf(tab: ClaimsTab, standingBucket: string): ClaimsFilter {
+  return tab === "standing" ? { bucket: standingBucket } : {};
 }
 
 /**

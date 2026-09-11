@@ -2708,6 +2708,25 @@ describe("a narrowing with no chip row", () => {
       .replace(/\s+/g, " ")
       .trim();
 
+  /** Every head:true count of the view a render issued, as its facets. */
+  const countFacets = (stub: StubClient): Record<string, string>[] =>
+    stub.calls
+      .filter((call: RecordedCall) => call.table === T.pendingClaims)
+      .filter((call: RecordedCall) =>
+        call.steps.some(
+          (step) =>
+            step.method === "select" &&
+            (step.args[1] as { head?: boolean } | undefined)?.head === true,
+        ),
+      )
+      .map((call: RecordedCall) =>
+        Object.fromEntries(
+          call.steps
+            .filter((step) => step.method === "eq")
+            .map((step) => [String(step.args[0]), String(step.args[1])]),
+        ),
+      );
+
   /** The two phrases that may only ever refer to a control the page draws. */
   const CHIP_PHRASES = ["these filters", "the filters above", "a filter above"];
 
@@ -3319,28 +3338,9 @@ describe("a narrowing with no chip row", () => {
    * below), so no clause may point at the chip bar; at `PARTIAL_SOURCE` +
    * `SHARED_DOMAIN` it really does remove one, and the clause is there.
    */
-  it.fails(
+  it(
     "claims no filter above on the standing tab when the chip set removed no row of it",
     async () => {
-      /** Every head:true count of the view a render issued, as its facets. */
-      const countFacets = (stub: StubClient): Record<string, string>[] =>
-        stub.calls
-          .filter((call: RecordedCall) => call.table === T.pendingClaims)
-          .filter((call: RecordedCall) =>
-            call.steps.some(
-              (step) =>
-                step.method === "select" &&
-                (step.args[1] as { head?: boolean } | undefined)?.head === true,
-            ),
-          )
-          .map((call: RecordedCall) =>
-            Object.fromEntries(
-              call.steps
-                .filter((step) => step.method === "eq")
-                .map((step) => [String(step.args[0]), String(step.args[1])]),
-            ),
-          );
-
       /** The claims of the standing subset a set of facets keeps. */
       const standingRows = (facets: Record<string, string>) =>
         matching({ ...facets, bucket: STANDING_BUCKET });
@@ -3407,6 +3407,65 @@ describe("a narrowing with no chip row", () => {
       expect(line(reallyNarrowed)).toContain(NARROWED_BY_FILTERS);
     },
   );
+
+  /**
+   * THE SAME HAZARD WHEN THE TWO BUCKETS ARE THE SAME STRING (the case the
+   * pin above cannot see; admin-window/BUG-0193).
+   *
+   * `standing_disagreement` is itself a bucket the chip row offers, so
+   * `?bucket=standing_disagreement` is one click from the buckets tab to the
+   * standing tab — and there the filter the read was GIVEN and the filter the
+   * URL ASKED for hold the same string for `bucket` while only one of them is
+   * a control above. A subtraction that decided by comparing those two values
+   * would drop the tab's own bucket here and count the other tab's population,
+   * exactly as the one that decided by presence did: which is why the surface
+   * hands its own facets in (`tabFacetsOf`).
+   */
+  it("keeps the tab's own bucket when the URL asks for that same bucket", async () => {
+    const onBuckets = {
+      bucket: STANDING_BUCKET,
+      source_id: SOURCE.third,
+      domain: "groups",
+    };
+    const buckets = await renderClaims(healthyScript(), onBuckets);
+    expect(droppedLine(buckets).lines).toBe(0);
+
+    // The click, off the page's own markup: the bucket travels to the tab.
+    const href = cheerio.load(buckets)('[data-tab="standing"] a').attr("href") ?? "";
+    const params = Object.fromEntries(new URLSearchParams(href.split("?")[1] ?? ""));
+    expect(params.bucket).toBe(STANDING_BUCKET);
+    expect(params.tab).toBe("standing");
+
+    const { markup, stub } = await renderWithStub(healthyScript(), params);
+    // Non-vacuous: the source chip removes no row of this tab's subset under
+    // this domain, and the domain really narrows it.
+    const standingRows = (facets: Record<string, string>) =>
+      matching({ ...facets, bucket: STANDING_BUCKET });
+    expect(standingRows({ source_id: SOURCE.third, domain: "groups" })).toEqual(
+      standingRows({ domain: "groups" }),
+    );
+    expect(standingRows({ domain: "groups" }).length).toBeGreaterThan(0);
+    expect(standingRows({ domain: "groups" }).length).toBeLessThan(
+      matching({ bucket: STANDING_BUCKET }).length,
+    );
+
+    // The read: every count of this tab is a count of this tab's subset.
+    for (const facets of countFacets(stub)) {
+      expect(facets.bucket, JSON.stringify(facets)).toBe(STANDING_BUCKET);
+    }
+    // The sentence: nothing points at a chip bar that shaped nothing, and the
+    // line is the one the same page renders without the parameter it dropped.
+    expect(line(markup)).not.toContain(NARROWED_BY_FILTERS);
+    expect(line(markup)).toBe(
+      line(
+        await renderClaims(healthyScript(), {
+          tab: "standing",
+          source_id: SOURCE.third,
+          domain: "groups",
+        }),
+      ),
+    );
+  });
 
   it("puts a space between the value and the words around it", async () => {
     // The rule the tree-wide scanner cannot see in this file's transform

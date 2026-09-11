@@ -102,11 +102,19 @@ const OWNER: Readonly<Record<string, string>> = {
    * any two of them with one word gave one chip two opposite verdicts on two
    * staging URLs. */
   isFamilyNarrowing: "src/lib/url/narrowing.ts",
-  /** A claims read MINUS the chip facets the URL carried — this page's
-   * vocabulary applied to the rule above, and the one place the subtraction is
-   * spelled (admin-window/BUG-0192). A second copy would be the one that
-   * forgot the standing tab's own bucket is not a control above. */
+  /** A claims read MINUS the chip facets the URL CONTRIBUTED to it — this
+   * page's vocabulary applied to the rule above, and the one place the
+   * subtraction is spelled (admin-window/BUG-0192). A second copy would be the
+   * one that forgot the standing tab's own bucket is not a control above —
+   * which is what the FIRST copy forgot (admin-window/BUG-0193). */
   withoutChipFacets: "src/lib/claims/filters.ts",
+  /** What a claims TAB merges into its own read of its own accord — the
+   * standing tab's bucket, and nothing else today (admin-window/BUG-0193). It
+   * is in this map because two readings of that one fact is precisely the bug:
+   * the read merged it and the subtraction took it away again, so the widened
+   * count landed in the other tab's population. The read and the subtraction
+   * now spell it once, here. */
+  tabFacetsOf: "src/lib/claims/filters.ts",
   /** The app's ONE claim predicate: claim rows + a `ClaimsFilter`, bucket arm
    * included (admin-window/DEBT-0014). */
   selectClaims: "src/lib/db/claims.ts",
