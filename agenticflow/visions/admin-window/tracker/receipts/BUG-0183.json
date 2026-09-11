@@ -1,0 +1,74 @@
+{
+ "id": "BUG-0183",
+ "created": "2026-09-11T10:05:56Z",
+ "green": true,
+ "git_head": "bfb139166862e5aa1d1110305f57f985dde64cd8",
+ "scope": [
+  "src/components/ui/window-line.tsx",
+  "src/app/claims/page.tsx",
+  "src/app/browse/page.tsx",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/ui/primitives.test.ts",
+  "tests/offline/browse/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 7,
+ "tree_hash": "e44c148c7e12be132c6861fe8c605bb05edfe2fe2d4bea65768969b2feded5f3",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/claims/page.test.ts tests/offline/browse/page.test.ts tests/offline/ui/paging.test.ts tests/offline/ui/primitives.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-38264\n\n \u2713 |offline| tests/offline/ui/paging.test.ts (61 tests) 112ms\n \u2713 |offline| tests/offline/ui/primitives.test.ts (111 tests) 118ms\n \u2713 |offline| tests/offline/browse/page.test.ts (62 tests) 1000ms\n \u2713 |offline| tests/offline/claims/page.test.ts (203 tests) 4468ms\n\n Test Files  4 passed (4)\n      Tests  437 passed (437)\n   Start at  03:05:24\n   Duration  5.36s (transform 918ms, setup 0ms, collect 2.16s, tests 5.70s, environment 0ms, prepare 228ms)\n\n(node:38271) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -q \"states the rows that are BELOW it\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q \"it.fails(\\\"states the rows that are BELOW it\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -qF \"info.drawn ?? info.limit\" src/components/ui/window-line.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"continues?: boolean\" src/components/ui/window-line.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"continues:\" src/app/claims/page.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"continues:\" src/app/browse/page.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"it(\\\"names no rows below a window that states none\" tests/offline/ui/primitives.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run typecheck",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 typecheck\nnpm notice run tsc --noEmit\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "riments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.5s\n  Running TypeScript ...\n  Finished TypeScript in 6.0s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 165ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/browse/rows\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-38264/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:38460) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

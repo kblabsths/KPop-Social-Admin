@@ -1,0 +1,46 @@
+{
+ "id": "DEBT-0017",
+ "created": "2026-09-11T10:06:54Z",
+ "green": true,
+ "git_head": "7f49b4ead3317b344ba5f34711a65b5a8f41961a",
+ "scope": [
+  "src/lib/paging/machine.ts",
+  "tests/offline/paging/machine.test.ts",
+  "tests/offline/claims/read.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 6,
+ "tree_hash": "39ff725d6fd4ddbcbb8e8183f494fbf12ab5f23789346dbd60ace9151badc080",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/paging tests/offline/claims/read.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-38740\n\n \u2713 |offline| tests/offline/paging/bounds.test.ts (11 tests) 6ms\n \u2713 |offline| tests/offline/paging/answer.test.ts (7 tests) 4ms\n \u2713 |offline| tests/offline/paging/browse-route.test.ts (39 tests) 35ms\n \u2713 |offline| tests/offline/claims/read.test.ts (38 tests) 70ms\n \u2713 |offline| tests/offline/paging/machine.test.ts (63 tests) 30ms\n \u2713 |offline| tests/offline/paging/claims-route.test.ts (39 tests) 143ms\n\n Test Files  6 passed (6)\n      Tests  197 passed (197)\n   Start at  03:06:43\n   Duration  845ms (transform 734ms, setup 0ms, collect 1.51s, tests 289ms, environment 1ms, prepare 370ms)\n\n(node:38747) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -qF \"MAX_PAGE_OFFSET\" src/lib/paging/machine.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"MAX_PAGE_OFFSET\" tests/offline/paging/machine.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q \"grows the bound by the row count\" tests/offline/paging/machine.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"index.ts\" tests/offline/claims/read.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
