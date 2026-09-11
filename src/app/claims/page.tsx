@@ -21,6 +21,7 @@ import { IN_PAGE_LINK } from "@/components/cycles/links";
 import {
   DroppedParamsLine,
   Empty,
+  Eyebrow,
   Identifier,
   NARROWED_BY_FILTERS,
   Page,
@@ -274,6 +275,35 @@ const BUCKET_CAPTION = {
   underTheFilters: " under the filters above",
   nothingNarrows: " — nothing above narrows these counts",
   tail: ". A bucket with no claims is a real zero.",
+  /**
+   * THE TABLE'S OWN SCOPE, where a BUCKET facet is in force (architect ruling
+   * 2026-09-11, folded into admin-window/TASK-0071 from QA's product residual
+   * on admin-window/TASK-0077).
+   *
+   * `/claims?bucket=awaiting_row` draws this table's WHOLE distribution beside
+   * a list that facet really narrowed — measured on staging 2026-09-11:
+   * awaiting_link 108, awaiting_row 770, three buckets at 0, identical to the
+   * bare page's — because `bucketStats` drops the bucket facet on purpose.
+   * The figures are right and they do not move. What was wrong is that the
+   * page said "nothing above narrows these counts" with the bucket chip
+   * standing active above it: the page denying a facet it had applied.
+   *
+   * So this clause states what this TABLE answers for, and nothing else. It
+   * never names the bucket as what narrowed these counts — nothing did —
+   * it never takes the blaming arm `?source_id=` takes over a view it really
+   * narrows, it names no bucket VALUE, and it says nothing about the list
+   * below or about why that list is empty: a sentence claims only the scope
+   * its read had, and an empty surface is explained from two facts
+   * (LESSONS 2 and 3).
+   *
+   * It REPLACES `nothingNarrows` rather than standing beside it — the two
+   * say one thing twice — and it is ADDED to the blaming arm rather than
+   * replacing it, because where a source facet really removed rows that arm is
+   * true of the source, and this clause is what keeps "the filters above" from
+   * being read as the bucket chip.
+   */
+  everyBucket:
+    " — these counts answer for every bucket; the bucket filter above does not narrow them",
 } as const;
 
 /**
@@ -407,10 +437,23 @@ function BucketCaption({
   narrowed,
   narrowings,
   chipped,
+  bucketFaceted,
 }: {
   narrowed: boolean;
   narrowings: readonly UnchippedNarrowing[];
   chipped: boolean;
+  /**
+   * Is a BUCKET facet in force? The one facet of this page that this table
+   * drops on purpose, so it can never be what narrowed these counts — and the
+   * page may not go on denying it while its chip stands active above
+   * (`BUCKET_CAPTION.everyBucket`).
+   *
+   * A fact of the FILTER the reads were given, handed in beside the other
+   * two rather than read off the URL again, for the reason every other word
+   * on this page is: the sentence and the query may not decide separately
+   * what narrowed what.
+   */
+  bucketFaceted: boolean;
 }) {
   return (
     <p className="type-body text-ink-secondary">
@@ -424,7 +467,17 @@ function BucketCaption({
       <NarrowedBy narrowings={narrowed ? narrowings : []} />
       {BUCKET_CAPTION.inIt}
       {narrowed && chipped ? BUCKET_CAPTION.underTheFilters : ""}
-      {narrowed ? "" : BUCKET_CAPTION.nothingNarrows}
+      {/* The two clauses that state this TABLE's scope, and only ever one of
+          them: "nothing above narrows these counts" is the whole truth only
+          where no facet of this page is in force at all, and the every-bucket
+          clause is what that sentence becomes once the one facet this table
+          drops is set. With a source or domain facet that really removed rows
+          the blaming arm above has already been said, and the every-bucket
+          clause is added to it rather than instead of it — "the filters
+          above" then means the source, and this says which one it does not
+          mean. */}
+      {narrowed || bucketFaceted ? "" : BUCKET_CAPTION.nothingNarrows}
+      {bucketFaceted ? BUCKET_CAPTION.everyBucket : ""}
       {BUCKET_CAPTION.tail}
     </p>
   );
@@ -546,6 +599,76 @@ const GAUGE_POPULATION_SURFACE = "gauge_population";
 const LIST_COUNT_EYEBROW = "Matching claims";
 const POPULATION_EYEBROW = "Whole-view count";
 const GAUGE_POPULATION_EYEBROW = "Window population";
+
+/**
+ * WHICH KIND OF FACT a set of per-bucket figures is — the eyebrow over each of
+ * the two places this page prints one (SPEC F15, M3 EC7,
+ * admin-window/TASK-0071).
+ *
+ * The page prints per-bucket claim counts TWICE and reads them two different
+ * ways. The bucket table's are `head: true, count: "exact"` counts of the
+ * whole narrowing, one read per bucket; the gauge's come out of a scan capped
+ * at `GAUGE_ROW_CAP` rows, which the window line above it states. Below
+ * that cap the two agree; above it they diverge, with nothing on screen
+ * saying which is which. Staging held 877 claims on 2026-09-11, so this is
+ * live within months rather than theoretical.
+ *
+ * **The ruling is LABEL, not equalise.** Capping the head counts to the
+ * window would make the page's totals wrong rather than windowed, and
+ * scanning the whole view to fill the gauge is the ~14-round-trip, 2.9-3.8 s
+ * read admin-window/BUG-0138 removed. So each set of figures says, in text a
+ * reader sees, what kind of fact it is — and no sentence anywhere on the page
+ * relates the two, because no single read established a relationship between
+ * them (LESSONS 2).
+ *
+ * The words EXTEND the vocabulary this page already owns rather than
+ * reinventing it: `POPULATION_EYEBROW` is "Whole-view count" and
+ * `GAUGE_POPULATION_EYEBROW` is "Window population", so a window is a window
+ * and a total is a total, in the same `micro` eyebrow the page's other
+ * figure-facts wear.
+ *
+ * They are UNCONDITIONAL — the same words whether the two sets agree or not.
+ * A label that appeared only on divergence would be an apology the page owes
+ * nobody, and would make the quiet state and the loud one two different
+ * screens; it would also be a sentence about the RELATIONSHIP between two
+ * figures, which is the one thing this page may not say.
+ */
+const TOTAL_FIGURES_EYEBROW = "Total counts";
+const WINDOW_FIGURES_EYEBROW = "Window counts";
+
+/**
+ * A region of figures, under the eyebrow that says which KIND they are.
+ *
+ * The kind is published as `data-figures` too, so an oracle can ask a figure
+ * what kind of fact it is without reading prose — but the attribute is never
+ * the whole of it: the criterion is text a reader sees, and the eyebrow is
+ * that text. One component for both call sites, so the two regions cannot
+ * come to wear different anatomy (LESSONS 5).
+ */
+function FiguresOf({
+  kind,
+  label,
+  children,
+}: {
+  kind: "total" | "window";
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div data-figures={kind} className="flex flex-col gap-2">
+      {/* The words carry a hook of their own so a reader of the markup can
+          address the LABEL rather than "the region's text minus its table":
+          a gauge table that drew no row renders a state CARD in place of the
+          table, and a subtraction like that would then read the card's words
+          as the label (measured against staging, where the standing gauge's
+          per-source table is empty). */}
+      <span data-figures-label={kind}>
+        <Eyebrow label={label} />
+      </span>
+      {children}
+    </div>
+  );
+}
 
 /**
  * The name each gauge's WINDOW answers to — `data-window`, the hook a live
@@ -751,32 +874,39 @@ function PendingClaimsGauge({
             : undefined
         }
       />
-      <TrendTable<PendingClaims["buckets"][number]>
-        label="Claims by bucket in this window"
-        period="bucket"
-        rows={gauge.buckets}
-        rowKey={(bucket) => bucket.bucket}
-        rowLabel={(bucket) => bucket.bucket}
-        measures={[
-          { key: "claims", label: "claims", value: (bucket) => bucket.claims },
-          { key: "sources", label: "sources", value: (bucket) => bucket.sources },
-          {
-            key: "p50",
-            label: "p50 age",
-            value: (bucket) => bucket.age.p50,
-            format: duration,
-          },
-        ]}
-        // Not narrowed-aware, and the rows say why: they are
-        // `RENDERABLE_BUCKETS` mapped one for one, so this table always draws
-        // five and this card is unreachable in every state. A narrowing clause
-        // here would qualify a BUCKET noun with a claim narrowing, in a
-        // sentence no render can produce (admin-window/BUG-0163).
-        empty={{
-          holds: "buckets in this window",
-          filledBy: "A claim is classified into one, and the bucket appears here.",
-        }}
-      />
+      {/* The one set of gauge figures that stands on the same page as a
+          second reading of the same question: the bucket table two Sections
+          up counts the WHOLE narrowing, bucket by bucket, and these come out
+          of the window this section states. Past the scan's cap the two
+          diverge, and each says which it is (admin-window/TASK-0071). */}
+      <FiguresOf kind="window" label={WINDOW_FIGURES_EYEBROW}>
+        <TrendTable<PendingClaims["buckets"][number]>
+          label="Claims by bucket in this window"
+          period="bucket"
+          rows={gauge.buckets}
+          rowKey={(bucket) => bucket.bucket}
+          rowLabel={(bucket) => bucket.bucket}
+          measures={[
+            { key: "claims", label: "claims", value: (bucket) => bucket.claims },
+            { key: "sources", label: "sources", value: (bucket) => bucket.sources },
+            {
+              key: "p50",
+              label: "p50 age",
+              value: (bucket) => bucket.age.p50,
+              format: duration,
+            },
+          ]}
+          // Not narrowed-aware, and the rows say why: they are
+          // `RENDERABLE_BUCKETS` mapped one for one, so this table always draws
+          // five and this card is unreachable in every state. A narrowing clause
+          // here would qualify a BUCKET noun with a claim narrowing, in a
+          // sentence no render can produce (admin-window/BUG-0163).
+          empty={{
+            holds: "buckets in this window",
+            filledBy: "A claim is classified into one, and the bucket appears here.",
+          }}
+        />
+      </FiguresOf>
       <p className="type-body text-ink-secondary">
         The per-source <Identifier>awaiting_row</Identifier>{" "}
         trend lives on Sources, and it is drawn without its threshold line: the{" "}
@@ -828,33 +958,39 @@ function StandingGauge({
         floor={gauge.window.truncated}
         sub={`from ${counted(gauge.bySource.length, "source")}`}
       />
-      <TrendTable<StandingDisagreements["bySource"][number]>
-        label="Standing disagreements by source"
-        period="source"
-        rows={gauge.bySource}
-        rowKey={(split) => split.sourceId}
-        rowLabel={(split) => (
-          <a
-            href={sourceHref(split.sourceId)}
-            data-split-source={split.sourceId}
-            className={IN_PAGE_LINK}
-          >
-            {sourceLabel(names, split.sourceId)}
-            {split.tier === null ? "" : ` · tier ${split.tier}`}
-            {split.lifecycle === null ? "" : ` · ${split.lifecycle}`}
-          </a>
-        )}
-        measures={[
-          { key: "claims", label: "claims", value: (split) => split.claims },
-          {
-            key: "p50",
-            label: "p50 age",
-            value: (split) => split.age.p50,
-            format: duration,
-          },
-        ]}
-        empty={gaugeEmpty(NO_STANDING_SOURCES, narrowing)}
-      />
+      {/* The standing tab draws no bucket table, so nothing here collides
+          with a head count — but the rule is the page's and not the pending
+          tab's, so this section's figures say what kind they are on both
+          tabs (admin-window/TASK-0071). */}
+      <FiguresOf kind="window" label={WINDOW_FIGURES_EYEBROW}>
+        <TrendTable<StandingDisagreements["bySource"][number]>
+          label="Standing disagreements by source"
+          period="source"
+          rows={gauge.bySource}
+          rowKey={(split) => split.sourceId}
+          rowLabel={(split) => (
+            <a
+              href={sourceHref(split.sourceId)}
+              data-split-source={split.sourceId}
+              className={IN_PAGE_LINK}
+            >
+              {sourceLabel(names, split.sourceId)}
+              {split.tier === null ? "" : ` · tier ${split.tier}`}
+              {split.lifecycle === null ? "" : ` · ${split.lifecycle}`}
+            </a>
+          )}
+          measures={[
+            { key: "claims", label: "claims", value: (split) => split.claims },
+            {
+              key: "p50",
+              label: "p50 age",
+              value: (split) => split.age.p50,
+              format: duration,
+            },
+          ]}
+          empty={gaugeEmpty(NO_STANDING_SOURCES, narrowing)}
+        />
+      </FiguresOf>
       <p className="type-body text-ink-secondary">
         Tier is the source&rsquo;s CURRENT tier, which drifts — not the tier the
         applied value won under.
@@ -1360,11 +1496,21 @@ export default async function ClaimsPage({
             <StateOf result={total} />
           ) : (
             <>
-              <BucketTable
-                label="Claims by bucket"
-                rows={bucketRows}
-                line={total.kind === "error" ? <StateOf result={total} /> : undefined}
-              />
+              {/* These counts are one `head: true, count: "exact"` read per
+                  bucket over the WHOLE narrowing, and the gauge below prints
+                  the same five buckets out of a capped window. The eyebrow is
+                  what keeps the two from being read as the same kind of fact
+                  once they diverge (admin-window/TASK-0071). It stands on the
+                  refusal states too: it labels the TABLE, and claims nothing
+                  about counts — the sentence that does is the caption below,
+                  which the refusal states drop (admin-window/BUG-0144). */}
+              <FiguresOf kind="total" label={TOTAL_FIGURES_EYEBROW}>
+                <BucketTable
+                  label="Claims by bucket"
+                  rows={bucketRows}
+                  line={total.kind === "error" ? <StateOf result={total} /> : undefined}
+                />
+              </FiguresOf>
               {/* The caption follows the READ, exactly as the list's window
                   line one Section down does (ARCHITECTURE.md §4.3, "a window
                   line states a read that HAPPENED"; admin-window/BUG-0063,
@@ -1383,6 +1529,7 @@ export default async function ClaimsPage({
                   narrowed={bucketsNarrowed}
                   narrowings={narrowings}
                   chipped={chipped}
+                  bucketFaceted={filter.bucket !== undefined}
                 />
               ) : null}
             </>
