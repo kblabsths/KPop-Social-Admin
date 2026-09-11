@@ -1383,6 +1383,27 @@ already ships.
   A `head: true` count carries no body, so supabase-js parses no error out of
   it (measured: `code=undefined, msg=""` on a 57014) — the helper that reports
   a failed parity count issues a GET-shaped count, or says it could not tell.
+- **A state card belongs to the BLOCK that rendered it; a surface's state is
+  the state of its FIGURES** (added 2026-09-10, admin-window/BUG-0169;
+  DECISIONS.md, same date). A gauge surface holds two kinds of thing: figures,
+  which state a real number in every counted state, and blocks — `Distribution`,
+  `TrendTable`, a stated `GaugeCard` — which are replaced by their own state
+  card when they hold no row, BY CONTRACT (§7, admin-window/TASK-0030: `rows:
+  []` with no stated reason is unwritable). So a surface at a counted zero
+  legitimately renders labelled `0`s AND an empty card, and an oracle reading
+  `[data-state]` anywhere inside the surface grades that surface `empty` —
+  which is how `/cycles`' two gauges went deterministically red the day
+  staging's resolver window emptied, against two rules that both held. The
+  rule: every card a gauge block renders carries `data-gauge-block`, emitted by
+  `GaugeStateCard` in `src/components/gauges/state.tsx` and by nothing else,
+  and a live oracle grading such a surface passes it as `excluding` — the
+  device `/queues` already uses for `[data-gauge-queue]`. A SURFACE-level
+  refusal is rendered by `StateOf`, which carries no marker, so the exclusion
+  can never silence an error or a not-provisioned card (admin-window/BUG-0036's
+  failure mode, and the reason the marker lives in exactly one component).
+  `emptyAtZero: false` keeps its meaning — this surface's figures stand in
+  every counted state — and the surface stays `ok` at a counted zero, so rule 2
+  above is graded there rather than skipped.
 - **An oracle counts the SAME narrowing the surface renders, and names its
   surface by `data-surface`, never by position** (added 2026-09-03 at the M1
   structure walk; common violations 7 and 8). Two failures of one idea — an
@@ -1656,6 +1677,19 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-10, M3 oracle-grain amendment — a block's empty card is not its
+  surface's state (architect, ruling BUG-0169).** §10 gains one bullet: a
+  surface's state kind is the state of the read behind its figures, a state
+  card rendered by a gauge BLOCK carries `data-gauge-block` and is excluded
+  from it, and `emptyAtZero: false` keeps its meaning instead of being flipped
+  to green a file. Why here rather than in a ticket comment: `/cycles` proved
+  the contradiction is structural, not local — every gauge surface that holds a
+  distribution is latently red against its own oracle the day its window
+  empties, so the rule has to be inherited by the next surface rather than
+  patched per call site. The losing reading is pinned, not deleted: the
+  labelled figures must still read a real `0` at a counted zero, offline and
+  live.
 
 - **2026-09-10, M3 ruling pass — the paging contract gets its client half, and
   two leaf directories join the list (architect).** **§4.3 kind 3** gains

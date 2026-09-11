@@ -1464,3 +1464,73 @@ loop around the assertion, a `--retry` flag, a skip, or a widened comparison.
 It is bought by making the two reads address the same rows — which is a
 statement the test can make in its own query — and a staging table that will
 not hold still remains a fact the suite states out loud.
+
+## 2026-09-10 — corollary to the live-proof ruling: what `whileStill` holds still is ONE read, and a snapshot never bounds a page render
+
+The ruling above survived contact and was found incomplete on its second leg.
+TASK-0075 put both `/claims` bucket-count cases on `whileStill` as rule 2
+directs; QA then ran that file **13 times across two independent checkouts and
+got 3 reds**, every one on a case the ticket had changed — two of them
+`the database changed under this comparison on all 3 attempts (117 then 117
+bytes)`. The device did not fail; the shape handed to it did. `whileStill`
+reads, makes, reads again, and needs the two reads to agree, so **its
+protection decays with the duration of the held read**: `bucketCounts()` is six
+sequential count round trips, which holds a ~4 s comparison window open and
+holds it open three times over, and a scraper cycle writes through every one of
+them. `cycles.live` and `dashboard.live` hold one small read, which is the only
+reason the same device works there. **Ruled, as a corollary and not a
+replacement:** (1) the shape a `whileStill` holds still is **one round trip** —
+one `select`, projected or tallied in TypeScript; the count that decides a
+surface's kind is that read's own length, never a second count query, and no
+held shape issues two queries. (2) A `whileStill` read is **bounded and refuses
+above its bound** rather than truncating silently (PostgREST stops at 1,000
+rows; the `/claims` view is at 877 today), the way the identity proof's cap
+guards already do. (3) `attempts` may be raised to at most 5 at a call site
+that has already done (1) — legal where a `--retry` flag is not, because
+`whileStill` retries the PRECONDITION (did the database hold still) and never
+an assertion outcome — but raising it is never the fix on its own. **The door
+this closes:** the snapshot of rule 1 may NOT be extended to a page comparison
+to make it deterministic. A page takes no upper-edge parameter, giving it one
+would be product code written to suit a test, and bounding only the test's leg
+is worse than useless — it freezes the detector while the page keeps racing,
+converting an intermittent disagreement into a deterministic red that looks
+like a product defect. Test-writes-every-query proofs take the snapshot; page
+comparisons take one small unbounded read held still.
+
+## 2026-09-10 — a state card belongs to the BLOCK that rendered it: a gauge surface's state is the state of its figures
+
+`/cycles`' two gauges render an `Empty` card at a counted zero while the live
+oracle grades them `emptyAtZero: false`, so `cycles.live` is deterministically
+red on the run branch the day staging's resolver window empties (BUG-0169).
+Both sides were deliberate and anchored — LESSONS 7 ("an empty set still
+renders its labelled figure as a real 0") against LESSONS 3 / §4.3 ("an empty
+surface is explained from two facts") — but only one of them can move. **Ruled:
+the ORACLE moves, at the grain.** The component cannot: the card at zero is not
+a choice `cycle-health.tsx` or `latency.tsx` makes, it is `Distribution`'s and
+`TrendTable`'s own contract (§7, TASK-0030 — `rows: []` with no stated reason
+is unwritable, and a header row over an empty body is unreachable by
+construction), so "the component moves" means unwriting a shared primitive six
+gauges obey in order to render the one thing §7 made impossible. And LESSONS 7
+is not violated here in the first place: the labelled figures still render as
+real `0`s beside the empty card — `tests/offline/cycles/page.test.ts` has
+asserted exactly that since DEBT-0004 ("says the window held nothing when the
+resolver has applied nothing": `readNumber(markup, "Applies in this window")`
+is `0` over an empty `field_provenance`). What was false was the ORACLE's
+claim about the SURFACE: `emptyAtZero: false` says "this surface never draws an
+empty card", which no surface containing a distribution can honour. **The rule,
+for every live oracle in this repo:** a surface's state is the state of the
+read behind its FIGURES; a state card rendered by a block INSIDE it —
+`Distribution`, `TrendTable`, `GaugeCard`, all three through `GaugeStateCard` —
+belongs to that block and is excluded from the surface's kind (`stateOf`'s
+`excluding`, the device `/queues` already uses for `[data-gauge-queue]`). The
+marker is `data-gauge-block`, emitted by `GaugeStateCard` and by nothing else,
+so a surface-level refusal (`StateOf`, which does not use it) can never be
+silenced — the BUG-0036 failure mode, which is why the marker is on exactly one
+component. **The door this closes:** the alternative fix — flipping
+`emptyAtZero` to `true` — would have greened the file and left the class alive,
+because it grades the surface `empty` at a counted zero and returns before
+comparing anything, and it says nothing at all about the same card appearing
+over a non-empty window (a distribution with no rows beside figures that count
+rows). Under this ruling the surface stays `ok` at a counted zero and the
+parity assertions RUN there, which is strictly more grading in the state that
+reddened.
