@@ -254,6 +254,177 @@ describe("requestPage", () => {
   });
 
   /**
+   * FULL-OR-EXHAUSTED, the client half — campaign admin-window/BUG-0168, ruled
+   * 2026-09-10 (DECISIONS.md, "a paged answer is full-or-exhausted";
+   * ARCHITECTURE.md §4.3 read kind 3).
+   *
+   * The driver reads `deps.size` — it never did — and grades the `ok` arm
+   * against it. The four shapes below are the whole of that contract, each
+   * driven against the recording stub, and the property after them is the one
+   * that kills the CLASS rather than this instance: a `held` that has walked
+   * off the grid `pageBound` enforces is what made paging unreachable for the
+   * life of a view, so no press may produce one except on the final page.
+   *
+   * Neither refusal is reachable from this app's own route, which derives
+   * `exhausted` from the read it just made (TASK-0066). They are here for
+   * foreign data on a wire — a truncating proxy, a stale deploy, a route
+   * mid-rewrite — where the alternative is telling the operator that a
+   * truncated read is the whole set.
+   */
+  describe("an ok answer is a full window or it says the set ended", () => {
+    const before = paged(4, "a", "b");
+    const served = (count: number): Row[] =>
+      Array.from({ length: count }, (_, i) => ({ id: `s${i}` }));
+
+    it("a FULL window that continues: appends in order, grows held by the WINDOW, stays idle", async () => {
+      const { urls, deps } = answering({
+        kind: "ok",
+        rows: served(SIZE),
+        offset: 4,
+        exhausted: false,
+      } satisfies PageAnswer<Row>);
+      const next = await requestPage(
+        { ...before, refusal: { reason: "the read failed", object: "pending_claims" } },
+        deps,
+      );
+      expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "s0", "s1"]);
+      expect(next.held).toBe(4 + SIZE);
+      expect(next.status).toBe("idle");
+      // A press that succeeds clears the account of the one before it.
+      expect(next.refusal).toBeNull();
+      expect(urls).toHaveLength(1);
+    });
+
+    it("a page that SAYS the set ended: appends what it carries, however short, and ends exhausted", async () => {
+      for (const count of [0, 1, SIZE]) {
+        const { urls, deps } = answering({
+          kind: "ok",
+          rows: served(count),
+          offset: 4,
+          exhausted: true,
+        } satisfies PageAnswer<Row>);
+        const next = await requestPage(before, deps);
+        expect(next.status, `${count} rows`).toBe("exhausted");
+        expect(next.refusal, `${count} rows`).toBeNull();
+        expect(next.rows.map((row) => row.id), `${count} rows`).toEqual([
+          "a",
+          "b",
+          ...served(count).map((row) => row.id),
+        ]);
+        expect(next.held, `${count} rows`).toBe(4 + count);
+        expect(urls, `${count} rows`).toHaveLength(1);
+      }
+    });
+
+    it("an EMPTY page behaves exactly as it always has, whatever it says about the end", async () => {
+      // The one row count this arm still reads as the end of the set by
+      // itself: nothing to append, no bound to move, nothing that could be
+      // missing. Deliberately unchanged by the ruling.
+      const { deps } = answering({ kind: "ok", rows: [], offset: 4, exhausted: false });
+      const next = await requestPage(before, deps);
+      expect(next.status).toBe("exhausted");
+      expect(next.refusal).toBeNull();
+      expect(next.rows).toBe(before.rows);
+      expect(next.held).toBe(4);
+    });
+
+    it("SHORT and still continuing: refused OUT LOUD, naming the route, with one request made", async () => {
+      // The defect this ticket was filed for. The route said it served fewer
+      // rows than the window AND that the set continues: one of the two is
+      // wrong, and which one cannot be told from here.
+      const { urls, deps } = answering({
+        kind: "ok",
+        rows: served(SIZE - 1),
+        offset: 4,
+        exhausted: false,
+      } satisfies PageAnswer<Row>);
+      const next = await requestPage(before, deps);
+      // Identical in length, members and order — a refusal never half-fills.
+      expect(next.rows).toHaveLength(before.rows.length);
+      expect(next.rows.map((row) => row.id)).toEqual(["a", "b"]);
+      // The next press asks for the SAME bound, so the set stays reachable.
+      expect(next.held).toBe(4);
+      expect(next.status).toBe("idle");
+      expect(next.refusal?.object).toBe(PAGE_ROUTES.claims);
+      expect(next.refusal?.reason.length).toBeGreaterThan(0);
+      expect(urls).toHaveLength(1);
+    });
+
+    it("LONGER than the window: refused the same way, on either value of exhausted", async () => {
+      for (const exhausted of [false, true]) {
+        const { urls, deps } = answering({
+          kind: "ok",
+          rows: served(SIZE + 1),
+          offset: 4,
+          exhausted,
+        } satisfies PageAnswer<Row>);
+        const next = await requestPage(before, deps);
+        expect(next.rows.map((row) => row.id), `exhausted: ${exhausted}`).toEqual(["a", "b"]);
+        expect(next.held, `exhausted: ${exhausted}`).toBe(4);
+        expect(next.status, `exhausted: ${exhausted}`).toBe("idle");
+        expect(next.refusal?.object, `exhausted: ${exhausted}`).toBe(PAGE_ROUTES.claims);
+        expect(urls, `exhausted: ${exhausted}`).toHaveLength(1);
+      }
+    });
+
+    it("a window that is not a window grades nothing: the answer is refused and no row lands", async () => {
+      // `pageBound` refuses every bound built from such a size, so a state
+      // grown against one could never be pressed again. Both fixtures
+      // (LESSONS 8): the same full page lands against a real window above.
+      for (const size of [0, -2, 2.5, Number.NaN]) {
+        const { deps } = answering({ kind: "ok", rows: served(2), offset: 4, exhausted: false });
+        const next = await requestPage(before, { ...deps, size });
+        expect(next.rows.map((row) => row.id), `size ${size}`).toEqual(["a", "b"]);
+        expect(next.held, `size ${size}`).toBe(4);
+        expect(next.refusal?.object, `size ${size}`).toBe(PAGE_ROUTES.claims);
+      }
+    });
+
+    /**
+     * THE INVARIANT THAT KILLS THE CLASS (admin-window/BUG-0168, criterion 3),
+     * asserted over the whole matrix above rather than case by case: after ANY
+     * press, either the bound the next press would carry is one this app
+     * serves, or the set is over. `held` leaves the bound grid only on the
+     * final page.
+     *
+     * It is what makes residual 5 unreachable too: a second consumer wiring
+     * the widget slightly differently cannot re-open the hole, because the
+     * driver itself refuses to leave the grid.
+     */
+    it("INVARIANT: after any press, the next bound is servable or the set is exhausted", async () => {
+      const shapes: { name: string; rows: number; exhausted: boolean }[] = [];
+      for (const count of [0, 1, SIZE - 1, SIZE, SIZE + 1, SIZE * 3]) {
+        for (const exhausted of [false, true]) {
+          shapes.push({ name: `${count} rows, exhausted: ${exhausted}`, rows: count, exhausted });
+        }
+      }
+      // Non-vacuity: the matrix really does contain pages of every shape the
+      // contract names, and both endings really do occur across it.
+      expect(shapes).toHaveLength(12);
+      const endings = new Set<string>();
+
+      for (const shape of shapes) {
+        for (const start of [before, paged(SIZE, "a"), paged(SIZE * 50, "a", "b")]) {
+          const { deps } = answering({
+            kind: "ok",
+            rows: served(shape.rows),
+            offset: 4,
+            exhausted: shape.exhausted,
+          } satisfies PageAnswer<Row>);
+          const next = await requestPage(start, deps);
+          endings.add(next.status);
+          const servable = pageBound(String(next.held), SIZE).kind === "ok";
+          expect(
+            servable || next.status === "exhausted",
+            `${shape.name} from held ${start.held} left held ${next.held}`,
+          ).toBe(true);
+        }
+      }
+      expect([...endings].sort()).toEqual(["exhausted", "idle"]);
+    });
+  });
+
+  /**
    * M3 EC5 / §4.3: a refused page never half-fills the list. Every arm of a
    * refusal — the two `DbResult` ones, the bound one, and the three ways a
    * body never becomes an answer at all — is graded on the same three
@@ -331,16 +502,20 @@ describe("requestPage", () => {
     });
 
     it("is cleared by the next press that succeeds", async () => {
+      // The recovering answer is a FULL window (admin-window/BUG-0168): under
+      // full-or-exhausted a one-row page for a two-row window is itself a
+      // refusal, so a short answer here would have graded the clearing arm
+      // against a page that never lands.
       const { deps } = answering(
         { kind: "error", reading: "pending_claims", message: "connection refused" },
-        { kind: "ok", rows: rows("c"), offset: 4, exhausted: false },
+        { kind: "ok", rows: rows("c", "d"), offset: 4, exhausted: false },
       );
       const refused = await requestPage(held, deps);
       expect(refused.refusal).not.toBeNull();
       const recovered = await requestPage(refused, deps);
       expect(recovered.refusal).toBeNull();
-      expect(recovered.rows.map((row) => row.id)).toEqual(["a", "b", "c"]);
-      expect(recovered.held).toBe(5);
+      expect(recovered.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d"]);
+      expect(recovered.held).toBe(6);
     });
 
     it("leaves the press repeatable, at the same bound", async () => {
@@ -452,10 +627,13 @@ describe("the double press, composed from the two pure pieces", () => {
 
   it("issues exactly ONE from the pre-press state, so the pin above is not vacuous", () => {
     // The must-NOT-flag half (LESSONS 8): the same driver, the same deps, the
-    // state a caller is obliged to hand it, and a request really is made.
+    // state a caller is obliged to hand it, and a request really is made. The
+    // answer is a FULL window so that the rows it carries land — under
+    // full-or-exhausted (admin-window/BUG-0168) a short continuing page is
+    // refused, and this half proves the press did something.
     const { urls, deps } = answering({
       kind: "ok",
-      rows: rows("c"),
+      rows: rows("c", "d"),
       offset: 4,
       exhausted: false,
     } satisfies PageAnswer<Row>);
@@ -463,7 +641,7 @@ describe("the double press, composed from the two pure pieces", () => {
     void pressing(idle);
     return requestPage(idle, deps).then((next) => {
       expect(urls).toHaveLength(1);
-      expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "c"]);
+      expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d"]);
     });
   });
 });
