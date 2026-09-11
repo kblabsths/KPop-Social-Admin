@@ -126,14 +126,29 @@ function renderedSources(markup: string) {
     });
 }
 
-/** One gauge's window, as the page states it. */
+/**
+ * One gauge's window, as the page states it — BOTH edges (campaign
+ * admin-window/TASK-0070).
+ *
+ * The line has always published `data-window-until` and the page has always
+ * printed it; the scans under it carried `.gte(since)` alone, so an oracle
+ * that counted `>= since` graded a wider set than the surface rendered. Every
+ * count below now applies `[since, until)`, the interval the line states, and
+ * says which window it compared when it disagrees.
+ */
 function windowOf(markup: string, gauge: string) {
   const line = cheerio.load(markup)(`[data-window="${gauge}"]`);
   return {
     present: line.length > 0,
     since: line.attr("data-window-since") ?? "",
+    until: line.attr("data-window-until") ?? "",
     truncated: line.attr("data-window-truncated") === "true",
   };
+}
+
+/** The interval a disagreeing assertion names, so a red says WHICH window. */
+function windowSaid(window: { since: string; until: string }, column: string): string {
+  return `over ${column} in [${window.since}, ${window.until}) — the window the page's line states`;
 }
 
 /** A trend table's rows, by the source each names, with its measure cells. */
@@ -304,6 +319,7 @@ describe("the per-source trends against staging", () => {
       .select("observation_id")
       .eq("status", "pending")
       .gte("observed_at", window.since)
+      .lt("observed_at", window.until)
       .limit(1000);
     if (error) throw new Error(`the observations query failed: ${JSON.stringify(error)}`);
     const ids = ((data ?? []) as { observation_id: string }[]).map(
@@ -350,6 +366,7 @@ describe("the per-source trends against staging", () => {
       .select("observation_id")
       .eq("status", "pending")
       .gte("observed_at", window.since)
+      .lt("observed_at", window.until)
       .limit(1000);
     if (observedError) {
       throw new Error(`the observations query failed: ${JSON.stringify(observedError)}`);
@@ -374,9 +391,15 @@ describe("the per-source trends against staging", () => {
     }
 
     const rendered = trendCells(markup, "Awaiting-row claims by source");
-    expect([...rendered.keys()].sort()).toEqual([...counted.keys()].sort());
+    expect(
+      [...rendered.keys()].sort(),
+      `the sources holding an awaiting-row claim ${windowSaid(window, "observed_at")}`,
+    ).toEqual([...counted.keys()].sort());
     for (const [sourceId, claimed] of counted) {
-      expect(Number(rendered.get(sourceId)?.[1]), sourceId).toBe(claimed);
+      expect(
+        Number(rendered.get(sourceId)?.[1]),
+        `${sourceId}: awaiting-row claims ${windowSaid(window, "observed_at")}`,
+      ).toBe(claimed);
     }
   });
 
@@ -394,7 +417,8 @@ describe("the per-source trends against staging", () => {
       return countRows(() =>
         exactCount(T.observations)
           .eq("rejected_by", "resolver")
-          .gte("rejected_at", window.since),
+          .gte("rejected_at", window.since)
+          .lt("rejected_at", window.until),
       );
     };
 
@@ -417,9 +441,13 @@ describe("the per-source trends against staging", () => {
         exactCount(T.observations)
           .eq("source_id", sourceId)
           .eq("rejected_by", "resolver")
-          .gte("rejected_at", window.since),
+          .gte("rejected_at", window.since)
+          .lt("rejected_at", window.until),
       );
-      expect(Number(cells[1]), sourceId).toBe(expected);
+      expect(
+        Number(cells[1]),
+        `${sourceId}: re-rejected values ${windowSaid(window, "rejected_at")}`,
+      ).toBe(expected);
     }
   });
 

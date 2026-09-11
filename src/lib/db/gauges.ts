@@ -18,9 +18,10 @@ import type { ReviewItemRow } from "../review/shapes";
  *
  * Every read here is **bounded** — ARCHITECTURE.md §8: "every gauge query
  * carries an explicit `limit` and an explicit time window; an unbounded fetch
- * is a defect". A scan carries `.gte(<its time column>, since)` and
- * `.limit(n)`; an id-set lookup carries `.in(...)` over ids a previous read
- * produced, chunked, and `.limit(n)` again.
+ * is a defect". A scan carries BOTH EDGES of its window on its own time column
+ * — `.gte(<that column>, bounds.since)` and `.lt(<the same column>,
+ * bounds.until)` — plus `.limit(n)`; an id-set lookup carries `.in(...)` over
+ * ids a previous read produced, chunked, and `.limit(n)` again.
  *
  * Every export returns a `DbResult` and never throws (§4.1), and the table is
  * named through `T` alone (§4 rule 4), so a database lacking the resolver
@@ -71,10 +72,28 @@ export type { PendingClaimBucket, PendingClaimRow, PendingClaimsFilter } from ".
 
 /* ── bounds ──────────────────────────────────────────────────────────────── */
 
-/** The window and cap a scan runs under. Resolved by `lib/gauges/gauge.ts`. */
+/**
+ * The window and cap a scan runs under. Resolved by `lib/gauges/gauge.ts`.
+ *
+ * **Both edges are required, and every scan below applies both**
+ * (admin-window/TASK-0070). `resolveBounds` has always returned an `until` and
+ * the window line has always PRINTED it ("read to <until>"), while the five
+ * scans carried `.gte(since)` alone — so every one of them stated an upper
+ * edge it did not apply, and a row dated after `until` (clock skew at a
+ * source, a source dating ahead) was inside the read and outside the sentence.
+ * A count over a different interval than the rows beside it is a false
+ * relationship whichever way it is resolved (LESSONS 2).
+ *
+ * `until` is not optional and is never defaulted: an optional edge is the same
+ * defect one release later, since a predicate answering two questions gets
+ * widened by whichever one broke last (LESSONS 4). A scan cannot be written
+ * here without stating its edge.
+ */
 export interface ReadBounds {
   /** Inclusive lower bound on the table's own time column, as an ISO instant. */
   since: string;
+  /** EXCLUSIVE upper bound on the same column — the instant the read was resolved. */
+  until: string;
   /** Hard row cap. */
   limit: number;
 }
@@ -272,6 +291,7 @@ export function readResolutionRuns(
         .from(T.resolutionRuns)
         .select(RESOLUTION_RUN_COLUMNS)
         .gte("started_at", bounds.since)
+        .lt("started_at", bounds.until)
         .order("started_at", { ascending: false })
         .limit(bounds.limit) as unknown as PromiseLike<DbResponse<ResolutionRunRow[]>>,
     db,
@@ -303,6 +323,7 @@ export function readProvenanceApplies(
         .from(T.fieldProvenance)
         .select(PROVENANCE_COLUMNS)
         .gte("applied_at", bounds.since)
+        .lt("applied_at", bounds.until)
         .order("applied_at", { ascending: false })
         .limit(bounds.limit) as unknown as PromiseLike<DbResponse<ProvenanceApplyRow[]>>,
     db,
@@ -359,6 +380,7 @@ export function readPendingObservations(
       if (filter.domain !== undefined) builder = builder.eq("domain", filter.domain);
       return builder
         .gte("observed_at", bounds.since)
+        .lt("observed_at", bounds.until)
         .order("observed_at", { ascending: true })
         .order("observation_id", { ascending: true })
         .limit(bounds.limit) as unknown as PromiseLike<DbResponse<PendingObservationRow[]>>;
@@ -386,6 +408,7 @@ export function readReviewItemsOpenedSince(
         .from(T.reviewItems)
         .select(REVIEW_ITEM_COLUMNS)
         .gte("opened_at", bounds.since)
+        .lt("opened_at", bounds.until)
         .order("opened_at", { ascending: true })
         .limit(bounds.limit) as unknown as PromiseLike<DbResponse<ReviewItemRow[]>>,
     db,
@@ -396,8 +419,10 @@ export function readReviewItemsOpenedSince(
  * The adjudication stamps of the window.
  *
  * `gte` on the nullable stamp is also the "was ever adjudicated" filter: `null
- * >= x` is null, so a claim that never was cannot satisfy it. Newest first —
- * a truncated read of a counts-over-time gauge keeps the recent weeks.
+ * >= x` is null, so a claim that never was cannot satisfy it — and `null < x`
+ * is null too, so the window's upper edge keeps that property rather than
+ * re-admitting an unadjudicated claim. Newest first — a truncated read of a
+ * counts-over-time gauge keeps the recent weeks.
  */
 export function readRejectionStamps(
   bounds: ReadBounds,
@@ -410,6 +435,7 @@ export function readRejectionStamps(
         .from(T.observations)
         .select(REJECTION_COLUMNS)
         .gte("rejected_at", bounds.since)
+        .lt("rejected_at", bounds.until)
         .order("rejected_at", { ascending: false })
         .limit(bounds.limit) as unknown as PromiseLike<DbResponse<RejectionRow[]>>,
     db,

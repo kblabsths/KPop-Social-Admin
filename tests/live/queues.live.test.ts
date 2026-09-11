@@ -356,9 +356,36 @@ describe("the filters against staging", () => {
   });
 });
 
-/** This test's own count over the set the GAUGE reads: opened inside the window. */
-function openedInWindow(since: string) {
-  return exactCount(T.reviewItems).gte("opened_at", since);
+/** One gauge's window, as the page states it — both edges and its cap. */
+function windowOf(markup: string, gauge: string) {
+  const line = cheerio.load(markup)(`[data-window="${gauge}"]`);
+  return {
+    present: line.length > 0,
+    since: line.attr("data-window-since") ?? "",
+    until: line.attr("data-window-until") ?? "",
+    truncated: line.attr("data-window-truncated") === "true",
+  };
+}
+
+/** The interval a disagreeing assertion names, so a red says WHICH window. */
+function windowSaid(window: { since: string; until: string }): string {
+  return `over opened_at in [${window.since}, ${window.until}) — the window the page's line states`;
+}
+
+/**
+ * This test's own count over the set the GAUGE reads: opened inside the
+ * window, at BOTH its edges (campaign admin-window/TASK-0070).
+ *
+ * `gte` on `opened_at` is the gauge's own lower narrowing and this one, and
+ * `lt` is its upper: a row whose `opened_at` is NULL is in neither set (`null
+ * >= x` and `null < x` are both null), so it can never make one side count
+ * what the other cannot see — and neither can a row opened after the instant
+ * the page resolved its window at.
+ */
+function openedInWindow(window: { since: string; until: string }) {
+  return exactCount(T.reviewItems)
+    .gte("opened_at", window.since)
+    .lt("opened_at", window.until);
 }
 
 interface WindowCounts {
@@ -369,21 +396,29 @@ interface WindowCounts {
 }
 
 /**
- * The gauge's set, counted by this test, against a `since` resolved at call
- * time — the same 180 days back the page resolves when it renders.
+ * The gauge's set, counted by this test over the window THE PAGE STATES —
+ * both of its edges, read off the line the render published.
  *
- * `gte` on `opened_at` is the gauge's own narrowing and this one: a row whose
- * `opened_at` is NULL is in neither set, so it can never make one side count
- * what the other cannot see.
+ * It used to resolve a `since` of its own at call time (the same 180 days back
+ * the page resolves) and apply no upper edge at all, so the comparison was
+ * between two windows that shared neither edge exactly and the test needed
+ * `whileStill` to keep a row arriving mid-comparison from reading as a defect
+ * in the page. Taking both edges off the rendered line makes the interval one
+ * closed interval rather than two open ones — `tests/live/parity.ts`'
+ * `snapshotAsOf` states the rule ("one explicit upper edge shared by every leg
+ * is deterministic, needs no retry"), and its carve-out for a leg that "cannot
+ * be given an upper edge" is exactly what admin-window/TASK-0070 closed: the
+ * app's own read carries `[since, until)` now, and publishes both.
  */
-async function windowCounts(): Promise<WindowCounts | "absent"> {
-  const since = new Date(Date.now() - WINDOW_DAYS * MS_PER_DAY).toISOString();
-  const rows = await countOrAbsent(() => openedInWindow(since));
+async function windowCounts(
+  window: { since: string; until: string },
+): Promise<WindowCounts | "absent"> {
+  const rows = await countOrAbsent(() => openedInWindow(window));
   if (rows === "absent") return "absent";
   const open: Record<GaugeQueue, number> = { data_conflict: 0, entity_link: 0 };
   for (const queue of GAUGE_QUEUES) {
     open[queue] = await countRows(() =>
-      openedInWindow(since).eq("status", "open").eq("queue", queue),
+      openedInWindow(window).eq("status", "open").eq("queue", queue),
     );
   }
   return { rows, open };
@@ -391,15 +426,27 @@ async function windowCounts(): Promise<WindowCounts | "absent"> {
 
 describe("the queue-health gauge against staging", () => {
   it("renders each queue's open count over its own window", async () => {
-    // TWO windows are in play — the page resolves its own `since` while it
-    // renders, this test resolves its own while it counts — and staging is
-    // live besides. `whileStill` brackets the render between two identical
-    // reads and compares only when nothing moved between them, so neither an
-    // arriving row nor the boundary sliding under the comparison is reported
-    // as a defect in the page.
-    const { made: markup, held: counted } = await whileStill(windowCounts, () =>
-      queuesMarkup(),
-    );
+    // ONE window is in play since admin-window/TASK-0070: the page resolves
+    // `[since, until)`, applies both edges to its scan and publishes both on
+    // its line, so this test counts the interval the page states rather than
+    // one it resolves for itself. A row the reviewers file while this runs
+    // carries `opened_at = now()`, which is at or after `until` and is
+    // therefore outside both legs — the comparison is deterministic and needs
+    // no `whileStill` retry (`tests/live/parity.ts`, `snapshotAsOf`).
+    const markup = await queuesMarkup();
+    const window = windowOf(markup, "queue_health");
+    if (window.present) {
+      // The window's LENGTH, from this file's own spelling of spec §5 rather
+      // than from the gauge's defaults (ARCHITECTURE.md §10, two paths to one
+      // number). Both edges are now the page's, so the interval it states is
+      // itself gradeable: 180 days, exactly, end to end.
+      expect(
+        Date.parse(window.until) - Date.parse(window.since),
+        `the queue-health line states ${windowSaid(window)}, which must be ` +
+          `${WINDOW_DAYS} days end to end`,
+      ).toBe(WINDOW_DAYS * MS_PER_DAY);
+    }
+    const counted = window.present ? await windowCounts(window) : "absent";
 
     // The gauge is its own read of the same table, so it is its own surface
     // with its own state — graded before a figure is read off it, and graded
@@ -438,10 +485,13 @@ describe("the queue-health gauge against staging", () => {
         expect(
           rendered,
           `${queue} open (the window filled its ${WINDOW_ROW_CAP}-row cap, so ` +
-            `the page's figure is a floor over the oldest rows in it)`,
+            `the page's figure is a floor over the oldest rows in it), ` +
+            `counted ${windowSaid(window)}`,
         ).toBeLessThanOrEqual(counted.open[queue]);
       } else {
-        expect(rendered, `${queue} open`).toBe(counted.open[queue]);
+        expect(rendered, `${queue} open, counted ${windowSaid(window)}`).toBe(
+          counted.open[queue],
+        );
       }
     }
   });

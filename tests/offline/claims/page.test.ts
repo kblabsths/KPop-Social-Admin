@@ -107,12 +107,13 @@ vi.mock("@/lib/db/claims", async (importActual) => {
     readClaimCount: (filter?: Parameters<typeof actual.readClaimCount>[0]) =>
       actual.readClaimCount(filter, readWith.client as never),
     // The gauge section's fact 2 — the unnarrowed count inside the gauge's own
-    // window (admin-window/BUG-0163). Stubbed at the same boundary as every
-    // other read; without it this one leg would reach for a real client.
-    readClaimCountSince: (
-      since: Parameters<typeof actual.readClaimCountSince>[0],
-      filter?: Parameters<typeof actual.readClaimCountSince>[1],
-    ) => actual.readClaimCountSince(since, filter, readWith.client as never),
+    // window (admin-window/BUG-0163), over BOTH its edges since
+    // admin-window/TASK-0070. Stubbed at the same boundary as every other
+    // read; without it this one leg would reach for a real client.
+    readClaimCountIn: (
+      bounds: Parameters<typeof actual.readClaimCountIn>[0],
+      filter?: Parameters<typeof actual.readClaimCountIn>[1],
+    ) => actual.readClaimCountIn(bounds, filter, readWith.client as never),
     readBucketOldest: (
       bucket: Parameters<typeof actual.readBucketOldest>[0],
       filter?: Parameters<typeof actual.readBucketOldest>[1],
@@ -2436,6 +2437,118 @@ describe("which emptiness this is", () => {
     // is also what makes the assertion above non-vacuous — the URL really did
     // narrow this page.
     expect(emptyHook(narrowed)).toBe("narrowing");
+  });
+
+  /* ── the same rule at the window's OTHER edge (admin-window/TASK-0070) ── */
+
+  /**
+   * A claim dated AFTER the instant the read was resolved at — clock skew at a
+   * source, or a source dating ahead — is outside the window this section's
+   * line prints, so it must be outside BOTH reads under that line: the scan,
+   * and the population count printed beside it.
+   *
+   * The count had no upper bound at all (`readClaimCountSince`) while the scan
+   * beside it was `[since, until]`, so this claim was counted in fact 2 and
+   * rendered in nothing — and the section then blamed the URL's facet for a
+   * zero the facet had not caused, which is the LESSONS 3 misattribution
+   * BUG-0163 landed here to prevent, arriving through the other edge.
+   *
+   * The two fixtures differ in ONE character-for-character respect: the
+   * claim's instant, on one side of `until` or the other (LESSONS 8).
+   */
+  const PAST = () => new Date(Date.now() - 86_400_000).toISOString();
+  const AHEAD = () => new Date(Date.now() + 86_400_000).toISOString();
+
+  /** A view holding exactly one claim, at the instant given, and no observation. */
+  function oneClaimAt(observedAt: string): Script {
+    return {
+      [T.pendingClaims]: claimView([
+        pendingClaimRow("standing_disagreement", {
+          observation_id: "01920000-0000-7000-8000-0000000009f1",
+          observed_at: observedAt,
+        }),
+      ]),
+      [T.observations]: { data: [] },
+      [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
+    };
+  }
+
+  it("blames no facet on the gauge card when the one claim is dated after until", async () => {
+    const script = oneClaimAt(AHEAD());
+    const narrowed = await renderClaims(script, { domain: "idols" });
+    const bare = await renderClaims(script);
+
+    expect(gaugeCard(bare)).not.toBe("");
+    // The claim is outside the window at its UPPER edge, so the gauge's
+    // window holds nothing whatever the URL says — and the facet removed
+    // nothing from it.
+    expect(gaugeCard(narrowed)).toBe(gaugeCard(bare));
+    expect(gaugeCard(narrowed)).not.toContain("idols");
+    expect(gaugeCard(narrowed)).not.toContain(CLEAR_LABEL);
+    // Non-vacuous, and the reason the old count got this wrong: the LIST's
+    // population is the whole view with no time bound at all, so it DOES hold
+    // that claim and the list's card blames the facet on the same render.
+    expect(emptyHook(narrowed)).toBe("narrowing");
+  });
+
+  it("blames the facet on the gauge card when that same claim is inside the window", async () => {
+    // The twin, differing only in the instant: now the window really does hold
+    // a claim with no facet, and the facet really is what emptied the section.
+    const script = oneClaimAt(PAST());
+    const narrowed = await renderClaims(script, { domain: "idols" });
+    const bare = await renderClaims(script);
+
+    expect(gaugeCard(narrowed)).not.toBe(gaugeCard(bare));
+    expect(gaugeCard(narrowed)).toContain("idols");
+    expect(gaugeCard(narrowed)).toContain(CLEAR_LABEL);
+  });
+
+  it("takes the count's two edges from the window its line prints", async () => {
+    // The relationship, at the read: the population count and the scan are
+    // handed ONE bounds object, so the interval the count ran over is the
+    // interval the line above it states — read off the rendered line and the
+    // recorded query, never off a constant this test chose.
+    const { markup, stub } = await renderWithStub(oneClaimAt(AHEAD()), {
+      domain: "idols",
+    });
+    const line = cheerio.load(markup)('[data-window="pending"]');
+    expect(line.length, "the gauge's window line").toBe(1);
+
+    const counted = stub.calls.filter(
+      (call) =>
+        call.table === T.pendingClaims &&
+        call.steps.some(
+          (step) =>
+            step.method === "select" &&
+            (step.args[1] as { head?: boolean } | undefined)?.head === true,
+        ) &&
+        call.steps.some((step) => step.method === "gte" && step.args[0] === "observed_at"),
+    );
+    expect(counted, "the gauge window's population count").toHaveLength(1);
+    const edge = (method: string) =>
+      counted[0].steps.find(
+        (step) => step.method === method && step.args[0] === "observed_at",
+      )?.args[1];
+
+    expect(edge("gte")).toBe(line.attr("data-window-since"));
+    expect(
+      edge("lt"),
+      "the line states an upper edge; the count printed under it must read to it",
+    ).toBe(line.attr("data-window-until"));
+    // And the scan beside it ran over the very same interval — one object, two
+    // reads, never two intervals.
+    const scan = stub.calls.find(
+      (call) =>
+        call.table === T.pendingClaims &&
+        call.steps.some((step) => step.method === "limit") &&
+        call.steps.some((step) => step.method === "gte" && step.args[0] === "observed_at"),
+    );
+    expect(scan, "the gauge's claims leg").toBeDefined();
+    const scanEdge = (method: string) =>
+      scan?.steps.find((step) => step.method === method && step.args[0] === "observed_at")
+        ?.args[1];
+    expect(scanEdge("gte")).toBe(edge("gte"));
+    expect(scanEdge("lt")).toBe(edge("lt"));
   });
 
   it("still names its scope for a facet that really removed rows", async () => {

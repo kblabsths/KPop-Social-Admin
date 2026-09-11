@@ -1,9 +1,14 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import ClaimsPage from "@/app/claims/page";
 import { CLAIM_WINDOW } from "@/components/claims";
 import type { ClaimLine } from "@/lib/claims/lines";
-import { readPendingClaimRows } from "@/lib/db/claims";
+import {
+  readClaimCountIn,
+  readPendingClaimRows,
+  readPendingClaimsInWindow,
+} from "@/lib/db/claims";
 import { readPendingObservations } from "@/lib/db/gauges";
 import { T } from "@/lib/db/tables";
 import { resolveBounds } from "@/lib/gauges/gauge";
@@ -914,6 +919,120 @@ describe("the two shapes of the pending-claims gauge against staging", () => {
     // …and the largest cap selected something, so this is not an equality of
     // two empty sets.
     expect(made[made.length - 1].joined.length).toBeGreaterThan(0);
+  }, 120_000);
+});
+
+/**
+ * THE BOUNDS THE PAIR READS, AGAINST STAGING (admin-window/TASK-0070).
+ *
+ * The gauge on `/claims` renders the claims of a bounded scan and prints a
+ * count beside them; `readClaimCountSince` bounded that count at `since` and
+ * nowhere else, while the scan it stands beside is `[since, until]`. Two
+ * figures over two intervals, presented as one relationship, is LESSONS 2 —
+ * and the row that separates them is real on a live database: a claim whose
+ * `observed_at` is ahead of the instant the read resolved at, from a source
+ * whose clock runs fast or that dates its payloads forward.
+ *
+ * This grades the pair on staging, over a window this TEST closes at an edge
+ * of its own choosing so the upper bound is not vacuous: a `cut` drawn from
+ * the population itself, with claims on both sides of it. The APP's count is
+ * `readClaimCountIn`; the count it is compared against is written out here
+ * from the migration, the way every oracle in this file is, and both name the
+ * interval they compared when they disagree.
+ *
+ * Race-free by construction rather than by retry: both edges are fixed strings
+ * shared by every leg, and a claim the scraper files while this runs carries
+ * `observed_at = now()`, which is after `until` and outside all of them
+ * (`tests/live/parity.ts`, `snapshotAsOf`).
+ */
+describe("the window a claims count and the scan beside it read", () => {
+  /** The gauge's own day window — what the PRODUCT reads (spec §5). */
+  const BOUNDS_DAYS = 90;
+
+  /** The window as this test states it, both edges, for an assertion message. */
+  const said = (window: { since: string; until: string }) =>
+    `over pending_claims.observed_at in [${window.since}, ${window.until})`;
+
+  /** This test's OWN count of that window, written out from the migration. */
+  const countedIn = (window: { since: string; until: string }, db: SupabaseClient) =>
+    countRows(() =>
+      exactCount(T.pendingClaims, db)
+        .neq("bucket", PARKED_BUCKET)
+        .gte("observed_at", window.since)
+        .lt("observed_at", window.until),
+    );
+
+  it("counts exactly the claims the scan beside it draws, at both edges", async () => {
+    const db = independentClient();
+    const whole = { since: snapshotAsOf(BOUNDS_DAYS * 86_400_000), until: snapshotAsOf() };
+
+    const held = await countedIn(whole, db);
+    expect(
+      held,
+      `staging holds ${held} live pending claim(s) ${said(whole)}, so there is ` +
+        "nothing here to bound — this proof needs at least two",
+    ).toBeGreaterThan(1);
+
+    // A CUT drawn from the population itself: the newest instant among the
+    // claims this window holds (bounded by the platform's row ceiling, which
+    // only moves the cut earlier and never makes it vacuous). Claims exist
+    // strictly before it, and at least one stands at or after it, so an upper
+    // edge here is a bound that really removes rows.
+    const seen = await db
+      .from(T.pendingClaims)
+      .select("observed_at")
+      .neq("bucket", PARKED_BUCKET)
+      .gte("observed_at", whole.since)
+      .lt("observed_at", whole.until)
+      .order("observed_at", { ascending: true })
+      .limit(ROW_CEILING);
+    if (seen.error) throw new Error(`the instants query failed: ${JSON.stringify(seen.error)}`);
+    const instants = [
+      ...new Set(
+        ((seen.data ?? []) as { observed_at: string | null }[])
+          .map((row) => row.observed_at)
+          .filter((at): at is string => at !== null)
+          .map((at) => new Date(at).toISOString()),
+      ),
+    ].sort();
+    expect(
+      instants.length,
+      `every claim ${said(whole)} was observed at one instant, so no cut ` +
+        "inside this window can leave claims on both sides of it",
+    ).toBeGreaterThan(1);
+
+    const window = { since: whole.since, until: instants[instants.length - 1] };
+    const bounded = await countedIn(window, db);
+
+    // NON-VACUOUS: the upper edge really removed claims this window's lower
+    // edge admits. Without it the two figures below would be equal by accident.
+    expect(bounded, `the claims ${said(window)}`).toBeGreaterThan(0);
+    expect(
+      bounded,
+      `the upper edge removed nothing: ${bounded} claims ${said(window)} and ` +
+        `${held} ${said(whole)} — a count with no upper bound would have ` +
+        "matched this one and proved nothing",
+    ).toBeLessThan(held);
+
+    // THE APP's count, over the same two edges.
+    const app = await readClaimCountIn(window, {}, db);
+    expect(app, `readClaimCountIn ${said(window)}`).toEqual({ kind: "ok", data: bounded });
+
+    // …and the SCAN printed beside it draws that same population, under the
+    // one bounds object the page hands to both.
+    const scan = await readPendingClaimsInWindow(
+      { ...window, limit: ROW_CEILING },
+      {},
+      db,
+    );
+    expect(scan.kind, `readPendingClaimsInWindow ${said(window)}`).toBe("ok");
+    if (scan.kind !== "ok") return;
+    expect(
+      scan.data.length,
+      `the scan drew ${scan.data.length} claim(s) ${said(window)} while the ` +
+        `count printed beside it says ${bounded}`,
+    ).toBe(bounded);
+    expect(scan.data.map((claim) => claim.bucket)).not.toContain(PARKED_BUCKET);
   }, 120_000);
 });
 
