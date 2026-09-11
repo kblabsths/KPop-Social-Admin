@@ -335,7 +335,7 @@ describe("the claim window read", () => {
 });
 
 describe("the claim count read", () => {
-  it("is a head request carrying the narrowing, and reads no row at all", async () => {
+  it("is a GET-shaped count carrying the narrowing, and reads no row at all", async () => {
     const stub = scripted(wholeView());
     const result = await readClaimCount(
       { bucket: "awaiting_row" },
@@ -344,12 +344,17 @@ describe("the claim count read", () => {
 
     const steps = stepsOf(stub, T.pendingClaims);
     expect(steps[0].method).toBe("select");
-    expect(steps[0].args[1]).toEqual({ head: true, count: "exact" });
+    // `{ count: "exact" }` and NOT `head: true` — a HEAD response carries no
+    // body, so the 404 a database without this view answers reached the app as
+    // `error: null, count: null` and the page rendered a developer sentence
+    // instead of the absence (admin-window/BUG-0210).
+    expect(steps[0].args[1]).toEqual({ count: "exact" });
     expect(argsOf(stub, T.pendingClaims, "neq")).toEqual([["bucket", PARKED]]);
     expect(argsOf(stub, T.pendingClaims, "eq")).toEqual([["bucket", "awaiting_row"]]);
-    // No cap can reach it: a head count carries no bound and no order.
+    // No cap can reach it, and it is still not a row read: no `.range`, and
+    // the only bound is the count read's own "bring back nothing".
     expect(steps.some((step) => step.method === "range")).toBe(false);
-    expect(steps.some((step) => step.method === "limit")).toBe(false);
+    expect(argsOf(stub, T.pendingClaims, "limit")).toEqual([[0]]);
 
     expect(result).toEqual({
       kind: "ok",
@@ -443,12 +448,14 @@ describe("the windowed claim count read", () => {
       scripted({ [T.pendingClaims]: claimView(claims) }).asSupabaseClient(),
     );
 
-  it("is a head request carrying BOTH edges on the instant, and the narrowing", async () => {
+  it("is a GET-shaped count carrying BOTH edges on the instant, and the narrowing", async () => {
     const stub = scripted({ [T.pendingClaims]: claimView(INSIDE) });
     await readClaimCountIn(WINDOW, { source_id: SOURCE.first }, stub.asSupabaseClient());
 
     const steps = stepsOf(stub, T.pendingClaims);
-    expect(steps[0].args[1]).toEqual({ head: true, count: "exact" });
+    // GET-shaped, so an absent view answers with its `PGRST205` body
+    // (admin-window/BUG-0210).
+    expect(steps[0].args[1]).toEqual({ count: "exact" });
     expect(argsOf(stub, T.pendingClaims, "gte")).toEqual([["observed_at", WINDOW.since]]);
     expect(
       argsOf(stub, T.pendingClaims, "lt"),
@@ -458,8 +465,10 @@ describe("the windowed claim count read", () => {
     // The narrowing and the parked-bucket exclusion are still the query's.
     expect(argsOf(stub, T.pendingClaims, "eq")).toEqual([["source_id", SOURCE.first]]);
     expect(argsOf(stub, T.pendingClaims, "neq")).toEqual([["bucket", PARKED]]);
-    // Still a count and never a row read: no cap can reach it.
-    expect(steps.some((step) => step.method === "limit" || step.method === "range")).toBe(false);
+    // Still a count and never a row read: no cap can reach it, and the only
+    // bound is the count read's own "bring back nothing".
+    expect(steps.some((step) => step.method === "range")).toBe(false);
+    expect(argsOf(stub, T.pendingClaims, "limit")).toEqual([[0]]);
   });
 
   it("leaves out a claim dated after until — the figure the old count changed", async () => {
