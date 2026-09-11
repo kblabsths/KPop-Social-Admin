@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T06:27:36Z — do not edit)
+# Tracker index (regenerated 2026-09-11T06:28:52Z — do not edit)
 
 ## open
 - FEAT-0014 [P1][feat][M3] F16 — the second leg of a two-step join runs its chunks concurrently  (scope:src/lib/db/result.ts,src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/db/verdict.ts,tests/offline/db/result.test.ts,tests/live/claims.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts)
@@ -16,7 +16,7 @@
 - DEBT-0019 [P3][debt][M3] The http tier's storable assertion passes on the gate's 403, so it grades nothing the handler answered — make the vacuity visible  (scope:tests/http/paging.http.test.ts from:BUG-0171)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - BUG-0172 [P1][bug][M3] A paged surface still says rows are withheld after the walk reached the end of the set — /browse and /claims  (scope:src/app/browse/page.tsx,src/app/claims/page.tsx,src/components/browse/paged-browse-table.tsx,src/components/claims/paged-claim-list.tsx,src/components/ui/paging.tsx,src/components/ui/window-line.tsx,tests/offline/browse/page.test.ts,tests/offline/claims/page.test.ts,tests/offline/ui/paging.test.ts,tests/offline/ui/primitives.test.ts,tests/offline/absence/pages.test.ts,tests/offline/shell/client-boundary.test.ts @builder-263 from:TASK-0069)
 
-Totals — claimed:1, done:20, open:14. Archived: 252.
+Totals — built:1, done:20, open:14. Archived: 252.
