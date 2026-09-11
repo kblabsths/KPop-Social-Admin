@@ -7,7 +7,12 @@ import { pageAnswerOf } from "@/lib/db/paging";
 import { readSourceNames } from "@/lib/db/sources";
 import { idsOf } from "@/lib/gauges/gauge";
 import { STANDING_BUCKET } from "@/lib/gauges/standing-disagreements";
-import { OFFSET_PARAM, pageBound, type PageAnswer } from "@/lib/paging/bounds";
+import {
+  OFFSET_PARAM,
+  PAGE_ANSWER_CACHE_CONTROL,
+  pageBound,
+  type PageAnswer,
+} from "@/lib/paging/bounds";
 import { sourceNamesOf } from "@/lib/sources/names";
 import { searchParamsOf } from "@/lib/url/search-params";
 
@@ -70,6 +75,21 @@ import { searchParamsOf } from "@/lib/url/search-params";
  * that refuses does NOT refuse the rows: `sourceLabel` renders the id verbatim
  * when the registry names nothing, exactly as the first screen does today.
  *
+ * **A GATED ANSWER IS NEVER STORABLE, AND THIS ROUTE SAYS SO ITSELF**
+ * (admin-window/BUG-0171). Every dynamically rendered page here already
+ * carries the gated-answer cache directives because Next sets them on the
+ * response; a Route Handler is given NO `Cache-Control` and answers with none
+ * unless it writes one — measured off the wire by QA, which found every arm of
+ * this route bare while the browse paging route on the same server carried
+ * them. Without this, `/claims` and its own continuation would be one surface
+ * under two cache policies, whatever store is reached: the browser's own, a
+ * corporate forward proxy, or anything later placed in front of Railway.
+ * `PAGE_ANSWER_CACHE_CONTROL` is the value, declared once in
+ * `lib/paging/bounds.ts` and never a second string typed here, and it goes on
+ * EVERY arm — the `ok` page, `not_provisioned`, `error` and the 400 refusal
+ * alike. This says nothing about the GATE, which is unchanged and still runs
+ * `requireAdmin()` on every request.
+ *
  * **GET only.** No POST, no PATCH, no DELETE — this route reads, and Next
  * answers any other method 405.
  *
@@ -78,6 +98,14 @@ import { searchParamsOf } from "@/lib/url/search-params";
  * no raw PostgREST error object beyond the `message` §4.1 already renders on
  * the page today.
  */
+
+/** Every answer this route emits, on every arm. */
+function answer(body: PageAnswer<ClaimLine>, status?: number): Response {
+  return Response.json(body, {
+    status,
+    headers: { "cache-control": PAGE_ANSWER_CACHE_CONTROL },
+  });
+}
 
 export async function GET(request: Request): Promise<Response> {
   const gate = await requireAdmin();
@@ -89,12 +117,7 @@ export async function GET(request: Request): Promise<Response> {
   // `pageBound` is handed the parameter VERBATIM and is the only reader of it.
   const bound = pageBound(url.searchParams.get(OFFSET_PARAM), CLAIM_WINDOW);
   if (bound.kind === "refused") {
-    const refusal: PageAnswer<ClaimLine> = {
-      kind: "refused",
-      reason: bound.reason,
-      bound: bound.bound,
-    };
-    return Response.json(refusal, { status: 400 });
+    return answer({ kind: "refused", reason: bound.reason, bound: bound.bound }, 400);
   }
 
   // The page's own narrowing, derived by the page's own functions, off the
@@ -119,12 +142,7 @@ export async function GET(request: Request): Promise<Response> {
   if (read.kind !== "ok") {
     // `not_provisioned` and `error` cross UNCHANGED (§4.1): the client's
     // refusal names the same object this page's own card would name.
-    const answer: PageAnswer<ClaimLine> = pageAnswerOf<ClaimLine>(
-      read,
-      bound.offset,
-      CLAIM_WINDOW,
-    );
-    return Response.json(answer);
+    return answer(pageAnswerOf<ClaimLine>(read, bound.offset, CLAIM_WINDOW));
   }
 
   // The names for exactly THIS page's sources, and no others. A refusal costs
@@ -136,10 +154,11 @@ export async function GET(request: Request): Promise<Response> {
   // `claimLines` is one line per claim, in the order the database returned
   // them, so the row count `pageAnswerOf` grades full-or-exhausted against is
   // the count the READ returned — nothing here adds, drops or re-sorts a row.
-  const answer: PageAnswer<ClaimLine> = pageAnswerOf<ClaimLine>(
-    { kind: "ok", data: claimLines(read.data, names) },
-    bound.offset,
-    CLAIM_WINDOW,
+  return answer(
+    pageAnswerOf<ClaimLine>(
+      { kind: "ok", data: claimLines(read.data, names) },
+      bound.offset,
+      CLAIM_WINDOW,
+    ),
   );
-  return Response.json(answer);
 }

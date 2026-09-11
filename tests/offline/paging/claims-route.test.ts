@@ -71,6 +71,7 @@ import { T } from "@/lib/db/tables";
 import {
   MAX_PAGE_OFFSET,
   OFFSET_PARAM,
+  PAGE_ANSWER_CACHE_CONTROL,
   PAGE_ROUTES,
   isPageAnswer,
   type PageAnswer,
@@ -87,6 +88,7 @@ import {
   type StubClient,
 } from "../../fixtures/stub-client";
 import { REGISTRY, SOURCE, SOURCE_NAME, claimView } from "../claims/population";
+import { codeText } from "../source-tree";
 import { render } from "../ui/markup";
 
 /** The admin the stubbed gate hands the handler. Not a real address. */
@@ -154,9 +156,15 @@ function rangeOf(call: RecordedCall): [number, number] {
 }
 
 /** Drive the handler and read its answer back as the client would. */
-async function ask(query: string): Promise<{ status: number; body: unknown }> {
+async function ask(
+  query: string,
+): Promise<{ status: number; body: unknown; cacheControl: string | null }> {
   const response = await GET(request(query));
-  return { status: response.status, body: await response.json() };
+  return {
+    status: response.status,
+    body: await response.json(),
+    cacheControl: response.headers.get("cache-control"),
+  };
 }
 
 /**
@@ -169,6 +177,14 @@ async function ask(query: string): Promise<{ status: number; body: unknown }> {
 function accepted(body: unknown): PageAnswer<ClaimLine> {
   expect(isPageAnswer(body), `the client's own gate rejects ${JSON.stringify(body)}`).toBe(true);
   return body as PageAnswer<ClaimLine>;
+}
+
+/** The route, repo-relative — the spelling `codeText` reads. */
+const ROUTE_FILE = "src/app/api/admin/claims/rows/route.ts";
+
+/** The route file, whole, as the structural assertions read it. */
+function routeSource(): string {
+  return fs.readFileSync(path.join(import.meta.dirname, "..", "..", "..", ROUTE_FILE), "utf8");
 }
 
 /** The rows the first screen would shape out of this slice of the population. */
@@ -211,10 +227,7 @@ describe("the gate, first and always", () => {
   });
 
   it("is the first statement of the handler body", () => {
-    const source = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "..", "..", "src/app/api/admin/claims/rows/route.ts"),
-      "utf8",
-    );
+    const source = routeSource();
     const body = source.slice(source.indexOf("export async function GET"));
     const firstStatement = body.slice(body.indexOf("{") + 1).trim().split("\n")[0];
     expect(firstStatement).toMatch(/requireAdmin\(\)/);
@@ -229,8 +242,9 @@ describe("the gate, first and always", () => {
  * EXHAUSTION — so a malformed URL would render to the operator as a set that
  * has ended rather than as a refusal.
  *
- * Every entry is asserted three ways: HTTP 400, a `refused` answer naming the
- * reason and the bound AS SENT, and a recorder that stayed EMPTY.
+ * Every entry is asserted four ways: HTTP 400, a `refused` answer naming the
+ * reason and the bound AS SENT, the gated cache directives, and a recorder
+ * that stayed EMPTY.
  */
 const REFUSED: ReadonlyArray<readonly [string, string, string]> = [
   ["no offset parameter at all", "", ""],
@@ -251,7 +265,7 @@ describe("the bound reaches nothing but pageBound", () => {
   it.each(REFUSED)("refuses %s with 400, naming it, and reads nothing", async (_what, query, sent) => {
     const stub = database(script());
 
-    const { status, body } = await ask(query);
+    const { status, body, cacheControl } = await ask(query);
     const answer = accepted(body);
 
     expect(status).toBe(400);
@@ -260,6 +274,7 @@ describe("the bound reaches nothing but pageBound", () => {
     // The bound AS SENT — never a trimmed, repaired or clamped spelling of it.
     expect(answer.bound).toBe(sent);
     expect(answer.reason.length).toBeGreaterThan(0);
+    expect(cacheControl).toBe(PAGE_ANSWER_CACHE_CONTROL);
     // The whole point: no query of any object was even built.
     expect(stub.calls, `${sent} reached a read`).toEqual([]);
   });
@@ -278,10 +293,7 @@ describe("the bound reaches nothing but pageBound", () => {
   });
 
   it("does its own arithmetic on the raw parameter nowhere", () => {
-    const source = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "..", "..", "src/app/api/admin/claims/rows/route.ts"),
-      "utf8",
-    );
+    const source = routeSource();
     // The route ASKS the shared guard…
     expect(source).toContain("pageBound(");
     // …and never coerces the parameter itself. `pageBound` owns every spelling
@@ -493,30 +505,30 @@ describe("the facets are the page's own", () => {
 });
 
 describe("the route owns the shape of what it serves", () => {
-  it("is accepted by the client's own gate on all four arms", async () => {
-    const arms: Array<{ what: string; script: Script; query: string }> = [
-      { what: "ok", script: script(), query: `?${OFFSET_PARAM}=50` },
-      { what: "refused", script: script(), query: `?${OFFSET_PARAM}=abc` },
-      {
-        what: "not_provisioned",
-        script: {
-          [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
-          [T.sources]: registryAnswer,
-        },
-        query: `?${OFFSET_PARAM}=50`,
+  const ARMS: Array<{ what: string; script: Script; query: string }> = [
+    { what: "ok", script: script(), query: `?${OFFSET_PARAM}=50` },
+    { what: "refused", script: script(), query: `?${OFFSET_PARAM}=abc` },
+    {
+      what: "not_provisioned",
+      script: {
+        [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
+        [T.sources]: registryAnswer,
       },
-      {
-        what: "error",
-        script: {
-          [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
-          [T.sources]: registryAnswer,
-        },
-        query: `?${OFFSET_PARAM}=50`,
+      query: `?${OFFSET_PARAM}=50`,
+    },
+    {
+      what: "error",
+      script: {
+        [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
+        [T.sources]: registryAnswer,
       },
-    ];
+      query: `?${OFFSET_PARAM}=50`,
+    },
+  ];
 
+  it("is accepted by the client's own gate on all four arms", async () => {
     const seen: string[] = [];
-    for (const arm of arms) {
+    for (const arm of ARMS) {
       database(arm.script);
       const { body } = await ask(arm.query);
       const answer = accepted(body);
@@ -525,6 +537,34 @@ describe("the route owns the shape of what it serves", () => {
     }
     // Every arm the answer type has, driven — not three of four.
     expect(seen).toEqual(["ok", "refused", "not_provisioned", "error"]);
+  });
+
+  /**
+   * A GATED ANSWER IS NEVER STORABLE. Every dynamically rendered page here
+   * already answers these directives because Next sets them on the response;
+   * a Route Handler answers with NO `Cache-Control` unless it writes one, so
+   * without this `/claims` and its own continuation would be one surface under
+   * two cache policies (admin-window/BUG-0171, measured off the wire by QA:
+   * every arm of this route answered with no `Cache-Control` at all while the
+   * browse route on the same server carried the directives).
+   */
+  it("says so itself on all four arms, from the one constant", async () => {
+    for (const arm of ARMS) {
+      database(arm.script);
+      const { cacheControl } = await ask(arm.query);
+      expect(cacheControl, arm.what).toBe(PAGE_ANSWER_CACHE_CONTROL);
+    }
+  });
+
+  it("spells those directives nowhere but the shared constant", () => {
+    // The value is `lib/paging/bounds.ts`' to own; a second string typed into
+    // a route is how the two paging routes drift (LESSONS 5). Read over CODE
+    // lines only — the docstring above the handler explains what the header is
+    // for, and that is documentation, not a second spelling.
+    const code = codeText(ROUTE_FILE);
+    expect(code).toContain("PAGE_ANSWER_CACHE_CONTROL");
+    expect(code).not.toContain("no-store");
+    expect(code).not.toContain("must-revalidate");
   });
 
   it("answers JSON", async () => {
