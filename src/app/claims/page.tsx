@@ -64,6 +64,7 @@ import {
   hasNarrowingFacet,
   listFilterOf,
   sourceHref,
+  tabFacetsOf,
   type FacetLabel,
   tabFrom,
   tabLinks,
@@ -1089,8 +1090,13 @@ export default async function ClaimsPage({
   // again here or there (LESSONS 5).
   const listFilter: ClaimsFilter = listFilterOf(asked, tab, STANDING_BUCKET);
   const tableFilter = withFacet(filter, "bucket", undefined);
-  const populationFilter: ClaimsFilter =
-    tab === "standing" ? { bucket: STANDING_BUCKET } : {};
+  // What this TAB merges into its own reads, of its own accord — the standing
+  // tab's own bucket and nothing else today. One spelling for the three things
+  // that need it (`tabFacetsOf`, admin-window/BUG-0193): the population read
+  // below, the list's own filter above, and the family subtraction, which must
+  // leave it standing while it drops the chips the URL contributed.
+  const tabOwn: ClaimsFilter = tabFacetsOf(tab, STANDING_BUCKET);
+  const populationFilter: ClaimsFilter = { ...tabOwn };
   // Fact 1, from the URL: can a facet of this URL remove a claim at all
   // (`lib/url/narrowing.ts`)? It also decides whether the population count is
   // ISSUED: `isSurfaceNarrowed` ANDs the two facts, so where fact 1 is false
@@ -1139,12 +1145,14 @@ export default async function ClaimsPage({
   // `listFilter` minus those facets and `tableFilter` minus them are the SAME
   // filter (they differ only by the bucket facet, which is a chip), so ONE
   // count serves the list's window line, the bucket caption and the empty card
-  // — the one-binding shape admin-window/BUG-0191 established. The SUBTRACTION
-  // is `asked`', never the applied filter's: the standing tab's own bucket is
-  // merged in by `listFilterOf` and is not a control above, so dropping it
-  // would compare this tab's rows against the other tab's population.
+  // — the one-binding shape admin-window/BUG-0191 established. The subtraction
+  // drops only the chip facets the URL CONTRIBUTED to this read, which is why
+  // it is handed `tabOwn`: the standing tab's own bucket is merged in by
+  // `listFilterOf`, is not a control above, and dropping it would compare this
+  // tab's rows against the other tab's population — measured on the landed
+  // first fix (admin-window/BUG-0193).
   const chipsNarrowingNeedsCount = chipped && unchippedInForce;
-  const withoutChipFilter = withoutChipFacets(listFilter, asked);
+  const withoutChipFilter = withoutChipFacets(listFilter, asked, tabOwn);
 
   // The GAUGE's narrowing is not the page's: `gaugeFilter` drops the bucket
   // facet, because the gauges read `observations` by source and domain and
@@ -1177,9 +1185,12 @@ export default async function ClaimsPage({
   // what makes this a count of THIS read with one family removed.
   const gaugeChipsNarrowingNeedsCount =
     chippedWithoutBucket && gaugeNarrowings.length > 0;
+  // The tab's own facets reach this subtraction too, so this leg's correctness
+  // is its own and not the spread's: `populationFilter` putting the bucket back
+  // afterwards is belt and braces, not the repair (admin-window/BUG-0193).
   const gaugeWithoutChipFilter: ClaimsFilter = {
     ...populationFilter,
-    ...withoutChipFacets(gaugeNarrowing, asked),
+    ...withoutChipFacets(gaugeNarrowing, asked, tabOwn),
   };
 
   // ONE composition, every leg independent (§4.3, the interface contract of

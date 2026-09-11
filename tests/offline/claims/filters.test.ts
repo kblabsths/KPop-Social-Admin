@@ -19,9 +19,11 @@ import {
   hasNarrowingFacet,
   listFilterOf,
   sourceHref,
+  tabFacetsOf,
   tabFrom,
   tabLinks,
   withFacet,
+  withoutChipFacets,
   type ClaimFacet,
   type ClaimsFilter,
   type ClaimsTab,
@@ -593,6 +595,107 @@ describe("one facet at a time", () => {
     expect(filterBar(PATH, {}, "buckets", OPTIONS).map((group) => group.facet)).toEqual([
       ...CHIP_FACETS,
     ]);
+  });
+});
+
+/**
+ * **The family subtraction widens a read by what the URL CONTRIBUTED to it** —
+ * admin-window/BUG-0192's own named hazard 1, refiled as
+ * admin-window/BUG-0193 when the first fix decided from `asked` and deleted
+ * from `applied`.
+ *
+ * The widened count exists to answer one question: did the CHIP family remove
+ * any of the rows this surface drew (`isFamilyNarrowing`,
+ * `src/lib/url/narrowing.ts`)? So the filter it is taken under has to be this
+ * surface's own read minus the chips the operator set, and nothing else. The
+ * standing tab merges `bucket = standing_disagreement` into its read of its
+ * own accord — no control on screen offers it — so subtracting it counts the
+ * OTHER tab's population and the comparison then differs for a reason that has
+ * nothing to do with the chip bar.
+ *
+ * The coincidence case below is why the surface's own facets are handed IN
+ * rather than inferred from equal values: `standing_disagreement` is itself a
+ * bucket the chip row offers, so `?bucket=standing_disagreement` reaches the
+ * standing tab in one click and there the applied bucket and the asked bucket
+ * are the same STRING while only one of them is a control above.
+ *
+ * What the PAGE renders in that state is graded in
+ * `tests/offline/claims/page.test.ts`; this is the leaf's share.
+ */
+describe("widening a read by one facet family", () => {
+  const standingBucket = "standing_disagreement";
+  /** The URL an operator is on: both chip facets, plus the control-less one. */
+  const asked: ClaimsFilter = {
+    bucket: "escalated",
+    source_id: SOURCES[0],
+    domain: "events",
+  };
+
+  /** The same read, widened — always taken through the tab's own two facts. */
+  const widened = (from: ClaimsFilter, tab: ClaimsTab) =>
+    withoutChipFacets(
+      listFilterOf(from, tab, standingBucket),
+      from,
+      tabFacetsOf(tab, standingBucket),
+    );
+
+  it("drops the chip facets the URL contributed and keeps the ones with no control", () => {
+    const applied = listFilterOf(asked, "buckets", standingBucket);
+    // Non-vacuous: on this tab both chips really are part of the read.
+    expect(applied).toEqual(asked);
+    for (const facet of CHIP_FACETS) expect(applied[facet]).toBeDefined();
+
+    expect(widened(asked, "buckets")).toEqual({ domain: "events" });
+    // A subtraction, not a mutation: the read the page issues is untouched.
+    expect(applied).toEqual(asked);
+  });
+
+  it("keeps a facet the surface merged in of its own accord", () => {
+    const applied = listFilterOf(asked, "standing", standingBucket);
+    // The tab's bucket replaced the URL's, which is the state under test.
+    expect(applied.bucket).toBe(standingBucket);
+
+    const result = widened(asked, "standing");
+    expect(result).toEqual({ bucket: standingBucket, domain: "events" });
+    // Said as the count means it: every row counted is still a row of THIS
+    // tab's subset, and the only thing missing is the chip the operator set.
+    expect(result.bucket).toBe(applied.bucket);
+    expect(result.source_id).toBeUndefined();
+  });
+
+  it("keeps it when the URL happens to ask for the same value", () => {
+    // One click from the buckets tab: `standing_disagreement` is a bucket the
+    // chip row offers, so `?bucket=standing_disagreement` travels into the
+    // standing tab's href and the two buckets become one string. Equal values
+    // are a coincidence; which facet is a CONTROL is the fact.
+    const coincident: ClaimsFilter = { ...asked, bucket: standingBucket };
+    expect(BUCKETS).toContain(standingBucket);
+
+    const result = widened(coincident, "standing");
+    expect(result.bucket).toBe(standingBucket);
+    expect(result).toEqual(widened(asked, "standing"));
+  });
+
+  it("answers for a tab that merges nothing, and for every facet family", () => {
+    // The other tab merges no facet at all, so its widened read is its applied
+    // read minus every chip — and a URL that set no chip is widened to itself.
+    expect(tabFacetsOf("buckets", standingBucket)).toEqual({});
+    expect(widened({ domain: "events" }, "buckets")).toEqual({ domain: "events" });
+    expect(widened({}, "buckets")).toEqual({});
+
+    // Every facet the tab merges is a facet its own read carries, at that
+    // value — the two halves of the merge read from one spelling, so a tab
+    // that gains a merged facet gains it for the subtraction in the same edit.
+    for (const tab of TABS) {
+      const own = tabFacetsOf(tab, standingBucket);
+      const applied = listFilterOf(asked, tab, standingBucket);
+      for (const [facet, value] of Object.entries(own)) {
+        expect(applied[facet as ClaimFacet], tab).toBe(value);
+        expect(widened(asked, tab)[facet as ClaimFacet], tab).toBe(value);
+      }
+      // ...and the empty URL on that tab reads exactly those facets.
+      expect(listFilterOf({}, tab, standingBucket), tab).toEqual(own);
+    }
   });
 });
 
