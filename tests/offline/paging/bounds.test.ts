@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  isPageNotes,
   MAX_PAGE_OFFSET,
   OFFSET_PARAM,
   PAGE_ROUTES,
   pageBound,
   type PageBound,
+  type PageNotes,
 } from "@/lib/paging/bounds";
 
 /**
@@ -137,5 +139,87 @@ describe("pageBound", () => {
     }
     // A 400-digit bound is refused as itself, not accepted as an Infinity.
     expect(refusalOf(pageBound("9".repeat(400), SIZE)).bound.length).toBe(400);
+  });
+});
+
+/**
+ * The LEG NOTES a page carries — campaign admin-window/TASK-0076.
+ *
+ * `isPageNotes` asks of the `notes` FIELD exactly what `isPageAnswer` asks of
+ * the body: is this something this app can read at all? It is a yes-or-no
+ * question and nothing else — nothing here trims, rewords or renders a note,
+ * because the words an operator reads are the database's own.
+ *
+ * Both fixtures, the way every guard here owes them (LESSONS 8): the records
+ * it must NOT flag first, so the refusals below cannot pass vacuously.
+ */
+describe("isPageNotes", () => {
+  /** What `/api/admin/browse/rows` really puts on the wire, both legs refused. */
+  const BROWSE_NOTES = {
+    venues: { kind: "not_provisioned", missing: "event_listings.venue_name" },
+    provenance: { kind: "error", reading: "field_provenance", message: "connection refused" },
+  };
+
+  it("accepts a record of notes and nulls, by whatever keys the surface spells", () => {
+    const readable: unknown[] = [
+      // No leg reported anything: a surface with no legs still reported.
+      {},
+      // Both legs answered.
+      { venues: null, provenance: null },
+      // One refused, one answered — the measured Browse case.
+      { venues: { kind: "not_provisioned", missing: "event_listings" }, provenance: null },
+      { venues: null, provenance: { kind: "error", reading: "field_provenance", message: "boom" } },
+      BROWSE_NOTES,
+      // The keys are the SURFACE's own; this leaf knows none of them.
+      { anything_a_surface_calls_a_leg: null },
+    ];
+    for (const value of readable) {
+      expect(isPageNotes(value), JSON.stringify(value)).toBe(true);
+      // …and through JSON, because that is the only way it ever travels.
+      expect(isPageNotes(JSON.parse(JSON.stringify(value))), JSON.stringify(value)).toBe(true);
+    }
+  });
+
+  it("refuses anything that is not a record of notes, including notes wearing the right shape", () => {
+    const foreign: unknown[] = [
+      null,
+      undefined,
+      42,
+      // A string: the whole field replaced by a sentence.
+      "the venue leg failed",
+      // An array: JSON's other container.
+      [],
+      [{ kind: "not_provisioned", missing: "venues" }],
+      // A kind this app does not know — the one that would otherwise reach a
+      // renderer with no arm for it.
+      { venues: { kind: "unavailable", missing: "venues" } },
+      { venues: { kind: "refused", reason: "the offset must be a multiple of 50", bound: "75" } },
+      { venues: { kind: "ok", rows: [], offset: 50, exhausted: true } },
+      // A field of the wrong type, or missing.
+      { venues: { kind: "not_provisioned", missing: 7 } },
+      { venues: { kind: "not_provisioned" } },
+      { venues: { kind: "error", reading: "field_provenance" } },
+      { venues: { kind: "error", reading: "field_provenance", message: 7 } },
+      // A note that is itself a nested record of notes.
+      { venues: { venues: null, provenance: null } },
+      { venues: {} },
+      { venues: [] },
+      // ONE unreadable leg is enough: the page is refused whole rather than
+      // silently rendered with that column's account missing.
+      { venues: null, provenance: "gone" },
+    ];
+    for (const value of foreign) {
+      expect(isPageNotes(value), JSON.stringify(value ?? String(value))).toBe(false);
+    }
+  });
+
+  it("names no `DbResult`, and hands back the note objects untouched", () => {
+    // The note the answer carried IS the note the state gets: this leaf is a
+    // guard, never a translator (common violations row 15).
+    const value: unknown = BROWSE_NOTES;
+    expect(isPageNotes(value)).toBe(true);
+    const notes = value as PageNotes;
+    expect(notes.venues).toBe(BROWSE_NOTES.venues);
+    expect(notes.provenance).toBe(BROWSE_NOTES.provenance);
   });
 });

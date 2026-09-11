@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as barrel from "@/components/ui";
 import { Button } from "@/components/ui/button";
-import { PageMore, fetchJson, usePageRows } from "@/components/ui/paging";
+import {
+  ANSWERED_BY_SOMETHING_ELSE,
+  PageMore,
+  UNREADABLE_ANSWER,
+  fetchJson,
+  usePageRows,
+} from "@/components/ui/paging";
 import {
   MAX_PAGE_OFFSET,
   OFFSET_PARAM,
@@ -20,6 +26,7 @@ import {
   h,
   render,
   runTogetherWords,
+  textOf,
   uppercasedIdentifiers,
 } from "./markup";
 
@@ -41,7 +48,7 @@ const SIZE = 50;
 
 /** A state a surface would really be in: a first screen, and nothing paged in yet. */
 function state(over: Partial<PageState<Row>> = {}): PageState<Row> {
-  return { rows: [], held: SIZE, status: "idle", refusal: null, ...over };
+  return { rows: [], held: SIZE, status: "idle", refusal: null, notes: null, ...over };
 }
 
 const more = (over: Partial<PageState<Row>> = {}): string =>
@@ -322,9 +329,11 @@ describe("fetchJson — the one request, and what it may reject with", () => {
   }
 
   it("asks the URL it was given, carrying this origin's own credentials", async () => {
-    const calls = stub(
-      () => new Response(JSON.stringify({ kind: "refused", reason: "x", bound: "1" })),
-    );
+    // `Response.json` is what both paging routes answer with (their `answer()`
+    // helper), so it is what a fixture for "this app's route answered" uses:
+    // `new Response(JSON.stringify(...))` declares `text/plain`, which is a
+    // body from something ELSE (admin-window/TASK-0076).
+    const calls = stub(() => Response.json({ kind: "refused", reason: "x", bound: "1" }));
     await fetchJson(URL_ASKED);
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe(URL_ASKED);
@@ -340,14 +349,14 @@ describe("fetchJson — the one request, and what it may reject with", () => {
       reason: "the `offset` must be a multiple of 50",
       bound: "51",
     };
-    stub(() => new Response(JSON.stringify(answer), { status: 400 }));
+    stub(() => Response.json(answer, { status: 400 }));
     expect(await fetchJson(URL_ASKED)).toEqual(answer);
 
     // …and end to end: the driver reads it and refuses in the answer's words,
     // with the row list untouched.
-    stub(() => new Response(JSON.stringify(answer), { status: 400 }));
+    stub(() => Response.json(answer, { status: 400 }));
     const next = await requestPage<Row>(
-      { rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null },
+      { rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
       { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
     );
     expect(next.refusal?.reason).toBe(answer.reason);
@@ -382,7 +391,7 @@ describe("fetchJson — the one request, and what it may reject with", () => {
       expect(said, name).not.toBe("null");
       // The driver renders whatever this rejects with; it must be readable.
       const next = await requestPage<Row>(
-        { rows: [], held: SIZE, status: "idle", refusal: null },
+        { rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
         { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
       );
       expect(next.refusal?.reason, name).toBe(said);
@@ -392,6 +401,231 @@ describe("fetchJson — the one request, and what it may reject with", () => {
   it("passes a rejection's own words through when it has some", async () => {
     stub(() => Promise.reject(new TypeError("Failed to fetch")));
     await expect(fetchJson(URL_ASKED)).rejects.toThrow("Failed to fetch");
+  });
+});
+
+/**
+ * WHAT ANSWERED, BEFORE WHAT THE BODY SAYS — campaign admin-window/TASK-0076.
+ *
+ * MEASURED: a session that expires mid-walk is answered with the login
+ * redirect, FOLLOWED to an HTML page at status **200**. `response.json()`
+ * rejected with the JSON parser's own `SyntaxError`, `asError` passed its words
+ * through, and `requestPage`'s `reasonOf` put them in the refusal slot — so the
+ * operator read the parser's vocabulary as this app's account of why the press
+ * added no rows. Same class as admin-window/BUG-0170 (text this app did not
+ * author inside a sentence it wrote), and not covered by it: that fix is inside
+ * `errorMessage` in `lib/db/result.ts`, which this path never touches.
+ *
+ * `response.ok` is deliberately not the discriminator — the measured defect
+ * arrives at 200, and a 400 carrying a refused page is the operator's own
+ * refusal (pinned above, unchanged).
+ */
+describe("fetchJson asks what ANSWERED before it reads the body", () => {
+  const URL_ASKED = pageUrl(
+    { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
+    SIZE,
+  );
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function answeredWith(body: BodyInit | null, init?: ResponseInit): void {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response(body, init)));
+  }
+
+  /** Whatever `fetchJson` rejected with, or a failure naming what it resolved. */
+  async function rejection(): Promise<Error> {
+    const thrown = await fetchJson(URL_ASKED).then(
+      (value) => ({ resolved: value }),
+      (error: unknown) => error,
+    );
+    expect(thrown, JSON.stringify(thrown)).toBeInstanceOf(Error);
+    return thrown as Error;
+  }
+
+  /**
+   * The refusal AS READ, not as escaped: React writes `'` as `&#x27;` and `<`
+   * as `&lt;`, so a body fragment that leaked would hide from a raw substring
+   * check behind its own escape.
+   */
+  const readable = (html: string): string =>
+    textOf(html)
+      .replace(/&#x27;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&");
+
+  /** The measured fixture: the login page, followed, at status 200. */
+  const LOGIN_PAGE =
+    '<!doctype html><html><head><title>Sign in</title></head><body>' +
+    '<form action="/api/auth/callback"><input name="csrfToken" value="7f3a"></form>' +
+    "</body></html>";
+
+  const NOT_THIS_APP: ReadonlyArray<readonly [string, BodyInit | null, ResponseInit]> = [
+    [
+      "the measured one: an HTML login page at status 200",
+      LOGIN_PAGE,
+      { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
+    ],
+    [
+      "a text/plain proxy page",
+      "502 Bad Gateway (proxy)",
+      { status: 502, headers: { "content-type": "text/plain" } },
+    ],
+    ["no content-type header at all", "{}", { status: 200, headers: {} }],
+    ["an empty body", null, { status: 200 }],
+  ];
+
+  it("refuses in the app's own words when something else answered, on four fixtures", async () => {
+    for (const [name, body, init] of NOT_THIS_APP) {
+      answeredWith(body, init);
+      const thrown = await rejection();
+      expect(thrown.message, name).toBe(ANSWERED_BY_SOMETHING_ELSE);
+    }
+  });
+
+  it("the operator's refusal is EXACTLY that sentence, with this app's own route as its object", async () => {
+    // End to end: through the driver, which names `deps.route` on this arm.
+    for (const [name, body, init] of NOT_THIS_APP) {
+      answeredWith(body, init);
+      const next = await requestPage<Row>(
+        { rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
+        { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
+      );
+      expect(next.refusal?.reason, name).toBe(ANSWERED_BY_SOMETHING_ELSE);
+      expect(next.refusal?.object, name).toBe(PAGE_ROUTES.claims);
+      // A refusal never half-fills the list, whatever it was refused for.
+      expect(next.rows.map((row) => row.id), name).toEqual(["a"]);
+      expect(next.held, name).toBe(SIZE);
+      expect(next.status, name).toBe("idle");
+    }
+  });
+
+  it("the RENDERED refusal quotes nothing this app did not author", async () => {
+    // The login-page fixture, all the way to the markup an operator reads: no
+    // fragment of the body, no content type, no status code, and none of the
+    // JSON parser's vocabulary.
+    const [, body, init] = NOT_THIS_APP[0];
+    answeredWith(body, init);
+    const next = await requestPage<Row>(
+      { rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
+      { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
+    );
+    const shown = readable(
+      render(h(PageMore, { state: next, holds: HOLDS, size: SIZE, onPress: () => {} })),
+    );
+    // Non-vacuity: the refusal really is on screen.
+    expect(shown).toContain(ANSWERED_BY_SOMETHING_ELSE);
+    for (const forbidden of [/JSON/i, /token/, /</, /SyntaxError/]) {
+      expect(shown, String(forbidden)).not.toMatch(forbidden);
+    }
+    // Nor the body, the declared type, or the status.
+    for (const fragment of ["doctype", "csrfToken", "7f3a", "Sign in", "text/html", "200", "502"]) {
+      expect(shown, fragment).not.toContain(fragment);
+    }
+  });
+
+  it("a body that DECLARES json and does not parse refuses on the same terms", async () => {
+    // A truncated document, sent as `application/json`.
+    for (const truncated of ['{"kind":"ok","rows":[{"id":', "", "   "]) {
+      answeredWith(truncated, { status: 200, headers: { "content-type": "application/json" } });
+      const thrown = await rejection();
+      expect(thrown.message, JSON.stringify(truncated)).toBe(UNREADABLE_ANSWER);
+    }
+
+    answeredWith('{"kind":"ok","rows":[{"id":', {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    const next = await requestPage<Row>(
+      { rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
+      { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
+    );
+    expect(next.refusal?.reason).toBe(UNREADABLE_ANSWER);
+    expect(next.refusal?.object).toBe(PAGE_ROUTES.claims);
+    expect(next.rows.map((row) => row.id)).toEqual(["a"]);
+  });
+
+  it("both sentences are the app's voice, and neither is one of its generic apologies", async () => {
+    const sentences = [ANSWERED_BY_SOMETHING_ELSE, UNREADABLE_ANSWER];
+    // Two DIFFERENT accounts: "something else answered" and "the answer broke
+    // off" are not the same fact, and one sentence for both would be an
+    // apology rather than a report.
+    expect(new Set(sentences).size).toBe(2);
+    for (const sentence of sentences) {
+      expect(sentence.length, sentence).toBeGreaterThan(20);
+      // Quotes nothing: no parser vocabulary, no media type, no figure.
+      for (const forbidden of [/JSON/i, /SyntaxError/, /content-type/i, /status/i, /\d/]) {
+        expect(sentence, String(forbidden)).not.toMatch(forbidden);
+      }
+      // Distinct from the app's existing generic lines, so a refusal says
+      // which of them happened (LESSONS 11 — one row, one verdict).
+      expect(sentence).not.toBe("the page request failed before it answered");
+      expect(sentence).not.toBe("the page request answered something this app cannot read");
+    }
+  });
+
+  it("must NOT flag: every spelling of a declared json answer still reaches the driver", async () => {
+    // The passing half (LESSONS 8). The media type is compared on a canonical
+    // form, not against a list of spellings someone thought of (LESSONS 4).
+    const answer: PageAnswer<Row> = { kind: "ok", rows: pageOf(SIZE), offset: SIZE, exhausted: false };
+    for (const declared of [
+      "application/json",
+      "application/json; charset=utf-8",
+      "application/json;charset=UTF-8",
+      "APPLICATION/JSON",
+      "Application/Json; charset=utf-8",
+      "  application/json  ",
+    ]) {
+      answeredWith(JSON.stringify(answer), { status: 200, headers: { "content-type": declared } });
+      expect(await fetchJson(URL_ASKED), declared).toEqual(answer);
+    }
+  });
+
+  it("a media type that merely LOOKS like json is something else answering", async () => {
+    // `application/json` with parameters, and nothing else: a suffix type or a
+    // different tree is not this app's route, which answers `Response.json`.
+    for (const declared of ["application/jsonl", "text/json", "application/ld+json", "json"]) {
+      answeredWith("{}", { status: 200, headers: { "content-type": declared } });
+      expect((await rejection()).message, declared).toBe(ANSWERED_BY_SOMETHING_ELSE);
+    }
+  });
+
+  it("reads the body ONCE and only after the declaration, still one request per press", async () => {
+    // The body is never read at all when something else answered: an HTML page
+    // reaches no parser, which is the whole point of the discriminator.
+    const calls: string[] = [];
+    const response = new Response(LOGIN_PAGE, {
+      status: 200,
+      headers: { "content-type": "text/html" },
+    });
+    // Own properties shadow the prototype's readers; `headers` is untouched.
+    for (const reader of ["json", "text"] as const) {
+      Object.defineProperty(response, reader, {
+        configurable: true,
+        value: () => {
+          calls.push(reader);
+          return Promise.reject(new Error("the body was read"));
+        },
+      });
+    }
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      urls.push(url);
+      return Promise.resolve(response);
+    });
+    expect((await rejection()).message).toBe(ANSWERED_BY_SOMETHING_ELSE);
+    expect(calls).toEqual([]);
+    expect(urls).toHaveLength(1);
+  });
+
+  it("a PLATFORM rejection still passes its own words through", async () => {
+    // Unchanged: `Failed to fetch` is the transport's account of a request
+    // that never happened, not a foreign body quoted back as ours.
+    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
+    expect((await rejection()).message).toBe("Failed to fetch");
   });
 });
 
@@ -445,7 +679,9 @@ describe("usePageRows binds the driver to a press", () => {
       urls.push(url);
       return typeof answer === "function"
         ? answer()
-        : Promise.resolve(new Response(JSON.stringify(answer)));
+        // `Response.json`, because that is what this app's routes answer with
+        // and `fetchJson` now reads the declared type (admin-window/TASK-0076).
+        : Promise.resolve(Response.json(answer));
     });
     return urls;
   }
@@ -497,9 +733,7 @@ describe("usePageRows binds the driver to a press", () => {
     press();
     expect(urls).toHaveLength(1);
     answer.resolve(
-      new Response(
-        JSON.stringify({ kind: "ok", rows: [{ id: "c" }], offset: SIZE, exhausted: false }),
-      ),
+      Response.json({ kind: "ok", rows: [{ id: "c" }], offset: SIZE, exhausted: false }),
     );
     await settle();
     expect(urls).toHaveLength(1);
@@ -634,6 +868,11 @@ describe("the module's place in the tree", () => {
     expect(barrel.PageMore).toBe(PageMore);
     expect("usePageRows" in barrel).toBe(false);
     expect("fetchJson" in barrel).toBe(false);
+    // The two refusal sentences are VALUES too (admin-window/TASK-0076): the
+    // rule is about what crosses, not about what kind of value it is.
+    expect("ANSWERED_BY_SOMETHING_ELSE" in barrel).toBe(false);
+    expect("UNREADABLE_ANSWER" in barrel).toBe(false);
+    expect(Object.keys(barrel).filter((name) => name.startsWith("Page"))).toContain("PageMore");
   });
 
   it("holds the only network call under src/components, and it reaches nothing else", () => {
@@ -693,7 +932,7 @@ describe("a page that arrives short of the window", () => {
       exhausted,
     };
     const next = await requestPage<Row>(
-      { rows: [], held: SIZE, status: "idle", refusal: null },
+      { rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
       {
         route: PAGE_ROUTES.claims,
         params: "",

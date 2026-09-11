@@ -53,6 +53,62 @@ import { Button } from "./button";
  */
 
 /**
+ * Something other than this app's own route answered the press — campaign
+ * admin-window/TASK-0076.
+ *
+ * MEASURED: a session that expires mid-walk is answered with the login
+ * redirect, FOLLOWED to an HTML page at status 200. `response.json()` then
+ * rejects with the JSON parser's own `SyntaxError`, and its vocabulary ends up
+ * in the refusal line as this app's account of why the press added no rows.
+ *
+ * So this sentence quotes NOTHING: not the content type, not the status, not a
+ * byte of the body. It names what arrived — an answer from something that is
+ * not this app's route — and `requestPage` names the route it asked
+ * (`deps.route`, this app's own relative path) beside it.
+ *
+ * Exported for the offline tier; NOT re-exported through the `src/components/ui`
+ * barrel — a server module importing a VALUE out of a "use client" module
+ * builds green and answers 500 in production (admin-window/BUG-0094).
+ */
+export const ANSWERED_BY_SOMETHING_ELSE =
+  "the page request was answered by something other than this app's own route, so there is no page in what came back";
+
+/**
+ * The answer DECLARED a page and carried something that is not one — campaign
+ * admin-window/TASK-0076, on the same terms as its neighbour above: this app's
+ * own voice, naming what arrived rather than how it failed, quoting nothing.
+ *
+ * A truncated document sent as `application/json` lands here. The parser's
+ * words are the parser's, not this app's account of a press.
+ */
+export const UNREADABLE_ANSWER =
+  "the page request came back declaring a page and carrying an incomplete one, so there is no page to add";
+
+/**
+ * Does this response DECLARE that it carries JSON?
+ *
+ * A case-insensitive `application/json`, with parameters (`; charset=utf-8`)
+ * allowed and nothing else: the media type is compared to a canonical form
+ * rather than against a list of spellings someone thought of (LESSONS 4).
+ *
+ * **`response.ok` is deliberately NOT the discriminator.** The status is not
+ * the question: the route answers a refused page as a `PageAnswer` with a 400
+ * to match, and that body is the operator's refusal — throwing it away for its
+ * status would replace the server's reason with one this app made up. And the
+ * measured defect arrives at status **200**, which a status check misses
+ * entirely. The declared type is what separates "this app's route answered"
+ * from "something else did".
+ */
+const DECLARES_JSON = /^application\/json\s*(?:;|$)/i;
+
+function declaresJson(response: Response): boolean {
+  const declared = response.headers.get("content-type");
+  // No header at all is not a declaration — a proxy page and an empty body
+  // both land here, and neither is this app's route answering.
+  return declared !== null && DECLARES_JSON.test(declared.trim());
+}
+
+/**
  * One paging request, already parsed — the whole of §4 rule 1's exception.
  *
  * **It does not reject on a non-ok status.** The route answers a refused page
@@ -60,22 +116,39 @@ import { Button } from "./button";
  * operator's refusal: throwing it away for its status code would replace the
  * reason the server gave with a generic one this app made up.
  *
+ * **It asks what ANSWERED before it asks what the body says** (campaign
+ * admin-window/TASK-0076). Unless the response declares JSON, the body is
+ * never read at all and this rejects with `ANSWERED_BY_SOMETHING_ELSE`; a body
+ * that declares JSON and does not parse rejects with `UNREADABLE_ANSWER`.
+ * Same class as admin-window/BUG-0170 — text this app did not author inside a
+ * sentence it wrote — and not covered by it: that fix is inside `errorMessage`
+ * in `lib/db/result.ts`, which this path never touches.
+ *
  * **It rejects only with an `Error` carrying words.** `requestPage`'s
  * `reasonOf` renders a non-`Error` rejection with `String(thrown)`, so a
  * rejection carrying `undefined` reaches the operator as the word "undefined"
- * in a refusal line. A body that is not JSON — an HTML error page, an empty
- * body — already rejects with a `SyntaxError`, which has words; anything else
- * that a client, a proxy or a stub can throw is given the app's own sentence
- * here rather than downstream.
+ * in a refusal line. A PLATFORM rejection — the fetch itself never answering —
+ * still passes its own words through (`Failed to fetch`): those are the
+ * transport's account of a request that did not happen, not a foreign body
+ * quoted back as ours.
  *
  * Exported so the offline tier can drive it against a stubbed global.
  */
 export async function fetchJson(url: string): Promise<unknown> {
+  let response: Response;
   try {
-    const response = await fetch(url, { credentials: "same-origin" });
-    return await response.json();
+    response = await fetch(url, { credentials: "same-origin" });
   } catch (thrown) {
     throw asError(thrown);
+  }
+
+  if (!declaresJson(response)) throw new Error(ANSWERED_BY_SOMETHING_ELSE);
+
+  try {
+    return await response.json();
+  } catch {
+    // The parser's words stop here. What the operator reads is the app's.
+    throw new Error(UNREADABLE_ANSWER);
   }
 }
 

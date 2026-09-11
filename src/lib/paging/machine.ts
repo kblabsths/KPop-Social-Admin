@@ -27,7 +27,11 @@
  * already loading issues no request at all.
  */
 
-import { isPageAnswer, OFFSET_PARAM, type PageAnswer } from "./bounds";
+// ONE line, deliberately: the leaf-closure guard in
+// `tests/offline/db/layering.test.ts` reads imports LINE BY LINE, so a
+// multi-line import's opening brace reads as an import naming no module at all
+// and the leaf is reported as reaching outside itself.
+import { isPageAnswer, isPageNotes, OFFSET_PARAM, type PageAnswer, type PageNote, type PageNotes } from "./bounds";
 
 /**
  * Why a press added no rows, and WHICH object it was about.
@@ -52,6 +56,16 @@ export interface PageState<Row> {
   readonly held: number;
   readonly status: "idle" | "loading" | "exhausted";
   readonly refusal: PageRefusal | null;
+  /**
+   * The legs that reported on the pages THIS STATE has taken in — never the
+   * first screen's, which are the page's own to render, exactly as `rows`
+   * holds no first-screen row (admin-window/TASK-0076).
+   *
+   * `null` means no page this state took in said anything about its legs: a
+   * surface whose route carries no notes at all (`/claims`) never leaves this
+   * field.
+   */
+  readonly notes: PageNotes | null;
 }
 
 /**
@@ -82,7 +96,15 @@ export interface PageState<Row> {
  */
 export function pressing<Row>(state: PageState<Row>): PageState<Row> {
   if (state.status !== "idle") return state;
-  return { rows: state.rows, held: state.held, status: "loading", refusal: state.refusal };
+  return {
+    rows: state.rows,
+    held: state.held,
+    status: "loading",
+    refusal: state.refusal,
+    // Carried through untouched: a press in flight has not changed what the
+    // pages already taken in reported about their legs.
+    notes: state.notes,
+  };
 }
 
 /**
@@ -93,7 +115,9 @@ export function pressing<Row>(state: PageState<Row>): PageState<Row> {
  * honoured is never offered (SPEC F10's rule).
  */
 export function initialPage<Row>(held: number, more: boolean): PageState<Row> {
-  return { rows: [], held, status: more ? "idle" : "exhausted", refusal: null };
+  // `notes: null` — a surface's FIRST screen renders its own legs
+  // server-side; this state holds only what PRESSES brought.
+  return { rows: [], held, status: more ? "idle" : "exhausted", refusal: null, notes: null };
 }
 
 /** What one press needs: where to ask, what to carry, and how to ask. */
@@ -142,9 +166,49 @@ export function pageUrl(deps: PageDeps, offset: number): string {
   return `${deps.route}?${facets.toString()}`;
 }
 
-/** A refusal that adds no rows: the list, the bound and the order all stand. */
+/**
+ * A refusal that adds no rows: the list, the bound, the order and the standing
+ * leg notes all stand.
+ *
+ * The notes survive a refusal for the same reason the rows do — they are the
+ * account of columns that are STILL unfilled on screen, and a press that added
+ * nothing cannot have filled them.
+ */
 function refuse<Row>(state: PageState<Row>, reason: string, object: string | null): PageState<Row> {
-  return { rows: state.rows, held: state.held, status: "idle", refusal: { reason, object } };
+  return {
+    rows: state.rows,
+    held: state.held,
+    status: "idle",
+    refusal: { reason, object },
+    notes: state.notes,
+  };
+}
+
+/**
+ * The standing notes, plus what this page reported — MERGED per key, campaign
+ * admin-window/TASK-0076.
+ *
+ * A key already carrying a note KEEPS it; a key that is absent or `null` takes
+ * whatever the new page carried. **Why merge and not replace:** the rows a
+ * refused leg left unfilled are still on screen after the next press, so a
+ * note that vanished when a later page's legs answered would be the
+ * silently-empty-column defect one press later.
+ *
+ * Nothing is read, trimmed, reworded or rendered here: the note objects reach
+ * the state byte-identical to what the answer carried, because the words an
+ * operator reads are the database's own (§4.1, common violations row 15).
+ *
+ * Built through `Object.fromEntries` rather than by assigning a computed key:
+ * the keys come off a JSON body, and `merged["__proto__"] = note` would set a
+ * prototype instead of adding an entry.
+ */
+function mergedNotes(standing: PageNotes | null, arrived: PageNotes): PageNotes {
+  const merged = new Map<string, PageNote | null>(Object.entries(standing ?? {}));
+  for (const [key, note] of Object.entries(arrived)) {
+    // Absent or null takes the new report; a standing note is never overwritten.
+    if ((merged.get(key) ?? null) === null) merged.set(key, note);
+  }
+  return Object.fromEntries(merged);
 }
 
 /**
@@ -164,6 +228,18 @@ const OVERLONG_PAGE =
   "the page arrived with more rows than this view's window, so it is not the page this view asked for";
 const WINDOWLESS =
   "this view has no window size to read a page by, so no page can be honoured";
+
+/**
+ * A page whose legs reported in a vocabulary this app does not know — campaign
+ * admin-window/TASK-0076.
+ *
+ * Appending the rows and dropping the notes is the defect this sentence exists
+ * to close; rendering a note this app cannot read is the one thing worse than
+ * dropping it. Like its two neighbours it carries no figure and — decisively —
+ * not one character of the foreign field it refused (common violations row 15).
+ */
+const UNREADABLE_NOTES =
+  "the page reported on its own columns in a form this app cannot read, so none of it was taken in";
 
 /** The words a thrown or rejected value carries, without asking it to be an Error. */
 function reasonOf(thrown: unknown): string {
@@ -199,6 +275,14 @@ function reasonOf(thrown: unknown): string {
  *  5. **Foreign data is a refusal, never a throw**: a rejected `fetchJson`, a
  *     body that never parsed, and a body `isPageAnswer` rejects all refuse
  *     naming the route.
+ *  6. **The legs a page brought reach the state, or the press is refused**
+ *     (admin-window/TASK-0076). An `ok` answer carrying a `notes` field must
+ *     satisfy `isPageNotes`; a readable one MERGES per key into `state.notes`
+ *     and an unreadable one refuses naming the route, appending nothing. An
+ *     answer with no `notes` field leaves the standing notes exactly as they
+ *     were. A page whose provenance leg refused must not reach the operator as
+ *     rows with a silently empty column, and no surface can render what the
+ *     state does not carry.
  *
  * The answer's own `offset` is not read into the state: `held` grows by the
  * rows that actually arrived, so a server echoing some other bound can never
@@ -243,7 +327,15 @@ export async function requestPage<Row>(
       // and a page past the end is an answer rather than a refusal (rule 3).
       // Unchanged by admin-window/BUG-0168.
       if (served === 0) {
-        return { rows: state.rows, held: state.held, status: "exhausted", refusal: null };
+        // The standing notes stand: an empty page appended no row, so it left
+        // no column for a leg to have failed to fill.
+        return {
+          rows: state.rows,
+          held: state.held,
+          status: "exhausted",
+          refusal: null,
+          notes: state.notes,
+        };
       }
 
       // Full-or-exhausted, the client half (rule 2). Neither refusal is
@@ -258,6 +350,20 @@ export async function requestPage<Row>(
         return refuse(state, SHORT_PAGE, deps.route);
       }
 
+      // THE LEGS TRAVEL TO THE STATE, OR THE PRESS IS REFUSED — never dropped.
+      // Read AFTER the full-or-exhausted rules and BEFORE the append, so a
+      // page refused for its row count never reaches the notes at all and a
+      // page refused for its notes appends nothing.
+      //
+      // An answer with NO `notes` property changes nothing: `/claims`' route
+      // carries none, and its state keeps whatever it held.
+      let notes = state.notes;
+      if (Object.hasOwn(answer, "notes")) {
+        const reported = (answer as { notes?: unknown }).notes;
+        if (!isPageNotes(reported)) return refuse(state, UNREADABLE_NOTES, deps.route);
+        notes = mergedNotes(state.notes, reported);
+      }
+
       return {
         rows: [...state.rows, ...answer.rows],
         // By the WINDOW on every continuing page, so the next bound is on the
@@ -266,6 +372,7 @@ export async function requestPage<Row>(
         held: state.held + served,
         status: answer.exhausted ? "exhausted" : "idle",
         refusal: null,
+        notes,
       };
     }
     case "not_provisioned":

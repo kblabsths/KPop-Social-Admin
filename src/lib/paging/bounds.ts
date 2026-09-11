@@ -181,6 +181,71 @@ export type PageWithoutRows =
  */
 export type PageAnswer<Row> = PageOk<Row> | PageWithoutRows;
 
+/** Every field of `shape` present on `value` with the type named. */
+function hasFields(value: object, shape: Record<string, "string" | "number" | "boolean" | "array">): boolean {
+  const record = value as Record<string, unknown>;
+  return Object.entries(shape).every(([field, kind]) =>
+    kind === "array" ? Array.isArray(record[field]) : typeof record[field] === kind,
+  );
+}
+
+/**
+ * ONE leg's own report — campaign admin-window/TASK-0076.
+ *
+ * The two rowless arms, spelled exactly as `PageWithoutRows` spells them.
+ * Structurally a `DbUnavailable` and a `StateOf`-renderable `UnavailableRead`,
+ * which is what lets a surface render a paged note through the same primitive
+ * the first screen uses — and this leaf still names no `DbResult`, not even as
+ * a type (ARCHITECTURE.md §4 rule 7).
+ *
+ * The bound refusal is deliberately NOT an arm: a leg does not carry a bound,
+ * and the page's own bound was already accepted by the time a leg ran.
+ */
+export type PageNote =
+  | { kind: "not_provisioned"; missing: string }
+  | { kind: "error"; reading: string; message: string };
+
+/**
+ * A surface's legs, by the SURFACE's own key. `null` = that leg answered.
+ *
+ * The keys are the surface's, never this leaf's: Browse spells `venues` and
+ * `provenance` (`lib/db/browse.ts`), and a surface that grows a third leg
+ * grows a third key without touching this file.
+ */
+export type PageNotes = Readonly<Record<string, PageNote | null>>;
+
+/** One leg's report, or `null` — the same shape-check `isPageAnswer` makes. */
+function isPageNote(value: unknown): value is PageNote | null {
+  if (value === null) return true;
+  if (typeof value !== "object" || Array.isArray(value)) return false;
+  switch ((value as { kind?: unknown }).kind) {
+    case "not_provisioned":
+      return hasFields(value, { missing: "string" });
+    case "error":
+      return hasFields(value, { reading: "string", message: "string" });
+    default:
+      return false;
+  }
+}
+
+/**
+ * Is this parsed value a notes record at all?
+ *
+ * The same question `isPageAnswer` asks of the body, asked of the field:
+ * foreign data is a refusal, never something a surface renders. Rendering a
+ * note this app cannot read is the one thing worse than dropping it, so a
+ * record carrying ANY value that is not a note or `null` is not a notes record
+ * — one unreadable leg refuses the whole page rather than being skipped, which
+ * would be the silently-empty-column defect wearing a different hat.
+ *
+ * An EMPTY record is a notes record: a surface with no legs that ran still
+ * reported, and there is nothing unreadable about it.
+ */
+export function isPageNotes(value: unknown): value is PageNotes {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  return Object.values(value as Record<string, unknown>).every(isPageNote);
+}
+
 /**
  * A page answer whose `ok` arm ALSO carries this surface's own leg notes.
  *
@@ -204,13 +269,6 @@ export type NotedPageAnswer<Row, Notes> =
   | (PageOk<Row> & { notes: Notes })
   | PageWithoutRows;
 
-/** Every field of `shape` present on `value` with the type named. */
-function hasFields(value: object, shape: Record<string, "string" | "number" | "boolean" | "array">): boolean {
-  const record = value as Record<string, unknown>;
-  return Object.entries(shape).every(([field, kind]) =>
-    kind === "array" ? Array.isArray(record[field]) : typeof record[field] === kind,
-  );
-}
 
 /**
  * Is this parsed body a `PageAnswer` at all? A foreign body is a refusal,
