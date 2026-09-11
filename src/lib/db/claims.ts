@@ -146,8 +146,9 @@ const BUCKET_INSTANT_COLUMNS = ["bucket", "observed_at"].join(", ");
  * It exists because the view carries `observed_at` now (scraper migration
  * `20260910000001` carries `observations.observed_at` through unchanged, one
  * row per live pending claim), so the claims a window holds are expressible
- * against this view alone. `readClaimCountSince` already windows this side by
- * the same column on the same page; this is the row read beside it.
+ * against this view alone. `readClaimCountIn` windows this side by the same
+ * column over the same interval on the same page; this is the row read beside
+ * it.
  *
  * **What it is FOR is depth, not round trips.** The gauge used to await its
  * `observations` scan and then feed the ids it returned into
@@ -165,9 +166,15 @@ const BUCKET_INSTANT_COLUMNS = ["bucket", "observed_at"].join(", ");
  *
  * A null instant is outside every window (`null >= x` is null), which is the
  * same claim the `observations` scan cannot see either.
+ *
+ * **Both edges, like the scan beside it** (admin-window/TASK-0070): the window
+ * it reads is `[since, until)`, the same interval the `observations` scan
+ * applies and the same one the window line above the card prints. It carried
+ * the lower edge alone until then, so a claim dated after `until` was in this
+ * leg and outside the sentence.
  */
 export function readPendingClaimsInWindow(
-  bounds: { since: string; limit: number },
+  bounds: { since: string; until: string; limit: number },
   filter: PendingClaimsFilter = {},
   db?: SupabaseClient,
 ): Promise<DbResult<PendingClaimRow[]>> {
@@ -176,6 +183,7 @@ export function readPendingClaimsInWindow(
     (client) =>
       narrowed(client.from(T.pendingClaims).select(PENDING_CLAIM_COLUMNS), filter)
         .gte("observed_at", bounds.since)
+        .lt("observed_at", bounds.until)
         .order("observed_at", { ascending: true })
         .order("observation_id", { ascending: true })
         .limit(bounds.limit) as unknown as PromiseLike<DbResponse<PendingClaimRow[]>>,
@@ -259,6 +267,12 @@ interface ClaimQuery {
   neq(column: string, value: string): ClaimQuery;
   /** The lower bound a WINDOWED count carries (admin-window/BUG-0163). */
   gte(column: string, value: string): ClaimQuery;
+  /**
+   * The EXCLUSIVE upper bound the same windowed read carries
+   * (admin-window/TASK-0070) — `[since, until)`, so the count and the scan
+   * printed beside it are counts of one population over one interval.
+   */
+  lt(column: string, value: string): ClaimQuery;
   order(
     column: string,
     options: { ascending: boolean; nullsFirst?: boolean },
@@ -355,15 +369,27 @@ export function readClaimCount(
 
 /**
  * The same count, bounded to a WINDOW — every claim of this narrowing observed
- * at or after `since` (admin-window/BUG-0163).
+ * in `[since, until)` (admin-window/BUG-0163, both edges since
+ * admin-window/TASK-0070).
  *
  * It is fact 2 of `lib/url/narrowing.ts`' two-fact rule for a surface whose
  * set is a window rather than the whole view: the gauge on `/claims` renders
  * the claims of a bounded scan, so "what would this surface hold with no URL
- * facet at all" has to carry the scan's own lower bound. Asked with the
- * unnarrowed filter, it answers exactly that — and it is the bounded
- * `head: true` count that rule prescribes for a fact it costs a query
- * (admin-window/BUG-0135), never a second row read.
+ * facet at all" has to carry the scan's own bounds. Asked with the unnarrowed
+ * filter, it answers exactly that — and it is the bounded `head: true` count
+ * that rule prescribes for a fact it costs a query (admin-window/BUG-0135),
+ * never a second row read.
+ *
+ * **It takes ONE bounds object, carrying both edges, and that is the point of
+ * the shape.** It was `readClaimCountSince(since, …)` and had no upper bound
+ * at all, while the scan it is printed beside is `[since, until]` and capped
+ * at 1,000 — so the two figures the page compares were counts over two
+ * different intervals, and a claim dated after `until` (clock skew at a
+ * source, a source dating ahead) was counted here and rendered nowhere. The
+ * caller hands this and the scan the same `gaugeBounds` object, so the two
+ * reads cannot be given different edges by construction. An optional `until`
+ * defaulting to "no upper edge" was the other way to write it and is the same
+ * defect one release later (LESSONS 4).
  *
  * The bound is `observed_at`, the instant the view carries through from
  * `observations` — the same column the gauge scan windows on, so the two
@@ -377,8 +403,8 @@ export function readClaimCount(
  * questions gets widened by whichever one broke last (LESSONS 4). The
  * narrowing itself is still declared once: both go through `narrowed`.
  */
-export function readClaimCountSince(
-  since: string,
+export function readClaimCountIn(
+  bounds: { since: string; until: string },
   filter?: ClaimsFilter,
   db?: SupabaseClient,
 ): Promise<DbResult<number>> {
@@ -388,7 +414,9 @@ export function readClaimCountSince(
       narrowed(
         client.from(T.pendingClaims).select("*", { head: true, count: "exact" }),
         filter,
-      ).gte("observed_at", since) as unknown as PromiseLike<{
+      )
+        .gte("observed_at", bounds.since)
+        .lt("observed_at", bounds.until) as unknown as PromiseLike<{
         count: number | null;
         error: unknown;
       }>,

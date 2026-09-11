@@ -7,8 +7,10 @@ import {
   isRenderableBucket,
   readBucketOldest,
   readClaimCount,
+  readClaimCountIn,
   readClaimWindow,
   readPendingClaimRows,
+  readPendingClaimsInWindow,
   selectClaims,
   type ClaimRow,
 } from "@/lib/db/claims";
@@ -388,6 +390,136 @@ describe("the claim count read", () => {
 
   it("names the view when it is absent", async () => {
     const result = await readClaimCount(
+      {},
+      scripted({
+        [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
+      }).asSupabaseClient(),
+    );
+    expect(result).toEqual({ kind: "not_provisioned", missing: T.pendingClaims });
+  });
+});
+
+/**
+ * The WINDOWED count and the scan printed beside it — campaign
+ * admin-window/TASK-0070.
+ *
+ * `readClaimCountIn` replaced `readClaimCountSince`, which took a lower edge
+ * and nothing else while the scan whose rows it is printed beside is
+ * `[since, until]` and capped at 1,000. A count over a different interval than
+ * the rows beside it is a false relationship whichever way it is resolved
+ * (LESSONS 2), so the pair now takes ONE bounds object carrying both edges and
+ * the two reads cannot be given different intervals.
+ *
+ * The fixture that proves it is a claim dated AFTER `until` (LESSONS 8, two
+ * fixtures): clock skew at a source, or a source dating ahead, files a claim
+ * the old count counted and the scan beside it never saw.
+ */
+describe("the windowed claim count read", () => {
+  /** The window these cases are about — every fixture instant is placed in it. */
+  const WINDOW = { since: "2026-08-01T00:00:00Z", until: "2026-09-01T00:00:00Z" };
+
+  /** A claim of this fixture's own, at an instant, in the standing bucket. */
+  function claimAt(id: string, observedAt: string | null) {
+    return pendingClaimRow("standing_disagreement", {
+      observation_id: id,
+      observed_at: observedAt,
+    });
+  }
+
+  /** Three claims inside the window, and the ones outside each of its edges. */
+  const INSIDE = [
+    claimAt("in-1", "2026-08-05T00:00:00Z"),
+    claimAt("in-2", "2026-08-15T00:00:00Z"),
+    claimAt("in-3", "2026-08-31T23:59:59Z"),
+  ];
+  const BEFORE_SINCE = claimAt("before", "2026-07-31T23:59:59Z");
+  const AFTER_UNTIL = claimAt("ahead", "2026-09-02T00:00:00Z");
+  const NO_INSTANT = claimAt("undated", null);
+
+  const countIn = (claims: readonly ClaimRow[], filter?: Parameters<typeof readClaimCountIn>[1]) =>
+    readClaimCountIn(
+      WINDOW,
+      filter,
+      scripted({ [T.pendingClaims]: claimView(claims) }).asSupabaseClient(),
+    );
+
+  it("is a head request carrying BOTH edges on the instant, and the narrowing", async () => {
+    const stub = scripted({ [T.pendingClaims]: claimView(INSIDE) });
+    await readClaimCountIn(WINDOW, { source_id: SOURCE.first }, stub.asSupabaseClient());
+
+    const steps = stepsOf(stub, T.pendingClaims);
+    expect(steps[0].args[1]).toEqual({ head: true, count: "exact" });
+    expect(argsOf(stub, T.pendingClaims, "gte")).toEqual([["observed_at", WINDOW.since]]);
+    expect(
+      argsOf(stub, T.pendingClaims, "lt"),
+      "the count is printed beside a scan bounded at [since, until): it must " +
+        "carry the same upper edge, not the scan's lower edge alone",
+    ).toEqual([["observed_at", WINDOW.until]]);
+    // The narrowing and the parked-bucket exclusion are still the query's.
+    expect(argsOf(stub, T.pendingClaims, "eq")).toEqual([["source_id", SOURCE.first]]);
+    expect(argsOf(stub, T.pendingClaims, "neq")).toEqual([["bucket", PARKED]]);
+    // Still a count and never a row read: no cap can reach it.
+    expect(steps.some((step) => step.method === "limit" || step.method === "range")).toBe(false);
+  });
+
+  it("leaves out a claim dated after until — the figure the old count changed", async () => {
+    // The fixture where the upper edge MATTERS: the view holds four claims the
+    // lower edge admits, one of them dated ahead of the instant the read was
+    // resolved at.
+    expect(await countIn([...INSIDE, AFTER_UNTIL])).toEqual({
+      kind: "ok",
+      data: INSIDE.length,
+    });
+  });
+
+  it("leaves out nothing when no claim is dated after until", async () => {
+    // The non-vacuous twin (LESSONS 8): the same four-claim view, its fourth
+    // claim INSIDE the window. A count that had simply lost a row would pass
+    // the case above and fail here.
+    const alsoInside = claimAt("in-4", "2026-08-20T00:00:00Z");
+    expect(await countIn([...INSIDE, alsoInside])).toEqual({
+      kind: "ok",
+      data: INSIDE.length + 1,
+    });
+  });
+
+  it("leaves out a claim before since, and one carrying no instant at all", async () => {
+    // The lower edge is unchanged, and a claim of unknown instant is outside
+    // every window however many edges it has (`null >= x` and `null < x` are
+    // both null) — the same claim the scan beside it cannot see either.
+    expect(await countIn([...INSIDE, BEFORE_SINCE, NO_INSTANT])).toEqual({
+      kind: "ok",
+      data: INSIDE.length,
+    });
+  });
+
+  it("counts the population the scan beside it draws, over one bounds object", async () => {
+    // THE RELATIONSHIP THE PAGE PRINTS, at the read: the gauge's claims leg
+    // and the count above are handed the SAME bounds and must describe one
+    // population. On a view holding a claim dated ahead, an upper edge on one
+    // of them and not the other is two different figures under one sentence.
+    const view = [...INSIDE, AFTER_UNTIL, BEFORE_SINCE, NO_INSTANT];
+    const bounds = { ...WINDOW, limit: 50 };
+    const stub = scripted({ [T.pendingClaims]: claimView(view) });
+    const scan = await readPendingClaimsInWindow(bounds, {}, stub.asSupabaseClient());
+    const count = await countIn(view);
+
+    expect(scan.kind).toBe("ok");
+    if (scan.kind !== "ok") return;
+    expect(count).toEqual({ kind: "ok", data: scan.data.length });
+    // …and the fixture really is one where an unbounded upper edge would have
+    // changed the number, so this is not an equality of two unwindowed reads.
+    expect(scan.data.map((claim) => claim.observation_id)).not.toContain(
+      AFTER_UNTIL.observation_id,
+    );
+    expect(view.filter((claim) => claim.observed_at !== null).length).toBeGreaterThan(
+      scan.data.length,
+    );
+  });
+
+  it("names the view when it is absent", async () => {
+    const result = await readClaimCountIn(
+      WINDOW,
       {},
       scripted({
         [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },

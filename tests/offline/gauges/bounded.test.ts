@@ -4,6 +4,15 @@ import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DbResult } from "@/lib/db/result";
 import { objectKindOf, T, TABLE_NAMES, type TableName } from "@/lib/db/tables";
+import {
+  readPendingObservations,
+  readProvenanceApplies,
+  readRejectionStamps,
+  readResolutionRuns,
+  readReviewItemsOpenedSince,
+  type ReadBounds,
+} from "@/lib/db/gauges";
+import { readPendingClaimsInWindow } from "@/lib/db/claims";
 import type { WindowInfo } from "@/lib/gauges/gauge";
 import { fetchCycleHealth, CYCLE_HEALTH_DEFAULTS } from "@/lib/gauges/cycle-health";
 import { fetchPendingClaims, PENDING_CLAIMS_DEFAULTS } from "@/lib/gauges/pending-claims";
@@ -22,7 +31,13 @@ import {
   reviewItemDataConflict,
   sourceRow,
 } from "../../fixtures/rows";
-import { stubClient, tableNotInSchemaCache } from "../../fixtures/stub-client";
+import {
+  stubClient,
+  tableNotInSchemaCache,
+  type RecordedCall,
+  type RecordedStep,
+  type ScriptedResponse,
+} from "../../fixtures/stub-client";
 
 /**
  * The properties acceptance test 11 / M1 EC8 assert about the gauges AS A SET
@@ -586,4 +601,230 @@ describe("the second leg of every join", () => {
       }
     });
   }
+});
+
+/* ── both edges: a scan reads the window its line prints ─────────────────── */
+
+/**
+ * **Every scan applies BOTH edges of `ReadBounds`, on its own time column**
+ * (campaign admin-window/TASK-0070).
+ *
+ * `every gauge query is bounded` above asks only that a scan carry a `gte` or
+ * an `in` — which is what let all five of them state an upper edge they did
+ * not apply. `resolveBounds` has always returned `{since, until, limit}` and
+ * the window line has always PRINTED `until` ("read to …"), while the queries
+ * carried the lower edge alone: a row dated after `until` — clock skew at a
+ * source, a source dating ahead — was inside the read and outside the
+ * sentence, and the count printed beside it was over a different interval
+ * again. A figure that claims a relationship no read established is LESSONS 2.
+ *
+ * Graded at the READ rather than through a gauge, because the five reads are
+ * what the contract is about and each one owns a different column. Two
+ * fixtures per scan (LESSONS 8): one holding a row dated after `until`, where
+ * the upper edge changes the figure, and one holding none, where it must not
+ * — a read that simply dropped its last row would pass the first alone.
+ */
+const BOTH_EDGES: ReadBounds = {
+  since: "2026-06-03T12:00:00.000Z",
+  until: NOW,
+  limit: 50,
+};
+
+/** Instants strictly inside `BOTH_EDGES`, and one strictly after its upper edge. */
+const IN_WINDOW = [
+  "2026-07-01T00:00:00.000Z",
+  "2026-08-01T00:00:00.000Z",
+  "2026-08-20T00:00:00.000Z",
+];
+const ALSO_IN_WINDOW = "2026-08-25T00:00:00.000Z";
+const AFTER_UNTIL = "2026-09-02T00:00:00.000Z";
+
+/**
+ * A table that answers the WINDOW the query asked for, on one time column —
+ * the same device `tests/offline/claims/population.ts` is for the claims view.
+ *
+ * A fixed scripted response answers every query with every row, so it cannot
+ * tell a read that applied an edge from one that did not. This applies
+ * whichever of `gte` / `lt` the query really built on that column, and a null
+ * instant satisfies neither (`null >= x` and `null < x` are both null), which
+ * is what Postgres does with a row a predicate cannot decide.
+ */
+function windowedTable(rows: readonly object[], column: string) {
+  return (call: RecordedCall): ScriptedResponse => {
+    let kept = [...rows] as Record<string, unknown>[];
+    for (const step of call.steps) {
+      if (step.args[0] !== column) continue;
+      const edge = Date.parse(String(step.args[1]));
+      const compare =
+        step.method === "gte"
+          ? (ms: number) => ms >= edge
+          : step.method === "lt"
+            ? (ms: number) => ms < edge
+            : null;
+      if (compare === null) continue;
+      kept = kept.filter((row) => {
+        const value = row[column];
+        if (typeof value !== "string") return false;
+        const ms = Date.parse(value);
+        return !Number.isNaN(ms) && compare(ms);
+      });
+    }
+    const limit = call.steps.find((step) => step.method === "limit")?.args[0];
+    return { data: typeof limit === "number" ? kept.slice(0, limit) : kept };
+  };
+}
+
+/** The id every row type below is identified by, for the sets compared. */
+type Scanned = { id: string; at: string };
+
+const SCANS_WITH_EDGES: {
+  /** The exported read under test — named in every message. */
+  read: string;
+  /** The scan's OWN time column: five reads, five columns. */
+  column: string;
+  object: TableName;
+  /** One row of that object, at an instant, with the id given. */
+  row: (id: string, at: string) => object;
+  /** The id of a returned row, read back off the read's own payload. */
+  idOf: (row: unknown) => string;
+  run: (bounds: ReadBounds, db: SupabaseClient) => Promise<DbResult<unknown[]>>;
+}[] = [
+  {
+    read: "readResolutionRuns",
+    column: "started_at",
+    object: T.resolutionRuns,
+    row: (id, at) => resolutionRunRow({ run_id: id, started_at: at }),
+    idOf: (row) => (row as { run_id: string }).run_id,
+    run: (bounds, db) => readResolutionRuns(bounds, db),
+  },
+  {
+    read: "readProvenanceApplies",
+    column: "applied_at",
+    object: T.fieldProvenance,
+    row: (id, at) => fieldProvenanceRow({ provenance_id: id, applied_at: at }),
+    idOf: (row) => (row as { provenance_id: string }).provenance_id,
+    run: (bounds, db) => readProvenanceApplies(bounds, db),
+  },
+  {
+    read: "readPendingObservations",
+    column: "observed_at",
+    object: T.observations,
+    row: (id, at) => observationRow({ observation_id: id, status: "pending", observed_at: at }),
+    idOf: (row) => (row as { observation_id: string }).observation_id,
+    run: (bounds, db) => readPendingObservations(bounds, {}, db),
+  },
+  {
+    read: "readReviewItemsOpenedSince",
+    column: "opened_at",
+    object: T.reviewItems,
+    row: (id, at) => reviewItemDataConflict({ review_item_id: id, opened_at: at }),
+    idOf: (row) => (row as { review_item_id: string }).review_item_id,
+    run: (bounds, db) => readReviewItemsOpenedSince(bounds, db),
+  },
+  {
+    read: "readRejectionStamps",
+    column: "rejected_at",
+    object: T.observations,
+    row: (id, at) =>
+      observationRow({
+        observation_id: id,
+        status: "rejected",
+        rejected_at: at,
+        rejected_by: "resolver",
+      }),
+    idOf: (row) => (row as { observation_id: string }).observation_id,
+    run: (bounds, db) => readRejectionStamps(bounds, db),
+  },
+  {
+    // The SIXTH scan run under the same bounds object, and it is in
+    // `lib/db/claims.ts` rather than `lib/db/gauges.ts`: the gauges' claims
+    // leg, issued BESIDE the `observations` scan above under one window
+    // (admin-window/TASK-0074). It stated the same upper edge it did not apply
+    // and it is graded here with the other five — leaving it would be the
+    // class surviving one more ticket (LESSONS 2).
+    read: "readPendingClaimsInWindow",
+    column: "observed_at",
+    object: T.pendingClaims,
+    row: (id, at) =>
+      pendingClaimRow("standing_disagreement", { observation_id: id, observed_at: at }),
+    idOf: (row) => (row as { observation_id: string }).observation_id,
+    run: (bounds, db) => readPendingClaimsInWindow(bounds, {}, db),
+  },
+];
+
+/** The ids a read came back with, or a thrown account of why it refused. */
+async function idsFrom(
+  scan: (typeof SCANS_WITH_EDGES)[number],
+  population: readonly Scanned[],
+): Promise<{ ids: string[]; steps: RecordedStep[] }> {
+  const stub = stubClient({
+    [scan.object]: windowedTable(
+      population.map((row) => scan.row(row.id, row.at)),
+      scan.column,
+    ),
+  });
+  const result = await scan.run(BOTH_EDGES, stub.asSupabaseClient());
+  expect(result.kind, `${scan.read}: the read refused`).toBe("ok");
+  if (result.kind !== "ok") throw new Error("unreachable");
+  const call = stub.calls.find((recorded) => recorded.table === scan.object);
+  expect(call, `${scan.read} never queried ${scan.object}`).toBeDefined();
+  return { ids: result.data.map(scan.idOf), steps: call?.steps ?? [] };
+}
+
+describe("every scan reads the window its line prints", () => {
+  for (const scan of SCANS_WITH_EDGES) {
+    const inWindow: Scanned[] = IN_WINDOW.map((at, index) => ({ id: `row-${index}`, at }));
+
+    it(`carries both edges on its own time column — ${scan.read}`, async () => {
+      const { steps } = await idsFrom(scan, inWindow);
+      const bound = (method: string) =>
+        steps.find((step) => step.method === method && step.args[0] === scan.column)?.args[1];
+
+      expect(
+        bound("gte"),
+        `${scan.read} must window ${scan.object}.${scan.column} from bounds.since`,
+      ).toBe(BOTH_EDGES.since);
+      expect(
+        bound("lt"),
+        `${scan.read} states an upper edge (${BOTH_EDGES.until}) its window line prints, ` +
+          `so it must apply one: .lt(${scan.column}, bounds.until)`,
+      ).toBe(BOTH_EDGES.until);
+    });
+
+    it(`leaves out a row dated after until — ${scan.read}`, async () => {
+      const dated: Scanned = { id: "dated-ahead", at: AFTER_UNTIL };
+      const { ids } = await idsFrom(scan, [...inWindow, dated]);
+
+      expect(
+        ids,
+        `${scan.read}: ${scan.object}.${scan.column} = ${AFTER_UNTIL} is outside ` +
+          `[${BOTH_EDGES.since}, ${BOTH_EDGES.until}), the window the line states`,
+      ).not.toContain(dated.id);
+      // …and the figure really CHANGED: the table holds four rows the lower
+      // edge admits, and the read came back with three.
+      expect(ids, `${scan.read} population`).toHaveLength(IN_WINDOW.length);
+    });
+
+    it(`leaves out nothing when no row is dated after until — ${scan.read}`, async () => {
+      // The non-vacuous twin (LESSONS 8): the same four-row table, its fourth
+      // row INSIDE the window. A read that dropped its last row, or capped at
+      // three, would pass the case above and fail here.
+      const also: Scanned = { id: "also-inside", at: ALSO_IN_WINDOW };
+      const { ids } = await idsFrom(scan, [...inWindow, also]);
+
+      expect(ids, `${scan.read} keeps every row of its window`).toContain(also.id);
+      expect(ids, `${scan.read} population`).toHaveLength(IN_WINDOW.length + 1);
+    });
+  }
+
+  it("grades every scan the gauges run under ReadBounds, and each on its own column", () => {
+    // The table above is the contract's own census: a scan added to
+    // `lib/db/gauges.ts` without an upper edge must fail something, and it
+    // fails this. Five reads in that module take `ReadBounds`; the sixth is
+    // the claims leg beside them (admin-window/TASK-0074).
+    expect(SCANS_WITH_EDGES).toHaveLength(6);
+    expect(new Set(SCANS_WITH_EDGES.map((scan) => scan.column))).toEqual(
+      new Set(["started_at", "applied_at", "observed_at", "opened_at", "rejected_at"]),
+    );
+  });
 });

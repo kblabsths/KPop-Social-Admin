@@ -265,7 +265,7 @@ export function claimsInBucket(bucket: string): PendingClaimRow[] {
  * them would be asserting on the script; a queue would pin the suite to the
  * order the promises happen to be built in, which is not a property of the
  * product. So this reads the chain the query built — `.select()`, `.eq()`,
- * `.neq()`, `.in()`, `.order()`, `.limit()`, `.range()`, and the
+ * `.neq()`, `.in()`, `.gte()`, `.lt()`, `.order()`, `.limit()`, `.range()`, and the
  * `{ head, count }` options
  * — and answers it the way PostgREST would.
  *
@@ -286,7 +286,9 @@ export function claimsInBucket(bucket: string): PendingClaimRow[] {
  *  - a `.gte()` lower bound narrows by VALUE and drops a null outright, so a
  *    claim of unknown instant is outside every window (`null >= x` is null) —
  *    which is what a windowed read of this view really returns
- *    (admin-window/TASK-0074).
+ *    (admin-window/TASK-0074), and its `.lt()` UPPER bound does the same at
+ *    the other end, so a claim dated after the instant the read was resolved
+ *    at is outside the window as well (admin-window/TASK-0070);
  *
  * And one that is this fixture's own: the response carries ONLY the columns
  * the `.select()` named, so a page reading a column its query did not ask for
@@ -334,6 +336,20 @@ export function claimView(
         const value = row[String(step.args[0])];
         if (value === null || value === undefined) return false;
         return compareScalar(value, bound) >= 0;
+      });
+    }
+    for (const step of steps("lt")) {
+      // The same window's EXCLUSIVE upper bound (admin-window/TASK-0070). A
+      // null is outside this edge for the same reason it is outside the other
+      // one, so a claim of unknown instant stays outside every window however
+      // many edges it has — and a claim dated AFTER the instant the read was
+      // resolved at is outside it too, which is the row the gauge's scan and
+      // the count printed beside it must agree about.
+      const bound = step.args[1];
+      rows = rows.filter((row) => {
+        const value = row[String(step.args[0])];
+        if (value === null || value === undefined) return false;
+        return compareScalar(value, bound) < 0;
       });
     }
 

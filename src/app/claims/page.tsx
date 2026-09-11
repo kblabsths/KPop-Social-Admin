@@ -40,7 +40,7 @@ import {
   CLAIMS_OBJECT,
   readBucketOldest,
   readClaimCount,
-  readClaimCountSince,
+  readClaimCountIn,
   readClaimWindow,
   RENDERABLE_BUCKETS,
   UNRENDERABLE_BUCKET,
@@ -939,7 +939,10 @@ export default async function ClaimsPage({
   // The bounds BOTH gauge reads run under, resolved here rather than twice
   // inside them, so the window the section states and the window the
   // population count is taken over are one interval and not two instants a
-  // few microseconds apart (`resolveBounds`, `lib/gauges/gauge.ts`).
+  // few microseconds apart (`resolveBounds`, `lib/gauges/gauge.ts`). One
+  // OBJECT, carrying both edges, reaches both reads — the scan applies
+  // `[since, until)` on `observed_at` and so does the count
+  // (admin-window/TASK-0070).
   const gaugeBounds = resolveBounds({}, PENDING_CLAIMS_DEFAULTS);
 
   // ONE composition, every leg independent (§4.3, the interface contract of
@@ -1005,7 +1008,11 @@ export default async function ClaimsPage({
       structural ? readClaimCount(populationFilter) : null,
       // Fact 2 for the GAUGE surface, whose set is a WINDOW and not the whole
       // view: how many claims this tab's population holds inside the same
-      // window, with no facet at all (admin-window/BUG-0163). The page's own
+      // window, with no facet at all (admin-window/BUG-0163). It is handed the
+      // SAME `gaugeBounds` object the scan above was resolved from, so the
+      // count and the rows beside it carry one pair of edges rather than two
+      // (admin-window/TASK-0070) — the read cannot be given a different
+      // interval than the sentence over it states. The page's own
       // `population` above cannot answer it — it counts the view with no time
       // bound, so a window that is empty because nothing was observed in 90
       // days would be reported as a window a facet emptied, which is the
@@ -1016,7 +1023,7 @@ export default async function ClaimsPage({
       // fact 1 is false no count could change a word this section renders. It
       // is a bounded `head: true` count and never a row read — the shape
       // `lib/url/narrowing.ts` prescribes where fact 2 costs a query.
-      gaugeStructural ? readClaimCountSince(gaugeBounds.since, populationFilter) : null,
+      gaugeStructural ? readClaimCountIn(gaugeBounds, populationFilter) : null,
     ]);
 
   const names = sourceNamesOf(registry.kind === "ok" ? registry.data : []);

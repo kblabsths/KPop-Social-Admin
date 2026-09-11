@@ -153,14 +153,29 @@ function renderedCycles(markup: string) {
     });
 }
 
-/** One gauge's window, as the page states it. */
+/**
+ * One gauge's window, as the page states it — BOTH edges (campaign
+ * admin-window/TASK-0070).
+ *
+ * The line has always published `data-window-until` and the page has always
+ * printed it; the scans under it carried `.gte(since)` alone, so an oracle
+ * that counted `>= since` graded a wider set than the surface rendered. Every
+ * count below now applies `[since, until)`, the interval the line states, and
+ * says which window it compared when it disagrees.
+ */
 function windowOf(markup: string, gauge: string) {
   const line = cheerio.load(markup)(`[data-window="${gauge}"]`);
   return {
     present: line.length > 0,
     since: line.attr("data-window-since") ?? "",
+    until: line.attr("data-window-until") ?? "",
     truncated: line.attr("data-window-truncated") === "true",
   };
+}
+
+/** The interval a disagreeing assertion names, so a red says WHICH window. */
+function windowSaid(window: { since: string; until: string }, column: string): string {
+  return `over ${column} in [${window.since}, ${window.until}) — the window the page's line states`;
 }
 
 /** The newest cycles, read by THIS TEST, in the order it expects them. */
@@ -304,7 +319,9 @@ describe("the two gauges on this page against staging", () => {
           return (await objectIsAbsent(T.resolutionRuns)) ? "absent" : 0;
         }
         return countRows(() =>
-          exactCount(T.resolutionRuns).gte("started_at", window.since),
+          exactCount(T.resolutionRuns)
+            .gte("started_at", window.since)
+            .lt("started_at", window.until),
         );
       },
       emptyAtZero: false,
@@ -317,11 +334,16 @@ describe("the two gauges on this page against staging", () => {
     if (window.truncated) return;
 
     const expected = await countRows(() =>
-      exactCount(T.resolutionRuns).gte("started_at", window.since),
+      exactCount(T.resolutionRuns)
+        .gte("started_at", window.since)
+        .lt("started_at", window.until),
     );
     // `readNumber` reads the figure STRUCTURALLY — the number standing beside
     // its label — so a restyle or a copy change never reddens this parity.
-    expect(readNumber(markup, "Cycles in this window")).toBe(expected);
+    expect(
+      readNumber(markup, "Cycles in this window"),
+      `Cycles in this window, counted ${windowSaid(window, "started_at")}`,
+    ).toBe(expected);
   });
 
   it("separates the applies it measured from the decisions that name no claim", async () => {
@@ -336,7 +358,9 @@ describe("the two gauges on this page against staging", () => {
           return (await objectIsAbsent(T.fieldProvenance)) ? "absent" : 0;
         }
         return countRows(() =>
-          exactCount(T.fieldProvenance).gte("applied_at", window.since),
+          exactCount(T.fieldProvenance)
+            .gte("applied_at", window.since)
+            .lt("applied_at", window.until),
         );
       },
       emptyAtZero: false,
@@ -353,13 +377,22 @@ describe("the two gauges on this page against staging", () => {
     const applies = await countRows(() =>
       exactCount(T.fieldProvenance)
         .gte("applied_at", window.since)
+        .lt("applied_at", window.until)
         .not("observation_id", "is", null),
     );
     const decisions = await countRows(() =>
-      exactCount(T.fieldProvenance).gte("applied_at", window.since),
+      exactCount(T.fieldProvenance)
+        .gte("applied_at", window.since)
+        .lt("applied_at", window.until),
     );
 
-    expect(readNumber(markup, "Applies in this window")).toBe(applies);
-    expect(readNumber(markup, "Unset by a human decision")).toBe(decisions - applies);
+    expect(
+      readNumber(markup, "Applies in this window"),
+      `Applies in this window, counted ${windowSaid(window, "applied_at")}`,
+    ).toBe(applies);
+    expect(
+      readNumber(markup, "Unset by a human decision"),
+      `decisions naming no observation, counted ${windowSaid(window, "applied_at")}`,
+    ).toBe(decisions - applies);
   });
 });
