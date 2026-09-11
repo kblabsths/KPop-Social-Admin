@@ -1180,9 +1180,15 @@ describe("when a read fails", () => {
     }
   });
 
-  it("carries the client's whole account of a transport failure, untrimmed", async () => {
-    // BUG-0016's residual: the red line carries every field the client gave,
-    // stack frame included. Trimming it silently is the defect.
+  it("carries the CAUSE of a transport failure, and says how many frames it dropped", async () => {
+    // admin-window/BUG-0016's residual, as admin-window/BUG-0173 rewrote it.
+    // What BUG-0016 was protecting is the CAUSE: `message` alone says
+    // "TypeError: fetch failed" and names nothing, and the cause lives in
+    // `details` AFTER the first frame line — so the account is still never
+    // truncated at the first frame, and the cause still reaches the card.
+    // What no longer reaches it is the client's own stack: those LINES are
+    // dropped, and the card says how many went, so the trim BUG-0016 refused
+    // to have done silently is not silent.
     const failure = transportFailure();
     const markup = await renderDashboard({
       [T.reviewItems]: { error: failure },
@@ -1192,7 +1198,12 @@ describe("when a read fails", () => {
     const text = textOf(markup);
 
     expect(text).toContain("Caused by");
-    expect(text).toContain("makeNetworkError");
+    expect(text).toContain("bad port");
+    // The one frame the fixture carries is counted, not quoted: a number and
+    // the app's own noun for what went, and no runtime path on the card.
+    expect(text).toMatch(/\b1\b[^)]{0,40}frame/);
+    expect(text).not.toContain("node:internal");
+    expect(text).not.toMatch(/:\d+:\d+\)/);
   });
 
   it("renders no figure when the count read refused", async () => {

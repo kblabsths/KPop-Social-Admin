@@ -218,6 +218,14 @@ function withoutSecrets(text: string): string {
 const MAX_CAUSE_DEPTH = 4;
 
 /**
+ * One part of the client's account, carrying the one thing about it that no
+ * amount of reading its text could recover: whether the part is the client's
+ * own words at all, or a value THIS APP serialised because the client gave it
+ * none (admin-window/BUG-0173, question 1 below).
+ */
+type AccountPart = { readonly raw: string; readonly serialised: boolean };
+
+/**
  * Every field of the client's own account, in a FIXED order:
  * `message`, `details`, `hint`, then whatever its `cause` says.
  *
@@ -228,19 +236,26 @@ const MAX_CAUSE_DEPTH = 4;
  *    real one.
  * Reading `message` alone discarded the only field carrying what actually went
  * wrong (admin-window/BUG-0016).
+ *
+ * The `serialised` flag is PROVENANCE, recorded here because here is the only
+ * place that knows it: a value with no string `message` sends `messageOf` down
+ * its `JSON.stringify` path, so the resulting part is this app's rendering of
+ * a body rather than anything the database said.
  */
-function accountParts(error: unknown, depth: number): string[] {
+function accountParts(error: unknown, depth: number): AccountPart[] {
   const record = asRecord(error);
   // No `message` field: `messageOf` serialises the whole object, which already
   // carries every field there is — appending them again would only repeat it.
+  // A non-object (a thrown string, a number) has no fields to serialise, so
+  // only the object case is ours rather than the client's.
   if (record === null || typeof record.message !== "string") {
-    return [messageOf(error)];
+    return [{ raw: messageOf(error), serialised: record !== null }];
   }
 
-  const parts = [messageOf(error)];
+  const parts: AccountPart[] = [{ raw: messageOf(error), serialised: false }];
   for (const field of ["details", "hint"] as const) {
     const value = record[field];
-    if (typeof value === "string") parts.push(value);
+    if (typeof value === "string") parts.push({ raw: value, serialised: false });
   }
 
   const cause = record.cause;
@@ -278,6 +293,29 @@ function isDocument(part: string): boolean {
 }
 
 /**
+ * A line of a part that is a RUNTIME STACK FRAME: after its leading
+ * whitespace it begins `at ` and it ends in `)` or in `:<line>:<column>`.
+ *
+ * That is the V8 frame format — a SPECIFIED format, which is why this question
+ * may be asked at all where a family of adversary text may not. The two
+ * endings are the two forms V8 emits: `at fn (file:1:2)` for a named frame and
+ * `at file:1:2` for an anonymous one.
+ *
+ * A line that merely opens with those two letters is prose and stays: a
+ * database can and does wrap a message onto a second line beginning "at the
+ * end of the statement", and that line ends in neither of the two forms. The
+ * question is about the line's shape and nothing else — no frame vocabulary
+ * (no runtime's class names, no error names, no host names) is matched here.
+ */
+function isRuntimeFrame(line: string): boolean {
+  const trimmed = line.trim();
+  return (
+    trimmed.startsWith("at ") &&
+    (trimmed.endsWith(")") || /:\d+:\d+$/.test(trimmed))
+  );
+}
+
+/**
  * What an account says INSTEAD of a document: counted, never spelled.
  *
  * The clause quotes no part of what arrived — not its `<title>`, not its first
@@ -304,6 +342,90 @@ function documentInstead(raw: string): string {
 }
 
 /**
+ * What an account says INSTEAD of a body we had to serialise: the same
+ * counted, never-spelled clause, for the same reason.
+ *
+ * Provenance decides this one, so NOTHING of the value is inspected: the
+ * client handed back an object carrying no string `message`, `messageOf` had
+ * to render the whole thing, and this app's rendering of a foreign body is not
+ * the database's words however it reads. Measured shapes (QA,
+ * admin-window/BUG-0173): an intermediary's `{"success":…,"errors":…}`
+ * envelope, and an array whose one element nests a document one quote deep —
+ * a part that does not BEGIN with `<` and so is invisible to the document
+ * question above. Neither is chased by text; both are answered by asking who
+ * wrote the part.
+ */
+function serialisedInstead(raw: string): string {
+  return (
+    `a ${raw.length}-character body carrying no sentence of its own arrived ` +
+    `here instead of the database's own words`
+  );
+}
+
+/**
+ * What the account says about the frames it dropped — in the app's own words,
+ * with the number in them.
+ *
+ * admin-window/BUG-0016 pinned the client's whole account as untrimmed
+ * precisely because trimming it SILENTLY is how its cause was lost. This
+ * ticket drops the frame lines and says so, which is the opposite of silent:
+ * an operator reading the line can see that a stack was here, how big it was,
+ * and that nothing else was taken.
+ */
+function framesInstead(count: number): string {
+  return `(${count} runtime stack frame${count === 1 ? "" : "s"} dropped)`;
+}
+
+/**
+ * A part whose stack frames are gone and whose CAUSE is not.
+ *
+ * Every non-frame line is kept verbatim and joined into one line; only frame
+ * lines go. The part is never truncated at the first frame, because
+ * postgrest-js puts the real cause AFTER it — reading down to the first frame
+ * is exactly the bug admin-window/BUG-0016 fixed, and it does not come back.
+ *
+ * The kept lines are re-asked the questions above: a header that is itself a
+ * document is counted rather than quoted. (Question 1 needs no re-asking: a
+ * serialised part never reaches here, since provenance is answered first.)
+ *
+ * A part with no frame at all is returned UNTOUCHED — not re-joined, not
+ * re-indented, not re-spaced. A database message that happens to span lines
+ * crosses exactly as it arrived.
+ */
+function withoutRuntimeFrames(part: string): string {
+  const lines = part.split(/\r?\n/);
+  const dropped = lines.filter(isRuntimeFrame).length;
+  if (dropped === 0) return part;
+
+  const said = lines
+    .filter((line) => !isRuntimeFrame(line))
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => (isDocument(line) ? documentInstead(line) : line))
+    .join(" ");
+  const counted = framesInstead(dropped);
+  return said.length > 0 ? `${said} ${counted}` : counted;
+}
+
+/**
+ * The three questions this app asks of ONE part of an account, in order, and
+ * there is no fourth (admin-window/BUG-0173).
+ *
+ *  1. Did WE serialise it? Provenance, inspecting no text at all.
+ *  2. Is it a DOCUMENT? Its first non-blank character is `<`.
+ *  3. Does it carry RUNTIME FRAMES? Those lines go; every other line stays.
+ *
+ * `null` means the part was blank and carries nothing to say.
+ */
+function partOfAccount({ raw, serialised }: AccountPart): string | null {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  if (serialised) return serialisedInstead(raw);
+  if (isDocument(trimmed)) return documentInstead(raw);
+  return withoutRuntimeFrames(trimmed);
+}
+
+/**
  * The database client's own account of the failure — everything it said,
  * nothing of ours.
  *
@@ -312,9 +434,11 @@ function documentInstead(raw: string): string {
  * substitutes no friendlier sentence, and it also refuses to throw away the
  * fields where the cause actually lives.
  *
- * A part that is a DOCUMENT rather than prose does not cross at all: it is
- * replaced by `documentInstead`'s counted clause before anything else looks at
- * it, so no surface below this function needs a reduction of its own.
+ * What an account may carry is decided HERE and nowhere below: an account
+ * carries the parts the DATABASE authored. A part the CLIENT authored ABOUT a
+ * failure — a runtime's stack frames, a body we had to serialise because it
+ * carried no message — is not the database's words, and is answered the way a
+ * document is: counted, never quoted (`partOfAccount` above).
  *
  * A part that another part already contains is dropped rather than repeated —
  * supabase-js's `details` opens with a copy of `message`, and printing the
@@ -325,14 +449,12 @@ function documentInstead(raw: string): string {
 function errorMessage(error: unknown): string {
   const kept: string[] = [];
   for (const raw of accountParts(error, 0)) {
-    const trimmed = raw.trim();
-    if (trimmed.length === 0) continue;
     // The ONE place the app decides what an account may carry, for every read
-    // in `lib/db/**`: a document-shaped part becomes an app-authored,
-    // bounded description of what arrived; prose crosses verbatim. Every
-    // surface — the claims card, the paging routes' error arms — inherits
-    // this with no line of its own (admin-window/BUG-0170).
-    const part = isDocument(trimmed) ? documentInstead(raw) : trimmed;
+    // in `lib/db/**`. Every surface — the claims card, the paging routes'
+    // error arms — inherits it with no line of its own
+    // (admin-window/BUG-0170, admin-window/BUG-0173).
+    const part = partOfAccount(raw);
+    if (part === null) continue;
     if (kept.some((held) => held.includes(part))) continue;
     for (let index = kept.length - 1; index >= 0; index -= 1) {
       if (part.includes(kept[index])) kept.splice(index, 1);
