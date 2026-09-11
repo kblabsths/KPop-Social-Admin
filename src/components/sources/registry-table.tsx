@@ -1,6 +1,7 @@
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { Badge, type Column } from "@/components/ui";
 import { isAbsent, relativeAge } from "@/lib/format";
+import { sourceLabel } from "@/lib/sources/names";
 import {
   queueItemsHref,
   runsHref,
@@ -20,25 +21,49 @@ import type { SourceStateRow } from "./rows";
  * table's own dash (`orDash` in `ui/data-table.tsx`) — never blank, never a
  * zero, never a word of ours standing in for one.
  */
-export function sourceColumns(filter: SourceNarrowing): Column<SourceStateRow>[] {
+export function sourceColumns(
+  filter: SourceNarrowing,
+  /**
+   * What the registry calls each source, as `sourceNamesOf` recorded it — the
+   * page's own complete `listSources` read, handed over whole, exactly as
+   * `SourceChips` and the two trend sections take it.
+   *
+   * The name column has the row's own `source` in its hand, so this map looks
+   * redundant and is not: what to SAY when that string names nothing readable
+   * is `sourceLabel`'s one rule and not this file's
+   * (admin-window/TASK-0060). This cell spelled `{row.source}` raw — no
+   * fallback of any spelling, which is why the `?? sourceId` scanner never saw
+   * it — so one blank registry row rendered the registry's own name cell as an
+   * anchor with nothing to read and nothing visible to click, beside a trend
+   * row naming that same source by its id (BUG-0154's harm; BUG-0159 was the
+   * same defect on the chips).
+   */
+  names: ReadonlyMap<string, string>,
+): Column<SourceStateRow>[] {
   return [
     {
       key: "source",
       label: "source",
-      cell: (row) => (
-        <a
-          href={sourcesHref({
-            // Clicking the source you are already narrowed to clears it.
-            source_id: filter.source_id === row.source_id ? undefined : row.source_id,
-          })}
-          data-source={row.source_id}
-          data-source-name={row.source}
-          aria-current={filter.source_id === row.source_id ? "true" : undefined}
-          className={IN_PAGE_LINK}
-        >
-          {row.source}
-        </a>
-      ),
+      cell: (row) => {
+        // Derived ONCE and rendered into both the ink and the hook, so the
+        // attribute a test or a live oracle reads is the thing an operator
+        // reads (LESSONS 11).
+        const label = sourceLabel(names, row.source_id);
+        return (
+          <a
+            href={sourcesHref({
+              // Clicking the source you are already narrowed to clears it.
+              source_id: filter.source_id === row.source_id ? undefined : row.source_id,
+            })}
+            data-source={row.source_id}
+            data-source-name={label}
+            aria-current={filter.source_id === row.source_id ? "true" : undefined}
+            className={IN_PAGE_LINK}
+          >
+            {label}
+          </a>
+        );
+      },
     },
     {
       key: "kind",
@@ -141,6 +166,11 @@ export function sourceColumns(filter: SourceNarrowing): Column<SourceStateRow>[]
           >
             review items
           </a>
+          {/* The registry's NAME, raw and not the label: `runs` carries no
+              key and is filtered by `runs.source`, so this is a value to
+              match rather than a word to read (admin-window/TASK-0060). A
+              source the registry named nothing for matches the runs that
+              named nothing either, which is the truth about the run log. */}
           <a
             href={runsHref(row.source)}
             data-source-runs={row.source}

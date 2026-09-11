@@ -10,12 +10,15 @@
  * shipped at once on `/claims` and the review item (BUG-0043), and each was a
  * different hand-rolled `nameOf.get(id) ?? id` away from being right.
  *
- * So the two halves of that rule live here, once:
+ * So the parts of that rule live here, once:
  *
  *  - `sourceNamesOf` — the id→name lookup a read's registry rows give;
  *  - `sourceLabel` — name it, or render the id VERBATIM when the registry
  *    NAMES NOTHING (LOOK_AND_FEEL Voice bar 5: the id is then genuinely the
- *    only thing known, and a blank or a guess would be worse than a uuid).
+ *    only thing known, and a blank or a guess would be worse than a uuid);
+ *  - `isSourceNamed` — the same question's ANSWER, for the surface that says
+ *    how many of the rows it just labelled are wearing an id
+ *    (admin-window/TASK-0060).
  *
  * **"Names nothing" is decided by INK, not by `null`** (admin-window/BUG-0154).
  * The fallback was `??`, which catches `null` and `undefined` only, so a
@@ -90,7 +93,49 @@ export function sourceLabel(
   names: ReadonlyMap<string, string>,
   sourceId: string,
 ): string {
+  const name = nameIn(names, sourceId);
+  return name === null ? sourceId : name;
+}
+
+/**
+ * Whether the registry NAMED this source at all — the same question
+ * `sourceLabel` asks, for a caller that needs the ANSWER rather than the label
+ * (campaign admin-window/TASK-0060).
+ *
+ * A surface that labels sources and then also COUNTS the ones it had to name
+ * by id is asking this rule twice, and the second asking is where it drifts:
+ * `/sources`' settled-values sentence counted `split.source === null`, so a
+ * registry row that existed with an ink-less name was rendered by its id by
+ * `sourceLabel` above and left out of the count below it — one page, two
+ * answers, and a sentence stating a number the rows beside it disagreed with
+ * (LESSONS 11). Both answers now come out of `nameIn`, so they cannot.
+ *
+ * `false` for an id the map has no entry for AND for an entry with no ink in
+ * it: two ways for the registry to name no source, one answer, exactly as the
+ * label rule has it.
+ */
+export function isSourceNamed(
+  names: ReadonlyMap<string, string>,
+  sourceId: string,
+): boolean {
+  return nameIn(names, sourceId) !== null;
+}
+
+/**
+ * The ONE reading of the registry's answer, which both exports above are
+ * stated in terms of: the name when there is one a person could read, and
+ * `null` when the registry named nothing — no row, or a row with no ink in it.
+ *
+ * Module-private on purpose. What a caller may ask is "what is this called"
+ * and "is it named"; a third caller taking `string | null` would be a third
+ * place deciding what to do about the null, which is the whole class this leaf
+ * exists to end.
+ */
+function nameIn(
+  names: ReadonlyMap<string, string>,
+  sourceId: string,
+): string | null {
   const name = names.get(sourceId);
-  return name !== undefined && hasVisibleContent(name) ? name : sourceId;
+  return name !== undefined && hasVisibleContent(name) ? name : null;
 }
 

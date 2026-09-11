@@ -356,6 +356,45 @@ function settledValuesSays(markup: string): string {
   return section.text().replace(/\s+/g, " ").trim();
 }
 
+/**
+ * The settled-values section's CLOSING SENTENCE — its words below its figures,
+ * with the tables and the window line left out.
+ *
+ * Addressed structurally (the gauge's own hook, then the last paragraph of its
+ * section) rather than by any word in it, so nothing here pins the app's copy;
+ * what the cases below read out of it is the NUMBERS it states.
+ */
+function settledValuesSentence(markup: string): string {
+  const $ = cheerio.load(markup);
+  const section = $('[data-window="rejections"]').closest("section");
+  section.find("[data-window]").remove();
+  const paragraph = section.find("p").last();
+  expect(paragraph.length, "the settled-values section said nothing at all").toBe(1);
+  // A table's empty state is a paragraph too; a case that read one of those
+  // would be grading the wrong sentence.
+  expect(paragraph.closest("table").length, "read a paragraph inside the table").toBe(0);
+  return paragraph.text().replace(/\s+/g, " ").trim();
+}
+
+/** Every figure a sentence states, in the order it states them. */
+function figuresIn(sentence: string): string[] {
+  return sentence.match(/\d[\d,]*/g) ?? [];
+}
+
+/**
+ * The trend rows WEARING AN ID: the ones whose label is the source's own id,
+ * which is what the app says when the registry named nothing for it
+ * (`sourceLabel`, `src/lib/sources/names.ts`).
+ *
+ * Read off the rendered table, so a case can compare what the rows say with
+ * what the sentence under them counts without either being retyped here.
+ */
+function wearingAnId(markup: string, label: string): string[] {
+  return trendSources(markup, label).filter(
+    (sourceId) => trendRow(markup, label, sourceId)[0] === sourceId,
+  );
+}
+
 const AWAITING_BY_SOURCE = "Awaiting-row claims by source";
 const AWAITING_BY_DAY = "Awaiting-row claims by day";
 const REJECTED_BY_SOURCE = "Re-rejected values by source";
@@ -389,6 +428,70 @@ describe("the registry, rendered", () => {
       expect(row.text, source.source).toContain(source.lifecycle);
       expect(row.text, source.source).toContain(source.tier);
     }
+  });
+
+  /**
+   * **The registry's own name column is a source LABEL like any other**
+   * (admin-window/TASK-0060, the last site of BUG-0154's class).
+   *
+   * It rendered `{row.source}` raw — no fallback of any spelling, which is why
+   * the `?? sourceId` scanner in `names.test.ts` never saw it — so a registry
+   * row that EXISTED with an ink-less name drew the registry's own cell as an
+   * anchor with nothing to read and nothing visible to click, on the one page
+   * whose whole subject is the registry, while the chips above it and the two
+   * trends below it named that same source by its id.
+   *
+   * The hook is asserted beside the ink: `data-source-name` is what the live
+   * parity oracle reads, and an attribute that disagreed with the cell would
+   * make that oracle grade a page no operator sees.
+   */
+  for (const blank of ["", "   ", "\u200b"]) {
+    it(`names a registry row the registry names ${JSON.stringify(blank)} by its id`, async () => {
+      const blanked = SOURCES.map((row) =>
+        row.source_id === SOURCE.ticketmaster ? { ...row, source: blank } : row,
+      );
+      const markup = await renderSources(
+        healthyScript({
+          [T.sources]: [{ data: blanked, count: blanked.length }, { data: blanked }],
+        }),
+      );
+      const $ = cheerio.load(markup);
+      const spelling = JSON.stringify(blank);
+      // The id VERBATIM, as the ink of the link an operator clicks...
+      expect($(`[data-source="${SOURCE.ticketmaster}"]`).text(), spelling).toBe(
+        SOURCE.ticketmaster,
+      );
+      // ...and in the hook, which says the same thing the cell does.
+      expect(sourceRowOf(markup, SOURCE.ticketmaster).name, spelling).toBe(
+        SOURCE.ticketmaster,
+      );
+      // Non-vacuity in the same read (LESSONS 8): the sibling row still reads
+      // as its name, so this is a per-ROW fallback and not a blanked table.
+      expect($(`[data-source="${SOURCE.bandsintown}"]`).text(), spelling).toBe(
+        SOURCE_NAME[SOURCE.bandsintown],
+      );
+      expect(sourceRowOf(markup, SOURCE.bandsintown).name, spelling).toBe(
+        SOURCE_NAME[SOURCE.bandsintown],
+      );
+    });
+  }
+
+  it("leaves a registry name with ink in it exactly as the registry wrote it", async () => {
+    // The other direction: a name the app can read is never trimmed and never
+    // swapped for the id, in the cell or in the hook.
+    const padded = "  ticketmaster  ";
+    const rows = SOURCES.map((row) =>
+      row.source_id === SOURCE.ticketmaster ? { ...row, source: padded } : row,
+    );
+    const markup = await renderSources(
+      healthyScript({
+        [T.sources]: [{ data: rows, count: rows.length }, { data: rows }],
+      }),
+    );
+    const cell = cheerio.load(markup)(`[data-source="${SOURCE.ticketmaster}"]`);
+    expect(cell.text()).toBe(padded);
+    expect(cell.text()).toHaveLength(padded.length);
+    expect(sourceRowOf(markup, SOURCE.ticketmaster).name).toBe(padded);
   });
 
   it("renders a source with no checkpoint as the dash, not a blank", async () => {
@@ -1514,6 +1617,87 @@ describe("the settled-values trend", () => {
     expect(unnamedPlusStrangers).toBe(unnamed);
   });
 
+  /**
+   * **The sentence counts what the rows above it show** (admin-window/TASK-0060).
+   *
+   * The closing sentence says how many of these sources are named by their id.
+   * It answered that itself — `split.source === null` — while the rows were
+   * labelled by `sourceLabel`, which also names by id a row that EXISTS with an
+   * ink-less name. So on a blank-named registry row the table showed a uuid
+   * where a name goes and the sentence under it said nothing had happened: one
+   * page, two answers about one row (LESSONS 11), and the number stated
+   * disagreed with the rows beside it.
+   *
+   * The fixture drops the one rejection carrying no reason, so the sentence's
+   * ONLY figure is the count under test — with the unattributed clause present
+   * a case could not tell which number it was reading.
+   */
+  it("states the number of rows it named by id, on a row the registry left blank", async () => {
+    const attributed = REJECTIONS.filter((row) => row.rejected_by !== null);
+    const script = (rows: typeof SOURCES): Script =>
+      healthyScript({
+        [T.sources]: [{ data: rows, count: rows.length }, { data: rows }],
+        [T.observations]: [{ data: [...PENDING_OBSERVATIONS] }, { data: attributed }],
+      });
+    const blanked = SOURCES.map((row) =>
+      row.source_id === SOURCE.ticketmaster ? { ...row, source: "   " } : row,
+    );
+
+    const withBlank = await renderSources(script(blanked));
+    const allNamed = await renderSources(script(SOURCES));
+
+    // Both fixtures really are two rows of one table, or the counts below are
+    // over a table that rendered nothing.
+    for (const [name, markup] of [["blank", withBlank], ["named", allNamed]] as const) {
+      expect(trendSources(markup, REJECTED_BY_SOURCE).sort(), name).toEqual(
+        [SOURCE.ticketmaster, SOURCE.bandsintown].sort(),
+      );
+    }
+
+    // The row the registry named nothing for wears its id; its sibling does
+    // not (LESSONS 8 — one input the count MUST take, one it must not).
+    const worn = wearingAnId(withBlank, REJECTED_BY_SOURCE);
+    expect(worn).toEqual([SOURCE.ticketmaster]);
+    // ...and the sentence states THAT number, read off the rows rather than
+    // typed in here.
+    expect(figuresIn(settledValuesSentence(withBlank))).toEqual([String(worn.length)]);
+
+    // The other direction, same population with a name on it: no row wears an
+    // id and the sentence states no figure at all — so the agreement above is
+    // not a sentence that always says "1".
+    expect(wearingAnId(allNamed, REJECTED_BY_SOURCE)).toEqual([]);
+    expect(figuresIn(settledValuesSentence(allNamed))).toEqual([]);
+    expect(settledValuesSentence(withBlank)).not.toBe(settledValuesSentence(allNamed));
+  });
+
+  it("reports a blank-named source it is NARROWED to as its own, once", async () => {
+    // Narrowed, the sentence is about one row and says so without a figure —
+    // and it must still be said: the operator is looking at a uuid where a
+    // name belongs and is owed the reason. Graded by difference against the
+    // same narrowing with a name on the row, so no copy is pinned.
+    const params = { source_id: SOURCE.ticketmaster };
+    const blanked = SOURCES.map((row) =>
+      row.source_id === SOURCE.ticketmaster ? { ...row, source: "\u200b" } : row,
+    );
+    const withBlank = await renderSources(
+      healthyScript({
+        [T.sources]: [{ data: blanked, count: blanked.length }, { data: blanked }],
+      }),
+      params,
+    );
+    const allNamed = await renderSources(healthyScript(), params);
+
+    // The narrowed branch really is what rendered — the weeks table, not the
+    // per-source one — so the clause under test is the narrowed spelling.
+    expect(columnCount(withBlank, REJECTED_BY_WEEK)).toBeGreaterThan(0);
+    expect(settledValuesSentence(withBlank)).not.toBe(settledValuesSentence(allNamed));
+    // One row, so one mention of it: the narrowed clause carries no count and
+    // must not have grown the fleet's.
+    expect(figuresIn(settledValuesSentence(withBlank))).toEqual(
+      figuresIn(settledValuesSentence(allNamed)),
+    );
+  });
+
   it("names the observations table when the stamps cannot be read", async () => {
     const markup = await renderSources(
       healthyScript({
@@ -1898,19 +2082,22 @@ describe("the surface hooks the live parity oracle addresses", () => {
  * The rule is ARCHITECTURE.md §4.3's: a window line states the read that
  * HAPPENED. So the scope is unconditional on what came back — a narrowed scan
  * that returned nothing still names its narrowing — and it names what the READ
- * carried, never what the URL spelled. The two reads under these two lines are
- * not the same read, and that is the whole of why the two lines differ:
+ * carried, never what the URL spelled. Each line is graded against ITS OWN
+ * scan, and this page issues two of them:
  *
  *  - the awaiting-row trend is `readAwaitingRowTrend({ filter })` — narrowed at
  *    the query, so `?source_id=` really is that scan's population and its line
  *    says so;
- *  - the settled-values gauge is `readRejectionStampGauge()` — it takes no
- *    filter at all, scans every source's adjudications in the window, and
- *    `RejectionSection` narrows the ROWS it returned. Its line therefore names
- *    no narrowing in either URL, and naming one would put that sentence's cap
- *    and its truncation verdict ("a window of at most N rows") over a
- *    population the scan never took — admin-window/BUG-0114's defect with its
- *    halves swapped.
+ *  - the settled-values gauge is `readRejectionStampGauge({ filter })` —
+ *    narrowed at the query too **since admin-window/BUG-0194**, so its line
+ *    names the narrowing as well. It took no filter at all until then while
+ *    `RejectionSection` narrowed the ROWS it returned anyway, so that
+ *    sentence's cap and its truncation verdict ("a window of at most N rows")
+ *    stood over a population its own figures were not over —
+ *    admin-window/BUG-0114's defect with its halves swapped. The section still
+ *    re-selects the rows it is handed (`selectPendingClaims`' idiom), which is
+ *    a defence if a future caller hands it a wider read and not a second
+ *    narrowing.
  *
  * Nothing here pins the app's words. The value a case asserts is the id THIS
  * TEST put in the URL, and where a case needs the phrase itself it computes it
