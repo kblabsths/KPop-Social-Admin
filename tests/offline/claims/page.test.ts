@@ -2850,16 +2850,19 @@ describe("a narrowing with no chip row", () => {
    * same rule is a chip that is set and narrows this table by NOTHING:
    * `?bucket=X&domain=Y`. This table's read drops the bucket facet on purpose
    * (`bucketStats`), so the domain did all the narrowing and the bucket chip
-   * did none — while `chipped` is `hasChipNarrowing(filter)` over the
+   * did none — while `chipped` WAS `hasChipNarrowing(filter)` over the
    * UNDROPPED filter, which the bucket facet alone satisfies. The caption
-   * therefore blames "the filters above" and then says, in its next clause,
-   * that the one filter above does not narrow these counts.
+   * therefore blamed "the filters above" and then said, in its next clause,
+   * that the one filter above does not narrow these counts. Since
+   * admin-window/BUG-0191 the caption asks the filter its own read carried,
+   * and this pin is a plain `it(...)`.
    *
    * Measured on staging 2026-09-11 at `/claims?bucket=awaiting_row&domain=events`:
    * bucket counts 0/108/741/0/0 — identical to `?domain=events` and NOT to the
    * bare page's 0/108/769/0/0 — with the chip rows reading `awaiting_row` and
    * `all`. The gauge section one screen down already asks the right filter
-   * (`gaugeChipped = hasChipNarrowing(gaugeFilter(filter))`).
+   * (it asked `hasChipNarrowing` of `gaugeFilter(filter)`; since
+   * admin-window/BUG-0191 both surfaces read ONE binding).
    *
    * Neither phrase is typed here. The chip clause is READ OFF THE APP: the
    * only thing a chip-narrowed caption says that the same view narrowed by the
@@ -2867,7 +2870,7 @@ describe("a narrowing with no chip row", () => {
    * this test with it, and the guard has its passing spelling and its failing
    * one (LESSONS 8).
    */
-  it.fails("claims no filter above when the only chip set narrows this table by nothing", async () => {
+  it("claims no filter above when the only chip set narrows this table by nothing", async () => {
     // The clause a CHIP narrowing adds to this caption, in the app's own
     // words, with the domain held constant across both renders.
     const [, chipClause] = differingClause(
@@ -2902,6 +2905,130 @@ describe("a narrowing with no chip row", () => {
     // The defect: the caption blames a chip bar in which the only thing set
     // narrows this table by nothing.
     expect(bucketCaption(faceted)).not.toContain(chipClause);
+  });
+
+  /**
+   * THE CAPTION AND THE GAUGE ANSWER ONE QUESTION (admin-window/BUG-0191,
+   * criterion 3).
+   *
+   * Both surfaces are read under the same filter — this page's, with the
+   * bucket facet dropped — so "did a facet with a chip row narrow these
+   * figures" has ONE answer on this page, and the two sentences either both
+   * claim a chip narrowing or neither does. The caption's clause is read off
+   * the app with `differingClause` and never typed; the gauge's is the app's
+   * own exported phrase for a chip narrowing, which its window line already
+   * renders (`NARROWED_BY_FILTERS`, the spelling the list's line uses too).
+   *
+   * Non-vacuous in both directions: `?bucket=X&domain=Y` is the state where
+   * the chip set narrows neither read, `?bucket=X&source_id=Z` is the state
+   * where a chip really removed rows from both, and the same two assertions
+   * are made in each.
+   */
+  it("says what the gauge says about a chip narrowing, in both directions", async () => {
+    // The clause a CHIP narrowing adds to this caption, in the app's own
+    // words, with the domain held constant across both renders.
+    const [, chipClause] = differingClause(
+      bucketCaption(await renderClaims(healthyScript(), { domain: NARROWING })),
+      bucketCaption(
+        await renderClaims(healthyScript(), {
+          source_id: SOURCE.first,
+          domain: NARROWING,
+        }),
+      ),
+    );
+    expect(chipClause).not.toBe("");
+
+    const gaugeLine = (markup: string) =>
+      cheerio
+        .load(markup)('[data-surface="gauge"] [data-window]')
+        .text()
+        .replace(/\s+/g, " ")
+        .trim();
+
+    for (const [state, params, claimsOne] of [
+      ["?bucket=X&domain=Y", { bucket: "awaiting_row", domain: NARROWING }, false],
+      ["?bucket=X&source_id=Z", { bucket: "awaiting_row", source_id: SOURCE.first }, true],
+    ] as [string, Record<string, string>, boolean][]) {
+      const markup = await renderClaims(healthyScript(), params);
+      // Non-vacuous: the bucket chip really is the active one, the page threw
+      // no parameter away, and the gauge really drew a line to read.
+      expect(
+        chipsOf(markup, "bucket").filter((chip) => chip.active).map((chip) => chip.label),
+        state,
+      ).toEqual([params.bucket]);
+      expect(droppedLine(markup).lines, state).toBe(0);
+      expect(gaugeLine(markup), state).not.toBe("");
+
+      expect(gaugeLine(markup).includes(NARROWED_BY_FILTERS), state).toBe(claimsOne);
+      expect(bucketCaption(markup).includes(chipClause), state).toBe(claimsOne);
+    }
+  });
+
+  /**
+   * THE ARMS, GRADED RELATIONALLY (admin-window/BUG-0191, criterion 4).
+   *
+   * What a bucket facet does to this caption is add the every-bucket clause
+   * and nothing else — the clause it adds to the BARE page's sentence, read
+   * off the app rather than typed. So the sentence at `?bucket=X&domain=Y` is
+   * the `?domain=Y` sentence plus exactly that clause, and the sentence at
+   * `?bucket=X&source_id=Z` is the `?source_id=Z` sentence plus exactly that
+   * clause — the source chip removed rows of this table, so its chip clause
+   * stays where it was. `differingClause` returning an empty first half is
+   * what says the bucket facet took NOTHING away from either.
+   *
+   * The LIST is the control: under the very same URL its window line goes on
+   * naming the chip bar, because the bucket facet really does remove claims
+   * from the list. One URL, two sentences, two different true answers.
+   */
+  it("adds the bucket clause and nothing else, whatever else narrowed the table", async () => {
+    const bareCaption = bucketCaption(await renderClaims(healthyScript()));
+    const [denial, bucketArm] = differingClause(
+      bareCaption,
+      bucketCaption(await renderClaims(healthyScript(), { bucket: "awaiting_row" })),
+    );
+    // Non-vacuous: on the BARE page the bucket arm replaces a denial, so both
+    // halves are real — the state the sibling describe pins as structure.
+    expect(bucketArm).not.toBe("");
+    expect(denial).not.toBe("");
+
+    const added: string[] = [];
+    for (const [state, others] of [
+      ["?domain=Y", { domain: NARROWING }],
+      ["?source_id=Z", { source_id: SOURCE.first }],
+    ] as [string, Record<string, string>][]) {
+      const without = bucketCaption(await renderClaims(healthyScript(), others));
+      const withBucket = bucketCaption(
+        await renderClaims(healthyScript(), { ...others, bucket: "awaiting_row" }),
+      );
+      // Non-vacuous: the other facet really narrowed this table, so the
+      // sentence under test is the narrowed arm and not the bare page's.
+      expect(without, state).not.toBe(bareCaption);
+
+      const [subtracted, clause] = differingClause(without, withBucket);
+      // Nothing was taken away — there is no denial here to replace — and
+      // what was added is the bucket arm's own clause, which these renders
+      // never type: it is carried in from the bare pair above. The helper cuts
+      // at the longest shared prefix, so the bare pair's half can be the
+      // clause minus the punctuation the denial shared with it; `toContain` is
+      // what makes this indifferent to where that cut fell.
+      expect(subtracted, state).toBe("");
+      expect(clause, state).toContain(bucketArm);
+      added.push(clause);
+    }
+    // ONE clause, both states: what the bucket facet adds does not depend on
+    // what else narrowed the table.
+    expect(added[0]).toBe(added[1]);
+
+    // THE CONTROL: the list's own line under the URL where the caption says
+    // nothing about the chip bar still says something about it, because the
+    // bucket facet really did narrow the list.
+    const markup = await renderClaims(healthyScript(), {
+      bucket: "awaiting_row",
+      domain: NARROWING,
+    });
+    expect(CHIP_PHRASES.some((phrase) => line(markup).includes(phrase))).toBe(true);
+    expect(CHIP_PHRASES.some((phrase) => bucketCaption(markup).includes(phrase))).toBe(false);
+    expect(line(markup)).not.toBe(line(await renderClaims(healthyScript(), { domain: NARROWING })));
   });
 
   it("is true of both kinds of narrowing when both are set", async () => {
