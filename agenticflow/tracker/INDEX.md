@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T08:51:41Z — do not edit)
+# Tracker index (regenerated 2026-09-11T08:51:55Z — do not edit)
 
 ## open
 - BUG-0176 [P2][bug][M3] A paged not-provisioned answer renders red, stutters its object and tells the operator to press again for a table that does not exist — /claims and /browse  (deps:BUG-0175 scope:src/lib/paging/machine.ts,src/components/ui/paging.tsx,src/components/ui/not-provisioned.tsx,tests/offline/paging/machine.test.ts,tests/offline/ui/paging.test.ts,tests/offline/ui/primitives.test.ts from:BUG-0172)
