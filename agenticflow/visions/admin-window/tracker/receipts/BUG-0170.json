@@ -1,0 +1,50 @@
+{
+ "id": "BUG-0170",
+ "created": "2026-09-11T06:03:18Z",
+ "green": true,
+ "git_head": "ea59f1252cb93816776413e504eb407eeb3eb7ec",
+ "scope": [
+  "src/lib/db/result.ts",
+  "tests/offline/db/result.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "2774e2f85fa910f361da5485ca21888650030168d7d0e61138b2f610f705328f",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-78837\n\n \u2713 |offline| tests/offline/db/result.test.ts (101 tests) 24ms\n\n Test Files  1 passed (1)\n      Tests  101 passed (101)\n   Start at  23:02:25\n   Duration  399ms (transform 95ms, setup 0ms, collect 124ms, tests 24ms, environment 1ms, prepare 63ms)\n\n(node:78845) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -qF 'it(\"does not carry an intermediary' tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -qF \"it.fails\" tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -qF \"canSpellUrlValue\" src/lib/db/result.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db tests/offline/paging tests/offline/claims",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-78837\n\n \u2713 |offline| tests/offline/paging/machine.test.ts (52 tests) 20ms\n \u2713 |offline| tests/offline/db/client.test.ts (5 tests) 141ms\n \u2713 |offline| tests/offline/db/result.test.ts (101 tests) 25ms\n \u2713 |offline| tests/offline/claims/filters.test.ts (48 tests) 15ms\n \u2713 |offline| tests/offline/paging/browse-route.test.ts (39 tests) 34ms\n \u2713 |offline| tests/offline/claims/read.test.ts (33 tests) 48ms\n \u2713 |offline| tests/offline/paging/bounds.test.ts (11 tests) 6ms\n \u2713 |offline| tests/offline/paging/answer.test.ts (7 tests) 4ms\n \u2713 |offline| tests/offline/paging/claims-route.test.ts (39 tests) 152ms\n \u2713 |offline| tests/offline/db/layering.test.ts (29 tests) 915ms\n \u2713 |offline| tests/offline/claims/page.test.ts (193 tests) 3734ms\n   \u2713 what a filled window promises > cannot reach past the cap from any state its own chips offer  389ms\n\n Test Files  11 passed (11)\n      Tests  557 passed (557)\n   Start at  23:02:26\n   Duration  4.79s (transform 1.43s, setup 0ms, collect 3.68s, tests 5.09s, environment 2ms, prepare 1.06s)\n\n(node:78873) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm test",
+   "exit": 0,
+   "output_tail": "ct 21.25s, tests 63.85s, environment 12ms, prepare 5.81s)\n\n\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-78837\n\n \u2713 |isolated| tests/isolated/probe-race.isolated.test.ts (6 tests) 23916ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is readable  1568ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is listed but cannot be opened  1569ms\n   \u2713 walking src/ while the layering probe comes and goes > survives the probe directory appearing and vanishing under the walk  6552ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no OTHER offline file that walks the tree either  14225ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  23:02:43\n   Duration  24.18s (transform 31ms, setup 0ms, collect 31ms, tests 23.92s, environment 0ms, prepare 54ms)\n\nnpm notice run kpop-social-space@0.1.0 test\nnpm notice run vitest run --project=offline && vitest run --project=isolated\n(node:78936) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:78957) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:78960) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:78965) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:79193) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
