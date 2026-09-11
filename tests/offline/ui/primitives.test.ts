@@ -1216,6 +1216,95 @@ describe("WindowLine", () => {
     );
   });
 
+  /**
+   * A window a press CONTINUES — admin-window/BUG-0172.
+   *
+   * `drawn` is the one new fact on this primitive: the rows the operator now
+   * holds from this window, on a surface that may continue it. Two arms read
+   * it, because two surfaces page — `catalog` (`/browse`) and `matched`
+   * (`/claims`) — and its whole contract is graded here rather than through
+   * either page.
+   */
+  const PAGED: DrawnWindow = {
+    limit: 50,
+    held: 50,
+    truncated: true,
+    over: "view",
+    oldest: null,
+    scope: null,
+  };
+  const PAGED_ARMS: DrawnSentence[] = [
+    { of: "catalog", rows: "events" },
+    { of: "matched", lede: "Oldest first.", rows: "claims" },
+  ];
+
+  it("renders the first screen's own sentence, to the byte, until a press appends a row", () => {
+    // SPEC F14's "the first screen does not change": a paged surface is drawn
+    // only on a window that FILLED, so before any press `drawn` is the cap and
+    // every arm must render exactly the markup it rendered before this fact
+    // existed — the sentence, the hooks and the element.
+    for (const shows of EVERY_KIND) {
+      expect(drawn(shows, { ...PAGED, drawn: PAGED.limit }), shows.of).toBe(drawn(shows, PAGED));
+      expect(drawn(shows, { ...PAGED, drawn: null }), shows.of).toBe(drawn(shows, PAGED));
+    }
+  });
+
+  it("states the rows on screen once the window has been continued", () => {
+    for (const shows of PAGED_ARMS) {
+      const continued = textOf(drawn(shows, { ...PAGED, held: 877, drawn: 120 }));
+      // The figure the operator can count on screen, in the app's own
+      // formatting — never the cap the first read carried.
+      expect(continued, shows.of).toContain(count(120));
+    }
+  });
+
+  it("never says a continued window did not fill, in either direction of its verdict", () => {
+    // The wrapper is only drawn on a window that filled, so "The window did
+    // not fill — 50 of at most 50" is a sentence no state of a paged surface
+    // may reach; the not-truncated case of a continued window is the set being
+    // complete on screen, which is a different sentence (criterion 3).
+    for (const shows of PAGED_ARMS) {
+      for (const truncated of [true, false]) {
+        const text = textOf(drawn(shows, { ...PAGED, truncated, drawn: 120 }));
+        expect(text, `${shows.of} truncated=${truncated}`).not.toContain("did not fill");
+        expect(text, `${shows.of} truncated=${truncated}`).toContain(count(120));
+      }
+      // …and the SAME window with no press behind it still states its own
+      // emptiness the way it always has, so the clause was narrowed and not
+      // deleted.
+      expect(
+        textOf(drawn(shows, { ...PAGED, truncated: false, held: 12 })),
+        shows.of,
+      ).toContain("did not fill");
+    }
+  });
+
+  it("takes the held-back verdict from `truncated` alone, never from the rows beside it", () => {
+    // LESSONS 11. A window continued to 120 rows says rows are held back or
+    // does not, by its own flag — and the same `drawn` renders both, so no arm
+    // is deciding by comparing figures.
+    for (const shows of PAGED_ARMS) {
+      const held = textOf(drawn(shows, { ...PAGED, held: 877, truncated: true, drawn: 120 }));
+      const complete = textOf(drawn(shows, { ...PAGED, held: 877, truncated: false, drawn: 120 }));
+      expect(held, shows.of).not.toBe(complete);
+      const $held = cheerio.load(drawn(shows, { ...PAGED, truncated: true, drawn: 120 }));
+      const $complete = cheerio.load(drawn(shows, { ...PAGED, truncated: false, drawn: 120 }));
+      expect($held("[data-window]").attr("data-window-truncated"), shows.of).toBe("true");
+      expect($complete("[data-window]").attr("data-window-truncated"), shows.of).toBe("false");
+    }
+  });
+
+  it("publishes no new attribute for it", () => {
+    // The first screen is byte-identical (SPEC F14, ARCHITECTURE.md §5) and an
+    // added attribute is not. `drawn` changes the sentence, and the number
+    // `held` already publishes.
+    const $ = cheerio.load(drawn(PAGED_ARMS[0], { ...PAGED, drawn: 120 }));
+    const published = Object.keys($("[data-window]").attr() ?? {}).filter((name) =>
+      name.startsWith("data-window"),
+    );
+    expect(published.sort()).toEqual([...HOOKS_EVERY_WINDOW].sort());
+  });
+
   it("is one paragraph carrying one window, whichever kind it is", () => {
     for (const shows of [
       { of: "newest", lede: "The newest cycles", rows: "cycles" },

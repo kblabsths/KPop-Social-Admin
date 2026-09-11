@@ -29,6 +29,12 @@ import {
   WindowLine,
   narrowedTo,
 } from "@/components/ui";
+// COMPONENTS out of the "use client" paging module, imported straight from it
+// rather than through the server barrel: a re-export hands the binding to every
+// server module importing the barrel, and only a component may cross that
+// boundary at all (admin-window/BUG-0094, admin-window/BUG-0172,
+// tests/offline/shell/client-boundary.test.ts).
+import { PagedWindowLine, PagingProvider } from "@/components/ui/paging";
 import {
   CLAIMS_OBJECT,
   readBucketOldest,
@@ -66,8 +72,9 @@ import {
   type SearchParams,
   type UnchippedNarrowing,
 } from "@/lib/claims/filters";
-import { claimLines } from "@/lib/claims/lines";
-import { pageBound } from "@/lib/paging/bounds";
+import { claimLines, type ClaimLine } from "@/lib/claims/lines";
+import { PAGE_ROUTES, pageBound } from "@/lib/paging/bounds";
+import { initialPage } from "@/lib/paging/machine";
 import { resolveBounds } from "@/lib/gauges/gauge";
 import {
   PENDING_CLAIMS_DEFAULTS,
@@ -1159,6 +1166,139 @@ export default async function ClaimsPage({
     truncated &&
     pageBound(String(listed.length), CLAIM_WINDOW).kind === "ok";
 
+  // THE FIRST SCREEN'S WINDOW, COMPOSED ONCE (admin-window/BUG-0172). One
+  // object reaches whichever component renders the line — the paged arm or the
+  // plain one — because two spellings of these facts is how the two come to
+  // disagree.
+  //
+  // The line follows the READ, not the rows (ARCHITECTURE.md §4.3,
+  // admin-window/BUG-0070): it describes a window this page actually looked
+  // in, so it stands on every `ok` read — with rows or with none — and on no
+  // other state. A refused or absent read looked nowhere, so the line would
+  // describe a table that is not there and publish a `0` an honest empty read
+  // is then indistinguishable from; an EMPTY window is still a window, and its
+  // line stands BESIDE the Empty card below rather than instead of it — the
+  // card says what would fill the surface, the line says where the app looked.
+  // Same rule and same shape as `/runs` (admin-window/BUG-0063,
+  // LOOK_AND_FEEL states 3 and 4).
+  //
+  // Two reads have to have happened for it to stand, not one: the window, and
+  // the COUNT that is its `held`. A count this page never got is not a number
+  // it may print, and it may not print the rows' own length instead — that is
+  // the window-as-total substitution the line exists to prevent — so a refused
+  // count costs the LINE and nothing else, and says so on its own sub-surface
+  // below.
+  const listWindow =
+    rows.kind === "ok" && listCount.kind === "ok"
+      ? {
+          limit: CLAIM_WINDOW,
+          // The matching COUNT its own count read established. Paging reads no
+          // new claim into it, so it is the same number after a press as
+          // before one — the hook the live paged-walk oracle grades the walk
+          // against (admin-window/BUG-0172).
+          held: listCount.data,
+          // The window is truncated exactly when the set it was drawn from
+          // holds more than it drew — from the COUNT, never from the rows,
+          // which is how a `limit 50` read that returned 50 rows says whether
+          // a 51st exists (admin-window/BUG-0138). ONE derivation, shared with
+          // the paging affordance below, so the sentence over the list and the
+          // control under it can never come to disagree about whether a 51st
+          // claim exists (LESSONS 11). On the paged arm the same verdict is
+          // the paging state's own status, which is that same question after a
+          // press has answered it again.
+          truncated,
+          over: CLAIMS_OBJECT,
+          // No floor to name, and that is a fact of this read rather than a
+          // gap: the list is drawn LONGEST-WAITING first, so its bottom row is
+          // the newest claim it holds and never its oldest. A window that did
+          // not fill still says it holds every claim the read found; it just
+          // has no "nothing earlier" to state (admin-window/BUG-0109).
+          oldest: null,
+          // What the READS below narrowed to, from the same tab and the same
+          // filter they carried (admin-window/BUG-0114).
+          scope: listScope(tab, listNarrowed, narrowings, chipped),
+        }
+      : null;
+  // The page words its own subject and nothing about the read: the arm ends on
+  // what the window is not showing, which needs no state this file knows. It
+  // used to hand down a way to REACH the held-back rows in the one state the
+  // shared clause could not be said in (admin-window/BUG-0160); no state of
+  // this page can reach them at all — the list is a hard `CLAIM_WINDOW` window
+  // and the narrowest state the chip rows offer still held 108 claims against
+  // 50 rows (measured on staging 2026-09-10) — so both wordings were removed
+  // rather than one chosen (admin-window/BUG-0162).
+  const listShows = { of: "matched", lede: SORT_STATEMENT, rows: "claims" } as const;
+
+  // The list Section's children, in the order this page has always rendered
+  // them. On the paged arm they are handed to `PagingProvider` — which emits no
+  // markup of its own — so the line and the list stay exactly where they are,
+  // and every child stays a SERVER component: a server parent may hand
+  // server-rendered JSX to a client component as children
+  // (admin-window/BUG-0172).
+  const listBody = (
+    <>
+      {listWindow === null ? null : pageable ? (
+        // The same element in the same place, rendered inside client-land
+        // so that every fact in it is a fact of the read the operator NOW
+        // holds: a press is a read on this surface, and a server-rendered
+        // constant above rows a press changes is the contradiction QA
+        // measured (admin-window/BUG-0172).
+        <PagedWindowLine gauge={LIST_WINDOW} window={listWindow} shows={listShows} />
+      ) : (
+        <WindowLine gauge={LIST_WINDOW} window={listWindow} shows={listShows} />
+      )}
+      {rows.kind === "not_provisioned" ? (
+        <StateOf result={rows} />
+      ) : rows.kind === "ok" && rows.data.length === 0 ? (
+        // Three different emptinesses, three different renderings: the
+        // table that holds nothing, the filter that matched nothing, and
+        // the table that is not in this database (LOOK_AND_FEEL,
+        // Emptiness). The hook says WHICH — the spelling `/sources` and
+        // `/queues` already carry (`data-empty`), so the two are told apart
+        // structurally and not by reading the copy, and one test grades the
+        // rule on all three surfaces at once (admin-window/DEBT-0008).
+        <div data-empty={listNarrowed ? "narrowing" : LIST_SURFACE}>
+          <Empty holds={emptyWords.holds} filledBy={emptyWords.filledBy} />
+        </div>
+      ) : pageable ? (
+        // The same rows, the same markup, the same order — plus the control
+        // beneath them. The wrapper takes the rows, the press and the
+        // window from the provider above rather than deriving any of them
+        // (admin-window/BUG-0168, admin-window/BUG-0172).
+        <PagedClaimList label={LIST_TITLE[tab]} initial={listed} />
+      ) : (
+        <ClaimList
+          label={LIST_TITLE[tab]}
+          rows={rows.kind === "ok" ? listed : []}
+          line={rows.kind === "error" ? <StateOf result={rows} /> : undefined}
+        />
+      )}
+      {registry.kind === "ok" ? null : (
+        // The claims rendered fine, or did not; either way what NAMES their
+        // sources is its own read of its own object, so it is reported on
+        // its own — never folded into the list's state and never silent.
+        // Every row above is named by its id verbatim, and the chip row
+        // offers the vocabulary this read did not bring.
+        <StateOf result={registry} eyebrow="Source names" />
+      )}
+      {/* Two counts that render no row of their own, each reported beside
+          the rows rather than instead of them (admin-window/BUG-0135). The
+          first is the list's own `held`; the second is the unnarrowed
+          population, which decides only which of two sentences and which of
+          two empty cards this surface shows. */}
+      {rows.kind === "ok" && listCount.kind !== "ok" ? (
+        <div data-surface={LIST_COUNT_SURFACE}>
+          <StateOf result={listCount} eyebrow={LIST_COUNT_EYEBROW} />
+        </div>
+      ) : null}
+      {populationRefused === undefined ? null : (
+        <div data-surface={POPULATION_SURFACE}>
+          <StateOf result={populationRefused} eyebrow={POPULATION_EYEBROW} />
+        </div>
+      )}
+    </>
+  );
+
   return (
     <Page title="Claims">
       <ClaimTabs tabs={tabLinks(CLAIMS_PATH, filter, tab)} />
@@ -1220,120 +1360,25 @@ export default async function ClaimsPage({
       ) : null}
 
       <Section title={LIST_TITLE[tab]} surface={LIST_SURFACE}>
-        {/* The window line follows the READ, not the rows (ARCHITECTURE.md
-            §4.3, admin-window/BUG-0070): it describes a window this page
-            actually looked in, so it stands on every `ok` read — with rows or
-            with none — and on no other state. A refused or absent read looked
-            nowhere, so the line would describe a table that is not there and
-            publish a `0` an honest empty read is then indistinguishable from;
-            an EMPTY window is still a window, and its line stands BESIDE the
-            Empty card below rather than instead of it — the card says what
-            would fill the surface, the line says where the app looked. Same
-            rule and same shape as `/runs` (admin-window/BUG-0063,
-            LOOK_AND_FEEL states 3 and 4).
-
-            Two reads have to have happened for it to stand now, not one: the
-            window, and the COUNT that is its `held`. A count this page never
-            got is not a number it may print, and it may not print the rows'
-            own length instead — that is the window-as-total substitution the
-            line exists to prevent — so a refused count costs the LINE and
-            nothing else, and says so on its own sub-surface below. */}
-        {rows.kind === "ok" && listCount.kind === "ok" ? (
-          <WindowLine
-            gauge={LIST_WINDOW}
-            window={{
-              limit: CLAIM_WINDOW,
-              held: listCount.data,
-              // The window is truncated exactly when the set it was drawn from
-              // holds more than it drew — from the COUNT, never from the rows,
-              // which is how a `limit 50` read that returned 50 rows says
-              // whether a 51st exists (admin-window/BUG-0138). ONE derivation,
-              // shared with the paging affordance below, so the sentence over
-              // the list and the control under it can never come to disagree
-              // about whether a 51st claim exists (LESSONS 11).
-              truncated,
-              over: CLAIMS_OBJECT,
-              // No floor to name, and that is a fact of this read rather than
-              // a gap: the list is drawn LONGEST-WAITING first, so its bottom
-              // row is the newest claim it holds and never its oldest. A
-              // window that did not fill still says it holds every claim the
-              // read found; it just has no "nothing earlier" to state
-              // (admin-window/BUG-0109).
-              oldest: null,
-              // What the READS below narrowed to, from the same tab and the
-              // same filter they carried (admin-window/BUG-0114).
-              scope: listScope(tab, listNarrowed, narrowings, chipped),
+        {pageable ? (
+          // The window this surface pages by is spelled ONCE, here, and handed
+          // to the driver that grades every page against it. The narrowing a
+          // press carries is serialized from the FILTER the reads above were
+          // given, never from `searchParams`, so a parameter this page dropped
+          // cannot come back as a different narrowing under rows drawn from
+          // this one (admin-window/BUG-0141).
+          <PagingProvider
+            initial={initialPage<ClaimLine>(listed.length, truncated)}
+            deps={{
+              route: PAGE_ROUTES.claims,
+              params: claimsQuery(filter, tab),
+              size: CLAIM_WINDOW,
             }}
-            // The page words its own subject and nothing about the read: the
-            // arm ends on what the window is not showing, which needs no state
-            // this file knows. It used to hand down a way to REACH the held-back
-            // rows in the one state the shared clause could not be said in
-            // (admin-window/BUG-0160); no state of this page can reach them at
-            // all — the list is a hard `CLAIM_WINDOW` window and the narrowest
-            // state the chip rows offer still held 108 claims against 50 rows
-            // (measured on staging 2026-09-10) — so both wordings were removed
-            // rather than one chosen (admin-window/BUG-0162).
-            shows={{ of: "matched", lede: SORT_STATEMENT, rows: "claims" }}
-          />
-        ) : null}
-        {rows.kind === "not_provisioned" ? (
-          <StateOf result={rows} />
-        ) : rows.kind === "ok" && rows.data.length === 0 ? (
-          // Three different emptinesses, three different renderings: the table
-          // that holds nothing, the filter that matched nothing, and the table
-          // that is not in this database (LOOK_AND_FEEL, Emptiness). The hook
-          // says WHICH — the spelling `/sources` and `/queues` already carry
-          // (`data-empty`), so the two are told apart structurally and not by
-          // reading the copy, and one test grades the rule on all three
-          // surfaces at once (admin-window/DEBT-0008).
-          <div data-empty={listNarrowed ? "narrowing" : LIST_SURFACE}>
-            <Empty holds={emptyWords.holds} filledBy={emptyWords.filledBy} />
-          </div>
-        ) : pageable ? (
-          // The same rows, the same markup, the same order — plus the control
-          // beneath them. The narrowing a press carries is serialized from the
-          // FILTER the reads above were given, never from `searchParams`, so a
-          // parameter this page dropped cannot come back as a different
-          // narrowing under rows drawn from this one (admin-window/BUG-0141).
-          // The window is handed down from its ONE spelling here, and the
-          // wrapper feeds the control from the number the driver graded
-          // against (admin-window/BUG-0168).
-          <PagedClaimList
-            label={LIST_TITLE[tab]}
-            initial={listed}
-            total={listCount.kind === "ok" ? listCount.data : null}
-            params={claimsQuery(filter, tab)}
-            size={CLAIM_WINDOW}
-          />
+          >
+            {listBody}
+          </PagingProvider>
         ) : (
-          <ClaimList
-            label={LIST_TITLE[tab]}
-            rows={rows.kind === "ok" ? listed : []}
-            line={rows.kind === "error" ? <StateOf result={rows} /> : undefined}
-          />
-        )}
-        {registry.kind === "ok" ? null : (
-          // The claims rendered fine, or did not; either way what NAMES their
-          // sources is its own read of its own object, so it is reported on
-          // its own — never folded into the list's state and never silent.
-          // Every row above is named by its id verbatim, and the chip row
-          // offers the vocabulary this read did not bring.
-          <StateOf result={registry} eyebrow="Source names" />
-        )}
-        {/* Two counts that render no row of their own, each reported beside
-            the rows rather than instead of them (admin-window/BUG-0135). The
-            first is the list's own `held`; the second is the unnarrowed
-            population, which decides only which of two sentences and which of
-            two empty cards this surface shows. */}
-        {rows.kind === "ok" && listCount.kind !== "ok" ? (
-          <div data-surface={LIST_COUNT_SURFACE}>
-            <StateOf result={listCount} eyebrow={LIST_COUNT_EYEBROW} />
-          </div>
-        ) : null}
-        {populationRefused === undefined ? null : (
-          <div data-surface={POPULATION_SURFACE}>
-            <StateOf result={populationRefused} eyebrow={POPULATION_EYEBROW} />
-          </div>
+          listBody
         )}
       </Section>
 

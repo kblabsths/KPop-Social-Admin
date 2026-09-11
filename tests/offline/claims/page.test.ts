@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CLAIM_WINDOW, PagedClaimList } from "@/components/claims";
+import { PagingProvider } from "@/components/ui/paging";
 import { PENDING_CLAIMS_DEFAULTS } from "@/lib/gauges/pending-claims";
 // The app's own phrase for a CHIP narrowing, imported rather than retyped: a
 // literal here would pass while the two surfaces said different things.
@@ -11,11 +12,17 @@ import { count } from "@/lib/format";
 import { STANDING_BUCKET } from "@/lib/gauges/standing-disagreements";
 import { claimLines, type ClaimLine } from "@/lib/claims/lines";
 import {
+  MAX_PAGE_OFFSET,
   OFFSET_PARAM,
   PAGE_ROUTES,
   type PageAnswer,
 } from "@/lib/paging/bounds";
-import { requestPage, type PageState } from "@/lib/paging/machine";
+import {
+  initialPage,
+  pressing,
+  requestPage,
+  type PageState,
+} from "@/lib/paging/machine";
 import { ROW_CAP } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
 import {
@@ -149,23 +156,27 @@ vi.mock("@/lib/gauges/standing-disagreements", async (importActual) => {
 });
 
 /**
- * The paging hook, SPIED rather than replaced — campaign
- * admin-window/TASK-0067.
+ * The surface's PROVIDER, spied rather than replaced — campaign
+ * admin-window/TASK-0067, moved from the hook to the provider by
+ * admin-window/BUG-0172, which made the provider the one thing that holds a
+ * paged surface's state (the list consumes it, and so does the window line).
  *
  * Two things this tier cannot do on its own, and one it can:
  *
  *  - it has NO DOM, so the control the page renders cannot be clicked. The
- *    press is taken from the widget's own `onPress` prop as the wrapper hands
+ *    press is taken from the widget's own `onPress` prop as the surface hands
  *    it over, which is the same function a click would call;
  *  - `renderToStaticMarkup` renders ONCE, so a state published after the
  *    render never reaches markup. `override` is the one substitution this file
- *    makes: the state the hook publishes is replaced by a state the REAL
- *    driver produced from the REAL deps the wrapper built, and the wrapper is
- *    rendered again with it. Nothing else is faked — the deps, the driver, the
- *    widget, the row markup and the request are all the app's.
- *  - what it CAN do is watch the wire: `usePageRows` reaches the network
- *    through `fetch`, so "one press, one request" is read off a stubbed global
- *    and needs no DOM at all (the arrangement `tests/offline/ui/paging.test.ts`
+ *    makes: the state the provider STARTS from is replaced by a state the REAL
+ *    driver produced from the REAL deps the page built, and the page is
+ *    rendered again with it. Nothing else is faked — the provider, the deps,
+ *    the driver, the widget, the row markup and the request are all the app's,
+ *    and the line and the rows read that one state exactly as they do in a
+ *    browser;
+ *  - what it CAN do is watch the wire: the press reaches the network through
+ *    `fetch`, so "one press, one request" is read off a stubbed global and
+ *    needs no DOM at all (the arrangement `tests/offline/ui/paging.test.ts`
  *    established for the hook itself).
  *
  * By default it DELEGATES, so every other render in this file is unchanged.
@@ -183,13 +194,29 @@ vi.mock("@/components/ui/paging", async (importActual) => {
   const actual = await importActual<typeof import("@/components/ui/paging")>();
   return {
     ...actual,
-    usePageRows: (initial: never, deps: never) => {
-      paging.calls.push({ initial, deps });
-      const bound = actual.usePageRows(initial, deps);
-      paging.press = bound.press;
-      return paging.override === null
-        ? bound
-        : { ...bound, state: paging.override as typeof bound.state };
+    PagingProvider: (props: {
+      initial: (typeof paging.calls)[number]["initial"];
+      deps: (typeof paging.calls)[number]["deps"];
+      children: unknown;
+    }) => {
+      paging.calls.push({ initial: props.initial, deps: props.deps });
+      // The REAL provider, started from the state under test, with a probe
+      // added beside the page's own children to hand the press back out.
+      return h(
+        actual.PagingProvider as never,
+        {
+          initial: (paging.override === null ? props.initial : paging.override) as never,
+          deps: props.deps as never,
+        },
+        props.children as never,
+      );
+    },
+    // The press, taken from the widget's own `onPress` prop as the surface
+    // hands it over — the same function a click would call, in a tier with no
+    // DOM to click. The widget itself is the app's and renders unchanged.
+    PageMore: (props: { onPress: () => void }) => {
+      paging.press = props.onPress;
+      return h(actual.PageMore as never, props as never);
     },
   };
 });
@@ -5335,8 +5362,8 @@ describe("the affordance that continues the claim list", () => {
   });
 
   it("spells the window ONCE: the control names the number the driver grades against", async () => {
-    // QA residual 4 off admin-window/TASK-0064, one layer up. The window is a
-    // PROP here, so the wrapper is driven at a window that is NOT 50 and the
+    // QA residual 4 off admin-window/TASK-0064, one layer up. The window is
+    // the PROVIDER's dep here, so the surface is driven at one that is NOT 50 and the
     // same 7-row answer is read twice: it LANDS against a window of 7 (the
     // next press moves on to 14) and is REFUSED against a window of 8 (the
     // next press asks for 8 again) — so the number the driver graded the page
@@ -5353,13 +5380,15 @@ describe("the affordance that continues the claim list", () => {
         exhausted: false,
       });
       const markup = render(
-        h(PagedClaimList, {
-          label: "All claims",
-          initial: rows.slice(0, windowSize),
-          total: 900,
-          params: "",
-          size: windowSize,
-        }),
+        h(
+          PagingProvider,
+          {
+            initial: initialPage<ClaimLine>(windowSize, true),
+            deps: { route: PAGE_ROUTES.claims, params: "", size: windowSize },
+            children: null,
+          },
+          h(PagedClaimList, { label: "All claims", initial: rows.slice(0, windowSize) }),
+        ),
       );
       paging.press?.();
       await settle();
@@ -5380,6 +5409,212 @@ describe("the affordance that continues the claim list", () => {
     expect(refused.label).not.toContain("7");
   });
 
+  /* ── the window line of a surface a press CONTINUES ───────────────────── */
+
+  /**
+   * The line and the rows, one verdict — admin-window/BUG-0172.
+   *
+   * QA measured the same contradiction here as on `/browse`: 616 rows on
+   * screen under "the 50 longest-waiting are below — the rest are not shown",
+   * with `data-window-truncated="true"` beside `data-paging="exhausted"`. The
+   * cases below read the app's own machine-readable statements — the window
+   * hooks and the paging arm — and pin no word of either sentence (LESSONS 11).
+   */
+
+  /** The window line's own markup, for a byte comparison of two renders. */
+  const lineHtml = (markup: string): string =>
+    cheerio.load(markup)('[data-window="claims"]').toString();
+
+  /**
+   * The defect sentence a CONTINUED window must never reach: this surface is
+   * drawn paged only where a count said there is more, so "the window did not
+   * fill" is a claim no press can make true (criterion 3).
+   */
+  const DID_NOT_FILL = "did not fill";
+
+  /** The line's sentence, with no word of it pinned — read for what it omits. */
+  const lineText = (markup: string): string =>
+    cheerio.load(markup)('[data-window="claims"]').text().replace(/\s+/g, " ").trim();
+
+  /** The page's own deps, as it handed them to the driver. */
+  const depsOf = () =>
+    paging.calls[0].deps as { route: string; params: string; size: number };
+
+  it("does not claim rows are withheld once the walk has reached the end of the set", async () => {
+    // The sibling of QA's `/browse` pin, pressed to exhaustion through the
+    // same driver (admin-window/BUG-0172, criterion 9). Both handles are the
+    // app's own statements about ONE question: are there matching claims this
+    // surface could show that are not on screen?
+    const claims = longPopulation(130);
+    const script = pagedScript(130);
+    await renderClaims(script);
+    const initial = paging.calls[0].initial as unknown as PageState<ClaimLine>;
+    const press = (state: PageState<ClaimLine>, answer: PageAnswer<ClaimLine>) =>
+      requestPage<ClaimLine>(state, { ...depsOf(), fetchJson: () => Promise.resolve(answer) });
+
+    const second = await press(initial, {
+      kind: "ok",
+      rows: claimLines(claims.slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
+      offset: CLAIM_WINDOW,
+      exhausted: false,
+    });
+    paging.override = await press(second, {
+      kind: "ok",
+      rows: claimLines(claims.slice(CLAIM_WINDOW * 2, 130), new Map()),
+      offset: CLAIM_WINDOW * 2,
+      exhausted: true,
+    });
+    const markup = await renderClaims(script);
+
+    // The walk really did reach the end, and the rows really are all drawn.
+    expect(pagingArms(markup)).toEqual(["exhausted"]);
+    expect(claimIds(markup)).toHaveLength(130);
+
+    // …so nothing on this page may still say claims are being held back.
+    expect(windowFigures(markup).lines).toBe(1);
+    expect(windowFigures(markup).truncated).toBe(false);
+    expect(lineText(markup)).not.toContain(DID_NOT_FILL);
+  });
+
+  it("keeps its held on the COUNT its own read established, whatever a press appends", async () => {
+    // `/browse`'s `held` is the rows its reads came back with and grows with
+    // them; this one is the matching COUNT, established by a read paging never
+    // repeats — and the live paged-walk oracle grades the walk against exactly
+    // this hook (admin-window/BUG-0172, criterion 2).
+    const claims = longPopulation(130);
+    const script = pagedScript(130);
+    const first = await renderClaims(script);
+    expect(windowFigures(first)).toEqual({
+      lines: 1,
+      limit: CLAIM_WINDOW,
+      held: 130,
+      truncated: true,
+    });
+
+    paging.override = await requestPage<ClaimLine>(
+      paging.calls[0].initial as unknown as PageState<ClaimLine>,
+      {
+        ...depsOf(),
+        fetchJson: () =>
+          Promise.resolve({
+            kind: "ok",
+            rows: claimLines(claims.slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
+            offset: CLAIM_WINDOW,
+            exhausted: false,
+          }),
+      },
+    );
+    const continued = await renderClaims(script);
+
+    expect(claimIds(continued)).toHaveLength(CLAIM_WINDOW * 2);
+    expect(windowFigures(continued)).toEqual({
+      lines: 1,
+      limit: CLAIM_WINDOW,
+      // Untouched: paging read no new claim into the count.
+      held: 130,
+      // The count still holds more than the screen does, and the control below
+      // still offers them.
+      truncated: true,
+    });
+    expect(pagingArms(continued)).toEqual(["more"]);
+    // The sentence states the rows that ARE below, not the cap the first read
+    // carried — no word of it is pinned, only the two figures it must carry.
+    expect(lineText(continued)).toContain(count(CLAIM_WINDOW * 2));
+    expect(lineText(continued)).not.toContain(DID_NOT_FILL);
+  });
+
+  it("is one element while a press is in FLIGHT, and says what the rows still say", async () => {
+    const script = pagedScript(130);
+    await renderClaims(script);
+    paging.override = pressing(paging.calls[0].initial as unknown as PageState<ClaimLine>);
+    const loading = await renderClaims(script);
+    expect(pagingArms(loading)).toEqual(["loading"]);
+    // A press in flight has taken in no row and ended nothing.
+    expect(windowFigures(loading)).toEqual({
+      lines: 1,
+      limit: CLAIM_WINDOW,
+      held: 130,
+      truncated: true,
+    });
+    expect(lineText(loading)).not.toContain(DID_NOT_FILL);
+  });
+
+  it("a refused press settles nothing: the line is what it was before it", async () => {
+    const claims = longPopulation(130);
+    const script = pagedScript(130);
+    await renderClaims(script);
+    const landed = await requestPage<ClaimLine>(
+      paging.calls[0].initial as unknown as PageState<ClaimLine>,
+      {
+        ...depsOf(),
+        fetchJson: () =>
+          Promise.resolve({
+            kind: "ok",
+            rows: claimLines(claims.slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
+            offset: CLAIM_WINDOW,
+            exhausted: false,
+          }),
+      },
+    );
+
+    paging.override = landed;
+    const before = await renderClaims(script);
+    paging.override = await requestPage<ClaimLine>(landed, {
+      ...depsOf(),
+      fetchJson: () => Promise.resolve({ kind: "not_provisioned", missing: T.pendingClaims }),
+    });
+    const after = await renderClaims(script);
+
+    expect(cheerio.load(after)("[data-paging-refusal]")).toHaveLength(1);
+    expect(pagingArms(after)).toContain("more");
+    expect(lineHtml(after)).toBe(lineHtml(before));
+  });
+
+  it("at the bound ceiling it still says claims are not shown", async () => {
+    // The state a walk reaches after `MAX_PAGE_OFFSET` rows: every further
+    // bound is past the ceiling `pageBound` enforces, so `PageMore` draws its
+    // limit sentence and NO control — and that sentence does not claim the set
+    // has ended, because nothing established that. The line must agree: claims
+    // this surface could show are not shown, and it says so.
+    //
+    // The held is seeded rather than pressed to: 2,000 full pages is what puts
+    // a real operator here, and the state is built the way the surface's own
+    // state is built (`initialPage`), then driven through the REAL driver with
+    // the refusal this app's route answers a bound past the ceiling with.
+    const script = pagedScript(130);
+    await renderClaims(script);
+    const atCeiling = initialPage<ClaimLine>(MAX_PAGE_OFFSET + CLAIM_WINDOW, true);
+
+    // These two renders go around `renderClaims`, and only these two do: its
+    // sweep grades that no FIRST screen of this file draws the limit arm, and
+    // the state under test here is the one state where drawing it is correct.
+    const rendered = async (): Promise<string> => {
+      readWith.client = stubClient(script).asSupabaseClient();
+      return render(await ClaimsPage({ searchParams: Promise.resolve({}) }));
+    };
+
+    paging.override = atCeiling;
+    const before = await rendered();
+    expect(pagingArms(before)).toEqual(["limit"]);
+    expect(windowFigures(before).lines).toBe(1);
+    expect(windowFigures(before).truncated).toBe(true);
+    expect(lineText(before)).not.toContain(DID_NOT_FILL);
+
+    paging.override = await requestPage<ClaimLine>(atCeiling, {
+      ...depsOf(),
+      fetchJson: () =>
+        Promise.resolve({
+          kind: "refused",
+          reason: "the `offset` must be at most 100000",
+          bound: String(MAX_PAGE_OFFSET + CLAIM_WINDOW),
+        }),
+    });
+    const after = await rendered();
+    expect(pagingArms(after)).toEqual(["limit"]);
+    expect(cheerio.load(after)("[data-paging-refusal]")).toHaveLength(1);
+    expect(lineHtml(after)).toBe(lineHtml(before));
+  });
+
   it("draws no control from a state off the grid, and never calls it exhausted", async () => {
     // Where a wrapper is built off the grid ANYWAY — which `/claims` never
     // does — the ceiling is answered by the widget and by nothing here: no
@@ -5389,13 +5624,20 @@ describe("the affordance that continues the claim list", () => {
     // would produce that forbidden sentence instead.
     recordingFetch({ kind: "ok", rows: [], offset: 50, exhausted: true });
     const markup = render(
-      h(PagedClaimList, {
-        label: "All claims",
-        initial: claimLines(longPopulation(37), new Map()),
-        total: 900,
-        params: "",
-        size: CLAIM_WINDOW,
-      }),
+      h(
+        PagingProvider,
+        {
+          // A COUNT of 900 over 37 rendered rows: the state a page would build
+          // where its two reads disagree — which `/claims` never hands over.
+          initial: initialPage<ClaimLine>(37, true),
+          deps: { route: PAGE_ROUTES.claims, params: "", size: CLAIM_WINDOW },
+          children: null,
+        },
+        h(PagedClaimList, {
+          label: "All claims",
+          initial: claimLines(longPopulation(37), new Map()),
+        }),
+      ),
     );
     expect(claimIds(markup)).toHaveLength(37);
     expect(pagingArms(markup)).toEqual(["limit"]);

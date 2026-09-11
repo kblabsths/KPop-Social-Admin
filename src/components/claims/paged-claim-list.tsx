@@ -1,10 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { PageMore, usePageRows } from "@/components/ui/paging";
+import { PageMore, usePaging } from "@/components/ui/paging";
 import type { ClaimLine } from "@/lib/claims/lines";
-import { PAGE_ROUTES } from "@/lib/paging/bounds";
-import { initialPage } from "@/lib/paging/machine";
 import { ClaimList } from "./claim-list";
 
 /**
@@ -25,14 +23,21 @@ import { ClaimList } from "./claim-list";
  * `ClaimList` and no paging element exists in the markup. That is why nothing
  * below reads a count, a state kind or a window line.
  *
+ * **The state is the SURFACE's, not this component's** (admin-window/BUG-0172).
+ * The page wraps its window line and this wrapper in ONE `PagingProvider`,
+ * which owns the press; this file consumes that state through `usePaging` and
+ * derives nothing from it. That is what lets the sentence above the rows and
+ * the control below them read one derivation — before this ticket the line was
+ * server-rendered above a wrapper that could change the rows underneath it,
+ * and after a press the two contradicted each other in the hooks.
+ *
  * **The window is spelled ONCE per surface** (admin-window/BUG-0168, QA
- * residual 4 off admin-window/TASK-0064). It arrives as the `size` prop: the
- * window constant `src/components/claims/claim-list.tsx` declares, which the
- * PAGE spells and this file deliberately never names. That one value is handed
- * to `usePageRows` as the number the driver grades a page full-or-short
- * against, and `PageMore` is fed the number the hook hands BACK. The two
- * copies that used to be reconciled nowhere are one value, so a control that
- * says "the next 50" and a driver grading against 25 cannot happen here.
+ * residual 4 off admin-window/TASK-0064). The PAGE spells it — the window
+ * constant `src/components/claims/claim-list.tsx` declares — into the deps it
+ * hands the provider, and `PageMore` is fed the number the driver hands BACK
+ * through the context. This file never names it. The two copies that used to
+ * be reconciled nowhere are one value, so a control that says "the next 50"
+ * and a driver grading against 25 cannot happen here.
  *
  * **The BOUND CEILING is not asked here, and that is deliberate** (the
  * architect's ruling of 2026-09-10 on admin-window/BUG-0168). A count and a
@@ -60,37 +65,17 @@ const HOLDS = "claims";
 export function PagedClaimList({
   label,
   initial,
-  total,
-  params,
-  size: window,
   line,
 }: {
   label: string;
   /** The first screen's rows — already shaped by the page (`claimLines`). */
   initial: readonly ClaimLine[];
-  /** How many rows the whole narrowing holds, when a count established it. */
-  total: number | null;
-  /** The narrowing this page RENDERED, serialized — never the raw URL. */
-  params: string;
-  /** The surface's window, spelled by the page and by nothing here. */
-  size: number;
   line?: ReactNode;
 }): ReactNode {
-  // What the page actually RENDERED is the bound the next press carries: the
-  // rows on screen, never a count and never the window the read asked for.
-  const held = initial.length;
-  // A COUNT, or no affordance: `initialPage` starts `exhausted` where nothing
-  // established there is more, because a control that cannot be honoured is
-  // never offered (SPEC F10). The page reaches this with a count that already
-  // said there is more, so the `null` arm is the honest default and not a
-  // state this surface renders.
-  const more = total !== null && total > held;
-
-  const { state, press, size } = usePageRows<ClaimLine>(initialPage<ClaimLine>(held, more), {
-    route: PAGE_ROUTES.claims,
-    params,
-    size: window,
-  });
+  // The surface's one state, published by the provider the page wrapped this
+  // in: the rows a press appended, the press itself, and the window the driver
+  // graded them against. Nothing here decides any of the three.
+  const { state, press, size } = usePaging<ClaimLine>();
 
   return (
     <div className="flex flex-col gap-4">
