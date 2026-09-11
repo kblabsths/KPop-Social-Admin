@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import * as cheerio from "cheerio";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -60,6 +61,9 @@ vi.mock("@/lib/db/client", async (importActual) => {
 });
 
 const { GET } = await import("@/app/api/admin/claims/rows/route");
+// The FIRST screen, driven through the same stubbed client as the route, so
+// the seam between them is observable in one test (QA, admin-window/TASK-0066).
+const ClaimsPage = (await import("@/app/claims/page")).default;
 
 import { CLAIM_WINDOW } from "@/components/claims";
 import { claimLines, type ClaimLine } from "@/lib/claims/lines";
@@ -83,6 +87,7 @@ import {
   type StubClient,
 } from "../../fixtures/stub-client";
 import { REGISTRY, SOURCE, SOURCE_NAME, claimView } from "../claims/population";
+import { render } from "../ui/markup";
 
 /** The admin the stubbed gate hands the handler. Not a real address. */
 const ADMIN = { user: { email: "paging-suite@example.invalid" } };
@@ -531,5 +536,110 @@ describe("the route owns the shape of what it serves", () => {
   it("serves GET and nothing else", async () => {
     const route = await import("@/app/api/admin/claims/rows/route");
     expect(Object.keys(route)).toEqual(["GET"]);
+  });
+});
+
+
+/**
+ * THE FIRST SCREEN AND ITS CONTINUATION ARE ONE SET — QA's attack on
+ * admin-window/TASK-0066, and the property the shared derivation exists for.
+ *
+ * Everything above drives the route ALONE, so it cannot see the defect this
+ * feature is most exposed to: a paged row set that belongs to a different
+ * narrowing, or a different order, than the rows already on the screen — rows
+ * repeated or skipped at the boundary, which no assertion about one surface
+ * can catch (ARCHITECTURE.md common violations row 20; LESSONS 5). So here the
+ * PAGE function and the ROUTE are driven against ONE stubbed database, and the
+ * ids the screen rendered are compared with the ids the press appended.
+ *
+ * The population is deliberately MIXED — two buckets, two domains, three
+ * sources, strictly ascending instants — so the standing tab's subset, a
+ * domain facet and the unnarrowed set are three different row sets, and the
+ * last case is the CONTROL: two different narrowings really do serve different
+ * rows, so the equalities above cannot pass by comparing a set with itself.
+ */
+const MIXED: readonly PendingClaimRow[] = Array.from({ length: 130 }, (_, index) =>
+  pendingClaimRow(index % 2 === 0 ? "standing_disagreement" : "agreeing", {
+    observation_id: `01920000-0000-7000-8000-${(700000 + index).toString().padStart(12, "0")}`,
+    source_id: SOURCE_RING[index % SOURCE_RING.length],
+    domain: index % 4 < 2 ? "events" : "venues",
+    observed_at: new Date(Date.UTC(2026, 7, 1, 0, index)).toISOString(),
+  }),
+);
+
+/** The whole page's database: the view, the registry, and the instants leg. */
+function mixedScript(): Script {
+  return {
+    [T.pendingClaims]: claimView(MIXED),
+    [T.observations]: { data: [] },
+    [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
+  };
+}
+
+/** The claim ids the FIRST SCREEN rendered, in rendered order. */
+async function firstScreenIds(params: Record<string, string>): Promise<string[]> {
+  database(mixedScript());
+  const markup = render(await ClaimsPage({ searchParams: Promise.resolve(params) }));
+  const $ = cheerio.load(markup);
+  return $("[data-claim]")
+    .toArray()
+    .map((element) => $(element).attr("data-claim") ?? "");
+}
+
+/** The ids ONE press appended, against the same database at the same bound. */
+async function pagedIds(query: string): Promise<{ ids: string[]; exhausted: boolean }> {
+  database(mixedScript());
+  const { body } = await ask(query);
+  const answer = accepted(body);
+  if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
+  return { ids: answer.rows.map((row) => row.observationId), exhausted: answer.exhausted };
+}
+
+/** The population's own ids, in the read's order, under this file's predicate. */
+function idsWhere(keep: (row: PendingClaimRow) => boolean): string[] {
+  return MIXED.filter(keep).map((row) => row.observation_id);
+}
+
+describe("the first screen and its continuation are one set", () => {
+  it("continues where the screen ended: no row repeated, none skipped", async () => {
+    const screen = await firstScreenIds({});
+    const { ids } = await pagedIds(`?${OFFSET_PARAM}=${CLAIM_WINDOW}`);
+
+    expect(screen.length).toBe(CLAIM_WINDOW);
+    // Disjoint — a repeated row is the defect an off-grid bound would cause.
+    expect(new Set([...screen, ...ids]).size).toBe(screen.length + ids.length);
+    // And contiguous in the read's own order — no row fell between them.
+    expect([...screen, ...ids]).toEqual(idsWhere(() => true).slice(0, screen.length + ids.length));
+  });
+
+  it("reads the standing TAB's subset on both surfaces, bucket facet and all", async () => {
+    // The tab IS a bucket, so `listFilterOf` drops the URL's own bucket on it.
+    // A route that kept `bucket=agreeing` would append rows from a bucket the
+    // screen above is not showing — one list, two narrowings.
+    const params = { tab: "standing", bucket: "agreeing" };
+    const screen = await firstScreenIds(params);
+    const { ids, exhausted } = await pagedIds(
+      `?tab=standing&bucket=agreeing&${OFFSET_PARAM}=${CLAIM_WINDOW}`,
+    );
+    const standing = idsWhere((row) => row.bucket === "standing_disagreement");
+
+    expect(screen).toEqual(standing.slice(0, CLAIM_WINDOW));
+    expect([...screen, ...ids]).toEqual(standing);
+    // The set ended inside this page, and the page says so.
+    expect(exhausted).toBe(true);
+  });
+
+  it("keeps a control-less facet across the boundary", async () => {
+    const screen = await firstScreenIds({ domain: "venues" });
+    const { ids } = await pagedIds(`?domain=venues&${OFFSET_PARAM}=${CLAIM_WINDOW}`);
+
+    expect([...screen, ...ids]).toEqual(idsWhere((row) => row.domain === "venues"));
+  });
+
+  it("really does serve different rows for a different narrowing (the control)", async () => {
+    const venues = await pagedIds(`?domain=venues&${OFFSET_PARAM}=${CLAIM_WINDOW}`);
+    const events = await pagedIds(`?domain=events&${OFFSET_PARAM}=${CLAIM_WINDOW}`);
+
+    expect(venues.ids).not.toEqual(events.ids);
   });
 });

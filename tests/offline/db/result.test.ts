@@ -464,6 +464,43 @@ describe("the database client's own account", () => {
     }
   });
 
+  /**
+   * An INTERMEDIARY's error page is not the database's account (QA,
+   * admin-window/TASK-0066 attack, measured against staging 2026-09-10).
+   *
+   * `/claims?domain=events%27%29%3B%20drop%20table%20groups%3B--` is answered
+   * by the WAF in front of PostgREST with an HTML document, not by PostgREST,
+   * so supabase-js hands back the page body as `message`. The measured answer
+   * on the landed tree is a 4,547-character Cloudflare document, which the
+   * claims card and the paging route's `error` arm both carry verbatim onto
+   * the operator's screen.
+   *
+   * The rule is ARCHITECTURE.md common violations row 15 and LESSONS 4:
+   * foreign text reaches an app sentence in its own box or not at all. A
+   * document is never a sentence, whatever it says.
+   */
+  // A STRICT xfail pin (admin-window/BUG-0170): `it.fails` passes only while
+  // the divergence stands, so the day the account stops carrying the document
+  // this case reddens and sends the reader to the ticket.
+  it.fails("does not carry an intermediary's HTML page into the account (admin-window/BUG-0170)", () => {
+    const page = [
+      "<!DOCTYPE html>",
+      '<html class="no-js" lang="en-US"><head>',
+      "<title>Attention Required! | Cloudflare</title>",
+      '<meta charset="UTF-8" /></head>',
+      "<body>Sorry, you have been blocked</body></html>",
+    ].join("\n");
+    const result = classify({ code: "", hint: "", details: "", message: page }, T.pendingClaims);
+
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    // Still an honest refusal naming the object it could not read.
+    expect(result.reading).toBe(T.pendingClaims);
+    // But not a document: no doctype, no tags, nothing for a reader to parse.
+    expect(result.message).not.toMatch(/<!DOCTYPE/i);
+    expect(result.message).not.toMatch(/<\/?html[\s>]/i);
+  });
+
   it("invents nothing when the client said nothing at all", () => {
     // No message, no details: still an error, still never a sentence of ours.
     const result = classify({}, T.runs);
