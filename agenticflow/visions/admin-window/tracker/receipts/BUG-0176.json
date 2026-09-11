@@ -1,0 +1,84 @@
+{
+ "id": "BUG-0176",
+ "created": "2026-09-11T09:25:42Z",
+ "green": true,
+ "git_head": "67e1c4e5d1efebf87707c4db99459b84568fcc53",
+ "scope": [
+  "src/lib/paging/machine.ts",
+  "src/components/ui/paging.tsx",
+  "src/components/ui/not-provisioned.tsx",
+  "tests/offline/paging/machine.test.ts",
+  "tests/offline/ui/paging.test.ts",
+  "tests/offline/ui/primitives.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "9e4187ac8e70d462577f3497e49aa59e38f174014493cd3c059920a60c8d191f",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/paging tests/offline/ui/paging.test.ts tests/offline/ui/primitives.test.ts tests/offline/ui/contrast.test.ts tests/offline/ui/copy.test.ts tests/offline/shell/client-boundary.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-14284\n\n \u2713 |offline| tests/offline/ui/contrast.test.ts (51 tests) 8ms\n \u2713 |offline| tests/offline/paging/bounds.test.ts (11 tests) 10ms\n \u2713 |offline| tests/offline/paging/machine.test.ts (62 tests) 37ms\n \u2713 |offline| tests/offline/paging/browse-route.test.ts (39 tests) 30ms\n \u2713 |offline| tests/offline/paging/answer.test.ts (7 tests) 4ms\n \u2713 |offline| tests/offline/ui/copy.test.ts (12 tests) 125ms\n \u2713 |offline| tests/offline/ui/paging.test.ts (61 tests) 133ms\n \u2713 |offline| tests/offline/ui/primitives.test.ts (110 tests) 140ms\n \u2713 |offline| tests/offline/shell/client-boundary.test.ts (20 tests) 585ms\n   \u2713 the client boundary under src/ > really resolves server imports of client components  379ms\n \u2713 |offline| tests/offline/paging/claims-route.test.ts (39 tests) 152ms\n\n Test Files  10 passed (10)\n      Tests  412 passed (412)\n   Start at  02:25:21\n   Duration  1.04s (transform 1.21s, setup 0ms, collect 2.96s, tests 1.22s, environment 1ms, prepare 747ms)\n\n(node:14291) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -q \"a missing object is not painted as breakage\" tests/offline/ui/paging.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"the not-provisioned arm carries the object and composes no sentence\" tests/offline/paging/machine.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q \"is not provisioned\" src/lib/paging/machine.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"from \\\"./not-provisioned\\\"\" src/components/ui/paging.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"answer.offset\" src/lib/paging/machine.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"declares a bound this press did not ask for\" tests/offline/paging/machine.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q \"is not read into the state\" src/lib/paging/machine.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"the missing object stands in its own isolated box and in no sentence\" tests/offline/ui/paging.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"WORDLESS_REFUSAL\" src/lib/paging/machine.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"a refusal that carried no words still says a press was refused\" tests/offline/paging/machine.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "riments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.1s\n  Running TypeScript ...\n  Finished TypeScript in 5.8s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 156ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/browse/rows\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-14284/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:14387) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
