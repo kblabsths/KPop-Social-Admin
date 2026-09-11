@@ -12,13 +12,23 @@ import {
   type PendingClaimRow,
   type PendingObservationRow,
 } from "@/lib/gauges/pending-claims";
-import { readPendingClaimRows, readPendingObservations } from "@/lib/db/gauges";
+import {
+  readPendingClaimRows,
+  readPendingClaimsInWindow,
+  readPendingObservations,
+} from "@/lib/db/gauges";
 import { T } from "@/lib/db/tables";
 import {
   PENDING_CLAIMS_DEFAULTS,
   aggregatePendingClaims as aggregate,
 } from "@/lib/gauges/pending-claims";
-import { idsOf, resolveBounds, windowOf, type WindowInfo } from "@/lib/gauges/gauge";
+import {
+  idsOf,
+  resolveBounds,
+  windowOf,
+  type GaugeOptions,
+  type WindowInfo,
+} from "@/lib/gauges/gauge";
 import { ID, observationRow, pendingClaimRow } from "../../fixtures/rows";
 import { claimView } from "../claims/population";
 import {
@@ -160,9 +170,12 @@ describe("fetchPendingClaims", () => {
     ]);
     expect(scan.find((s) => s.method === "limit")?.args).toEqual([900]);
     // Oldest first: truncation drops the newest claims and keeps the stuck ones.
-    expect(scan.find((s) => s.method === "order")?.args).toEqual([
-      "observed_at",
-      { ascending: true },
+    // …and `observation_id` after it, the claims leg's own tiebreak: ONE total
+    // order over both legs is what makes the two cuts the same cut at the cap
+    // (admin-window/BUG-0167).
+    expect(scan.filter((s) => s.method === "order").map((s) => s.args)).toEqual([
+      ["observed_at", { ascending: true }],
+      ["observation_id", { ascending: true }],
     ]);
 
     // The claims leg is a WINDOW over the view's own instant, not a lookup by
@@ -304,9 +317,17 @@ describe("fetchPendingClaims", () => {
 describe("the windowed claims leg against the id-list join it replaced", () => {
   const SINCE = "2026-06-03T12:00:00.000Z";
 
-  /** The shape this gauge had before the collapse — the comparand, not a fallback. */
-  async function idListJoin(db: ReturnType<typeof stubClient>) {
-    const bounds = resolveBounds({ now: NOW }, PENDING_CLAIMS_DEFAULTS);
+  /**
+   * The shape this gauge had before the collapse — the comparand, not a
+   * fallback. It takes the same options `fetchPendingClaims` does, so the cap
+   * fixtures below can hand both shapes ONE set of bounds
+   * (admin-window/BUG-0167).
+   */
+  async function idListJoin(
+    db: ReturnType<typeof stubClient>,
+    options: GaugeOptions = { now: NOW },
+  ) {
+    const bounds = resolveBounds(options, PENDING_CLAIMS_DEFAULTS);
     const client = db.asSupabaseClient();
     const observations = await readPendingObservations(bounds, {}, client);
     if (observations.kind !== "ok") return observations;
@@ -338,6 +359,35 @@ describe("the windowed claims leg against the id-list join it replaced", () => {
   ) {
     return stubClient({
       [T.observations]: { data: observationRows },
+      [T.pendingClaims]: claimView(claimRows),
+    });
+  }
+
+  /**
+   * The same fixture database, with the SCAN answering the query it was asked
+   * as well (admin-window/BUG-0167) — `.eq`, `.gte`, `.order`, `.limit` and
+   * the projection, applied by `claimView`'s engine to this table's rows.
+   *
+   * `fixture` above hands the scan a fixed row set, which is all a test of an
+   * UNTRUNCATED read needs; a test about the CAP needs a scan that cuts its
+   * own order, because where it cuts is the whole question.
+   *
+   * **The rows are handed over in the order the answer should NOT be trusted
+   * to have.** That sort is stable, so rows the query's own `.order()` leaves
+   * tied come back in the order they went in: hand them reversed and the
+   * fixture returns, for an incompletely-ordered `limit`, one of the answers
+   * Postgres is free to return — which is exactly the state this ticket is
+   * about. With a total order on the query the input order cannot be read
+   * back out of the answer at all, which is the property being proved.
+   */
+  function capped(
+    claimRows: ReturnType<typeof pendingClaimRow>[],
+    observationRows: ReturnType<typeof observationRow>[],
+  ) {
+    return stubClient({
+      [T.observations]: claimView(
+        observationRows as unknown as ReturnType<typeof pendingClaimRow>[],
+      ),
       [T.pendingClaims]: claimView(claimRows),
     });
   }
@@ -484,82 +534,130 @@ describe("the windowed claims leg against the id-list join it replaced", () => {
   });
 
   /**
-   * QA (admin-window/TASK-0074): THE REGIME THE PROOF ABOVE EXCLUDES.
+   * THE CAP, WHERE THE TWO LEGS EITHER CUT ONE ORDER OR CUT TWO
+   * (admin-window/TASK-0074's question, admin-window/BUG-0167's answer).
    *
-   * Both legs carry the SAME cap (`GAUGE_ROW_CAP`, 1000) and the census says
-   * staging holds 877 claims in the 90-day window, so the truncated regime is
-   * ~14% of growth away. The two legs do not truncate the same way:
+   * Both legs carry the SAME cap (`GAUGE_ROW_CAP`, 1000) and staging held 877
+   * claims in the 90-day window when this was measured, so the truncated
+   * regime is ~14% of growth away — and it is the one regime the live proof
+   * (`tests/live/claims.live.test.ts`) refuses to be about, because it demands
+   * both legs came back under their cap.
    *
-   *  - the claims leg orders `observed_at asc, observation_id asc` — a TOTAL
-   *    order, which is exactly what its own test above asserts, "so which
-   *    claims are inside a truncated window is decided by the database and not
-   *    by a tie";
-   *  - the `observations` scan it must agree with orders by `observed_at`
-   *    ALONE (`readPendingObservations`, src/lib/db/gauges.ts), so at the cap
-   *    Postgres returns an ARBITRARY subset of the rows tied on the boundary
-   *    instant.
-   *
-   * Below, the scan came back with the tie subset {c02, c03, c04} and the
-   * claims leg — ordered totally — took {c01, c02, c03}. The intersection is
-   * {c02, c03}: the id-list join returned all three claims the scan asked
-   * about, the windowed shape returns two of them.
+   * The two fixtures below are that regime, and they are the criterion for
+   * BUG-0167: the identity has to hold where the boundary instant is TIED and
+   * where it is not. It holds because both legs now cut ONE total order
+   * (`observed_at`, then `observation_id`) over a population the claims are a
+   * subset of, so the claims below the scan's cutoff are exactly the claims
+   * leg's own first rows. Before the fix the scan ordered by `observed_at`
+   * alone and a tie on the boundary instant was cut arbitrarily: the scan came
+   * back with {c02, c03, c04}, the claims leg with {c01, c02, c03}, and the
+   * gauge rendered the two claims in the middle while the id-list join it
+   * replaced returned three.
    */
-  it.fails(
-    "PIN admin-window/BUG-0167: at the cap, a tie on the boundary instant costs claims the id list kept",
-    async () => {
-      const TIED = "2026-08-01T00:00:00Z";
-      const ids = [
-        "01920000-0000-7000-8000-000000000c01",
-        "01920000-0000-7000-8000-000000000c02",
-        "01920000-0000-7000-8000-000000000c03",
-        "01920000-0000-7000-8000-000000000c04",
-      ];
-      const claimRows = ids.map((observation_id) =>
-        pendingClaimRow("standing_disagreement", {
-          observation_id,
-          source_id: SOURCE_A,
-          observed_at: TIED,
-        }),
-      );
-      // What `order by observed_at limit 3` may legally hand back over four
-      // rows of one instant: any three of them.
-      const scanned = ids.slice(1).map((observation_id) =>
+  // The name QA pinned this defect under, kept verbatim — a strict pin now,
+  // so it reddens the day the divergence returns.
+  it("PIN admin-window/BUG-0167: at the cap, a tie on the boundary instant costs claims the id list kept", async () => {
+    const TIED = "2026-08-01T00:00:00Z";
+    const ids = [
+      "01920000-0000-7000-8000-000000000c01",
+      "01920000-0000-7000-8000-000000000c02",
+      "01920000-0000-7000-8000-000000000c03",
+      "01920000-0000-7000-8000-000000000c04",
+    ];
+    const claimRows = ids.map((observation_id) =>
+      pendingClaimRow("standing_disagreement", {
+        observation_id,
+        source_id: SOURCE_A,
+        observed_at: TIED,
+      }),
+    );
+    // Four observations on ONE instant, handed to the scan's fixture newest id
+    // first — the order a query that does not ask for one may get back.
+    const observationRows = [...ids]
+      .reverse()
+      .map((observation_id) =>
         observationRow({ observation_id, source_id: SOURCE_A, observed_at: TIED, status: "pending" }),
       );
 
-      const bounds = { now: NOW, days: 90, limit: 3 } as const;
-      const windowed = await fetchPendingClaims(
-        bounds,
-        stubClient({
-          [T.observations]: { data: scanned },
-          [T.pendingClaims]: claimView(claimRows),
-        }).asSupabaseClient(),
-      );
+    const bounds: GaugeOptions = { now: NOW, days: 90, limit: 3 };
+    const windowed = await fetchPendingClaims(bounds, capped(claimRows, observationRows).asSupabaseClient());
+    const joined = await idListJoin(capped(claimRows, observationRows), bounds);
+    if (windowed.kind !== "ok" || joined.kind !== "ok") throw new Error("both shapes read ok");
 
-      const joinDb = stubClient({
-        [T.observations]: { data: scanned },
-        [T.pendingClaims]: claimView(claimRows),
-      }).asSupabaseClient();
-      const scan = await readPendingObservations(
-        resolveBounds(bounds, PENDING_CLAIMS_DEFAULTS),
-        {},
-        joinDb,
-      );
-      if (scan.kind !== "ok") throw new Error("the scan reads ok");
-      const joined = await readPendingClaimRows(
-        idsOf(scan.data, (row) => row.observation_id),
-        joinDb,
-      );
-      if (joined.kind !== "ok" || windowed.kind !== "ok") throw new Error("both shapes read ok");
+    // Non-vacuous: the cap really bit — three of the four tied rows came back.
+    expect(windowed.data.observations).toHaveLength(3);
+    expect(joined.data.observations).toHaveLength(3);
+    // The identity the collapse rests on, at the cap and on the tie.
+    expect(idsOf(windowed.data.claims, (claim) => claim.observation_id)).toEqual(
+      idsOf(joined.data.claims, (claim) => claim.observation_id),
+    );
+    expect(aggregate(windowed.data)).toEqual(aggregate(joined.data));
+    // …and no claim the scan itself saw is dropped: the three it returned are
+    // the three the gauge counts, decided by the order and not by the tie.
+    expect(idsOf(windowed.data.claims, (claim) => claim.observation_id)).toEqual(ids.slice(0, 3));
+    expect(aggregate(windowed.data).claims).toBe(3);
+  });
 
-      // The id list returned every claim the scan asked about…
-      expect(joined.data.map((claim) => claim.observation_id)).toEqual(ids.slice(1));
-      // …and this is the identity the collapse rests on. It does not hold here.
-      expect(windowed.data.claims.map((claim) => claim.observation_id)).toEqual(
-        joined.data.map((claim) => claim.observation_id),
-      );
-    },
-  );
+  it("selects the same claims at the cap when the boundary instant is UNTIED and the two populations differ", async () => {
+    // The identity is about the two SHAPES, not about the tie. Six pending
+    // observations on six distinct instants; the view holds a claim for four
+    // of them, so the claims leg's cap reaches an hour further into the window
+    // than the scan's does and the scan returns rows no claim exists for.
+    const at = (hour: number) => `2026-08-0${hour}T00:00:00Z`;
+    const idOf = (n: number) => `01920000-0000-7000-8000-00000000000${n}`;
+    const observationRows = [1, 2, 3, 4, 5, 6].map((n) =>
+      observationRow({
+        observation_id: idOf(n),
+        source_id: SOURCE_A,
+        observed_at: at(n),
+        status: "pending",
+      }),
+    );
+    // …claims for 1, 3, 5 and 6 — never for 2 or 4.
+    const claimRows = [1, 3, 5, 6].map((n) =>
+      pendingClaimRow("awaiting_row", {
+        observation_id: idOf(n),
+        source_id: SOURCE_A,
+        observed_at: at(n),
+      }),
+    );
+
+    const bounds: GaugeOptions = { now: NOW, days: 90, limit: 3 };
+    const windowed = await fetchPendingClaims(bounds, capped(claimRows, observationRows).asSupabaseClient());
+    const joined = await idListJoin(capped(claimRows, observationRows), bounds);
+    if (windowed.kind !== "ok" || joined.kind !== "ok") throw new Error("both shapes read ok");
+
+    // Both legs truncated, and the claims leg reached FURTHER: the scan stops
+    // at the third observation, the claims leg's third claim is the fifth.
+    expect(idsOf(windowed.data.observations, (row) => row.observation_id)).toEqual([
+      idOf(1),
+      idOf(2),
+      idOf(3),
+    ]);
+    const claimsLeg = await readPendingClaimsInWindow(
+      resolveBounds(bounds, PENDING_CLAIMS_DEFAULTS),
+      {},
+      capped(claimRows, observationRows).asSupabaseClient(),
+    );
+    if (claimsLeg.kind !== "ok") throw new Error("the claims leg reads ok");
+    expect(idsOf(claimsLeg.data, (claim) => claim.observation_id)).toEqual([
+      idOf(1),
+      idOf(3),
+      idOf(5),
+    ]);
+
+    // The identity, over populations that differ in both directions.
+    expect(idsOf(windowed.data.claims, (claim) => claim.observation_id)).toEqual(
+      idsOf(joined.data.claims, (claim) => claim.observation_id),
+    );
+    expect(aggregate(windowed.data)).toEqual(aggregate(joined.data));
+    // And it is the claims of the scan's own rows: …005 is below the claims
+    // leg's cap but above the scan's, so neither shape may count it.
+    expect(idsOf(windowed.data.claims, (claim) => claim.observation_id)).toEqual([
+      idOf(1),
+      idOf(3),
+    ]);
+  });
 
   it("windows the claims read on the bound the scan carries, and on the view's own column", async () => {
     const { claimRows, observationRows } = agreeing();
