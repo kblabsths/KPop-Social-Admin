@@ -896,6 +896,15 @@ export function snapshotAsOf(settleMs = 5_000): string {
  * exact comparison, and running out of attempts throws rather than passing —
  * a database that will not hold still is a fact the test states, not one it
  * swallows.
+ *
+ * **The protection decays with the DURATION of the shape `read` holds still**
+ * (measured 2026-09-10, admin-window/TASK-0075): a held shape of six sequential
+ * count round trips keeps a ~4 s window open, three attempts keep it open three
+ * times over, and a scraper cycle writes through every one of them. Hold ONE
+ * round trip — one `select`, tallied or projected in TypeScript — and take the
+ * count that decides a surface's kind from that read's own length. Raising
+ * `attempts` (to at most 5) buys more independent still windows; it never
+ * widens a comparison, and it is not a substitute for a small shape.
  */
 export async function whileStill<Held, Made>(
   read: () => Promise<Held>,
@@ -908,11 +917,59 @@ export async function whileStill<Held, Made>(
     const made = await make();
     const held = await read();
     if (JSON.stringify(before) === JSON.stringify(held)) return { made, held };
-    moved = `${JSON.stringify(before).length} then ${JSON.stringify(held).length} bytes`;
+    moved = firstDifference(before, held);
   }
   throw new Error(
     `the database changed under this comparison on all ${attempts} attempts ` +
       `(${moved}), so the page and the query were never looking at the same ` +
       `rows. This is a statement about staging, not a verdict on the page.`,
   );
+}
+
+/** A value clipped to something a failure message can carry on one line. */
+function shortly(value: unknown): string {
+  const text = JSON.stringify(value) ?? String(value);
+  return text.length <= 80 ? text : `${text.slice(0, 77)}…`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * WHAT moved, said in the words of the shape itself: the first path at which
+ * the two reads differ, and the two values there — `buckets.agreeing 877 → 878`
+ * rather than `117 then 117 bytes` (admin-window/TASK-0075).
+ *
+ * The old message reported the two shapes' BYTE LENGTHS, which for a count
+ * moving 877 → 878 are identical, so the one line a red live run left behind
+ * said `117 then 117 bytes` and named nothing at all. This walks the two values
+ * in the same order `JSON.stringify` does and stops at the first disagreement:
+ * a length change on an array, a changed key on an object, or the two scalars.
+ */
+function firstDifference(before: unknown, after: unknown, path = ""): string {
+  const here = path === "" ? "the held shape" : path;
+  if (Array.isArray(before) && Array.isArray(after)) {
+    if (before.length !== after.length) {
+      return `${here}.length ${before.length} → ${after.length}`;
+    }
+    for (let index = 0; index < before.length; index += 1) {
+      const at = `${path}[${index}]`;
+      if (JSON.stringify(before[index]) !== JSON.stringify(after[index])) {
+        return firstDifference(before[index], after[index], at);
+      }
+    }
+    return `${here} (two arrays this comparison cannot tell apart)`;
+  }
+  if (isRecord(before) && isRecord(after)) {
+    const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
+    for (const key of keys) {
+      const at = path === "" ? key : `${path}.${key}`;
+      if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
+        return firstDifference(before[key], after[key], at);
+      }
+    }
+    return `${here} (two objects this comparison cannot tell apart)`;
+  }
+  return `${here} ${shortly(before)} → ${shortly(after)}`;
 }
