@@ -807,6 +807,34 @@ export function WindowLine(
          * than silently changed.
          */
         scope?: readonly string[] | null;
+        /**
+         * WHAT THIS READ ANSWERS FOR — one SENTENCE the surface ends its
+         * window line on, where the page carries a facet this read does not
+         * apply (admin-window/BUG-0204).
+         *
+         * It is the complement of `scope` and never a member of it: `scope`
+         * names what the read CARRIED, this names a facet it did NOT, and the
+         * two are said in different places for that reason — a phrase in
+         * `scope` qualifies the population ("Claims observed in the events
+         * domain"), which is the one thing a dropped facet may not be made to
+         * do.
+         *
+         * `/claims`'s gauges are why it exists: they scan `observations`,
+         * which has no bucket column, so `?bucket=escalated` left an empty
+         * claim list one screen above a gauge reading 877, and the gauge's
+         * line — alone among that page's captions — said nothing about the
+         * chip standing active above it. A window line states the read
+         * (ARCHITECTURE.md §4.3), and "the read did not apply that" is a
+         * statement about the read.
+         *
+         * The WORDS are the surface's, as `measured` and `scope` are: this
+         * file owns the window's facts (its bounds, its cap, whether it
+         * filled) and never a page's vocabulary for its own facets. Absent or
+         * `null` — which is every other call site in the app — renders
+         * nothing at all, so every other window line is byte-identical to what
+         * it was.
+         */
+        answersFor?: string | null;
         shows?: undefined;
       }
     | {
@@ -814,6 +842,7 @@ export function WindowLine(
         shows: DrawnSentence;
         measured?: undefined;
         scope?: undefined;
+        answersFor?: undefined;
       }
   ),
 ): ReactNode {
@@ -831,6 +860,12 @@ export function WindowLine(
         {info.truncated
           ? " The window filled its cap, so every count here is a floor."
           : ""}
+        {/* Last, and after the cap clause: the facts of the READ are stated
+            first and in one place, and what the read answers for is the
+            sentence a reader is left holding (admin-window/BUG-0204). */}
+        {props.answersFor === undefined || props.answersFor === null
+          ? ""
+          : ` ${props.answersFor}`}
       </WindowParagraph>
     );
   }
