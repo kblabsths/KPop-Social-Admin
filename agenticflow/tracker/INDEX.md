@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T09:11:46Z — do not edit)
+# Tracker index (regenerated 2026-09-11T09:13:13Z — do not edit)
 
 ## open
 - BUG-0181 [P2][bug][M3] A foreign column-absent envelope makes the app name an intermediary's own text as the missing object — classify()'s mined column is admitted unvalidated  (deps:BUG-0179 scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0175)
@@ -18,7 +18,7 @@
 - DEBT-0020 [P3][debt][patch] The transport account states its cause sentence twice: postgrest-js appends cause.stack, whose head repeats the Caused-by line  (deps:BUG-0179 scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0173)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - BUG-0176 [P2][bug][M3] A paged not-provisioned answer renders red, stutters its object and tells the operator to press again for a table that does not exist — /claims and /browse  (deps:BUG-0175 scope:src/lib/paging/machine.ts,src/components/ui/paging.tsx,src/components/ui/not-provisioned.tsx,tests/offline/paging/machine.test.ts,tests/offline/ui/paging.test.ts,tests/offline/ui/primitives.test.ts @builder-270 from:BUG-0172)
 
-Totals — claimed:1, done:29, open:16. Archived: 252.
+Totals — built:1, done:29, open:16. Archived: 252.
