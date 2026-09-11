@@ -1,0 +1,50 @@
+{
+ "id": "BUG-0185",
+ "created": "2026-09-11T09:58:37Z",
+ "green": true,
+ "git_head": "20d490f667790b5a36194b3017113dc8bba33613",
+ "scope": [
+  "src/lib/db/result.ts",
+  "tests/offline/db/result.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "b7e01092d61c74f70b5487cab777081b215ac38a061b20ae34ae72662f2073ea",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db/result.test.ts tests/offline/absence/pages.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-35476\n\n \u2713 |offline| tests/offline/db/result.test.ts (125 tests) 72ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (286 tests) 6360ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  638ms\n   \u2713 a surface offers a control only where the read behind it answered > puts no control inside a card that says a read did not happen, and gains none  2601ms\n\n Test Files  2 passed (2)\n      Tests  411 passed (411)\n   Start at  02:58:12\n   Duration  8.19s (transform 2.57s, setup 0ms, collect 1.52s, tests 6.43s, environment 0ms, prepare 464ms)\n\n(node:35484) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -q 'it(\"mines a column only out of what the database put in message\"' tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"databaseMessage\" src/lib/db/result.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF 'const COLUMN_NAME_GRAMMAR = \"[A-Za-z_][\\\\w$]{0,62}\";' src/lib/db/result.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF 'carrying no sentence of its own arrived ' src/lib/db/result.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run typecheck",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 typecheck\nnpm notice run tsc --noEmit\n"
+  }
+ ]
+}
