@@ -8,7 +8,6 @@ import {
   CLAIM_WINDOW,
   FilterBar,
   type BucketStat,
-  type ClaimLine,
 } from "@/components/claims";
 import {
   Distribution,
@@ -37,7 +36,6 @@ import {
   readClaimWindow,
   RENDERABLE_BUCKETS,
   UNRENDERABLE_BUCKET,
-  type ClaimRow,
   type PendingClaimBucket,
 } from "@/lib/db/claims";
 import type { DbResult } from "@/lib/db/result";
@@ -65,6 +63,7 @@ import {
   type SearchParams,
   type UnchippedNarrowing,
 } from "@/lib/claims/filters";
+import { claimLines } from "@/lib/claims/lines";
 import { resolveBounds } from "@/lib/gauges/gauge";
 import {
   PENDING_CLAIMS_DEFAULTS,
@@ -76,7 +75,6 @@ import {
   STANDING_BUCKET,
   type StandingDisagreements,
 } from "@/lib/gauges/standing-disagreements";
-import { recordHref } from "@/lib/records/routes";
 import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
 
 /**
@@ -610,36 +608,6 @@ function bucketStats(
   });
 }
 
-/**
- * One claim, as the list renders it: its row, its age, and its two links.
- *
- * The source is carried twice on purpose (admin-window/BUG-0043): `sourceId`
- * is the machine value the link narrows by and the row is keyed on, `source`
- * is what the cell SAYS — the registry's name, or that same id verbatim when
- * the registry holds no row for it.
- */
-function claimLines(
-  claims: readonly ClaimRow[],
-  names: ReadonlyMap<string, string>,
-): ClaimLine[] {
-  // In the order the database returned them, unchanged: the window read is
-  // `observed_at asc, observation_id asc` with `.limit(CLAIM_WINDOW)`, so a
-  // re-sort here could only disagree with the rows that were selected
-  // (admin-window/BUG-0138).
-  return claims.map((claim) => ({
-    observationId: claim.observation_id,
-    bucket: claim.bucket,
-    domain: claim.domain,
-    field: claim.field,
-    entityId: claim.entity_id,
-    sourceId: claim.source_id,
-    source: sourceLabel(names, claim.source_id),
-    observedAt: claim.observed_at,
-    unmetRequirement: claim.unmet_requirement,
-    sourceHref: sourceHref(claim.source_id),
-    provenanceHref: recordHref(claim.domain, claim.entity_id),
-  }));
-}
 
 /*
  * The line beside the filter bar that names the parameters this page did not

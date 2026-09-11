@@ -4617,22 +4617,39 @@ describe("the reads this page makes", () => {
     expect(large.stub.calls.map(shapeOf)).toEqual(small.stub.calls.map(shapeOf));
     expect(large.stub.tablesRead()).toEqual(small.stub.tablesRead());
 
-    // No read over the view is a `range` — the complete read and its ROW_CAP
-    // are gone — and every one of them asks for a FIXED number of rows: the
-    // list's window, one row for a bucket's oldest seek, or the gauge's own
-    // cap (admin-window/TASK-0074 moved the gauge's claims leg onto this view,
+    // Every read over the view asks for a FIXED number of rows: the list's
+    // window, one row for a bucket's oldest seek, or the gauge's own cap
+    // (admin-window/TASK-0074 moved the gauge's claims leg onto this view,
     // where it carries the cap it always carried over `observations`). Three
     // declared caps, none of which is a function of the 2,000 rows the view
-    // holds — which is the invariance this test is named for.
+    // holds — which is the invariance this test is named for. The complete
+    // read and its ROW_CAP are still gone; what a `range` may be here is the
+    // list's window at an explicit offset (admin-window/TASK-0065), which is
+    // the same fixed number of rows spelled the way a paged read spells it.
     for (const call of callsOver(large.stub, T.pendingClaims)) {
-      const steps = call.steps.map((step) => step.method);
-      expect(steps, shapeOf(call)).not.toContain("range");
       const limit = call.steps.find((step) => step.method === "limit")?.args[0];
       if (limit !== undefined) {
         expect([1, CLAIM_WINDOW, PENDING_CLAIMS_DEFAULTS.limit], shapeOf(call)).toContain(
           Number(limit),
         );
       }
+      const range = call.steps.find((step) => step.method === "range")?.args as
+        | [number, number]
+        | undefined;
+      if (range !== undefined) {
+        expect(range[1] - range[0] + 1, shapeOf(call)).toBe(CLAIM_WINDOW);
+      }
+      // A ROW read carries ONE bound, never both — a head count carries
+      // neither, which is what makes a count a count (§4.3).
+      const isHeadCount = call.steps.some(
+        (step) =>
+          step.method === "select" &&
+          JSON.stringify(step.args[1]) === JSON.stringify({ head: true, count: "exact" }),
+      );
+      expect(
+        [limit !== undefined, range !== undefined].filter(Boolean),
+        shapeOf(call),
+      ).toHaveLength(isHeadCount ? 0 : 1);
     }
 
     // And the 2,000-row view really did render: the window's rows, and a count
@@ -4655,6 +4672,15 @@ describe("the reads this page makes", () => {
       ),
     );
     const rowReads = overView.filter((call) => !counts.includes(call));
+    /** The number of rows a row read asked for, however it spelled the bound. */
+    const boundOf = (call: RecordedCall): number | undefined => {
+      const limit = call.steps.find((step) => step.method === "limit")?.args[0];
+      if (limit !== undefined) return Number(limit);
+      const range = call.steps.find((step) => step.method === "range")?.args as
+        | [number, number]
+        | undefined;
+      return range === undefined ? undefined : range[1] - range[0] + 1;
+    };
     // The renderable total plus one per bucket — one count per question,
     // because PostgREST refuses the grouped read (PGRST123, measured).
     expect(counts).toHaveLength(1 + RENDERED_BUCKETS.length);
@@ -4665,17 +4691,17 @@ describe("the reads this page makes", () => {
     // SEQUENTIAL waits. One request replaced it, and it is issued beside the
     // scan rather than after it.
     expect(rowReads).toHaveLength(2 + RENDERED_BUCKETS.length);
+    expect(rowReads.filter((call) => boundOf(call) === 1)).toHaveLength(
+      RENDERED_BUCKETS.length,
+    );
+    const windows = rowReads.filter((call) => boundOf(call) !== 1);
+    // The list's window is a `.range()` at an explicit offset since
+    // admin-window/TASK-0065; the gauge's scan is still a `.limit()`. Both ask
+    // for a fixed number of rows, which is what this census is counting.
+    expect(windows.map(boundOf)).toEqual([CLAIM_WINDOW, PENDING_CLAIMS_DEFAULTS.limit]);
     expect(
-      rowReads.filter(
-        (call) => call.steps.find((step) => step.method === "limit")?.args[0] === 1,
-      ),
-    ).toHaveLength(RENDERED_BUCKETS.length);
-    const windows = rowReads.filter(
-      (call) => call.steps.find((step) => step.method === "limit")?.args[0] !== 1,
-    );
-    expect(windows.map((call) => call.steps.find((s) => s.method === "limit")?.args[0])).toEqual(
-      [CLAIM_WINDOW, PENDING_CLAIMS_DEFAULTS.limit],
-    );
+      windows[0].steps.filter((step) => step.method === "range").map((step) => step.args),
+    ).toEqual([[0, CLAIM_WINDOW - 1]]);
     // Neither of them is an id-set lookup any more: no read this page makes
     // over the view filters on a list of ids some other read produced.
     expect(

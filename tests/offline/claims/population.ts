@@ -265,12 +265,15 @@ export function claimsInBucket(bucket: string): PendingClaimRow[] {
  * them would be asserting on the script; a queue would pin the suite to the
  * order the promises happen to be built in, which is not a property of the
  * product. So this reads the chain the query built — `.select()`, `.eq()`,
- * `.neq()`, `.in()`, `.order()`, `.limit()`, and the `{ head, count }` options
+ * `.neq()`, `.in()`, `.order()`, `.limit()`, `.range()`, and the
+ * `{ head, count }` options
  * — and answers it the way PostgREST would.
  *
  * It is a FIXTURE DATABASE, not an expectation: it knows nothing about the
  * page, and every test still computes what it expects from `CLAIMS` with its
- * own predicates.
+ * own predicates. Since admin-window/TASK-0065 it reads `.range(from, to)`
+ * beside `.limit()`, because the list's window read carries an explicit
+ * offset and issues the former.
  *
  * Three behaviours are the database's and are reproduced deliberately:
  *
@@ -350,8 +353,19 @@ export function claimView(
     const count = asked.count === "exact" ? matched : null;
     if (asked.head === true) return { data: null, count };
 
+    // A bound is `.limit(n)` or `.range(from, to)`, never both: PostgREST's
+    // `range` is INCLUSIVE at both ends and is how a paged read asks for the
+    // slice of the order it wants (admin-window/TASK-0065). A `range` past the
+    // end of the set answers with the rows that are there and no error, which
+    // is what makes an exhausted page an empty page rather than a refusal.
     const limit = steps("limit")[0]?.args[0] as number | undefined;
-    const drawn = limit === undefined ? rows : rows.slice(0, limit);
+    const range = steps("range")[0]?.args as [number, number] | undefined;
+    const drawn =
+      range !== undefined
+        ? rows.slice(range[0], range[1] + 1)
+        : limit === undefined
+          ? rows
+          : rows.slice(0, limit);
     return { data: drawn.map((row) => project(row, columns)), count };
   };
 }

@@ -8,6 +8,12 @@ import {
 } from "./result";
 import { objectKindOf, T, type ObjectKind } from "./tables";
 import type { ClaimsFilter } from "../claims/filters";
+import {
+  PENDING_CLAIM_BUCKETS,
+  type ClaimRow,
+  type PendingClaimBucket,
+  type PendingClaimRow,
+} from "../claims/lines";
 
 /**
  * What this module's window read runs OVER — the word its window line ends
@@ -59,20 +65,20 @@ export const CLAIMS_OBJECT: ObjectKind = objectKindOf(T.pendingClaims);
 /* ── the bucket vocabulary ───────────────────────────────────────────────── */
 
 /**
- * The six buckets, spelled as the view spells them (migration
- * `20260901000004`, `pending_claims.bucket`), in the view's own precedence
- * order — most blocking first, `agreeing` last.
+ * The six buckets and the union over them are declared in
+ * `src/lib/claims/lines.ts` and re-exported here, so every caller of this
+ * module keeps the import it already had.
+ *
+ * They moved with the row interfaces below and for the same reason
+ * (admin-window/TASK-0065): `PendingClaimRow.bucket` is typed on
+ * `PendingClaimBucket`, and a leaf may not import `lib/db/**` back, not even a
+ * type (§4 rule 7). What did NOT move is the EXCLUSION — the parked bucket,
+ * the renderable set, the predicate and the `narrowed()` that applies it to
+ * every query all stay in this module, which is the one that may query this
+ * view (§6 trap 4).
  */
-export const PENDING_CLAIM_BUCKETS = [
-  "in_window",
-  "standing_disagreement",
-  "awaiting_link",
-  "awaiting_row",
-  "escalated",
-  "agreeing",
-] as const;
-
-export type PendingClaimBucket = (typeof PENDING_CLAIM_BUCKETS)[number];
+export { PENDING_CLAIM_BUCKETS } from "../claims/lines";
+export type { PendingClaimBucket, PendingClaimRow, ClaimRow } from "../claims/lines";
 
 /**
  * The bucket that is empty by rule and is not rendered until it can hold a row
@@ -100,31 +106,13 @@ export function isRenderableBucket(bucket: string): bucket is PendingClaimBucket
 
 /* ── rows ────────────────────────────────────────────────────────────────── */
 
-/** The `pending_claims` view's classification columns — migration `20260901000004`. */
-export interface PendingClaimRow {
-  observation_id: string;
-  /** The view spells the canonical table `domain` (ARCHITECTURE.md §6 trap 1). */
-  domain: string;
-  entity_id: string | null;
-  field: string;
-  source_id: string;
-  bucket: PendingClaimBucket;
-  /** Named only on `awaiting_row`; null in every other bucket. */
-  unmet_requirement: string | null;
-}
-
-/**
- * A claim with the instant the source observed it — the claim's AGE, which
- * every claims surface renders.
- *
- * The column is `observations.observed_at`, carried through the view unchanged
- * by the scraper handoff (admin-window/BUG-0138). Upstream it is `NOT NULL`,
- * so a null instant is defensive rather than expected: a claim carrying one
- * sorts last and renders the dash — never "now", and never dropped.
+/*
+ * `PendingClaimRow` and `ClaimRow` are declared in `src/lib/claims/lines.ts`
+ * and re-exported at the top of this file (admin-window/TASK-0065). The row
+ * shape is what the leaf's `claimLines()` reasons over, so it is declared
+ * THERE and this module imports it back — the arrow `ReviewItemRow` in
+ * `src/lib/review/shapes.ts` already draws (§4 rule 7).
  */
-export interface ClaimRow extends PendingClaimRow {
-  observed_at: string | null;
-}
 
 /** What a GAUGE claims read may be narrowed by (spec §5: "by source and domain"). */
 export interface PendingClaimsFilter {
@@ -276,6 +264,14 @@ interface ClaimQuery {
     options: { ascending: boolean; nullsFirst?: boolean },
   ): ClaimQuery;
   limit(rows: number): ClaimQuery;
+  /**
+   * The half-open-in-PostgREST-terms window a PAGED read carries
+   * (admin-window/TASK-0065): `.range(from, to)` is INCLUSIVE at both ends, so
+   * a page of `limit` rows starting at `offset` is `range(offset, offset +
+   * limit - 1)`. It replaces `.limit()` on the window read alone — a head
+   * count still carries neither, and the gauge scans still carry `.limit()`.
+   */
+  range(from: number, to: number): ClaimQuery;
 }
 
 /**
@@ -292,18 +288,33 @@ interface ClaimQuery {
  * order is total and two claims made on one instant never swap between
  * renders — which is what makes membership of the window itself deterministic
  * when the cap falls inside a tie.
+ *
+ * **`offset` is where that window STARTS, and it defaults to 0**
+ * (admin-window/TASK-0065). The bound is a `.range(offset, offset + limit - 1)`
+ * rather than a `.limit(limit)`, so the continuation the operator asks for is
+ * the next slice of the SAME total order — which is the only reason paging
+ * this read cannot drop or repeat a claim between two requests. Every caller
+ * that names no offset issues exactly the request it issued before.
+ *
+ * The parked-bucket exclusion is `narrowed()`'s and `selectClaims`', at every
+ * offset alike (§6 trap 4): a paged read is this same narrowing further down
+ * the order, and a page that skipped either would leak the parked `in_window`
+ * bucket into a rendering.
  */
 export function readClaimWindow(
-  options: { filter?: ClaimsFilter; limit: number },
+  options: { filter?: ClaimsFilter; limit: number; offset?: number },
   db?: SupabaseClient,
 ): Promise<DbResult<ClaimRow[]>> {
+  const offset = options.offset ?? 0;
   return readRows<ClaimRow>(
     T.pendingClaims,
     (client) =>
       narrowed(client.from(T.pendingClaims).select(CLAIM_COLUMNS), options.filter)
         .order("observed_at", { ascending: true, nullsFirst: false })
         .order("observation_id", { ascending: true })
-        .limit(options.limit) as unknown as PromiseLike<DbResponse<ClaimRow[]>>,
+        .range(offset, offset + options.limit - 1) as unknown as PromiseLike<
+        DbResponse<ClaimRow[]>
+      >,
     db,
   ).then((drawn) =>
     // The exclusion again, in code: the returned set is decided by one rule
