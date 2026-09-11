@@ -111,36 +111,54 @@ export interface DrawnWindow extends WindowFacts {
    */
   scope: string | null;
   /**
-   * The rows the operator now holds from this window, on a surface that may
-   * CONTINUE it — `null`/absent on one that cannot (admin-window/BUG-0172).
+   * The rows THIS WINDOW PUT ON SCREEN — the number an operator can count
+   * below the line, stated by whoever drew them (admin-window/BUG-0183).
    *
-   * A paged surface's line is rendered inside client-land by
-   * `PagedWindowLine` (`src/components/ui/paging.tsx`), which fills this from
-   * the paging state's own `held`. Three readings, and the first two are the
-   * app as it stands:
+   * It is stated on the FIRST screen too, not only on a continued one: it is a
+   * fact of the read that drew the rows, and every clause naming what is below
+   * the line names this and nothing else. It used to be absent until a press
+   * had grown the window, and the two arms fell back to the CAP — so three
+   * unpaged `/claims` screens holding 37, 10 and 49 claims each told the
+   * operator that "the 50 longest-waiting are below", publishing the size of a
+   * window as a description of a screen.
    *
-   *  - absent/null                  → this surface has no paging: every arm
-   *                                   renders exactly what it renders today;
-   *  - <= the window's own cap      → nothing has been appended, so the first
-   *                                   screen renders what it rendered before
-   *                                   this fact existed, to the byte;
-   *  - >  the window's own cap      → the window has been CONTINUED: the arm
-   *                                   states what is on screen instead of what
-   *                                   the first read drew.
+   * A paged surface's line is rendered inside client-land by `PagedWindowLine`
+   * (`src/components/ui/paging.tsx`), which overwrites this with the paging
+   * state's own `held` — the first screen plus everything a press appended —
+   * so a continued window states what is on screen and not what the first read
+   * drew.
+   *
+   * Absent/`null` says this window states NO rows on screen, and then the two
+   * arms that name the rows below name NONE: they invent no number and they
+   * never reach for the cap. Neither page can reach that state — both of them
+   * state it — and the seven other call sites are the arms that do not read
+   * it at all.
    *
    * `truncated` — never a count of the rows beside it — remains the one
    * held-back verdict (LESSONS 11), and on a paged surface it is the paging
-   * state's own status. What `drawn` decides is the SENTENCE: which number the
-   * clause names, and that a continued window never reaches `didNotFill`,
-   * whose "did not fill — 50 of at most 50" would be said of a window that
-   * filled and was then continued.
-   *
-   * Only the two arms a PAGED surface renders read it — `catalog` (`/browse`)
-   * and `matched` (`/claims`). `newest` and `alphabetical` belong to surfaces
-   * that cannot be continued at all, so a `drawn` handed to one of them would
-   * be a fact about a press that surface has no way to make.
+   * state's own status. Whether a press may CONTINUE this window is
+   * `continues` below, never this field's presence (admin-window/BUG-0183).
    */
   drawn?: number | null;
+  /**
+   * Can a press CONTINUE this window? Absent means no — the nine unpaged
+   * `WindowLine` call sites, unchanged (admin-window/BUG-0183).
+   *
+   * STATED by the page that composed the window, never inferred from another
+   * field's presence or size (ARCHITECTURE.md §4.3 rule 4). It was read off
+   * `drawn`'s PRESENCE, which made one field carry two unrelated facts: a
+   * surface that honestly stated the rows it had drawn was thereby claiming a
+   * press it has no way to make, and `/claims`'s agreeing state would have
+   * swapped "The window did not fill — 37 of at most 50" for a held-back
+   * sentence.
+   *
+   * The two pages that choose between the paged line and the plain one
+   * (`/claims`, `/browse`) state it from the SAME expression that makes that
+   * choice, so ONE page-level fact reaches both components; `PagingProvider`
+   * spreads the page's window into the continued one, so it rides through to
+   * `PagedWindowLine` untouched.
+   */
+  continues?: boolean;
   /**
    * What `held` COUNTS — stated by the page that composed these facts, never
    * inferred from the number's size (admin-window/BUG-0174).
@@ -215,6 +233,13 @@ export function drawnWindow(read: {
    * function derives (admin-window/BUG-0174).
    */
   heldFrom?: DrawnWindow["heldFrom"];
+  /**
+   * Whether a press can CONTINUE this window, where the call site has that to
+   * state — carried through untouched for the same reason `heldFrom` is: it is
+   * the page's statement about its own affordance, not a fact this function
+   * derives (admin-window/BUG-0183).
+   */
+  continues?: DrawnWindow["continues"];
 }): DrawnWindow {
   return { ...read, truncated: read.held >= read.limit };
 }
@@ -481,13 +506,14 @@ function didNotFill(info: DrawnWindow, rows: string): string {
  * The rows a CONTINUED window has on screen, or `null` where the sentence is
  * the one the app rendered before paging existed (admin-window/BUG-0172).
  *
- * Two windows answer `null` here and they are the same case for a reader: the
- * unpageable surface, which carries no `drawn` at all, and the paged surface
- * that has taken in nothing yet, whose `drawn` is still the first screen's own
- * rows. **A first screen renders byte-identically either way**, which is the
- * whole of SPEC F14's "the first screen does not change": the cap is what a
- * full first window drew, so `drawn` passes this test only after a press
- * really appended rows.
+ * Every window whose rows on screen are still within its cap answers `null`
+ * here, and they are the same case for a reader: the unpageable surface, whose
+ * `drawn` is the rows the page rendered, and the paged surface that has taken
+ * in nothing yet, whose `drawn` is still the first screen's own rows. **A
+ * first screen renders byte-identically either way**, which is the whole of
+ * SPEC F14's "the first screen does not change": the cap is what a full first
+ * window drew, so `drawn` passes this test only after a press really appended
+ * rows.
  */
 function continuedTo(info: DrawnWindow): number | null {
   const drawn = info.drawn ?? null;
@@ -502,9 +528,15 @@ function continuedTo(info: DrawnWindow): number | null {
  * not fill — 50 of at most 50" is a sentence no state of it may reach; the
  * not-truncated case here is the set being complete on screen, which is a
  * different sentence and each arm below says it in its own words.
+ *
+ * It reads the page's own statement (`DrawnWindow.continues`) and NOTHING
+ * else. It used to ask whether `drawn` was present — a fact about the rows on
+ * screen, standing in for a fact about a control — so the only way for a
+ * surface to state what it had drawn was to claim a press it cannot make
+ * (admin-window/BUG-0183, ARCHITECTURE.md §4.3 rule 4).
  */
 function pageable(info: DrawnWindow): boolean {
-  return info.drawn !== undefined && info.drawn !== null;
+  return info.continues === true;
 }
 
 /**
@@ -522,23 +554,26 @@ function ended(info: DrawnWindow): boolean {
 
 /**
  * The rows that are ON SCREEN, for the clauses that name them
+ * (admin-window/BUG-0174, admin-window/BUG-0183).
+ *
+ * ONE source and one only: `drawn`, which whoever drew the rows states — on a
+ * paged surface the driver's own `held`, on an unpaged one the rows the page
+ * rendered. `null` where the window states none, and then no clause names
+ * them at all.
+ *
+ * **`limit` is not an answer here, in any arm or any state.** The cap is the
+ * size of a window; it is never a description of a screen. The fallback this
+ * function used to carry claimed one true use — the unpaged window, "where
+ * the clause is rendered only over a read that filled" — and that gate does
+ * not exist: on `/claims` the clause is gated on `truncated`, which comes from
+ * a separate COUNT read and not from the rows filling the cap, so screens
+ * holding 37, 10 and 49 claims all said "the 50 longest-waiting are below"
+ * (admin-window/BUG-0183). The same fallback on the paged arm rendered the
+ * cap's number over an exhausted screen that had appended zero rows
  * (admin-window/BUG-0174).
- *
- * On a paged surface `drawn` is always a number — the driver's own `held`, the
- * first screen plus everything appended — and it is the only honest source of
- * "what the operator can count below this line". The cap keeps its ONE true
- * use, the unpaged window, where the clause is rendered only over a read that
- * filled and so drew exactly its cap.
- *
- * The defect it closes: the matched arm fell back to `limit` whenever no press
- * had grown the window past it, so an exhausted `/claims` that appended ZERO
- * rows rendered the CAP's number as the screen's — "877 claims in all; the 50
- * longest-waiting are below — the read found no more" — which is reachable
- * through a count/read divergence (staging's count moved 877 -> 878 between
- * two sessions of this campaign).
  */
-function onScreen(info: DrawnWindow): number {
-  return info.drawn ?? info.limit;
+function onScreen(info: DrawnWindow): number | null {
+  return info.drawn ?? null;
 }
 
 /**
@@ -573,9 +608,16 @@ function onScreen(info: DrawnWindow): number {
  * with, so once its read has ended (`truncated` false) `onScreen` IS `held`
  * and this answers `true` by construction — which is why `/browse` cannot
  * reach the diverged sentence at all.
+ *
+ * A window that states NO rows on screen answers the DISAGREE verdict: there
+ * is one read here and not two, so there is no agreement to assert
+ * (admin-window/BUG-0183). Its exported signature is unchanged — the terminal
+ * sentence of `PageMore` asks it of the same window this arm does.
  */
 export function readsAgree(info: DrawnWindow): boolean {
-  return info.truncated ? onScreen(info) < info.held : onScreen(info) === info.held;
+  const below = onScreen(info);
+  if (below === null) return false;
+  return info.truncated ? below < info.held : below === info.held;
 }
 
 /**
@@ -767,11 +809,17 @@ export function WindowLine(
           besides(info.scope, NARROWED_BY_FILTERS),
         )} match these filters`
       : `${count(info.held)} ${of} in all`;
-    // The rows that are below, from the rows drawn and never from the cap.
+    // The rows that are below, from the rows this window DREW and never from
+    // the cap (admin-window/BUG-0183). A window that states none names none:
+    // there is no number here a read established, so the clause that would
+    // name one is not rendered and nothing else about the line moves.
     const below = onScreen(info);
-    const holdsBack = ` ${counted}; the ${count(below)} longest-waiting are below — ${THE_REST_IS_NOT_SHOWN}`;
+    const holdsBack =
+      below === null
+        ? ""
+        : ` ${counted}; the ${count(below)} longest-waiting are below — ${THE_REST_IS_NOT_SHOWN}`;
 
-    if (continuedTo(info) === null && !ended(info)) {
+    if (below === null || (continuedTo(info) === null && !ended(info))) {
       // Unchanged, element for element and byte for byte: this is the first
       // screen SPEC F14 keeps, and every window no press can continue.
       return (
@@ -831,7 +879,11 @@ export function WindowLine(
   // can be continued filled its window to be drawn at all, so "the window did
   // not fill — 50 of at most 50" is a sentence no state of it reaches.
   const catalogOf = population(shows.rows, info.scope);
-  if (continuedTo(info) === null && !ended(info)) {
+  // The rows this window drew, and the same rule the matched arm follows: a
+  // window that states none names none, and renders the sentence it renders
+  // before a press — its cap clause included (admin-window/BUG-0183).
+  const catalogBelow = onScreen(info);
+  if (catalogBelow === null || (continuedTo(info) === null && !ended(info))) {
     return (
       <WindowParagraph gauge={props.gauge} window={info}>
         {/* The cap is stated as a cap ("at most"), not as the row count: this
@@ -846,7 +898,7 @@ export function WindowLine(
       </WindowParagraph>
     );
   }
-  const drawnNow = onScreen(info);
+  const drawnNow = catalogBelow;
   return (
     <WindowParagraph gauge={props.gauge} window={info}>
       The newest {catalogOf} by arrival, newest first.

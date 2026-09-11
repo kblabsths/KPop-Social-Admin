@@ -855,7 +855,7 @@ describe("the claim list's window", () => {
     };
   }
 
-  it.fails("states the rows that are BELOW it, never its cap, when the row read came back short [admin-window/BUG-0183]", async () => {
+  it("states the rows that are BELOW it, never its cap, when the row read came back short [admin-window/BUG-0183]", async () => {
     // THE OTHER HALF OF admin-window/BUG-0174, on the arm that has no `drawn`.
     // `/claims` counts its matching set and draws its rows in TWO reads, and
     // the line's "the N longest-waiting are below" clause is drawn whenever the

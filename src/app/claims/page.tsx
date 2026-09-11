@@ -1224,6 +1224,23 @@ export default async function ClaimsPage({
           // What the READS below narrowed to, from the same tab and the same
           // filter they carried (admin-window/BUG-0114).
           scope: listScope(tab, listNarrowed, narrowings, chipped),
+          // THE ROWS THIS PAGE PUT ON SCREEN — stated on BOTH arms, from the
+          // rows it actually rendered (admin-window/BUG-0183). The clause that
+          // names what is below the line names this number, so it is a number
+          // a read established; it used to be stated only on the paged arm,
+          // and the unpaged line fell back to the CAP — 37 rows under a count
+          // of 900 said "the 50 longest-waiting are below". On the paged arm
+          // `PagingProvider` overwrites it with the rows the operator now
+          // holds, which is the same fact after a press.
+          drawn: listed.length,
+          // WHETHER A PRESS CAN CONTINUE THIS WINDOW — the same expression
+          // that chooses which component renders the line below, so one fact
+          // reaches both and they cannot come to disagree. It is stated rather
+          // than read off `drawn`'s presence: those are two different facts,
+          // and conflating them is what made stating the rows drawn
+          // impossible without also claiming an affordance this arm does not
+          // offer (admin-window/BUG-0183, ARCHITECTURE.md §4.3 rule 4).
+          continues: pageable,
         }
       : null;
   // The page words its own subject and nothing about the read: the arm ends on

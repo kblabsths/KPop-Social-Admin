@@ -1720,6 +1720,40 @@ describe("the affordance that continues the recent-events view", () => {
     expect(windowLine(exhausted).text).not.toContain(DID_NOT_FILL);
   });
 
+  it("takes continuability from the page's own statement, not from the rows it drew [admin-window/BUG-0183]", async () => {
+    // CRITERION 2. The line used to learn that a press can continue this
+    // window from `drawn` being PRESENT — a fact about the rows on screen,
+    // standing in for a fact about a control. The page states it now, and this
+    // is the state that turns on it alone: a press that ENDED the set and
+    // appended ZERO rows, so the rows on screen are still exactly the first
+    // screen's and no figure in the window tells the two apart.
+    //
+    // Graded by comparing the two renderings against each other, so no word of
+    // either sentence is pinned.
+    const script = windowScript(view.window);
+    const first = await renderBrowse(script);
+    paging.override = await pressedWith(
+      pageAnswer(view.window, { venues: null, provenance: null }, 0),
+    );
+    const ended = await renderBrowse(script);
+
+    // The press really landed, really ended the set, and appended nothing: the
+    // rows below are the first screen's own, to the row.
+    expect(pagingArms(first)).toEqual(["more"]);
+    expect(pagingArms(ended)).toEqual(["exhausted"]);
+    expect(eventIds(ended)).toEqual(eventIds(first));
+    expect(windowLine(ended).held).toBe(windowLine(first).held);
+    expect(windowLine(ended).limit).toBe(windowLine(first).limit);
+    // …and the line moved anyway, because the page said this window could be
+    // continued and the read has now said it cannot be continued further.
+    expect(windowLine(ended).truncated).toBe("false");
+    expect(windowLine(first).truncated).toBe("true");
+    expect(windowLine(ended).text).not.toBe(windowLine(first).text);
+    // The window filled and was then continued to the end; it never "failed to
+    // fill", whatever the two reads' figures look like.
+    expect(windowLine(ended).text).not.toContain(DID_NOT_FILL);
+  });
+
   it("says the set is complete when its read ends, because it has no second read to disagree with [admin-window/BUG-0180]", async () => {
     // Criterion 4. `/claims` counts its matching set and draws its rows in TWO
     // reads, so a press can end the set short of the count and the sentence
