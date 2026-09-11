@@ -1202,6 +1202,97 @@ describe("an account carries the parts the database authored", () => {
     expect(counted.message).not.toContain("blocked");
     expect(counted.message.length).toBeLessThan(400);
   });
+
+  /**
+   * PIN — QA, admin-window/BUG-0182. A document that arrives PRETTY-PRINTED is
+   * counted once PER LINE, so ONE document becomes one clause per markup line
+   * and the account grows LARGER than the thing it was summarising.
+   *
+   * Question 2 is asked line by line of every part (admin-window/BUG-0179,
+   * criterion 5), which is right; what is missing is that the lines of one
+   * document are one document. A WAF interstitial is served pretty-printed,
+   * and the frameless part one line below the client's own prose — the exact
+   * shape criterion 5 exists for — is where it lands: its own named case uses
+   * a ONE-line page and reads one clause, while the same page printed over
+   * seventeen lines reads seventeen, each stating a length that is not the
+   * length of anything that arrived.
+   *
+   * Expected: an account that COUNTS a document rather than quoting it is
+   * shorter than the document it counted.
+   * Found: a 442-character part yields a 1,380-character account (17 clauses);
+   * measured wider, an 11,505-character part yields 32,020 characters.
+   */
+  it.fails(
+    "counts ONE document once, however many lines it was printed on (admin-window/BUG-0182)",
+    () => {
+      // The shape a WAF actually serves: an interstitial, pretty-printed.
+      const page = [
+        "<!DOCTYPE html>",
+        '<html lang="en-US">',
+        "<head>",
+        "<title>Attention Required!</title>",
+        '<meta charset="UTF-8" />',
+        '<meta name="robots" content="noindex, nofollow" />',
+        '<link rel="stylesheet" href="/cdn-cgi/styles/cf.errors.css" />',
+        "</head>",
+        "<body>",
+        '<div id="cf-wrapper">',
+        '<div id="cf-error-details" class="cf-error-details-wrapper">',
+        "<h1>Sorry, you have been blocked</h1>",
+        "<h2>You are unable to access this site</h2>",
+        "</div>",
+        "</div>",
+        "</body>",
+        "</html>",
+      ].join("\n");
+
+      // REDUCED — the frameless part, one line below the client's own prose.
+      const part = `reference 8f3c1\n${page}`;
+      const below = classify(
+        { code: "", details: part, hint: "", message: "read failed" },
+        T.pendingClaims,
+      );
+      expect(below.kind).toBe("error");
+      if (below.kind !== "error") return;
+      // What the rule already gets right, and must keep getting right.
+      expect(below.message).toContain("read failed");
+      expect(below.message).toContain("reference 8f3c1");
+      expect(below.message).not.toContain("<");
+      expect(below.message).not.toContain("Sorry, you have been blocked");
+      // An account that counted a document cannot be longer than the document.
+      expect(below.message.length).toBeLessThan(part.length);
+    },
+  );
+
+  /**
+   * MUST NOT TOUCH (LESSONS 8) — the twin of the pin above, GREEN today and
+   * green after: counting is not deleted to bound the account. The same page
+   * as the WHOLE part is already one clause, and the one number in it is the
+   * length of what arrived.
+   */
+  it("counts a pretty-printed document that IS the whole part exactly once", () => {
+    const page = [
+      "<!DOCTYPE html>",
+      '<html lang="en-US">',
+      "<head>",
+      "<title>Attention Required!</title>",
+      "</head>",
+      "<body>",
+      "<h1>Sorry, you have been blocked</h1>",
+      "</body>",
+      "</html>",
+    ].join("\n");
+    const whole = classify(
+      { code: "", details: page, hint: "", message: "read failed" },
+      T.pendingClaims,
+    );
+    expect(whole.kind).toBe("error");
+    if (whole.kind !== "error") return;
+    expect(whole.message).toContain("read failed");
+    expect(whole.message).not.toContain("<");
+    expect(whole.message).toContain(String(page.length));
+    expect(whole.message.length).toBeLessThan(page.length);
+  });
 });
 
 /**
