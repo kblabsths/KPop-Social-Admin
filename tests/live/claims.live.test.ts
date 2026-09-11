@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import ClaimsPage from "@/app/claims/page";
 import { CLAIM_WINDOW } from "@/components/claims";
 import type { ClaimLine } from "@/lib/claims/lines";
+import { readPendingClaimRows } from "@/lib/db/claims";
+import { readPendingObservations } from "@/lib/db/gauges";
 import { T } from "@/lib/db/tables";
+import { resolveBounds } from "@/lib/gauges/gauge";
+import { fetchPendingClaims, PENDING_CLAIMS_DEFAULTS } from "@/lib/gauges/pending-claims";
 import { OFFSET_PARAM, PAGE_ROUTES } from "@/lib/paging/bounds";
 import { initialPage, requestPage, type PageState } from "@/lib/paging/machine";
 import {
@@ -604,6 +608,116 @@ describe("the two shapes of the pending-claims gauge against staging", () => {
     // And the parked bucket is in neither, on a database that spells it.
     expect(fromWindow.map((claim) => claim.bucket)).not.toContain(PARKED_BUCKET);
   });
+
+  /**
+   * THE SAME IDENTITY, IN THE REGIME THE CHECK ABOVE REFUSES TO BE ABOUT
+   * (admin-window/BUG-0167, QA).
+   *
+   * The check above guards both legs against their cap and says why: a
+   * truncated read would make it a question about where two windows were cut.
+   * But "where two windows were cut" is exactly what BUG-0167 was, and until
+   * this case the only evidence the fix holds AT the cap was an offline
+   * fixture whose ordering engine compares uuids as JavaScript strings. This
+   * one asks Postgres, whose `uuid` order is its own, and asks the gauge's own
+   * `fetchPendingClaims` rather than a query the test rewrote.
+   *
+   * **Staging is a harder fixture than the offline one.** Censused here
+   * 2026-09-11: 877 pending observations in the 90-day window across FIVE
+   * distinct instants, the largest tie holding 817 rows from index 1. So
+   * almost any cap lands inside a tie, and the arbitrary-subset regime is one
+   * `order by` clause away rather than a contrived four-row fixture.
+   *
+   * Race-free by construction, not by tolerance: the caps are drawn from the
+   * first `PROBE_DEPTH` rows of the ascending order, and a claim the scraper
+   * files while this runs carries `observed_at = now()`, which sorts at the
+   * END of that order and can never enter the prefix. A claim ADJUDICATED out
+   * of the prefix mid-comparison would, so the whole comparison sits inside
+   * `whileStill` on that prefix and re-runs rather than reporting staging's
+   * movement as a defect.
+   */
+  const PROBE_DEPTH = 64;
+
+  it("selects the same claims AT the cap, where staging's boundary instant is tied", async () => {
+    const db = independentClient();
+    const since = snapshotAsOf(GAUGE_DAYS * 86_400_000);
+    const instantOf = (value: string) => new Date(value).toISOString();
+
+    /** The head of the window's own total order — the prefix the caps cut. */
+    const prefix = async () => {
+      const read = await db
+        .from(T.observations)
+        .select("observation_id, observed_at")
+        .eq("status", "pending")
+        .gte("observed_at", since)
+        .order("observed_at", { ascending: true })
+        .order("observation_id", { ascending: true })
+        .limit(PROBE_DEPTH);
+      if (read.error) throw new Error(`the census scan failed: ${JSON.stringify(read.error)}`);
+      return (read.data ?? []) as { observation_id: string; observed_at: string }[];
+    };
+
+    const head = await prefix();
+    expect(
+      head.length,
+      "staging holds too few pending observations in the window for a capped comparison",
+    ).toBeGreaterThan(2);
+
+    // A cap that cuts INSIDE a tie: rows `n-1` and `n` share an instant, so
+    // an incompletely-ordered `limit n` is free to return either of them.
+    const tiedCut = head.findIndex(
+      (row, index) => index > 0 && instantOf(row.observed_at) === instantOf(head[index - 1].observed_at),
+    );
+    const caps = [...new Set([1, tiedCut, Math.floor(head.length / 2), head.length - 1])]
+      .filter((cap) => cap >= 1 && cap < head.length)
+      .sort((left, right) => left - right);
+
+    const { made } = await whileStill(prefix, async () => {
+      const compared: { cap: number; scanned: number; windowed: string[]; joined: string[] }[] = [];
+      for (const cap of caps) {
+        const options = { since, limit: cap };
+        // SHAPE A — the gauge itself: two legs, one cap, one order, intersected.
+        const windowed = await fetchPendingClaims(options, db);
+        if (windowed.kind !== "ok") throw new Error(`the gauge refused: ${JSON.stringify(windowed)}`);
+        // SHAPE B — the id-list join it replaced, over the same scan.
+        const scan = await readPendingObservations(
+          resolveBounds(options, PENDING_CLAIMS_DEFAULTS),
+          {},
+          db,
+        );
+        if (scan.kind !== "ok") throw new Error(`the scan refused: ${JSON.stringify(scan)}`);
+        const joined = await readPendingClaimRows(
+          scan.data.map((row) => row.observation_id),
+          db,
+        );
+        if (joined.kind !== "ok") throw new Error(`the id-list join refused: ${JSON.stringify(joined)}`);
+        compared.push({
+          cap,
+          scanned: scan.data.length,
+          windowed: windowed.data.claims.map((claim) => claim.observation_id).sort(),
+          joined: joined.data.map((claim) => claim.observation_id).sort(),
+        });
+      }
+      return compared;
+    });
+
+    // Non-vacuous: every cap really truncated, and at least one cut a tie.
+    expect(made.length).toBeGreaterThan(1);
+    expect(
+      tiedCut,
+      "no two of staging's oldest pending observations share an instant, so this " +
+        "run proved the untied identity only",
+    ).toBeGreaterThan(0);
+    for (const { cap, scanned } of made) expect(scanned, `cap ${cap}`).toBe(cap);
+    // The identity, at every cap, on the database's own ordering.
+    for (const { cap, windowed, joined } of made) {
+      expect(windowed, `cap ${cap}: the gauge and the id-list join select the same claims`).toEqual(
+        joined,
+      );
+    }
+    // …and the largest cap selected something, so this is not an equality of
+    // two empty sets.
+    expect(made[made.length - 1].joined.length).toBeGreaterThan(0);
+  }, 120_000);
 });
 
 describe("the Claims page's surface hooks against staging", () => {
