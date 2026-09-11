@@ -441,6 +441,16 @@ function BucketCaption({
 }: {
   narrowed: boolean;
   narrowings: readonly UnchippedNarrowing[];
+  /**
+   * Did a facet this page draws a CHIP for narrow the figures this table
+   * DREW? Asked of the filter the table's reads were given — the bucket facet
+   * dropped — and never of the URL's whole filter
+   * (admin-window/BUG-0191): at `?bucket=X&domain=Y` the domain did all the
+   * narrowing, the bucket chip did none of it, and a sentence pointing at the
+   * chip bar for these counts would be pointing at a control that shaped
+   * nothing here. The list's own line still asks the UNDROPPED filter, because
+   * the bucket facet really does narrow the list.
+   */
   chipped: boolean;
   /**
    * Is a BUCKET facet in force? The one facet of this page that this table
@@ -466,6 +476,10 @@ function BucketCaption({
           set it did not draw (admin-window/DEBT-0008, LOOK_AND_FEEL bar 13). */}
       <NarrowedBy narrowings={narrowed ? narrowings : []} />
       {BUCKET_CAPTION.inIt}
+      {/* Asked of `chipped` over the table's OWN filter (admin-window/BUG-0191),
+          so this clause and the every-bucket clause below stay two separate
+          facts: this one says what narrowed these counts, that one says which
+          chip is standing above them. */}
       {narrowed && chipped ? BUCKET_CAPTION.underTheFilters : ""}
       {/* The two clauses that state this TABLE's scope, and only ever one of
           them: "nothing above narrows these counts" is the whole truth only
@@ -1055,23 +1069,42 @@ export default async function ClaimsPage({
   // The two halves of "what narrowed this page, and can the operator SEE it"
   // (admin-window/BUG-0160). Both are facts of the URL alone, so they are
   // established here beside `structural` and handed to every sentence below:
-  // one page-wide answer, so the window line, the bucket caption and the empty
-  // card cannot come to disagree about which narrowings are in force.
+  // one page-wide answer, so the window line and the empty card cannot come to
+  // disagree about which narrowings are in force.
+  //
+  // This one is asked of the UNDROPPED filter, which is the filter the LIST
+  // was read under: the bucket facet really does remove claims from the list,
+  // so "matching these filters" is true of it there.
   const chipped = hasChipNarrowing(filter);
   const narrowings = unchippedNarrowings(filter);
+  // The SAME question asked of the filter the bucket table and the gauge were
+  // read under — `filter` with the bucket facet dropped
+  // (admin-window/BUG-0191). Neither of those reads applies that facet, so at
+  // `?bucket=X&domain=Y` no facet this page draws a control for removed a row
+  // from either set, and neither sentence may point at the chip bar for its
+  // figures (LESSONS 2): the bucket caption used to blame "the filters above"
+  // and then deny that same one filter in its very next clause.
+  //
+  // ONE fact, two surfaces, and why that is honest TODAY: the bucket facet is
+  // the only facet either read drops, so `tableFilter` and
+  // `gaugeFilter(filter)` carry the same chip facets — `source_id` alone — and
+  // cannot answer differently. A chip facet that only ONE of them dropped
+  // would make these two facts again, and the second would then be derived
+  // from that read's own filter rather than by widening this one.
+  const chippedWithoutBucket = hasChipNarrowing(tableFilter);
 
   // The GAUGE's narrowing is not the page's: `gaugeFilter` drops the bucket
   // facet, because the gauges read `observations` by source and domain and
   // know nothing of buckets. It is derived ONCE and handed BOTH to the read
   // and to the words about the read, so the sentence over the card and the
   // `.eq()` under it cannot come to disagree (admin-window/BUG-0163). Its own
-  // three answers follow from it and from nothing else: `?bucket=` alone
-  // narrows this section's figures not at all, and its sentence says so by
-  // saying nothing.
+  // answers follow from it and from nothing else — the chip half of them is
+  // `chippedWithoutBucket` above, that question asked of a filter identical to
+  // this one in every chip facet: `?bucket=` alone narrows this section's
+  // figures not at all, and its sentence says so by saying nothing.
   const gaugeNarrowing = gaugeFilter(filter);
   const gaugeStructural = hasNarrowingFacet(gaugeNarrowing);
   const gaugeNarrowings = unchippedNarrowings(gaugeNarrowing);
-  const gaugeChipped = hasChipNarrowing(gaugeNarrowing);
   // The bounds BOTH gauge reads run under, resolved here rather than twice
   // inside them, so the window the section states and the window the
   // population count is taken over are one interval and not two instants a
@@ -1264,10 +1297,10 @@ export default async function ClaimsPage({
     // read, not the rows.
     scope: narrowedTo([
       ...gaugeNarrowings.map(unchippedPhrase),
-      gaugeChipped ? NARROWED_BY_FILTERS : null,
+      chippedWithoutBucket ? NARROWED_BY_FILTERS : null,
     ]),
     narrowings: gaugeNarrowings,
-    chipped: gaugeChipped,
+    chipped: chippedWithoutBucket,
     emptied: gaugeEmptied,
   };
   const gaugePopulationRefused =
@@ -1528,7 +1561,7 @@ export default async function ClaimsPage({
                 <BucketCaption
                   narrowed={bucketsNarrowed}
                   narrowings={narrowings}
-                  chipped={chipped}
+                  chipped={chippedWithoutBucket}
                   bucketFaceted={filter.bucket !== undefined}
                 />
               ) : null}
