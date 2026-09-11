@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T10:07:57Z — do not edit)
+# Tracker index (regenerated 2026-09-11T10:12:59Z — do not edit)
 
 ## open
 - BUG-0186 [P2][bug][M3] The window line says "the window did not fill — 30 of at most 50" over 50 rows on screen — the didNotFill clause fires when the COUNT read came back SMALLER than the rows  (scope:src/components/ui/window-line.tsx,src/app/claims/page.tsx,tests/offline/claims/page.test.ts,tests/offline/ui/primitives.test.ts from:BUG-0183)
@@ -16,7 +16,7 @@
 - DEBT-0020 [P3][debt][patch] The transport account states its cause sentence twice: postgrest-js appends cause.stack, whose head repeats the Caused-by line  (deps:BUG-0179,BUG-0182(unmet:1) scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0173)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - BUG-0182 [P2][bug][M3] One pretty-printed document is counted once per line, so the account grows larger than the page it summarised  (deps:BUG-0181,BUG-0185 scope:src/lib/db/result.ts,tests/offline/db/result.test.ts @builder-275 from:BUG-0179)
 
-Totals — claimed:1, done:34, open:14. Archived: 252.
+Totals — built:1, done:34, open:14. Archived: 252.
