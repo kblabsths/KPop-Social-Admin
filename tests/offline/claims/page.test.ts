@@ -5090,7 +5090,13 @@ function recordingFetch(answer: PageAnswer<ClaimLine>): string[] {
   const urls: string[] = [];
   vi.stubGlobal("fetch", (url: string) => {
     urls.push(url);
-    return Promise.resolve(new Response(JSON.stringify(answer)));
+    // `Response.json`, because that is what `/api/admin/claims/rows` really
+    // answers with (its three `Response.json(...)` returns) and `fetchJson`
+    // now reads the DECLARED content type before it reads a body
+    // (admin-window/TASK-0076). `new Response(JSON.stringify(...))` declares
+    // `text/plain`, which is the wire shape of something that is NOT this
+    // app's route — the measured expired-session login page.
+    return Promise.resolve(Response.json(answer));
   });
   return urls;
 }

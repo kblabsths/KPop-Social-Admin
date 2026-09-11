@@ -51,7 +51,7 @@ function answering(...answers: unknown[]): { urls: string[]; deps: PageDeps } {
 
 /** A surface that has rendered a first screen of `held` rows and paged in two. */
 function paged(held: number, ...ids: string[]): PageState<Row> {
-  return { rows: rows(...ids), held, status: "idle", refusal: null };
+  return { rows: rows(...ids), held, status: "idle", refusal: null, notes: null };
 }
 
 describe("initialPage", () => {
@@ -63,12 +63,16 @@ describe("initialPage", () => {
       held: 50,
       status: "idle",
       refusal: null,
+      // A surface's FIRST screen renders its own legs server-side; this state
+      // holds only what presses brought (admin-window/TASK-0076).
+      notes: null,
     });
     expect(initialPage<Row>(7, false)).toEqual({
       rows: [],
       held: 7,
       status: "exhausted",
       refusal: null,
+      notes: null,
     });
   });
 
@@ -185,8 +189,8 @@ describe("requestPage", () => {
     // comparing identity can see that nothing happened.
     const { urls, deps } = answering({ kind: "ok", rows: rows("x"), offset: 4, exhausted: false });
     const states: PageState<Row>[] = [
-      { rows: rows("a"), held: 4, status: "loading", refusal: null },
-      { rows: rows("a"), held: 4, status: "exhausted", refusal: null },
+      { rows: rows("a"), held: 4, status: "loading", refusal: null, notes: null },
+      { rows: rows("a"), held: 4, status: "exhausted", refusal: null, notes: null },
     ];
     return Promise.all(
       states.map(async (state) => {
@@ -425,6 +429,261 @@ describe("requestPage", () => {
   });
 
   /**
+   * THE LEGS A PAGE BROUGHT REACH THE STATE, OR THE PRESS IS REFUSED — campaign
+   * admin-window/TASK-0076.
+   *
+   * `GET /api/admin/browse/rows` answers a `NotedPageAnswer`: its `ok` arm
+   * carries the two legs that FILL columns over the events window, each `null`
+   * when that leg answered. The driver used to drop them, so a page whose
+   * provenance leg refused reached the operator as events with a silently
+   * empty Sources column — nothing rendered them because nothing could.
+   *
+   * Every case below is driven against the same recording stub the rest of
+   * this file uses, and the note objects are compared by IDENTITY wherever the
+   * point is that nothing reworded them.
+   */
+  describe("the leg notes a page carries", () => {
+    /** A refused provenance leg, as `lib/db/browse.ts` reports one. */
+    const PROVENANCE_GONE = {
+      kind: "not_provisioned",
+      missing: "field_provenance",
+    } as const;
+    /** A refused venue leg, the other arm. */
+    const VENUES_BROKE = {
+      kind: "error",
+      reading: "event_listings.venue_name",
+      message: "connection refused",
+    } as const;
+
+    /** An `ok` page of a full window, optionally carrying a `notes` field. */
+    const page = (ids: string[], notes?: unknown): unknown => {
+      const answer: Record<string, unknown> = {
+        kind: "ok",
+        rows: rows(...ids),
+        offset: 4,
+        exhausted: false,
+      };
+      if (notes !== undefined) answer.notes = notes;
+      return answer;
+    };
+
+    it("(1) appends the rows AND leaves the refused leg's note byte-identical on the state", async () => {
+      const { deps } = answering(
+        page(["c", "d"], { venues: null, provenance: PROVENANCE_GONE }),
+      );
+      const next = await requestPage(paged(4, "a", "b"), deps);
+      // The rows landed.
+      expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d"]);
+      expect(next.held).toBe(6);
+      expect(next.status).toBe("idle");
+      expect(next.refusal).toBeNull();
+      // …and so did the legs' own report, unrewritten: same kind, same
+      // `missing`, no sentence of this app's wrapped around it.
+      expect(next.notes).toEqual({ venues: null, provenance: PROVENANCE_GONE });
+      expect(next.notes?.provenance).toBe(PROVENANCE_GONE);
+    });
+
+    it("(2) holds a record of nulls when both legs answered", async () => {
+      // `null` is a leg's ANSWER, not its absence: a surface reading this
+      // state can tell "that column is filled" from "nobody said".
+      const { deps } = answering(page(["c", "d"], { venues: null, provenance: null }));
+      const next = await requestPage(paged(4, "a", "b"), deps);
+      expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d"]);
+      expect(next.notes).toEqual({ venues: null, provenance: null });
+      expect(next.notes).not.toBeNull();
+    });
+
+    it("(3) an answer with NO notes property leaves the standing notes exactly as they were", async () => {
+      // The claims route's answer. `/claims` is byte-identical through this
+      // ticket because of this arm.
+      const standing = { venues: null, provenance: PROVENANCE_GONE };
+      const { deps } = answering(page(["c", "d"]));
+      const before = { ...paged(4, "a", "b"), notes: standing };
+      const next = await requestPage(before, deps);
+      expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d"]);
+      expect(next.held).toBe(6);
+      expect(next.refusal).toBeNull();
+      expect(next.notes).toBe(standing);
+
+      // …and from a state that never held any, nothing is invented.
+      const { deps: deps2 } = answering(page(["c", "d"]));
+      expect((await requestPage(paged(4, "a", "b"), deps2)).notes).toBeNull();
+    });
+
+    it("(4) an unreadable notes field REFUSES naming the route, on five shapes", async () => {
+      // Appending the rows and dropping the notes is the defect this ticket
+      // closes; rendering a note this app cannot read is the one thing worse.
+      const unreadable: ReadonlyArray<readonly [string, unknown]> = [
+        ["a string", "the provenance leg failed"],
+        ["an array", [PROVENANCE_GONE]],
+        ["a kind this app does not know", { provenance: { kind: "unavailable", missing: "x" } }],
+        ["a `missing` that is a number", { provenance: { kind: "not_provisioned", missing: 7 } }],
+        ["a note that is itself a record", { provenance: { venues: null, provenance: null } }],
+      ];
+      for (const [name, notes] of unreadable) {
+        const { urls, deps } = answering(page(["c", "d"], notes));
+        const next = await requestPage(paged(4, "a", "b"), deps);
+        // Zero rows appended, the bound unmoved, the press repeatable.
+        expect(next.rows.map((row) => row.id), name).toEqual(["a", "b"]);
+        expect(next.held, name).toBe(4);
+        expect(next.status, name).toBe("idle");
+        expect(next.refusal?.object, name).toBe(PAGE_ROUTES.claims);
+        expect(next.refusal?.reason.length, name).toBeGreaterThan(0);
+        expect(urls, name).toHaveLength(1);
+        // The reason is THIS APP's: not one character of the field it refused,
+        // and no figure it would have to pluralise.
+        const reason = next.refusal?.reason ?? "";
+        expect(reason, name).not.toContain("unavailable");
+        expect(reason, name).not.toContain("provenance");
+        expect(reason, name).not.toContain("kind");
+        expect(reason, name).not.toMatch(/\d/);
+      }
+    });
+
+    it("(4b) an unreadable notes field on a page that WOULD have landed — the must-not-flag half", async () => {
+      // The same rows, the same window, the same bound: only the notes differ — so
+      // the refusal above is about the notes and nothing else.
+      const { deps } = answering(page(["c", "d"], { provenance: PROVENANCE_GONE }));
+      const next = await requestPage(paged(4, "a", "b"), deps);
+      expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d"]);
+      expect(next.refusal).toBeNull();
+    });
+
+    it("(5) MERGES per key: a standing note survives a later page whose legs answered", async () => {
+      // Why merge and not replace: the rows the refused leg left unfilled are
+      // STILL on screen after the next press, so a note that vanished would be
+      // the silently-empty-column defect one press later.
+      const { deps } = answering(
+        page(["c", "d"], { venues: null, provenance: PROVENANCE_GONE }),
+        page(["e", "f"], { venues: null, provenance: null }),
+      );
+      const first = await requestPage(paged(4, "a", "b"), deps);
+      const second = await requestPage(first, deps);
+      expect(second.notes).toEqual({ venues: null, provenance: PROVENANCE_GONE });
+      // Byte-identical still: the FIRST page's own note object.
+      expect(second.notes?.provenance).toBe(PROVENANCE_GONE);
+      // Both pages' rows, in the order they arrived.
+      expect(second.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d", "e", "f"]);
+      expect(second.held).toBe(8);
+    });
+
+    it("(5b) a key that is null or absent TAKES a later page's note", async () => {
+      // The other half of the merge rule, so it is not a rule that only ever
+      // keeps: a leg that answered on page one and refused on page two reports
+      // the refusal, and a key no page had mentioned appears.
+      const { deps } = answering(
+        page(["c", "d"], { venues: null }),
+        page(["e", "f"], { venues: VENUES_BROKE, provenance: PROVENANCE_GONE }),
+      );
+      const first = await requestPage(paged(4, "a", "b"), deps);
+      expect(first.notes).toEqual({ venues: null });
+      const second = await requestPage(first, deps);
+      expect(second.notes).toEqual({ venues: VENUES_BROKE, provenance: PROVENANCE_GONE });
+      expect(second.notes?.venues).toBe(VENUES_BROKE);
+    });
+
+    it("(6) a refused press leaves the notes it held, on every way a press is refused", async () => {
+      const standing = { venues: null, provenance: PROVENANCE_GONE };
+      const held = { ...paged(4, "a", "b"), notes: standing };
+
+      const refusals: ReadonlyArray<readonly [string, () => unknown]> = [
+        // A short continuing page.
+        ["a short continuing page", () => page(["c"])],
+        // A rejected request.
+        [
+          "a rejected request",
+          () => {
+            throw new Error("Failed to fetch");
+          },
+        ],
+        // A body that never parsed.
+        [
+          "a body that never parsed",
+          () => {
+            throw new SyntaxError("Unexpected token '<'");
+          },
+        ],
+        // …and the answer's own refusal arms, for good measure.
+        ["a not-provisioned answer", () => ({ kind: "not_provisioned", missing: "pending_claims" })],
+        ["a body that is not an answer", () => ({ rows: rows("c") })],
+      ];
+      for (const [name, reply] of refusals) {
+        const { deps } = recorder(reply);
+        const next = await requestPage(held, deps);
+        expect(next.refusal, name).not.toBeNull();
+        expect(next.rows.map((row) => row.id), name).toEqual(["a", "b"]);
+        expect(next.held, name).toBe(4);
+        // The notes are the account of columns that are STILL unfilled.
+        expect(next.notes, name).toBe(standing);
+      }
+    });
+
+    it("an EMPTY page ends the set without disturbing the notes it holds", async () => {
+      // Nothing appended, so no column of this page's went unfilled.
+      const standing = { venues: null, provenance: PROVENANCE_GONE };
+      const { deps } = answering({ kind: "ok", rows: [], offset: 4, exhausted: false });
+      const next = await requestPage({ ...paged(4, "a", "b"), notes: standing }, deps);
+      expect(next.status).toBe("exhausted");
+      expect(next.notes).toBe(standing);
+    });
+
+    it("a FINAL page's notes land too: exhaustion is not a reason to drop a leg's report", async () => {
+      const { deps } = answering({
+        kind: "ok",
+        rows: rows("c"),
+        offset: 4,
+        exhausted: true,
+        notes: { venues: null, provenance: PROVENANCE_GONE },
+      });
+      const next = await requestPage(paged(4, "a", "b"), deps);
+      expect(next.status).toBe("exhausted");
+      expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "c"]);
+      expect(next.notes?.provenance).toBe(PROVENANCE_GONE);
+    });
+
+    it("pressing carries the notes through, and still hands back the SAME object", () => {
+      const standing = { venues: null, provenance: PROVENANCE_GONE };
+      const idle: PageState<Row> = {
+        rows: rows("a"),
+        held: 2,
+        status: "idle",
+        refusal: null,
+        notes: standing,
+      };
+      expect(pressing(idle).notes).toBe(standing);
+      expect(pressing(idle).status).toBe("loading");
+      for (const status of ["loading", "exhausted"] as const) {
+        const state: PageState<Row> = { ...idle, status };
+        // Identity, unchanged by this ticket: the double-press proof rests on it.
+        expect(pressing(state)).toBe(state);
+      }
+    });
+
+    it("the state it was handed is never mutated, notes included", async () => {
+      const standing = { venues: null, provenance: PROVENANCE_GONE };
+      const before = { ...paged(4, "a", "b"), notes: standing };
+      const { deps } = answering(page(["c", "d"], { venues: VENUES_BROKE, provenance: null }));
+      await requestPage(before, deps);
+      expect(before.notes).toBe(standing);
+      expect(standing).toEqual({ venues: null, provenance: PROVENANCE_GONE });
+    });
+
+    it("a `__proto__` key in a notes body is an entry, never a prototype", async () => {
+      // The keys come off a JSON body. Built by assignment, `merged["__proto__"] = note`
+      // would set a prototype instead of adding an entry.
+      const body = JSON.parse(
+        '{"kind":"ok","rows":[{"id":"c"},{"id":"d"}],"offset":4,"exhausted":false,' +
+          '"notes":{"__proto__":null,"provenance":null}}',
+      ) as unknown;
+      const { deps } = answering(body);
+      const next = await requestPage(paged(4, "a", "b"), deps);
+      expect(next.refusal).toBeNull();
+      expect(Object.hasOwn(next.notes ?? {}, "__proto__")).toBe(true);
+      expect(Object.getPrototypeOf({})).toBe(Object.prototype);
+    });
+  });
+
+  /**
    * M3 EC5 / §4.3: a refused page never half-fills the list. Every arm of a
    * refusal — the two `DbResult` ones, the bound one, and the three ways a
    * body never becomes an answer at all — is graded on the same three
@@ -565,7 +824,13 @@ describe("pressing", () => {
   // tier that has no DOM.
 
   it("turns idle into loading and touches nothing else", () => {
-    const idle: PageState<Row> = { rows: rows("a", "b"), held: 4, status: "idle", refusal: null };
+    const idle: PageState<Row> = {
+      rows: rows("a", "b"),
+      held: 4,
+      status: "idle",
+      refusal: null,
+      notes: null,
+    };
     const started = pressing(idle);
     expect(started.status).toBe("loading");
     // Untouched means the SAME rows, not merely equal ones: a press that
@@ -584,6 +849,7 @@ describe("pressing", () => {
       held: 2,
       status: "idle",
       refusal: { reason: "the read failed", object: "pending_claims" },
+      notes: null,
     };
     expect(pressing(refused).refusal).toBe(refused.refusal);
     expect(pressing(refused).status).toBe("loading");
@@ -593,13 +859,25 @@ describe("pressing", () => {
     // Identity, not equality: a caller publishing this would re-render the
     // whole row list for a press that changed nothing.
     for (const status of ["loading", "exhausted"] as const) {
-      const state: PageState<Row> = { rows: rows("a"), held: 2, status, refusal: null };
+      const state: PageState<Row> = {
+        rows: rows("a"),
+        held: 2,
+        status,
+        refusal: null,
+        notes: null,
+      };
       expect(pressing(state)).toBe(state);
     }
   });
 
   it("is idempotent, so a third press is as free as the second", () => {
-    const idle: PageState<Row> = { rows: rows("a"), held: 2, status: "idle", refusal: null };
+    const idle: PageState<Row> = {
+      rows: rows("a"),
+      held: 2,
+      status: "idle",
+      refusal: null,
+      notes: null,
+    };
     const once = pressing(idle);
     expect(pressing(once)).toBe(once);
   });
