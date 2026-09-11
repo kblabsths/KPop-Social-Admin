@@ -1,0 +1,52 @@
+{
+ "id": "BUG-0186",
+ "created": "2026-09-11T10:43:50Z",
+ "green": true,
+ "git_head": "de1f3228c1e3ee6530694b71b4e3301f780da27f",
+ "scope": [
+  "src/components/ui/window-line.tsx",
+  "src/app/claims/page.tsx",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/ui/primitives.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "b6e2577807a3990f1966fdee91293dedc1fe4dddd5fbba03dc19f5117749f814",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline",
+   "exit": 0,
+   "output_tail": "w promises > cannot reach past the cap from any state its own chips offer  723ms\n   \u2713 what a filled window promises > says what it is not showing and offers no way to it  496ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=(absent)  433ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=standing_disagreement  486ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=awaiting_row  368ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=agreeing  529ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=ESCALATED  443ms\n\n Test Files  80 passed (80)\n      Tests  3786 passed (3786)\n   Start at  03:43:21\n   Duration  11.91s (transform 4.88s, setup 0ms, collect 21.10s, tests 60.52s, environment 18ms, prepare 5.44s)\n\n(node:50050) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:50071) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:50077) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:50118) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -q \"names the rows ON SCREEN when the COUNT read came back SMALLER\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q \"it.fails(\\\"names the rows ON SCREEN when the COUNT read came back SMALLER\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"admin-window/BUG-0186\" tests/offline/ui/primitives.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"drawn: listed.length\" src/app/claims/page.tsx && grep -q \"continues: pageable\" src/app/claims/page.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run typecheck",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 typecheck\nnpm notice run tsc --noEmit\n"
+  }
+ ]
+}
