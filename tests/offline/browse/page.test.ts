@@ -1542,6 +1542,37 @@ describe("the affordance that continues the recent-events view", () => {
     expect(/<button/.test(markup)).toBe(false);
   });
 
+  // PINNED RED — admin-window/BUG-0172. `it.fails` is strict: the day the page
+  // stops contradicting itself this turns red and sends the reader to that
+  // ticket, whose check then requires the marker to be gone.
+  it.fails("does not claim rows are withheld once the walk has reached the end of the set", async () => {
+    // QA, admin-window/BUG-0172: the window line above the table is a
+    // SERVER-rendered claim about the rows below it, and a press changes those
+    // rows underneath it. Once the driver reports `exhausted` — the read's own
+    // answer that the set has ended — the page publishes two contradictory
+    // facts about the SAME question: the paging hook says every row is on
+    // screen, and the window hook still says rows are withheld (LESSONS 11:
+    // one row, one verdict; LESSONS 2: a sentence claims only the scope its
+    // read had).
+    //
+    // Both handles are the app's own machine-readable statements about that
+    // one question — no word of either sentence is pinned here.
+    const script = windowScript(view.window);
+    await renderBrowse(script);
+    // ONE press whose page ends the set: short, and says so.
+    paging.override = await pressedWith(
+      pageAnswer(view.window, { venues: null, provenance: null }, view.window - 10),
+    );
+    const markup = await renderBrowse(script);
+
+    // The walk really did reach the end, and the rows really are all drawn.
+    expect(pagingArms(markup)).toEqual(["exhausted"]);
+    expect(eventIds(markup)).toHaveLength(view.window * 2 - 10);
+
+    // …so nothing on this page may still say rows are being held back.
+    expect(windowLine(markup).truncated).not.toBe("true");
+  });
+
   it("spells no leg key and imports no lib/db type", async () => {
     // The wrapper renders the non-null notes the record HOLDS, in the record's
     // own order, so its output cannot drift from the route's key spelling —
