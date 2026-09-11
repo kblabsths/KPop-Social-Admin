@@ -13,6 +13,7 @@ import {
 } from "@/components/sources";
 import {
   DataTable,
+  DroppedParamsLine,
   Empty,
   Identifier,
   Page,
@@ -45,6 +46,11 @@ import {
   unchippedNarrowings,
   unchippedPhrase,
 } from "@/lib/url/narrowing";
+// What the URL asked for that this page did not do, from the ONE module that
+// owns that rule for every route (admin-window/BUG-0141). Imported, never
+// retyped: four bugs have landed on that one sentence and a second spelling
+// would be born with none of them (LESSONS 5, ARCHITECTURE.md §13.7).
+import { droppedParams } from "@/lib/url/dropped-params";
 
 /**
  * Sources — **the registry's state rows, and who keeps being wrong** (campaign
@@ -282,6 +288,38 @@ export default async function SourcesPage({
       {sources.kind === "ok" && held.length > 0 ? (
         <SourceChips sources={held} names={names} filter={filter} />
       ) : null}
+
+      {/* What the URL asked for that this page did NOT do — the sentence
+          `/claims`, `/queues` and `/cycles` already render, from the same code
+          (admin-window/BUG-0201; ARCHITECTURE.md common violations row 9). It
+          stands beside the chip row because it is a fact of the URL and not of
+          any read: it renders the same over an `ok` read, a refusal and a
+          registry that is not there, and the chips above it are drawn only
+          when the registry answered with rows.
+
+          The narrowing handed over is `filter` — **what the reads actually
+          carried**, never the URL's raw value. So `?source_id=deadbeef`, which
+          `filterFrom` reduces to no narrowing at all because it can equal no
+          row anywhere, is NAMED here rather than swallowed under a registry
+          that answers with every source (the silence Tomas read as "I asked
+          for one source and this is it"); while a canonical id that really did
+          narrow is not named, whether or not the registry holds that row —
+          that emptiness is `data-empty="narrowing"`'s to say.
+
+          Nothing is consumed elsewhere and nothing is withheld by name: this
+          route has no tab strip and no word it may not render, so it states
+          its own empty lists rather than taking the module's `tab` default —
+          a `?tab=` here really is a parameter this page did not apply, exactly
+          as `/cycles` (the other tabless route) reports one.
+
+          The filter is SPREAD for the same reason `/queues` spreads its own:
+          `SourcesFilter` is an interface, so it has no implicit index
+          signature and the rule's `AppliedNarrowing` is a record — the copy is
+          the type edge and nothing else, and it carries exactly the keys the
+          reads carried. */}
+      <DroppedParamsLine
+        dropped={droppedParams(params, { ...filter }, [], [])}
+      />
 
       <Section title="Registry" surface={REGISTRY_SURFACE}>
         {sources.kind === "not_provisioned" ? (
