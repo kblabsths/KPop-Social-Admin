@@ -2841,6 +2841,69 @@ describe("a narrowing with no chip row", () => {
     }
   });
 
+  /**
+   * THE STATE THE PIN ABOVE NEVER REACHES: a chip that IS set over a table
+   * that drops that chip's facet (QA, admin-window/BUG-0191).
+   *
+   * The pin above walks `?domain=` with BOTH chip rows on `all`, so it grades
+   * the rule "no chip is set, so claim no filter above". The other half of the
+   * same rule is a chip that is set and narrows this table by NOTHING:
+   * `?bucket=X&domain=Y`. This table's read drops the bucket facet on purpose
+   * (`bucketStats`), so the domain did all the narrowing and the bucket chip
+   * did none — while `chipped` is `hasChipNarrowing(filter)` over the
+   * UNDROPPED filter, which the bucket facet alone satisfies. The caption
+   * therefore blames "the filters above" and then says, in its next clause,
+   * that the one filter above does not narrow these counts.
+   *
+   * Measured on staging 2026-09-11 at `/claims?bucket=awaiting_row&domain=events`:
+   * bucket counts 0/108/741/0/0 — identical to `?domain=events` and NOT to the
+   * bare page's 0/108/769/0/0 — with the chip rows reading `awaiting_row` and
+   * `all`. The gauge section one screen down already asks the right filter
+   * (`gaugeChipped = hasChipNarrowing(gaugeFilter(filter))`).
+   *
+   * Neither phrase is typed here. The chip clause is READ OFF THE APP: the
+   * only thing a chip-narrowed caption says that the same view narrowed by the
+   * control-less facet alone does not — so a rewording of either arm moves
+   * this test with it, and the guard has its passing spelling and its failing
+   * one (LESSONS 8).
+   */
+  it.fails("claims no filter above when the only chip set narrows this table by nothing", async () => {
+    // The clause a CHIP narrowing adds to this caption, in the app's own
+    // words, with the domain held constant across both renders.
+    const [, chipClause] = differingClause(
+      bucketCaption(await renderClaims(healthyScript(), { domain: NARROWING })),
+      bucketCaption(
+        await renderClaims(healthyScript(), {
+          source_id: SOURCE.first,
+          domain: NARROWING,
+        }),
+      ),
+    );
+    // Non-vacuous: there really is a clause to look for.
+    expect(chipClause).not.toBe("");
+
+    const params = { bucket: "awaiting_row", domain: NARROWING };
+    const faceted = await renderClaims(healthyScript(), params);
+    // Non-vacuous, the other direction: the bucket chip is really ACTIVE, no
+    // source chip is, and this table's figures are the domain's figures — the
+    // bucket facet removed not one row of them.
+    expect(chipsOf(faceted, "bucket").filter((chip) => chip.active).map((chip) => chip.label))
+      .toEqual([params.bucket]);
+    expect(chipsOf(faceted, "source_id").filter((chip) => chip.active).map((chip) => chip.label))
+      .toEqual([ANY_LABEL]);
+    const figures = (markup: string) => bucketRows(markup).map((row) => row.claims);
+    expect(figures(faceted)).toEqual(
+      figures(await renderClaims(healthyScript(), { domain: NARROWING })),
+    );
+    // …and the domain really narrowed them, so the narrowed arm is the one
+    // under test rather than the unnarrowed one.
+    expect(figures(faceted)).not.toEqual(figures(await renderClaims(healthyScript())));
+
+    // The defect: the caption blames a chip bar in which the only thing set
+    // narrows this table by nothing.
+    expect(bucketCaption(faceted)).not.toContain(chipClause);
+  });
+
   it("is true of both kinds of narrowing when both are set", async () => {
     // A chip AND the control-less facet. The chip narrowing keeps its own
     // clause — it is a control the operator can see — and the domain is named
