@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T06:04:29Z — do not edit)
+# Tracker index (regenerated 2026-09-11T06:09:26Z — do not edit)
 
 ## open
 - FEAT-0014 [P1][feat][M3] F16 — the second leg of a two-step join runs its chunks concurrently  (scope:src/lib/db/result.ts,src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/db/verdict.ts,tests/offline/db/result.test.ts,tests/live/claims.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts)
@@ -16,7 +16,4 @@
 ## claimed
 - BUG-0172 [P1][bug][M3] A paged surface still says rows are withheld after the walk reached the end of the set — /browse and /claims  (scope:src/app/browse/page.tsx,src/app/claims/page.tsx,src/components/browse/paged-browse-table.tsx,src/components/claims/paged-claim-list.tsx,src/components/ui/paging.tsx,src/components/ui/window-line.tsx,tests/offline/browse/page.test.ts,tests/offline/claims/page.test.ts,tests/offline/ui/paging.test.ts,tests/offline/ui/primitives.test.ts,tests/offline/absence/pages.test.ts,tests/offline/shell/client-boundary.test.ts @builder-263 from:TASK-0069)
 
-## qa
-- BUG-0171 [P2][bug][M3] The claims rows route answers gated admin data with no Cache-Control, while every gated page carries one  (deps:TASK-0068 scope:src/app/api/admin/claims/rows/route.ts,tests/http/paging.http.test.ts,tests/offline/paging/claims-route.test.ts @builder-262 from:TASK-0066)
-
-Totals — claimed:1, done:19, open:11, qa:1. Archived: 252.
+Totals — claimed:1, done:20, open:11. Archived: 252.
