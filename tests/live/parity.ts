@@ -361,6 +361,58 @@ export async function objectIsAbsent(object: string): Promise<boolean> {
   return ABSENCE_CODES.includes(codeOf(error));
 }
 
+/**
+ * Every function this database exposes over PostgREST, from the database's own
+ * schema description (`GET /rest/v1/`, the OpenAPI document PostgREST
+ * generates from the live catalog — the same source `residue.live.test.ts`
+ * reads column types from).
+ *
+ * This is a READ and never a call, which is the whole point of it: a live test
+ * establishes whether a function is there BEFORE it decides what to send, so
+ * an installed function is never invoked by a case written for its absence.
+ * That is not a theoretical worry — `settle_review_item` was installed on
+ * staging mid-campaign (admin-window/BUG-0215) and the case written for its
+ * absence applied a real admin override, whose `verdicts` row the service role
+ * cannot delete.
+ *
+ * It lives here, beside `objectIsAbsent`, because two files now ask this same
+ * question of the same database and a second hand-rolled copy is how the two
+ * answers drift apart (LESSONS 5). Reads the APP's names, which `setup.ts` has
+ * already pointed at staging; nothing here prints the target or the key.
+ */
+export async function functionsOnStaging(): Promise<Set<string>> {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error(
+      "the function reader has no target: SUPABASE_URL / " +
+        "SUPABASE_SERVICE_ROLE_KEY are unset, which means tests/live/setup.ts " +
+        "did not run. Live tests must run through `npm run test:live`.",
+    );
+  }
+  const response = await fetch(`${url.replace(/\/+$/, "")}/rest/v1/`, {
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      Accept: "application/openapi+json",
+    },
+  });
+  if (!response.ok) {
+    throw new Error(
+      `could not read this database's schema description: HTTP ` +
+        `${response.status}. Without it a caller cannot tell an absent ` +
+        `function from an unreadable database, so this is a failure and ` +
+        `never an absence.`,
+    );
+  }
+  const body = (await response.json()) as { paths?: Record<string, unknown> };
+  return new Set(
+    Object.keys(body.paths ?? {})
+      .filter((route) => route.startsWith("/rpc/"))
+      .map((route) => route.slice("/rpc/".length)),
+  );
+}
+
 /** A test's own count, or `"absent"` when the object is not in this database. */
 export type Counted = number | "absent";
 
