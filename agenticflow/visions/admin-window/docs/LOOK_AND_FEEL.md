@@ -21,6 +21,12 @@ copy bar 6. Each says where it came from. VISION.md is untouched by this pass;
 Ben's amendment of 2026-09-08 — direct `groups`/`idols` editing struck — is
 honoured in the inline-edit rule below.
 
+**Revised 2026-09-11** (TASK-0079) to record two rulings of Ben's own, after
+he walked `/claims`' paging: a new Feel bar 14 (nothing the operator must find
+sits below a long list) and one dated clause on Feel bar 11 (paging is its
+exception in the shipped model, and the clause retires itself). Both are his
+words, not the designer's taste; bar 11's original sentence is unchanged.
+
 **Out of scope:** `/login`. The sign-in gate carries over untouched (spec §3),
 so its rounded card, pink mark and drop shadow are sanctioned exceptions —
 neither a precedent to copy nor a violation to file. Nothing else in the app
@@ -295,6 +301,19 @@ header's `animate-pulse` stale dot is gone).
     *(VISION: "item → its claims → its source and provenance → the event → its edit surface")*
 11. **State lives in the URL.** Every filter, sort, and page position is
     bookmarkable and survives the back button — the breakfast view is a link.
+    **Paging is the one exception, in the model that ships today** (Ben's
+    ruling, 2026-09-11): rows the operator has paged in carry no URL — a press
+    changes no address, a reload returns the first server-rendered window, and
+    Back leaves the app (ARCHITECTURE's dated 2026-09-10 amendment, traced to
+    SPEC F14's byte-identical first screen). What stands in for the URL is on
+    the screen: the **window line**, which states which rows are on screen and
+    whether the window filled, and the paging state's **held count**, which
+    states how many rows the surface now holds — so "where am I in this list"
+    is graded against those two, not against the address bar, and a walk states
+    that instead of calling the bar stale. **This clause retires itself the day
+    page position enters the URL**: if a `?page=`/`?size=` value (or any other
+    search param) ever decides which rows a cold load renders, delete the clause
+    and grade bar 11 by its own sentence again.
 12. **Both themes, clean console.** Every page renders in light and dark with
     nothing invisible, and every string a person reads to act measures ≥4.5:1
     against the fill behind it — `page`, `surface` or `chrome`; the active nav
@@ -313,6 +332,32 @@ header's `animate-pulse` stale dot is gone).
     *(VISION: "real staging rows whose numbers match what the database says".
     Both M1 sims named this behaviour as the reason they trusted the tool, and
     the one place it was missing is the only number a sim could not check.)*
+14. **Nothing the operator must find sits below a long list.** A list is
+    long when its rows can run past the fold at 1440×900 — the viewport bar 1
+    is graded at. On such a surface every element that is not a row — the
+    control that extends or moves the list, a total, a legend, an action —
+    renders **above** the list or on **its own surface**, chosen by how
+    important it is; never after the last row. Walkable on any list surface:
+    name every non-row element and say which side of the rows it is on; one
+    below the rows fails the bar.
+    *(Ben's ruling, 2026-09-11, verbatim: "There should not be elements at the
+    bottom of a list this long. We should put them at the top or on a different
+    page, depending on the importance. The elements that show up at the bottom
+    of this page after the list are extremely easy to not be able to find
+    because I wouldn't think to scroll to the bottom of the list to find more
+    elements." VISION: "Ben, the ecosystem's operator, at breakfast … what
+    needs me" — a control he would not think to scroll for is not available to
+    him at breakfast. This ruling **closes** the designer's M3 proposal "a
+    control that extends a list is still on screen after it acts": Ben's bar is
+    about where the control sits in the first place, the proposal is superseded,
+    and no walker re-raises it. Known failing surface at the time of writing,
+    measured on the landed M3 tree at 1440×900: `/claims`' "show the next 50"
+    control goes viewport y=434 → **2,066** on the first press with `scrollY`
+    unchanged — 1,166px below a 900px fold (2,084 on presses 2 and 3); the same
+    control on `/browse` stays at y=852 because the browser's scroll anchoring
+    holds it. No BUG is filed for `/claims` by the pass that wrote this bar: the
+    fix is whichever paging shape Ben picks, and that decision is open
+    (`tracker/for-human/M3-paging-shape-for-ben.md`).)*
 
 ### Key screens
 
