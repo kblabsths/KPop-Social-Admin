@@ -30483,3 +30483,21 @@
 2026-09-11T15:32:30Z	qa-adversary	DEBT-0020	14663	395	89169
 # STRANDED	2026-09-11T15:32:32Z	agent	6 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0196.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0197.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0198.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0199.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0020.md
 2026-09-11T15:32:32Z	agent	-	-	-	-
+# STRANDED	2026-09-11T15:33:04Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T15:33:04Z	agent	-	-	-	-
+# STRANDED	2026-09-11T15:33:09Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T15:33:09Z	agent	-	-	-	-
+# STRANDED	2026-09-11T15:33:35Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T15:33:35Z	agent	-	-	-	-
+# STRANDED	2026-09-11T15:34:07Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/milestones/M3.md
+2026-09-11T15:34:07Z	agent	-	-	-	-
+# STRANDED	2026-09-11T15:34:10Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/milestones/M3.md
+2026-09-11T15:34:10Z	agent	-	-	-	-
+# STRANDED	2026-09-11T15:34:38Z	agent	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/milestones/M3.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0196.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0197.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0198.md
+2026-09-11T15:34:38Z	agent	-	-	-	-
+# STRANDED	2026-09-11T15:34:42Z	agent	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/milestones/M3.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0196.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0197.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0198.md
+2026-09-11T15:34:42Z	agent	-	-	-	-
+# STRANDED	2026-09-11T15:35:01Z	designer	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/milestones/M3.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0196.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0197.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0198.md
+2026-09-11T15:35:01Z	designer	FEAT-0014	35035	1843	265594
+# STRANDED	2026-09-11T15:35:10Z	agent	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/milestones/M3.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0196.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0197.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0198.md
+2026-09-11T15:35:10Z	agent	-	-	-	-

@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T15:32:41Z — do not edit)
+# Tracker index (regenerated 2026-09-11T15:35:10Z — do not edit)
 
 ## open
 - BUG-0196 [P2][bug][M3] A failed read's account renders the app's own sentences in the mono face reserved for the machine's words  (scope:src/lib/db/result.ts,src/components/ui/error-line.tsx,src/components/ui/paging.tsx,tests/offline/db/result.test.ts,tests/offline/ui/primitives.test.ts,tests/offline/ui/paging.test.ts from:designer:endgame-walk)
