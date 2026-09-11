@@ -1,3 +1,4 @@
+import * as cheerio from "cheerio";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as barrel from "@/components/ui";
@@ -5,10 +6,14 @@ import { Button } from "@/components/ui/button";
 import {
   ANSWERED_BY_SOMETHING_ELSE,
   PageMore,
+  PagedWindowLine,
+  PagingProvider,
   UNREADABLE_ANSWER,
   fetchJson,
   usePageRows,
+  usePaging,
 } from "@/components/ui/paging";
+import { WindowLine, type DrawnSentence, type DrawnWindow } from "@/components/ui/window-line";
 import {
   MAX_PAGE_OFFSET,
   OFFSET_PARAM,
@@ -858,6 +863,137 @@ describe("usePageRows binds the driver to a press", () => {
   });
 });
 
+/**
+ * ONE surface, ONE state — the provider, and the window line that reads it
+ * (campaign admin-window/BUG-0172).
+ *
+ * The defect: a paged surface's window line was the PAGE's, server-rendered
+ * above a wrapper that changes the rows underneath it, so after a press the
+ * page published two answers to one question. The mechanism here is the fix —
+ * a zero-markup provider that publishes the one state, and a line that renders
+ * the shared primitive from it.
+ */
+describe("PagingProvider publishes one surface's state, and draws nothing", () => {
+  const WINDOW: DrawnWindow = {
+    limit: SIZE,
+    held: SIZE,
+    truncated: true,
+    over: "view",
+    oldest: null,
+    scope: null,
+  };
+  const CATALOG: DrawnSentence = { of: "catalog", rows: "events" };
+
+  /** The line, rendered inside a surface whose state is `state`. */
+  const paged = (state: PageState<Row>, window: DrawnWindow = WINDOW): string =>
+    render(
+      h(
+        PagingProvider,
+        {
+          initial: state,
+          deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE },
+          children: null,
+        },
+        h(PagedWindowLine, { gauge: "events", window, shows: CATALOG }),
+      ),
+    );
+
+  const hooks = (html: string) => {
+    const line = cheerio.load(html)("[data-window]");
+    return {
+      lines: line.length,
+      held: line.attr("data-window-held"),
+      truncated: line.attr("data-window-truncated"),
+    };
+  };
+
+  it("renders no markup of its own: the children are the whole output", () => {
+    const child = h("span", { "data-probe": "" }, "rows");
+    const wrapped = render(
+      h(
+        PagingProvider,
+        {
+          initial: initialPage<Row>(SIZE, true),
+          deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE },
+          children: null,
+        },
+        child,
+      ),
+    );
+    expect(wrapped).toBe(render(child));
+  });
+
+  it("renders the page's own window line, to the byte, before any press", () => {
+    // SPEC F14: the first screen does not change. The page composes the facts
+    // once and hands the same object to either component, so the paged arm and
+    // the unpaged one are the same element with the same hooks and the same
+    // words until a press changes what the operator holds.
+    expect(paged(initialPage<Row>(SIZE, true))).toBe(
+      render(h(WindowLine, { gauge: "events", window: WINDOW, shows: CATALOG })),
+    );
+  });
+
+  it("takes truncation from the paging state's status and from nothing else", () => {
+    // Offered, in flight and refused all still hold rows back; only the read's
+    // own answer that the set has ended says otherwise (LESSONS 11).
+    const states: [string, PageState<Row>][] = [
+      ["idle", initialPage<Row>(SIZE, true)],
+      ["loading", { ...initialPage<Row>(SIZE, true), status: "loading" }],
+      [
+        "refused",
+        {
+          ...initialPage<Row>(SIZE, true),
+          refusal: { reason: "the view is not provisioned", object: "pending_claims" },
+        },
+      ],
+    ];
+    for (const [name, state] of states) {
+      expect(hooks(paged(state)).truncated, name).toBe("true");
+    }
+    expect(hooks(paged(initialPage<Row>(SIZE, false))).truncated).toBe("false");
+  });
+
+  it("grows a held that counts this window's own rows, and leaves a count alone", () => {
+    // Two shapes of `held`, two behaviours, one rule: a window read cannot come
+    // back with more rows than its cap, so a `held` at or under the cap IS this
+    // window's rows and grows with the rows appended to it (`/browse`, whose
+    // line was stuck at 50 under 100 rows). A `held` above the cap came from a
+    // second read — `/claims` counts the matching set — and paging reads no new
+    // row into that count (admin-window/BUG-0172, criterion 2).
+    const continued: PageState<Row> = {
+      rows: pageOf(SIZE),
+      held: SIZE * 2,
+      status: "idle",
+      refusal: null,
+      notes: null,
+    };
+    expect(hooks(paged(continued)).held).toBe(String(SIZE * 2));
+    expect(hooks(paged(continued, { ...WINDOW, held: 877 })).held).toBe("877");
+  });
+
+  it("is ONE element in every state a press can end in", () => {
+    for (const state of [
+      initialPage<Row>(SIZE, true),
+      { ...initialPage<Row>(SIZE, true), status: "loading" as const },
+      initialPage<Row>(SIZE, false),
+    ]) {
+      expect(hooks(paged(state)).lines).toBe(1);
+    }
+  });
+
+  it("refuses to draw a paged surface outside its provider", () => {
+    // A default would be a paging state no read produced, drawn under rows
+    // some read did.
+    expect(() =>
+      render(h(PagedWindowLine, { gauge: "events", window: WINDOW, shows: CATALOG })),
+    ).toThrow();
+    expect(() => render(h(function Probe() {
+      usePaging();
+      return null;
+    }))).toThrow();
+  });
+});
+
 describe("the module's place in the tree", () => {
   it("is a client module, and the barrel re-exports only its component", () => {
     // A server module importing a VALUE out of a "use client" module compiles,
@@ -872,6 +1008,14 @@ describe("the module's place in the tree", () => {
     // rule is about what crosses, not about what kind of value it is.
     expect("ANSWERED_BY_SOMETHING_ELSE" in barrel).toBe(false);
     expect("UNREADABLE_ANSWER" in barrel).toBe(false);
+    // The two components a PAGE renders out of this module are imported
+    // straight from it, the way the wrappers import `usePageRows`: the barrel
+    // is a server module and every server module that imports it takes on
+    // whatever it re-exports, so it is not widened by one export
+    // (admin-window/BUG-0172).
+    expect("PagingProvider" in barrel).toBe(false);
+    expect("PagedWindowLine" in barrel).toBe(false);
+    expect("usePaging" in barrel).toBe(false);
     expect(Object.keys(barrel).filter((name) => name.startsWith("Page"))).toContain("PageMore");
   });
 

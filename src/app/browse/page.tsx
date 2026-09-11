@@ -11,8 +11,16 @@ import {
   drawnWindow,
   oldestIn,
 } from "@/components/ui";
+// COMPONENTS out of the "use client" paging module, imported straight from it
+// rather than through the server barrel: a re-export hands the binding to every
+// server module importing the barrel, and only a component may cross that
+// boundary at all (admin-window/BUG-0094, admin-window/BUG-0172,
+// tests/offline/shell/client-boundary.test.ts).
+import { PagedWindowLine, PagingProvider } from "@/components/ui/paging";
+import type { BrowseRow } from "@/lib/browse/rows";
 import { EVENTS_OBJECT, readRecentEvents, type DbUnavailable } from "@/lib/db/browse";
-import { pageBound } from "@/lib/paging/bounds";
+import { PAGE_ROUTES, pageBound } from "@/lib/paging/bounds";
+import { initialPage } from "@/lib/paging/machine";
 import {
   COLUMNS_PARAM,
   RECENT_EVENTS,
@@ -184,56 +192,94 @@ export default async function BrowsePage({
       leg === null ? [] : [leg.kind === "not_provisioned" ? leg.missing : leg.reading],
   );
 
+  // THE FIRST SCREEN'S WINDOW, COMPOSED ONCE (admin-window/BUG-0172). One
+  // object reaches whichever component renders the line: a second spelling of
+  // these facts beside the first is how the two come to disagree, which is the
+  // class this ticket closed one layer up.
+  //
+  // `drawnWindow` decides whether the read filled its cap, in the one place
+  // the app decides that — this page used to spell the comparison itself, and
+  // the arm below then said the same thing whether it filled or not
+  // (admin-window/BUG-0109). The rows are in ARRIVAL order, newest first, so
+  // the last one carries the oldest arrival the catalog holds when the window
+  // did not fill.
+  const eventsWindow =
+    events.kind === "ok"
+      ? drawnWindow({
+          limit: view.window,
+          held: events.data.length,
+          over: EVENTS_OBJECT,
+          oldest: oldestIn(events.data, (row) => row.created_at),
+          // Unnarrowed: `?columns=` chooses which COLUMNS render and never
+          // which rows are read, so this window's floor is the catalog's own
+          // (admin-window/BUG-0114).
+          scope: null,
+        })
+      : null;
+  const shows = { of: "catalog", rows: "events" } as const;
+
+  // The Section's children, in the order this page has always rendered them.
+  // On the paged arm they are handed to `PagingProvider` — which emits no
+  // markup of its own — so the line, the selector and the leg notes stay
+  // exactly where they are, and every one of them stays a SERVER component:
+  // a server parent may hand server-rendered JSX to a client component as
+  // children (admin-window/BUG-0172).
+  const sectionBody = (
+    <>
+      {eventsWindow === null ? null : drawn === null ? (
+        <WindowLine gauge={EVENTS_WINDOW} window={eventsWindow} shows={shows} />
+      ) : (
+        // The same element in the same place, rendered inside client-land so
+        // that every fact in it is a fact of the read the operator NOW holds:
+        // a press is a read on this surface, and a server-rendered constant
+        // above rows a press changes is the contradiction QA measured.
+        <PagedWindowLine gauge={EVENTS_WINDOW} window={eventsWindow} shows={shows} />
+      )}
+      <ColumnSelector
+        label="Columns"
+        options={columnOptions(view, shown)}
+        hrefFor={hrefFor}
+      />
+      {listing.venues ? <StateOf result={listing.venues} /> : null}
+      {listing.provenance ? <StateOf result={listing.provenance} /> : null}
+      {drawn === null ? (
+        <div data-surface={EVENTS_SURFACE}>{body}</div>
+      ) : (
+        // The same rows, the same markup, the same order — plus whatever a
+        // press appends beneath them. The wrapper owns the surface div (it
+        // wraps the TABLE alone, so a paged leg note is never graded as the
+        // events read), and it takes the rows, the press and the window from
+        // the provider above rather than deriving any of them
+        // (admin-window/BUG-0168, admin-window/BUG-0172).
+        <PagedBrowseTable
+          surface={EVENTS_SURFACE}
+          view={view}
+          shown={shown}
+          initial={drawn}
+          reported={reported}
+        />
+      )}
+    </>
+  );
+
   return (
     <Page title="Browse">
       <Section title={view.title}>
-        {events.kind === "ok" ? (
-          <WindowLine
-            gauge={EVENTS_WINDOW}
-            // `drawnWindow` decides whether the read filled its cap, in the
-            // one place the app decides that — this page used to spell the
-            // comparison itself, and the arm below then said the same thing
-            // whether it filled or not (admin-window/BUG-0109). The rows are
-            // in ARRIVAL order, newest first, so the last one carries the
-            // oldest arrival the catalog holds when the window did not fill.
-            window={drawnWindow({
-              limit: view.window,
-              held: events.data.length,
-              over: EVENTS_OBJECT,
-              oldest: oldestIn(events.data, (row) => row.created_at),
-              // Unnarrowed: `?columns=` chooses which COLUMNS render and never
-              // which rows are read, so this window's floor is the catalog's
-              // own (admin-window/BUG-0114).
-              scope: null,
-            })}
-            shows={{ of: "catalog", rows: "events" }}
-          />
-        ) : null}
-        <ColumnSelector
-          label="Columns"
-          options={columnOptions(view, shown)}
-          hrefFor={hrefFor}
-        />
-        {listing.venues ? <StateOf result={listing.venues} /> : null}
-        {listing.provenance ? <StateOf result={listing.provenance} /> : null}
         {drawn === null ? (
-          <div data-surface={EVENTS_SURFACE}>{body}</div>
+          sectionBody
         ) : (
-          // The same rows, the same markup, the same order — plus whatever a
-          // press appends beneath them. The wrapper owns the surface div (it
-          // wraps the TABLE alone, so a paged leg note is never graded as the
-          // events read), and the window is handed down from its ONE spelling
-          // here: the view's own `window`, which the wrapper never names
-          // (admin-window/BUG-0168).
-          <PagedBrowseTable
-            surface={EVENTS_SURFACE}
-            view={view}
-            shown={shown}
-            initial={drawn}
-            params={browseQuery(view, shown)}
-            size={view.window}
-            reported={reported}
-          />
+          // The window this surface pages by is spelled ONCE, here, and handed
+          // to the driver that grades every page against it.
+          <PagingProvider
+            initial={initialPage<BrowseRow>(drawn.length, pageable)}
+            deps={{
+              route: PAGE_ROUTES.browse,
+              params: browseQuery(view, shown),
+              size: view.window,
+            }}
+          >
+            {sectionBody}
+          </PagingProvider>
         )}
       </Section>
     </Page>

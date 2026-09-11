@@ -1,12 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { PageMore, usePageRows } from "@/components/ui/paging";
+import { PageMore, usePaging } from "@/components/ui/paging";
 import { StateOf } from "@/components/ui/state-of";
 import type { BrowseRow } from "@/lib/browse/rows";
 import type { BrowseColumnKey, BrowseView } from "@/lib/browse/views";
-import { PAGE_ROUTES, pageBound, type PageNote } from "@/lib/paging/bounds";
-import { initialPage } from "@/lib/paging/machine";
+import type { PageNote } from "@/lib/paging/bounds";
 import { BrowseTable } from "./browse-table";
 
 /**
@@ -22,35 +21,35 @@ import { BrowseTable } from "./browse-table";
  *
  * **THE DRAWING RULE IS A FULL FIRST WINDOW, AND THERE IS NO TOTAL TO ASK.**
  * Browse's events read is a WINDOW read with no count beside it at all
- * (`readRecentEvents` returns rows and nothing else), so a `total` prop here
- * would always be `null` and an affordance derived from one would never be
- * reachable. The honest signal that there is more is that the window came back
- * FULL, and that question is asked of the one function that answers it:
- * `pageBound(String(held), size)` is `ok` exactly when `held` is a bound this
- * surface can page from, which on a window read of at most `size` rows is the
- * same question as "did it fill". A SHORT window is therefore never
- * `more: true`, so no state is ever constructed off the bound grid — the
- * defect QA measured on `/claims` (admin-window/BUG-0168), where a first
- * screen could be handed a state whose every press `pageBound` refuses for
- * ever. The surface still says "the newest N by arrival" and nothing here
- * presents the rows it holds as a total.
+ * (`readRecentEvents` returns rows and nothing else), so there is no total to
+ * derive an affordance from. The honest signal that there is more is that the
+ * window came back FULL, and the PAGE asks that of the one function that
+ * answers it (`pageBound(String(held), size)`, `src/app/browse/page.tsx`)
+ * before it draws this component at all: a short window, an empty one, a
+ * refused read and an absent table render exactly what they rendered before
+ * paging existed, with no paging element in the markup. That is also what
+ * keeps every state this surface starts in ON the bound grid — the defect QA
+ * measured on `/claims` (admin-window/BUG-0168), where a first screen could be
+ * handed a state whose every press `pageBound` refuses for ever. The surface
+ * still says "the newest N by arrival" and nothing here presents the rows it
+ * holds as a total.
  *
- * The PAGE asks the same question of the same function before it draws this
- * component at all (`src/app/browse/page.tsx`), so a short window, an empty
- * one, a refused read and an absent table render exactly what they rendered
- * before this ticket, with no paging element in the markup. The two calls
- * cannot disagree — same function, same `held`, same window — and this one
- * stands because the state has to be built from something, and a `more` prop
- * would be a second opinion where the contract wants an answer.
+ * **The state is the SURFACE's, not this component's** (admin-window/BUG-0172).
+ * The page wraps its window line, its column selector, its leg notes and this
+ * wrapper in ONE `PagingProvider`, which owns the press; this file consumes
+ * that state through `usePaging` and derives nothing from it. That is what
+ * lets the sentence above the rows and the control below them read one
+ * derivation — before this ticket the line was server-rendered above a wrapper
+ * that could change the rows underneath it, and after a press the two
+ * contradicted each other in the hooks.
  *
  * **The window is spelled ONCE per surface** (admin-window/BUG-0168, QA
- * residual 4 off admin-window/TASK-0064). It arrives as the `size` prop — the
- * view's own window, which the PAGE spells and this file deliberately never
- * names — neither the view registry nor the view's own window field. That one
- * value is handed to `usePageRows` as the number the driver grades a page
- * full-or-short against, and `PageMore` is fed the number the hook hands BACK,
- * so the number the label renders and the number the driver grades against
- * cannot disagree.
+ * residual 4 off admin-window/TASK-0064). The PAGE spells it — the view's own
+ * window, which this file deliberately never names, neither the view registry
+ * nor the view's own window field — into the deps it hands the provider, and
+ * `PageMore` is fed the number the driver hands BACK through the context, so
+ * the number the label renders and the number the driver grades against cannot
+ * disagree.
  *
  * **THE WRAPPER OWNS THE `data-surface` DIV, AND IT WRAPS THE TABLE ALONE.**
  * `[data-surface="events"]` names the events BODY and nothing else: the live
@@ -112,8 +111,6 @@ export function PagedBrowseTable({
   view,
   shown,
   initial,
-  params,
-  size: window,
   reported,
 }: {
   /** The name the events BODY answers to — `data-surface`, spelled by the page. */
@@ -123,30 +120,16 @@ export function PagedBrowseTable({
   shown: readonly BrowseColumnKey[];
   /** The rows the page RENDERED, in the order it rendered them. */
   initial: readonly BrowseRow[];
-  /** The view + column state the page RENDERED, serialized — never the raw URL. */
-  params: string;
-  /** The surface's window, spelled by the page and by nothing here. */
-  size: number;
   /**
    * The objects the PAGE has already reported above the table — its own legs'
    * `missing` / `reading`. A leg named once is not named again below.
    */
   reported: readonly string[];
 }): ReactNode {
-  // What the page actually RENDERED is the bound the next press carries, and
-  // it is the only thing this surface has to go on: there is no count beside
-  // the window read.
-  const held = initial.length;
-  // A FULL first window, asked of the one function that answers it. A short
-  // one starts `exhausted`, which is honest — the read that filled this screen
-  // is the read that says the set has ended — and it is never a state off the
-  // bound grid.
-  const more = pageBound(String(held), window).kind === "ok";
-
-  const { state, press, size } = usePageRows<BrowseRow>(
-    initialPage<BrowseRow>(held, more),
-    { route: PAGE_ROUTES.browse, params, size: window },
-  );
+  // The surface's one state, published by the provider the page wrapped this
+  // in: the rows a press appended, the press itself, and the window the driver
+  // graded them against. Nothing here decides any of the three.
+  const { state, press, size } = usePaging<BrowseRow>();
 
   // The legs the pages THIS STATE took in reported, in the record's own order
   // (the route composes them and JSON preserves it), each named at most once

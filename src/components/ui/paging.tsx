@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useRef, useState } from "react";
+import { createContext, type ReactNode, useContext, useRef, useState } from "react";
 import { EM_DASH, isAbsent } from "@/lib/format";
 import { pageBound } from "@/lib/paging/bounds";
 import {
@@ -10,6 +10,7 @@ import {
   requestPage,
 } from "@/lib/paging/machine";
 import { Button } from "./button";
+import { type DrawnSentence, type DrawnWindow, WindowLine } from "./window-line";
 
 /**
  * The paging affordance — campaign admin-window/TASK-0064, SPEC F14.
@@ -50,6 +51,11 @@ import { Button } from "./button";
  * and `fetchJson` are values and are imported straight from this module by the
  * client modules that need them. Everything both sides of the boundary need is
  * already in `src/lib/paging/**`, which carries no directive.
+ *
+ * `PagingProvider` and `PagedWindowLine` (admin-window/BUG-0172) are
+ * COMPONENTS, so the two paged pages RENDER them — they are imported straight
+ * from this module, the way the wrappers import `usePageRows`, and the barrel
+ * is not widened by one export.
  */
 
 /**
@@ -207,6 +213,153 @@ export function usePageRows<Row>(
   };
 
   return { state, press, size: deps.size };
+}
+
+/**
+ * ONE surface's paging state, published to every part of that surface that
+ * states a fact about it — campaign admin-window/BUG-0172.
+ *
+ * **The defect this exists for.** The window line of `/browse` and `/claims`
+ * is the PAGE's, server-rendered above the wrapper, and a press changes the
+ * rows underneath a sentence nothing can reach: with 120 rows on screen and
+ * `[data-paging="exhausted"]` below them, `[data-window-truncated="true"]`
+ * above still said events that arrived before them are not shown. Two answers
+ * to one question, published in the hooks, which is the defect a rewording
+ * could not have touched (LESSONS 11: one row, one verdict).
+ *
+ * **Why a context and not a prop.** The line is rendered ABOVE the rows and
+ * the control below them, with the page's own server-rendered children in
+ * between; nothing can hand a state down that tree without the page becoming
+ * a client component. A zero-markup provider publishes it sideways instead:
+ * `Context.Provider` emits no element, so the first server render of both
+ * pages is byte-identical to the one they rendered before this ticket — a
+ * `"use client"` component is server-rendered on the first request with the
+ * very facts the page composed, and there is no second render until a press.
+ */
+interface PagingSurface<Row> {
+  /** What the driver has published for this surface, after every press so far. */
+  state: PageState<Row>;
+  /** What a press does — the widget's `onPress`, and nothing else's. */
+  press: () => void;
+  /**
+   * The window the driver grades a page against, handed back by `usePageRows`
+   * so a surface spells it ONCE (admin-window/BUG-0168).
+   */
+  size: number;
+}
+
+/**
+ * `null` is "no provider above me", which is a programming error and never a
+ * state of the app — `usePaging` says so rather than rendering a surface with
+ * an invented paging state.
+ */
+const PagingContext = createContext<PagingSurface<unknown> | null>(null);
+
+/**
+ * The paging state ONE surface holds, published to every part of that surface
+ * that states a fact about it: the rows, the control, and the window line.
+ *
+ * It renders NO markup of its own — a context provider emits none — so the
+ * page's DOM is byte-identical to today's on the first render, which is SPEC
+ * F14's "the first screen does not change" (admin-window/BUG-0172).
+ *
+ * The page renders it around the same children in the same order it rendered
+ * them before, and those children stay SERVER components: a server parent may
+ * hand server-rendered JSX to a client component as `children`, so the column
+ * selector and the leg notes of `/browse` do not move into the client bundle.
+ *
+ * It calls `usePageRows` and owns the press, so the wrapper below it stops
+ * calling the hook and consumes this instead — one surface, one driver, one
+ * state, which is what keeps the line and the control from disagreeing.
+ */
+export function PagingProvider<Row>({
+  initial,
+  deps,
+  children,
+}: {
+  /** The first screen's own state, composed by the page (`initialPage`). */
+  initial: PageState<Row>;
+  /** Where a press asks, what it carries, and the window it is graded against. */
+  deps: Omit<PageDeps, "fetchJson">;
+  /** The page's own children, server-rendered, passed straight through. */
+  children: ReactNode;
+}): ReactNode {
+  const surface = usePageRows<Row>(initial, deps);
+  return (
+    <PagingContext.Provider value={surface as PagingSurface<unknown>}>
+      {children}
+    </PagingContext.Provider>
+  );
+}
+
+/**
+ * The surface's paging state, for the parts of it that state a fact about the
+ * read the operator now holds — the two wrappers and `PagedWindowLine`.
+ *
+ * It throws where there is no provider rather than defaulting: a default would
+ * be a paging state no read produced, drawn under rows some read did, and the
+ * whole point of this module is that one derivation answers for the surface.
+ */
+export function usePaging<Row>(): PagingSurface<Row> {
+  const surface = useContext(PagingContext);
+  if (surface === null) {
+    throw new Error("a paged surface was drawn outside its PagingProvider");
+  }
+  return surface as PagingSurface<Row>;
+}
+
+/**
+ * The window line of a surface that may CONTINUE its window — same element,
+ * same position and the same primitive the page renders when it cannot
+ * (admin-window/BUG-0172).
+ *
+ * The page composes the FIRST SCREEN's facts once and hands the same object
+ * here or to `WindowLine`; two spellings of those facts is how the two come to
+ * disagree. What this adds are the facts only the press knows:
+ *
+ *  - **`truncated` is the paging state's own answer and nothing else** — no
+ *    row is counted beside it. On the first render `idle` reproduces, by
+ *    construction, what each page computes today: a surface is drawn paged
+ *    only where its first window filled (`/browse`) or where a count said
+ *    there is more (`/claims`), which are the two pages' own `truncated`.
+ *    A refusal returns the driver to `idle`, so a refused press leaves this
+ *    line byte-identical to the line before it, and at the bound ceiling it
+ *    still says rows are not shown — because they are.
+ *  - **`drawn` is what the operator now holds**, which is the driver's own
+ *    `held`: the first screen plus everything appended.
+ *  - **`held` is the rows the surface's reads came back with, where that is
+ *    what the page's `held` MEANS.** A window read cannot come back with more
+ *    rows than its cap, so a `held` at or under the cap is this window's own
+ *    row count and grows with the rows appended to it (`/browse`, whose line
+ *    was stuck at 50 under 100 rows). A `held` ABOVE the cap came from a
+ *    second read — `/claims` counts the matching set — and paging reads no new
+ *    row into that count, so it stands untouched, which is also the hook the
+ *    live paged-walk oracle grades the walk against.
+ */
+export function PagedWindowLine({
+  gauge,
+  window: first,
+  shows,
+}: {
+  gauge: string;
+  /** The FIRST SCREEN's facts, composed by the page exactly once. */
+  window: DrawnWindow;
+  shows: DrawnSentence;
+}): ReactNode {
+  const { state } = usePaging();
+  const drawn = state.held;
+  return (
+    <WindowLine
+      gauge={gauge}
+      window={{
+        ...first,
+        held: first.held <= first.limit ? drawn : first.held,
+        truncated: state.status !== "exhausted",
+        drawn,
+      }}
+      shows={shows}
+    />
+  );
 }
 
 /** What one press asks for, in the operator's words. */

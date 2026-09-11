@@ -110,6 +110,37 @@ export interface DrawnWindow extends WindowFacts {
    * disagree.
    */
   scope: string | null;
+  /**
+   * The rows the operator now holds from this window, on a surface that may
+   * CONTINUE it — `null`/absent on one that cannot (admin-window/BUG-0172).
+   *
+   * A paged surface's line is rendered inside client-land by
+   * `PagedWindowLine` (`src/components/ui/paging.tsx`), which fills this from
+   * the paging state's own `held`. Three readings, and the first two are the
+   * app as it stands:
+   *
+   *  - absent/null                  → this surface has no paging: every arm
+   *                                   renders exactly what it renders today;
+   *  - <= the window's own cap      → nothing has been appended, so the first
+   *                                   screen renders what it rendered before
+   *                                   this fact existed, to the byte;
+   *  - >  the window's own cap      → the window has been CONTINUED: the arm
+   *                                   states what is on screen instead of what
+   *                                   the first read drew.
+   *
+   * `truncated` — never a count of the rows beside it — remains the one
+   * held-back verdict (LESSONS 11), and on a paged surface it is the paging
+   * state's own status. What `drawn` decides is the SENTENCE: which number the
+   * clause names, and that a continued window never reaches `didNotFill`,
+   * whose "did not fill — 50 of at most 50" would be said of a window that
+   * filled and was then continued.
+   *
+   * Only the two arms a PAGED surface renders read it — `catalog` (`/browse`)
+   * and `matched` (`/claims`). `newest` and `alphabetical` belong to surfaces
+   * that cannot be continued at all, so a `drawn` handed to one of them would
+   * be a fact about a press that surface has no way to make.
+   */
+  drawn?: number | null;
 }
 
 /**
@@ -419,6 +450,47 @@ function didNotFill(info: DrawnWindow, rows: string): string {
 }
 
 /**
+ * The rows a CONTINUED window has on screen, or `null` where the sentence is
+ * the one the app rendered before paging existed (admin-window/BUG-0172).
+ *
+ * Two windows answer `null` here and they are the same case for a reader: the
+ * unpageable surface, which carries no `drawn` at all, and the paged surface
+ * that has taken in nothing yet, whose `drawn` is still the first screen's own
+ * rows. **A first screen renders byte-identically either way**, which is the
+ * whole of SPEC F14's "the first screen does not change": the cap is what a
+ * full first window drew, so `drawn` passes this test only after a press
+ * really appended rows.
+ */
+function continuedTo(info: DrawnWindow): number | null {
+  const drawn = info.drawn ?? null;
+  return drawn !== null && drawn > info.limit ? drawn : null;
+}
+
+/**
+ * Is this window one a press can CONTINUE — whatever it has taken in so far?
+ *
+ * It is what keeps `didNotFill` off a paged surface (admin-window/BUG-0172).
+ * The wrapper is only ever drawn on a window that FILLED, so "The window did
+ * not fill — 50 of at most 50" is a sentence no state of it may reach; the
+ * not-truncated case here is the set being complete on screen, which is a
+ * different sentence and each arm below says it in its own words.
+ */
+function pageable(info: DrawnWindow): boolean {
+  return info.drawn !== undefined && info.drawn !== null;
+}
+
+/**
+ * How a continued window that has reached the end of its set ends — the read's
+ * own verdict, in the app's voice.
+ *
+ * It is deliberately NOT `PageMore`'s "All N in this view are shown": two
+ * sentences about one question read as a page arguing with itself when they
+ * differ and as a stutter when they agree (LESSONS 11). This one is the
+ * WINDOW's: it says what the read that continued the window came back with.
+ */
+const THE_READ_FOUND_NO_MORE = "the read found no more.";
+
+/**
  * The window line a surface carries — which window, and whether it filled
  * (ARCHITECTURE.md §4.3, read kind 2: "the caller's own `.order()` +
  * `.limit()` define a NAMED window and the surface says which window it is
@@ -536,6 +608,25 @@ export function WindowLine(
     );
   }
   if (shows.of === "matched") {
+    // A window a press CONTINUES states what is below it, and takes its
+    // held-back verdict from `truncated` alone (admin-window/BUG-0172). Two
+    // things change and nothing else does: the clause names the rows that ARE
+    // below rather than the cap the first read carried, and it ends on the
+    // read's own verdict where the set has run out. `held` is untouched — the
+    // matching count is a different read, and paging reads no new row into it.
+    // A first screen has appended nothing, so `below` is the cap and the
+    // sentence is the one this arm rendered before this fact existed.
+    const below = continuedTo(info) ?? info.limit;
+    const ends = info.truncated ? THE_REST_IS_NOT_SHOWN : THE_READ_FOUND_NO_MORE;
+    const matched = narrows(info.scope, NARROWED_BY_FILTERS)
+      ? ` ${count(info.held)} ${population(
+          shows.rows,
+          besides(info.scope, NARROWED_BY_FILTERS),
+        )} match these filters; the ${count(below)} longest-waiting are below — ${ends}`
+      : ` ${count(info.held)} ${population(
+          shows.rows,
+          info.scope,
+        )} in all; the ${count(below)} longest-waiting are below — ${ends}`;
     return (
       <WindowParagraph gauge={props.gauge} window={info}>
         {shows.lede} A window of at most {count(info.limit)} rows, not the whole{" "}
@@ -563,21 +654,7 @@ export function WindowLine(
             the tab's bucket where the tab did. Both arms end on the same cap
             clause, so the only thing the filters change is the phrase beside
             the count. */}
-        {info.truncated
-          ? narrows(info.scope, NARROWED_BY_FILTERS)
-            ? ` ${count(info.held)} ${population(
-                shows.rows,
-                besides(info.scope, NARROWED_BY_FILTERS),
-              )} match these filters; the ${count(
-                info.limit,
-              )} longest-waiting are below — ${THE_REST_IS_NOT_SHOWN}`
-            : ` ${count(info.held)} ${population(
-                shows.rows,
-                info.scope,
-              )} in all; the ${count(
-                info.limit,
-              )} longest-waiting are below — ${THE_REST_IS_NOT_SHOWN}`
-          : didNotFill(info, shows.rows)}
+        {info.truncated || pageable(info) ? matched : didNotFill(info, shows.rows)}
       </WindowParagraph>
     );
   }
@@ -595,6 +672,22 @@ export function WindowLine(
       </WindowParagraph>
     );
   }
+  // The three clauses of a catalog window, and which read produces each
+  // (admin-window/BUG-0172). A window nothing has continued says whether it
+  // filled, exactly as it always has. A CONTINUED one says what is on screen —
+  // the rows the operator now holds, which is the number `held` publishes too —
+  // and then either that earlier arrivals are still not shown, or, where the
+  // read has said the set has ended, that there are none. `didNotFill` is
+  // reachable only where no press can happen: a surface that can be continued
+  // filled its window to be drawn at all, so "the window did not fill — 50 of
+  // at most 50" is a sentence no state of it reaches.
+  const catalogOf = population(shows.rows, info.scope);
+  const onScreen = continuedTo(info);
+  const arrivals =
+    onScreen === null
+      ? ` The window filled its cap, so ${catalogOf} that arrived before the ones below are not shown.`
+      : ` ${count(onScreen)} ${catalogOf} are on screen, and ${catalogOf} that arrived before them are not shown.`;
+  const complete = ` ${count(info.drawn ?? 0)} ${catalogOf} are on screen, and ${THE_READ_FOUND_NO_MORE}`;
   return (
     <WindowParagraph gauge={props.gauge} window={info}>
       {/* The cap is stated as a cap ("at most"), not as the row count: this
@@ -603,12 +696,7 @@ export function WindowLine(
           (admin-window/BUG-0109). Every other arm already spells it this way. */}
       The newest {population(shows.rows, info.scope)} by arrival, newest first —
       a window of at most {count(info.limit)}, not the whole catalog.
-      {info.truncated
-        ? ` The window filled its cap, so ${population(
-            shows.rows,
-            info.scope,
-          )} that arrived before the ones below are not shown.`
-        : didNotFill(info, shows.rows)}
+      {info.truncated ? arrivals : pageable(info) ? complete : didNotFill(info, shows.rows)}
     </WindowParagraph>
   );
 }
