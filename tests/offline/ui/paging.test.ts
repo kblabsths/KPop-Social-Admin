@@ -566,3 +566,72 @@ describe("the module's place in the tree", () => {
     expect(code).not.toMatch(/fetch\s*\(\s*["'`]\w+:/);
   });
 });
+
+describe("a page that arrives short of the window", () => {
+  /**
+   * QA attack, admin-window/TASK-0064: the affordance and the driver disagree
+   * about what a SHORT page means, and the disagreement ends paging for good.
+   *
+   * `requestPage`'s `ok` arm grows `held` by the rows that actually arrived and
+   * ends in `exhausted` only when the answer SAID so or carried zero rows — so
+   * an answer of 30 rows for a 50-row window with `exhausted: false` leaves
+   * `held` at 80, one bound `pageBound` refuses for not being a multiple of the
+   * window. `PageMore` then draws its `limit` arm: no control, and a sentence
+   * saying this view shows no further rows — while the answer the operator just
+   * received said the set continues. The rest of the set is unreachable without
+   * a reload, which is the exact complaint FEAT-0015 exists to answer.
+   *
+   * The assertion is fix-agnostic on purpose. Either end is honest — the driver
+   * may call a short page the end of the set (which its own `ok`-arm comment
+   * already claims: "A short or empty page is the end of the set"), or the
+   * route's contract may guarantee full-or-exhausted pages and the driver
+   * refuse a short one out loud. What may NOT stand is the third outcome:
+   * silently dropping the affordance while claiming nothing is wrong.
+   *
+   * Filed as admin-window/BUG-0168.
+   */
+  const short = (count: number, exhausted: boolean): Promise<PageState<Row>> =>
+    requestPage<Row>(
+      { rows: [], held: SIZE, status: "idle", refusal: null },
+      {
+        route: PAGE_ROUTES.claims,
+        params: "",
+        size: SIZE,
+        fetchJson: async () => ({
+          kind: "ok",
+          rows: Array.from({ length: count }, (_, i) => ({ id: `r${i}` })),
+          offset: SIZE,
+          exhausted,
+        }),
+      },
+    );
+
+  // STRICT xfail — admin-window/BUG-0168. `it.fails` is red the day this
+  // starts passing, which sends the next reader to the ticket instead of
+  // letting the pin rot: flip it back to `it` as part of the fix.
+  it.fails("still offers a way to the rest of the set, or says the set is complete", async () => {
+    const next = await short(30, false);
+    // Non-vacuity: the answer really did say the set continues, and the rows
+    // really did arrive.
+    expect(next.rows).toHaveLength(30);
+    expect(next.status).not.toBe("exhausted");
+
+    const html = render(
+      h(PageMore, { state: next, holds: HOLDS, size: SIZE, onPress: () => {} }),
+    );
+    // One of the two honest endings, never the silent one.
+    expect(controls(html) === 1 || html.includes('data-paging="exhausted"')).toBe(true);
+    expect(html).not.toContain('data-paging="limit"');
+  });
+
+  it("a full window still pages on, so the case above is about the short page alone", async () => {
+    // The must-NOT-flag fixture (LESSONS 8): the same path, one window wide.
+    const next = await short(SIZE, false);
+    expect(next.held).toBe(SIZE * 2);
+    const html = render(
+      h(PageMore, { state: next, holds: HOLDS, size: SIZE, onPress: () => {} }),
+    );
+    expect(controls(html)).toBe(1);
+    expect(html).toContain('data-paging="more"');
+  });
+});
