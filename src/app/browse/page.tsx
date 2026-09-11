@@ -208,6 +208,11 @@ export default async function BrowsePage({
       ? drawnWindow({
           limit: view.window,
           held: events.data.length,
+          // WHOSE NUMBER `held` IS, stated rather than left to be guessed from
+          // its size (admin-window/BUG-0174): this surface's `held` is the rows
+          // ITS OWN reads came back with — there is no count beside them — so a
+          // press that appends rows grows it, and the line says so.
+          heldFrom: "this window",
           over: EVENTS_OBJECT,
           oldest: oldestIn(events.data, (row) => row.created_at),
           // Unnarrowed: `?columns=` chooses which COLUMNS render and never

@@ -27,6 +27,7 @@ import {
   Section,
   StateOf,
   WindowLine,
+  type DrawnWindow,
   narrowedTo,
 } from "@/components/ui";
 // COMPONENTS out of the "use client" paging module, imported straight from it
@@ -1188,7 +1189,7 @@ export default async function ClaimsPage({
   // the window-as-total substitution the line exists to prevent — so a refused
   // count costs the LINE and nothing else, and says so on its own sub-surface
   // below.
-  const listWindow =
+  const listWindow: DrawnWindow | null =
     rows.kind === "ok" && listCount.kind === "ok"
       ? {
           limit: CLAIM_WINDOW,
@@ -1197,6 +1198,12 @@ export default async function ClaimsPage({
           // before one — the hook the live paged-walk oracle grades the walk
           // against (admin-window/BUG-0172).
           held: listCount.data,
+          // WHOSE NUMBER `held` IS, stated rather than left to be guessed from
+          // its size (admin-window/BUG-0174): it came from a SEPARATE count
+          // over the matching set, so a press appends rows under it and leaves
+          // it exactly where it is. `PagedWindowLine` used to infer this by
+          // asking whether the number was bigger than the cap.
+          heldFrom: "a count read",
           // The window is truncated exactly when the set it was drawn from
           // holds more than it drew — from the COUNT, never from the rows,
           // which is how a `limit 50` read that returned 50 rows says whether

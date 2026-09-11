@@ -953,13 +953,18 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     expect(hooks(paged(initialPage<Row>(SIZE, false))).truncated).toBe("false");
   });
 
-  it("grows a held that counts this window's own rows, and leaves a count alone", () => {
-    // Two shapes of `held`, two behaviours, one rule: a window read cannot come
-    // back with more rows than its cap, so a `held` at or under the cap IS this
-    // window's rows and grows with the rows appended to it (`/browse`, whose
-    // line was stuck at 50 under 100 rows). A `held` above the cap came from a
-    // second read — `/claims` counts the matching set — and paging reads no new
-    // row into that count (admin-window/BUG-0172, criterion 2).
+  it("whose number held is, is a fact the window states, never a size it compares", () => {
+    // admin-window/BUG-0174, BUG-0172's residual (a). Two shapes of `held`, two
+    // behaviours: a window whose `held` counts ITS OWN rows grows with the rows
+    // a press appends (`/browse`, whose line was stuck at 50 under 100 rows),
+    // and one whose `held` came from a separate COUNT read stands unmoved while
+    // rows are appended under it (`/claims`, whose hook the live paged-walk
+    // oracle grades the walk against).
+    //
+    // This component used to guess between them by asking which number was
+    // bigger than the cap — one field with two meanings, told apart by size.
+    // The cases below are the two the heuristic gets WRONG, so nothing here
+    // can pass by comparing anything to `limit`.
     const continued: PageState<Row> = {
       rows: pageOf(SIZE),
       held: SIZE * 2,
@@ -967,8 +972,51 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
       refusal: null,
       notes: null,
     };
+
+    // Stated "this window": it grows with the rows, whatever its number is —
+    // including a number ABOVE the cap, which the heuristic froze.
+    expect(hooks(paged(continued, { ...WINDOW, heldFrom: "this window" })).held).toBe(
+      String(SIZE * 2),
+    );
+    expect(
+      hooks(paged(continued, { ...WINDOW, held: 877, heldFrom: "this window" })).held,
+    ).toBe(String(SIZE * 2));
+
+    // Stated "a count read": it stands, whatever its number is — including a
+    // count UNDER the cap, which the heuristic overwrote with the row count.
+    expect(
+      hooks(paged(continued, { ...WINDOW, held: 877, heldFrom: "a count read" })).held,
+    ).toBe("877");
+    expect(
+      hooks(paged(continued, { ...WINDOW, held: 12, heldFrom: "a count read" })).held,
+    ).toBe("12");
+
+    // Absent is "this window": the nine unpaged lines mean exactly that, and no
+    // call site of them changes.
     expect(hooks(paged(continued)).held).toBe(String(SIZE * 2));
-    expect(hooks(paged(continued, { ...WINDOW, held: 877 })).held).toBe("877");
+
+    // …and the fact reaches the markup only through `held`: no attribute is
+    // added for it, in either statement (SPEC F14, §5).
+    for (const heldFrom of ["this window", "a count read"] as const) {
+      const attrs = Object.keys(
+        cheerio.load(paged(continued, { ...WINDOW, heldFrom }))("[data-window]").attr() ?? {},
+      ).filter((name) => name.startsWith("data-window"));
+      expect(attrs.sort(), heldFrom).toEqual(
+        Object.keys(cheerio.load(paged(continued))("[data-window]").attr() ?? {})
+          .filter((name) => name.startsWith("data-window"))
+          .sort(),
+      );
+    }
+  });
+
+  it("renders the line without comparing any number to the cap", () => {
+    // The other half of the criterion: the component READS the window's
+    // statement and derives nothing from the cap's size. Read off the code, so
+    // the next hand at this file cannot quietly reintroduce the heuristic.
+    const code = codeLinesIn(sourceText("src/components/ui/paging.tsx")).join("\n");
+    expect(code).toContain("heldFrom");
+    expect(code).not.toContain("first.limit");
+    expect(code).not.toMatch(/held\s*[<>]=?\s*/);
   });
 
   it("is ONE element in every state a press can end in", () => {
