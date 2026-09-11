@@ -574,6 +574,19 @@ may do:
      the paged walk against). No `data-window-*` attribute is added, because an
      added attribute is a first-screen change.
 
+  4. **A fact a sentence depends on is STATED by whoever knows it, never
+     inferred from another field's size or from whether it is present**
+     (promoted at count 2, 2026-09-11, from Common violations row 22 —
+     admin-window/BUG-0174, admin-window/BUG-0183). `DrawnWindow` did both in
+     one week: `held`'s meaning was guessed by asking whether it was bigger
+     than the cap, and `drawn`'s PRESENCE carried both "the rows on screen"
+     and "a press may continue this window", so the unpaged `/claims` line
+     could not state its own row count without inheriting the paged arms and
+     fell back to naming the CAP over screens holding 37, 10 and 49 claims.
+     A renderer that asks `x != null`, or compares a value to a cap, to decide
+     WHICH SENTENCE to say is asking for a fact that has no owner yet: give it
+     one, on the page that knows it.
+
 What paging may **not** do, stated so it is not inferred: it does not raise
 `ROW_CAP`; it does not turn a window read into a complete read; it does not
 reopen whole-table browsing (Browse keeps its one curated view — a second view,
@@ -1845,6 +1858,8 @@ decomposition brief of every ticket touching that surface.
 | 3 (re-count) | A list read with no `.range()`, no `.limit()` and no `.order()` | **0 new** | — | **The rule held.** M1 structure walk, 2026-09-03: every `.select(` in `src/lib/db/**` was traced. Fourteen chains a crude scan flagged are all either `.maybeSingle()` by primary key or by-id chunks bounded with `.limit(ids.length)`; every list read goes through `readComplete` / `readRows` with a total order and a bound. Count stays 1 (the original, fixed under TASK-0026). |
 
 | 21 | **A server-rendered sentence stating a fact about rows a CLIENT press then changes** | 2 (one class, both paged surfaces) | `/browse`: `[data-window-truncated="true"]` ("events that arrived before the ones below are not shown") standing over 120 drawn rows beside `[data-paging="exhausted"]`, and `data-window-held` stuck at `"50"` under 100 rows; `/claims`: 616 rows under "the 50 longest-waiting are below — the rest are not shown", both measured in a browser by QA on 2026-09-11 (BUG-0172) | **PROMOTED at 2, 2026-09-11 (architect, BUG-0172's ruling) — and it is DESIGN-shaped, so it is fixed as design rather than left to accumulate**: §4.3 read kind 3 gains "the window line of a paged surface states the read the operator now holds", and §5 names the provider + client line as the mechanism. The class exists because two correct rules met: §5's byte-identical first screen (which froze the line server-side) and §4.3's "a window line states the read that happened" (which the press then falsified). Neither rule is wrong; what was missing was where the line LIVES on a surface whose read continues. Cited in the decomposition brief of every ticket that adds a client-updated region under a server-rendered statement — and the general form, for the next reader: **if a press can change the rows, the sentence about those rows renders where the press can reach it.** |
+
+| 22 | **One field carrying two facts, the second one INFERRED from the first's size or presence** | 2 (one interface, one week) | `DrawnWindow` in `src/components/ui/window-line.tsx`. BUG-0174: `PagedWindowLine` decided what `held` COUNTS by asking whether it was bigger than the cap (`held <= limit ? drawn : held`) — two meanings of one field guessed apart by size; fixed by having the page STATE it (`heldFrom`). BUG-0183: `drawn`'s PRESENCE carries both "the rows on screen" and "a press may continue this window" (`pageable(info)` is `drawn != null`), so the unpaged `/claims` line could not state its own row count without also inheriting the paged arms, and `onScreen` fell back to the CAP — three screens holding 37, 10 and 49 claims each told the operator that 50 were below the line (QA, measured offline 2026-09-11) | **PROMOTED at 2, 2026-09-11 (architect, BUG-0183's ruling)** — §4.3 gains, beside the window-line rules: **a fact a sentence depends on is STATED by whoever knows it, never inferred from another field's size or from whether it is present.** The cost is not the wrong sentence; it is that the second surface cannot state a true fact without silently changing the first one's rendering, which is what made a one-line fix into an interface split. Both instances were caught only after they shipped a wrong number, because a presence test reads like a type guard. Cited in the decomposition brief of every ticket adding a field to a shared render contract: if a renderer asks `x != null` or compares a value to a cap to decide WHICH SENTENCE to say, the fact it is really asking for has no owner yet. |
 
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
 findings on TASK-0001/0003/0006; rows 4–5 at the second pass the same day,
