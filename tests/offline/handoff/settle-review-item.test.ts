@@ -1157,6 +1157,53 @@ describe("the settle_review_item migration", () => {
   });
 
   /**
+   * The sibling allocating ITS OWN next code is not a claim on ours
+   * (QA on admin-window/BUG-0207).
+   *
+   * Attribution is positional over whole paste blocks, and one of this note's
+   * code-bearing blocks is TWO lines long: §1a's registry paste, the wrapped
+   * tail of the sibling's `tests/live_safety/test_codes_named_once.py` list of
+   * every code `ks_codes.py` names. That list is written six, six, six, five,
+   * five, four entries to a line, so the sibling's next allocation lands on the
+   * line that has room — our block's last line — and the block stops matching.
+   * The four codes that line spells are then reported as FOREIGN spellings of
+   * codes this artifact allocates, and `npm test` is red for every builder
+   * over a next-door edit that claims none of our meanings. That is the
+   * failure BUG-0207 exists to stop, one trigger later.
+   *
+   * Landed by QA as `it.fails` (strict xfail) for admin-window/BUG-0213,
+   * watched red first as a plain `it()`: `expected [ "\"KS029\", \"KS030\",
+   * \"KS031\", \"KS032\", \"KS033\"," ] to deeply equal []`. The fix flips
+   * it back to a plain `it`.
+   */
+  it.fails("does not call the sibling's own next code a claim on ours", () => {
+    const allocated = allocatedCodes();
+    expect(allocated.length).toBeGreaterThan(0);
+    expect(HANDOFF_BLOCKS.length).toBeGreaterThan(0);
+
+    // The smallest block of the corpus — the registry paste, read off the note
+    // rather than typed here, so it cannot drift from what Ben pasted.
+    const registry = HANDOFF_BLOCKS.reduce((smallest, block) =>
+      block.length < smallest.length ? block : smallest,
+    );
+    expect(registry.length).toBeLessThan(5);
+
+    // The next free number, which is the sibling's to allocate and not ours.
+    const next = `KS${String(TAKEN_NEXT_DOOR.length + allocated.length + 1).padStart(3, "0")}`;
+    expect(allocated).not.toContain(next);
+    expect(TAKEN_NEXT_DOOR).not.toContain(next);
+
+    // It allocates it the way that list is already written: one more entry on
+    // the line that has room. Nothing about OUR four codes changed.
+    const grown = registry
+      .map((line, index) => (index === registry.length - 1 ? `${line} "${next}",` : line))
+      .join("\n");
+    for (const code of allocated) expect(grown, code).toContain(code);
+
+    expect(unattributedSpellings(grown, allocated)).toEqual([]);
+  });
+
+  /**
    * admin-window/BUG-0082, on the function side. On this project a newly
    * created function is BORN with EXECUTE granted to `public`, `anon`,
    * `authenticated` and `service_role` by an `ALTER DEFAULT PRIVILEGES` nobody
