@@ -1,0 +1,48 @@
+{
+ "id": "BUG-0200",
+ "created": "2026-09-11T17:41:01Z",
+ "green": true,
+ "git_head": "4d10ef4e2c22c2bab35278347b2caa8a174efecf",
+ "scope": [
+  "src/lib/db/result.ts",
+  "src/lib/db/records.ts",
+  "src/lib/db/verdict.ts",
+  "tests/offline/db/result.test.ts",
+  "tests/offline/db/layering.test.ts",
+  "tests/offline/edit/records.test.ts",
+  "tests/offline/edit/route.test.ts",
+  "tests/offline/verdict/seam.test.ts",
+  "tests/offline/handoff/settle-review-item.test.ts",
+  "tests/offline/paging/answer.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "899b9f783a59cacaeb95cdb1564e45f08955025dcbb2479b321fd67eef90b4ec",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "perl -0777 -ne 'while (/kind:\\s*\"error\"\\s*,/g) { my $p=pos; my $d=0; my $s=\"\"; for my $i ($p..length($_)-1) { my $c=substr($_,$i,1); if ($c eq \"{\") { $d++ } elsif ($c eq \"}\") { last if $d==0; $d-- } $s.=$c } next if $s =~ /\\bauthored\\b/; $bad++; my $l=1+(()=substr($_,0,$p)=~/\\n/g); print \"UNAUTHORED $ARGV:$l\\n\" } END { exit($bad ? 1 : 0) }' $(find src/lib/db -name \"*.ts\")",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(perl -0777 -ne 'while (/kind:\\s*\"error\"\\s*,/g) { print \"site\\n\" }' $(find src/lib/db -name \"*.ts\") | wc -l)\" -ge 9",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db/result.test.ts tests/offline/db/layering.test.ts tests/offline/edit/records.test.ts tests/offline/edit/route.test.ts tests/offline/verdict/seam.test.ts tests/offline/handoff/settle-review-item.test.ts tests/offline/ui/primitives.test.ts tests/offline/paging/answer.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-89726\n\n \u2713 |offline| tests/offline/paging/answer.test.ts (10 tests) 6ms\n \u2713 |offline| tests/offline/verdict/seam.test.ts (46 tests) 16ms\n \u2713 |offline| tests/offline/edit/records.test.ts (42 tests) 20ms\n \u2713 |offline| tests/offline/edit/route.test.ts (62 tests) 107ms\n \u2713 |offline| tests/offline/db/result.test.ts (141 tests) 235ms\n \u2713 |offline| tests/offline/ui/primitives.test.ts (124 tests) 446ms\n \u2713 |offline| tests/offline/handoff/settle-review-item.test.ts (41 tests) 806ms\n \u2713 |offline| tests/offline/db/layering.test.ts (46 tests) 2517ms\n   \u2713 the credential guard itself > reports nothing for those same shapes naming an unrelated env name  429ms\n\n Test Files  8 passed (8)\n      Tests  512 passed (512)\n   Start at  10:40:57\n   Duration  3.62s (transform 3.21s, setup 0ms, collect 6.71s, tests 4.15s, environment 1ms, prepare 1.58s)\n\n(node:90037) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
