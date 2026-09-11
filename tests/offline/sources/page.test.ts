@@ -1698,6 +1698,85 @@ describe("the settled-values trend", () => {
     );
   });
 
+  /**
+   * **BOTH ways the registry names nothing, counted by one number**
+   * (admin-window/TASK-0060, QA attack).
+   *
+   * The sentence's words claim the REGISTRY gave these sources no name — a
+   * claim over two different states that look identical to an operator: a row
+   * that did not come back at all, and a row that came back with no ink in it.
+   * The cases above prove each mechanism alone; this one puts them in ONE
+   * render, where a count answering the question its own way can still agree
+   * with the rows by accident on a single-row fixture.
+   *
+   * The gauge's own registry lookup is the one that is starved (the page's
+   * complete read still names both, so the chips and the registry table above
+   * are untouched): ticketmaster comes back blank, bandsintown does not come
+   * back. Both rows are then labelled by `sourceLabel` with their ids, and the
+   * sentence under them must state 2 — not the 1 that `split.source === null`
+   * could see.
+   */
+  it("counts a blank-named source and a source with no registry row alike", async () => {
+    const attributed = REJECTIONS.filter((row) => row.rejected_by !== null);
+    const lookup = (rows: typeof SOURCES): Script =>
+      healthyScript({
+        // [0] is the page's own complete registry read, [1] is the gauge's.
+        [T.sources]: [{ data: [...SOURCES], count: SOURCES.length }, { data: rows }],
+        [T.observations]: [{ data: [...PENDING_OBSERVATIONS] }, { data: attributed }],
+      });
+    const blanked = (rows: typeof SOURCES): typeof SOURCES =>
+      rows.map((row) =>
+        row.source_id === SOURCE.ticketmaster ? { ...row, source: "   " } : row,
+      );
+    const withoutBandsintown = SOURCES.filter(
+      (row) => row.source_id !== SOURCE.bandsintown,
+    );
+
+    const bothWays = await renderSources(lookup(blanked(withoutBandsintown)));
+    const blankOnly = await renderSources(lookup(blanked(SOURCES)));
+    const missingOnly = await renderSources(lookup(withoutBandsintown));
+    const allNamed = await renderSources(lookup(SOURCES));
+
+    // Every fixture rendered the same two-row population, or the counts below
+    // are over tables that differ for another reason.
+    for (const [what, markup] of [
+      ["both", bothWays],
+      ["blank", blankOnly],
+      ["missing", missingOnly],
+      ["named", allNamed],
+    ] as const) {
+      expect(trendSources(markup, REJECTED_BY_SOURCE).sort(), what).toEqual(
+        [SOURCE.ticketmaster, SOURCE.bandsintown].sort(),
+      );
+    }
+
+    // Both rows wear an id, and the sentence states THAT number — read off the
+    // rendered rows, never typed in here.
+    expect(wearingAnId(bothWays, REJECTED_BY_SOURCE).sort()).toEqual(
+      [SOURCE.ticketmaster, SOURCE.bandsintown].sort(),
+    );
+    expect(figuresIn(settledValuesSentence(bothWays))).toEqual(["2"]);
+
+    // Each mechanism ALONE is one row and one, so the 2 above is the sum of
+    // two states and not one state counted twice (LESSONS 8).
+    for (const [what, markup, worn] of [
+      ["blank", blankOnly, SOURCE.ticketmaster],
+      ["missing", missingOnly, SOURCE.bandsintown],
+    ] as const) {
+      expect(wearingAnId(markup, REJECTED_BY_SOURCE), what).toEqual([worn]);
+      expect(figuresIn(settledValuesSentence(markup)), what).toEqual(["1"]);
+    }
+
+    // The words are true of both states or of neither: a missing row and a
+    // blank one are one fact to an operator, so the page says the same thing
+    // about them. (Graded by identity between two renders, so no copy is
+    // pinned — whatever the sentence says, it says it once for both.)
+    expect(settledValuesSentence(blankOnly)).toBe(settledValuesSentence(missingOnly));
+    // And it is not a sentence that always says something: named, it does not.
+    expect(figuresIn(settledValuesSentence(allNamed))).toEqual([]);
+    expect(wearingAnId(allNamed, REJECTED_BY_SOURCE)).toEqual([]);
+  });
+
   it("names the observations table when the stamps cannot be read", async () => {
     const markup = await renderSources(
       healthyScript({
