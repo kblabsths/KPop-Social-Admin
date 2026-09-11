@@ -855,6 +855,36 @@ describe("the claim list's window", () => {
     };
   }
 
+  it.fails("states the rows that are BELOW it, never its cap, when the row read came back short [admin-window/BUG-0183]", async () => {
+    // THE OTHER HALF OF admin-window/BUG-0174, on the arm that has no `drawn`.
+    // `/claims` counts its matching set and draws its rows in TWO reads, and
+    // the line's "the N longest-waiting are below" clause is drawn whenever the
+    // COUNT says more exist — never only over a read that filled its cap. On
+    // the UNPAGED arm (`drawn` absent, which is every state the bound grid
+    // refuses a control in) `onScreen` falls back to the CAP, so the clause
+    // states 50 over a screen holding 37.
+    //
+    // No word of the line is pinned: two screens holding DIFFERENT numbers of
+    // claims under the SAME count are rendered and compared against each
+    // other. A line that states what is below it cannot say the same thing
+    // about both.
+    const many = await renderClaims(offGridScript(37, 900));
+    const few = await renderClaims(offGridScript(10, 900));
+
+    // Non-vacuity, from the page's own hooks and rows rather than any word:
+    // two different screens, one count, and no paging element in either — the
+    // arm where `drawn` does not exist.
+    expect(claimIds(many)).toHaveLength(37);
+    expect(claimIds(few)).toHaveLength(10);
+    expect(windowLine(many).held).toBe(900);
+    expect(windowLine(few).held).toBe(900);
+    expect(windowLine(many).truncated).toBe(true);
+    expect(pagingOccurrences(many)).toBe(0);
+    expect(pagingOccurrences(few)).toBe(0);
+
+    expect(windowLine(many).text).not.toBe(windowLine(few).text);
+  });
+
   it("draws at most the window's rows however many claims the view holds", async () => {
     const markup = await renderClaims(crowdedScript(OVERFLOW));
     expect(claimIds(markup)).toHaveLength(CLAIM_WINDOW);
