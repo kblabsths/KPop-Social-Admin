@@ -3753,3 +3753,79 @@ describe("readRowsByIds keeps its refusal guarantees across a batch boundary", (
     expect(result.kind).toBe("error");
   });
 });
+
+/**
+ * THE ACCOUNTS `lib/db/result.ts` COMPOSES ITSELF, AND WHOSE FACE THEY READ IN
+ * — QA, campaign admin-window, on the landed BUG-0196.
+ *
+ * BUG-0196 made authorship travel with the clause, and `classify` publishes it
+ * for every account built out of what the client said. But `readComplete` and
+ * `readCount` compose THREE MORE accounts of their own, about reads they could
+ * not grade — a count that did not come back, and a set the cap truncated —
+ * and none of them is a string any database produced. They carry no
+ * authorship, so the wire's documented default applies to them and the
+ * operator reads them in the mono `data` step the type scale reserves for the
+ * machine's words: the exact defect of the ticket's own title, on the two arms
+ * its criterion 2 enumerated past.
+ *
+ * Every assertion here is STRUCTURAL — who the runs say wrote them, and that
+ * the flat message is still the join of them. Nothing pins a sentence, so
+ * rewording any of the three moves nothing in this block.
+ */
+describe("an account this app composed about a read it could not grade", () => {
+  /** `readComplete` on a set the cap truncated: a count above the rows back. */
+  async function truncatedSet(): Promise<DbResult<unknown[]>> {
+    const rows = Array.from({ length: ROW_CAP }, (_, index) => ({ id: `row-${index}` }));
+    const stub = stubClient({ [T.reviewItems]: { data: rows, count: ROW_CAP + 732 } });
+    return readComplete(
+      T.reviewItems,
+      (db, cap) => db.from(T.reviewItems).select("*", { count: "exact" }).range(0, cap - 1),
+      stub.asSupabaseClient(),
+    );
+  }
+
+  /** `readComplete` on a query that answered no count at all. */
+  async function completeWithoutCount(): Promise<DbResult<unknown[]>> {
+    const stub = stubClient({ [T.reviewItems]: { data: [{ id: "a" }], count: null } });
+    return readComplete(
+      T.reviewItems,
+      (db) => db.from(T.reviewItems).select("*"),
+      stub.asSupabaseClient(),
+    );
+  }
+
+  /** `readCount` on a count read that answered no count at all. */
+  async function countWithoutCount(): Promise<DbResult<number>> {
+    const stub = stubClient({ [T.pendingClaims]: { data: null, count: null } });
+    return readCount(
+      T.pendingClaims,
+      (db) => db.from(T.pendingClaims).select("*"),
+      stub.asSupabaseClient(),
+    );
+  }
+
+  // STRICT XFAIL (admin-window/BUG-0200): `it.fails` passes only while the
+  // body FAILS, so this is green on the run branch today and turns RED the
+  // moment the three arms carry authorship — which sends the next reader to
+  // the ticket and makes un-marking it part of the fix, never an oversight.
+  it.fails("says THIS APP wrote it, so it does not read in the machine's face", async () => {
+    for (const [name, made] of [
+      ["a set the cap truncated", truncatedSet],
+      ["a complete read that got no count", completeWithoutCount],
+      ["a count read that got no count", countWithoutCount],
+    ] as ReadonlyArray<readonly [string, () => Promise<DbResult<unknown>>]>) {
+      const result = await made();
+      expect(result.kind, name).toBe("error");
+      if (result.kind !== "error") continue;
+      // No authorship at all means the wire's default: the WHOLE account is
+      // the machine's, and every word of this one is ours.
+      expect(result.authored, `${name}: the arm carries no authorship`).toBeDefined();
+      expect(
+        (result.authored ?? []).map((run) => run.author),
+        `${name}: every run of an account this app wrote is this app's`,
+      ).toEqual(["this app"]);
+      // Whatever the runs are, the flat account stays the join of them.
+      expect((result.authored ?? []).map((run) => run.words).join(" "), name).toBe(result.message);
+    }
+  });
+});
