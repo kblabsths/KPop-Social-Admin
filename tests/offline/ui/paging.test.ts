@@ -35,6 +35,7 @@ import {
   requestPage,
   type PageRefusal,
   type PageState,
+  type ReasonAuthor,
 } from "@/lib/paging/machine";
 
 import { codeLinesIn, sourceFiles, sourceText } from "../source-tree";
@@ -100,7 +101,7 @@ const more = (
 
 /**
  * The BROKEN arm's facts, with the condition asserted on the way through: the
- * cases that read `reason`, `reasonFrom` or `object` are about a press this
+ * cases that read `reason`, `account` or `object` are about a press this
  * app could not complete, and the absent arm carries none of those fields
  * (admin-window/BUG-0176).
  */
@@ -109,6 +110,25 @@ function broken(refusal: PageRefusal | null | undefined): BrokenRefusal {
   expect(refusal, "there is no refusal to read").toBeTruthy();
   expect((refusal as PageRefusal).condition).toBe("broken");
   return refusal as BrokenRefusal;
+}
+
+/**
+ * A broken refusal carrying ONE sentence by one author — the shape every arm
+ * but a failed read's publishes (admin-window/BUG-0196).
+ *
+ * The flat `reason` and the account's one run are the same words BY
+ * CONSTRUCTION here, exactly as `refuse()` builds them, so a case pinning the
+ * sentence and a case pinning the face are pinning the same thing. A case that
+ * needs an account with TWO authors writes the runs itself.
+ */
+function brokenArm(reason: string, author: ReasonAuthor, object: string | null): BrokenRefusal {
+  return { condition: "broken", reason, account: [{ words: reason, author }], object };
+}
+
+/** WHO WROTE a refusal whose account is one run — what `reasonFrom` carried. */
+function authorOf(refusal: BrokenRefusal): ReasonAuthor {
+  expect(refusal.account, "the account is not one run").toHaveLength(1);
+  return refusal.account[0].author;
 }
 
 /** A page of rows, as a stub would serve it. A FULL window is `pageOf(SIZE)`. */
@@ -245,12 +265,7 @@ describe("PageMore draws its five states from props", () => {
 
   it("a refusal: the line names its object and the control STAYS, because a refusal is retryable", () => {
     const html = more({
-      refusal: {
-        condition: "broken",
-        reason: 'no relation "pending_claims" exists',
-        object: "pending_claims",
-        reasonFrom: "the machine",
-      },
+      refusal: brokenArm('no relation "pending_claims" exists', "the machine", "pending_claims"),
     });
     expect(html).toContain("data-paging-refusal");
     // Both halves: the object the answer named, the words it used, and what
@@ -267,12 +282,7 @@ describe("PageMore draws its five states from props", () => {
     // `PageRefusal.object` is null for a bound refusal: the bound the server
     // refused is the one this state already holds.
     const html = more({
-      refusal: {
-        condition: "broken",
-        reason: "that bound is not one this view serves",
-        object: null,
-        reasonFrom: "this app",
-      },
+      refusal: brokenArm("that bound is not one this view serves", "this app", null),
     });
     expect(html).toContain("data-paging-refusal");
     expect(html).toContain("that bound is not one this view serves");
@@ -282,7 +292,7 @@ describe("PageMore draws its five states from props", () => {
   it("a refusal on an exhausted set draws the line, and still no control", () => {
     const html = more({
       status: "exhausted",
-      refusal: { condition: "broken" as const, reason: "the read failed", object: "pending_claims", reasonFrom: "the machine" },
+      refusal: brokenArm("the read failed", "the machine", "pending_claims"),
     });
     expect(html).toContain("data-paging-refusal");
     expect(controls(html)).toBe(0);
@@ -296,7 +306,7 @@ describe("PageMore draws its five states from props", () => {
     // instruction to press nothing.
     const html = more({
       held: MAX_PAGE_OFFSET + SIZE,
-      refusal: { condition: "broken" as const, reason: "the read failed", object: "pending_claims", reasonFrom: "the machine" },
+      refusal: brokenArm("the read failed", "the machine", "pending_claims"),
     });
     expect(html).toContain("data-paging-refusal");
     expect(html).toContain('data-paging="limit"');
@@ -334,12 +344,7 @@ describe("PageMore draws its five states from props", () => {
     expect(clean).toContain("<li>a</li>");
     for (const over of [
       {
-        refusal: {
-          condition: "broken" as const,
-          reason: "the read failed",
-          object: "pending_claims",
-          reasonFrom: "the machine" as const,
-        },
+        refusal: brokenArm("the read failed", "the machine", "pending_claims"),
       },
       { status: "loading" as const },
       { status: "exhausted" as const },
@@ -401,16 +406,11 @@ describe("a page answer for an object this database does not have", () => {
 
     // …while the arms a retry CAN clear keep their red and keep their fix, so
     // neither half of this passes by painting everything one way (LESSONS 8).
-    const brokenArm = more({
-      refusal: {
-        condition: "broken",
-        reason: "canceling statement due to statement timeout",
-        object: "pending_claims",
-        reasonFrom: "the machine",
-      },
+    const retryable = more({
+      refusal: brokenArm("canceling statement due to statement timeout", "the machine", "pending_claims"),
     });
-    expect(classesOf(brokenArm)).toContain("text-broken");
-    expect(brokenArm).toMatch(/[Pp]ress it again/);
+    expect(classesOf(retryable)).toContain("text-broken");
+    expect(retryable).toMatch(/[Pp]ress it again/);
   });
 
   it("says what fills it, in the app's ONE spelling of that fact", () => {
@@ -504,19 +504,14 @@ describe("the affordance's look", () => {
     {
       name: "refused",
       html: more({
-        refusal: {
-          condition: "broken",
-          reason: "no relation exists",
-          object: "pending_claims",
-          reasonFrom: "the machine",
-        },
+        refusal: brokenArm("no relation exists", "the machine", "pending_claims"),
       }),
     },
     {
       name: "refused/exhausted",
       html: more({
         status: "exhausted",
-        refusal: { condition: "broken" as const, reason: "no relation exists", object: null, reasonFrom: "the machine" },
+        refusal: brokenArm("no relation exists", "the machine", null),
       }),
     },
     {
@@ -524,12 +519,7 @@ describe("the affordance's look", () => {
       // own prose renders through too (admin-window/BUG-0175).
       name: "refused/app-authored",
       html: more({
-        refusal: {
-          condition: "broken",
-          reason: ANSWERED_BY_SOMETHING_ELSE,
-          object: PAGE_ROUTES.claims,
-          reasonFrom: "this app",
-        },
+        refusal: brokenArm(ANSWERED_BY_SOMETHING_ELSE, "this app", PAGE_ROUTES.claims),
       }),
     },
     {
@@ -541,12 +531,7 @@ describe("the affordance's look", () => {
     {
       name: "refused/app-authored, nothing to name",
       html: more({
-        refusal: {
-          condition: "broken",
-          reason: "a bound of 61 is not a multiple of the 50-row window",
-          object: null,
-          reasonFrom: "this app",
-        },
+        refusal: brokenArm("a bound of 61 is not a multiple of the 50-row window", "this app", null),
       }),
     },
   ];
@@ -605,12 +590,7 @@ describe("the affordance's look", () => {
   });
 
   /** A refusal a press can be retried after — so the control is drawn beside it. */
-  const BROKEN_PAGE = {
-    condition: "broken",
-    reason: "no relation exists",
-    object: "pending_claims",
-    reasonFrom: "the machine",
-  } as const;
+  const BROKEN_PAGE = brokenArm("no relation exists", "the machine", "pending_claims");
 
   /**
    * Classes that make an element fill the line it is on, whatever its content
@@ -1486,12 +1466,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
         "refused",
         {
           ...initialPage<Row>(SIZE, true),
-          refusal: {
-            condition: "broken",
-            reason: "the view is not provisioned",
-            object: "pending_claims",
-            reasonFrom: "this app",
-          },
+          refusal: brokenArm("the view is not provisioned", "this app", "pending_claims"),
         },
       ],
     ];
@@ -1896,12 +1871,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
         [
           "refused",
           {
-            refusal: {
-              condition: "broken",
-              reason: "the read failed",
-              object: "pending_claims",
-              reasonFrom: "the machine",
-            },
+            refusal: brokenArm("the read failed", "the machine", "pending_claims"),
           },
           true,
         ],
@@ -2360,17 +2330,12 @@ describe("the refusal line says who wrote the words", () => {
 
   it("derives the face from the fact alone: the words never decide it here", () => {
     // The component is handed a refusal whose words say one thing and whose
-    // `reasonFrom` says the other, BOTH ways round. A component comparing the
+    // its carried authorship says the other, BOTH ways round. A component comparing the
     // reason to one of this module's constants fails both halves; one reading
     // the carried fact passes both. No string comparison can survive this.
     const asMachine = faces(
       more({
-        refusal: {
-          condition: "broken",
-          reason: ANSWERED_BY_SOMETHING_ELSE,
-          object: "pending_claims",
-          reasonFrom: "the machine",
-        },
+        refusal: brokenArm(ANSWERED_BY_SOMETHING_ELSE, "the machine", "pending_claims"),
       }),
     );
     expect(asMachine.mono).toContain(ANSWERED_BY_SOMETHING_ELSE);
@@ -2378,12 +2343,7 @@ describe("the refusal line says who wrote the words", () => {
 
     const asApp = faces(
       more({
-        refusal: {
-          condition: "broken",
-          reason: "canceling statement due to statement timeout",
-          object: "pending_claims",
-          reasonFrom: "this app",
-        },
+        refusal: brokenArm("canceling statement due to statement timeout", "this app", "pending_claims"),
       }),
     );
     expect(asApp.sans).toContain("canceling statement due to statement timeout");
@@ -2405,6 +2365,79 @@ describe("the refusal line says who wrote the words", () => {
    * machine's face, so neither assertion passes by rendering everything one
    * way.
    */
+  /**
+   * A FAILED READ'S ACCOUNT, PAGED — campaign admin-window/BUG-0196.
+   *
+   * The refusal's `error` arm is the ONE arm that can carry both authors:
+   * BUG-0175 gave every arm one author because every arm this driver writes is
+   * one sentence, and then a read's account turned out to be several. The
+   * press is driven end to end over the wire, so the fact is graded where it
+   * actually arrives — decided in `lib/db/result.ts`, carried by the answer,
+   * read by the line, re-derived nowhere.
+   */
+  describe("an answer whose account carries BOTH authors", () => {
+    const SAID = "canceling statement due to statement timeout";
+    const CLAUSE = "and the words this app wrote about what it would not quote";
+
+    const answering = (authored?: unknown): Promise<string> =>
+      pressed(
+        JSON.stringify({
+          kind: "error",
+          reading: "pending_claims",
+          message: `${SAID} ${CLAUSE}`,
+          ...(authored === undefined ? {} : { authored }),
+        }),
+        { status: 500, headers: { "content-type": "application/json" } },
+      );
+
+    const BOTH = [
+      { words: SAID, author: "the machine" },
+      { words: CLAUSE, author: "this app" },
+    ];
+
+    it("draws each run in its author's face, on one line, in the answer's order", async () => {
+      const face = faces(await answering(BOTH));
+      expect(face.mono).toContain(SAID);
+      expect(face.mono).not.toContain(CLAUSE);
+      expect(face.sans).toContain(CLAUSE);
+      expect(face.sans).not.toContain(SAID);
+      // The object stays a machine identifier in mono, one em dash after it,
+      // and the fix still comes last in the app's voice.
+      expect(face.mono).toContain("pending_claims");
+      expect(face.read.split(EM_DASH)).toHaveLength(2);
+      expect(face.read.indexOf(SAID)).toBeLessThan(face.read.indexOf(CLAUSE));
+      expect(face.read.indexOf(CLAUSE)).toBeLessThan(face.read.indexOf("Press it again"));
+    });
+
+    it("isolates the machine's run and never the app's", async () => {
+      // BUG-0175's isolation, unregressed and no wider: `dir="ltr"` wraps the
+      // identifier and the words this app did not write, and nothing else.
+      const face = faces(await answering(BOTH));
+      expect(face.isolated).toHaveLength(1);
+      expect(face.isolated[0]).toContain("pending_claims");
+      expect(face.isolated[0]).toContain(SAID);
+      expect(face.isolated[0]).not.toContain(CLAUSE);
+    });
+
+    it("reads an answer carrying NO authorship exactly as it did before the fact existed", async () => {
+      // The forced-answer shape of the ticket's human check, and every live
+      // probe: the whole account is the machine's and the line is one mono run.
+      const face = faces(await answering());
+      expect(face.mono).toContain(`pending_claims ${EM_DASH} ${SAID} ${CLAUSE}`);
+      expect(face.sans).not.toContain(SAID);
+      expect(face.isolated).toHaveLength(1);
+    });
+
+    it("refuses an answer whose authorship is unreadable, rather than rendering it", async () => {
+      // Not a face question: an `authored` field this app cannot read makes
+      // the whole body foreign, and the line says so in the app's own voice.
+      const face = faces(await answering([{ words: SAID, author: "somebody else" }]));
+      expect(face.sans).toContain("the page request answered something this app cannot read");
+      expect(face.read).not.toContain(SAID);
+      expect(face.mono).toContain(PAGE_ROUTES.claims);
+    });
+  });
+
   it("a rejection with no words of its own reads in the app's voice; one with words stays the machine's", async () => {
     const LAST_RESORT = "the page request failed before it answered";
 
@@ -2433,7 +2466,7 @@ describe("the refusal line says who wrote the words", () => {
     vi.stubGlobal("fetch", () => Promise.reject({ code: "ECONNRESET" }));
     const objectThrown = await requestPage<Row>(BEFORE, DEPS);
     expect(broken(objectThrown.refusal).reason).toBe(LAST_RESORT);
-    expect(broken(objectThrown.refusal).reasonFrom).toBe("this app");
+    expect(authorOf(broken(objectThrown.refusal))).toBe("this app");
 
     // The discriminator: the transport's OWN words, which this app did not
     // write, still read as the machine on the very same line.

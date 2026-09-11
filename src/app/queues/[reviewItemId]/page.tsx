@@ -256,7 +256,15 @@ const DIAL_DAYS = 14;
 function gaugeStateOf(result: DbUnavailable): GaugeState {
   return result.kind === "not_provisioned"
     ? { kind: "not_provisioned", missing: result.missing, arrivesWith: ARRIVES_WITH }
-    : { kind: "error", reading: result.reading, failed: result.message, retry: RETRY };
+    : {
+        kind: "error",
+        reading: result.reading,
+        failed: result.message,
+        // The account's runs cross this seam with it: the gauge's line draws
+        // the same split every other failed read does (admin-window/BUG-0196).
+        authored: result.authored,
+        retry: RETRY,
+      };
 }
 
 /* ── the anatomy, shaped ─────────────────────────────────────────────────── */

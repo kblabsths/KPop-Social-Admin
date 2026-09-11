@@ -17,6 +17,7 @@ import {
   type DbResult,
 } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
+import type { AccountSegment, ReasonAuthor } from "@/lib/account/authored";
 import {
   columnNotInSchemaCache,
   functionNotInSchemaCache,
@@ -451,6 +452,13 @@ describe("classify", () => {
       // say WHICH one refused (admin-window/BUG-0016).
       reading: T.verdicts,
       message: expect.stringContaining(error.message),
+      // Every run of it is the DATABASE's: its own sentence and its own code,
+      // and not one clause of this app's (admin-window/BUG-0196). The whole
+      // arm is pinned, so a segment appearing from nowhere reddens here.
+      authored: [
+        { words: error.message, author: "the machine" },
+        { words: `(${error.code})`, author: "the machine" },
+      ],
     });
   });
 
@@ -459,11 +467,13 @@ describe("classify", () => {
       kind: "error",
       reading: T.runs,
       message: "fetch failed",
+      authored: [{ words: "fetch failed", author: "the machine" }],
     });
     expect(classify("socket hang up", T.runs)).toEqual({
       kind: "error",
       reading: T.runs,
       message: "socket hang up",
+      authored: [{ words: "socket hang up", author: "the machine" }],
     });
     // No message anywhere: still an error, still never an invented sentence.
     expect(classify({ status: 503 }, T.runs).kind).toBe("error");
@@ -2367,6 +2377,140 @@ describe("an account carries the parts the database authored", () => {
       expect(result.message, sentence).not.toContain("node:net:");
     }
   });
+
+  /**
+   * WHO WROTE EACH PART OF THE ACCOUNT — campaign admin-window/BUG-0196.
+   *
+   * The account crossed to the view as ONE string, so no renderer could tell
+   * this app's clauses from the database's and all of them reached the
+   * operator in the mono face the type scale reserves for the machine. The
+   * fix is that the fact TRAVELS: `classify` publishes the account as runs,
+   * each carrying who wrote it, decided where the clause is authored.
+   *
+   * Every case below is STRUCTURAL — which run a part lands in, and that the
+   * flat account is the join of the runs. None of them pins one of this app's
+   * sentences: reword any clause and nothing here moves.
+   */
+  describe("and says who wrote each of them", () => {
+    /** The error arm of a classified failure, or a loud failure. */
+    function accountOf(error: unknown): {
+      message: string;
+      runs: readonly AccountSegment[];
+    } {
+      const result = classify(error, T.pendingClaims);
+      expect(result.kind).toBe("error");
+      if (result.kind !== "error") throw new Error("unreachable");
+      expect(result.authored, "the arm carries no authorship").toBeDefined();
+      return { message: result.message, runs: result.authored ?? [] };
+    }
+
+    /** The authors of an account's runs, in order — the shape of the split. */
+    const authorsOf = (error: unknown): ReasonAuthor[] =>
+      accountOf(error).runs.map((run) => run.author);
+
+    /** The words of the runs ONE author wrote, joined as the line reads them. */
+    function wroteBy(error: unknown, author: ReasonAuthor): string {
+      return accountOf(error)
+        .runs.filter((run) => run.author === author)
+        .map((run) => run.words)
+        .join(" ");
+    }
+
+    it("makes the flat message the JOIN of the runs, on every shape", () => {
+      // Criterion 5b: the string is derived FROM the segments, not beside
+      // them — which is what makes byte-identity structural. Every fixture
+      // this suite reasons about is driven, the plain ones included.
+      for (const [name, error] of [
+        ["a document in `message`", { code: "", message: `<!DOCTYPE html>${"x".repeat(40)}` }],
+        ["a serialised envelope", envelope],
+        ["a nested document", nestedDocument],
+        ["a transport failure with frames", dnsFailure],
+        ["a 2xx body that was not JSON", notJsonBody],
+        ["indented prose that is not a frame", indentedProse],
+        ["a plain PostgREST refusal", permissionDenied(T.pendingClaims)],
+        ["a thrown string", "socket hang up"],
+        ["a value that said nothing at all", { code: "", message: "" }],
+      ] as ReadonlyArray<readonly [string, unknown]>) {
+        const { message, runs } = accountOf(error);
+        expect(runs.map((run) => run.words).join(" "), name).toBe(message);
+        // No empty run: a run with no words is a span drawing a gap around
+        // nothing, and it cannot be what any author wrote.
+        for (const run of runs) expect(run.words.length, name).toBeGreaterThan(0);
+      }
+    });
+
+    it("puts the DATABASE's own words, and its own code, in the machine's runs alone", () => {
+      // Criterion 3: a message answering none of the account's three
+      // questions crosses byte-identical and is wholly the machine's — the
+      // parenthesised code included, which is a machine identifier and not a
+      // clause of ours.
+      const denied = permissionDenied(T.pendingClaims);
+      expect(authorsOf(denied)).toEqual(["the machine", "the machine"]);
+      expect(wroteBy(denied, "this app")).toBe("");
+      expect(accountOf(denied).message).toBe(`${denied.message} (${denied.code})`);
+    });
+
+    it("puts a counted clause about a part it refused to quote in this app's run", () => {
+      // The three authors of criterion 2 that REPLACE a part: a document, a
+      // body with no sentence of its own, and a document nested one quote
+      // deep. Each account is exactly one run, and it is ours — asserted by
+      // its AUTHOR, never by its wording.
+      for (const [name, error] of [
+        ["a document", { code: "", message: `<!DOCTYPE html>${"x".repeat(40)}` }],
+        ["an envelope with no message", envelope],
+        ["a document nested one quote deep", nestedDocument],
+      ] as ReadonlyArray<readonly [string, unknown]>) {
+        expect(authorsOf(error), name).toEqual(["this app"]);
+      }
+    });
+
+    it("splits ONE account between both faces where both authors spoke", () => {
+      // Criterion 4: a part that kept its cause sentence and dropped frames.
+      // The database's lines are the machine's run; the count of what went is
+      // this app's, and they are separate runs of one account in that order.
+      expect(authorsOf(dnsFailure)).toEqual(["the machine", "this app"]);
+      // Nothing is dropped, truncated or reordered to buy the split: the
+      // cause the account exists to preserve is in the machine's run, and the
+      // number of frames is in ours.
+      expect(wroteBy(dnsFailure, "the machine")).toContain("getaddrinfo ENOTFOUND db.invalid");
+      expect(wroteBy(dnsFailure, "this app")).toMatch(/\b1\b[^)]{0,40}frame/);
+      expect(wroteBy(dnsFailure, "this app")).not.toContain("ENOTFOUND");
+    });
+
+    it("says the read was refused in this app's run when the client said nothing at all", () => {
+      // The fourth author of criterion 2. A non-2xx with an empty body: every
+      // part is blank, so the account is the app's own clause and reads in
+      // the app's face.
+      expect(authorsOf({ code: "", message: "" })).toEqual(["this app"]);
+    });
+
+    it("never recovers the author from the words: the same sentence, both ways round", () => {
+      // Criterion 5e, and the bar `reasonFrom` already passes: the DATABASE
+      // says, verbatim, the sentence this app writes about a document. Read
+      // as text it is indistinguishable; read as provenance it is the
+      // machine's, because the database authored it. A derivation comparing a
+      // sentence to this app's own list fails here; one carrying the fact
+      // passes, and no rewording can change that.
+      const ours = wroteBy({ code: "", message: `<!DOCTYPE html>${"x".repeat(40)}` }, "this app");
+      expect(ours.length).toBeGreaterThan(0);
+
+      const impostor = accountOf({ code: "42501", message: ours });
+      expect(impostor.runs.map((run) => run.author)).toEqual(["the machine", "the machine"]);
+      expect(impostor.message).toContain(ours);
+    });
+
+    it("scrubs every run, so a credential cannot cross inside one", () => {
+      // `withoutSecrets` still runs LAST over what crosses — over the runs
+      // now, which is the same string as over the join.
+      const { message, runs } = accountOf({
+        code: "",
+        message: `GET https://host/rest/v1/events failed with apikey ${jwtShaped}`,
+      });
+      expect(message).not.toContain(jwtShaped);
+      for (const run of runs) expect(run.words).not.toContain(jwtShaped);
+      expect(message).toContain("[redacted]");
+    });
+  });
 });
 
 /**
@@ -2594,6 +2738,10 @@ describe("reads against a scripted PostgREST response", () => {
       kind: "error",
       reading: T.observations,
       message: expect.stringContaining(error.message),
+      authored: [
+        { words: error.message, author: "the machine" },
+        { words: `(${error.code})`, author: "the machine" },
+      ],
     });
   });
 
@@ -2964,6 +3112,10 @@ describe("readComplete", () => {
       kind: "error",
       reading: T.observations,
       message: expect.stringContaining(permissionDenied(T.observations).message),
+      authored: [
+        { words: permissionDenied(T.observations).message, author: "the machine" },
+        { words: `(${permissionDenied(T.observations).code})`, author: "the machine" },
+      ],
     });
   });
 
@@ -3167,7 +3319,12 @@ describe("no exported read throws", () => {
     };
     const client = stubClient({}).asSupabaseClient();
 
-    const thrown = { kind: "error", reading: T.sources, message: boom.message };
+    const thrown = {
+      kind: "error",
+      reading: T.sources,
+      message: boom.message,
+      authored: [{ words: boom.message, author: "the machine" }],
+    };
     await expect(readRows(T.sources, thrower, client)).resolves.toEqual(thrown);
     await expect(readOne(T.sources, thrower, client)).resolves.toEqual(thrown);
     await expect(readCount(T.sources, thrower, client)).resolves.toEqual(thrown);

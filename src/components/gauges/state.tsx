@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import type { AccountSegment } from "@/lib/account/authored";
 import {
   Empty,
   ErrorLine,
@@ -48,7 +49,19 @@ export type GaugeState =
   | { kind: "loading"; what: string }
   | ({ kind: "empty" } & EmptyWords)
   | { kind: "not_provisioned"; missing: string; arrivesWith: string }
-  | { kind: "error"; reading: string; failed: string; retry: string };
+  | {
+      kind: "error";
+      reading: string;
+      failed: string;
+      /**
+       * The account's runs and who wrote them (admin-window/BUG-0196), carried
+       * from the `DbResult` arm the page narrowed. Optional, and its absence
+       * means the whole account is the machine's — which is what a gauge state
+       * this app composed itself carries.
+       */
+      authored?: readonly AccountSegment[];
+      retry: string;
+    };
 
 /** The two states that are CARDS, and so replace the surface. */
 export type GaugeSurfaceState = Extract<
@@ -141,6 +154,11 @@ export function GaugeStateLine({ state }: { state: GaugeLineState }) {
   return state.kind === "loading" ? (
     <Loading what={state.what} />
   ) : (
-    <ErrorLine reading={state.reading} failed={state.failed} retry={state.retry} />
+    <ErrorLine
+      reading={state.reading}
+      failed={state.failed}
+      authored={state.authored}
+      retry={state.retry}
+    />
   );
 }

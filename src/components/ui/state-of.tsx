@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import type { AccountSegment } from "@/lib/account/authored";
 import { ErrorLine } from "./error-line";
 import type { MicroLabel } from "./micro-label";
 import { NotProvisioned } from "./not-provisioned";
@@ -33,7 +34,20 @@ export const RETRY = "Reload to try the read again.";
  */
 export type UnavailableRead =
   | { kind: "not_provisioned"; missing: string }
-  | { kind: "error"; reading: string; message: string };
+  | {
+      kind: "error";
+      reading: string;
+      message: string;
+      /**
+       * The account's runs and who wrote them, carried straight through to the
+       * line (campaign admin-window/BUG-0196). Optional here for the reason it
+       * is optional on `DbResult`: an arm that carries none renders wholly in
+       * the machine's face, exactly as it did before the fact existed. The
+       * TYPE is the leaf's, not a second spelling — `lib/account/authored.ts`
+       * is below `lib/db/**`, so naming it here still imports no `lib/db`.
+       */
+      authored?: readonly AccountSegment[];
+    };
 
 /**
  * The state a failed or absent read renders as. `reading` and `missing` come
@@ -70,7 +84,12 @@ export function StateOf({
     </div>
   ) : (
     <div data-read-failed={result.reading}>
-      <ErrorLine reading={result.reading} failed={result.message} retry={RETRY} />
+      <ErrorLine
+        reading={result.reading}
+        failed={result.message}
+        authored={result.authored}
+        retry={RETRY}
+      />
     </div>
   );
 }

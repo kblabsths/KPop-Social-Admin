@@ -24,7 +24,8 @@ import type { PageAnswer } from "../paging/bounds";
  * still not a total).
  *
  * `not_provisioned` and `error` cross UNCHANGED, carrying `missing` /
- * `reading` + `message`, so the client's refusal names the same object the
+ * `reading` + `message` + the account's authorship, so the client's refusal
+ * names the same object the
  * page's own not-provisioned card would name (§4.1) — in the same spelling
  * `tables.ts` gave the query. Nothing is summarised, replaced or softened on
  * the way out: the app shows what the database said.
@@ -49,6 +50,16 @@ export function pageAnswerOf<Row>(
     case "not_provisioned":
       return { kind: "not_provisioned", missing: result.missing };
     case "error":
-      return { kind: "error", reading: result.reading, message: result.message };
+      // The account crosses with its AUTHORSHIP, in the runs `lib/db/result.ts`
+      // decided where the clauses are written — never re-derived at the far end
+      // (admin-window/BUG-0196 criterion 5c). `message` is still the join of
+      // those runs, so a client that reads only the string reads exactly what
+      // it read before.
+      return {
+        kind: "error",
+        reading: result.reading,
+        message: result.message,
+        authored: result.authored,
+      };
   }
 }

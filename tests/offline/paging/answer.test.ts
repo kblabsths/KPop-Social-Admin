@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isPageAnswer, type PageAnswer } from "@/lib/paging/bounds";
 import { pageAnswerOf } from "@/lib/db/paging";
 import type { DbResult } from "@/lib/db/result";
+import type { AccountSegment } from "@/lib/account/authored";
 
 /**
  * The page answer, on BOTH sides of the wire — campaign
@@ -62,7 +63,84 @@ describe("pageAnswerOf", () => {
         50,
         SIZE,
       ),
-    ).toEqual({ kind: "error", reading: "event_listings", message: "connection refused" });
+    ).toEqual({
+      kind: "error",
+      reading: "event_listings",
+      message: "connection refused",
+      // An arm that carried no authorship crosses carrying none: absence is
+      // the wire's documented default and is never invented here
+      // (admin-window/BUG-0196).
+      authored: undefined,
+    });
+  });
+
+  /**
+   * WHO WROTE THE ACCOUNT CROSSES WITH IT — campaign admin-window/BUG-0196.
+   *
+   * The fact is decided where the clauses are authored (`lib/db/result.ts`)
+   * and is never re-derived at the far end. This is the seam it crosses: the
+   * one place `DbResult` meets the wire.
+   */
+  describe("the error arm's authorship", () => {
+    const ACCOUNT: AccountSegment[] = [
+      { words: "canceling statement due to statement timeout", author: "the machine" },
+      { words: "and this app's own clause about what it would not quote", author: "this app" },
+    ];
+
+    it("crosses with the account, through JSON, unchanged", () => {
+      const answer = pageAnswerOf<Row>(
+        {
+          kind: "error",
+          reading: "pending_claims",
+          message: ACCOUNT.map((segment) => segment.words).join(" "),
+          authored: ACCOUNT,
+        },
+        50,
+        SIZE,
+      );
+      // Through JSON, because that is the only way it ever travels.
+      const arrived: unknown = JSON.parse(JSON.stringify(answer));
+      expect(isPageAnswer(arrived)).toBe(true);
+      expect(arrived).toEqual({
+        kind: "error",
+        reading: "pending_claims",
+        message: ACCOUNT.map((segment) => segment.words).join(" "),
+        authored: ACCOUNT,
+      });
+    });
+
+    it("is OPTIONAL on the wire, and its absence is not a foreign body", () => {
+      // A forced answer, a live probe, any client older than this ticket: a
+      // `{kind, reading, message}` error arm is still a page answer, and a
+      // validator made stricter here would refuse it as something this app
+      // cannot read (admin-window/BUG-0196 criterion 5c).
+      expect(isPageAnswer({ kind: "error", reading: "pending_claims", message: "boom" })).toBe(true);
+    });
+
+    it("is refused whole when it is PRESENT and unreadable", () => {
+      // Rendering an account this app cannot read is worse than dropping it,
+      // and silently ignoring the field would put the words back in the
+      // machine's face while claiming they had been graded.
+      const unreadable: unknown[] = [
+        { kind: "error", reading: "x", message: "boom", authored: "the machine" },
+        { kind: "error", reading: "x", message: "boom", authored: {} },
+        { kind: "error", reading: "x", message: "boom", authored: [null] },
+        { kind: "error", reading: "x", message: "boom", authored: ["boom"] },
+        { kind: "error", reading: "x", message: "boom", authored: [{ words: "boom" }] },
+        { kind: "error", reading: "x", message: "boom", authored: [{ words: 7, author: "this app" }] },
+        {
+          kind: "error",
+          reading: "x",
+          message: "boom",
+          authored: [{ words: "boom", author: "somebody else" }],
+        },
+      ];
+      for (const body of unreadable) {
+        expect(isPageAnswer(body), JSON.stringify(body)).toBe(false);
+      }
+      // …and an EMPTY list is readable: no runs is not an unreadable run.
+      expect(isPageAnswer({ kind: "error", reading: "x", message: "boom", authored: [] })).toBe(true);
+    });
   });
 
   it("produces only answers the client's own guard accepts", () => {

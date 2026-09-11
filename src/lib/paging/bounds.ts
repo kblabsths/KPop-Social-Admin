@@ -21,7 +21,16 @@
  * The route paths and the parameter name are spelled HERE and nowhere else:
  * two route handlers and two client wrappers would otherwise each invent one
  * (LESSONS 5 — a shared spelling gets imported, never retyped).
+ *
+ * Its ONE import is another leaf, `../account/authored` — the app's one
+ * spelling of "who wrote these words" and the one validator of its shape, so
+ * the error arm's authorship crosses the wire in the vocabulary the author
+ * used (rule 7 ¶2, admin-window/BUG-0196).
  */
+
+// ONE LINE, deliberately: the leaf-closure guard in
+// `tests/offline/db/layering.test.ts` reads imports LINE BY LINE.
+import { isAccountSegments, type AccountSegment } from "../account/authored";
 
 /** The two surfaces that page, and the ONE spelling of their route paths. */
 export const PAGE_ROUTES = {
@@ -169,7 +178,7 @@ export interface PageOk<Row> {
  */
 export type PageWithoutRows =
   | { kind: "not_provisioned"; missing: string }
-  | { kind: "error"; reading: string; message: string }
+  | { kind: "error"; reading: string; message: string; authored?: readonly AccountSegment[] }
   | { kind: "refused"; reason: string; bound: string };
 
 /**
@@ -180,6 +189,33 @@ export type PageWithoutRows =
  * not-provisioned card would name.
  */
 export type PageAnswer<Row> = PageOk<Row> | PageWithoutRows;
+
+/**
+ * The error arm's OPTIONAL authorship, as the wire may carry it — campaign
+ * admin-window/BUG-0196.
+ *
+ * Two answers are `true`, and the difference between them is the whole rule:
+ *
+ *  - **the field is ABSENT** — the answer says nothing about who wrote its
+ *    `message`, and its absence MEANS what this app rendered before the fact
+ *    existed: the whole account is the machine's, drawn wholly in mono. A
+ *    `{kind, reading, message}` answer — what a forced answer, a live probe
+ *    and any client older than this ticket sends — is still a `PageAnswer`,
+ *    and a validator made stricter here would refuse it as "something this app
+ *    cannot read" and put a fourth question on the wire that §4.1 refuses;
+ *  - **the field is a SEGMENT LIST** — every element carries words and one of
+ *    the two authors (`isAccountSegments`).
+ *
+ * A field that is PRESENT and is neither is foreign data, and the answer is
+ * refused whole — the same call `isPageNotes` makes about a leg's report:
+ * rendering an account this app cannot read is the one thing worse than
+ * dropping it, and silently ignoring the field would put the words back in the
+ * machine's face while claiming they were graded.
+ */
+function carriesReadableAuthorship(value: object): boolean {
+  const authored = (value as { authored?: unknown }).authored;
+  return authored === undefined || isAccountSegments(authored);
+}
 
 /** Every field of `shape` present on `value` with the type named. */
 function hasFields(value: object, shape: Record<string, "string" | "number" | "boolean" | "array">): boolean {
@@ -203,7 +239,7 @@ function hasFields(value: object, shape: Record<string, "string" | "number" | "b
  */
 export type PageNote =
   | { kind: "not_provisioned"; missing: string }
-  | { kind: "error"; reading: string; message: string };
+  | { kind: "error"; reading: string; message: string; authored?: readonly AccountSegment[] };
 
 /**
  * A surface's legs, by the SURFACE's own key. `null` = that leg answered.
@@ -222,7 +258,10 @@ function isPageNote(value: unknown): value is PageNote | null {
     case "not_provisioned":
       return hasFields(value, { missing: "string" });
     case "error":
-      return hasFields(value, { reading: "string", message: "string" });
+      return (
+        hasFields(value, { reading: "string", message: "string" }) &&
+        carriesReadableAuthorship(value)
+      );
     default:
       return false;
   }
@@ -289,7 +328,10 @@ export function isPageAnswer(value: unknown): value is PageAnswer<unknown> {
     case "not_provisioned":
       return hasFields(value, { missing: "string" });
     case "error":
-      return hasFields(value, { reading: "string", message: "string" });
+      return (
+        hasFields(value, { reading: "string", message: "string" }) &&
+        carriesReadableAuthorship(value)
+      );
     case "refused":
       return hasFields(value, { reason: "string", bound: "string" });
     default:

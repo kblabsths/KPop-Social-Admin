@@ -605,6 +605,15 @@ function pagingLeaves(): string[] {
 }
 
 const LEAF_MODULES = [
+  // The app's ONE spelling of "who wrote these words" (admin-window/BUG-0196).
+  // Its home is a leaf BECAUSE of who asks it: `src/lib/db/result.ts` DECIDES
+  // the fact where each clause of an account is authored, and
+  // `src/lib/paging/**` — a leaf, which may name no `DbResult`, not even as a
+  // type — carries it across the wire and into the two renderers. A type both
+  // sides need is declared BELOW both (rule 7 ¶1), and an import of
+  // `lib/db/**` from here would put it back out of the paging leaf's reach and
+  // write the directory cycle rule 7 forbids.
+  "src/lib/account/authored.ts",
   "src/lib/edit/config.ts",
   // The verdict decision envelope: the one shape `settle_review_item` reads,
   // built by every M2 surface (ARCHITECTURE §9.2, admin-window/TASK-0042).

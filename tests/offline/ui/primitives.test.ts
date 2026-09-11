@@ -25,6 +25,7 @@ import {
   type ReadWindow,
 } from "@/components/ui/window-line";
 import { DroppedParamsLine } from "@/components/ui/dropped-params";
+import type { AccountSegment } from "@/lib/account/authored";
 import { EM_DASH, absoluteUtc, count, relativeAge } from "@/lib/format";
 import { droppedParams } from "@/lib/url/dropped-params";
 import { codeLinesIn, sourceFiles, sourceText } from "../source-tree";
@@ -674,6 +675,179 @@ describe("StateOf", () => {
         expect(textOf(labelled).indexOf("cycle health")).toBe(0);
       }
     }
+  });
+});
+
+/**
+ * A FAILED READ'S ACCOUNT, AND THE TWO FACES IT READS IN — campaign
+ * admin-window/BUG-0196.
+ *
+ * "Mono carries every value the database produced … Sans carries every word
+ * the app wrote. That split *is* the typographic idea: the operator can always
+ * see which words are the machine's" (LOOK_AND_FEEL → Typography). MEASURED
+ * defect: this line drew the WHOLE account in one `type-data` span, so the
+ * app's own clause about a part it refused to quote — "a 4524-character markup
+ * document arrived here instead of the database's own words" — reached the
+ * operator in the database's face, inside the same red mono run as a real
+ * Postgres string.
+ *
+ * Every case is STRUCTURAL: which run a part lands in, read off the delivered
+ * markup. None of them pins a sentence this app wrote, and the two that decide
+ * a face hand the SAME words to both authors, so no string comparison can pass
+ * them.
+ */
+describe("a failed read's account renders each part in its author's face", () => {
+  const MACHINE = 'relation "pending_claims" does not exist';
+  const OURS = "the words this app wrote about the part it refused to quote";
+
+  /** The type step each span of the line carries, with its text. */
+  function runs(html: string): { step: string; words: string; isolated: boolean }[] {
+    const $ = cheerio.load(html);
+    return $('[data-state="error"] span')
+      .toArray()
+      .map((element) => ({
+        step: ($(element).attr("class") ?? "").split(/\s+/).find((c) => c.startsWith("type-")) ?? "",
+        words: $(element).text(),
+        isolated: $(element).attr("dir") === "ltr",
+      }));
+  }
+
+  /** The words of every run in one type step, joined as the line reads them. */
+  const inStep = (html: string, step: string): string =>
+    runs(html)
+      .filter((run) => run.step === step)
+      .map((run) => run.words)
+      .join(" ");
+
+  const line = (authored?: readonly AccountSegment[]) =>
+    render(
+      h(ErrorLine, {
+        reading: "pending_claims",
+        failed: (authored ?? [{ words: MACHINE, author: "the machine" as const }])
+          .map((segment) => segment.words)
+          .join(" "),
+        authored,
+        retry: RETRY,
+      }),
+    );
+
+  it("draws an account carrying no authorship exactly as it always did: one mono run", () => {
+    // The wire's documented default, and every call site that holds only the
+    // string: absence means the whole account is the machine's.
+    const html = line();
+    expect(inStep(html, "type-data")).toBe(`pending_claims ${EM_DASH} ${MACHINE}`);
+    expect(inStep(html, "type-body")).toBe(RETRY);
+  });
+
+  it("puts this app's clause in the sans run and the database's words in the mono one", () => {
+    const html = line([
+      { words: MACHINE, author: "the machine" },
+      { words: OURS, author: "this app" },
+    ]);
+    expect(inStep(html, "type-data")).toContain(MACHINE);
+    expect(inStep(html, "type-data")).not.toContain(OURS);
+    expect(inStep(html, "type-body")).toContain(OURS);
+    expect(inStep(html, "type-body")).not.toContain(MACHINE);
+    // The object stays a machine identifier in mono, and the retry stays sans.
+    expect(inStep(html, "type-data")).toContain("pending_claims");
+    expect(inStep(html, "type-body")).toContain(RETRY);
+  });
+
+  it("derives the face from the carried fact alone: the same words, both ways round", () => {
+    // A renderer matching a sentence against a list of this app's own phrases
+    // fails both halves of this; one reading the carried fact passes both. No
+    // rewording can move a face.
+    const asOurs = line([{ words: MACHINE, author: "this app" }]);
+    expect(inStep(asOurs, "type-body")).toContain(MACHINE);
+    expect(inStep(asOurs, "type-data")).not.toContain(MACHINE);
+
+    const asTheirs = line([{ words: OURS, author: "the machine" }]);
+    expect(inStep(asTheirs, "type-data")).toContain(OURS);
+    expect(inStep(asTheirs, "type-body")).not.toContain(OURS);
+  });
+
+  it("keeps the whole account, in order, with one em dash after the object", () => {
+    // No account is dropped, truncated or reordered to make the split easier,
+    // and the words still read as one sentence to anything that concatenates
+    // the text — a screen reader announcing the alert, a live oracle reading
+    // the card back.
+    const html = line([
+      { words: MACHINE, author: "the machine" },
+      { words: OURS, author: "this app" },
+    ]);
+    const read = cheerio.load(html)('[data-state="error"]').text();
+    expect(read).toContain(`pending_claims ${EM_DASH} ${MACHINE} ${OURS}`);
+    expect(read.split(EM_DASH)).toHaveLength(2);
+    expect(read.indexOf(MACHINE)).toBeLessThan(read.indexOf(OURS));
+    expect(read.indexOf(OURS)).toBeLessThan(read.indexOf(RETRY));
+  });
+
+  it("isolates exactly the runs this app did not write, and never one it did", () => {
+    // `dir="ltr"` boxes foreign text so it cannot reorder the line around it
+    // (ARCHITECTURE §7). A sentence this app wrote needs no isolation from
+    // itself, and the object is foreign in every arm.
+    const html = line([
+      { words: MACHINE, author: "the machine" },
+      { words: OURS, author: "this app" },
+    ]);
+    const isolated = runs(html).filter((run) => run.isolated);
+    expect(isolated.map((run) => run.words)).toEqual([`pending_claims ${EM_DASH} ${MACHINE}`]);
+    for (const run of runs(html)) {
+      if (run.words.includes(OURS)) expect(run.isolated).toBe(false);
+    }
+  });
+
+  it("merges two runs by the same author, so a two-field account keeps its space", () => {
+    // The line lays its runs out as flex items, so the gap between two spans
+    // is the layout's and not a character. Two same-authored parts therefore
+    // have to arrive in ONE span or the account reads run together.
+    const html = line([
+      { words: "first", author: "the machine" },
+      { words: "second", author: "the machine" },
+    ]);
+    expect(runs(html).filter((run) => run.step === "type-data")).toHaveLength(1);
+    expect(inStep(html, "type-data")).toBe(`pending_claims ${EM_DASH} first second`);
+  });
+
+  it("gets the account alone rather than a dangling em dash when the read names nothing", () => {
+    // The app's one definition of absence, asked of the object — unchanged by
+    // the split, and asked once for both faces.
+    for (const reading of ["", "   "]) {
+      const html = render(
+        h(ErrorLine, {
+          reading,
+          failed: OURS,
+          authored: [{ words: OURS, author: "this app" as const }],
+          retry: RETRY,
+        }),
+      );
+      expect(cheerio.load(html)('[data-state="error"]').text(), JSON.stringify(reading)).not.toContain(
+        EM_DASH,
+      );
+      expect(inStep(html, "type-body"), JSON.stringify(reading)).toContain(OURS);
+    }
+  });
+
+  it("carries the account down through StateOf, which is how every page draws it", () => {
+    // The seam a page actually renders: `DbResult`'s error arm satisfies
+    // `UnavailableRead` structurally, so no page translates and the runs are
+    // not re-derived anywhere on the way (admin-window/BUG-0196 criterion 5c).
+    const html = render(
+      h(StateOf, {
+        result: {
+          kind: "error",
+          reading: "pending_claims",
+          message: `${MACHINE} ${OURS}`,
+          authored: [
+            { words: MACHINE, author: "the machine" },
+            { words: OURS, author: "this app" },
+          ],
+        },
+      }),
+    );
+    expect(inStep(html, "type-data")).toContain(MACHINE);
+    expect(inStep(html, "type-body")).toContain(OURS);
+    expect(html).toContain('data-read-failed="pending_claims"');
   });
 });
 
