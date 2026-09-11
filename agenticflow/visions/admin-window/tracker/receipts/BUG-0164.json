@@ -1,0 +1,31 @@
+{
+ "id": "BUG-0164",
+ "created": "2026-09-11T15:24:19Z",
+ "green": true,
+ "git_head": "585e410bda43a9a9498114193fa735de8585a4df",
+ "scope": [
+  "src/app/queues/page.tsx",
+  "tests/offline/queues/page.test.ts",
+  "tests/offline/ui/copy.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "c6cc083d19f1cacf77b8825b3d88f3006e948c07168aad8fc2d49a47431b83a4",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/queues/page.test.ts tests/offline/ui/copy.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-52017\n\n \u2713 |offline| tests/offline/ui/copy.test.ts (15 tests) 149ms\n \u2713 |offline| tests/offline/queues/page.test.ts (126 tests) 3010ms\n   \u2713 a zero that a filter produced > leaves a block untouched by EVERY value its kind implies, and by no other  482ms\n\n Test Files  2 passed (2)\n      Tests  141 passed (141)\n   Start at  08:23:55\n   Duration  3.77s (transform 377ms, setup 0ms, collect 746ms, tests 3.16s, environment 0ms, prepare 115ms)\n\n(node:52024) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/queues.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-52017\n\n \u2713 |live| tests/live/queues.live.test.ts (14 tests) 8744ms\n   \u2713 the two queues against staging > renders the open decision count the database holds  412ms\n   \u2713 the two queues against staging > renders the open signal count the database holds  374ms\n   \u2713 the two queues against staging > renders every row the table holds, split between the two queues  1060ms\n   \u2713 the two queues against staging > orders each queue open first, then severity, then age  334ms\n   \u2713 the filters against staging > returns exactly the matching items for every queue and status value  2480ms\n   \u2713 the filters against staging > returns exactly the matching items for every shape value  889ms\n   \u2713 the queue-health gauge against staging > renders each queue's open count over its own window  372ms\n   \u2713 the whole-queue population against staging > counts each kind's whole-queue population, and it is the census the database holds  614ms\n   \u2713 the whole-queue population against staging > renders a faceted URL with no block reporting a count it could not make  460ms\n   \u2713 a source narrowing against staging > renders exactly the items of the source the URL names, in both blocks  554ms\n   \u2713 a source narrowing against staging > renders the honest empty for a registered source with no items  431ms\n   \u2713 a source narrowing against staging > names a source_id it cannot use and renders the whole table, never an error  419ms\n\n Test Files  1 passed (1)\n      Tests  14 passed (14)\n   Start at  08:24:10\n   Duration  9.37s (transform 214ms, setup 28ms, collect 376ms, tests 8.74s, environment 0ms, prepare 57ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/queues.live.test.ts\n(node:52125) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
