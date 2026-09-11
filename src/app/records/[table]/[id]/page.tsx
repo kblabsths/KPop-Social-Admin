@@ -110,15 +110,47 @@ import { isRecordId } from "@/lib/records/id";
  * own heading — and what this function returns is only the words the app wrote
  * about it. The sentence on screen is unchanged: it still opens with the name,
  * followed by these words.
+ *
+ * **The override sentence is said only where the override path is OPEN**
+ * (admin-window/BUG-0205, from the M3 user-sim walk of Tomas Berg). It
+ * describes a control — "an edit here is recorded as an admin override" — in
+ * the present tense, and this note used to say it unconditionally, one
+ * paragraph above `OVERRIDE_UNAVAILABLE` saying no field here can be edited.
+ * The sim read the first, went looking for the control, found none, and
+ * learned from the second that there was never one to find. Both sentences are
+ * true; the closed one was second. So while the path is closed the note stops
+ * after the ownership sentence — which is a fact about the REGIME and stays
+ * true in every state — and `OVERRIDE_UNAVAILABLE` carries what an edit would
+ * be, first, together with the reason there is none. Where the path is open
+ * the string is byte-identical to what it always was: when `verdicts` lands,
+ * the override sentence is exactly right and comes back with it.
  */
-function regimeNote(config: TableEditConfig): string {
-  return writePathFor(config.regime) === "direct"
-    ? `is a staging fixture table, edited directly: a value ` +
-        `changed here is written to it as it stands and reaches no catalog ` +
-        `record. No field provenance is recorded for it, so no source is ` +
-        `shown beside a value.`
-    : `is resolver-owned: its values change through the ` +
-        `resolution pipeline, never by a direct edit. An edit here is ` +
+function regimeNote(
+  config: TableEditConfig,
+  /**
+   * Has this page ESTABLISHED that the override path is closed? False wherever
+   * it has not asked — a malformed address, a failed read, a row that is not
+   * there — because the note may not claim the path is shut on a question
+   * nobody put to the database. It is only ever true beside the paragraph that
+   * says so, from the one derivation both of them read.
+   */
+  overrideClosed: boolean,
+): string {
+  if (writePathFor(config.regime) === "direct") {
+    return (
+      `is a staging fixture table, edited directly: a value ` +
+      `changed here is written to it as it stands and reaches no catalog ` +
+      `record. No field provenance is recorded for it, so no source is ` +
+      `shown beside a value.`
+    );
+  }
+  const ownership =
+    `is resolver-owned: its values change through the ` +
+    `resolution pipeline, never by a direct edit.`;
+  return overrideClosed
+    ? ownership
+    : ownership +
+        ` An edit here is ` +
         `recorded as an admin override — a claim at the admin tier, ` +
         `applied through the pipeline and logged — and the pipeline then ` +
         `leaves that field alone.`;
@@ -138,6 +170,13 @@ function regimeNote(config: TableEditConfig): string {
  * It is a statement about the PATH, so it never varies with the record's data,
  * and it is said once per record — never per line, and never in place of a
  * value.
+ *
+ * Since admin-window/BUG-0205 it is also the FIRST thing said about editing on
+ * a record whose path is closed: the regime note above it stops after its
+ * ownership sentence while `overrideClosed` holds, so what a reader meets in
+ * order is the closed path and then its reason, never a control described in
+ * the present tense ahead of the line withdrawing it. The string itself is
+ * unchanged by that ticket — what moved is what stands before it.
  */
 const OVERRIDE_UNAVAILABLE =
   "No field here can be edited: an edit is recorded through the resolution " +
@@ -364,11 +403,21 @@ function notAnId(config: TableEditConfig): ReactNode {
 function RecordFrame({
   config,
   id,
+  overrideClosed,
   children,
 }: {
   config: TableEditConfig;
   /** The id segment as the URL carried it, whether or not it is an id. */
   id: string;
+  /**
+   * Has the page established that this record's override path is CLOSED? The
+   * frame composes the regime note and the page owns the settlement answer, so
+   * the fact travels as one prop from the one derivation that also gates the
+   * paragraph naming the closure (admin-window/BUG-0205, LESSONS 11: one row,
+   * one verdict). A frame that was never told renders the regime in full,
+   * which is what every state that asked the database nothing gets.
+   */
+  overrideClosed: boolean;
   children: ReactNode;
 }) {
   // The table name is a machine identifier, so it is handed to `Page` as one —
@@ -400,7 +449,8 @@ function RecordFrame({
             primitive (LOOK_AND_FEEL Voice bar 5; admin-window/BUG-0112,
             admin-window/DEBT-0011). */}
         <p data-note="regime" className="type-body text-ink-secondary">
-          <Identifier>{config.table}</Identifier> {regimeNote(config)}
+          <Identifier>{config.table}</Identifier>{" "}
+          {regimeNote(config, overrideClosed)}
         </p>
         {children}
       </Section>
@@ -433,7 +483,11 @@ export default async function RecordPage({
   // (admin-window/BUG-0065).
   if (!isRecordId(id)) {
     return (
-      <RecordFrame config={config} id={id}>
+      // Nothing was asked of the database for this address, so nothing here
+      // knows whether the override path is open (admin-window/BUG-0205): the
+      // regime note stays whole, and no line on this state describes a control
+      // for a record that is not on screen at all.
+      <RecordFrame config={config} id={id} overrideClosed={false}>
         <Empty
           holds={
             <>
@@ -541,9 +595,15 @@ export default async function RecordPage({
   const provenanceLegend =
     config.regime === "resolver_owned" && provenance.note === null && record !== null;
 
+  // Derived ONCE and read twice: the paragraph below names the closure, and the
+  // regime note above it stops before describing an override while it holds —
+  // so the two lines cannot disagree about the same answer from the same read
+  // (admin-window/BUG-0205, LESSONS 11).
+  const overrideClosed = settlement !== null && settlement.kind !== "ok";
+
   return (
-    <RecordFrame config={config} id={id}>
-      {settlement !== null && settlement.kind !== "ok" ? (
+    <RecordFrame config={config} id={id} overrideClosed={overrideClosed}>
+      {overrideClosed ? (
         <>
           <p
             data-note="override-unavailable"
