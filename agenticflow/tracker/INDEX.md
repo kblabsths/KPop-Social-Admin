@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T12:57:15Z — do not edit)
+# Tracker index (regenerated 2026-09-11T12:59:56Z — do not edit)
 
 ## open
 - FEAT-0016 [P2][feat][M3] F15 — every windowed figure is true about the read that produced it  (scope:src/app/claims/page.tsx,src/app/sources/page.tsx,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/gauges,src/components/claims,src/components/sources,src/components/ui/window-line.tsx,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/sources/read.test.ts,tests/offline/gauges,tests/live/claims.live.test.ts,tests/live/sources.live.test.ts)
@@ -10,7 +10,7 @@
 - DEBT-0020 [P3][debt][patch] The transport account states its cause sentence twice: postgrest-js appends cause.stack, whose head repeats the Caused-by line  (deps:BUG-0179,BUG-0182,BUG-0187 scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0173)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - BUG-0184 [P3][bug][M3] A paged refusal whose reason is the app's own em dash is announced as the whole of a red alert — the one blank criterion 14 left uncovered  (deps:DEBT-0017 scope:src/lib/paging/machine.ts,src/lib/verdict/decision.ts,src/lib/format.ts,src/components/edit-refusal.ts,tests/offline/paging/machine.test.ts,tests/offline/verdict/decision.test.ts,tests/offline/format.test.ts @builder-286 from:BUG-0176)
 
-Totals — claimed:1, done:45, open:8. Archived: 252.
+Totals — built:1, done:45, open:8. Archived: 252.
