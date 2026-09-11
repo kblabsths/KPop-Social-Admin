@@ -1,5 +1,5 @@
 import { Distribution, GaugeCard, TrendTable, spreadRows, type EmptyWords } from "@/components/gauges";
-import { Identifier, WindowLine } from "@/components/ui";
+import { Empty, Identifier, WindowLine } from "@/components/ui";
 import { counted, duration } from "@/lib/format";
 import type { DomainLatency, ResolutionLatency } from "@/lib/gauges/resolution-latency";
 
@@ -27,6 +27,12 @@ import type { DomainLatency, ResolutionLatency } from "@/lib/gauges/resolution-l
 export function LatencySection({ latency }: { latency: ResolutionLatency }) {
   const { window: info, overall } = latency;
   const cadence = duration(latency.cadenceSeconds);
+  // A window that holds no decision at all — no apply, no unset. It is an
+  // emptiness with a reason, so it is said in the panel's own words rather
+  // than left to three zeros and a dash, and it is said ONCE: these words
+  // stand where the figures stand, and the distribution and the domain table
+  // below take the same words (admin-window/BUG-0206, the sibling half of
+  // admin-window/BUG-0203 on the panel above).
   const nothing = latency.applies === 0 && latency.verdictUnsets === 0;
   const empty: EmptyWords | undefined = nothing
     ? {
@@ -43,36 +49,53 @@ export function LatencySection({ latency }: { latency: ResolutionLatency }) {
         window={info}
         measured="Canonical decisions applied"
       />
-      <div className="grid grid-cols-2 gap-4">
-        <GaugeCard
-          label="Applies in this window"
-          value={latency.applies}
-          floor={info.truncated}
-          sub="Claims that became the canonical value"
-        />
-        <GaugeCard
-          label="Median wait, claim to apply"
-          value={overall.p50 === null ? null : duration(overall.p50)}
-          absent={`no apply in this window had a claim to measure from${
-            latency.verdictUnsets > 0
-              ? `; ${counted(latency.verdictUnsets, "decision")} in it named no claim`
-              : ""
-          }`}
-          sub={`p90 ${duration(overall.p90)}, against a ${cadence} cadence`}
-        />
-        <GaugeCard
-          label="Unset by a human decision"
-          value={latency.verdictUnsets}
-          floor={info.truncated}
-          sub="Decisions that name no claim, so they carry no wait to measure"
-        />
-        <GaugeCard
-          label="Applies with no claim found"
-          value={latency.unmatchedApplies}
-          tone={latency.unmatchedApplies > 0 ? "attention" : "default"}
-          sub="The claim behind the apply was not in this read — a join gap, not a wait"
-        />
-      </div>
+      {empty === undefined ? (
+        <div className="grid grid-cols-2 gap-4">
+          <GaugeCard
+            label="Applies in this window"
+            value={latency.applies}
+            floor={info.truncated}
+            sub="Claims that became the canonical value"
+          />
+          <GaugeCard
+            label="Median wait, claim to apply"
+            value={overall.p50 === null ? null : duration(overall.p50)}
+            absent={`no apply in this window had a claim to measure from${
+              latency.verdictUnsets > 0
+                ? `; ${counted(latency.verdictUnsets, "decision")} in it named no claim`
+                : ""
+            }`}
+            sub={`p90 ${duration(overall.p90)}, against a ${cadence} cadence`}
+          />
+          <GaugeCard
+            label="Unset by a human decision"
+            value={latency.verdictUnsets}
+            floor={info.truncated}
+            sub="Decisions that name no claim, so they carry no wait to measure"
+          />
+          <GaugeCard
+            label="Applies with no claim found"
+            value={latency.unmatchedApplies}
+            tone={latency.unmatchedApplies > 0 ? "attention" : "default"}
+            sub="The claim behind the apply was not in this read — a join gap, not a wait"
+          />
+        </div>
+      ) : (
+        // Three figures counting a set with no members and a fourth that
+        // cannot measure, each with its own sub-line, answered the same
+        // emptiness a second way two inches under the words that already
+        // stated it — and a wall of zeros reads as good news at a glance
+        // (admin-window/BUG-0206; admin-window/BUG-0203 settled this for the
+        // panel directly above, filed from two independent user-sim walks).
+        // The median wait goes with the other three: with no decision in the
+        // window there is no wait to measure either. The Empty state stands
+        // where the figures stood — what this surface holds, and the one
+        // thing that fills it. No eyebrow (the section heading above already
+        // names the surface), and no colour, no tone, no severity, no word
+        // about staleness: an emptiness is not a verdict. The window line
+        // above is untouched and still names the interval the read carried.
+        <Empty holds={empty.holds} filledBy={empty.filledBy} />
+      )}
       <Distribution
         label="Wait from claim to apply"
         dimension="percentile"

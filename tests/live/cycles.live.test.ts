@@ -90,12 +90,12 @@ const LATENCY = '[data-surface="resolution_latency"]';
  * cases stopped running in exactly the state that reddened
  * (admin-window/BUG-0169).
  *
- * What the two gauges DO at a counted zero is no longer the same, and that one
- * rule is what keeps them comparable. Latency still states its figures there,
- * so its blocks' cards are the only ones inside it and it grades `ok`. Cycle
- * health renders no figure there at all since admin-window/BUG-0203 — the card
- * standing where its figures stood is the read behind them, so it is the
- * SURFACE's own, carries no marker, and grades it `empty`.
+ * What the two gauges DO at a counted zero is the same again, and that one
+ * rule is what keeps them comparable. Neither renders a figure there — cycle
+ * health since admin-window/BUG-0203, resolution latency since
+ * admin-window/BUG-0206 — so on each one the card standing where its figures
+ * stood is the read behind them: the SURFACE's own, carrying no marker, and
+ * what grades it `empty`. Their blocks' cards stay outside that verdict.
  *
  * **One constant, both gauges.** Two hand-typed selectors would be two rules,
  * and the next gauge surface added here inherits this one (LESSONS 11 / 5).
@@ -380,10 +380,28 @@ describe("the two gauges on this page against staging", () => {
             .lt("applied_at", window.until),
         );
       },
-      emptyAtZero: false,
+      // The latency panel renders NO figure over a window that holds no
+      // decision (admin-window/BUG-0206, the sibling of BUG-0203 above): the
+      // card standing where its four figures stood is the surface's own, so a
+      // counted zero is the EMPTY state here and there is no labelled figure
+      // for `figure` to read.
+      //
+      // The count above is every `field_provenance` row in the window, which
+      // is exactly the panel's own condition for that state: an apply names a
+      // claim and an unset does not, and the two partition the window, so
+      // `applies === 0 && verdictUnsets === 0` holds precisely when this
+      // test's own count is 0. That is why the default `emptyAtZero` is the
+      // right one here.
       excluding: GAUGE_BLOCKS,
-      figure: "Applies in this window",
     });
+    if (state === "empty") {
+      // The other half of the same rule: the emptiness is stated once. A
+      // figure standing beside those words is the reading both M3 user-sims
+      // took off the panel above this one.
+      expect(() => readNumber(markup, "Applies in this window")).toThrow();
+      expect(() => readNumber(markup, "Unset by a human decision")).toThrow();
+      return;
+    }
     if (state !== "ok") return;
     if (window.truncated) return;
 
