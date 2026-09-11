@@ -1,11 +1,10 @@
-# Tracker index (regenerated 2026-09-11T12:41:58Z — do not edit)
+# Tracker index (regenerated 2026-09-11T12:49:42Z — do not edit)
 
 ## open
 - FEAT-0016 [P2][feat][M3] F15 — every windowed figure is true about the read that produced it  (scope:src/app/claims/page.tsx,src/app/sources/page.tsx,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/gauges,src/components/claims,src/components/sources,src/components/ui/window-line.tsx,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/sources/read.test.ts,tests/offline/gauges,tests/live/claims.live.test.ts,tests/live/sources.live.test.ts)
 - TASK-0072 [P2][task][M3] One home for the narrowing vocabulary, and a window's scope stops being a string somebody splits  (deps:TASK-0071,BUG-0169,BUG-0174,BUG-0183,BUG-0186,BUG-0191(unmet:1) scope:src/components/ui/window-line.tsx,src/lib/url/narrowing.ts,src/lib/claims/filters.ts,src/app/claims/page.tsx,src/app/cycles/page.tsx,src/app/queues/page.tsx,src/app/browse/page.tsx,src/app/page.tsx,src/components/cycles,src/components/review/shape-views.tsx,src/components/records/entity-picker.tsx,src/components/sources/trends.tsx,tests/offline/url/narrowing.test.ts,tests/offline/ui,tests/offline/claims,tests/offline/cycles,tests/offline/queues,tests/offline/browse,tests/offline/sources)
 - TASK-0073 [P2][task][M3] /sources' two scan-window lines name the narrowing their read carried  (deps:TASK-0072(unmet:1) scope:src/components/sources/trends.tsx,src/app/sources/page.tsx,src/lib/sources/routes.ts,tests/offline/sources/page.test.ts,tests/offline/sources/read.test.ts,tests/live/sources.live.test.ts)
 - BUG-0164 [P3][bug][patch] /queues still carries the exit copy BUG-0161 replaced on /claims  (deps:TASK-0072(unmet:1) scope:src/app/queues/page.tsx,tests/offline/queues/page.test.ts,tests/offline/ui/copy.test.ts from:designer:endgame-walk)
-- BUG-0177 [P3][bug][M3] The paging control is the only full-width button in the app — 1216px with a centred label, where every other button is intrinsic width  (deps:BUG-0180 scope:src/components/ui/paging.tsx,tests/offline/ui/paging.test.ts)
 - BUG-0178 [P3][bug][M3] The bound-ceiling sentence reads as exhaustion — "This view shows no further rows" beside a window line that says rows are not shown  (deps:BUG-0177(unmet:1) scope:src/components/ui/paging.tsx,tests/offline/ui/paging.test.ts)
 - BUG-0184 [P3][bug][M3] A paged refusal whose reason is the app's own em dash is announced as the whole of a red alert — the one blank criterion 14 left uncovered  (deps:DEBT-0017 scope:src/lib/paging/machine.ts,src/lib/verdict/decision.ts,src/lib/format.ts,src/components/edit-refusal.ts,tests/offline/paging/machine.test.ts,tests/offline/verdict/decision.test.ts,tests/offline/format.test.ts from:BUG-0176)
 - DEBT-0019 [P3][debt][M3] The http tier's storable assertion passes on the gate's 403, so it grades nothing the handler answered — make the vacuity visible  (scope:tests/http/paging.http.test.ts from:BUG-0171)
@@ -13,6 +12,9 @@
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
 ## built
+- BUG-0177 [P3][bug][M3] The paging control is the only full-width button in the app — 1216px with a centred label, where every other button is intrinsic width  (deps:BUG-0180 scope:src/components/ui/paging.tsx,tests/offline/ui/paging.test.ts @builder-285)
+
+## qa
 - BUG-0191 [P2][bug][M3] /claims?bucket=X&domain=Y: the bucket caption blames "the filters above" and denies the only filter above, in one sentence  (scope:src/app/claims/page.tsx,tests/offline/claims/page.test.ts @builder-284 from:TASK-0071)
 
-Totals — built:1, done:43, open:10. Archived: 252.
+Totals — built:1, done:43, open:9, qa:1. Archived: 252.
