@@ -7,6 +7,7 @@ import {
   settleReviewItem,
   type VerdictReceipt,
 } from "@/lib/db/verdict";
+import type { DbResult } from "@/lib/db/result";
 import { FN, T } from "@/lib/db/tables";
 import { decisionRefusals } from "@/lib/verdict/decision";
 import type { VerdictDecision } from "@/lib/verdict/decision";
@@ -381,6 +382,46 @@ describe("the function is installed", () => {
       if (result.kind !== "error") continue;
       expect(result.reading).toBe(FN.settleReviewItem);
       expect(result.message).toBe(NO_RECEIPT);
+    }
+  });
+
+  it("says THIS APP wrote each refusal, so neither reads in the machine's face", async () => {
+    // admin-window/BUG-0200 ruled the class: every `kind: "error"` account
+    // this app composes under `src/lib/db/**` carries its authorship at its
+    // one construction point. Neither of these arms carries a word any
+    // database produced — one is this app's constant plus `decisionRefusals`'
+    // identifiers, the other is this app's constant — so each is ONE
+    // `"this app"` segment.
+    //
+    // The pre-send refusal must NOT be split at its refusal identifiers:
+    // `accountText` joins segments with exactly one SPACE and those are joined
+    // with `", "`, so a split there would change the account's bytes. Asserting
+    // a single run is what grades that, and the join assertion is what would
+    // catch it if the bytes ever moved.
+    const arms: ReadonlyArray<readonly [string, () => Promise<DbResult<VerdictReceipt>>]> = [
+      [
+        "the pre-send refusal",
+        () =>
+          settleReviewItem(
+            stubClient({ [FN.settleReviewItem]: { data: verdictLogEntry() } }).asSupabaseClient(),
+            verdictDecision({ action: "wont_fix", note: null, actor: " " }),
+          ),
+      ],
+      [
+        "an answer that is not a receipt",
+        () => callWith({ [FN.settleReviewItem]: { data: null } }).run(),
+      ],
+    ];
+    for (const [name, made] of arms) {
+      const result = await made();
+      expect(result.kind, name).toBe("error");
+      if (result.kind !== "error") continue;
+      expect(result.authored, `${name}: the arm carries no authorship`).toBeDefined();
+      expect(
+        (result.authored ?? []).map((run) => run.author),
+        `${name}: every run of an account this app wrote is this app's`,
+      ).toEqual(["this app"]);
+      expect((result.authored ?? []).map((run) => run.words).join(" "), name).toBe(result.message);
     }
   });
 });

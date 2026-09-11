@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { accountText, type AccountSegment } from "../account/authored";
 import {
   ROW_CAP,
   readComplete,
@@ -172,21 +173,29 @@ export async function updateRecordField(
   const { config, field } = edit;
   const decision = decideEdit(config.table, field);
   if (!decision.allowed) {
-    return {
-      kind: "error",
-      reading: config.table,
-      message: decision.refusal.message,
-    };
+    // `decideEdit`'s refusal is this app's own sentence about its own
+    // allowlist (`src/lib/edit/config.ts`) — no string any database produced
+    // reaches here — so the whole account is ONE `"this app"` segment
+    // (admin-window/BUG-0200 criterion 2). Joining a list of one returns the
+    // refusal byte-identical.
+    const authored: AccountSegment[] = [
+      { words: decision.refusal.message, author: "this app" },
+    ];
+    return { kind: "error", reading: config.table, message: accountText(authored), authored };
   }
 
   if (writePathFor(config.regime) !== "direct") {
-    return {
-      kind: "error",
-      reading: config.table,
-      message:
-        `${config.table} is not written directly from Admin; its values ` +
-        `change through the resolution pipeline`,
-    };
+    // This app's sentence about its own write paths; the table name is a
+    // figure it interpolated, which does not split the run (criterion 4).
+    const authored: AccountSegment[] = [
+      {
+        words:
+          `${config.table} is not written directly from Admin; its values ` +
+          `change through the resolution pipeline`,
+        author: "this app",
+      },
+    ];
+    return { kind: "error", reading: config.table, message: accountText(authored), authored };
   }
 
   return readOne<CanonicalRecord>(

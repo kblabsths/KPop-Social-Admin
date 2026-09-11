@@ -406,6 +406,33 @@ describe("updateRecordField refuses, and issues no query at all", () => {
     );
     expect(step(db.calls[0], "eq")?.args).toEqual(["sandbox_id", ROW_ID]);
   });
+
+  it("says THIS APP wrote each refusal, so neither reads in the machine's face", async () => {
+    // admin-window/BUG-0200 ruled the class: every `kind: "error"` account
+    // this app composes under `src/lib/db/**` carries its authorship at its
+    // one construction point. Both arms here are wholly this app's prose —
+    // `decideEdit`'s sentence about its own allowlist, and this app's sentence
+    // about its own write paths — so each is ONE `"this app"` segment, the
+    // interpolated table name included.
+    //
+    // STRUCTURAL only: who the runs say wrote them, and that the flat account
+    // is still the join of them. Nothing here pins the product's prose, so
+    // rewording either refusal moves nothing in this case.
+    for (const [name, table, field] of [
+      ["the allowlist refusal", "walk_sandbox", "created_at"],
+      ["the not-written-directly refusal", "events", "title"],
+    ] as const) {
+      const { result } = await refuse(table, field);
+      expect(result.kind, name).toBe("error");
+      if (result.kind !== "error") continue;
+      expect(result.authored, `${name}: the arm carries no authorship`).toBeDefined();
+      expect(
+        (result.authored ?? []).map((run) => run.author),
+        `${name}: every run of an account this app wrote is this app's`,
+      ).toEqual(["this app"]);
+      expect((result.authored ?? []).map((run) => run.words).join(" "), name).toBe(result.message);
+    }
+  });
 });
 
 describe("updateRecordField surfaces what the database said", () => {

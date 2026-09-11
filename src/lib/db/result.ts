@@ -24,12 +24,18 @@ export type DbResult<T> =
        * The account as its RUNS: the words of each part and WHO WROTE THEM
        * (campaign admin-window/BUG-0196).
        *
-       * OPTIONAL, and its ABSENCE means what this app rendered before the
-       * fact existed: the whole account is the machine's, drawn wholly in the
-       * mono `data` step. Every arm `classify` builds carries it; the arms
-       * this app composes about a read it could not grade — a count that did
-       * not come back, a row cap — carry none, and read exactly as they read
-       * before.
+       * OPTIONAL ON THE WIRE, and its ABSENCE there means what this app
+       * rendered before the fact existed: the whole account is the machine's,
+       * drawn wholly in the mono `data` step (`src/lib/paging/bounds.ts`
+       * keeps accepting an answer without it).
+       *
+       * **No arm this app composes under `src/lib/db/**` omits it**
+       * (admin-window/BUG-0200 ruled the class): every account `classify`
+       * builds out of what the client said carries it, and so does every
+       * account this app writes itself about a read it could not grade — a
+       * count that did not come back, a row cap, a refused edit, a refused
+       * settlement. An arm added later without it turns that ticket's source
+       * sweep RED.
        *
        * `message` is derived FROM this list and never beside it, so the two
        * cannot disagree: there is no second code path composing the account.
@@ -1015,24 +1021,37 @@ export async function readComplete<Row>(
 
     const rows = data ?? [];
     if (count === null || count === undefined) {
-      return {
-        kind: "error",
-        reading: missing,
-        message:
-          `the read returned no count, so whether these ${rows.length} rows ` +
-          `are all of them is unknown; a complete read requires ` +
-          `{ count: "exact" }.`,
-      };
+      // Every word of this account is this app's own prose about a read it
+      // could not grade, so it is ONE `"this app"` segment — the interpolated
+      // figure included (admin-window/BUG-0200 criterion 4: a value this app
+      // puts inside its own sentence does not split the run, because the
+      // vocabulary answers who wrote the WORDS and a run boundary that turned
+      // on a value's shape would move a face when a number changed).
+      const authored: AccountSegment[] = [
+        {
+          words:
+            `the read returned no count, so whether these ${rows.length} rows ` +
+            `are all of them is unknown; a complete read requires ` +
+            `{ count: "exact" }.`,
+          author: "this app",
+        },
+      ];
+      return { kind: "error", reading: missing, message: accountText(authored), authored };
     }
     if (count > rows.length) {
-      return {
-        kind: "error",
-        reading: missing,
-        message:
-          `the database holds ${count} rows matching this read and it is ` +
-          `capped at ${ROW_CAP} (${rows.length} returned); narrow the filter ` +
-          `or raise ROW_CAP.`,
-      };
+      // One `"this app"` segment for the same reason: `count`, `ROW_CAP` and
+      // `rows.length` are figures this app interpolated into a sentence it
+      // wrote (admin-window/BUG-0200 criterion 4).
+      const authored: AccountSegment[] = [
+        {
+          words:
+            `the database holds ${count} rows matching this read and it is ` +
+            `capped at ${ROW_CAP} (${rows.length} returned); narrow the filter ` +
+            `or raise ROW_CAP.`,
+          author: "this app",
+        },
+      ];
+      return { kind: "error", reading: missing, message: accountText(authored), authored };
     }
     return { kind: "ok", data: rows };
   } catch (thrown) {
@@ -1099,13 +1118,17 @@ export async function readCount(
     const { count, error } = await run(client);
     if (error !== null && error !== undefined) return classify(error, missing);
     if (count === null || count === undefined) {
-      return {
-        kind: "error",
-        reading: missing,
-        message:
-          `the query returned no count, so the number of rows is unknown; a ` +
-          `count read requires { head: true, count: "exact" }.`,
-      };
+      // This app's own prose about a count that did not come back: one
+      // `"this app"` segment (admin-window/BUG-0200 criterion 4).
+      const authored: AccountSegment[] = [
+        {
+          words:
+            `the query returned no count, so the number of rows is unknown; a ` +
+            `count read requires { head: true, count: "exact" }.`,
+          author: "this app",
+        },
+      ];
+      return { kind: "error", reading: missing, message: accountText(authored), authored };
     }
     return { kind: "ok", data: count };
   } catch (thrown) {
