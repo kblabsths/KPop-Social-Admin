@@ -242,18 +242,28 @@ function ksCodeSpellingsUnder(root: string): Map<string, string[]> {
  * what turned the suite red; that is the bug.
  *
  * What the guard must still stop is unchanged: allocating a number the sibling
- * already means something else by. So attribution is per LINE, not per file and
- * not per path — a spelling next door is ours when the line carrying it is a
- * line one of this campaign's handoff notes carries verbatim. Both installed
- * halves pass that test for the honest reason: the migration IS the note's one
- * fenced block (its file on disk is that block plus a trailing newline,
- * measured 2026-09-11), and the registry entries ARE §1a's python block,
- * pasted. A stranger writing `ITEM_NOT_OPEN = "KS031"` with its own meaning
- * writes a line no note of ours contains, and still fails.
+ * already means something else by. So a spelling next door is ours when it sits
+ * INSIDE a verbatim copy of one of this campaign's paste BLOCKS — a fenced
+ * block of a qualifying note, matched as a contiguous run of lines. Both
+ * installed halves pass that test for the honest reason: the migration IS the
+ * note's one fenced sql block (its file on disk is that block plus a trailing
+ * newline, measured 2026-09-11), and the registry entries ARE §1a's two python
+ * blocks, pasted.
  *
- * Path-based attribution was the obvious alternative and is weaker: it would
- * clear whatever came to sit at the target path, including a later rewrite of
- * our own file that re-pointed one of these codes at something else.
+ * **Why the block and not the line** (admin-window/BUG-0212, QA on this
+ * ticket). The first fix attributed any line the notes carried verbatim, and
+ * next door a SQLSTATE is raised on a line of its own — `using errcode =
+ * 'KSnnn',`, the grammar of every KS raise in that repo (QA counted 22 for
+ * `KS024`, 20 for our own `KS029`, over `supabase/migrations` and
+ * `tools/staging`). Our note carries that line for each code it allocates, so a
+ * LATER sibling migration raising one of the four for a meaning of its own
+ * wrote a line the corpus already held and passed SILENTLY. A one-line idiom is
+ * not an identity; 776 lines of it in order are. The same narrowing makes the
+ * re-point case honest: a rewrite of our own installed file that re-points a
+ * code no longer matches the block it came from, and is flagged.
+ *
+ * Path-based attribution was the other obvious alternative and is weaker
+ * still: it would clear whatever came to sit at the target path.
  */
 
 /** The `target file` row of a for-human note, when it names a sibling migration. */
@@ -278,34 +288,58 @@ function installedHandoffNotes(): { note: string; target: string; text: string }
     .map(({ note, text, row }) => ({ note, text, target: (row as RegExpExecArray)[1] }));
 }
 
-/** Every non-blank line of those notes, trimmed — the corpus a spelling is attributed to. */
-const HANDOFF_LINES: ReadonlySet<string> = new Set(
-  installedHandoffNotes()
-    .flatMap((handoff) => handoff.text.split("\n"))
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0),
-);
+/**
+ * The blocks this campaign asks Ben to paste next door, as trimmed lines: every
+ * fenced block of a qualifying note that spells one of `codes`. A block that
+ * spells none of them attributes nothing and is left out.
+ */
+function handoffBlocks(codes: readonly string[]): string[][] {
+  if (codes.length === 0) return [];
+  const spelled = new RegExp(codes.join("|"));
+  return installedHandoffNotes()
+    .flatMap((handoff) => fencedBlocks(handoff.text))
+    .map((block) => block.text.split("\n").map((line) => line.trim()))
+    .filter((lines) => lines.some((line) => spelled.test(line)));
+}
+
+/** The paste blocks that spell one of this artifact's own four codes. */
+const HANDOFF_BLOCKS: readonly string[][] = handoffBlocks(allocatedCodes());
+
+/** The indices of `lines` covered by a verbatim, contiguous occurrence of `block`. */
+function coveredBy(lines: readonly string[], block: readonly string[]): Set<number> {
+  const covered = new Set<number>();
+  if (block.length === 0 || block.length > lines.length) return covered;
+  for (let start = 0; start + block.length <= lines.length; start += 1) {
+    let hit = true;
+    for (let offset = 0; offset < block.length && hit; offset += 1) {
+      hit = lines[start + offset] === block[offset];
+    }
+    if (!hit) continue;
+    for (let offset = 0; offset < block.length; offset += 1) covered.add(start + offset);
+  }
+  return covered;
+}
 
 /**
- * The lines of `text` that spell one of `codes` and that no handoff note of
- * this campaign carries — the spellings next door that are NOT ours.
+ * The lines of `text` that spell one of `codes` from OUTSIDE every paste block
+ * of this campaign — the spellings next door that are not ours.
  *
- * Empty means every spelling in that file arrived through our own handoff.
- * A non-empty answer is the collision the guard exists to catch, and it comes
- * back as the offending lines rather than as a bare `false`, so the failure
- * names what to look at.
+ * Empty means every spelling in that file arrived inside a verbatim copy of
+ * something one of our notes tells Ben to paste. A non-empty answer is the
+ * collision the guard exists to catch, and it comes back as the offending lines
+ * rather than as a bare `false`, so the failure names what to look at.
  */
 function unattributedSpellings(
   text: string,
   codes: readonly string[],
-  attributed: ReadonlySet<string> = HANDOFF_LINES,
+  blocks: readonly string[][] = HANDOFF_BLOCKS,
 ): string[] {
   if (codes.length === 0) return [];
   const spelled = new RegExp(codes.join("|"));
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => spelled.test(line) && !attributed.has(line));
+  const lines = text.split("\n").map((line) => line.trim());
+  const covered = new Set<number>();
+  for (const block of blocks) for (const index of coveredBy(lines, block)) covered.add(index);
+  return lines.filter((line, index) => spelled.test(line) && !covered.has(index));
 }
 
 /* ── reading the artifact ─────────────────────────────────────────────────── */
@@ -948,10 +982,12 @@ describe("the settle_review_item migration", () => {
    * What changed on 2026-09-11: this campaign's own handoff now lives next
    * door, so "the sibling's tree holds `KS029`" became true BECAUSE the
    * artifact this file grades was installed there. Attribution (see
-   * `unattributedSpellings`) is per line against the handoff notes, so the
-   * collision arm is intact — a stranger's line spelling one of these four
-   * fails exactly as before, pinned on a fixture in the grader suite below —
-   * while our own pasted artifact no longer counts against us.
+   * `unattributedSpellings`) asks whether the spelling sits inside a verbatim
+   * copy of one of our paste blocks, so the collision arm is intact — a
+   * stranger's raise of one of these four fails exactly as before, in the
+   * python spelling and in the sibling's own `using errcode` idiom alike
+   * (both pinned on fixtures below) — while our own pasted artifact no longer
+   * counts against us.
    */
   it.runIf(SIBLING_PRESENT)("allocates no code the sibling's tree holds today", () => {
     const spellings = ksCodeSpellingsUnder(SIBLING_ROOT);
@@ -983,22 +1019,41 @@ describe("the settle_review_item migration", () => {
    * walk report happened to quote. It is exactly the notes that INSTALL a file
    * in the sibling, read off their own `target file` row.
    */
-  it("attributes a spelling against the notes that install a file next door", () => {
+  it("attributes a spelling against the paste blocks of the notes that install a file next door", () => {
     const notes = installedHandoffNotes();
     expect(notes.map((handoff) => handoff.note)).toContain(NOTE);
     expect(notes.find((handoff) => handoff.note === NOTE)?.target).toBe(TARGET_PATH);
     // This note is not the only one: the verdicts artifact installs a file too,
     // so the derivation is a rule and not a one-file special case.
     expect(notes.length).toBeGreaterThan(1);
-    // And the corpus really carries the artifact's own lines: a line of the
-    // shipped block that spells an allocated code is in it, so an empty or
-    // mis-read corpus cannot pass this by being silently small.
-    const spelling = shipped.text
-      .split("\n")
-      .map((line) => line.trim())
-      .find((line) => line.includes(allocatedCodes()[0]));
-    expect(spelling).toBeDefined();
-    expect(HANDOFF_LINES.has(spelling as string), spelling).toBe(true);
+
+    // The corpus is the notes' paste BLOCKS and not their lines
+    // (admin-window/BUG-0212). The migration block — what Ben pastes into
+    // TARGET_PATH — is one of them, whole.
+    const shippedLines = shipped.text.split("\n").map((line) => line.trim());
+    expect(
+      HANDOFF_BLOCKS.some(
+        (block) =>
+          block.length === shippedLines.length &&
+          block.every((line, index) => line === shippedLines[index]),
+      ),
+    ).toBe(true);
+    // Every code this artifact allocates is spelled inside one of them, so no
+    // code is attributed by an empty or mis-read corpus.
+    for (const code of allocatedCodes()) {
+      expect(
+        HANDOFF_BLOCKS.some((block) => block.some((line) => line.includes(code))),
+        code,
+      ).toBe(true);
+    }
+    // And a block is a contiguous run, not a bag of lines: the artifact's own
+    // idiom line, standing alone, is NOT attributed — that is BUG-0212's leak,
+    // closed here rather than only at the fixture below.
+    const idiom = shippedLines.find(
+      (line) => line.includes(allocatedCodes()[0]) && /errcode/i.test(line),
+    );
+    expect(idiom).toBeDefined();
+    expect(unattributedSpellings(idiom as string, allocatedCodes())).toEqual([idiom]);
   });
 
   /**
@@ -1045,30 +1100,37 @@ describe("the settle_review_item migration", () => {
     // And a code this artifact does not allocate stays the sibling's own
     // business: the guard speaks about these four and nothing else.
     expect(unattributedSpellings('LEASE_HELD_BY_ANOTHER = "KS027"', allocated)).toEqual([]);
+
+    // Carrying our block does not buy a file amnesty for what sits OUTSIDE it:
+    // coverage is positional, so an extra raise appended to a verbatim copy of
+    // the artifact is still flagged, and only that line is.
+    const extra = `raise exception 'lease lost' using errcode = '${claim}';`;
+    expect(unattributedSpellings(`${shipped.text}\n${extra}`, allocated)).toEqual([extra]);
   });
 
   /**
    * The collision arm in the grammar the sibling actually raises codes in
    * (admin-window/BUG-0212; QA on admin-window/BUG-0207).
    *
-   * Attribution is per LINE against this campaign's handoff notes, and next
+   * Attribution WAS per LINE against this campaign's handoff notes, and next
    * door a SQLSTATE is raised on a line of its own:
    * `using errcode = 'KSnnn',` — 100+ such lines across the sibling's
    * migrations and `tools/staging` (measured 2026-09-11; `KS024` alone has
    * 22, our own installed `KS029` has 20). Our note carries that same line
    * verbatim for each of the four codes it allocates, so a LATER sibling
    * migration that raises one of them for a meaning of its own writes a line
-   * this corpus already holds, is attributed to us, and passes.
+   * that corpus already held, was attributed to us, and passed.
    *
    * The fixture above proves the arm in PYTHON (`X = "KSnnn"`), a spelling
    * the note happens not to carry per code; this one uses the sibling's own
    * SQL idiom, taken from the shipped block so it cannot drift from it.
-   * PINNED FAILING (admin-window/BUG-0212): `it.fails` is this runner's strict
-   * xfail — the day attribution stops swallowing the idiom line this test
-   * XPASSes, goes red, and sends the reader to the ticket, whose fix flips
-   * it back to a plain `it`.
+   * Landed by QA as `it.fails` (strict xfail) reporting `expected [] to deeply
+   * equal [ "using errcode = 'KS029'," ]`; flipped back to a plain `it` by the
+   * fix, which stopped attributing a LINE the notes carry and started
+   * attributing a verbatim copy of a whole paste BLOCK. Watched red once more
+   * against the line-corpus version before the flip.
    */
-  it.fails("flags a stranger's raise of an allocated code in the sibling's own SQL idiom", () => {
+  it("flags a stranger's raise of an allocated code in the sibling's own SQL idiom", () => {
     const allocated = allocatedCodes();
     expect(allocated.length).toBeGreaterThan(0);
 
