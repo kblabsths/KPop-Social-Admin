@@ -73,6 +73,7 @@ export function AwaitingRowTrendSection({
   trend,
   filter,
   names,
+  scope,
 }: {
   trend: AwaitingRowTrend;
   filter: SourceNarrowing;
@@ -85,6 +86,20 @@ export function AwaitingRowTrendSection({
    * (admin-window/BUG-0158).
    */
   names: ReadonlyMap<string, string>;
+  /**
+   * What the read BELOW this line was narrowed to, as the phrases the line
+   * says — `null` for a read that covered the whole object
+   * (admin-window/TASK-0073).
+   *
+   * Composed by the page, from the filter this read was GIVEN and from the one
+   * facet table `/sources` owns (`SOURCES_NARROWING_FACETS`,
+   * `lib/sources/routes.ts`), through the phrase shape every surface shares
+   * (`lib/url/narrowing.ts`). **This file declares no narrowing phrase and
+   * spells none**: a sentence retyped beside the line it belongs to is the
+   * class LESSONS 5 names, and the model one page over is `/claims`, which
+   * says this by import (admin-window/BUG-0163).
+   */
+  scope: readonly string[] | null;
 }) {
   const { window: info, series } = trend;
   const claims = series.reduce((total, one) => total + one.claims, 0);
@@ -127,6 +142,7 @@ export function AwaitingRowTrendSection({
         gauge="awaiting_row"
         window={info}
         measured="Claims observed"
+        scope={scope}
       />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
@@ -215,9 +231,24 @@ export function AwaitingRowTrendSection({
 export function RejectionSection({
   gauge,
   filter,
+  scope,
 }: {
   gauge: SettledValues;
   filter: SourceNarrowing;
+  /**
+   * What the read BELOW this line was narrowed to, as the phrases the line
+   * says — `null` for a read that covered the whole object
+   * (admin-window/TASK-0073).
+   *
+   * Composed by the page, from the filter this read was GIVEN and from the one
+   * facet table `/sources` owns (`SOURCES_NARROWING_FACETS`,
+   * `lib/sources/routes.ts`), through the phrase shape every surface shares
+   * (`lib/url/narrowing.ts`). **This file declares no narrowing phrase and
+   * spells none**: a sentence retyped beside the line it belongs to is the
+   * class LESSONS 5 names, and the model one page over is `/claims`, which
+   * says this by import (admin-window/BUG-0163).
+   */
+  scope: readonly string[] | null;
 }) {
   const { window: info, bySource } = gauge;
   // The names map THIS section labels by is the gauge's own: `bySource` was
@@ -240,20 +271,27 @@ export function RejectionSection({
       ? null
       : (bySource.find((split) => split.sourceId === filter.source_id) ?? null);
   // The figures answer the question the URL asked. Narrowed to a source with
-  // nothing adjudicated in this window, that is an empty scope — a real zero
-  // over the rows read, not the fleet's total wearing one source's name.
-  const scope =
+  // nothing adjudicated in this window, that is an empty set — a real zero over
+  // the rows read, not the fleet's total wearing one source's name.
+  //
+  // It is `reported` and no longer `scope` (admin-window/TASK-0073): `scope` is
+  // the app's word for WHAT A READ WAS NARROWED TO, which is the prop above and
+  // is this line's business; these are the splits this SECTION reports its
+  // figures over, selected from the rows an unnarrowed read returned. One word,
+  // one concept (LESSONS 6) — and the two are not the same fact here, which is
+  // the whole reason this line names no narrowing.
+  const reported =
     filter.source_id === undefined ? bySource : narrowed === null ? [] : [narrowed];
-  const rerejected = scope.reduce((total, split) => total + split.rerejected, 0);
+  const rerejected = reported.reduce((total, split) => total + split.rerejected, 0);
   // The closing sentence obeys the same rule as the cards. Both facts it
   // reports are per-source facts: an unattributed rejection is missing its
-  // REASON, not its source, and an unnamed source is one row of `scope` whose
+  // REASON, not its source, and an unnamed source is one row of `reported` whose
   // registry lookup came back empty. Read off the whole gauge they were the
   // FLEET's, so a bandsintown row moved a page narrowed to ticketmaster
   // (admin-window/BUG-0022) — and deleting the sentence would have lost two
   // facts the operator needs, so they are scoped rather than dropped.
-  const unattributed = scope.reduce((total, split) => total + split.unattributed, 0);
-  const unnamed = scope.filter((split) => split.source === null).length;
+  const unattributed = reported.reduce((total, split) => total + split.unattributed, 0);
+  const unnamed = reported.filter((split) => split.source === null).length;
 
   return (
     <>
@@ -261,6 +299,7 @@ export function RejectionSection({
         gauge="rejections"
         window={info}
         measured="Claims adjudicated"
+        scope={scope}
       />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
@@ -271,8 +310,8 @@ export function RejectionSection({
         />
         <GaugeCard
           label="Sources re-pushing adjudicated values"
-          value={scope.filter((split) => split.rerejected > 0).length}
-          sub={`of ${count(scope.length)} with any claim adjudicated in this window`}
+          value={reported.filter((split) => split.rerejected > 0).length}
+          sub={`of ${count(reported.length)} with any claim adjudicated in this window`}
         />
       </div>
       {narrowed === null ? (

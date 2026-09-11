@@ -11,7 +11,15 @@ import {
   SourceChips,
   sourceColumns,
 } from "@/components/sources";
-import { DataTable, Empty, Identifier, Page, Section, StateOf } from "@/components/ui";
+import {
+  DataTable,
+  Empty,
+  Identifier,
+  Page,
+  Section,
+  StateOf,
+  narrowedTo,
+} from "@/components/ui";
 import { canonicalRecordId } from "@/lib/records/id";
 import {
   listSources,
@@ -22,8 +30,21 @@ import {
 import { readAwaitingRowTrend } from "@/lib/gauges/pending-claims";
 import { readRejectionStampGauge } from "@/lib/gauges/settled-values";
 import { sourceNamesOf } from "@/lib/sources/names";
-import { SOURCE_FACET } from "@/lib/sources/routes";
-import { isSurfaceNarrowed } from "@/lib/url/narrowing";
+import {
+  SOURCES_NARROWING_FACETS,
+  SOURCE_FACET,
+  type SourceNarrowing,
+} from "@/lib/sources/routes";
+// The narrowing vocabulary itself — the SHAPE of a facet table and the two
+// functions over it — from the leaf that owns URL meaning, so this page and
+// `/claims` say one sentence from one declaration (admin-window/TASK-0072,
+// LESSONS 5). The facet TABLE is this surface's own and lives in
+// `lib/sources/routes.ts`; nothing of the phrase is written here.
+import {
+  isSurfaceNarrowed,
+  unchippedNarrowings,
+  unchippedPhrase,
+} from "@/lib/url/narrowing";
 
 /**
  * Sources — **the registry's state rows, and who keeps being wrong** (campaign
@@ -143,6 +164,53 @@ function filterFrom(params: SearchParams): SourcesFilter {
   return narrowing === null ? {} : { source_id: narrowing };
 }
 
+/* ── the narrowing the WINDOW LINES name ────────────────────────── */
+
+/**
+ * What a windowed read was NARROWED TO, as the phrases its window line says —
+ * `null` for a read that covered the whole object (campaign
+ * admin-window/TASK-0073, SPEC F15).
+ *
+ * Asked of the filter that read was GIVEN, never of the URL: a window line
+ * states the read that HAPPENED (ARCHITECTURE.md §4.3), so a facet this page
+ * dropped — `?source_id=` carrying something that is not a uuid, or a
+ * parameter this route does not read at all — never reaches a filter and so
+ * appears in no scope, and a facet that did reach one appears in every line
+ * whose read carried it and in no line whose read did not. Nothing here asks
+ * what came back: a narrowed scan that returned no rows still names its
+ * narrowing, exactly as `/claims`' gauge line does
+ * (admin-window/BUG-0163, admin-window/BUG-0123).
+ *
+ * Every word of it is imported. The phrase SHAPE and its composition are
+ * `lib/url/narrowing.ts`' and `components/ui/window-line.tsx`'; the facet
+ * table is this surface's own, in `lib/sources/routes.ts`. This page writes no
+ * narrowing sentence and neither does `components/sources/trends.tsx` — the
+ * two lines are handed the answer (LESSONS 5).
+ */
+function scopeOf(given: SourceNarrowing): readonly string[] | null {
+  return narrowedTo(
+    unchippedNarrowings(given, SOURCES_NARROWING_FACETS).map(unchippedPhrase),
+  );
+}
+
+/**
+ * The filter the settled-values read is given: NONE, and that is a fact of
+ * `readRejectionStampGauge()` (`lib/gauges/settled-values.ts`), which takes no
+ * filter at all — its scan reads every source's adjudications in the window
+ * and `RejectionSection` narrows the ROWS it returned.
+ *
+ * So that line names no narrowing, in either URL, and this constant is where
+ * that is said out loud rather than by a `null` nobody can check. Naming one
+ * would be the defect this ticket fixes with its halves swapped: the sentence
+ * ends "a window of at most N rows, not the whole table", and over a
+ * fleet-wide scan that cap and its truncation verdict belong to the fleet's
+ * rows, not to one source's — the split that made `/cycles?source=<name>`
+ * state one source's floor over the whole `runs` table
+ * (admin-window/BUG-0114). The day that read takes a filter, it takes this
+ * one, and the line follows with no second edit.
+ */
+const REJECTIONS_READ: SourceNarrowing = {};
+
 /* ── the page ────────────────────────────────────────────────────────────── */
 
 export default async function SourcesPage({
@@ -172,9 +240,16 @@ export default async function SourcesPage({
   // rejection gauge takes no filter, so its narrowing happens over the rows it
   // returned. Each keeps its own `DbResult` and its own Section state, so no
   // leg's refusal removes another leg's rows (§4.1, common violations row 14).
+  //
+  // The awaiting-row read's own options object is named, so the filter that
+  // read is GIVEN and the words its window line says about that read come from
+  // one expression and cannot come to disagree (admin-window/TASK-0073,
+  // admin-window/BUG-0163). The rejection read is given none — `REJECTIONS_READ`
+  // above says why.
+  const awaitingRead = { filter };
   const [sources, trend, rejections] = await Promise.all([
     listSources(),
-    readAwaitingRowTrend({ filter }),
+    readAwaitingRowTrend(awaitingRead),
     readRejectionStampGauge(),
   ]);
 
@@ -257,7 +332,12 @@ export default async function SourcesPage({
 
       <Section title="Awaiting-row trend" surface={AWAITING_SURFACE}>
         {trend.kind === "ok" ? (
-          <AwaitingRowTrendSection trend={trend.data} filter={filter} names={names} />
+          <AwaitingRowTrendSection
+            trend={trend.data}
+            filter={filter}
+            names={names}
+            scope={scopeOf(awaitingRead.filter)}
+          />
         ) : (
           <StateOf result={trend} eyebrow={AWAITING_LABEL} />
         )}
@@ -265,7 +345,11 @@ export default async function SourcesPage({
 
       <Section title="Settled values" surface={REJECTION_SURFACE}>
         {rejections.kind === "ok" ? (
-          <RejectionSection gauge={rejections.data} filter={filter} />
+          <RejectionSection
+            gauge={rejections.data}
+            filter={filter}
+            scope={scopeOf(REJECTIONS_READ)}
+          />
         ) : (
           <StateOf result={rejections} eyebrow={REJECTION_LABEL} />
         )}
