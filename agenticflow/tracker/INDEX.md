@@ -1,9 +1,9 @@
-# Tracker index (regenerated 2026-09-11T07:27:03Z — do not edit)
+# Tracker index (regenerated 2026-09-11T07:37:03Z — do not edit)
 
 ## open
 - BUG-0175 [P2][bug][M3] A paging refusal renders the app's own 22-word sentence in mono, the face this app reserves for the machine's words — /browse and /claims  (deps:BUG-0174(unmet:1) scope:src/lib/paging/machine.ts,src/components/ui/paging.tsx,tests/offline/paging/machine.test.ts,tests/offline/ui/paging.test.ts from:BUG-0172)
 - BUG-0176 [P2][bug][M3] A paged not-provisioned answer renders red, stutters its object and tells the operator to press again for a table that does not exist — /claims and /browse  (deps:BUG-0175(unmet:1) scope:src/lib/paging/machine.ts,src/components/ui/paging.tsx,src/components/ui/not-provisioned.tsx,tests/offline/paging/machine.test.ts,tests/offline/ui/paging.test.ts,tests/offline/ui/primitives.test.ts from:BUG-0172)
-- BUG-0179 [P2][bug][-] The account's one derivation skips the code arm: a foreign envelope's code trails verbatim after the clause that counted its body  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0173)
+- BUG-0179 [P2][bug][M3] The account's one derivation, applied evenly: the code arm, a body with no words, and a document one line down  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0173)
 - DEBT-0017 [P2][debt][M3] Three paging-leaf truths: a ceiling-false invariant, a stale test title, and a closure guard that stops at a barrel  (deps:TASK-0076 scope:src/lib/paging/machine.ts,tests/offline/paging/machine.test.ts,tests/offline/claims/read.test.ts from:BUG-0168)
 - DEBT-0018 [P2][debt][M3] Two vitest runs in one checkout redden the layering suite: its self-guards write a FIXED probe path and remove the shared parent  (scope:tests/offline/db/layering.test.ts,tests/isolated/probe-race.isolated.test.ts from:BUG-0170)
 - FEAT-0016 [P2][feat][M3] F15 — every windowed figure is true about the read that produced it  (scope:src/app/claims/page.tsx,src/app/sources/page.tsx,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/gauges,src/components/claims,src/components/sources,src/components/ui/window-line.tsx,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/sources/read.test.ts,tests/offline/gauges,tests/live/claims.live.test.ts,tests/live/sources.live.test.ts)
@@ -15,9 +15,10 @@
 - BUG-0177 [P3][bug][M3] The paging control is the only full-width button in the app — 1216px with a centred label, where every other button is intrinsic width  (deps:BUG-0174(unmet:1) scope:src/components/ui/paging.tsx,tests/offline/ui/paging.test.ts)
 - BUG-0178 [P3][bug][M3] The bound-ceiling sentence reads as exhaustion — "This view shows no further rows" beside a window line that says rows are not shown  (deps:BUG-0177(unmet:1) scope:src/components/ui/paging.tsx,tests/offline/ui/paging.test.ts)
 - DEBT-0019 [P3][debt][M3] The http tier's storable assertion passes on the gate's 403, so it grades nothing the handler answered — make the vacuity visible  (scope:tests/http/paging.http.test.ts from:BUG-0171)
+- DEBT-0020 [P3][debt][patch] The transport account states its cause sentence twice: postgrest-js appends cause.stack, whose head repeats the Caused-by line  (deps:BUG-0179(unmet:1) scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0173)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - BUG-0174 [P1][bug][M3] A continued window still calls itself a 50-row window and denies being the whole set, under 877 rows and "All claims in this view are shown" — /claims and /browse  (scope:src/components/ui/window-line.tsx,src/components/ui/paging.tsx,src/app/claims/page.tsx,src/app/browse/page.tsx,tests/offline/ui/primitives.test.ts,tests/offline/ui/paging.test.ts,tests/offline/browse/page.test.ts,tests/offline/claims/page.test.ts,tests/offline/absence/pages.test.ts @builder-266 from:BUG-0172)
 
-Totals — claimed:1, done:25, open:15. Archived: 252.
+Totals — built:1, done:25, open:16. Archived: 252.
