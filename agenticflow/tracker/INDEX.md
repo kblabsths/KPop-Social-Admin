@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T10:45:22Z — do not edit)
+# Tracker index (regenerated 2026-09-11T10:50:56Z — do not edit)
 
 ## open
 - DEBT-0018 [P2][debt][M3] Two vitest runs in one checkout redden the layering suite: its self-guards write a FIXED probe path and remove the shared parent  (scope:tests/offline/db/layering.test.ts,tests/isolated/probe-race.isolated.test.ts from:BUG-0170)
@@ -15,7 +15,7 @@
 - DEBT-0020 [P3][debt][patch] The transport account states its cause sentence twice: postgrest-js appends cause.stack, whose head repeats the Caused-by line  (deps:BUG-0179,BUG-0182,BUG-0187(unmet:1) scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0173)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - BUG-0187 [P2][bug][M3] A pretty-printed document whose text sits on its own lines is counted once per fragment, and its own text crosses verbatim into the account  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts @builder-277 from:BUG-0182)
 
-Totals — claimed:1, done:36, open:13. Archived: 252.
+Totals — built:1, done:36, open:13. Archived: 252.
