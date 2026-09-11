@@ -29254,3 +29254,5 @@
 2026-09-11T12:41:47Z	builder	BUG-0191	21960	531	106378
 # STRANDED	2026-09-11T12:41:55Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0190.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0190.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0191.md
 2026-09-11T12:41:55Z	agent	-	-	-	-
+# STRANDED	2026-09-11T12:42:03Z	qa-adversary	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0190.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0190.md
+2026-09-11T12:42:03Z	qa-adversary	BUG-0190	21112	638	92309
