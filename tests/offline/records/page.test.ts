@@ -2225,6 +2225,110 @@ describe("the regime note", () => {
       expect(text.slice(table.length).trim().length, table).toBeGreaterThan(40);
     }
   });
+
+  /**
+   * The two paragraphs at the top of a resolver-owned record, read in the order
+   * a reader meets them — campaign admin-window/BUG-0205, from the M3 user-sim
+   * walk of Tomas Berg.
+   *
+   * The note described the override in the present tense ("an edit here is
+   * recorded as an admin override") unconditionally, one paragraph above
+   * `override-unavailable` saying no field here can be edited. The sim read the
+   * first, went looking for the control, found none, and learned from the
+   * second that there had never been one. Both sentences are true; the closed
+   * one was second.
+   *
+   * What is asserted is the RULE, not the copy: with the path closed the note
+   * is the open note TRUNCATED at a sentence end (so a reworded closed note is
+   * caught, and a later rewording of both is the designer's business, not a
+   * red suite), the sentence it drops is said nowhere ahead of the paragraph
+   * that names the closure, and with the path open nothing is withdrawn. The
+   * one word either side is asked for by name is `override` — a glossary noun,
+   * like the `read-only` and `resolution pipeline` the closure's own guard
+   * reads — because "does this page describe an override here" is the whole
+   * question the sim's thirty seconds were spent on.
+   */
+  it("states the closed override path before it describes an edit", async () => {
+    /** The note, whitespace-normalised, with the table name it opens on gone. */
+    function said(markup: string, table: string): string {
+      const $ = cheerio.load(markup);
+      return note($, table)
+        .text()
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(table.length)
+        .trim();
+    }
+
+    for (const table of ["events", "venues"]) {
+      expect(EDIT_CONFIG[table].regime, table).toBe("resolver_owned");
+      const openMarkup = await renderRecord(table);
+      const closedMarkup = await renderRecord(table, {
+        ...defaultScript(table),
+        ...OVERRIDE_ABSENT,
+      });
+      const open = said(openMarkup, table);
+      const closed = said(closedMarkup, table);
+
+      // The closed note is the open one stopped at a sentence end — same words
+      // as far as it goes, and shorter. A rewrite rather than a truncation, or
+      // a closed page still saying the whole thing, both fail here.
+      expect(open.startsWith(closed), `${table}: the closed note is not the open one truncated`).toBe(true);
+      expect(closed.length, table).toBeLessThan(open.length);
+      expect(closed.endsWith("."), `${table}: the closed note stops mid-sentence`).toBe(true);
+
+      // The sentence the closed page does not say, taken off the open page
+      // rather than typed here.
+      const dropped = open.slice(closed.length).trim();
+      expect(dropped.length, table).toBeGreaterThan(0);
+      expect(dropped.toLowerCase(), table).toContain("override");
+      expect(closed.toLowerCase(), `${table}: the closed note still describes an override`).not.toContain("override");
+
+      // THE RULE. Wherever the page does describe an edit being recorded while
+      // the path is closed, it does so AFTER the line saying no field here can
+      // be edited — and saying it nowhere at all satisfies it too. Read off the
+      // rendered page's own text in document order, so what is graded is what a
+      // reader meets and not which of the two paragraphs the fix moved.
+      const closed$ = cheerio.load(closedMarkup);
+      const page = closed$.root().text().replace(/\s+/g, " ").trim();
+      const closure = closed$('[data-note="override-unavailable"]')
+        .text()
+        .replace(/\s+/g, " ")
+        .trim();
+      expect(closure.length, `${table}: nothing on the closed page names the closure`).toBeGreaterThan(0);
+      const closureAt = page.indexOf(closure);
+      expect(closureAt, table).toBeGreaterThanOrEqual(0);
+      const describedAt = page.indexOf(dropped);
+      expect(
+        describedAt === -1 || describedAt > closureAt,
+        `${table}: the page describes the edit before it says no field can be edited`,
+      ).toBe(true);
+
+      // The open arm: nothing was withdrawn where the path is there. The note
+      // still describes the override, and no closure line stands over it.
+      expect(open.toLowerCase(), `${table}: the open note no longer describes the override`).toContain("override");
+      expect(cheerio.load(openMarkup)('[data-note="override-unavailable"]').length, table).toBe(0);
+
+      // ...and a state that asked the database nothing claims nothing: the
+      // malformed address renders the regime in full, exactly as before.
+      expect(said(await renderRecord(table, defaultScript(table), "not-an-id"), table), table).toBe(open);
+    }
+
+    // The direct-write regime is not touched by the readiness answer at all:
+    // its note reads the same whether or not the override object is there.
+    expect(EDIT_CONFIG[DIRECT_WRITE_TABLE].regime, DIRECT_WRITE_TABLE).toBe("sandbox");
+    expect(
+      said(await renderRecord(DIRECT_WRITE_TABLE), DIRECT_WRITE_TABLE),
+    ).toBe(
+      said(
+        await renderRecord(DIRECT_WRITE_TABLE, {
+          ...defaultScript(DIRECT_WRITE_TABLE),
+          ...OVERRIDE_ABSENT,
+        }),
+        DIRECT_WRITE_TABLE,
+      ),
+    );
+  });
 });
 
 /* ── the scope of the field table ─────────────────────────────────────────── */
