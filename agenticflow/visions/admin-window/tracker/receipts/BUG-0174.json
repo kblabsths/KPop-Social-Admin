@@ -1,0 +1,102 @@
+{
+ "id": "BUG-0174",
+ "created": "2026-09-11T07:50:03Z",
+ "green": true,
+ "git_head": "3ba5651701951264bfcfb40912a837d4cd111b02",
+ "scope": [
+  "src/components/ui/window-line.tsx",
+  "src/components/ui/paging.tsx",
+  "src/app/claims/page.tsx",
+  "src/app/browse/page.tsx",
+  "tests/offline/ui/primitives.test.ts",
+  "tests/offline/ui/paging.test.ts",
+  "tests/offline/browse/page.test.ts",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/absence/pages.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "7fee34002592f2afff436b8957d035d332a8722a5fffffa8c4bfbce6a650ce0d",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/ui/primitives.test.ts tests/offline/ui/paging.test.ts tests/offline/browse/page.test.ts tests/offline/claims/page.test.ts tests/offline/absence/pages.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-47806\n\n \u2713 |offline| tests/offline/ui/paging.test.ts (47 tests) 84ms\n \u2713 |offline| tests/offline/ui/primitives.test.ts (110 tests) 122ms\n \u2713 |offline| tests/offline/browse/page.test.ts (60 tests) 868ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (286 tests) 2255ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  326ms\n   \u2713 a surface offers a control only where the read behind it answered > puts no control inside a card that says a read did not happen, and gains none  784ms\n \u2713 |offline| tests/offline/claims/page.test.ts (201 tests) 4353ms\n   \u2713 what a filled window promises > cannot reach past the cap from any state its own chips offer  330ms\n\n Test Files  5 passed (5)\n      Tests  704 passed (704)\n   Start at  00:49:37\n   Duration  5.38s (transform 2.03s, setup 0ms, collect 3.30s, tests 7.68s, environment 1ms, prepare 293ms)\n\n(node:47813) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -q \"publishes the read.s own facts, and says the window did not fill\" tests/offline/browse/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"says the window filled its cap, and names no floor of its own\" tests/offline/browse/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"states the cap and the number of claims it holds back\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"does not claim to be truncated when every matching claim is drawn\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"a continued window states no cap of its own\" tests/offline/ui/primitives.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"a continued window that is complete on screen denies nothing\" tests/offline/ui/primitives.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q heldFrom src/components/ui/window-line.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -l heldFrom src/app/claims/page.tsx src/app/browse/page.tsx | wc -l)\" -eq 2",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q \"first.held <= first.limit\" src/components/ui/paging.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"whose number held is, is a fact the window states\" tests/offline/ui/paging.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"an exhausted window that appended nothing names the rows on screen\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"the window line in every state a press can end in\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"the window line in every state a press can end in\" tests/offline/browse/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "riments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.2s\n  Running TypeScript ...\n  Finished TypeScript in 5.8s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 152ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/browse/rows\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-47806/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:47999) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
