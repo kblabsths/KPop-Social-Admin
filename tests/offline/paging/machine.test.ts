@@ -1118,6 +1118,21 @@ describe("requestPage", () => {
       const theirs = broken((await requestPage(held, kept.deps)).refusal);
       expect(theirs.reason).toBe(`column events.badcol ${EM_DASH} does not exist`);
       expect(theirs.reasonFrom).toBe("the machine");
+
+      // The OTHER wire-fed arm, which no case above reaches: `refuse()` is
+      // asked the absence question by the `error` arm too, so a machine
+      // message that is nothing but the dash must flip BOTH the words and the
+      // face — the app's clause, authored by this app — while the object the
+      // answer named survives. Green when this was added (QA, 2026-09-11);
+      // it is here because the seam between the two arms is where a later
+      // narrowing of the predicate would show first.
+      for (const dashOnly of [EM_DASH, ` ${EM_DASH} `]) {
+        const wordless = answering({ kind: "error", reading: "pending_claims", message: dashOnly });
+        const said = broken((await requestPage(held, wordless.deps)).refusal);
+        expect(said.reason, JSON.stringify(dashOnly)).toMatch(/refus/i);
+        expect(said.reasonFrom, JSON.stringify(dashOnly)).toBe("this app");
+        expect(said.object, JSON.stringify(dashOnly)).toBe("pending_claims");
+      }
     });
 
     it("is cleared by the next press that succeeds", async () => {
