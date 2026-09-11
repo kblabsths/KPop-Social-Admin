@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T07:51:27Z — do not edit)
+# Tracker index (regenerated 2026-09-11T08:11:45Z — do not edit)
 
 ## open
 - BUG-0175 [P2][bug][M3] A paging refusal renders the app's own 22-word sentence in mono, the face this app reserves for the machine's words — /browse and /claims  (deps:BUG-0174 scope:src/lib/paging/machine.ts,src/components/ui/paging.tsx,tests/offline/paging/machine.test.ts,tests/offline/ui/paging.test.ts from:BUG-0172)

@@ -27386,3 +27386,5 @@
 2026-09-11T07:50:53Z	agent	-	-	-	-
 # STRANDED	2026-09-11T07:51:16Z	qa-adversary	1 uncommitted in primary checkout: .env.example
 2026-09-11T07:51:16Z	qa-adversary	BUG-0174	24837	836	147889
+2026-09-11T08:11:57Z	builder	BUG-0175	spawned
+2026-09-11T08:12:08Z	architect	BUG-0180	spawned
