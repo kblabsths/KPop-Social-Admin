@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T09:26:59Z — do not edit)
+# Tracker index (regenerated 2026-09-11T09:29:50Z — do not edit)
 
 ## open
 - BUG-0182 [P2][bug][M3] One pretty-printed document is counted once per line, so the account grows larger than the page it summarised  (deps:BUG-0181(unmet:1) scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0179)
@@ -18,7 +18,7 @@
 - DEBT-0020 [P3][debt][patch] The transport account states its cause sentence twice: postgrest-js appends cause.stack, whose head repeats the Caused-by line  (deps:BUG-0179,BUG-0182(unmet:1) scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0173)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - BUG-0181 [P2][bug][M3] A foreign column-absent envelope makes the app name an intermediary's own text as the missing object — classify()'s mined column is admitted unvalidated  (deps:BUG-0179 scope:src/lib/db/result.ts,tests/offline/db/result.test.ts @builder-271 from:BUG-0175)
 
-Totals — claimed:1, done:30, open:16. Archived: 252.
+Totals — built:1, done:30, open:16. Archived: 252.
