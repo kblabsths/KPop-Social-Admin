@@ -4,11 +4,14 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { allSourceFiles, codeText, repoRoot, sourceText } from "../source-tree";
 import {
+  MIRROR_PARENT,
   PROBE_PARENT,
   RUN_ID,
   isProcessAlive,
+  mirrorDirFor,
   pidOfProbeDir,
   probeDirFor,
+  sweepDeadMirrorDirs,
   sweepDeadProbeDirs,
 } from "../../probe-area";
 
@@ -962,7 +965,7 @@ describe("the leaf-import guard itself", () => {
  * reason, the same way the source-tree walkers do.
  */
 describe("the probe area both guards write in", () => {
-  const base = path.join(repoRoot, "tests", ".probes", `probe-area-${process.pid}-${RUN_ID}`);
+  const base = mirrorDirFor("probe-area");
   const parent = path.join(base, PROBE_PARENT);
 
   /**
@@ -1072,6 +1075,108 @@ describe("the probe area both guards write in", () => {
     // A first run in a fresh checkout: the area is created by the first probe,
     // never by the sweep.
     expect(fs.existsSync(path.join(empty, PROBE_PARENT))).toBe(false);
+    // The same for the mirror area, which has its own parent.
+    expect(sweepDeadMirrorDirs(empty)).toEqual([]);
+    expect(fs.existsSync(path.join(empty, MIRROR_PARENT))).toBe(false);
+  });
+
+  /**
+   * The MIRROR area (`tests/.probes/`), where a self-guard plants a whole fake
+   * `src/` and walks it — admin-window/BUG-0190. It carries the same two rules
+   * as `src/.probes/` and they are the same two functions, parameterised by
+   * the parent: a second copy is what let this defect outlive
+   * admin-window/BUG-0188 in the other area for a whole milestone.
+   */
+  describe("the mirror area the self-guards walk", () => {
+    /** A fake CHECKOUT, so the rule is proved without touching the real area. */
+    const checkout = path.join(base, "mirror-checkout");
+    const mirrorParent = path.join(checkout, MIRROR_PARENT);
+
+    /** Plant a mirror tree named `name`, with one source file in it. */
+    function plantMirror(name: string): string {
+      const dir = path.join(mirrorParent, name);
+      fs.mkdirSync(path.join(dir, "src", "lib"), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, "src", "lib", "corpse.ts"),
+        '"use server";\nexport async function corpse() {}\n',
+        "utf8",
+      );
+      return dir;
+    }
+
+    it("names a mirror base with this run's pid AND its own entropy", () => {
+      const dir = mirrorDirFor("close-guard");
+      // Absolute, because a self-guard hands it to `sourceFiles(base)`.
+      expect(path.isAbsolute(dir)).toBe(true);
+      expect(dir.startsWith(path.join(repoRoot, MIRROR_PARENT) + path.sep)).toBe(true);
+      expect(pidOfProbeDir(path.basename(dir))).toBe(process.pid);
+      expect(dir).toContain(RUN_ID);
+      // The pid-only name a dead run wrote is a DIFFERENT directory — the
+      // whole of admin-window/BUG-0190's fix.
+      expect(path.basename(dir)).not.toBe(`close-guard-${process.pid}`);
+      // Two guards in one run still get two directories, and the same guard
+      // asked twice gets one.
+      expect(mirrorDirFor("close-guard")).not.toBe(mirrorDirFor("close-one-call"));
+      expect(mirrorDirFor("close-guard")).toBe(dir);
+      // And the naming rule is the same rule: a label a pid read would
+      // mistake for a pid is refused here too.
+      expect(() => mirrorDirFor("probe-2-guard")).toThrow(/no digit/);
+    });
+
+    it("sweeps a mirror tree whose pid names no live process", () => {
+      const corpse = plantMirror(`close-guard-${deadPid()}-${randomUUIDLike()}`);
+      // The pre-fix spelling, from a run that died before entropy existed.
+      const legacyCorpse = plantMirror(`m2-close-${deadPid()}`);
+      // Non-vacuous: both corpses are really on disk, with their files.
+      for (const dir of [corpse, legacyCorpse]) {
+        expect(fs.existsSync(path.join(dir, "src", "lib", "corpse.ts")), dir).toBe(true);
+      }
+
+      expect(sweepDeadMirrorDirs(checkout).sort()).toEqual(
+        [path.basename(corpse), path.basename(legacyCorpse)].sort(),
+      );
+      expect(fs.existsSync(corpse)).toBe(false);
+      expect(fs.existsSync(legacyCorpse)).toBe(false);
+      // The shared parent stays: removing it races a concurrent run's
+      // `mkdirSync` (admin-window/DEBT-0018).
+      expect(fs.existsSync(mirrorParent)).toBe(true);
+    });
+
+    it("leaves a LIVE run's mirror tree, and one it cannot read a pid from", () => {
+      const mine = plantMirror(`close-guard-${process.pid}-${randomUUIDLike()}`);
+      const theirs = plantMirror(`strings-${process.ppid}-${randomUUIDLike()}-3`);
+      // A pid-only name from a run that is still alive: it stays, because the
+      // sweep's question is liveness and never age.
+      const legacy = plantMirror(`admin-locked-${process.pid}`);
+      const unreadable = plantMirror("a-mirror-without-a-pid");
+      const corpse = plantMirror(`one-call-${deadPid()}-${randomUUIDLike()}`);
+
+      expect(sweepDeadMirrorDirs(checkout)).toEqual([path.basename(corpse)]);
+      for (const kept of [mine, theirs, legacy, unreadable]) {
+        expect(fs.existsSync(kept), kept).toBe(true);
+      }
+      expect(fs.existsSync(corpse)).toBe(false);
+    });
+
+    it("sweeps each area on its own: one parent's corpse is not the other's", () => {
+      // The two areas are two directories, and a sweep of one must not reach
+      // into the other — otherwise the `base` a fixture passes would mean two
+      // different things.
+      const mirrorCorpse = plantMirror(`close-guard-${deadPid()}-${randomUUIDLike()}`);
+      const probeCorpse = path.join(
+        checkout,
+        PROBE_PARENT,
+        `credential-guard-${deadPid()}-${randomUUIDLike()}`,
+      );
+      fs.mkdirSync(probeCorpse, { recursive: true });
+
+      expect(sweepDeadProbeDirs(checkout)).toEqual([path.basename(probeCorpse)]);
+      expect(fs.existsSync(mirrorCorpse), "the mirror corpse survived the src sweep").toBe(true);
+      expect(fs.existsSync(probeCorpse)).toBe(false);
+
+      expect(sweepDeadMirrorDirs(checkout)).toEqual([path.basename(mirrorCorpse)]);
+      expect(fs.existsSync(mirrorCorpse)).toBe(false);
+    });
   });
 });
 

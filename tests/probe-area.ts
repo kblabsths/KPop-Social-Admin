@@ -1,12 +1,27 @@
 /**
- * The probe area under `src/` — who may write in it, how a run names its own
- * directory in it, and who cleans up after a run that never got to
- * (admin-window/BUG-0188).
+ * The probe areas — who may write in them, how a run names its own directory
+ * in one, and who cleans up after a run that never got to
+ * (admin-window/BUG-0188, admin-window/BUG-0190).
  *
- * Shared by `tests/offline/db/layering.test.ts` and
- * `tests/isolated/probe-race.isolated.test.ts`, which both plant probes there,
+ * There are TWO of them and they hold the same two rules:
+ *
+ *   - `src/.probes` (`PROBE_PARENT`) — a probe written into the REAL source
+ *     tree, because the credential and leaf-import scanners are proved by
+ *     reaching it where they really walk;
+ *   - `tests/.probes` (`MIRROR_PARENT`) — a whole MIRROR TREE a self-guard
+ *     walks instead of the real `src/`, so a probe deleted between a parallel
+ *     suite's readdir and its read cannot redden a stranger's lane
+ *     (admin-window/BUG-0020).
+ *
+ * Shared by every suite that plants in either — `tests/offline/db/layering.test.ts`,
+ * `tests/isolated/probe-race.isolated.test.ts`, `tests/offline/review/one-place.test.ts`,
+ * `tests/offline/edit/config.test.ts`, `tests/offline/records/entity-picker.test.ts` —
  * because the naming rule and the sweep rule below are one rule each and a
- * second hand-typed copy of either would drift (LESSONS 5).
+ * second hand-typed copy of either would drift (LESSONS 5). Two files still
+ * spell a mirror base by hand (`tests/offline/toolchain.test.ts`,
+ * `tests/offline/ui/copy.test.ts`); both already carry per-run entropy, so
+ * neither is exposed to the defect below, and the sweep is area-wide, so their
+ * corpses go too — but a third copy of the idiom belongs here, not there.
  *
  * ## What went wrong before this module existed
  *
@@ -38,6 +53,17 @@
  * answers `process.kill(pid, 0)`), the shared PARENT is never removed, and a
  * name this module did not write is left alone.
  *
+ * ## The same defect, one directory over (admin-window/BUG-0190)
+ *
+ * The mirror trees under `tests/.probes/` were named from `process.pid` ALONE
+ * and removed only in each case's `finally`, exactly as `src/.probes` was
+ * before BUG-0188, and the consequence was measured: a run that drew a killed
+ * run's pid walked the corpse's files as its own mirror, and every self-guard
+ * there compares the walk with `toEqual`, so three unrelated suites
+ * (review/one-place, edit/config, records/entity-picker) went red in a lane
+ * that planted nothing. Both areas now take both answers from this module,
+ * parameterised by the parent rather than copied.
+ *
  * The residue it deliberately does not chase: a corpse whose pid has since
  * been reused by some unrelated live process survives until that process
  * exits. It is harmless — it is foreign to every run's scan by the entropy
@@ -60,6 +86,17 @@ export { repoRoot };
 export const PROBE_PARENT = "src/.probes";
 
 /**
+ * The dot-hidden area beneath `tests/` that every MIRROR TREE is planted in —
+ * gitignored (`.gitignore`) and ignored by ESLint (`eslint.config.mjs`) for
+ * the same reasons, and outside `src/` entirely, so no rule's walk over the
+ * real source tree can ever reach into it.
+ *
+ * A guard proving itself plants a whole fake `src/` beneath its directory here
+ * and walks THAT, so its scan sees the mirror and nothing else.
+ */
+export const MIRROR_PARENT = "tests/.probes";
+
+/**
  * This PROCESS's run id: the entropy that makes a directory name unforgeable
  * by a run that is no longer alive.
  *
@@ -77,16 +114,32 @@ const LABELLED = /^[a-z][a-z-]*[a-z]$/;
 
 /**
  * THIS run's probe directory for one guard, as a repo-relative posix path:
- * `src/.probes/<label>-<pid>-<run id>`.
+ * `<parent>/<label>-<pid>-<run id>`.
  *
  * The pid is kept in the name because it is what makes the sweep possible; the
- * run id is what makes the name this run's own.
+ * run id is what makes the name this run's own. `parent` is either probe area
+ * — the naming rule is the same rule in both, which is why there is one
+ * function rather than a second copy of it (admin-window/BUG-0190).
  */
-export function probeDirFor(label: string): string {
+export function probeDirFor(label: string, parent: string = PROBE_PARENT): string {
   if (!LABELLED.test(label)) {
     throw new Error(`probe label must be lowercase letters and hyphens, with no digit: ${label}`);
   }
-  return `${PROBE_PARENT}/${label}-${process.pid}-${RUN_ID}`;
+  return `${parent}/${label}-${process.pid}-${RUN_ID}`;
+}
+
+/**
+ * THIS run's MIRROR TREE base for one guard, as an ABSOLUTE path under
+ * `tests/.probes/` — the base a self-guard hands to `sourceFiles(base)` and
+ * friends, which is why this one is absolute where `probeDirFor` is
+ * repo-relative (a rule's own scan reports paths relative to the base).
+ *
+ * The whole point of the entropy is that no dead run can have written here:
+ * before admin-window/BUG-0190 these bases were `<label>-<pid>` and a run
+ * drawing a killed run's pid adopted its corpse as its own mirror.
+ */
+export function mirrorDirFor(label: string): string {
+  return path.join(repoRoot, probeDirFor(label, MIRROR_PARENT));
 }
 
 /**
@@ -136,10 +189,15 @@ export function isProcessAlive(pid: number): boolean {
  *
  * `base` is the checkout to sweep, for the same reason the source-tree walkers
  * take one: so this rule can be proved on a fixture tree rather than on the
- * shared one every concurrent run is writing to.
+ * shared one every concurrent run is writing to. `area` is which probe area of
+ * that checkout to sweep — the rule is identical in both, so there is one
+ * implementation (admin-window/BUG-0190).
  */
-export function sweepDeadProbeDirs(base: string = repoRoot): string[] {
-  const parent = path.join(base, PROBE_PARENT);
+export function sweepDeadProbeDirs(
+  base: string = repoRoot,
+  area: string = PROBE_PARENT,
+): string[] {
+  const parent = path.join(base, area);
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(parent, { withFileTypes: true });
@@ -162,4 +220,19 @@ export function sweepDeadProbeDirs(base: string = repoRoot): string[] {
     }
   }
   return swept.sort();
+}
+
+/**
+ * The same sweep over the MIRROR area (`tests/.probes/`): remove every mirror
+ * tree whose pid names no live process (admin-window/BUG-0190).
+ *
+ * Called once at module scope by each suite that plants a mirror there, the
+ * same way `sweepDeadProbeDirs()` is called by each suite that plants under
+ * `src/.probes/` — explicitly, so nothing depends on an import's side effect.
+ * Every guarantee is the one above's: a live run's mirror is never touched,
+ * the shared parent is never removed, and a name this module did not write is
+ * left alone.
+ */
+export function sweepDeadMirrorDirs(base: string = repoRoot): string[] {
+  return sweepDeadProbeDirs(base, MIRROR_PARENT);
 }
