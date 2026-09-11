@@ -73,9 +73,13 @@ export function PagedClaimList({
   line?: ReactNode;
 }): ReactNode {
   // The surface's one state, published by the provider the page wrapped this
-  // in: the rows a press appended, the press itself, and the window the driver
-  // graded them against. Nothing here decides any of the three.
-  const { state, press, size } = usePaging<ClaimLine>();
+  // in: the rows a press appended, the press itself, the window the driver
+  // graded them against, and whether this window's two reads agree. Nothing
+  // here decides any of the four — the verdict in particular is derived once,
+  // by `readsAgree` over the provider's one window (admin-window/BUG-0180),
+  // and is carried to the control rather than re-asked of a count this file
+  // deliberately never sees.
+  const { state, press, size, readsAgree } = usePaging<ClaimLine>();
 
   return (
     <div className="flex flex-col gap-4">
@@ -87,7 +91,13 @@ export function PagedClaimList({
           interface this ticket was given, and this surface holds exactly one
           kind of thing on both of its tabs — a standing disagreement is a
           claim, not a second noun. */}
-      <PageMore state={state} holds={HOLDS} size={size} onPress={press} />
+      <PageMore
+        state={state}
+        holds={HOLDS}
+        size={size}
+        readsAgree={readsAgree}
+        onPress={press}
+      />
     </div>
   );
 }

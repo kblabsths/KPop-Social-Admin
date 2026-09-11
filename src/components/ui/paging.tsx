@@ -12,7 +12,12 @@ import {
   requestPage,
 } from "@/lib/paging/machine";
 import { Button } from "./button";
-import { type DrawnSentence, type DrawnWindow, WindowLine } from "./window-line";
+import {
+  type DrawnSentence,
+  type DrawnWindow,
+  WindowLine,
+  readsAgree,
+} from "./window-line";
 
 /**
  * The paging affordance — campaign admin-window/TASK-0064, SPEC F14.
@@ -259,6 +264,20 @@ interface PagingSurface<Row> {
    * so a surface spells it ONCE (admin-window/BUG-0168).
    */
   size: number;
+  /**
+   * THE WINDOW THE OPERATOR NOW HOLDS — the page's own first-screen facts
+   * combined with the press state exactly once (`continuedWindow` below), so
+   * every part of the surface that states a fact about this read states it
+   * about the same object (admin-window/BUG-0180).
+   */
+  window: DrawnWindow;
+  /**
+   * Do that window's two reads agree? `readsAgree`'s verdict over the window
+   * above, decided HERE and handed down already decided: the line reads it and
+   * so does the control's terminal sentence, so one screen cannot answer one
+   * question twice (LESSONS 11, admin-window/BUG-0180).
+   */
+  readsAgree: boolean;
 }
 
 /**
@@ -288,21 +307,80 @@ const PagingContext = createContext<PagingSurface<unknown> | null>(null);
 export function PagingProvider<Row>({
   initial,
   deps,
+  window: first,
   children,
 }: {
   /** The first screen's own state, composed by the page (`initialPage`). */
   initial: PageState<Row>;
   /** Where a press asks, what it carries, and the window it is graded against. */
   deps: Omit<PageDeps, "fetchJson">;
+  /**
+   * THE FIRST SCREEN'S WINDOW, as the page composed it — ONE object for the
+   * whole surface (admin-window/BUG-0172, admin-window/BUG-0180).
+   *
+   * The page is the only thing that knows what its `held` counts
+   * (`heldFrom`), and it is the ONLY thing that may state it. What the page
+   * cannot know is the press: `truncated` on a paged surface is the driver's
+   * status, so the live window is combined here and nowhere else, and both the
+   * line above the rows and the sentence below them read that one object.
+   */
+  window: DrawnWindow;
   /** The page's own children, server-rendered, passed straight through. */
   children: ReactNode;
 }): ReactNode {
-  const surface = usePageRows<Row>(initial, deps);
+  const driver = usePageRows<Row>(initial, deps);
+  // The surface's ONE window, and the ONE verdict over it. `readsAgree` is
+  // asked here rather than by either consumer: a control that asks it of a
+  // window of its own is the second comparison this ticket exists to remove.
+  const live = continuedWindow(first, driver.state);
+  const surface: PagingSurface<Row> = {
+    ...driver,
+    window: live,
+    readsAgree: readsAgree(live),
+  };
   return (
     <PagingContext.Provider value={surface as PagingSurface<unknown>}>
       {children}
     </PagingContext.Provider>
   );
+}
+
+/**
+ * The window the operator NOW holds: the page's first-screen facts, combined
+ * with the facts only the press knows — spelled ONCE for the whole surface
+ * (admin-window/BUG-0172, admin-window/BUG-0180).
+ *
+ *  - **`truncated` is the paging state's own answer and nothing else** — no
+ *    row is counted beside it. On the first render `idle` reproduces, by
+ *    construction, what each page computes today: a surface is drawn paged
+ *    only where its first window filled (`/browse`) or where a count said
+ *    there is more (`/claims`), which are the two pages' own `truncated`.
+ *    A refusal returns the driver to `idle`, so a refused press leaves this
+ *    window byte-identical to the one before it, and at the bound ceiling it
+ *    still says rows are not shown — because they are.
+ *  - **`drawn` is what the operator now holds**, which is the driver's own
+ *    `held`: the first screen plus everything appended.
+ *  - **`held` is whatever the WINDOW says it counts** (`DrawnWindow.heldFrom`,
+ *    admin-window/BUG-0174). A window whose `held` counts its own rows grows
+ *    with the rows a press appends (`/browse`, whose line was stuck at 50
+ *    under 100 rows); one whose `held` came from a separate count read stands
+ *    untouched, because paging reads no row into that count (`/claims`, whose
+ *    hook the live paged-walk oracle grades the walk against). It is STATED by
+ *    the page that composed the facts, never inferred here: this compared
+ *    `held` to `limit` and took the bigger meaning, which is one field with two
+ *    meanings guessed apart by size — wrong the moment a surface's count sits
+ *    under its cap, and a trap for every surface that inherits these arms.
+ *
+ * Nothing here compares a number to the cap, or to a row count beside it.
+ */
+function continuedWindow(first: DrawnWindow, state: PageState<unknown>): DrawnWindow {
+  const drawn = state.held;
+  return {
+    ...first,
+    held: first.heldFrom === "a count read" ? first.held : drawn,
+    truncated: state.status !== "exhausted",
+    drawn,
+  };
 }
 
 /**
@@ -326,57 +404,24 @@ export function usePaging<Row>(): PagingSurface<Row> {
  * same position and the same primitive the page renders when it cannot
  * (admin-window/BUG-0172).
  *
- * The page composes the FIRST SCREEN's facts once and hands the same object
- * here or to `WindowLine`; two spellings of those facts is how the two come to
- * disagree. What this adds are the facts only the press knows:
- *
- *  - **`truncated` is the paging state's own answer and nothing else** — no
- *    row is counted beside it. On the first render `idle` reproduces, by
- *    construction, what each page computes today: a surface is drawn paged
- *    only where its first window filled (`/browse`) or where a count said
- *    there is more (`/claims`), which are the two pages' own `truncated`.
- *    A refusal returns the driver to `idle`, so a refused press leaves this
- *    line byte-identical to the line before it, and at the bound ceiling it
- *    still says rows are not shown — because they are.
- *  - **`drawn` is what the operator now holds**, which is the driver's own
- *    `held`: the first screen plus everything appended.
- *  - **`held` is whatever the WINDOW says it counts** (`DrawnWindow.heldFrom`,
- *    admin-window/BUG-0174). A window whose `held` counts its own rows grows
- *    with the rows a press appends (`/browse`, whose line was stuck at 50
- *    under 100 rows); one whose `held` came from a separate count read stands
- *    untouched, because paging reads no row into that count (`/claims`, whose
- *    hook the live paged-walk oracle grades the walk against). It is STATED by
- *    the page that composed the facts, never inferred here: this compared
- *    `held` to `limit` and took the bigger meaning, which is one field with two
- *    meanings guessed apart by size — wrong the moment a surface's count sits
- *    under its cap, and a trap for every surface that inherits these arms.
- *
- * Nothing here compares a number to `limit`, or to a row count beside it.
+ * It renders the SURFACE's window and composes nothing: the page hands its
+ * first-screen facts to `PagingProvider`, which combines them with the press
+ * state once (`continuedWindow`), and the sentence below the rows reads that
+ * same object. A window this component built for itself would be a second
+ * spelling of those facts, which is how two elements on one screen come to
+ * disagree (admin-window/BUG-0180).
  */
 export function PagedWindowLine({
   gauge,
-  window: first,
   shows,
 }: {
   gauge: string;
-  /** The FIRST SCREEN's facts, composed by the page exactly once. */
-  window: DrawnWindow;
   shows: DrawnSentence;
 }): ReactNode {
-  const { state } = usePaging();
-  const drawn = state.held;
-  return (
-    <WindowLine
-      gauge={gauge}
-      window={{
-        ...first,
-        held: first.heldFrom === "a count read" ? first.held : drawn,
-        truncated: state.status !== "exhausted",
-        drawn,
-      }}
-      shows={shows}
-    />
-  );
+  // `window:` is renamed off the global here for the same reason the provider
+  // names it `first`: a bare `window` in a client module reads as the DOM's.
+  const { window: surface } = usePaging();
+  return <WindowLine gauge={gauge} window={surface} shows={shows} />;
 }
 
 /** What one press asks for, in the operator's words. */
@@ -390,14 +435,25 @@ function askFor(size: number, holds: string): string {
  *
  * Five states, drawn from props alone, in this order:
  *
- *  1. **exhausted** — no control, and one sentence saying this view holds no
- *     more. The set really is finished; the read said so. **This arm is FIRST
- *     and the order is load-bearing** (admin-window/BUG-0168): a legitimate
- *     final page is short, so an exhausted state's `held` may sit off the grid
- *     `pageBound` enforces (80 against a window of 50) — honestly so, because
- *     there is no next bound to honour. Read in the other order it would draw
- *     arm 2 and tell the operator the view "shows no further rows" about a set
- *     the read established IS complete.
+ *  1. **exhausted** — no control, and one sentence: the read that continues
+ *     this view came back with nothing more. **This arm is FIRST and the order
+ *     is load-bearing** (admin-window/BUG-0168): a legitimate final page is
+ *     short, so an exhausted state's `held` may sit off the grid `pageBound`
+ *     enforces (80 against a window of 50) — honestly so, because there is no
+ *     next bound to honour. Read in the other order it would draw arm 2 and
+ *     tell the operator the view "shows no further rows" about a set the read
+ *     established IS complete.
+ *
+ *     **WHICH terminal sentence is the WINDOW's verdict, handed in already
+ *     decided** (admin-window/BUG-0180). Where the surface's two reads agree,
+ *     every row the count found is on screen and the set really is complete —
+ *     the sentence says so, in the words it has always said it in. Where they
+ *     DISAGREE — `/claims` counts the matching set and draws its rows in two
+ *     separate reads, so a claim resolved between them ends the set short of
+ *     the count — no single read established completeness, and this element is
+ *     the one an operator acts on (it REPLACES the control; there is nothing
+ *     left to press). It then says what the read did establish and no more,
+ *     while the window line three lines above states each read as its own.
  *  2. **the next bound cannot be honoured** — no control either, and one
  *     sentence that does NOT claim the set is finished. Past
  *     `MAX_PAGE_OFFSET` a bound refusal returns the state to `idle` by design
@@ -420,6 +476,7 @@ export function PageMore({
   state,
   holds,
   size,
+  readsAgree: agree,
   onPress,
 }: {
   state: PageState<unknown>;
@@ -431,6 +488,18 @@ export function PageMore({
    * the driver graded the last page against; it is never retyped beside it.
    */
   size: number;
+  /**
+   * Do this surface's two reads agree — `readsAgree` (`./window-line`) over
+   * the ONE window the page composed, DECIDED ELSEWHERE and handed here as a
+   * verdict (admin-window/BUG-0180).
+   *
+   * This component compares no count, no row count and no `held` to anything:
+   * its only arithmetic is the bound question below, which is `pageBound`'s.
+   * It is a required prop rather than a defaulted one because the defect it
+   * closes was precisely a sentence asserting a fact the control did not hold:
+   * a surface that has not decided this has nothing for this element to say.
+   */
+  readsAgree: boolean;
   onPress: () => void;
 }): ReactNode {
   const exhausted = state.status === "exhausted";
@@ -453,9 +522,22 @@ export function PageMore({
         />
       )}
       {exhausted ? (
-        <p data-paging="exhausted" className="type-body text-ink-secondary">
-          All {holds} in this view are shown.
-        </p>
+        agree ? (
+          // One read established that every row the surface counted is on
+          // screen, so the set IS complete and the sentence says so — the
+          // words this arm has always said, to the byte.
+          <p data-paging="exhausted" className="type-body text-ink-secondary">
+            All {holds} in this view are shown.
+          </p>
+        ) : (
+          // No single read established completeness, so nothing here claims
+          // it: what the READ came back with is all this sentence may say
+          // (LESSONS 2, admin-window/BUG-0180). The window line beside it
+          // states each of the two reads as its own.
+          <p data-paging="exhausted" className="type-body text-ink-secondary">
+            The read returned no further {holds}.
+          </p>
+        )
       ) : !drawsControl ? (
         <p data-paging="limit" className="type-body text-ink-secondary">
           This view shows no further rows.

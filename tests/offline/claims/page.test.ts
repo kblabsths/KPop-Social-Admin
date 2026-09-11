@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CLAIM_WINDOW, PagedClaimList } from "@/components/claims";
 import { PagingProvider } from "@/components/ui/paging";
+import type { DrawnWindow } from "@/components/ui/window-line";
 import { PENDING_CLAIMS_DEFAULTS } from "@/lib/gauges/pending-claims";
 // The app's own phrase for a CHIP narrowing, imported rather than retyped: a
 // literal here would pass while the two surfaces said different things.
@@ -197,15 +198,20 @@ vi.mock("@/components/ui/paging", async (importActual) => {
     PagingProvider: (props: {
       initial: (typeof paging.calls)[number]["initial"];
       deps: (typeof paging.calls)[number]["deps"];
+      window: unknown;
       children: unknown;
     }) => {
       paging.calls.push({ initial: props.initial, deps: props.deps });
       // The REAL provider, started from the state under test, with a probe
-      // added beside the page's own children to hand the press back out.
+      // added beside the page's own children to hand the press back out. The
+      // WINDOW is the page's own, passed straight through: this file overrides
+      // the paging STATE and nothing the page composed
+      // (admin-window/BUG-0180).
       return h(
         actual.PagingProvider as never,
         {
           initial: (paging.override === null ? props.initial : paging.override) as never,
+          window: props.window as never,
           deps: props.deps as never,
         },
         props.children as never,
@@ -223,6 +229,27 @@ vi.mock("@/components/ui/paging", async (importActual) => {
 
 const claimsModule = await import("@/app/claims/page");
 const ClaimsPage = claimsModule.default;
+
+/**
+ * A window of the shape `/claims` composes — a cap, and a `held` that came
+ * from a SEPARATE count read over the matching set (`heldFrom: "a count
+ * read"`, admin-window/BUG-0174), which is what makes this surface the one
+ * where two reads can disagree.
+ *
+ * Handed to the provider by the renders below that build a wrapper directly,
+ * the way the page hands its own (admin-window/BUG-0180).
+ */
+function countedWindow(counted: number, limit: number): DrawnWindow {
+  return {
+    limit,
+    held: counted,
+    truncated: counted > limit,
+    over: "view",
+    oldest: null,
+    scope: null,
+    heldFrom: "a count read",
+  };
+}
 
 /* ── the population, and this file's own reading of it ───────────────────── */
 
@@ -5384,6 +5411,7 @@ describe("the affordance that continues the claim list", () => {
           PagingProvider,
           {
             initial: initialPage<ClaimLine>(windowSize, true),
+            window: countedWindow(windowSize * 3, windowSize),
             deps: { route: PAGE_ROUTES.claims, params: "", size: windowSize },
             children: null,
           },
@@ -5625,7 +5653,7 @@ describe("the affordance that continues the claim list", () => {
     expect(shapeOf(zero)).not.toBe(shapeOf(agreeing));
   });
 
-  it.fails("does not tell the operator every claim is shown while its own count says more are not [admin-window/BUG-0180]", async () => {
+  it("does not tell the operator every claim is shown while its own count says more are not [admin-window/BUG-0180]", async () => {
     // The other half of admin-window/BUG-0174 criterion 5, one element down.
     // The WINDOW LINE refuses to call a diverged set complete — "a count of
     // claims answered 877; the reads returned the 50 below" — and the sentence
@@ -5885,6 +5913,7 @@ describe("the affordance that continues the claim list", () => {
           // A COUNT of 900 over 37 rendered rows: the state a page would build
           // where its two reads disagree — which `/claims` never hands over.
           initial: initialPage<ClaimLine>(37, true),
+          window: countedWindow(900, CLAIM_WINDOW),
           deps: { route: PAGE_ROUTES.claims, params: "", size: CLAIM_WINDOW },
           children: null,
         },

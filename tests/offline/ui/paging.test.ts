@@ -57,8 +57,16 @@ function state(over: Partial<PageState<Row>> = {}): PageState<Row> {
   return { rows: [], held: SIZE, status: "idle", refusal: null, notes: null, ...over };
 }
 
-const more = (over: Partial<PageState<Row>> = {}): string =>
-  render(h(PageMore, { state: state(over), holds: HOLDS, size: SIZE, onPress: () => {} }));
+/**
+ * The widget, over a state and the WINDOW VERDICT the surface hands it
+ * (admin-window/BUG-0180). It defaults to the agreeing surface — the one every
+ * case below this line is about — and the diverged one is passed explicitly
+ * where it is the subject.
+ */
+const more = (over: Partial<PageState<Row>> = {}, readsAgree = true): string =>
+  render(
+    h(PageMore, { state: state(over), holds: HOLDS, size: SIZE, readsAgree, onPress: () => {} }),
+  );
 
 /** A page of rows, as a stub would serve it. A FULL window is `pageOf(SIZE)`. */
 const pageOf = (count: number): Row[] => Array.from({ length: count }, (_, i) => ({ id: `r${i}` }));
@@ -122,6 +130,46 @@ describe("PageMore draws its five states from props", () => {
     expect(html).toContain('data-paging="exhausted"');
     expect(html).not.toContain('data-paging="limit"');
     expect((html.match(/<p/g) ?? []).length).toBe(1);
+  });
+
+  it("exhausted where the surface's two reads DISAGREE: the same arm, a different claim [admin-window/BUG-0180]", () => {
+    // `/claims` counts its matching set and draws its rows in TWO reads, so a
+    // press can end the set with fewer rows on screen than the count the page
+    // publishes. No single read established completeness there, and this
+    // element is the one an operator acts on — it REPLACES the control, so
+    // there is nothing left to press.
+    //
+    // What does NOT move: the arm, the hook, the absence of a control and the
+    // noun. Only the claim does. No word of either sentence is pinned: the two
+    // renders are compared against EACH OTHER, and the words are the
+    // designer's.
+    const held = SIZE * 3;
+    const agreeing = more({ status: "exhausted", held });
+    const diverged = more({ status: "exhausted", held }, false);
+    expect(controls(diverged)).toBe(0);
+    expect(diverged).toContain('data-paging="exhausted"');
+    expect(diverged).not.toContain('data-paging="limit"');
+    expect(diverged).not.toContain('data-paging="more"');
+    expect((diverged.match(/<p/g) ?? []).length).toBe(1);
+    expect(diverged).toContain(HOLDS);
+    expect(diverged).not.toBe(agreeing);
+  });
+
+  it("renders the verdict it is handed, and compares no number of its own [admin-window/BUG-0180]", () => {
+    // Criterion 3, from the outside: the ONLY thing that moves this sentence
+    // is the verdict. One state, two verdicts — two sentences. One verdict,
+    // two states a size heuristic would tell apart (a `held` at the window and
+    // a `held` of 877 over the same rows) — one sentence, byte for byte. A
+    // control that compared anything of its own would fail the second half.
+    const sentence = (html: string): string => cheerio.load(html)("[data-paging]").toString();
+    expect(sentence(more({ status: "exhausted", held: SIZE }, true))).not.toBe(
+      sentence(more({ status: "exhausted", held: SIZE }, false)),
+    );
+    for (const agree of [true, false]) {
+      expect(sentence(more({ status: "exhausted", held: SIZE }, agree)), String(agree)).toBe(
+        sentence(more({ status: "exhausted", held: 877 }, agree)),
+      );
+    }
   });
 
   it("a next bound past the ceiling: no control either, and it does NOT say the set is finished", () => {
@@ -226,7 +274,13 @@ describe("PageMore draws its five states from props", () => {
           "div",
           null,
           rows,
-          h(PageMore, { state: state(over), holds: HOLDS, size: SIZE, onPress: () => {} }),
+          h(PageMore, {
+            state: state(over),
+            holds: HOLDS,
+            size: SIZE,
+            readsAgree: true,
+            onPress: () => {},
+          }),
         ),
       );
     const listOf = (html: string) => /<ul[^]*<\/ul>/.exec(html)?.[0] ?? "";
@@ -565,7 +619,13 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
       { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
     );
     const shown = readable(
-      render(h(PageMore, { state: next, holds: HOLDS, size: SIZE, onPress: () => {} })),
+      render(h(PageMore, {
+        state: next,
+        holds: HOLDS,
+        size: SIZE,
+        readsAgree: true,
+        onPress: () => {},
+      })),
     );
     // Non-vacuity: the refusal really is on screen.
     expect(shown).toContain(ANSWERED_BY_SOMETHING_ELSE);
@@ -714,6 +774,7 @@ describe("usePageRows binds the driver to a press", () => {
           state: bound.state,
           holds: HOLDS,
           size: SIZE,
+          readsAgree: true,
           onPress: bound.press,
         });
       }),
@@ -869,6 +930,7 @@ describe("usePageRows binds the driver to a press", () => {
             state: bound.state,
             holds: HOLDS,
             size: bound.size,
+            readsAgree: true,
             onPress: bound.press,
           });
         }),
@@ -930,17 +992,25 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
   };
   const CATALOG: DrawnSentence = { of: "catalog", rows: "events" };
 
-  /** The line, rendered inside a surface whose state is `state`. */
+  /**
+   * The line, rendered inside a surface whose state is `state`.
+   *
+   * The WINDOW is handed to the PROVIDER (admin-window/BUG-0180): the page
+   * composes its first-screen facts once, the provider combines them with the
+   * press state once, and every part of the surface — this line and the
+   * control alike — reads that one object.
+   */
   const paged = (state: PageState<Row>, window: DrawnWindow = WINDOW): string =>
     render(
       h(
         PagingProvider,
         {
           initial: state,
+          window,
           deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE },
           children: null,
         },
-        h(PagedWindowLine, { gauge: "events", window, shows: CATALOG }),
+        h(PagedWindowLine, { gauge: "events", shows: CATALOG }),
       ),
     );
 
@@ -960,6 +1030,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
         PagingProvider,
         {
           initial: initialPage<Row>(SIZE, true),
+          window: WINDOW,
           deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE },
           children: null,
         },
@@ -1079,11 +1150,121 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     }
   });
 
+  it("derives the two-reads verdict ONCE, over the one window, for the line and the control alike [admin-window/BUG-0180]", () => {
+    // The seam this ticket names. The page composes its first-screen facts
+    // once and hands them here; the provider combines them with the press
+    // state once and asks `readsAgree` of that one object; the line above the
+    // rows and the sentence below them each read what they are handed. The
+    // control holds no count, no row count and no `held` to compare, which is
+    // why the two elements cannot answer one question two ways (LESSONS 11).
+    const MATCHED: DrawnSentence = { of: "matched", lede: "Longest-waiting first.", rows: HOLDS };
+
+    /** A whole paged surface — the line, then the control, from one provider. */
+    const surface = (state: PageState<Row>, window: DrawnWindow): string =>
+      render(
+        h(
+          PagingProvider,
+          {
+            initial: state,
+            window,
+            deps: { route: PAGE_ROUTES.claims, params: "", size: SIZE },
+            children: null,
+          },
+          h(function Body() {
+            const published = usePaging<Row>();
+            return h(
+              "div",
+              null,
+              h(PagedWindowLine, { gauge: "claims", shows: MATCHED }),
+              h(PageMore, {
+                state: published.state,
+                holds: HOLDS,
+                size: published.size,
+                readsAgree: published.readsAgree,
+                onPress: published.press,
+              }),
+            );
+          }),
+        ),
+      );
+    const ended = (held: number): PageState<Row> => ({
+      rows: [],
+      held,
+      status: "exhausted",
+      refusal: null,
+      notes: null,
+    });
+    const counted = (count: number): DrawnWindow => ({
+      ...WINDOW,
+      held: count,
+      heldFrom: "a count read",
+    });
+    const hook = (html: string, name: string): string | undefined =>
+      cheerio.load(html)("[data-window]").attr(name);
+    const sentence = (html: string): string => cheerio.load(html)("[data-paging]").toString();
+
+    // (a) The two reads AGREE: every claim the count found is drawn.
+    const agreeing = surface(ended(130), counted(130));
+    // (b) They DIVERGE: the press ended the set with SIZE rows on screen under
+    //     a count of 877 — the state a claim resolved between the two reads
+    //     produces.
+    const diverged = surface(ended(SIZE), counted(877));
+
+    // Non-vacuity, off the page's own hooks: the line publishes the COUNT's
+    // number in both, and both reads have ended.
+    expect(hook(agreeing, "data-window-held")).toBe("130");
+    expect(hook(diverged, "data-window-held")).toBe("877");
+    expect(hook(agreeing, "data-window-truncated")).toBe("false");
+    expect(hook(diverged, "data-window-truncated")).toBe("false");
+
+    // The sentence under the rows is not the same one in both states…
+    expect(sentence(diverged)).not.toBe(sentence(agreeing));
+    // …and where they agree it is exactly what the widget draws when it is
+    // handed the agreeing verdict — so the fact really did travel from the
+    // window, through one derivation, to the control.
+    expect(sentence(agreeing)).toBe(
+      sentence(
+        render(
+          h(PageMore, {
+            state: ended(130),
+            holds: HOLDS,
+            size: SIZE,
+            readsAgree: true,
+            onPress: () => {},
+          }),
+        ),
+      ),
+    );
+    expect(sentence(diverged)).toBe(
+      sentence(
+        render(
+          h(PageMore, {
+            state: ended(SIZE),
+            holds: HOLDS,
+            size: SIZE,
+            readsAgree: false,
+            onPress: () => {},
+          }),
+        ),
+      ),
+    );
+
+    // A surface with NO second read cannot reach the diverged sentence: its
+    // `held` counts its own rows, so an ended window holds what it counted
+    // (`/browse`, which is why its markup does not move in any state).
+    const single = surface(ended(SIZE * 3), { ...WINDOW, held: 1, heldFrom: "this window" });
+    // Its `held` is its own rows' — the stated `1` is overwritten by the press
+    // state, which is `heldFrom` doing its job (admin-window/BUG-0174) — and
+    // the sentence it draws is the completeness one, byte for byte.
+    expect(hook(single, "data-window-held")).toBe(String(SIZE * 3));
+    expect(sentence(single)).toBe(sentence(agreeing));
+  });
+
   it("refuses to draw a paged surface outside its provider", () => {
     // A default would be a paging state no read produced, drawn under rows
     // some read did.
     expect(() =>
-      render(h(PagedWindowLine, { gauge: "events", window: WINDOW, shows: CATALOG })),
+      render(h(PagedWindowLine, { gauge: "events", shows: CATALOG })),
     ).toThrow();
     expect(() => render(h(function Probe() {
       usePaging();
@@ -1200,7 +1381,13 @@ describe("a page that arrives short of the window", () => {
     expect(answer.exhausted).toBe(false);
 
     const html = render(
-      h(PageMore, { state: next, holds: HOLDS, size: SIZE, onPress: () => {} }),
+      h(PageMore, {
+        state: next,
+        holds: HOLDS,
+        size: SIZE,
+        readsAgree: true,
+        onPress: () => {},
+      }),
     );
     // One of the two honest endings, never the silent one. (Unchanged.)
     expect(controls(html) === 1 || html.includes('data-paging="exhausted"')).toBe(true);
@@ -1212,7 +1399,13 @@ describe("a page that arrives short of the window", () => {
     const { next } = await short(SIZE, false);
     expect(next.held).toBe(SIZE * 2);
     const html = render(
-      h(PageMore, { state: next, holds: HOLDS, size: SIZE, onPress: () => {} }),
+      h(PageMore, {
+        state: next,
+        holds: HOLDS,
+        size: SIZE,
+        readsAgree: true,
+        onPress: () => {},
+      }),
     );
     expect(controls(html)).toBe(1);
     expect(html).toContain('data-paging="more"');
@@ -1258,7 +1451,13 @@ describe("the refusal line says who wrote the words", () => {
     expect(next.rows.map((row) => row.id)).toEqual(["a"]);
     expect(next.held).toBe(SIZE);
     expect(next.status).toBe("idle");
-    return render(h(PageMore, { state: next, holds: HOLDS, size: SIZE, onPress: () => {} }));
+    return render(h(PageMore, {
+        state: next,
+        holds: HOLDS,
+        size: SIZE,
+        readsAgree: true,
+        onPress: () => {},
+      }));
   }
 
   /**
@@ -1494,7 +1693,13 @@ describe("the refusal line says who wrote the words", () => {
     const wordless = await requestPage<Row>(BEFORE, DEPS);
     expect(wordless.refusal?.reason).toBe(LAST_RESORT);
     const ours = faces(
-      render(h(PageMore, { state: wordless, holds: HOLDS, size: SIZE, onPress: () => {} })),
+      render(h(PageMore, {
+        state: wordless,
+        holds: HOLDS,
+        size: SIZE,
+        readsAgree: true,
+        onPress: () => {},
+      })),
     );
     expect(ours.sans).toContain(LAST_RESORT);
     expect(ours.mono).not.toContain(LAST_RESORT);
@@ -1515,7 +1720,13 @@ describe("the refusal line says who wrote the words", () => {
     const transport = await requestPage<Row>(BEFORE, DEPS);
     expect(transport.refusal?.reason).toBe("Failed to fetch");
     const theirs = faces(
-      render(h(PageMore, { state: transport, holds: HOLDS, size: SIZE, onPress: () => {} })),
+      render(h(PageMore, {
+        state: transport,
+        holds: HOLDS,
+        size: SIZE,
+        readsAgree: true,
+        onPress: () => {},
+      })),
     );
     expect(theirs.mono).toContain("Failed to fetch");
     expect(theirs.sans).not.toContain("Failed to fetch");
