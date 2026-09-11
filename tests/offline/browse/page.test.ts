@@ -1685,6 +1685,97 @@ describe("the affordance that continues the recent-events view", () => {
     expect(windowLine(exhausted).text).not.toContain(DID_NOT_FILL);
   });
 
+  /** The line's sentence, with no word of it pinned — read for what it omits. */
+  const lineText = (markup: string): string => windowLine(markup).text;
+
+  /** The cap clause, in the one spelling every window line in the app uses. */
+  const A_CAP = "at most";
+
+  it("the window line in every state a press can end in", async () => {
+    // admin-window/BUG-0174, criterion 6: offered, loading, refused, refused at
+    // the bound ceiling, and exhausted — every one driven by the REAL driver
+    // from the REAL deps this page handed it, and every one graded on the two
+    // things a state may never get wrong. The words are the designer's; what is
+    // asserted is that the line publishes ONE window and agrees with the
+    // sentence under the table about whether rows are held back (LESSONS 11).
+    const script = windowScript(view.window);
+    await renderBrowse(script);
+    const deps = paging.calls[0].deps as { route: string; params: string; size: number };
+    const initial = paging.calls[0].initial as unknown as PageState<BrowseRow>;
+    const answering = (state: PageState<BrowseRow>, answer: unknown) =>
+      requestPage<BrowseRow>(state, { ...deps, fetchJson: () => Promise.resolve(answer) });
+
+    const landed = await pressedWith(pageAnswer(view.window, { venues: null, provenance: null }));
+    const ended = await answering(
+      landed,
+      pageAnswer(view.window * 2, { venues: null, provenance: null }, view.window - 10),
+    );
+    const refused = await answering(landed, {
+      kind: "error",
+      reading: T.events,
+      message: "refused",
+    });
+    const atCeiling = initialPage<BrowseRow>(MAX_PAGE_OFFSET + view.window, true);
+    const ceilingRefusal = await answering(atCeiling, {
+      kind: "refused",
+      reason: "the `offset` must be at most 100000",
+      bound: String(MAX_PAGE_OFFSET + view.window),
+    });
+
+    // The ceiling state goes around `renderBrowse`, and only it does: that
+    // helper's sweep grades that no FIRST screen of this file draws the limit
+    // arm, and this is the state where drawing it is correct.
+    const rendered = async (): Promise<string> => {
+      readWith.client = stubClient(script).asSupabaseClient();
+      return render(await BrowsePage({ searchParams: Promise.resolve({}) }));
+    };
+
+    const states: [string, string, PageState<BrowseRow> | null, boolean, number][] = [
+      ["offered", "more", null, false, view.window],
+      ["loading", "loading", pressing(initial), false, view.window],
+      ["refused", "more", refused, false, view.window * 2],
+      [
+        "refused at the bound ceiling",
+        "limit",
+        ceilingRefusal,
+        true,
+        MAX_PAGE_OFFSET + view.window,
+      ],
+      ["exhausted", "exhausted", ended, false, view.window * 3 - 10],
+    ];
+
+    for (const [name, arm, state, ceiling, held] of states) {
+      paging.override = state;
+      const markup = ceiling ? await rendered() : await renderBrowse(script);
+      const line = windowLine(markup);
+      expect(pagingArms(markup), name).toContain(arm);
+      expect(line.lines, name).toBe(1);
+      expect(line.truncated, name).toBe(arm === "exhausted" ? "false" : "true");
+      // `held` on this surface is the rows its own reads came back with, so it
+      // grows with the rows a press appends and stands where one appended none
+      // (criterion 4).
+      expect(line.held, name).toBe(String(held));
+      expect(line.text, name).not.toContain(DID_NOT_FILL);
+    }
+
+    // …and the states a press CONTINUED state no cap of their own, while the
+    // two that have taken in no row still render the first screen's sentence.
+    for (const [name, state] of [
+      ["refused", refused],
+      ["exhausted", ended],
+    ] as const) {
+      paging.override = state;
+      expect(lineText(await renderBrowse(script)), name).not.toContain(A_CAP);
+    }
+    for (const [name, state] of [
+      ["offered", null],
+      ["loading", pressing(initial)],
+    ] as const) {
+      paging.override = state;
+      expect(lineText(await renderBrowse(script)), name).toContain(A_CAP);
+    }
+  });
+
   it("is one element while a press is in FLIGHT, and says what the rows still say", async () => {
     const script = windowScript(view.window);
     const { initial } = paging.calls[0] ?? (await renderBrowse(script), paging.calls[0]);

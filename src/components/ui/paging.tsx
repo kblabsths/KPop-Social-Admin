@@ -327,14 +327,18 @@ export function usePaging<Row>(): PagingSurface<Row> {
  *    still says rows are not shown — because they are.
  *  - **`drawn` is what the operator now holds**, which is the driver's own
  *    `held`: the first screen plus everything appended.
- *  - **`held` is the rows the surface's reads came back with, where that is
- *    what the page's `held` MEANS.** A window read cannot come back with more
- *    rows than its cap, so a `held` at or under the cap is this window's own
- *    row count and grows with the rows appended to it (`/browse`, whose line
- *    was stuck at 50 under 100 rows). A `held` ABOVE the cap came from a
- *    second read — `/claims` counts the matching set — and paging reads no new
- *    row into that count, so it stands untouched, which is also the hook the
- *    live paged-walk oracle grades the walk against.
+ *  - **`held` is whatever the WINDOW says it counts** (`DrawnWindow.heldFrom`,
+ *    admin-window/BUG-0174). A window whose `held` counts its own rows grows
+ *    with the rows a press appends (`/browse`, whose line was stuck at 50
+ *    under 100 rows); one whose `held` came from a separate count read stands
+ *    untouched, because paging reads no row into that count (`/claims`, whose
+ *    hook the live paged-walk oracle grades the walk against). It is STATED by
+ *    the page that composed the facts, never inferred here: this compared
+ *    `held` to `limit` and took the bigger meaning, which is one field with two
+ *    meanings guessed apart by size — wrong the moment a surface's count sits
+ *    under its cap, and a trap for every surface that inherits these arms.
+ *
+ * Nothing here compares a number to `limit`, or to a row count beside it.
  */
 export function PagedWindowLine({
   gauge,
@@ -353,7 +357,7 @@ export function PagedWindowLine({
       gauge={gauge}
       window={{
         ...first,
-        held: first.held <= first.limit ? drawn : first.held,
+        held: first.heldFrom === "a count read" ? first.held : drawn,
         truncated: state.status !== "exhausted",
         drawn,
       }}

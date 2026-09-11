@@ -5523,6 +5523,194 @@ describe("the affordance that continues the claim list", () => {
     expect(lineText(continued)).not.toContain(DID_NOT_FILL);
   });
 
+  /** The sentence's shape, with every figure blanked — "is this the SAME
+   * sentence with other numbers, or a different sentence?" (LESSONS 2). */
+  const shapeOf = (markup: string): string => lineText(markup).replace(/[\d,]+/g, "#");
+
+  /** The cap clause, in the one spelling every window line in the app uses. */
+  const A_CAP = "at most";
+
+  it("an exhausted window that appended nothing names the rows on screen", async () => {
+    // admin-window/BUG-0174, criterion 5. The count and the window read are two
+    // reads and they can disagree — staging's own count moved 877 -> 878
+    // between two sessions of this campaign — so a press that ends the set
+    // without appending a row leaves 50 rows on screen under a count of 877.
+    // The arm used to fall back to the CAP for "what is below", which rendered
+    // "877 claims in all; the 50 longest-waiting are below — the read found no
+    // more": the cap's number as the screen's, and a completeness claim over a
+    // larger count that no single read established.
+    const claims = longPopulation(877);
+    const script = pagedScript(877);
+    await renderClaims(script);
+    const initial = paging.calls[0].initial as unknown as PageState<ClaimLine>;
+    const endingWith = (rows: ClaimLine[]) =>
+      requestPage<ClaimLine>(initial, {
+        ...depsOf(),
+        fetchJson: () =>
+          Promise.resolve({
+            kind: "ok" as const,
+            rows,
+            offset: CLAIM_WINDOW,
+            exhausted: true,
+          }),
+      });
+
+    paging.override = await endingWith([]);
+    const zero = await renderClaims(script);
+    // The state really is the one under test: the set has ended, nothing was
+    // appended, and the count still says there are 877.
+    expect(pagingArms(zero)).toEqual(["exhausted"]);
+    expect(claimIds(zero)).toHaveLength(CLAIM_WINDOW);
+    expect(windowFigures(zero)).toEqual({
+      lines: 1,
+      limit: CLAIM_WINDOW,
+      held: 877,
+      truncated: false,
+    });
+
+    // A press that DID append rows: the number the sentence names for what is
+    // on screen follows the rows drawn, which is what proves the zero-append
+    // case is not reading the cap (they are the same number there).
+    paging.override = await endingWith(
+      claimLines(claims.slice(CLAIM_WINDOW, CLAIM_WINDOW + 30), new Map()),
+    );
+    const appended = await renderClaims(script);
+    expect(claimIds(appended)).toHaveLength(CLAIM_WINDOW + 30);
+    expect(lineText(appended)).toContain(count(CLAIM_WINDOW + 30));
+    expect(lineText(zero)).not.toContain(count(CLAIM_WINDOW + 30));
+    expect(lineText(zero)).toContain(count(CLAIM_WINDOW));
+
+    // Both reads are named, and neither continued sentence states a cap.
+    for (const [state, text] of [
+      ["appended nothing", lineText(zero)],
+      ["appended 30", lineText(appended)],
+    ] as const) {
+      expect(text, state).toContain(count(877));
+      expect(text, state).not.toContain(A_CAP);
+    }
+
+    // …and the set is NOT called complete on screen while a larger count is
+    // named: the diverged state gets a different sentence, not the same one
+    // with other numbers. The comparison is against the same arm's own
+    // completeness sentence, so no word of either is pinned here.
+    const whole = longPopulation(130);
+    const wholeScript = pagedScript(130);
+    await renderClaims(wholeScript);
+    const from = paging.calls[0].initial as unknown as PageState<ClaimLine>;
+    const second = await requestPage<ClaimLine>(from, {
+      ...depsOf(),
+      fetchJson: () =>
+        Promise.resolve({
+          kind: "ok" as const,
+          rows: claimLines(whole.slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
+          offset: CLAIM_WINDOW,
+          exhausted: false,
+        }),
+    });
+    paging.override = await requestPage<ClaimLine>(second, {
+      ...depsOf(),
+      fetchJson: () =>
+        Promise.resolve({
+          kind: "ok" as const,
+          rows: claimLines(whole.slice(CLAIM_WINDOW * 2, 130), new Map()),
+          offset: CLAIM_WINDOW * 2,
+          exhausted: true,
+        }),
+    });
+    const agreeing = await renderClaims(wholeScript);
+    // Non-vacuity: this one really is the state where one read established
+    // completeness — every matching claim the count found is drawn.
+    expect(claimIds(agreeing)).toHaveLength(130);
+    expect(windowFigures(agreeing).held).toBe(130);
+    expect(shapeOf(zero)).not.toBe(shapeOf(agreeing));
+  });
+
+  it("the window line in every state a press can end in", async () => {
+    // admin-window/BUG-0174, criterion 6: offered, loading, refused, refused at
+    // the bound ceiling, and exhausted — every one driven by the REAL driver
+    // from the REAL deps this page handed it, and every one graded on the two
+    // things a state may never get wrong. The words are the designer's; what is
+    // asserted is that the line publishes ONE window and agrees with the
+    // sentence under the table about whether rows are held back (LESSONS 11).
+    const claims = longPopulation(130);
+    const script = pagedScript(130);
+    await renderClaims(script);
+    const initial = paging.calls[0].initial as unknown as PageState<ClaimLine>;
+    const answering = (state: PageState<ClaimLine>, answer: PageAnswer<ClaimLine>) =>
+      requestPage<ClaimLine>(state, { ...depsOf(), fetchJson: () => Promise.resolve(answer) });
+
+    const landed = await answering(initial, {
+      kind: "ok",
+      rows: claimLines(claims.slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
+      offset: CLAIM_WINDOW,
+      exhausted: false,
+    });
+    const ended = await answering(landed, {
+      kind: "ok",
+      rows: claimLines(claims.slice(CLAIM_WINDOW * 2, 130), new Map()),
+      offset: CLAIM_WINDOW * 2,
+      exhausted: true,
+    });
+    const refused = await answering(landed, {
+      kind: "not_provisioned",
+      missing: T.pendingClaims,
+    });
+    const atCeiling = initialPage<ClaimLine>(MAX_PAGE_OFFSET + CLAIM_WINDOW, true);
+    const ceilingRefusal = await answering(atCeiling, {
+      kind: "refused",
+      reason: "the `offset` must be at most 100000",
+      bound: String(MAX_PAGE_OFFSET + CLAIM_WINDOW),
+    });
+
+    // The ceiling states go around `renderClaims`, and only they do: its sweep
+    // grades that no FIRST screen of this file draws the limit arm, and these
+    // two are the states where drawing it is correct.
+    const rendered = async (): Promise<string> => {
+      readWith.client = stubClient(script).asSupabaseClient();
+      return render(await ClaimsPage({ searchParams: Promise.resolve({}) }));
+    };
+
+    const states: [string, string, PageState<ClaimLine> | null, boolean][] = [
+      ["offered", "more", null, false],
+      ["loading", "loading", pressing(initial), false],
+      ["refused", "more", refused, false],
+      ["refused at the bound ceiling", "limit", ceilingRefusal, true],
+      ["exhausted", "exhausted", ended, false],
+    ];
+
+    for (const [name, arm, state, ceiling] of states) {
+      paging.override = state;
+      const markup = ceiling ? await rendered() : await renderClaims(script);
+      const figures = windowFigures(markup);
+      // One window line, and it is the one the paging state below it answers
+      // for: truncated exactly where the read has not said the set has ended.
+      expect(pagingArms(markup), name).toContain(arm);
+      expect(figures.lines, name).toBe(1);
+      expect(figures.truncated, name).toBe(arm !== "exhausted");
+      // `held` is the matching count its own count read established, after
+      // every press and in every state (criterion 4).
+      expect(figures.held, name).toBe(130);
+      expect(lineText(markup), name).not.toContain(DID_NOT_FILL);
+    }
+
+    // …and the states a press CONTINUED state no cap of their own, while the
+    // two that have taken in no row still render the first screen's sentence.
+    for (const [name, state] of [
+      ["refused", refused],
+      ["exhausted", ended],
+    ] as const) {
+      paging.override = state;
+      expect(lineText(await renderClaims(script)), name).not.toContain(A_CAP);
+    }
+    for (const [name, state] of [
+      ["offered", null],
+      ["loading", pressing(initial)],
+    ] as const) {
+      paging.override = state;
+      expect(lineText(await renderClaims(script)), name).toContain(A_CAP);
+    }
+  });
+
   it("is one element while a press is in FLIGHT, and says what the rows still say", async () => {
     const script = pagedScript(130);
     await renderClaims(script);
