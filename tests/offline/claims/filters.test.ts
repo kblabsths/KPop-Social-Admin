@@ -9,6 +9,7 @@ import {
   TABS,
   UNCHIPPED_FACETS,
   claimsHref,
+  claimsQuery,
   clearNarrowing,
   droppedParams,
   facetChips,
@@ -16,6 +17,7 @@ import {
   filterFrom,
   hasChipNarrowing,
   hasNarrowingFacet,
+  listFilterOf,
   sourceHref,
   tabFrom,
   tabLinks,
@@ -285,6 +287,74 @@ describe("the URL a state has", () => {
     expect(href).toBe(
       `/claims?bucket=escalated&source_id=${SOURCES[0]}&domain=events`,
     );
+  });
+
+  /**
+   * The query one PRESS carries — campaign admin-window/TASK-0067, SPEC F14.
+   *
+   * It is the same serialization the URL above carries, so the two cannot
+   * drift (LESSONS 5), and the round trip that matters is not a string
+   * comparison: the route handler re-derives the LIST's narrowing from these
+   * parameters with the page's own two functions, so what is asserted is that
+   * `claimsQuery(filter, tab)` -> `listFilterOf(filterFrom(...), tabFrom(...))`
+   * lands on exactly the filter the first screen's rows were read under.
+   */
+  it("carries the page's narrowing to the paging route, and nothing else", () => {
+    const filter: ClaimsFilter = {
+      bucket: "awaiting_row",
+      source_id: SOURCES[1],
+      domain: "venues",
+    };
+    expect(claimsQuery(filter, "buckets")).toBe(
+      `bucket=awaiting_row&source_id=${SOURCES[1]}&domain=venues`,
+    );
+    // The query half of the href, spelled once for both.
+    expect(claimsHref(PATH, filter, "buckets")).toBe(
+      `${PATH}?${claimsQuery(filter, "buckets")}`,
+    );
+    // Nothing narrowed is nothing carried — never `?bucket=&domain=`.
+    expect(claimsQuery({}, "buckets")).toBe("");
+    expect(claimsQuery({})).toBe("");
+    expect(claimsQuery({}, "standing")).toBe("tab=standing");
+  });
+
+  it("re-derives the same list narrowing the first screen read under", () => {
+    const standingBucket = "standing_disagreement";
+    const cases: ReadonlyArray<readonly [ClaimsFilter, ClaimsTab]> = [
+      [{}, "buckets"],
+      [{ bucket: "escalated" }, "buckets"],
+      [{ source_id: SOURCES[0], domain: "events" }, "buckets"],
+      // The standing tab carries no bucket facet at all: the tab sets it, and
+      // a bucket nobody can see must not travel in a URL.
+      [{}, "standing"],
+      [{ source_id: SOURCES[1] }, "standing"],
+    ];
+    for (const [filter, tab] of cases) {
+      const query = Object.fromEntries(
+        new URLSearchParams(claimsQuery(filter, tab)).entries(),
+      );
+      const where = JSON.stringify([filter, tab]);
+      expect(tabFrom(query), where).toBe(tab);
+      expect(
+        listFilterOf(filterFrom(query, BUCKETS), tabFrom(query), standingBucket),
+        where,
+      ).toEqual(listFilterOf(filter, tab, standingBucket));
+    }
+  });
+
+  it("carries no parameter the page DROPPED", () => {
+    // The defect this shape exists for (admin-window/BUG-0141): a facet the
+    // page could not read narrowed no row above, so it may not narrow the rows
+    // a press appends. The filter is what the page APPLIED — never the URL.
+    const asked = {
+      bucket: "not_a_bucket",
+      source_id: "not-a-uuid",
+      domain: "events",
+      tab: "standing",
+    };
+    const applied = filterFrom(asked, BUCKETS);
+    expect(applied).toEqual({ domain: "events" });
+    expect(claimsQuery(applied, tabFrom(asked))).toBe("domain=events&tab=standing");
   });
 
   it("round-trips every filter it writes", () => {
