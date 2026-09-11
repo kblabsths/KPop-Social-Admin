@@ -218,6 +218,22 @@ function withoutSecrets(text: string): string {
 const MAX_CAUSE_DEPTH = 4;
 
 /**
+ * Whether `messageOf` had to render the WHOLE value, because it carried no
+ * string `message` of its own.
+ *
+ * PROVENANCE, and the one fact no amount of reading the result could recover:
+ * what came out is this app's serialisation of a foreign body, and it already
+ * holds every field that value had — `details`, `hint` and `code` included.
+ * That is why none of the three is appended again in this state
+ * (admin-window/BUG-0179: the `code` arm used to be, so an intermediary's
+ * whole document trailed the clause that had just counted it).
+ */
+function serialisedWhole(error: unknown): boolean {
+  const record = asRecord(error);
+  return record !== null && typeof record.message !== "string";
+}
+
+/**
  * One part of the client's account, carrying the one thing about it that no
  * amount of reading its text could recover: whether the part is the client's
  * own words at all, or a value THIS APP serialised because the client gave it
@@ -249,7 +265,7 @@ function accountParts(error: unknown, depth: number): AccountPart[] {
   // A non-object (a thrown string, a number) has no fields to serialise, so
   // only the object case is ours rather than the client's.
   if (record === null || typeof record.message !== "string") {
-    return [{ raw: messageOf(error), serialised: record !== null }];
+    return [{ raw: messageOf(error), serialised: serialisedWhole(error) }];
   }
 
   const parts: AccountPart[] = [{ raw: messageOf(error), serialised: false }];
@@ -377,25 +393,39 @@ function framesInstead(count: number): string {
 }
 
 /**
- * A part whose stack frames are gone and whose CAUSE is not.
+ * A part read LINE BY LINE: every line that is a runtime STACK FRAME goes,
+ * every line that is a DOCUMENT is counted where it stood, and every other
+ * line is kept verbatim and joined into one line.
  *
- * Every non-frame line is kept verbatim and joined into one line; only frame
- * lines go. The part is never truncated at the first frame, because
- * postgrest-js puts the real cause AFTER it — reading down to the first frame
- * is exactly the bug admin-window/BUG-0016 fixed, and it does not come back.
+ * Question 2 is asked at both granularities, of EVERY part, because a document
+ * does not have to be the first thing in a part to be one. A frameless
+ * `details` of "reference 8f3c1\n<!DOCTYPE html>…" used to cross whole while
+ * the identical document one line above a stack frame was counted — the same
+ * question answered two ways depending on what else the part happened to carry
+ * (QA residual (b) of admin-window/BUG-0173, answered in
+ * admin-window/BUG-0179). One question asked at two granularities is still one
+ * question: nothing new is inspected here, and there is no line-level
+ * deduplication either — the transport account's twice-stated cause sentence
+ * is admin-window/DEBT-0020, not this.
  *
- * The kept lines are re-asked the questions above: a header that is itself a
- * document is counted rather than quoted. (Question 1 needs no re-asking: a
- * serialised part never reaches here, since provenance is answered first.)
+ * The part is never truncated at the first frame, because postgrest-js puts
+ * the real cause AFTER it — reading down to the first frame is exactly the bug
+ * admin-window/BUG-0016 fixed, and it does not come back. (Question 1 needs no
+ * re-asking: a serialised part never reaches here, since provenance is
+ * answered first.)
  *
- * A part with no frame at all is returned UNTOUCHED — not re-joined, not
- * re-indented, not re-spaced. A database message that happens to span lines
- * crosses exactly as it arrived.
+ * A part where NO line answers either question is returned UNTOUCHED — not
+ * re-joined, not re-indented, not re-spaced, and with no count of frames
+ * nobody dropped. A database message that happens to span lines crosses
+ * exactly as it arrived.
  */
-function withoutRuntimeFrames(part: string): string {
+function askedLineByLine(part: string): string {
   const lines = part.split(/\r?\n/);
   const dropped = lines.filter(isRuntimeFrame).length;
-  if (dropped === 0) return part;
+  const carriesDocument = lines.some(
+    (line) => !isRuntimeFrame(line) && isDocument(line.trim()),
+  );
+  if (dropped === 0 && !carriesDocument) return part;
 
   const said = lines
     .filter((line) => !isRuntimeFrame(line))
@@ -403,6 +433,7 @@ function withoutRuntimeFrames(part: string): string {
     .filter((line) => line.length > 0)
     .map((line) => (isDocument(line) ? documentInstead(line) : line))
     .join(" ");
+  if (dropped === 0) return said;
   const counted = framesInstead(dropped);
   return said.length > 0 ? `${said} ${counted}` : counted;
 }
@@ -412,7 +443,9 @@ function withoutRuntimeFrames(part: string): string {
  * there is no fourth (admin-window/BUG-0173).
  *
  *  1. Did WE serialise it? Provenance, inspecting no text at all.
- *  2. Is it a DOCUMENT? Its first non-blank character is `<`.
+ *  2. Is it a DOCUMENT? Its first non-blank character is `<` — asked of the
+ *     whole part, and then of each of its lines, which is one question at two
+ *     granularities rather than a second question.
  *  3. Does it carry RUNTIME FRAMES? Those lines go; every other line stays.
  *
  * `null` means the part was blank and carries nothing to say.
@@ -422,8 +455,66 @@ function partOfAccount({ raw, serialised }: AccountPart): string | null {
   if (trimmed.length === 0) return null;
   if (serialised) return serialisedInstead(raw);
   if (isDocument(trimmed)) return documentInstead(raw);
-  return withoutRuntimeFrames(trimmed);
+  return askedLineByLine(trimmed);
 }
+
+/**
+ * The `code` as the account may carry it — ONE MORE PART, asked the same three
+ * questions as every other one (admin-window/BUG-0179).
+ *
+ * The code is still a machine identifier and still trails LAST in parentheses,
+ * so a real PostgREST refusal still ends "(42501)". What changes is that it no
+ * longer crosses unasked: postgrest-js hands the parsed body back AS the error
+ * object for ANY non-2xx response (`error = JSON.parse(body)`), so an
+ * intermediary refusing with a JSON envelope authors its `code` too — QA
+ * measured a 4,524-character document arriving in that field, through the real
+ * client and again at `/claims` on a production build (2026-09-11).
+ *
+ * `null` means the account carries no code at all:
+ *  - the value carried no string `message`, so `messageOf` already rendered
+ *    the WHOLE object, `code` included, and the account IS that one counted
+ *    clause — appending the code after it is the repetition `details` and
+ *    `hint` are already spared in this state;
+ *  - there is no code, or it is blank — an empty code is not information and
+ *    never prints as "()".
+ *
+ * A code that answers NONE of the three crosses VERBATIM however long it is.
+ * That is deliberate: the bar is the same derivation as every other part, not
+ * a shorter one for this field, and a length cap or a shape allowlist here
+ * would be the fourth question this app refuses to ask (LESSONS 4,
+ * ARCHITECTURE.md §7 common violations row 15). If a 300-character code ever
+ * arrives beside a real database message it is exactly as bounded as a
+ * 300-character `details`, and the answer then is a rule for every part.
+ */
+function codeOfAccount(error: unknown): string | null {
+  if (serialisedWhole(error)) return null;
+  const code = errorCode(error);
+  if (code === null) return null;
+  return partOfAccount({ raw: code, serialised: false });
+}
+
+/**
+ * What the account says when the client said NOTHING AT ALL: no part survived
+ * and no code came back.
+ *
+ * A non-2xx with an EMPTY body reaches us as `{message: ""}` — postgrest-js's
+ * `JSON.parse(body)` throws and its catch builds `error = { message: body }` —
+ * which is the path every bodiless 502/503/429 takes and the path a
+ * head-shaped count takes. Every part is then blank, so the account was the
+ * empty string and `ErrorLine` rendered "pending_claims — " naming no failure
+ * at all (QA residual (a) of admin-window/BUG-0173, answered in
+ * admin-window/BUG-0179; the LIVE harness has refused to report this blank
+ * since admin-window/TASK-0032 and the product path had no such clause).
+ *
+ * It is the app's own words about a read that was refused, and it says only
+ * what the app knows: no number is invented, nothing is attributed to the
+ * database, and the HTTP status is deliberately NOT named — `DbResponse`
+ * carries `data` and `error` alone, the error object carries no status, and
+ * reaching for one would mean widening the data-layer contract and every
+ * reader in `lib/db/**`. It renders in this state ONLY: `{code: "42883",
+ * message: ""}` still says "(42883)" and nothing else.
+ */
+const REFUSED_WITHOUT_WORDS = "the read was refused with no words to explain it";
 
 /**
  * The database client's own account of the failure — everything it said,
@@ -444,7 +535,11 @@ function partOfAccount({ raw, serialised }: AccountPart): string | null {
  * supabase-js's `details` opens with a copy of `message`, and printing the
  * wrapper twice tells an operator nothing. The `code` is a machine identifier
  * rather than prose, so it trails in parentheses, and only when the account
- * does not already spell it.
+ * does not already spell it — but it is asked the same three questions on its
+ * way there, because an intermediary authors that field too
+ * (`codeOfAccount`). And when NOTHING survives, the account is the app's own
+ * clause rather than the empty string a screen cannot read
+ * (`REFUSED_WITHOUT_WORDS`).
  */
 function errorMessage(error: unknown): string {
   const kept: string[] = [];
@@ -463,11 +558,11 @@ function errorMessage(error: unknown): string {
   }
 
   let account = kept.join(" ");
-  const code = errorCode(error)?.trim() ?? "";
-  if (code.length > 0 && !account.includes(code)) {
+  const code = codeOfAccount(error);
+  if (code !== null && !account.includes(code)) {
     account = account.length > 0 ? `${account} (${code})` : `(${code})`;
   }
-  return withoutSecrets(account);
+  return withoutSecrets(account.length > 0 ? account : REFUSED_WITHOUT_WORDS);
 }
 
 /**
