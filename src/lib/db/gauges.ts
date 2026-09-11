@@ -416,28 +416,41 @@ export function readReviewItemsOpenedSince(
 }
 
 /**
- * The adjudication stamps of the window.
+ * The adjudication stamps of the window, narrowed by the facets the caller
+ * carries.
  *
  * `gte` on the nullable stamp is also the "was ever adjudicated" filter: `null
  * >= x` is null, so a claim that never was cannot satisfy it — and `null < x`
  * is null too, so the window's upper edge keeps that property rather than
  * re-admitting an unadjudicated claim. Newest first — a truncated read of a
  * counts-over-time gauge keeps the recent weeks.
+ *
+ * **The filter is applied HERE, at the query**, exactly as
+ * `readPendingObservations` above applies it on the same table
+ * (admin-window/BUG-0194). It took none until then, and `/sources`' settled
+ * values section narrowed the rows the fleet-wide scan returned — so the cap
+ * this read carries, the truncation verdict derived from it and the window
+ * line printed over the figures all belonged to a population the figures were
+ * not over (ARCHITECTURE.md §4.3, admin-window/BUG-0114). Narrowed at the
+ * query, the bounds and the rows describe one population again.
  */
 export function readRejectionStamps(
   bounds: ReadBounds,
+  filter: PendingClaimsFilter,
   db?: SupabaseClient,
 ): Promise<DbResult<RejectionRow[]>> {
   return readRows<RejectionRow>(
     T.observations,
-    (client) =>
-      client
-        .from(T.observations)
-        .select(REJECTION_COLUMNS)
+    (client) => {
+      let builder = client.from(T.observations).select(REJECTION_COLUMNS);
+      if (filter.source_id !== undefined) builder = builder.eq("source_id", filter.source_id);
+      if (filter.domain !== undefined) builder = builder.eq("domain", filter.domain);
+      return builder
         .gte("rejected_at", bounds.since)
         .lt("rejected_at", bounds.until)
         .order("rejected_at", { ascending: false })
-        .limit(bounds.limit) as unknown as PromiseLike<DbResponse<RejectionRow[]>>,
+        .limit(bounds.limit) as unknown as PromiseLike<DbResponse<RejectionRow[]>>;
+    },
     db,
   );
 }

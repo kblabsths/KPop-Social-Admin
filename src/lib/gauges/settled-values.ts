@@ -4,6 +4,7 @@ import {
   readRejectionStamps,
   readSourceStates,
   type DbClient,
+  type PendingClaimsFilter,
   type RejectionRow,
   type SourceStateRow,
 } from "../db/gauges";
@@ -119,7 +120,7 @@ export interface SettledValues {
   window: WindowInfo;
   /** Rejections read in the window; a floor when `window.truncated`. */
   rejections: number;
-  /** Re-rejects across every source. */
+  /** Re-rejects across every source the SCAN read — the fleet's, or the one it was narrowed to. */
   rerejected: number;
   /** Counts per `rejected_by`, the three known reasons always present. */
   byReason: Record<string, number>;
@@ -133,20 +134,35 @@ export interface SettledValues {
    * `20260901000003`), so a stamp without a reason is possible and is reported
    * rather than being counted as a re-reject.
    *
-   * Fleet-wide, and equal to the sum of `bySource[].unattributed` — a reader
-   * narrowed to one source wants that per-source figure, not this one
-   * (admin-window/BUG-0022).
+   * Over the scan's own population — which is the fleet's rows, or one
+   * source's when the read was narrowed to it (admin-window/BUG-0194) — and
+   * equal to the sum of `bySource[].unattributed` either way. A section
+   * reporting one split of a wider read wants that per-source figure, not this
+   * one (admin-window/BUG-0022).
    */
   unattributed: number;
 }
 
-/** The two bounded reads. Returns a `DbResult` and never throws. */
+/**
+ * The two bounded reads. Returns a `DbResult` and never throws.
+ *
+ * **The narrowing rides beside the bounds, and is applied at the query** —
+ * `GaugeOptions & { filter? }`, the shape `fetchPendingClaims` already takes,
+ * so `GaugeOptions` itself stays the vocabulary of a WINDOW and gains no facet
+ * (admin-window/BUG-0194). The scan below then reads one population: the rows
+ * a caller reports, the cap that bounds them, and the `truncated` verdict the
+ * window carries are all over the same set, which is what lets the line above
+ * those figures name the narrowing they carry (ARCHITECTURE.md §4.3).
+ *
+ * The `sources` lookup takes no filter and needs none: it is an id-set lookup
+ * over the ids the scan came back with, so a narrowed scan narrows it already.
+ */
 export async function fetchRejectionStamps(
-  options: GaugeOptions = {},
+  options: GaugeOptions & { filter?: PendingClaimsFilter } = {},
   db?: DbClient,
 ): Promise<DbResult<SettledValuesRows>> {
   const bounds = resolveBounds(options, REJECTION_STAMP_DEFAULTS);
-  const rejections = await readRejectionStamps(bounds, db);
+  const rejections = await readRejectionStamps(bounds, options.filter ?? {}, db);
   if (rejections.kind !== "ok") return rejections;
 
   const sources = await readSourceStates(
@@ -245,9 +261,9 @@ export function aggregateRejectionStamps(input: SettledValuesRows): SettledValue
   };
 }
 
-/** Fetch and aggregate — what `/sources` calls. */
+/** Fetch and aggregate — what `/sources` calls, with the filter that page holds. */
 export async function readRejectionStampGauge(
-  options: GaugeOptions = {},
+  options: GaugeOptions & { filter?: PendingClaimsFilter } = {},
   db?: DbClient,
 ): Promise<DbResult<SettledValues>> {
   return mapOk(await fetchRejectionStamps(options, db), aggregateRejectionStamps);

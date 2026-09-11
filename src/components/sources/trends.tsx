@@ -274,12 +274,20 @@ export function RejectionSection({
   // nothing adjudicated in this window, that is an empty set — a real zero over
   // the rows read, not the fleet's total wearing one source's name.
   //
+  // **The scan was already narrowed** (admin-window/BUG-0194): the gauge this
+  // section is handed came from `readRejectionStampGauge({ filter })`, so the
+  // rows below, the cap in the line above and its truncation verdict are all
+  // over one population, and the line NAMES that narrowing. Re-selecting here
+  // is not redundancy — it is `selectPendingClaims`' idiom (ARCHITECTURE.md §6
+  // trap 4): the returned set is decided by exactly one rule whether or not the
+  // server narrowed, which is what keeps a stranger's rejection out of a
+  // narrowed rendering (admin-window/BUG-0022) and is the defence if a future
+  // caller hands this section a wider read.
+  //
   // It is `reported` and no longer `scope` (admin-window/TASK-0073): `scope` is
   // the app's word for WHAT A READ WAS NARROWED TO, which is the prop above and
   // is this line's business; these are the splits this SECTION reports its
-  // figures over, selected from the rows an unnarrowed read returned. One word,
-  // one concept (LESSONS 6) — and the two are not the same fact here, which is
-  // the whole reason this line names no narrowing.
+  // figures over. One word, one concept (LESSONS 6).
   const reported =
     filter.source_id === undefined ? bySource : narrowed === null ? [] : [narrowed];
   const rerejected = reported.reduce((total, split) => total + split.rerejected, 0);
@@ -287,7 +295,7 @@ export function RejectionSection({
   // reports are per-source facts: an unattributed rejection is missing its
   // REASON, not its source, and an unnamed source is one row of `reported` whose
   // registry lookup came back empty. Read off the whole gauge they were the
-  // FLEET's, so a bandsintown row moved a page narrowed to ticketmaster
+  // SCAN's totals, so a bandsintown row moved a page narrowed to ticketmaster
   // (admin-window/BUG-0022) — and deleting the sentence would have lost two
   // facts the operator needs, so they are scoped rather than dropped.
   const unattributed = reported.reduce((total, split) => total + split.unattributed, 0);
