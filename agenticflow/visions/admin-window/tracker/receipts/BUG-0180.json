@@ -1,0 +1,65 @@
+{
+ "id": "BUG-0180",
+ "created": "2026-09-11T09:10:00Z",
+ "green": true,
+ "git_head": "339b1ce491781879a91a7d4110c890d6bfa7a599",
+ "scope": [
+  "src/components/ui/paging.tsx",
+  "src/components/ui/window-line.tsx",
+  "src/components/claims/paged-claim-list.tsx",
+  "src/components/browse/paged-browse-table.tsx",
+  "src/app/claims/page.tsx",
+  "src/app/browse/page.tsx",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/browse/page.test.ts",
+  "tests/offline/ui/paging.test.ts",
+  "tests/offline/ui/primitives.test.ts",
+  "tests/offline/absence/pages.test.ts",
+  "tests/offline/url/narrowing.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "fa71720840e313db07fa0e664047d4d3a0a507e570b8744cd2d1bffbb3c3f600",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/claims/page.test.ts tests/offline/browse/page.test.ts tests/offline/ui/paging.test.ts tests/offline/ui/primitives.test.ts tests/offline/absence/pages.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-99352\n\n \u2713 |offline| tests/offline/ui/paging.test.ts (56 tests) 109ms\n \u2713 |offline| tests/offline/ui/primitives.test.ts (110 tests) 121ms\n \u2713 |offline| tests/offline/browse/page.test.ts (61 tests) 914ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (286 tests) 2242ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  318ms\n   \u2713 a surface offers a control only where the read behind it answered > puts no control inside a card that says a read did not happen, and gains none  795ms\n \u2713 |offline| tests/offline/claims/page.test.ts (202 tests) 4426ms\n   \u2713 what a filled window promises > cannot reach past the cap from any state its own chips offer  394ms\n\n Test Files  5 passed (5)\n      Tests  715 passed (715)\n   Start at  02:09:34\n   Duration  5.46s (transform 2.03s, setup 0ms, collect 3.36s, tests 7.81s, environment 1ms, prepare 314ms)\n\n(node:99359) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "! grep -q \"it.fails(\\\"does not tell the operator every claim is shown\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"does not tell the operator every claim is shown\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"export function readsAgree\" src/components/ui/window-line.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"readsAgree\" src/components/ui/paging.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"in this view are shown\" src/components/ui/paging.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "riments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.4s\n  Running TypeScript ...\n  Finished TypeScript in 6.6s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 165ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/browse/rows\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-99352/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:99564) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
