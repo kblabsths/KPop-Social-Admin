@@ -1,0 +1,71 @@
+{
+ "id": "TASK-0067",
+ "created": "2026-09-11T03:21:34Z",
+ "green": true,
+ "git_head": "416a28a90d1ca3b09900e8c78291a9b4a10b3b6a",
+ "scope": [
+  "src/app/claims/page.tsx",
+  "src/components/claims/paged-claim-list.tsx",
+  "src/components/claims/index.ts",
+  "src/lib/claims/filters.ts",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/claims/filters.test.ts",
+  "tests/offline/absence/pages.test.ts",
+  "tests/live/claims.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "508ea4bf18ba4fb59ee9be87693457ff8f32461b2a1b26191054a1acc814616e",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/claims tests/offline/absence/pages.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-39470\n\n \u2713 |offline| tests/offline/claims/filters.test.ts (48 tests) 12ms\n \u2713 |offline| tests/offline/claims/read.test.ts (33 tests) 39ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (285 tests) 2259ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  416ms\n   \u2713 a surface offers a control only where the read behind it answered > puts no control inside a card that says a read did not happen, and gains none  880ms\n \u2713 |offline| tests/offline/claims/page.test.ts (193 tests) 3800ms\n\n Test Files  4 passed (4)\n      Tests  559 passed (559)\n   Start at  20:20:25\n   Duration  4.69s (transform 1.42s, setup 0ms, collect 1.78s, tests 6.11s, environment 1ms, prepare 265ms)\n\n(node:39477) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/shell tests/offline/ui/copy.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-39470\n\n \u2713 |offline| tests/offline/ui/copy.test.ts (12 tests) 102ms\n \u2713 |offline| tests/offline/shell/client-boundary.test.ts (20 tests) 493ms\n   \u2713 the client boundary under src/ > really resolves server imports of client components  306ms\n \u2713 |offline| tests/offline/shell/shell.test.ts (32 tests) 61ms\n\n Test Files  3 passed (3)\n      Tests  64 passed (64)\n   Start at  20:20:30\n   Duration  1.13s (transform 536ms, setup 0ms, collect 1.09s, tests 656ms, environment 0ms, prepare 159ms)\n\n(node:39547) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -qF \"const { state, press, size } = usePageRows\" src/components/claims/paged-claim-list.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"size={size}\" src/components/claims/paged-claim-list.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -qF \"CLAIM_WINDOW\" src/components/claims/paged-claim-list.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"data-paging\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(find src/app -name \"page.tsx\" | wc -l)\" -eq 9",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "- Environments: .env\n- Experiments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.2s\n  Running TypeScript ...\n  Finished TypeScript in 6.0s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/7) ...\n  Generating static pages using 9 workers (1/7) \n  Generating static pages using 9 workers (3/7) \n  Generating static pages using 9 workers (5/7) \n\u2713 Generating static pages using 9 workers (7/7) in 167ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-39470/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:39713) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/claims.live.test.ts",
+   "exit": 0,
+   "output_tail": " |live| tests/live/claims.live.test.ts (13 tests) 40821ms\n   \u2713 the column the Claims page rests on > pending_claims carries observed_at  392ms\n   \u2713 the two shapes of the pending-claims gauge against staging > the windowed claims read and the id-list join select the same claims  3193ms\n   \u2713 the Claims page's surface hooks against staging > names every surface on the page once, on both tabs  1720ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it  4249ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it, per source filter  8375ms\n   \u2713 the classification buckets against staging > narrows the same way for every spelling of one source id  7544ms\n   \u2713 the classification buckets against staging > draws the view's longest-waiting window, and states the whole it came from  1728ms\n   \u2713 the classification buckets against staging > renders the standing tab as the window of exactly that bucket's subset  1087ms\n   \u2713 the parked bucket against staging > is a string the database still spells, and the page never does  3666ms\n   \u2713 a source is named against staging > says the registry's name in every SOURCE cell, and still links by the id  1425ms\n   \u2713 a source is named against staging > names the source_id chips the same way, each still narrowing by its id  1162ms\n   \u2713 paging past the first window, against staging > reaches every claim the view holds, once each, and no more  6044ms\n\n Test Files  1 passed (1)\n      Tests  13 passed (13)\n   Start at  20:20:52\n   Duration  41.61s (transform 246ms, setup 32ms, collect 477ms, tests 40.82s, environment 0ms, prepare 69ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/claims.live.test.ts\n(node:39889) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

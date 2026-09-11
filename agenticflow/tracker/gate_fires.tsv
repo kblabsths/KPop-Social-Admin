@@ -224,3 +224,4 @@
 2026-09-11T00:36:55Z	artifact_gate	blocked write outside repo: /data-paging=([a-z]+)/.exec
 2026-09-11T00:54:30Z	artifact_gate	blocked write outside repo: /tmp/dev/null
 2026-09-11T01:18:27Z	artifact_gate	blocked write outside repo: /tmp/x.json
+2026-09-11T03:22:09Z	evidence_budget	qa_evidence_overbudget: TASK-0067 4566/4000 chars

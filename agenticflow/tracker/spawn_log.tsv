@@ -25794,3 +25794,61 @@
 2026-09-11T01:58:01Z	builder	TASK-0067	30725	1746	259079
 2026-09-11T03:11:36Z	builder	TASK-0068	spawned
 2026-09-11T03:11:42Z	qa-adversary	TASK-0067	spawned
+# STRANDED	2026-09-11T03:12:07Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:12:07Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:12:13Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:12:13Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:12:38Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:12:38Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:12:44Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:12:44Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:13:15Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:13:15Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:13:39Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:13:39Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:13:47Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:13:47Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:14:11Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:14:11Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:14:42Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:14:42Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:14:48Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:14:48Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:15:13Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:15:13Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:15:19Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:15:19Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:15:51Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:15:51Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:16:22Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md, tests/offline/claims/zz-qa-probe.test.ts
+2026-09-11T03:16:22Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:16:53Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md, tests/offline/claims/zz-qa-probe.test.ts
+2026-09-11T03:16:53Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:17:25Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md, tests/offline/claims/zz-qa-probe.test.ts
+2026-09-11T03:17:25Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:17:57Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md, tests/offline/claims/zz-qa-probe.test.ts
+2026-09-11T03:17:57Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:18:14Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md, tests/offline/claims/zz-qa-probe.test.ts
+2026-09-11T03:18:14Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:18:58Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md, tests/offline/claims/zz-qa-probe.test.ts
+2026-09-11T03:18:58Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:19:45Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md, tests/offline/claims/zz-qa-probe.test.ts
+2026-09-11T03:19:45Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:20:00Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md, tests/offline/claims/zz-qa-probe.test.ts
+2026-09-11T03:20:00Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:20:16Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:20:16Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:20:31Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:20:31Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:20:47Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:20:47Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:21:18Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:21:18Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:21:49Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/TASK-0067.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:21:49Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:22:03Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/TASK-0067.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:22:03Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:22:21Z	agent	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/TASK-0067.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:22:21Z	agent	-	-	-	-
+# STRANDED	2026-09-11T03:22:34Z	qa-adversary	3 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/TASK-0067.json, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T03:22:34Z	qa-adversary	TASK-0067	13045	651	99075
