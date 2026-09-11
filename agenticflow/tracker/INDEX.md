@@ -1,7 +1,8 @@
-# Tracker index (regenerated 2026-09-11T11:50:27Z — do not edit)
+# Tracker index (regenerated 2026-09-11T12:01:23Z — do not edit)
 
 ## open
 - BUG-0189 [P2][bug][M3] The queue-health live case takes its ABSENCE from the markup, so a not-provisioned page passes it vacuously  (scope:tests/live/queues.live.test.ts from:TASK-0070)
+- BUG-0190 [P2][bug][M3] A mirror tree under tests/.probes left by a KILLED run is never swept, and a later run that draws its pid walks the corpse as its own probe  (scope:tests/offline/review/one-place.test.ts,tests/offline/edit/config.test.ts,tests/offline/records/entity-picker.test.ts,tests/probe-area.ts from:BUG-0188)
 - FEAT-0016 [P2][feat][M3] F15 — every windowed figure is true about the read that produced it  (scope:src/app/claims/page.tsx,src/app/sources/page.tsx,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/gauges,src/components/claims,src/components/sources,src/components/ui/window-line.tsx,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/sources/read.test.ts,tests/offline/gauges,tests/live/claims.live.test.ts,tests/live/sources.live.test.ts)
 - TASK-0072 [P2][task][M3] One home for the narrowing vocabulary, and a window's scope stops being a string somebody splits  (deps:TASK-0071,BUG-0169,BUG-0174,BUG-0183,BUG-0186(unmet:1) scope:src/components/ui/window-line.tsx,src/lib/url/narrowing.ts,src/lib/claims/filters.ts,src/app/claims/page.tsx,src/app/cycles/page.tsx,src/app/queues/page.tsx,src/app/browse/page.tsx,src/app/page.tsx,src/components/cycles,src/components/review/shape-views.tsx,src/components/records/entity-picker.tsx,src/components/sources/trends.tsx,tests/offline/url/narrowing.test.ts,tests/offline/ui,tests/offline/claims,tests/offline/cycles,tests/offline/queues,tests/offline/browse,tests/offline/sources)
 - TASK-0073 [P2][task][M3] /sources' two scan-window lines name the narrowing their read carried  (deps:TASK-0072(unmet:1) scope:src/components/sources/trends.tsx,src/app/sources/page.tsx,src/lib/sources/routes.ts,tests/offline/sources/page.test.ts,tests/offline/sources/read.test.ts,tests/live/sources.live.test.ts)
@@ -16,7 +17,4 @@
 ## claimed
 - TASK-0071 [P2][task][M3] Two figures on /claims never silently disagree: each says whether it is a window or a total  (deps:TASK-0070,BUG-0174,BUG-0183,BUG-0186 scope:src/app/claims/page.tsx,src/components/claims/bucket-table.tsx,src/components/claims/tabs.tsx,tests/offline/claims/page.test.ts,tests/offline/gauges-ui,tests/live/claims.live.test.ts @builder-281)
 
-## qa
-- BUG-0188 [P2][bug][M3] A probe directory left by a KILLED vitest run is never swept, and a later run that draws its pid grades the corpse as its own probe  (scope:tests/offline/db/layering.test.ts,tests/isolated/probe-race.isolated.test.ts @builder-280 from:DEBT-0018)
-
-Totals — claimed:1, done:39, open:11, qa:1. Archived: 252.
+Totals — claimed:1, done:40, open:12. Archived: 252.
