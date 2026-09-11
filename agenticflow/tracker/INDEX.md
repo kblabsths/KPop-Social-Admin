@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T03:22:49Z — do not edit)
+# Tracker index (regenerated 2026-09-11T03:40:18Z — do not edit)
 
 ## open
 - FEAT-0014 [P1][feat][M3] F16 — the second leg of a two-step join runs its chunks concurrently  (scope:src/lib/db/result.ts,src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/db/verdict.ts,tests/offline/db/result.test.ts,tests/live/claims.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts)
@@ -17,10 +17,10 @@
 - BUG-0164 [P3][bug][patch] /queues still carries the exit copy BUG-0161 replaced on /claims  (deps:TASK-0072(unmet:1) scope:src/app/queues/page.tsx,tests/offline/queues/page.test.ts,tests/offline/ui/copy.test.ts from:designer:endgame-walk)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - TASK-0068 [P1][task][M3] Browse: the events window takes an offset, and its paging route handler answers one page  (deps:TASK-0066 scope:src/lib/db/browse.ts,src/lib/paging/bounds.ts,src/lib/url/search-params.ts,src/app/api/admin/browse/rows/route.ts,src/app/api/admin/claims/rows/route.ts,tests/offline/browse/browse-read.test.ts,tests/offline/paging/browse-route.test.ts,tests/offline/url/search-params.test.ts,tests/http/paging.http.test.ts @builder-256)
 
 ## reopened
 - TASK-0075 [P1][task][M3] claims.live stops racing the scraper: one snapshot instant for the identity proofs, whileStill for the page-vs-database ones  (scope:tests/live/claims.live.test.ts,tests/live/parity.ts from:TASK-0064)
 
-Totals — claimed:1, done:12, open:15, reopened:1. Archived: 252.
+Totals — built:1, done:12, open:15, reopened:1. Archived: 252.
