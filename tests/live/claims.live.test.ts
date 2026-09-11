@@ -555,6 +555,12 @@ describe("the two shapes of the pending-claims gauge against staging", () => {
       .gte("observed_at", since)
       .lt("observed_at", asOf)
       .order("observed_at", { ascending: true })
+      // The scan's tiebreak, so shape B is the scan the gauge really issues
+      // (admin-window/BUG-0167). Under the cap guard below it cannot change
+      // which rows come back — both legs are whole sets, not cuts — and at the
+      // cap it is what makes the two cuts one cut; the guard is what keeps
+      // this comparison about the shapes either way.
+      .order("observation_id", { ascending: true })
       .limit(GAUGE_CAP);
     if (scan.error) throw new Error(`the scan failed: ${JSON.stringify(scan.error)}`);
     const scanned = (scan.data ?? []) as { observation_id: string }[];

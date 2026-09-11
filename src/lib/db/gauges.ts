@@ -334,7 +334,14 @@ export function readObservedAt(
  * (ARCHITECTURE.md §6 trap 3: the view carries no age).
  *
  * **Oldest first**, so a truncated read keeps the oldest claims — the stuck
- * ones the gauge exists to show — and drops the newest.
+ * ones the gauge exists to show — and drops the newest, with `observation_id`
+ * breaking every tie: the claims leg it is compared against
+ * (`readPendingClaimsInWindow`) orders by the same two columns, and at the cap
+ * ONE total order over both legs is what makes the two cuts the same cut.
+ * Ordered by `observed_at` alone, a `limit` over rows tied on the boundary
+ * instant returned an arbitrary subset, so the gauge's intersection dropped
+ * claims the scan itself had in hand — and dropped different ones per query
+ * (admin-window/BUG-0167).
  */
 export function readPendingObservations(
   bounds: ReadBounds,
@@ -353,6 +360,7 @@ export function readPendingObservations(
       return builder
         .gte("observed_at", bounds.since)
         .order("observed_at", { ascending: true })
+        .order("observation_id", { ascending: true })
         .limit(bounds.limit) as unknown as PromiseLike<DbResponse<PendingObservationRow[]>>;
     },
     db,
