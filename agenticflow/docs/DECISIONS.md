@@ -1877,3 +1877,34 @@ becomes `hasChipFacet` — the same shape as `hasNarrowingFacet`, which keeps it
 word because fact 1 is a question about the FACET VOCABULARY ("can a facet of
 this kind remove a row at all"), not about this read's rows. Two questions, two
 words, before a third predicate joins them.
+
+## 2026-09-11 — a section may not narrow rows its read did not; on `/sources` the scope is fixed at the READ
+
+BUG-0194 (QA, out of TASK-0073's close): `/sources`' settled-values section
+carries one source's figures under a sentence, and two card labels, byte
+identical to the fleet's — `readRejectionStampGauge()` takes no facet and
+`RejectionSection` narrows the rows it reports. Two fixes were available and I
+am ruling for the read: `readRejectionStamps` gains the facet at the query
+(mirroring `readPendingObservations(bounds, filter, db?)`), the page hands one
+filter expression to both the read and `scopeOf`, and the line names it by the
+one home. The alternative — leaving the fleet scan and scoping the card labels
+— was rejected because it repairs the words and leaves the NUMBER: under a
+truncated fleet scan, one source's figure is that source's rows *among the
+fleet's 1,000 most recent*, an arbitrary subset (§4.3 read kind 2's forbidden
+shape) wearing a `floor` earned by other sources' rows (BUG-0114). The third
+option, dropping the narrowing so the fleet's figures stand under the fleet's
+line, reverses BUG-0022 and reds two green pinned cases; it is off the table.
+
+**The door this closes, and it is the general one:** when a rendering and its
+read disagree about scope, the scope is fixed ONCE, at the read, and the
+rendering follows — never the other way, and never at whichever end broke last.
+This page has now paid for that rule twice in opposite directions (BUG-0022
+narrowed the rendering under an unnarrowed read; BUG-0194 narrows the read
+under it), which is LESSONS 4's "widened by whichever one broke last" wearing a
+scope costume. The cost accepted out loud: a narrowed scan reaches rows the
+fleet's capped window had pushed out, so live figures CAN move where the fleet
+scan truncated. They move toward truth. Nothing moves today — staging holds 0
+rows in the 90-day rejection window and the offline fixtures are far under the
+cap, so only the words change. `RejectionSection` keeps re-selecting the rows
+it was handed (the `selectPendingClaims` idiom): the query narrows, the section
+selects again, and neither is the other's excuse.
