@@ -4,7 +4,7 @@ import { CYCLE_COUNTERS, CYCLE_WINDOW, type ResolutionRunRow } from "@/lib/db/cy
 import { T } from "@/lib/db/tables";
 import { CLAMP_LIMIT, ELLIPSIS, EM_DASH, absoluteUtc, duration } from "@/lib/format";
 import { RESOLVER_CADENCE_SECONDS } from "@/lib/gauges/gauge";
-import { readNumber } from "../../live/parity";
+import { readNumber, stateOf } from "../../live/parity";
 import {
   codeText,
   implicitInterElementSpaces,
@@ -3381,6 +3381,210 @@ describe("the surface hooks the live parity oracle addresses", () => {
         }
       }
     }
+  });
+});
+
+/* ── a block's card is the block's, a surface's refusal is the surface's ─── */
+
+/**
+ * The grain the live oracle reads these two gauges at (admin-window/BUG-0169;
+ * the architect's ruling of 2026-09-10, DECISIONS that date and ARCHITECTURE
+ * §10): **a surface's state is the state of the read behind its FIGURES, and a
+ * state card rendered by a BLOCK inside it belongs to that block.**
+ *
+ * `Distribution` and `TrendTable` replace themselves with `GaugeStateCard`
+ * whenever they hold no row — with or without an explicit state, and by
+ * ARCHITECTURE §7 they cannot do otherwise — so a gauge over an empty window
+ * draws empty cards BESIDE figures counting a real 0.
+ * `tests/live/cycles.live.test.ts` reads every `[data-state]` card inside the
+ * surface it grades, so one block's honest emptiness was being read as the
+ * whole gauge's state, and both gauges' parity assertions stopped running in
+ * exactly the case that reddened. That oracle now passes `[data-gauge-block]`
+ * to `stateOf`'s `excluding`; the marker has one emitter,
+ * `src/components/gauges/state.tsx`.
+ *
+ * Everything the exclusion could cost is pinned HERE, offline, over this
+ * page's own fixtures, so no ticket has to reach staging to find out:
+ *
+ *  1. it cannot silence a REFUSAL — a surface's own not-provisioned card and
+ *     error line come from `ui/StateOf`, which never reaches `GaugeStateCard`
+ *     and so carries no marker (admin-window/BUG-0036, where an exclusion that
+ *     matched the surface itself graded a page in its error state `ok`);
+ *  2. the figures under it are still real zeros (LESSONS 7);
+ *  3. the cards it excludes are still explained from two facts, so "excluded"
+ *     never becomes "ungraded" (LESSONS 3, ARCHITECTURE §4.3).
+ */
+const GAUGE_BLOCKS = "[data-gauge-block]";
+
+/** Every figure each gauge labels that COUNTS rows, and so reads 0 at a zero. */
+const HEALTH_COUNTS = [
+  "Cycles in this window",
+  "Facts examined",
+  "Writes",
+  "Errors",
+] as const;
+const LATENCY_COUNTS = [
+  "Applies in this window",
+  "Unset by a human decision",
+  "Applies with no claim found",
+] as const;
+
+/**
+ * The one figure on either gauge that MEASURES rather than counts: with no
+ * apply to measure from there is no wait, which is an absence and never a
+ * zeroth wait (LOOK_AND_FEEL, Zeroes; admin-window/BUG-0018).
+ */
+const MEDIAN_WAIT = "Median wait, claim to apply";
+
+/** Both gauges' windows holding nothing: no cycle filed, no decision applied. */
+function emptyWindows(): Script {
+  return healthyScript({
+    [T.resolutionRuns]: [{ data: [] }, { data: [] }],
+    [T.fieldProvenance]: { data: [] },
+    [T.observations]: { data: [] },
+  });
+}
+
+/**
+ * The state cards inside a surface that no gauge block rendered — the
+ * surface's OWN, in the order it drew them. These are exactly the cards the
+ * live oracle still grades once the blocks are excluded.
+ */
+function ownCards(markup: string, hook: string): string[] {
+  const $ = cheerio.load(markup);
+  return $(hook)
+    .find("[data-state]")
+    .toArray()
+    .filter((element) => $(element).closest(GAUGE_BLOCKS).length === 0)
+    .map((element) => $(element).attr("data-state") ?? "");
+}
+
+/**
+ * What stands immediately beside a labelled figure — the number, or the app's
+ * own dash. `ui/StatCard`'s anatomy is the eyebrow, then the figure, then at
+ * most one sub-line, so this is the sibling `cardSubLine` skips past: the two
+ * read the same card and answer two different questions.
+ */
+function figureBeside(markup: string, label: string): string {
+  const $ = cheerio.load(markup);
+  const flat = (text: string) => text.replace(/\s+/g, " ").trim();
+  const eyebrows = $("span")
+    .toArray()
+    .filter(
+      (element) =>
+        $(element).children().length === 0 && flat($(element).text()) === label,
+    );
+  if (eyebrows.length !== 1) {
+    throw new Error(`"${label}" labels ${eyebrows.length} cards in this markup.`);
+  }
+  return flat($(eyebrows[0]).next().text());
+}
+
+const GAUGE_SURFACES = [
+  SURFACE_HOOKS.cycle_health,
+  SURFACE_HOOKS.resolution_latency,
+] as const;
+
+describe("the state a gauge surface is in, at the grain the oracle reads it", () => {
+  it("is OK at a counted zero, and draws no card of its own there", async () => {
+    const markup = await renderCycles(emptyWindows());
+
+    for (const hook of GAUGE_SURFACES) {
+      // What the live oracle asks, asked here: the surface read its window and
+      // got nothing, and nothing is a state it states rather than one it
+      // refuses in.
+      expect(stateOf(markup, hook, GAUGE_BLOCKS), hook).toBe("ok");
+      expect(ownCards(markup, hook), hook).toEqual([]);
+      // Not vacuous: the blocks really did put their cards up. Remove the
+      // marker and these are the cards that make the surface say `empty`.
+      const blocks = cheerio.load(markup)(`${hook} ${GAUGE_BLOCKS} [data-state]`);
+      expect(blocks.length, hook).toBeGreaterThanOrEqual(2);
+    }
+
+    // …and neither gauge got there by refusing a read: an emptiness is not an
+    // absence and not a failure (LOOK_AND_FEEL, states 2, 3 and 4).
+    expect(notProvisioned(markup)).toEqual([]);
+    expect(readsFailed(markup)).toEqual([]);
+  });
+
+  it("states every labelled count as a real 0, and the wait it cannot measure as an absence", async () => {
+    const markup = await renderCycles(emptyWindows());
+
+    for (const label of [...HEALTH_COUNTS, ...LATENCY_COUNTS]) {
+      expect(readNumber(markup, label), label).toBe(0);
+      // Read a second way, structurally: the label really does stand beside a
+      // figure, so none of these is a 0 that only a sentence holds.
+      expect(figureLabels(markup), label).toContain(label);
+    }
+
+    // The one figure that measures: no apply in the window means no wait to
+    // measure from, which is the app's dash with its reason beside it — never
+    // a zero, and never graded as one.
+    expect(figureBeside(markup, MEDIAN_WAIT)).toBe(EM_DASH);
+    expect(figureLabels(markup)).not.toContain(MEDIAN_WAIT);
+    expect(() => readNumber(markup, MEDIAN_WAIT)).toThrow();
+    expect(cardSubLine(markup, MEDIAN_WAIT)).not.toBe("");
+  });
+
+  it("explains every card it excludes from two facts, not one", async () => {
+    const markup = await renderCycles(emptyWindows());
+    const $ = cheerio.load(markup);
+
+    for (const hook of GAUGE_SURFACES) {
+      const cards = $(hook).find(`${GAUGE_BLOCKS} [data-state="empty"]`).toArray();
+      expect(cards.length, hook).toBeGreaterThanOrEqual(2);
+      for (const card of cards) {
+        // `ui/Empty`'s two lines: what the block would hold, and the one thing
+        // that fills it. Two distinct, non-empty facts — the words themselves
+        // are the designer's and are not pinned here.
+        const lines = $(card)
+          .find("p")
+          .toArray()
+          .map((line) => $(line).text().replace(/\s+/g, " ").trim());
+        expect(lines.length, hook).toBe(2);
+        expect(lines[0], hook).not.toBe("");
+        expect(lines[1], hook).not.toBe("");
+        expect(lines[0], hook).not.toBe(lines[1]);
+      }
+    }
+  });
+
+  it("leaves a SURFACE's own refusal outside the exclusion [admin-window/BUG-0036]", async () => {
+    // Both gauges' own reads absent, and both refused: the two states whose
+    // card a wrongly-drawn exclusion would swallow, leaving the page graded
+    // green while it told the operator it could read nothing.
+    const absent = await renderCycles({
+      [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
+      [T.fieldProvenance]: { error: tableNotInSchemaCache(T.fieldProvenance) },
+    });
+    const refused = await renderCycles(
+      healthyScript({
+        // The table's own read succeeds and the gauge's refuses, so this is
+        // the gauge's surface refusing and not the whole page.
+        [T.resolutionRuns]: [{ data: [...CYCLES] }, { error: permissionDenied(T.resolutionRuns) }],
+        [T.fieldProvenance]: { error: permissionDenied(T.fieldProvenance) },
+      }),
+    );
+
+    for (const [name, markup, kind] of [
+      ["absent", absent, "not_provisioned"],
+      ["refused", refused, "error"],
+    ] as const) {
+      for (const hook of GAUGE_SURFACES) {
+        // The exclusion is passed and changes NOTHING: the card or line the
+        // surface renders itself carries no marker, so it still reaches
+        // `stateOf` and the surface is still graded on it.
+        expect(stateOf(markup, hook, GAUGE_BLOCKS), `${name}: ${hook}`).toBe(kind);
+        expect(stateOf(markup, hook), `${name}: ${hook} ungraded`).toBe(kind);
+        expect(ownCards(markup, hook), `${name}: ${hook}`).toEqual([kind]);
+      }
+    }
+
+    // …and each names what it could not read, in the object's own spelling.
+    expect(notProvisioned(absent)).toContain(T.resolutionRuns);
+    expect(notProvisioned(absent)).toContain(T.fieldProvenance);
+    expect(readsFailed(refused)).toContain(T.resolutionRuns);
+    expect(readsFailed(refused)).toContain(T.fieldProvenance);
   });
 });
 

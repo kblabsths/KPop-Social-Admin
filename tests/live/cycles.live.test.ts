@@ -74,6 +74,34 @@ const HEALTH = '[data-surface="cycle_health"]';
 const LATENCY = '[data-surface="resolution_latency"]';
 
 /**
+ * The BLOCKS inside a gauge: every card `GaugeStateCard` renders
+ * (`src/components/gauges/state.tsx`), which is every card a `Distribution`, a
+ * `TrendTable` or a stated `GaugeCard` puts on screen in place of itself.
+ *
+ * A block makes its own read and carries its own state: a distribution with no
+ * measurable duration in it is empty ABOUT THAT SPREAD and says nothing about
+ * the gauge, whose figures are counting rows in the same window. So a block's
+ * card is not the surface's to answer for and is excluded from its state
+ * (`stateOf`'s `excluding`, the device `/queues` uses for `[data-gauge-queue]`)
+ * — the rule the architect ruled on 2026-09-10 (DECISIONS that date,
+ * ARCHITECTURE §10): a surface's state is the state of the read behind its
+ * FIGURES. Without it, both gauges below graded EMPTY at a counted zero while
+ * their labelled figures read a real 0, and every parity assertion in these two
+ * cases stopped running in exactly the state that reddened
+ * (admin-window/BUG-0169).
+ *
+ * **One constant, both gauges.** Two hand-typed selectors would be two rules,
+ * and the next gauge surface added here inherits this one (LESSONS 11 / 5).
+ *
+ * It can never silence a REFUSAL. The marker has one emitter, and the
+ * SURFACE's own not-provisioned and error states are rendered by `ui/StateOf`,
+ * which does not reach it — so those cards and lines stay outside every
+ * exclusion and `stateOf` still grades them (admin-window/BUG-0036, pinned
+ * offline in `tests/offline/cycles/page.test.ts`).
+ */
+const GAUGE_BLOCKS = "[data-gauge-block]";
+
+/**
  * Every surface hook this page is expected to carry, including the lead
  * section this file does not otherwise grade and the runs window
  * `runs.live.test.ts` owns. Asserted to be present and UNIQUE before any of
@@ -280,6 +308,7 @@ describe("the two gauges on this page against staging", () => {
         );
       },
       emptyAtZero: false,
+      excluding: GAUGE_BLOCKS,
       figure: "Cycles in this window",
     });
     if (state !== "ok") return;
@@ -311,6 +340,7 @@ describe("the two gauges on this page against staging", () => {
         );
       },
       emptyAtZero: false,
+      excluding: GAUGE_BLOCKS,
       figure: "Applies in this window",
     });
     if (state !== "ok") return;

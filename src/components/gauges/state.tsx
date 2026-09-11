@@ -77,6 +77,28 @@ export function stateReplacesSurface(state: GaugeState): state is GaugeSurfaceSt
  * The state that stands in for the whole surface. Gray for not-provisioned,
  * never red and never a zero that reads like data: a missing table is
  * unavailable, not broken.
+ *
+ * **The card carries `data-gauge-block`, and this is its ONE emitter**
+ * (admin-window/BUG-0169; DECISIONS 2026-09-10, ARCHITECTURE §10 — a surface's
+ * state is the state of the read behind its FIGURES, and a state card rendered
+ * by a block INSIDE it belongs to that block).
+ *
+ * `Distribution` and `TrendTable` replace themselves with this card whenever
+ * they hold no row (ARCHITECTURE §7: `rows: []` with no stated reason is
+ * unwritable and a headers-only table is unreachable), so a gauge whose
+ * figures count a real 0 still draws empty cards beside them. A live oracle
+ * reads every `[data-state]` card inside the surface it grades, which made one
+ * block's honest emptiness the whole surface's state and stopped the parity
+ * assertions running in exactly that case. The marker is what lets such an
+ * oracle say "this card is the block's, not the surface's"
+ * (`stateOf`'s `excluding`, the device `/queues` already uses for
+ * `[data-gauge-queue]`).
+ *
+ * It cannot silence a REFUSAL, which is the whole reason it lives in exactly
+ * one place: a surface-level not-provisioned or error state is rendered by
+ * `ui/StateOf`, which does not call this component and so carries no marker
+ * (admin-window/BUG-0036's failure mode — an exclusion that swallowed a
+ * surface's own error line and graded a broken page `ok`).
  */
 export function GaugeStateCard({
   state,
@@ -95,14 +117,22 @@ export function GaugeStateCard({
    */
   label: MicroLabel;
 }) {
-  return state.kind === "empty" ? (
-    <Empty holds={state.holds} filledBy={state.filledBy} eyebrow={label} />
-  ) : (
-    <NotProvisioned
-      missing={state.missing}
-      arrivesWith={state.arrivesWith}
-      eyebrow={label}
-    />
+  return (
+    // `display: contents` — the marker names the card, it does not box it. The
+    // card element itself stays the flex or grid item it was, so a block that
+    // replaces itself with this card sits exactly where it sat before, and
+    // this element renders nothing of its own.
+    <div data-gauge-block="" className="contents">
+      {state.kind === "empty" ? (
+        <Empty holds={state.holds} filledBy={state.filledBy} eyebrow={label} />
+      ) : (
+        <NotProvisioned
+          missing={state.missing}
+          arrivesWith={state.arrivesWith}
+          eyebrow={label}
+        />
+      )}
+    </div>
   );
 }
 
