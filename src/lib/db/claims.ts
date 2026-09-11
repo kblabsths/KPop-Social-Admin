@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  countRead,
   readCount,
   readRows,
   readRowsByIds,
@@ -44,7 +45,7 @@ export const CLAIMS_OBJECT: ObjectKind = objectKindOf(T.pendingClaims);
  * ~14 sequential requests and 2.9-3.8 s of warm server time on a view holding
  * 877 rows (admin-window/BUG-0138, measured by Ben on the walk instance). Both
  * are gone. What answers the page now is a WINDOW read of the longest-waiting
- * claims, ordered in the database, plus `head: true` COUNTS the row cap cannot
+ * claims, ordered in the database, plus `countRead` COUNTS the row cap cannot
  * reach — so the page's cost no longer follows the size of the view.
  *
  * That shape rests on ONE schema change, which is the scraper repo's and
@@ -342,9 +343,16 @@ export function readClaimWindow(
 }
 
 /**
- * How many claims a narrowing holds — a `head: true, count: "exact"` request
- * through `readCount`, so `ROW_CAP` cannot reach it and a null count is a
- * refusal, never a zero (§4.3; common violations row 2).
+ * How many claims a narrowing holds — a `countRead` request through
+ * `readCount`, so `ROW_CAP` cannot reach it and a null count is a refusal,
+ * never a zero (§4.3; common violations row 2).
+ *
+ * It is `countRead` and not a `head: true` count of its own: a HEAD response
+ * carries no body, so the 404 a database without `pending_claims` answers
+ * reached this app as `error: null, count: null` and the page rendered the
+ * no-count arm's developer sentence beside the panel's own not-provisioned
+ * card (admin-window/BUG-0210). GET-shaped over zero rows, the absence
+ * classifies exactly as the window read's does.
  *
  * `filter.bucket` undefined counts every RENDERABLE bucket. It is one count
  * per question and NOT a grouped read, because PostgREST refuses aggregates on
@@ -359,10 +367,10 @@ export function readClaimCount(
   return readCount(
     T.pendingClaims,
     (client) =>
-      narrowed(
-        client.from(T.pendingClaims).select("*", { head: true, count: "exact" }),
-        filter,
-      ) as unknown as PromiseLike<{ count: number | null; error: unknown }>,
+      narrowed(countRead(client, T.pendingClaims), filter) as unknown as PromiseLike<{
+        count: number | null;
+        error: unknown;
+      }>,
     db,
   );
 }
@@ -376,9 +384,9 @@ export function readClaimCount(
  * set is a window rather than the whole view: the gauge on `/claims` renders
  * the claims of a bounded scan, so "what would this surface hold with no URL
  * facet at all" has to carry the scan's own bounds. Asked with the unnarrowed
- * filter, it answers exactly that — and it is the bounded `head: true` count
- * that rule prescribes for a fact it costs a query (admin-window/BUG-0135),
- * never a second row read.
+ * filter, it answers exactly that — and it is the bounded count that rule
+ * prescribes for a fact it costs a query (admin-window/BUG-0135), never a
+ * second row read.
  *
  * **It takes ONE bounds object, carrying both edges, and that is the point of
  * the shape.** It was `readClaimCountSince(since, …)` and had no upper bound
@@ -411,10 +419,7 @@ export function readClaimCountIn(
   return readCount(
     T.pendingClaims,
     (client) =>
-      narrowed(
-        client.from(T.pendingClaims).select("*", { head: true, count: "exact" }),
-        filter,
-      )
+      narrowed(countRead(client, T.pendingClaims), filter)
         .gte("observed_at", bounds.since)
         .lt("observed_at", bounds.until) as unknown as PromiseLike<{
         count: number | null;

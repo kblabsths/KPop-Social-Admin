@@ -23,6 +23,7 @@ import {
   reviewItemSourcePattern,
 } from "../../fixtures/rows";
 import {
+  isCountLeg,
   permissionDenied,
   stubClient,
   tableNotInSchemaCache,
@@ -657,26 +658,22 @@ describe("readReviewQueues", () => {
 });
 
 /**
- * The POPULATION leg, as admin-window/BUG-0135 shapes it: one HEAD count per
- * shape, built from the declaration in `src/lib/review/shapes.ts`, each kind's
- * figure the sum of the counts the database gave — and never the read's own
- * refusal.
+ * The POPULATION leg, as admin-window/BUG-0135 shapes it: one count per shape,
+ * built from the declaration in `src/lib/review/shapes.ts`, each kind's figure
+ * the sum of the counts the database gave — and never the read's own refusal.
+ *
+ * The legs are GET-shaped counts since admin-window/BUG-0210: `{ count:
+ * "exact" }` over zero rows, never `head: true`, because a HEAD response
+ * carries no body and the 404 a database without `review_items` answers
+ * reached the app as `error: null, count: null`.
  */
 describe("readReviewQueues counts the population instead of reading it", () => {
   /** The count legs of one recorded run, in the order they were issued. */
   function countLegs(stub: ReturnType<typeof withLegs>) {
-    return stub.calls.filter((call) =>
-      call.steps.some(
-        (step) =>
-          step.method === "select" &&
-          typeof step.args[1] === "object" &&
-          step.args[1] !== null &&
-          (step.args[1] as Record<string, unknown>).head === true,
-      ),
-    );
+    return stub.calls.filter((call) => isCountLeg(call));
   }
 
-  it("asks for a head count and no rows, one leg per shape", async () => {
+  it("asks for a GET-shaped count and no rows, one leg per shape", async () => {
     const rows = population();
     const stub = withLegs(rows, rows);
     await readReviewQueues({ queue: "data_conflict" }, stub.asSupabaseClient());
@@ -685,11 +682,15 @@ describe("readReviewQueues counts the population instead of reading it", () => {
     expect(legs).toHaveLength(SHAPES.length);
     for (const leg of legs) {
       const select = leg.steps.find((step) => step.method === "select");
-      expect(select?.args[1]).toMatchObject({ head: true, count: "exact" });
+      expect(select?.args[1]).toEqual({ count: "exact" });
       // No cap can apply to a read that returns no rows — which is the whole
-      // reason this leg is a count (admin-window/BUG-0135).
+      // reason this leg is a count (admin-window/BUG-0135) — and the bound
+      // that makes it return none is `limit(0)`, not a row window.
       expect(leg.steps.map((step) => step.method)).not.toContain("range");
       expect(leg.steps.map((step) => step.method)).not.toContain("order");
+      expect(
+        leg.steps.filter((step) => step.method === "limit").map((step) => step.args),
+      ).toEqual([[0]]);
     }
   });
 
@@ -866,17 +867,6 @@ describe("readReviewQueues counts only the kinds the URL narrows", () => {
   /** Every `review_items` read of one run — the row leg plus every count leg. */
   function readsOfReviewItems(stub: StubClient): number {
     return stub.tablesRead().filter((table) => table === T.reviewItems).length;
-  }
-
-  /** A HEAD count leg: `{ head: true }` on the select, which returns no rows. */
-  function isCountLeg(call: StubClient["calls"][number]): boolean {
-    return call.steps.some(
-      (step) =>
-        step.method === "select" &&
-        typeof step.args[1] === "object" &&
-        step.args[1] !== null &&
-        (step.args[1] as Record<string, unknown>).head === true,
-    );
   }
 
   /**
@@ -1291,15 +1281,7 @@ describe("listReviewItems narrowed by a source", () => {
   });
 });
 
-/** The head-count legs of one recorded run — the population's own reads. */
+/** The count legs of one recorded run — the population's own reads. */
 function countLegsOf(stub: ReturnType<typeof withLegs>) {
-  return stub.calls.filter((call) =>
-    call.steps.some(
-      (step) =>
-        step.method === "select" &&
-        typeof step.args[1] === "object" &&
-        step.args[1] !== null &&
-        (step.args[1] as Record<string, unknown>).head === true,
-    ),
-  );
+  return stub.calls.filter((call) => isCountLeg(call));
 }

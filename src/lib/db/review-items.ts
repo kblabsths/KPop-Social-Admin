@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  countRead,
   readComplete,
   readCount,
   type DbCountedResponse,
@@ -186,7 +187,8 @@ export interface ReviewQueues {
 export type KindPopulation = DbResult<number> | { kind: "not_asked" };
 
 /**
- * One shape's whole-table row count: `{ head: true, count: "exact" }`, no rows.
+ * One shape's whole-table row count: `countRead` — `{ count: "exact" }` over
+ * zero rows.
  *
  * Built from `SHAPE_COLUMNS` in `src/lib/review/shapes.ts` — the one owner of
  * what a shape IS (§6: "the kind is derived in code, no column carries it").
@@ -194,18 +196,21 @@ export type KindPopulation = DbResult<number> | { kind: "not_asked" };
  * only the column NAMES the declaration names, which is what turns that
  * declaration into a query.
  *
- * No `.range` and no `.order`: a head count returns no rows, so there is
+ * No `.range` and no `.order`: a count read returns no rows, so there is
  * nothing to bound or to order, and `readComplete`'s ROW_CAP cannot apply to
  * it. That is the whole point — a `review_items` table of any size answers a
  * faceted `/queues` URL with its rows AND its populations
  * (admin-window/BUG-0135).
+ *
+ * The `limit=0` is `countRead`'s and not this module's: a `head: true` count
+ * would be a HEAD request, whose 404 carries no body, so a database without
+ * `review_items` reached `readCount` as `error: null, count: null` and each
+ * block rendered a developer sentence instead of its absence
+ * (admin-window/BUG-0210).
  */
 function countQuery(db: SupabaseClient, shape: Shape) {
   const columns = columnsOfShape(shape);
-  let builder = db
-    .from(T.reviewItems)
-    .select("*", { head: true, count: "exact" })
-    .eq("queue", columns.queue);
+  let builder = countRead(db, T.reviewItems).eq("queue", columns.queue);
   if (columns.sourceIdIsNull === true) {
     builder = builder.is("source_id", null);
   } else if (columns.sourceIdIsNull === false) {
@@ -339,7 +344,7 @@ function narrows(filter: ReviewItemFilter): boolean {
  * complete, database-narrowed read had already returned, on every faceted URL,
  * as soon as the table passed ROW_CAP.
  *
- * The population leg is now a per-shape COUNT (`readCount`, `head: true`), so
+ * The population leg is now a per-shape COUNT (`readCount`, `countRead`), so
  * ROW_CAP cannot reach it at all; the FILTERED leg stays a COMPLETE read
  * (§4.3) and still refuses whole when it is truncated, because those rows
  * really are unknown.

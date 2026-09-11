@@ -1098,15 +1098,74 @@ export async function callFunction<T>(
 }
 
 /**
- * A `head: true, count: "exact"` read. `ok` carries the count the database
- * gave — and a database that gave none is a refusal, never a zero.
+ * How many ROWS a count read brings back: none.
+ *
+ * `limit=0` and `count=exact` together are what make a count read cost one
+ * request and two bytes of body (`[]`) while still carrying the whole count in
+ * `Content-Range` — measured on the declared staging target 2026-09-11
+ * (admin-window/BUG-0210): `GET /rest/v1/groups?select=*&limit=0` with
+ * `Prefer: count=exact` answered **206, `content-length: 2`, and a `Content-Range`
+ * whose total is 1759**; the same request over a matching set of zero answered
+ * **200, with a `Content-Range` total of 0** — never a 416, at either end.
+ */
+const COUNT_ROWS = 0;
+
+/**
+ * The ONE spelling of a count read's query: `{ count: "exact" }` over zero
+ * rows, GET-shaped, and never `head: true`.
+ *
+ * **Why not a HEAD count** (measured against the declared staging target
+ * 2026-09-11, admin-window/BUG-0210, and the same body-less-HEAD fact
+ * `src/lib/db/verdict.ts` records for the readiness probe):
+ *
+ *   - `.select("*", { head: true, count: "exact" })` over a table the database
+ *     does not have answers **404 with `content-length: 162` and no body on
+ *     the wire** — a HEAD response carries none. supabase-js parses its error
+ *     out of that body, finds nothing, and rewrites the response to
+ *     `status 204, error: null, count: null`
+ *     (`node_modules/@supabase/postgrest-js/src/PostgrestBuilder.ts`, the
+ *     `res.status === 404 && body === ''` arm). So the absence never reaches
+ *     `classify`, and `readCount` fell through to its no-count arm — which
+ *     rendered this app's note to ITS OWN developer beside the panel's
+ *     not-provisioned card. The same blindness swallows every other failure a
+ *     count leg can meet: a real `57014` statement timeout arrives as
+ *     `code=undefined, msg=""` (admin-window/TASK-0032).
+ *   - The same read GET-shaped with `limit=0` answers **404 carrying the whole
+ *     `PGRST205` body**, which `classify` turns into `not_provisioned` naming
+ *     the object — the identical answer the surface's row leg gives — and a
+ *     failure that is NOT an absence arrives with the database's own code and
+ *     sentence, so it still reaches the page as an error.
+ *
+ * It lives here, beside `readCount`, because the shape of the request and the
+ * reading of its answer are one contract: a caller that spells its own count
+ * query can spell one whose failure this seam cannot classify (LESSONS 5 — a
+ * shared spelling gets imported, never retyped). `tests/live/parity.ts`'
+ * `exactCount` is the live suite's copy of the same rule, and
+ * `tests/offline/live-guard.test.ts` pins it there.
+ */
+export function countRead(db: SupabaseClient, object: string) {
+  return db.from(object).select("*", { count: "exact" }).limit(COUNT_ROWS);
+}
+
+/**
+ * A `{ count: "exact" }` read — build the query with `countRead` above. `ok`
+ * carries the count the database gave, and a database that gave none is a
+ * refusal, never a zero.
  *
  * This used to substitute a zero for an absent count (BUG-0007's user-visible
  * twin), so a response with `error: null` and `count: null` — exactly what a
- * select written WITHOUT `{ head: true, count: "exact" }` returns — rendered a
+ * select written WITHOUT `{ count: "exact" }` returns — rendered a
  * confident `0` for a table holding 47 rows. A real zero still comes back as `ok` 0; only the
  * absent count refuses (ARCHITECTURE.md §4.3, campaign
  * admin-window/TASK-0026). It still never throws (§4.1).
+ *
+ * **The no-count arm below is this app talking to its own developer, so no
+ * read this app SHIPS may reach it** (admin-window/BUG-0210). It is reachable
+ * only by a count query written without `{ count: "exact" }` — which
+ * `countRead` makes unspellable — and it is kept, rather than softened into an
+ * absence, because a count nobody asked for is a defect in this repo and not a
+ * fact about the database. What used to reach it was the HEAD-shaped count's
+ * invisible 404; that now classifies as the absence it is.
  */
 export async function readCount(
   missing: string,
@@ -1124,7 +1183,7 @@ export async function readCount(
         {
           words:
             `the query returned no count, so the number of rows is unknown; a ` +
-            `count read requires { head: true, count: "exact" }.`,
+            `count read requires { count: "exact" }.`,
           author: "this app",
         },
       ];

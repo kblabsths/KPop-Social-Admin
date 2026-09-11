@@ -15,7 +15,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export interface ScriptedResponse {
   data?: unknown;
   error?: unknown;
-  /** For `head: true, count: "exact"` reads. */
+  /** For `{ count: "exact" }` reads. */
   count?: number | null;
 }
 
@@ -36,6 +36,35 @@ export interface RecordedCall {
    * existed reads unchanged.
    */
   kind?: "table" | "function";
+}
+
+/**
+ * Is this recorded call a COUNT read — the one query shape `countRead`
+ * (`src/lib/db/result.ts`) issues: `{ count: "exact" }` over zero rows?
+ *
+ * Both halves are load-bearing and neither identifies a count leg alone. A
+ * COMPLETE row read (`readComplete`) also passes `{ count: "exact" }`; what it
+ * never passes is `limit(0)`, because it wants its rows. And `head: true` —
+ * which used to be every count leg's marker — is exactly what made a count
+ * blind to the 404 an absent table answers, since a HEAD response carries no
+ * body for supabase-js to parse an error out of (admin-window/BUG-0210). So
+ * its ABSENCE is part of what this predicate asserts, and a count leg that
+ * regrew it stops being recognised as one here.
+ *
+ * Exported so every suite reads a count leg the same way rather than
+ * re-deriving the shape per file (LESSONS 5).
+ */
+export function isCountLeg(call: RecordedCall): boolean {
+  const select = call.steps.find((step) => step.method === "select");
+  const options = select?.args[1];
+  const counted =
+    typeof options === "object" &&
+    options !== null &&
+    (options as Record<string, unknown>).count === "exact" &&
+    (options as Record<string, unknown>).head === undefined;
+  return (
+    counted && call.steps.some((step) => step.method === "limit" && step.args[0] === 0)
+  );
 }
 
 export interface StubClient {

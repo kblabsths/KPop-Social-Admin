@@ -78,13 +78,22 @@ export const DB_KEY_SENTINEL = "http-suite-not-a-credential";
  * without a database instead of assuming it never asked for one. AUTH_SECRET
  * is the throwaway literal above; no real credential is ever read here, and
  * the suite never signs in through Google.
+ *
+ * **`dbUrl` overrides only WHICH address is unreachable-or-stubbed, never the
+ * enforcement above** (admin-window/BUG-0210): a caller hands it the loopback
+ * address of a PostgREST stub it started in this process
+ * (`tests/http/postgrest-stub.ts`), so the suite can also ask what the app
+ * does with a database that ANSWERS — the un-migrated project, which a refused
+ * connection cannot express. Every `*SUPABASE*` name of the ambient
+ * environment is still deleted first, and the key is still the sentinel, so no
+ * real database is reachable from this suite whatever this argument says.
  */
-export function serverEnv(): NodeJS.ProcessEnv {
+export function serverEnv(dbUrl: string = DB_URL_SENTINEL): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
     if (key.includes("SUPABASE")) delete env[key];
   }
-  env.SUPABASE_URL = DB_URL_SENTINEL;
+  env.SUPABASE_URL = dbUrl;
   env.SUPABASE_SERVICE_ROLE_KEY = DB_KEY_SENTINEL;
   env.AUTH_SECRET = AUTH_SECRET;
   env.AUTH_URL = base;
@@ -263,7 +272,9 @@ function ensureProductionBuild(): void {
   });
 }
 
-export async function startServer(): Promise<{ child: ChildProcess; log: string[] }> {
+export async function startServer(
+  options: { dbUrl?: string } = {},
+): Promise<{ child: ChildProcess; log: string[] }> {
   ensureProductionBuild();
   if (!(await portIsFree())) {
     throw new Error(
@@ -276,7 +287,7 @@ export async function startServer(): Promise<{ child: ChildProcess; log: string[
   const log: string[] = [];
   const child = spawn(nextBin, ["start", "--hostname", host, "--port", String(HTTP_TEST_PORT)], {
     cwd: repoRoot,
-    env: serverEnv(),
+    env: serverEnv(options.dbUrl),
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });

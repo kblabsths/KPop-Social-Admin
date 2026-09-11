@@ -63,6 +63,7 @@ import {
   type PendingClaimRow,
 } from "../../fixtures/rows";
 import {
+  isCountLeg,
   permissionDenied,
   stubClient,
   tableNotInSchemaCache,
@@ -1850,24 +1851,21 @@ describe("the gauge's window line", () => {
    * Fact 2 of the two-fact rule is a read this page did not have — the
    * unnarrowed count INSIDE the gauge's own window — so it is issued, and this
    * pins where: only where a facet can narrow the gauge at all, exactly once,
-   * as a `head: true` count carrying the window's lower bound and no facet.
+   * as a `countRead` count carrying the window's lower bound and no facet.
    * An unnarrowed page and a `?bucket=` page issue it not at all.
    */
   it("buys fact 2 with one bounded count, and only where a facet narrows this read", async () => {
-    // A windowed COUNT is a `head: true` read carrying the window's lower
-    // bound. The head option is half of the test and not decoration: since
-    // admin-window/TASK-0074 the gauge's own claims leg is a windowed ROW read
-    // of the same view, so "carries a gte" alone names two different reads.
+    // A windowed COUNT is a `{ count: "exact" }` read over ZERO rows carrying
+    // the window's lower bound. The count SHAPE is half of the test and not
+    // decoration: since admin-window/TASK-0074 the gauge's own claims leg is a
+    // windowed ROW read of the same view, so "carries a gte" alone names two
+    // different reads.
     const windowedCounts = (stub: StubClient) =>
       stub.calls.filter(
         (call) =>
           call.table === T.pendingClaims &&
           call.steps.some((step) => step.method === "gte") &&
-          call.steps.some(
-            (step) =>
-              step.method === "select" &&
-              (step.args[1] as { head?: boolean } | undefined)?.head === true,
-          ),
+          isCountLeg(call),
       );
 
     const unnarrowing: Record<string, string>[] = [{}, { bucket: "escalated" }];
@@ -1880,9 +1878,14 @@ describe("the gauge's window line", () => {
     const counts = windowedCounts(narrowed.stub);
     expect(counts).toHaveLength(1);
     const steps = counts[0].steps;
-    // A head count, so `ROW_CAP` cannot reach it and no row is transported.
+    // A count over zero rows, so `ROW_CAP` cannot reach it and no row is
+    // transported — and GET-shaped, so an absent view answers with its own
+    // `PGRST205` body (admin-window/BUG-0210).
     const select = steps.find((step) => step.method === "select");
-    expect(select?.args[1]).toEqual({ head: true, count: "exact" });
+    expect(select?.args[1]).toEqual({ count: "exact" });
+    expect(
+      steps.filter((step) => step.method === "limit").map((step) => step.args),
+    ).toEqual([[0]]);
     // Bounded by the window the section states, and by nothing else: it is the
     // population WITH NO FACET, so the domain the page narrowed by is absent.
     expect(
@@ -1913,12 +1916,7 @@ describe("the gauge's window line", () => {
       [T.pendingClaims]: (call: RecordedCall) =>
         call.steps.some(
           (step) => step.method === "gte" && step.args[0] === "observed_at",
-        ) &&
-        call.steps.some(
-          (step) =>
-            step.method === "select" &&
-            (step.args[1] as { head?: boolean } | undefined)?.head === true,
-        )
+        ) && isCountLeg(call)
           ? { error: permissionDenied(T.pendingClaims) }
           : claimView(CLAIMS)(call),
     };
@@ -2293,7 +2291,7 @@ describe("absence and failure", () => {
       ],
       [
         // A count the database did not GIVE — exactly what a select written
-        // without `{ head: true, count: "exact" }` comes back with — is a
+        // without `{ count: "exact" }` comes back with — is a
         // refusal and never a zero (ARCHITECTURE.md §4.3, common violations
         // row 2). The rows it did return are not a count either, so no
         // sentence stands over them. This replaces the truncated-complete-read
@@ -2821,11 +2819,7 @@ describe("which emptiness this is", () => {
     const counted = stub.calls.filter(
       (call) =>
         call.table === T.pendingClaims &&
-        call.steps.some(
-          (step) =>
-            step.method === "select" &&
-            (step.args[1] as { head?: boolean } | undefined)?.head === true,
-        ) &&
+        isCountLeg(call) &&
         call.steps.some((step) => step.method === "gte" && step.args[0] === "observed_at"),
     );
     expect(counted, "the gauge window's population count").toHaveLength(1);
@@ -2912,13 +2906,7 @@ describe("a narrowing with no chip row", () => {
   const countFacets = (stub: StubClient): Record<string, string>[] =>
     stub.calls
       .filter((call: RecordedCall) => call.table === T.pendingClaims)
-      .filter((call: RecordedCall) =>
-        call.steps.some(
-          (step) =>
-            step.method === "select" &&
-            (step.args[1] as { head?: boolean } | undefined)?.head === true,
-        ),
-      )
+      .filter((call: RecordedCall) => isCountLeg(call))
       .map((call: RecordedCall) =>
         Object.fromEntries(
           call.steps
@@ -3394,26 +3382,18 @@ describe("a narrowing with no chip row", () => {
    *
    * The single state the two facts cannot answer is both families in force, so
    * that is the only state that buys a count — and it buys a bounded
-   * `head: true` one, in the composition the page already awaits, never a
+   * `countRead` one, in the composition the page already awaits, never a
    * second round trip. The four states are graded by the SHAPE of every count
    * the page issued over the view: which facets it carried, and whether it
    * carried the gauge window's edges. A shape census rather than a total, so a
    * leg that moved from one question to another cannot pass as the same cost.
    */
-  it("buys the attribution fact with one head count per surface, and only where both families are in force", async () => {
-    /** Every `head: true` count over the view, as `kind:facets` — sorted, so
-     *  the census is about which questions were asked and not their order. */
+  it("buys the attribution fact with one count per surface, and only where both families are in force", async () => {
+    /** Every count over the view, as `kind:facets` — sorted, so the census is
+     *  about which questions were asked and not their order. */
     const countShapes = (stub: StubClient): string[] =>
       stub.calls
-        .filter(
-          (call) =>
-            call.table === T.pendingClaims &&
-            call.steps.some(
-              (step) =>
-                step.method === "select" &&
-                (step.args[1] as { head?: boolean } | undefined)?.head === true,
-            ),
-        )
+        .filter((call) => call.table === T.pendingClaims && isCountLeg(call))
         .map((call) => {
           const windowed = call.steps.some(
             (step) => step.method === "gte" && step.args[0] === "observed_at",
@@ -5576,8 +5556,8 @@ describe("QA: what the parked bucket alone carries", () => {
    * than `ROW_CAP` used to refuse the whole page: the read was COMPLETE, so a
    * count above the cap was a refusal carrying the real number, and `/claims`
    * rendered nothing but that line. No read this page makes can reach the cap
-   * now — the list is a `limit 50` window and every figure is a `head: true`
-   * count — so a view of any size renders its window and states the true
+   * now — the list is a `limit 50` window and every figure is a zero-row
+   * `{ count: "exact" }` read — so a view of any size renders its window and states the true
    * number beside it. That is the point of the fix, not a regression.
    */
   it("renders a view far larger than the row cap, and states its real size", async () => {
@@ -5930,28 +5910,30 @@ describe("the reads this page makes", () => {
     // the same fixed number of rows spelled the way a paged read spells it.
     for (const call of callsOver(large.stub, T.pendingClaims)) {
       const limit = call.steps.find((step) => step.method === "limit")?.args[0];
+      const range = call.steps.find((step) => step.method === "range")?.args as
+        | [number, number]
+        | undefined;
+      if (isCountLeg(call)) {
+        // A COUNT asks for NO rows at all — `limit(0)`, and never a range
+        // (admin-window/BUG-0210). Zero is as fixed a number as the caps
+        // below, so the invariance this test is named for still holds.
+        expect(Number(limit), shapeOf(call)).toBe(0);
+        expect(range, shapeOf(call)).toBeUndefined();
+        continue;
+      }
       if (limit !== undefined) {
         expect([1, CLAIM_WINDOW, PENDING_CLAIMS_DEFAULTS.limit], shapeOf(call)).toContain(
           Number(limit),
         );
       }
-      const range = call.steps.find((step) => step.method === "range")?.args as
-        | [number, number]
-        | undefined;
       if (range !== undefined) {
         expect(range[1] - range[0] + 1, shapeOf(call)).toBe(CLAIM_WINDOW);
       }
-      // A ROW read carries ONE bound, never both — a head count carries
-      // neither, which is what makes a count a count (§4.3).
-      const isHeadCount = call.steps.some(
-        (step) =>
-          step.method === "select" &&
-          JSON.stringify(step.args[1]) === JSON.stringify({ head: true, count: "exact" }),
-      );
+      // A ROW read carries ONE bound, never both.
       expect(
         [limit !== undefined, range !== undefined].filter(Boolean),
         shapeOf(call),
-      ).toHaveLength(isHeadCount ? 0 : 1);
+      ).toHaveLength(1);
     }
 
     // And the 2,000-row view really did render: the window's rows, and a count
@@ -5966,13 +5948,7 @@ describe("the reads this page makes", () => {
     const { stub } = await renderWithStub(viewOf(200));
     const overView = callsOver(stub, T.pendingClaims);
 
-    const counts = overView.filter((call) =>
-      call.steps.some(
-        (step) =>
-          step.method === "select" &&
-          JSON.stringify(step.args[1]) === JSON.stringify({ head: true, count: "exact" }),
-      ),
-    );
+    const counts = overView.filter((call) => isCountLeg(call));
     const rowReads = overView.filter((call) => !counts.includes(call));
     /** The number of rows a row read asked for, however it spelled the bound. */
     const boundOf = (call: RecordedCall): number | undefined => {
@@ -6067,12 +6043,14 @@ describe("the reads this page makes", () => {
         .filter((step) => step.method === "eq")
         .map((step) => `${step.args[0]}=${step.args[1]}`);
       expect(eqs, shapeOf(call)).toEqual(["domain=events"]);
-      // A bounded head count and never a row read — the shape the two-fact
-      // rule prescribes for a fact it costs a query.
+      // A bounded count and never a row read — the shape the two-fact rule
+      // prescribes for a fact it costs a query, GET-shaped over zero rows so
+      // an absent view answers with its own body (admin-window/BUG-0210).
       expect(
         call.steps.find((step) => step.method === "select")?.args[1],
         shapeOf(call),
-      ).toEqual({ head: true, count: "exact" });
+      ).toEqual({ count: "exact" });
+      expect(isCountLeg(call), shapeOf(call)).toBe(true);
     }
     const windowedWithoutChips = withoutChips.filter((call) =>
       call.steps.some((step) => step.method === "gte" && step.args[0] === "observed_at"),
@@ -6142,11 +6120,7 @@ describe("each read answers for itself", () => {
   /** A `pending_claims` whose COUNT reads refuse while its row reads answer. */
   function countsRefuse(refusal: unknown, only?: string): (call: RecordedCall) => ReturnType<ReturnType<typeof claimView>> {
     return (call) => {
-      const head = call.steps.some(
-        (step) =>
-          step.method === "select" &&
-          (step.args[1] as { head?: boolean } | undefined)?.head === true,
-      );
+      const head = isCountLeg(call);
       const bucket = call.steps.find(
         (step) => step.method === "eq" && step.args[0] === "bucket",
       )?.args[1];
@@ -6183,16 +6157,12 @@ describe("each read answers for itself", () => {
 
   it("renders a bucket's refusal rather than a zero when the count is absent", async () => {
     // `{count: null, error: null}` is what a select written WITHOUT
-    // `{ head: true, count: "exact" }` returns — a refusal, never a zero
+    // `{ count: "exact" }` returns — a refusal, never a zero
     // (ARCHITECTURE.md §4.3, common violations row 2).
     const markup = await renderClaims(
       healthyScript({
         [T.pendingClaims]: (call: RecordedCall) => {
-          const head = call.steps.some(
-            (step) =>
-              step.method === "select" &&
-              (step.args[1] as { head?: boolean } | undefined)?.head === true,
-          );
+          const head = isCountLeg(call);
           const bucket = call.steps.find(
             (step) => step.method === "eq" && step.args[0] === "bucket",
           )?.args[1];
@@ -6309,8 +6279,8 @@ function pagedScript(count = 130, bucket: PendingClaimBucket = "escalated"): Scr
  * A database where the COUNT and the WINDOW READ disagree — the fixture the
  * grid rule exists for (QA, admin-window/BUG-0168 close).
  *
- * They are two reads and nothing makes them agree: a view that answers
- * `head: true` with 900 while a `limit 50` read of the same view comes back
+ * They are two reads and nothing makes them agree: a view that answers a
+ * count of 900 while a `limit 50` read of the same view comes back
  * with 37 rows is a database this app must survive. `initialPage(37, true)` is
  * off the grid `pageBound` enforces, so every press from it would be refused
  * for ever — and the page's answer is to draw no paging element at all.
@@ -6329,11 +6299,7 @@ function offGridScript(rows: number, whole: number): Script {
 function countRefusesScript(rows: number, error: unknown): Script {
   const view = claimView(longPopulation(rows));
   return healthyScript({
-    [T.pendingClaims]: (call) => {
-      const asked = (call.steps.find((step) => step.method === "select")?.args[1] ??
-        {}) as { head?: boolean };
-      return asked.head === true ? { error } : view(call);
-    },
+    [T.pendingClaims]: (call) => (isCountLeg(call) ? { error } : view(call)),
   });
 }
 
@@ -7156,14 +7122,14 @@ describe("the affordance that continues the claim list", () => {
  * The Claims page prints per-bucket claim counts TWICE and reads them two
  * different ways (campaign admin-window/TASK-0071).
  *
- * The bucket table's counts are `head: true, count: "exact"` reads of the
+ * The bucket table's counts are `{ count: "exact" }` reads of the
  * WHOLE narrowing, one per bucket. The gauge's bucket distribution is computed
  * over a scan capped at `GAUGE_ROW_CAP` rows. Below that cap the two agree;
  * above it they diverge, and until this ticket nothing on screen said which
  * was which. Staging held 877 claims on 2026-09-11 — this is live within
  * months, not theoretical.
  *
- * The ruling is LABEL, not equalise: capping the head counts would make the
+ * The ruling is LABEL, not equalise: capping those counts would make the
  * page's totals wrong rather than windowed, and scanning the whole view to
  * fill the gauge is the ~14-round-trip read admin-window/BUG-0138 removed. So
  * each set of figures says, IN RENDERED TEXT, what kind of fact it is — and no
