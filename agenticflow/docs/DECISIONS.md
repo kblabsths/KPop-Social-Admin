@@ -1818,3 +1818,62 @@ where a leg cannot be given one. The window LENGTH assertion and the
 `opened_at` population count are unaffected either way. No retry is added now:
 a retry written against a stationary column hides the day it starts moving, and
 this entry is the cheaper record.
+
+## 2026-09-11 — a narrowing clause names a facet's EFFECT, never its presence; and the two questions get two words
+
+QA's residual on BUG-0191 measured the same chip getting two opposite verdicts
+on `/claims` staging: `?source_id=<ticketmaster>` — a source the whole view
+carries — removes zero rows, the bucket caption takes its unnarrowed arm and
+says "nothing above narrows these counts" with that chip standing active;
+`?source_id=<ticketmaster>&domain=events` draws exactly the counts
+`?domain=events` draws alone, and the caption says "under the filters above".
+Both sentences are true of their own reading — the first of EFFECT, the second
+of PRESENCE — and the page is answering one question two ways because
+`bucketsNarrowed` (two facts, `isSurfaceNarrowed`) and `hasChipNarrowing` (a
+`!== undefined` over `CHIP_FACETS`) are ANDed as though they were the same
+question about the same subject. They are not: the first is about the whole
+filter's effect on this surface, the second about whether a control is set.
+
+**Ruled, for every surface: a clause that attributes a narrowing — to a control
+("under the filters above", "matching these filters"), or to a named facet — is
+a claim about rows THIS read lost, and may be rendered only where that
+subject's own effect is established. Presence of a facet is never evidence that
+it narrowed anything.** It is the same rule BUG-0129/0131/0133 and DEBT-0008
+already settled for the surface as a whole, applied one level down, to the
+subject a sentence points at. The converse arm is unaffected and stays exactly
+as `isSurfaceNarrowed` leaves it: where a surface's rendered set equals its
+population, NO facet in force removed anything — that is free and provable, so
+"nothing above narrows these counts" is the true sentence at `?source_id=<a
+source the view carries anyway>`, and TASK-0071's `everyBucket` clause remains
+the way a standing chip is stated rather than denied.
+
+A clause that merely states WHAT THE READ CARRIED — the control-less phrases
+BUG-0160 added, "in the events domain" — is not an attribution and keeps its
+presence gate. One clause never does both jobs.
+
+**The effect of a FAMILY of facets is cheap, and that is what the chip clause
+needs.** Its subject is the chip bar collectively, not one chip: where the only
+facets in force are chips, the surface's own two-fact answer already IS the
+chip family's effect (free); where only control-less facets are in force the
+clause is not said at all (free); the single ambiguous state is both families
+in force, and there one bounded `head: true` count over the same read with the
+chip facets dropped settles it (§4.3's own allowance, BUG-0135's shape). On
+today's `/claims` that state is `?source_id=…&domain=…` and nothing else.
+
+**Where the ruling lands.** Not in TASK-0072: that ticket is a
+declared-zero-rendered-bytes contract change (the scope array, the vocabulary's
+one home) and this changes which arm renders at `?source_id=…&domain=…`. Filed
+as BUG-0192, chained AFTER TASK-0072 rather than before it — the "truth first"
+ordering BUG-0191 took applies where the fold would otherwise re-home a false
+sentence's DERIVATION, and here the fold is mechanical and its byte-identity
+baseline is the caption BUG-0191 already corrected; going second buys the fix
+one home to land in (`src/lib/url/narrowing.ts`) instead of a predicate written
+in `lib/claims/filters.ts` and moved again the same week.
+
+**The vocabulary half IS TASK-0072's**, because it is a rename and renders
+nothing: `hasChipNarrowing` answers presence and says "Narrowing", which is the
+word the effect question owns (`isSurfaceNarrowed`, `claimsNarrowed`). It
+becomes `hasChipFacet` — the same shape as `hasNarrowingFacet`, which keeps its
+word because fact 1 is a question about the FACET VOCABULARY ("can a facet of
+this kind remove a row at all"), not about this read's rows. Two questions, two
+words, before a third predicate joins them.

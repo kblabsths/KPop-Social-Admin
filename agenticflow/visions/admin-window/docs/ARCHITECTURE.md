@@ -666,6 +666,46 @@ four cycles that never finished (BUG-0110) and the Dashboard's attention
 zeros that never said what fills the queue (BUG-0125) are this rule, in the
 gauge rather than in the empty card.
 
+**A clause NAMES a facet's effect, never its presence** (ruled 2026-09-11 from
+QA's residual on BUG-0191; DECISIONS of the same day). The two-fact rule above
+answers whether THIS SURFACE is narrowed. A sentence that goes further and
+points at a subject — a control ("under the filters above", "matching these
+filters") or a named facet — is claiming that subject removed rows from this
+read, and may be rendered only where that subject's own effect is established.
+A facet being set is not evidence that it narrowed anything: on staging
+`/claims?source_id=<a source the whole view carries>` removes zero rows and
+takes the unnarrowed arm, while `?source_id=<same>&domain=events` draws exactly
+the counts `?domain=events` draws alone and blamed the chip bar — one chip, two
+opposite sentences, because one clause asked effect and the other asked
+presence.
+
+Three corollaries, so this costs almost no reads:
+
+1. **The unnarrowed arm is free and already right.** `rendered === population`
+   means no facet in force removed anything, so "nothing above narrows these
+   counts" is TRUE even with a chip standing active. A standing facet is
+   STATED rather than denied where the surface drops it on purpose
+   (`BUCKET_CAPTION.everyBucket`, TASK-0071) — that is a sentence about the
+   read's scope, not an attribution.
+2. **A clause that states what the read CARRIED is not an attribution** and
+   keeps its presence gate — the control-less phrases of BUG-0160 ("in the
+   events domain") exist so a facet with no chip is visible at all. One clause
+   never does both jobs.
+3. **Attribution is per SUBJECT, and a subject may be a FAMILY.** The chip
+   clause's subject is the chip bar collectively: where the only facets in
+   force are chips, the surface's own two-fact answer IS the family's effect;
+   where none are, the clause is not said; only where BOTH families are in
+   force is a fact missing, and there it is one bounded `head: true` count of
+   the same read with the family's facets dropped, issued only where it can
+   change a word (§4.3's own allowance, BUG-0135; the issue-gating of
+   DEBT-0012).
+
+Presence predicates and effect predicates therefore take different words:
+`isSurfaceNarrowed` / `claimsNarrowed` (effect), `hasChipFacet` (presence, the
+former `hasChipNarrowing` — renamed by TASK-0072), and `hasNarrowingFacet`,
+which keeps the narrowing word because fact 1 asks what the facet VOCABULARY
+can do, not what this read's rows did.
+
 ## 5. Rendering: one async boundary per route
 
 **The page function is the only `async` component on a route. Everything below
@@ -1902,6 +1942,8 @@ decomposition brief of every ticket touching that surface.
 
 | 23 | **A derivation whose BAR was never stated positively, extended by one anchored question per QA lane — the account's foreign-text rule, seven tickets deep** | 7 | One class, one property each, all in `src/lib/db/result.ts`'s account derivation: BUG-0170 (a document reaching an app sentence → the `<` question), BUG-0173 (a body we serialised → the provenance question), BUG-0179 (the same question answered two ways depending on what else the part carried → asked at two granularities, and of the `code`), BUG-0181 (a mined column name → an identifier allowlist), BUG-0185 (which STRING may be mined → `databaseMessage`), BUG-0182 (one document counted once per LINE, account 2-3x LONGER than the page), BUG-0187 (a page whose TEXT sits on its own lines ends the run at every text line: part 402 → account 664, linear in text nodes, the intermediary's sentences and its Ray ID quoted verbatim). Every one was found by a different QA lane, on the shape the previous anchor did not cover, and each repair collided with the twin the previous ruling had pinned | **PROMOTED at 7, 2026-09-11 (architect, BUG-0187's ruling) — and the fix is to state the BAR, not to add the eighth anchor.** §4.1 gains "the PART is the unit, and a part carrying a document anywhere is foreign as a whole", with its three limits decided in the same breath. The ruling DELETES machinery (the per-line document question, the `PartLine` offsets and the run bookkeeping) rather than adding it, and collapses the two granularities into one code path. The lesson generalises past this file and is cited in the brief of any ticket that repairs a DERIVATION: when the third ticket in a class arrives, the defect is that no one wrote down what the derivation may not do — an anchored question answers the shape in front of you, a bar answers the shapes nobody has measured. **How the next lane grades it:** against the bar (does any line of a document-carrying part appear in the account?), never against the anchors. |
 
+| 24 | **A clause gated on a facet's PRESENCE while the sentence beside it is gated on EFFECT — one chip, two opposite verdicts** | 2 (both on `/claims`' narrowing vocabulary) | TASK-0071's instance: the bucket caption said "nothing above narrows these counts" with the bucket chip active, because the table drops that facet — fixed by STATING the standing facet (`everyBucket`). BUG-0191's QA residual, measured on staging 2026-09-11: `?source_id=<ticketmaster>` removes zero rows and takes the unnarrowed arm, `?source_id=<ticketmaster>&domain=events` draws `?domain=events`' own counts and says "under the filters above" — `bucketsNarrowed` (two facts) ANDed with `hasChipNarrowing` (a `!== undefined`), as though they asked one question about one subject | **PROMOTED at 2, 2026-09-11** (architect ruling, DECISIONS of the same day) — §4.3 gains "a clause NAMES a facet's effect, never its presence", with the three corollaries that keep it read-cheap. Cited in the decomposition brief of every ticket touching a narrowing sentence. Carried by BUG-0192 (the rendered arms, chained after TASK-0072) and by TASK-0072 (the vocabulary half: `hasChipNarrowing` → `hasChipFacet`, so the presence question and the effect question stop sharing a word) |
+
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
 findings on TASK-0001/0003/0006; rows 4–5 at the second pass the same day,
 from measurement of the open tickets' own checks; row 6 at the third pass, from
@@ -1909,6 +1951,24 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-11, M3 §4.3 — a narrowing clause names a facet's EFFECT, never
+  its presence (architect ruling, from QA's residual on
+  admin-window/BUG-0191).** §4.3 gains the rule above and Common violations
+  gains row 24 (promoted at 2: TASK-0071's bucket instance and this one).
+  Why here rather than in one ticket: `/claims` answered "did a chip narrow
+  this?" with two facts in one clause and with a `!== undefined` in the clause
+  beside it, so one chip earned two opposite sentences on two URLs — and every
+  surface that grows a second facet family inherits that shape. **The door
+  this closes:** presence may no longer stand in for effect in any sentence
+  that points at a control or a named facet. **The doors it leaves open, so
+  they are not re-litigated:** the unnarrowed arm's denial stays exactly as
+  `isSurfaceNarrowed` leaves it (it is free and provable), the control-less
+  phrases of BUG-0160 keep their presence gate because they state a read's
+  scope rather than attribute an effect, and a family's effect costs at most
+  one bounded count in the single state where both families are in force.
+  Carried by admin-window/BUG-0192 (rendered arms) and admin-window/TASK-0072
+  (the rename that stops the two questions sharing a word).
 
 - **2026-09-11, M3 §4.1 — the account's foreign-text rule gets a BAR instead
   of a fourth anchor (architect, ruling admin-window/BUG-0187).** §4.1 gains
