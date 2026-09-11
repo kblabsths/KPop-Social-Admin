@@ -1,0 +1,36 @@
+{
+ "id": "BUG-0193",
+ "created": "2026-09-11T14:45:54Z",
+ "green": true,
+ "git_head": "8774a63a5a292301fbec9c7024e1bd4aecc5e087",
+ "scope": [
+  "src/lib/claims/filters.ts",
+  "src/app/claims/page.tsx",
+  "tests/offline/claims/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "7bc3105f959f3265c788e9ae412168fd6e032aacd393bc5307a0e63867db0574",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/claims/page.test.ts -t \"claims no filter above on the standing tab\"",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-39599\n\n \u2713 |offline| tests/offline/claims/page.test.ts (220 tests | 219 skipped) 62ms\n\n Test Files  1 passed (1)\n      Tests  1 passed | 219 skipped (220)\n   Start at  07:45:26\n   Duration  925ms (transform 395ms, setup 0ms, collect 625ms, tests 62ms, environment 0ms, prepare 61ms)\n\n(node:39606) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/claims tests/offline/url",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-39599\n\n \u2713 |offline| tests/offline/url/search-params.test.ts (22 tests) 6ms\n \u2713 |offline| tests/offline/claims/filters.test.ts (52 tests) 12ms\n \u2713 |offline| tests/offline/claims/read.test.ts (45 tests) 71ms\n \u2713 |offline| tests/offline/url/narrowing.test.ts (31 tests) 599ms\n   \u2713 the narrowing vocabulary has one name per question > declares each name in exactly one module  305ms\n \u2713 |offline| tests/offline/claims/page.test.ts (220 tests) 5184ms\n   \u2713 a narrowing with no chip row > says a chip narrowed the list in exactly the states a chip removed a row  342ms\n   \u2713 what a filled window promises > cannot reach past the cap from any state its own chips offer  340ms\n\n Test Files  5 passed (5)\n      Tests  370 passed (370)\n   Start at  07:45:27\n   Duration  6.05s (transform 647ms, setup 0ms, collect 1.67s, tests 5.87s, environment 1ms, prepare 315ms)\n\n(node:39629) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "riments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.1s\n  Running TypeScript ...\n  Finished TypeScript in 6.0s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 152ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/browse/rows\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-39599/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:39737) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
