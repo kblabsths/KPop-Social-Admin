@@ -256,6 +256,9 @@ describe("the route inventory", () => {
       "/sources",
     ]);
     expect(handlers).toEqual([
+      // The browse paging route (campaign admin-window/TASK-0068): GET only,
+      // gated by the same proxy, and swept below like every other route.
+      "/api/admin/browse/rows",
       // The claims paging route (campaign admin-window/TASK-0066): GET only,
       // gated by the same proxy, and swept below like every other route.
       "/api/admin/claims/rows",
@@ -274,9 +277,10 @@ describe("the route inventory", () => {
     expect(GATED_ROUTES).toContain(`/api/admin/records/events/${SAMPLE_ID}`);
     expect(GATED_ROUTES).toContain(`/api/admin/review-items/${SAMPLE_ID}/settle`);
     expect(GATED_ROUTES).toContain("/api/admin/claims/rows");
+    expect(GATED_ROUTES).toContain("/api/admin/browse/rows");
     expect(GATED_ROUTES).not.toContain("/login");
-    expect(GATED.filter((route) => route.kind === "handler").length).toBe(3);
-    expect(GATED.length).toBe(11);
+    expect(GATED.filter((route) => route.kind === "handler").length).toBe(4);
+    expect(GATED.length).toBe(12);
   });
 
   it("keeps the gate as an export, never as a wrapped handler", () => {

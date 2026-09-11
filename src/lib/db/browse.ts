@@ -78,13 +78,16 @@ export type { DbUnavailable } from "./result";
  * one, and folding it into nothing at all would show an empty Sources column
  * as though every event had no sources.
  */
-export interface RecentEventsListing {
-  /** The window itself. `ok` is the newest rows, in arrival order. */
-  events: DbResult<BrowseRow[]>;
+export interface BrowseLegNotes {
   /** Why the Venue column is empty, or `null` when the view answered. */
   venues: DbUnavailable | null;
   /** Why the Sources column is empty, or `null` when provenance answered. */
   provenance: DbUnavailable | null;
+}
+
+export interface RecentEventsListing extends BrowseLegNotes {
+  /** The window itself. `ok` is the newest rows, in arrival order. */
+  events: DbResult<BrowseRow[]>;
 }
 
 /**
@@ -101,7 +104,7 @@ const SOURCE_COLUMNS = "source_id, source";
 
 /**
  * The events window: `created_at` descending, `event_id` descending to break a
- * tie, and an explicit `limit`.
+ * tie, and ONE window of rows starting at `offset`.
  *
  * "Newest first" is ARRIVAL order — `events.created_at desc`, because the view
  * is "everything that came through the pipeline, newest first"
@@ -110,10 +113,18 @@ const SOURCE_COLUMNS = "source_id, source";
  *
  * The direction comes off the view definition rather than being spelled here:
  * the definition is the authority on its own sort (spec §4).
+ *
+ * The order is TOTAL — the view's sort field, then the primary key, same
+ * direction — which is what makes paging it safe at all: a partial order would
+ * let two requests at adjacent bounds repeat a row or skip one.
+ * `.range(offset, offset + view.window - 1)` replaces the `.limit(view.window)`
+ * this read carried before paging existed (admin-window/TASK-0068); at the
+ * default offset of 0 the two are the same query.
  */
 function eventsWindow(
   db: SupabaseClient,
   view: BrowseView,
+  offset: number,
 ): PromiseLike<DbResponse<EventArrivalRow[]>> {
   const ascending = view.sort.direction !== "desc";
   return db
@@ -121,7 +132,7 @@ function eventsWindow(
     .select(EVENT_COLUMNS)
     .order(view.sort.field, { ascending })
     .order("event_id", { ascending })
-    .limit(view.window) as unknown as PromiseLike<
+    .range(offset, offset + view.window - 1) as unknown as PromiseLike<
     DbResponse<EventArrivalRow[]>
   >;
 }
@@ -203,8 +214,31 @@ function unavailable(result: DbResult<unknown>): DbUnavailable | null {
 }
 
 /**
- * The recent-events view: the newest `view.window` events by arrival, each
- * with its venue name and the distinct sources behind its applied fields.
+ * The recent-events view: ONE window of `view.window` events by arrival,
+ * starting at `offset`, each with its venue name and the distinct sources
+ * behind its applied fields.
+ *
+ * `offset` defaults to 0 — the first screen — so every caller written before
+ * paging existed asks exactly the query it always did (admin-window/TASK-0068,
+ * SPEC F14). Paging is what the operator can do AFTER that screen.
+ *
+ * **The three legs are per PAGE, not per table.** Venues, provenance and
+ * sources run over the ids of THIS window exactly as they ran over the first
+ * window's before, and they stay COMPLETE reads (§4.3 kind 1: "the latest
+ * decision" is only knowable over the complete log). Each still reports its
+ * own refusal on its own, because a leg that renders no row of its own may not
+ * decide the surface's state (ARCHITECTURE.md common violations row 14).
+ *
+ * **NOTHING REMOVES A ROW BETWEEN `.range()` AND THE ANSWER**
+ * (ARCHITECTURE.md §4.3, "the count that grades exhaustion is the READ's own
+ * count"). `joinBrowseRows` maps ONE row per event and the legs FILL columns,
+ * so the row count a caller grades full-or-exhausted against is exactly the
+ * count `.range(offset, offset + view.window - 1)` returned. A leg that
+ * answers nothing at all — no listing row, no provenance row, no source row —
+ * costs the columns it fills and NEVER a row: a page shortened in code would
+ * report `exhausted` with rows still behind it and end the operator's paging
+ * early. Any narrowing this read ever needs goes IN the query, before the
+ * range, never applied to the rows it returned.
  *
  * A leg is skipped entirely when the window is empty — an `.in()` over no ids
  * is a pointless round trip, and no rows is the honest answer. The sources leg
@@ -216,10 +250,11 @@ function unavailable(result: DbResult<unknown>): DbUnavailable | null {
 export async function readRecentEvents(
   view: BrowseView,
   db?: SupabaseClient,
+  offset: number = 0,
 ): Promise<RecentEventsListing> {
   const window = await readRows<EventArrivalRow>(
     T.events,
-    (client) => eventsWindow(client, view),
+    (client) => eventsWindow(client, view, offset),
     db,
   );
   if (window.kind !== "ok") {
