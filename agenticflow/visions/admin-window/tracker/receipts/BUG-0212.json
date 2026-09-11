@@ -1,0 +1,29 @@
+{
+ "id": "BUG-0212",
+ "created": "2026-09-11T20:57:15Z",
+ "green": true,
+ "git_head": "73bb034d0da5e60b69f741ebfb7e544cf7ac659f",
+ "scope": [
+  "tests/offline/handoff/settle-review-item.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "61894869f0ec0abe4433f63b7ca6bcdaa065ad1487d3d22e0fc8670f1912402a",
+ "commands": [
+  {
+   "cmd": "env -u STAGING_SUPABASE_URL -u STAGING_SUPABASE_SERVICE_ROLE_KEY ./node_modules/.bin/vitest run --project=offline tests/offline/handoff/settle-review-item.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-47716\n\n \u2713 |offline| tests/offline/handoff/settle-review-item.test.ts (45 tests) 288ms\n\n Test Files  1 passed (1)\n      Tests  45 passed (45)\n   Start at  13:56:58\n   Duration  656ms (transform 85ms, setup 0ms, collect 126ms, tests 288ms, environment 0ms, prepare 49ms)\n\n(node:47723) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
