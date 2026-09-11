@@ -1,7 +1,7 @@
-# Tracker index (regenerated 2026-09-11T14:10:27Z — do not edit)
+# Tracker index (regenerated 2026-09-11T14:13:32Z — do not edit)
 
 ## open
-- BUG-0193 [P2][bug][-] The standing tab's own bucket is subtracted with the URL's, so the chip clause is decided off the other tab's population  (scope:src/lib/claims/filters.ts,src/app/claims/page.tsx,tests/offline/claims/page.test.ts from:BUG-0192)
+- BUG-0193 [P2][bug][M3] The standing tab's own bucket is subtracted with the URL's, so the chip clause is decided off the other tab's population  (deps:BUG-0192(unmet:1) scope:src/lib/claims/filters.ts,src/app/claims/page.tsx,tests/offline/claims/page.test.ts from:BUG-0192)
 - FEAT-0016 [P2][feat][M3] F15 — every windowed figure is true about the read that produced it  (scope:src/app/claims/page.tsx,src/app/sources/page.tsx,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/gauges,src/components/claims,src/components/sources,src/components/ui/window-line.tsx,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/sources/read.test.ts,tests/offline/gauges,tests/live/claims.live.test.ts,tests/live/sources.live.test.ts)
 - BUG-0164 [P3][bug][patch] /queues still carries the exit copy BUG-0161 replaced on /claims  (deps:TASK-0072 scope:src/app/queues/page.tsx,tests/offline/queues/page.test.ts,tests/offline/ui/copy.test.ts from:designer:endgame-walk)
 - DEBT-0020 [P3][debt][patch] The transport account states its cause sentence twice: postgrest-js appends cause.stack, whose head repeats the Caused-by line  (deps:BUG-0179,BUG-0182,BUG-0187 scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0173)
