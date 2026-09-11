@@ -121,9 +121,16 @@ button top **434 → 2,084** with the viewport 900 tall and `scrollY` unchanged;
 the document grows 2,814 → 4,464. So pressing it puts it ~1,650px below the
 fold, and paging `/claims` to the end is 17 presses and 17 scrolls. This is
 normal "load more" behaviour and no bar in LOOK_AND_FEEL covers it — filing it
-would be me inventing taste mid-milestone, which is drift. **I propose a bar at
+would be me inventing taste mid-milestone, which is drift. ~~**I propose a bar at
 the M3 endgame instead**, for Ben's sanity check: *"a control that extends a
-list is still on screen after it acts."* Flag it if you disagree.
+list is still on screen after it acts."* Flag it if you disagree.~~
+
+> **Superseded 2026-09-11 (designer, TASK-0079).** Ben ruled on this himself
+> after walking `/claims`, and his rule is stronger than the proposal: no element
+> the operator must find sits below a long list at all — it goes above the list
+> or on its own surface, by importance. That is **LOOK_AND_FEEL Feel bar 14**;
+> the proposal above is closed and no walker re-raises it. The measurement in
+> this paragraph is recorded in bar 14's trace.
 
 **2. The corrected window line is ~4,000px above the operator who paged.** By
 the time `/browse` exhausts, the sentence BUG-0174 fixes is off the top of the

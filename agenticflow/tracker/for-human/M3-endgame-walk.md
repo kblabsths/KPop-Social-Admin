@@ -215,9 +215,17 @@ anywhere, including when forced into the URL.
 
 ---
 
-## Two proposals for you, Ben — neither is a ticket, both need your word
+## ~~Two proposals for you, Ben — neither is a ticket, both need your word~~ — BOTH ANSWERED by your rulings of 2026-09-11; nothing here is waiting on you
 
-### 1. "A control that extends a list is still on screen after it acts."
+> **Closed 2026-09-11 (designer, TASK-0079).** You answered both of these after
+> walking `/claims`' paging yourself. Proposal 1 is **superseded** — your ruling
+> is stronger and differently shaped, and it is now **LOOK_AND_FEEL Feel bar 14**
+> ("nothing the operator must find sits below a long list"). Proposal 2 is
+> **granted** — bar 11 now carries your dated paging clause. The text below is
+> kept as the record of how each got to you, struck where it still asks for a
+> word; no walker re-raises either.
+
+### 1. ~~"A control that extends a list is still on screen after it acts."~~ — SUPERSEDED by Ben's 2026-09-11 ruling, now Feel bar 14
 
 I proposed this bar at the early walk and deliberately did not file it, because
 no bar in LOOK_AND_FEEL covered it and inventing taste mid-milestone is drift.
@@ -230,12 +238,21 @@ no bar in LOOK_AND_FEEL covered it and inventing taste mid-milestone is drift.
 
 So this is no longer me proposing a bar against a universal pattern; it is one
 app behaving two ways with one control. Paging `/claims` to the end is 17
-presses and **17 scrolls**; paging `/browse` is 2 presses and none. If you
+presses and **17 scrolls**; paging `/browse` is 2 presses and none. ~~If you
 accept the bar, it goes into LOOK_AND_FEEL first and a ticket follows only if a
 surface then fails it (`/claims` would). If you'd rather not, say so and I will
-record it as blessed so no future walker re-raises it.
+record it as blessed so no future walker re-raises it.~~
 
-### 2. Bar 11's wording no longer matches what shipped, and it is my file to fix
+**How it was answered (2026-09-11):** Ben did not accept this wording — he ruled
+a stronger one: *"There should not be elements at the bottom of a list this long.
+We should put them at the top or on a different page, depending on the
+importance…"* That is **Feel bar 14** now: the control's position after the press
+was never the point, its position at all is. The measurements in the table above
+are recorded in bar 14's own trace. The `/claims` fix is deliberately **not**
+filed — it depends on Ben's still-open paging-shape decision
+(`M3-paging-shape-for-ben.md`).
+
+### 2. ~~Bar 11's wording no longer matches what shipped, and it is my file to fix~~ — GRANTED by Ben's 2026-09-11 ruling; the clause is written
 
 Bar 11 reads *"State lives in the URL. Every filter, sort, and **page position**
 is bookmarkable and survives the back button."* Measured: pressing "Show the
@@ -251,8 +268,15 @@ also did not quietly edit the bar mid-walk, because that is the same drift in
 the other direction. So: at the next revision I would add one clause to bar 11 —
 *"rows the operator has paged in are not URL state; what is bookmarkable is the
 first screen of every URL, complete and identical to what a cold load renders"* —
-which is exactly what the app does today. Tell me if you want it worded
-differently, or want the behaviour changed instead.
+which is exactly what the app does today. ~~Tell me if you want it worded
+differently, or want the behaviour changed instead.~~
+
+**How it was answered (2026-09-11):** Ben ruled the clause in. Bar 11 now carries
+it, dated, naming paging as the exception in the model that ships today and
+naming what stands in for the URL — the **window line** and the paging state's
+**held count** — and the clause retires itself the day page position enters the
+URL. Bar 11's original sentence is unchanged, and no walk needs to narrate "bar
+is stale, app is right" again.
 
 ---
 
