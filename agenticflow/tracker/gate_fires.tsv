@@ -267,3 +267,4 @@
 2026-09-11T19:01:48Z	artifact_gate	blocked write outside repo: /tmp_out_lint.txt
 2026-09-11T19:08:54Z	artifact_gate	blocked write outside repo: /queues/[0-9a-f-]\{36\}
 2026-09-11T19:53:21Z	artifact_gate	blocked sibling write: /Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper/using errcode = 'KS[0-9]\{3\}'.* (the sibling is running its own campaign — everything is major while it does)
+2026-09-11T21:06:18Z	artifact_gate	blocked write outside repo: /tmp/x
