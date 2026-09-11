@@ -2258,6 +2258,92 @@ describe("an account carries the parts the database authored", () => {
       expect(twin.message, arrived).not.toContain(DEPLOY);
     }
   });
+
+  /**
+   * THE SAME SENTENCE, STILL SAID TWICE, ON EVERY REAL TRANSPORT FAILURE
+   * (QA pin, admin-window/BUG-0199, filed against admin-window/DEBT-0020).
+   *
+   * DEBT-0020 measured its shape from a hand-built `cause` that carried no
+   * `code`. Node's do: `getaddrinfo ENOTFOUND` carries `code: "ENOTFOUND"`,
+   * `connect ECONNREFUSED` carries `code: "ECONNREFUSED"`, and postgrest-js
+   * writes that code INTO the attributing line before it appends the stack
+   * (`node_modules/@supabase/postgrest-js/dist/index.mjs`: `if (causeCode)
+   * errorDetails += ` (${causeCode})`` sits between the `Caused by:` line and
+   * the `errorDetails += "\n" + cause.stack` arm). So the earlier kept line
+   * reads `Caused by: Error: getaddrinfo ENOTFOUND db.invalid (ENOTFOUND)`
+   * and no longer ENDS WITH the stack head it is supposed to absorb —
+   * `saidOnce`'s ends-with test misses, and the account says the cause
+   * sentence twice again.
+   *
+   * Driven through the REAL `@supabase/supabase-js` client over a transport
+   * that REJECTS the way node's `fetch` rejects, so the `details` string is
+   * postgrest-js's own and not a fixture's idea of it. No network: the host is
+   * `.invalid` and the stub throws before any socket.
+   * STRICT PIN: this is `it.fails` while admin-window/BUG-0199 stands, so
+   * the day the repetition goes the XPASS turns this file red and sends
+   * the reader to the ticket. Flip it back to a plain `it(...)` then.
+   */
+  it.fails("says the cause sentence once when the cause carries a code, as node's do", async () => {
+    const occurrences = (haystack: string, needle: string): number =>
+      haystack.split(needle).length - 1;
+
+    /** A client whose transport rejects with exactly what node hands back. */
+    const rejecting = (fetchError: unknown): SupabaseClient =>
+      createClient("https://stub.invalid", "stub-key", {
+        auth: { persistSession: false },
+        global: {
+          fetch: async () => {
+            throw fetchError;
+          },
+        },
+      }) as unknown as SupabaseClient;
+
+    /** The wrapper node's `fetch` throws, around a cause that carries a code. */
+    const transportFailureWithCode = (
+      sentence: string,
+      code: string,
+      frame: string,
+    ): unknown => {
+      const cause = new Error(sentence) as Error & { code?: string };
+      cause.code = code;
+      cause.stack = `${sentence}\n    at ${frame}`;
+      const wrapper = new TypeError("fetch failed");
+      (wrapper as TypeError & { cause?: unknown }).cause = cause;
+      return wrapper;
+    };
+
+    for (const [sentence, code, frame] of [
+      [
+        "Error: getaddrinfo ENOTFOUND db.invalid",
+        "ENOTFOUND",
+        "GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:120:26)",
+      ],
+      [
+        "Error: connect ECONNREFUSED 127.0.0.1:5432",
+        "ECONNREFUSED",
+        "TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)",
+      ],
+    ] as ReadonlyArray<readonly [string, string, string]>) {
+      const result = await readRows(
+        T.pendingClaims,
+        (db) => db.from(T.pendingClaims).select("id"),
+        rejecting(transportFailureWithCode(sentence, code, frame)),
+      );
+      expect(result.kind, sentence).toBe("error");
+      if (result.kind !== "error") continue;
+      // STILL THERE, and said ONCE — the whole of DEBT-0020's bar, on the
+      // shape a deployed instance actually produces.
+      expect(result.message, sentence).toContain(sentence);
+      expect(occurrences(result.message, sentence), sentence).toBe(1);
+      // Nothing else may move to buy that: the object read is still named,
+      // the frames are still counted in the app's words, and no runtime
+      // internal crosses.
+      expect(result.reading, sentence).toBe(T.pendingClaims);
+      expect(result.message, sentence).toMatch(/\b1\b[^)]{0,40}frame/);
+      expect(result.message, sentence).not.toContain("node:dns:");
+      expect(result.message, sentence).not.toContain("node:net:");
+    }
+  });
 });
 
 /**
