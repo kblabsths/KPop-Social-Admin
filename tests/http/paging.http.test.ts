@@ -250,7 +250,17 @@ describe("the browse paging route, gated like a page", () => {
  * tier. The header is asserted on every one of them against a recording stub
  * in `tests/offline/paging/browse-route.test.ts` and
  * `tests/offline/paging/claims-route.test.ts`, where the database's side is
- * observable. The two tiers together are the criterion; neither is it alone.
+ * observable — those two arm tables are the POSITIVE proof, and this tier
+ * never was. The two tiers together are the criterion; neither is it alone.
+ *
+ * And one measured fact about the route case below, so no reader over-reads
+ * it (admin-window/BUG-0171, admin-window/DEBT-0019): a `GATE_STATUS` refusal
+ * carries **no `cache-control` header at all**, so `isStorable(null)` is
+ * `false` and that assertion is satisfied VACUOUSLY — it grades the gate, not
+ * a handler answer. That is why every ask there also asserts the status it
+ * actually got: the day this harness gains a database or an allowlist, the
+ * case goes RED and is re-authored deliberately instead of quietly beginning
+ * to grade something else.
  *
  * **Both paging surfaces are checked here, each against its OWN page**
  * (admin-window/BUG-0171). What the constant must equal is what a gated page
@@ -301,23 +311,45 @@ describe("a gated answer is never storable", () => {
   });
 
   /**
-   * The two routes, each asked for a bound it would SERVE and a bound it would
-   * REFUSE, on the real server.
+   * The ONE answer this tier can get past the middleware: the fail-closed
+   * refusal `requireAdmin()` gives when there is no `admin_allowed_emails` to
+   * vouch for anybody (STACK §3, harness sentinels). It is not one of the
+   * handler's four arms, and it is what every ask below is really graded on.
    *
-   * The gate answers both 403 on this tier (no `admin_allowed_emails` to
-   * vouch for anyone), so what is provable here is the negative one: nothing
-   * either route puts on the wire — the gate's own refusal included — is
-   * anything a store may keep. Which of the handler's four arms carries which
-   * header is the offline tier's claim, against a recording stub.
+   * Asserted per ask, so this case cannot drift: give the harness a database
+   * or an allowlist and the asks stop answering this, the case goes RED, and
+   * whoever changed the harness re-authors it on purpose.
+   */
+  const GATE_STATUS = 403;
+
+  /**
+   * The two routes, each asked with a bound the handler WOULD serve and a
+   * bound it WOULD refuse — neither of which it ever sees on this tier.
+   *
+   * The gate answers all four `GATE_STATUS` (no `admin_allowed_emails` to
+   * vouch for anyone), so the labels name the gate's answer and not a
+   * handler's: what is provable here is the negative one, that nothing either
+   * route puts on the wire — the gate's own refusal included — is anything a
+   * store may keep. Which of the handler's four arms carries which header is
+   * the offline tier's claim, against a recording stub.
    */
   const ROUTE_ASKS: ReadonlyArray<readonly [string, string]> = [
-    ["the browse route, a signed-in GET", `${browseRoute}?${OFFSET_PARAM}=${RECENT_EVENTS.window}`],
-    ["the browse route, a refused bound", `${browseRoute}?${OFFSET_PARAM}=abc`],
-    ["the claims route, a signed-in GET", `${route}?${OFFSET_PARAM}=${CLAIM_WINDOW}`],
-    ["the claims route, a refused bound", `${route}?${OFFSET_PARAM}=abc`],
+    [
+      "the browse route, the gate's answer to a signed-in caller",
+      `${browseRoute}?${OFFSET_PARAM}=${RECENT_EVENTS.window}`,
+    ],
+    [
+      "the browse route, the gate's answer to a refused bound",
+      `${browseRoute}?${OFFSET_PARAM}=abc`,
+    ],
+    [
+      "the claims route, the gate's answer to a signed-in caller",
+      `${route}?${OFFSET_PARAM}=${CLAIM_WINDOW}`,
+    ],
+    ["the claims route, the gate's answer to a refused bound", `${route}?${OFFSET_PARAM}=abc`],
   ];
 
-  it("answers a signed-in GET and a refused bound with nothing a store may keep", async () => {
+  it("answers the gate's refusal, and never with anything a store may keep", async () => {
     const { child } = await startServer();
     try {
       const cookie = await signedInCookie();
@@ -326,6 +358,10 @@ describe("a gated answer is never storable", () => {
           headers: { cookie },
           redirect: "manual",
         });
+        // What actually answered. A 403 carries no `cache-control` at all, so
+        // the assertion below is vacuous on it — this line is what keeps the
+        // case honest about which answer it graded.
+        expect(response.status, `${what} — the status this ask was graded on`).toBe(GATE_STATUS);
         expect(isStorable(response.headers.get("cache-control")), what).toBe(false);
         await response.text();
       }
