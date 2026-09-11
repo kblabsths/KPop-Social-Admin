@@ -113,6 +113,22 @@ const NEIGHBOURING_CODES: ReadonlyArray<readonly [string, unknown]> = [
   ["42883 missing OPERATOR", missingOperator()],
 ];
 
+/**
+ * A JWT-SHAPED string, assembled at runtime.
+ *
+ * It has to have the real three-segment shape or it does not exercise the
+ * rule, and a literal of that shape in a source file is what a secret scanner
+ * is for — so the segments are encoded here instead of pasted. Nothing in it
+ * is or ever was a credential. Module-scoped because two cases need the same
+ * spelling: the redaction table below, and the document rule's proof that
+ * redaction still runs last (admin-window/BUG-0170).
+ */
+const jwtShaped = [
+  Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url"),
+  Buffer.from(JSON.stringify({ role: "not-a-real-role" })).toString("base64url"),
+  "n0tar3alsignaturevalue",
+].join(".");
+
 describe("classify", () => {
   it("reads a table-absent code as not_provisioned naming the table", () => {
     for (const error of [
@@ -479,26 +495,142 @@ describe("the database client's own account", () => {
    * foreign text reaches an app sentence in its own box or not at all. A
    * document is never a sentence, whatever it says.
    */
-  // A STRICT xfail pin (admin-window/BUG-0170): `it.fails` passes only while
-  // the divergence stands, so the day the account stops carrying the document
-  // this case reddens and sends the reader to the ticket.
-  it.fails("does not carry an intermediary's HTML page into the account (admin-window/BUG-0170)", () => {
-    const page = [
+  it("does not carry an intermediary's HTML page into the account (admin-window/BUG-0170)", () => {
+    // REDUCED — three document shapes, one derivation. Each part's first
+    // non-blank character is `<`: the doctype QA measured, an `<html>`
+    // fragment sent with NO doctype, and an `<?xml?>` prolog behind a leading
+    // newline and indentation. None of them may reach the account.
+    const cloudflare = [
       "<!DOCTYPE html>",
       '<html class="no-js" lang="en-US"><head>',
       "<title>Attention Required! | Cloudflare</title>",
       '<meta charset="UTF-8" /></head>',
       "<body>Sorry, you have been blocked</body></html>",
     ].join("\n");
-    const result = classify({ code: "", hint: "", details: "", message: page }, T.pendingClaims);
+    const nginx =
+      "<html><head><title>502 Bad Gateway</title></head>" +
+      "<body><center>502 Bad Gateway</center><hr><center>nginx</center></body></html>";
+    const xmlEnvelope =
+      '\n  <?xml version="1.0" encoding="UTF-8"?>\n' +
+      "  <Error><Code>AccessDenied</Code><Message>Request blocked</Message></Error>\n";
 
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    // Still an honest refusal naming the object it could not read.
-    expect(result.reading).toBe(T.pendingClaims);
-    // But not a document: no doctype, no tags, nothing for a reader to parse.
-    expect(result.message).not.toMatch(/<!DOCTYPE/i);
-    expect(result.message).not.toMatch(/<\/?html[\s>]/i);
+    const documents: ReadonlyArray<readonly [string, string, readonly string[]]> = [
+      [
+        "the Cloudflare doctype page measured against staging",
+        cloudflare,
+        ["Attention Required", "Cloudflare", "no-js", "charset"],
+      ],
+      ["an nginx 502 with no doctype", nginx, ["502 Bad Gateway", "nginx", "center"]],
+      [
+        "an XML error envelope, leading newline and indentation included",
+        xmlEnvelope,
+        ["AccessDenied", "Request blocked", "encoding"],
+      ],
+    ];
+
+    for (const [shape, page, itsOwnWords] of documents) {
+      const result = classify(
+        { code: "", hint: "", details: "", message: page },
+        T.pendingClaims,
+      );
+
+      expect(result.kind, shape).toBe("error");
+      if (result.kind !== "error") continue;
+      // Still an honest refusal naming the object it could not read.
+      expect(result.reading, shape).toBe(T.pendingClaims);
+      // Not a document: no doctype, no tags, nothing for a reader to parse.
+      expect(result.message, shape).not.toMatch(/<!DOCTYPE/i);
+      expect(result.message, shape).not.toMatch(/<\/?html[\s>]/i);
+      expect(result.message, shape).not.toContain("<");
+      // COUNTED, NOT SPELLED: no part of the document is quoted — not its
+      // title, not its first line, not a tag — and the real character count
+      // of what arrived is what the account carries instead.
+      for (const quoted of itsOwnWords) {
+        expect(result.message, `${shape} quotes ${quoted}`).not.toContain(quoted);
+      }
+      expect(result.message, shape).toContain(String(page.length));
+      // An app-authored clause, not a bare count and not a generic apology:
+      // the operator can tell that something other than the database answered.
+      const withoutTheCount = result.message.replace(String(page.length), "").trim();
+      expect(withoutTheCount.split(/\s+/).length, shape).toBeGreaterThan(3);
+      expect(result.message.toLowerCase(), shape).not.toContain("something went wrong");
+      expect(result.message.toLowerCase(), shape).not.toContain("sorry");
+    }
+
+    // The measured page was 4,547 characters (staging, 2026-09-10). Padded to
+    // exactly that length with filler this app wrote, so the number the
+    // operator reads is the number `error.message.length` reports.
+    const measured = cloudflare.padEnd(4547, "x");
+    expect(measured.length).toBe(4547);
+    const atMeasuredLength = classify({ code: "", message: measured }, T.pendingClaims);
+    expect(atMeasuredLength.kind).toBe("error");
+    if (atMeasuredLength.kind === "error") {
+      expect(atMeasuredLength.message).toContain("4547");
+    }
+
+    // Redaction still runs LAST, over whatever the account became: a document
+    // that embedded a key cannot ship one by being reduced first.
+    const pageCarryingAKey = `<!DOCTYPE html>\n<html><body>apikey=${jwtShaped}</body></html>`;
+    const redacted = classify({ code: "", message: pageCarryingAKey }, T.pendingClaims);
+    expect(redacted.kind).toBe("error");
+    if (redacted.kind === "error") {
+      expect(redacted.message).not.toMatch(/<!DOCTYPE/i);
+      expect(redacted.message).not.toContain(jwtShaped);
+      expect(redacted.message).toContain(String(pageCarryingAKey.length));
+    }
+
+    // CROSSING VERBATIM — the database's own prose is untouched by all of the
+    // above, in the order the account has always put its fields.
+    const refusal = {
+      code: "42501",
+      message: "permission denied for table pending_claims",
+      details: "the read used the anon role",
+      hint: "GRANT SELECT ON pending_claims TO service_role.",
+    };
+    const denied = classify(refusal, T.pendingClaims);
+    expect(denied.kind).toBe("error");
+    if (denied.kind === "error") {
+      const at = (part: string) => denied.message.indexOf(part);
+      expect(at(refusal.message)).toBeGreaterThanOrEqual(0);
+      expect(at(refusal.details)).toBeGreaterThan(at(refusal.message));
+      expect(at(refusal.hint)).toBeGreaterThan(at(refusal.details));
+      expect(denied.message).toContain("(42501)");
+    }
+
+    // The fixture that stops this rule from becoming a bracket scrub: a real
+    // Postgres message whose prose CONTAINS an angle-bracket operator. It
+    // begins with a letter, so it is prose, and it crosses whole.
+    const operatorMessage = "operator does not exist: text <-> integer";
+    const brackets = classify(
+      {
+        code: "42883",
+        details: null,
+        hint: null,
+        message: operatorMessage,
+      },
+      T.events,
+    );
+    expect(brackets.kind).toBe("error");
+    if (brackets.kind === "error") {
+      expect(brackets.message).toContain(operatorMessage);
+    }
+
+    // And the fixture that stops it from becoming an ASCII filter: data the
+    // database itself echoed back, in Hangul. Never reduced, never truncated,
+    // never transliterated.
+    const duplicate = {
+      code: "23505",
+      message: 'duplicate key value violates unique constraint "groups_name_key"',
+      details: "Key (name)=(르세라핌) already exists.",
+      hint: null,
+    };
+    const collision = classify(duplicate, T.groups);
+    expect(collision.kind).toBe("error");
+    if (collision.kind === "error") {
+      expect(collision.message).toContain(duplicate.message);
+      expect(collision.message).toContain(duplicate.details);
+      expect(collision.message).toContain("르세라핌");
+    }
   });
 
   it("invents nothing when the client said nothing at all", () => {
@@ -520,20 +652,6 @@ describe("the database client's own account", () => {
  */
 describe("the account never carries a credential", () => {
   const HOST = "abcdefghijklmnopqrst.supabase.co";
-
-  /**
-   * A JWT-SHAPED string, assembled at runtime.
-   *
-   * It has to have the real three-segment shape or it does not exercise the
-   * rule, and a literal of that shape in a source file is what a secret
-   * scanner is for — so the segments are encoded here instead of pasted.
-   * Nothing in it is or ever was a credential.
-   */
-  const jwtShaped = [
-    Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url"),
-    Buffer.from(JSON.stringify({ role: "not-a-real-role" })).toString("base64url"),
-    "n0tar3alsignaturevalue",
-  ].join(".");
 
   const cases: ReadonlyArray<[string, string, string]> = [
     [

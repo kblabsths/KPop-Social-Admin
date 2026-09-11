@@ -251,6 +251,59 @@ function accountParts(error: unknown, depth: number): string[] {
 }
 
 /**
+ * A part of the account that is a DOCUMENT rather than prose: its first
+ * non-blank character is `<`.
+ *
+ * That is the WHOLE question, and it is asked about the SHAPE of what the
+ * client handed back — never about which intermediary sent it and never about
+ * which surface will render it (admin-window/BUG-0170). Measured 2026-09-10
+ * against staging: a facet value the WAF in FRONT of PostgREST disliked was
+ * answered by the WAF, not by PostgREST, so supabase-js handed back a
+ * 4,547-character Cloudflare "Attention Required!" page as `error.message` and
+ * the whole document reached the operator inside an app-written sentence
+ * (`ErrorLine` renders `${reading} — ${failed}`).
+ *
+ * Three shapes answer `<` and all three are documents: the doctype that page
+ * opened with, an `<html …>` fragment sent with no doctype, and an
+ * `<?xml …?>` prolog. Nothing else is inspected — no tag stripping, no entity
+ * decoding, no length cap on prose, no codepoint blocklist and no second
+ * detector for a shape nobody has measured. That restraint is the point
+ * (ARCHITECTURE.md §7 common violations row 15, LESSONS 4): a blocklist
+ * chased one family at a time is the class this rule was promoted for. A
+ * database message that merely CONTAINS angle brackets — `operator does not
+ * exist: text <-> integer` — begins with a letter and is untouched.
+ */
+function isDocument(part: string): boolean {
+  return part.startsWith("<");
+}
+
+/**
+ * What an account says INSTEAD of a document: counted, never spelled.
+ *
+ * The clause quotes no part of what arrived — not its `<title>`, not its first
+ * line, not a tag — because the rule is that text this app did not author
+ * never sits inside a sentence this app wrote. What survives is the one fact
+ * an operator needs and the document cannot be trusted to state: something
+ * other than the database answered, and this much of it arrived. The number is
+ * the length of the part exactly as the client delivered it, before any
+ * trimming of ours, so it is the same number a reader gets from
+ * `error.message.length`.
+ *
+ * The URL-value predicate in `src/lib/url/spellable.ts` is deliberately NOT
+ * called here and not widened to reach this: it answers the URL-value
+ * question, and a shared predicate answering a second question gets widened by
+ * whichever question broke last (LESSONS 4; that module's own doc refuses it
+ * too). Nothing in this file names it — the check that keeps it that way is
+ * this ticket's, in the tracker.
+ */
+function documentInstead(raw: string): string {
+  return (
+    `a ${raw.length}-character markup document arrived here instead of the ` +
+    `database's own words`
+  );
+}
+
+/**
  * The database client's own account of the failure — everything it said,
  * nothing of ours.
  *
@@ -258,6 +311,10 @@ function accountParts(error: unknown, depth: number): string[] {
  * are never swallowed and never replaced with a generic message." So this
  * substitutes no friendlier sentence, and it also refuses to throw away the
  * fields where the cause actually lives.
+ *
+ * A part that is a DOCUMENT rather than prose does not cross at all: it is
+ * replaced by `documentInstead`'s counted clause before anything else looks at
+ * it, so no surface below this function needs a reduction of its own.
  *
  * A part that another part already contains is dropped rather than repeated —
  * supabase-js's `details` opens with a copy of `message`, and printing the
@@ -268,8 +325,14 @@ function accountParts(error: unknown, depth: number): string[] {
 function errorMessage(error: unknown): string {
   const kept: string[] = [];
   for (const raw of accountParts(error, 0)) {
-    const part = raw.trim();
-    if (part.length === 0) continue;
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) continue;
+    // The ONE place the app decides what an account may carry, for every read
+    // in `lib/db/**`: a document-shaped part becomes an app-authored,
+    // bounded description of what arrived; prose crosses verbatim. Every
+    // surface — the claims card, the paging routes' error arms — inherits
+    // this with no line of its own (admin-window/BUG-0170).
+    const part = isDocument(trimmed) ? documentInstead(raw) : trimmed;
     if (kept.some((held) => held.includes(part))) continue;
     for (let index = kept.length - 1; index >= 0; index -= 1) {
       if (part.includes(kept[index])) kept.splice(index, 1);
