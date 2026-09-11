@@ -48,8 +48,55 @@ const CARRIED_OVER = ["src/lib/supabase.ts"];
  * other files walk the same tree in parallel workers.
  */
 
+/**
+ * The dot-hidden area every probe this file plants lives under — gitignored,
+ * holding probes and nothing else — and THIS RUN's directory beneath it, one
+ * per self-guard.
+ *
+ * Two vitest runs share one checkout routinely here: a QA lane attacking the
+ * landed tree while a receipt re-runs a ticket's stored checks, and `npm test`
+ * sits in nearly every ticket's check block. A FIXED probe path made that a
+ * three-way collision (admin-window/DEBT-0018): one run read the other run's
+ * probe content back at its own path, one run's cleanup deleted the other's
+ * probe mid-scan, and removing the SHARED parent raced a concurrent
+ * `mkdirSync`. So each guard writes beneath a directory carrying
+ * `process.pid` — the idiom `tests/offline/edit/config.test.ts` and
+ * `tests/offline/toolchain.test.ts` already use — and its `finally` removes
+ * THAT directory, never the parent every run shares.
+ */
+const PROBE_PARENT = "src/.probes";
+const CREDENTIAL_PROBE_DIR = `${PROBE_PARENT}/credential-guard-${process.pid}`;
+const LEAF_PROBE_DIR = `${PROBE_PARENT}/leaf-import-guard-${process.pid}`;
+
+/**
+ * True for a probe under the shared parent that THIS run did not plant —
+ * another concurrent run's, or one left by a run that died.
+ *
+ * The test is on the directory BOUNDARY (`${dir}/`), so a run whose pid merely
+ * starts with this one's digits is foreign too.
+ */
+function isForeignProbe(file: string): boolean {
+  return (
+    file.startsWith(`${PROBE_PARENT}/`) &&
+    ![CREDENTIAL_PROBE_DIR, LEAF_PROBE_DIR].some((dir) => file.startsWith(`${dir}/`))
+  );
+}
+
+/**
+ * The file list the rules below grade: the UNFILTERED walk — the self-guards
+ * are the point, so a run's scanner must reach its own probe — minus any probe
+ * that is not this run's own.
+ *
+ * A probe holds `process.env.SUPABASE_SERVICE_ROLE_KEY` on purpose, so leaving
+ * a foreign one visible would let this lane's scan report another lane's probe
+ * as a violation of the credential rule.
+ */
+function gradedSourceFiles(): string[] {
+  return allSourceFiles().filter((file) => !isForeignProbe(file));
+}
+
 function filesWhereCodeMatches(pattern: RegExp): string[] {
-  return allSourceFiles().filter((file) => pattern.test(codeText(file)));
+  return gradedSourceFiles().filter((file) => pattern.test(codeText(file)));
 }
 
 function withoutDeprecated(files: string[]): string[] {
@@ -121,7 +168,7 @@ const SUPABASE_CREDENTIAL_READ = envReadOf("SUPABASE_[A-Z0-9_]+");
 
 describe("the source tree", () => {
   it("is non-empty and contains the seam files these rules are about", () => {
-    const files = allSourceFiles();
+    const files = gradedSourceFiles();
     expect(files.length).toBeGreaterThan(5);
     expect(files).toContain(CLIENT);
     expect(files).toContain(TABLES);
@@ -140,7 +187,7 @@ describe("credentials", () => {
   it("mentions no staging name anywhere under src", () => {
     // Not code-lines-only: a STAGING_ name has no business in a comment here
     // either. Staging is tests/live's, and this rule takes no exemption.
-    const offenders = allSourceFiles().filter((file) => sourceText(file).includes("STAGING_"));
+    const offenders = gradedSourceFiles().filter((file) => sourceText(file).includes("STAGING_"));
     expect(offenders).toEqual([]);
   });
 
@@ -204,7 +251,7 @@ describe("the credential guard itself", () => {
    * Under `src/`, so the scanner walks it — and inside a dot-directory, so no
    * compiler does (admin-window/BUG-0029).
    *
-   * This probe used to be written straight to `src/__credential_guard_probe__.ts`,
+   * This probe used to be written straight into `src/` under its bare name,
    * which the tsconfig `include` glob (`**\/*.ts`) covers. `tests/offline/toolchain.test.ts`
    * runs a real `tsc --listFilesOnly` over that same program in a parallel
    * worker; when it enumerated the probe and the `finally` below deleted it a
@@ -213,8 +260,13 @@ describe("the credential guard itself", () => {
    * globbing skips directories whose name starts with `.`, while the walker in
    * `allSourceFiles()` skips nothing — so a dot-hidden probe is asserted on
    * exactly as before and is invisible to any concurrent compile.
+   *
+   * The directory it sits in carries this run's `process.pid`
+   * (`CREDENTIAL_PROBE_DIR`, above), so a second vitest run in this same
+   * checkout writes somewhere else and the `finally` below removes only what
+   * this run made (admin-window/DEBT-0018).
    */
-  const PROBE = "src/.probes/__credential_guard_probe__.ts";
+  const PROBE = `${CREDENTIAL_PROBE_DIR}/__credential_guard_probe__.ts`;
   const probePath = path.join(repoRoot, PROBE);
   const probeDir = path.dirname(probePath);
 
@@ -235,6 +287,54 @@ describe("the credential guard itself", () => {
     // `tsc`/`next build` running beside this suite.
     expect(PROBE.startsWith("src/")).toBe(true);
     expect(PROBE.split("/").some((segment) => segment.startsWith("."))).toBe(true);
+  });
+
+  it("writes where no other run of this suite writes", () => {
+    // The uniqueness invariant admin-window/DEBT-0018 bought: the directory
+    // this run removes is its OWN, not the parent every run shares.
+    expect(probeDir).not.toBe(path.join(repoRoot, PROBE_PARENT));
+    expect(path.basename(probeDir)).toContain(String(process.pid));
+    expect(PROBE.startsWith(`${PROBE_PARENT}/`)).toBe(true);
+  });
+
+  it("is blind to another run's probe, and leaves it where it found it", () => {
+    // The concurrency property (admin-window/DEBT-0018). A second vitest run
+    // in this checkout has a probe on disk — containing the service-role key
+    // BY DESIGN — while this run scans. It must be invisible to these rules
+    // and untouched by this run's cleanup, or each lane reddens the other.
+    //
+    // The foreign name is this pid with a digit appended: a directory whose
+    // name merely STARTS with ours is another run's, and the filter has to
+    // say so.
+    const foreignProbe = `${PROBE_PARENT}/credential-guard-${process.pid}9/__credential_guard_probe__.ts`;
+    const foreignPath = path.join(repoRoot, foreignProbe);
+    fs.mkdirSync(path.dirname(foreignPath), { recursive: true });
+    fs.writeFileSync(
+      foreignPath,
+      "export const key = process.env.SUPABASE_SERVICE_ROLE_KEY;\n",
+      "utf8",
+    );
+    try {
+      // Non-vacuous: the walk really does list it, so the blindness below is
+      // this file's filter doing its job rather than the probe being absent.
+      expect(allSourceFiles()).toContain(foreignProbe);
+      expect(gradedSourceFiles()).not.toContain(foreignProbe);
+
+      // The rule holds with a foreign probe on disk...
+      expect(withoutDeprecated(filesWhereCodeMatches(SERVICE_ROLE_KEY_READ))).toEqual([CLIENT]);
+      // ...and a scan of this run's own probe still reports its own, only.
+      const readers = scanWithProbe(
+        "export const key = process.env.SUPABASE_SERVICE_ROLE_KEY;\n",
+        SERVICE_ROLE_KEY_READ,
+      );
+      expect(readers).toContain(PROBE);
+      expect(readers).not.toContain(foreignProbe);
+
+      // And the cleanup that just ran took only this run's directory.
+      expect(fs.existsSync(foreignPath)).toBe(true);
+    } finally {
+      fs.rmSync(path.dirname(foreignPath), { force: true, recursive: true });
+    }
   });
 
   it("still reaches the scanner from there, and leaves nothing behind", () => {
@@ -610,10 +710,22 @@ describe("the pure domain leaves", () => {
  * (LESSONS 3).
  */
 describe("the leaf-import guard itself", () => {
-  /** Dot-hidden, for the reasons the credential probe above states. */
-  const PROBE = "src/.probes/__leaf_import_probe__.ts";
+  /**
+   * Dot-hidden, and in a directory carrying this run's `process.pid`, for the
+   * reasons the credential probe above states (admin-window/DEBT-0018).
+   */
+  const PROBE = `${LEAF_PROBE_DIR}/__leaf_import_probe__.ts`;
   const probePath = path.join(repoRoot, PROBE);
   const probeDir = path.dirname(probePath);
+
+  /**
+   * `src/` as reached from the probe's OWN directory, computed rather than
+   * typed. The probe sits one level below the shared probe parent now, so a
+   * hand-typed `../` would resolve INSIDE the probe area rather than into
+   * `src/lib/**` — leaving the must-flag fixture flagged for the wrong reason
+   * and the must-not-flag fixture flagged for one.
+   */
+  const TO_SRC = path.posix.relative(path.posix.dirname(PROBE), "src");
 
   /** What the leaf rule reports while `source` sits under `src/` as PROBE. */
   function scanLeafProbe(source: string): string[] {
@@ -641,7 +753,7 @@ describe("the leaf-import guard itself", () => {
       'import fs from "node:fs";\n',
       // A relative reach OUT of the leaf layer resolves the same way an
       // aliased one does, so neither spelling is a way around the rule.
-      'import { T } from "../lib/db/tables";\n',
+      `import { T } from "${TO_SRC}/lib/db/tables";\n`,
     ]) {
       expect(scanLeafProbe(source), source).not.toEqual([]);
     }
@@ -657,8 +769,8 @@ describe("the leaf-import guard itself", () => {
       'import { visibleContent } from "@/lib/verdict/decision.ts";\n',
       'import type { VerdictAction } from "@/lib/verdict/decision";\n',
       'export { factKey } from "@/lib/verdict/decision";\n',
-      // Relative, from the probe's own directory (`src/.probes/`).
-      'import { ADMIN_SOURCE } from "../lib/verdict/decision";\n',
+      // Relative, from the probe's own per-run directory under the probe area.
+      `import { ADMIN_SOURCE } from "${TO_SRC}/lib/verdict/decision";\n`,
     ]) {
       expect(scanLeafProbe(source), source).toEqual([]);
     }
@@ -680,6 +792,41 @@ describe("the leaf-import guard itself", () => {
       "}\n";
     expect(scanLeafProbe(source)).toEqual([]);
     expect(fs.existsSync(probeDir)).toBe(false);
+  });
+
+  it("resolves its relative fixtures out of the probe directory and into src", () => {
+    // What makes the two relative fixtures above fixtures at all: the
+    // specifier must land on the real module, not on a sibling of the probe.
+    expect(importTarget(PROBE, `import { T } from "${TO_SRC}/lib/db/tables";`)).toBe(
+      "src/lib/db/tables.ts",
+    );
+    expect(importTarget(PROBE, `import { x } from "${TO_SRC}/lib/verdict/decision";`)).toBe(
+      "src/lib/verdict/decision.ts",
+    );
+  });
+
+  it("is blind to another run's probe, and leaves it where it found it", () => {
+    // The concurrency property, for this guard (admin-window/DEBT-0018): a
+    // second run's probe is on disk while this one scans, and this run's
+    // `finally` must not carry it off with its own directory.
+    const foreignProbe = `${PROBE_PARENT}/leaf-import-guard-${process.pid}9/__leaf_import_probe__.ts`;
+    const foreignPath = path.join(repoRoot, foreignProbe);
+    fs.mkdirSync(path.dirname(foreignPath), { recursive: true });
+    fs.writeFileSync(
+      foreignPath,
+      'import { T } from "@/lib/db/tables";\nexport const key = process.env.SUPABASE_SERVICE_ROLE_KEY;\n',
+      "utf8",
+    );
+    try {
+      expect(allSourceFiles()).toContain(foreignProbe);
+      expect(gradedSourceFiles()).not.toContain(foreignProbe);
+      expect(scanLeafProbe('import { hasVisibleContent } from "@/lib/verdict/decision";\n')).toEqual(
+        [],
+      );
+      expect(fs.existsSync(foreignPath)).toBe(true);
+    } finally {
+      fs.rmSync(path.dirname(foreignPath), { force: true, recursive: true });
+    }
   });
 
   it("reads the leaf set through the same scanner, on the real files", () => {

@@ -45,14 +45,26 @@ import {
  *      ENOENT on a directory that went away mid-walk.
  */
 
-/** The path `tests/offline/db/layering.test.ts` writes its probe to. */
-const PROBE = "src/.probes/__credential_guard_probe__.ts";
+/**
+ * THIS run's probe, planted in the same dot-hidden area beneath `src/` that
+ * `tests/offline/db/layering.test.ts` writes its own probes to, under a
+ * directory carrying this process's pid.
+ *
+ * It used to be that suite's exact probe path. Since admin-window/DEBT-0018
+ * there is no such single path — each run of that suite writes beneath its own
+ * `process.pid` directory, so two vitest runs in one checkout stop colliding —
+ * and this pin's subject never needed one: what it measures is a WALKER's
+ * resilience to a file that appears and vanishes in that area, and its
+ * blindness to it, neither of which turns on who wrote the file.
+ */
+const PROBE = `src/.probes/probe-race-${process.pid}/__credential_guard_probe__.ts`;
 const probePath = path.join(repoRoot, PROBE);
 const probeDir = path.dirname(probePath);
 
 /**
- * The offline file that OWNS the probe path: the only writer of it, and the
- * only file whose scanner is meant to see it.
+ * The offline file this pin exists for: the one that plants probes in that
+ * area during an ordinary run, and the one file whose own scanner is meant to
+ * reach a probe at all.
  */
 const LAYERING_SUITE = "tests/offline/db/layering.test.ts";
 
