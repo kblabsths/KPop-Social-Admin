@@ -1644,7 +1644,10 @@ describe("WindowLine", () => {
    * and the state table is its own: the page reaches four of these states and
    * the fixtures below reach all of them.
    */
-  const matchedRows: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
+  /** The page's own words, which the call site hands the line (not a product
+   *  sentence this file may not spell — the fixture IS this file's input). */
+  const MATCHED_LEDE = "Oldest first.";
+  const matchedRows: DrawnSentence = { of: "matched", lede: MATCHED_LEDE, rows: "claims" };
 
   /**
    * The window `/claims` composes on its UNPAGED arm, with the two reads set
@@ -1747,20 +1750,73 @@ describe("WindowLine", () => {
    * place in this describe that pins product words, and they are here on
    * purpose: the words are the designer's, and the ticket's job was to move
    * two states and nothing else.
+   *
+   * THREE OF THOSE PINS ARE NOW STRUCTURAL — admin-window/BUG-0197. The two
+   * held-back states at (a) and the paged held-back arm at (e) held the
+   * ranking-and-withholding clause verbatim, which was BUG-0186's proof that
+   * it moved two arms and nothing else; QA has since measured that proof
+   * cross-tree, so what is left to hold is what the tickets DECIDED, not the
+   * designer's copy of it. The three are graded below by the figures each
+   * clause carries, by which clause each state renders, and by which arms
+   * render the SAME clause — every figure masked, no word of the sentence
+   * spelled in this file. (b), (c), (d) and the paged arm's other two states
+   * are untouched byte pins.
    */
   const FIRST_SCREEN = "Oldest first. A window of at most 50 rows, not the whole view.";
 
   it("leaves every state but the two the ruling moves byte-identical [admin-window/BUG-0186]", () => {
     const lineOf = (window: DrawnWindow) => textOf(drawn(matchedRows, window));
 
+    /** A window that states NO rows on screen: one read, not two (d). */
+    const silentWindow = (held: number, truncated: boolean): DrawnWindow => ({
+      limit: 50,
+      held,
+      truncated,
+      over: "view",
+      oldest: null,
+      scope: null,
+    });
+    /** The same arm on a surface a press CONTINUES (e). */
+    const paged = (facts: Partial<DrawnWindow>): DrawnWindow => ({
+      ...PAGED,
+      ...facts,
+    });
+
     // (a) the held-back states — the count exceeded the rows, which is the
-    // clause admin-window/BUG-0183 fixed and this ticket may not touch.
-    expect(lineOf(twoReads(37, 900))).toBe(
-      `${FIRST_SCREEN} 900 claims in all; the 37 longest-waiting are below — the rest are not shown.`,
-    );
-    expect(lineOf(twoReads(0, 900))).toBe(
-      `${FIRST_SCREEN} 900 claims in all; the 0 longest-waiting are below — the rest are not shown.`,
-    );
+    // clause admin-window/BUG-0183 fixed. Held STRUCTURALLY since
+    // admin-window/BUG-0197 took the empty one of them out of that clause: no
+    // word of the sentence is spelled here, so the designer's copy may move,
+    // and what is graded is what the two tickets decided.
+    //
+    // The opening both states share — the lede and the cap clause — is taken
+    // from the component itself, as the line of a window that states no rows
+    // at all, so this comparison holds no words either.
+    const drew37 = lineOf(twoReads(37, 900));
+    const drewNone = lineOf(twoReads(0, 900));
+    const opening = lineOf(silentWindow(900, true));
+    expect(drew37.startsWith(opening)).toBe(true);
+    expect(drewNone.startsWith(opening)).toBe(true);
+
+    // What each adds to that opening, every figure masked.
+    const heldBack = digitMasked(drew37).slice(digitMasked(opening).length);
+    const countClause = digitMasked(drewNone).slice(digitMasked(opening).length);
+    // Non-vacuous: each really is a clause, and they are not the same one.
+    expect(heldBack.length).toBeGreaterThan(0);
+    expect(countClause.length).toBeGreaterThan(0);
+    expect(heldBack).not.toBe(countClause);
+
+    // The figures each line prints, in the order it prints them: the cap, the
+    // count read's number, and — where the window DREW rows — the rows it
+    // drew. A window that drew none prints no third figure at all: there is no
+    // `0` rank in the line and no rest to withhold (admin-window/BUG-0197).
+    expect(figuresIn(drew37)).toEqual([count(50), count(900), count(37)]);
+    expect(figuresIn(drewNone)).toEqual([count(50), count(900)]);
+
+    // …and the clause the empty window stops after is the one the drawn window
+    // OPENS its clause with — the count read's fact, stated once, the same way
+    // in both, with the ranking-and-withholding half absent rather than
+    // emptied. Only the terminator stands between them.
+    expect(heldBack.startsWith(countClause.slice(0, -1))).toBe(true);
 
     // (b) the rows fell short of the cap and the two reads agree — the one
     // state `didNotFill` may still speak in.
@@ -1775,15 +1831,8 @@ describe("WindowLine", () => {
 
     // (d) a window that states NO rows on screen: one read, not two, so there
     // is nothing here to diverge and both arms say what they always said
-    // (admin-window/BUG-0183).
-    const silentWindow = (held: number, truncated: boolean): DrawnWindow => ({
-      limit: 50,
-      held,
-      truncated,
-      over: "view",
-      oldest: null,
-      scope: null,
-    });
+    // (admin-window/BUG-0183). Its fixture is hoisted to the top of this case,
+    // where (a) reads the opening off it.
     expect(lineOf(silentWindow(900, true))).toBe(FIRST_SCREEN);
     expect(lineOf(silentWindow(30, false))).toBe(
       `${FIRST_SCREEN} The window did not fill — 30 of at most 50 — so it holds all the claims the read found.`,
@@ -1793,19 +1842,72 @@ describe("WindowLine", () => {
     // disagreeing one, which is where a window whose reads diverge already
     // stated each read as its own fact (admin-window/BUG-0174). The ruling
     // moves the unpaged arm to that same rule and leaves these untouched.
-    const paged = (facts: Partial<DrawnWindow>): DrawnWindow => ({
-      ...PAGED,
-      ...facts,
-    });
-    expect(lineOf(paged({ held: 877, truncated: true, drawn: 120 }))).toBe(
-      "Oldest first. 877 claims in all; the 120 longest-waiting are below — the rest are not shown.",
-    );
+    //
+    // Its held-back state is the third structural pin (admin-window/BUG-0197):
+    // it is the lede plus the very clause the drawn unpaged window ends with —
+    // ONE clause rendered by two arms, which is the fact worth holding — and
+    // it names the two figures two reads established, with no cap of its own,
+    // because 50 is the size of one press and not a description of a screen.
+    const pagedHeldBack = paged({ held: 877, truncated: true, drawn: 120 });
+    expect(digitMasked(lineOf(pagedHeldBack))).toBe(`${MATCHED_LEDE}${heldBack}`);
+    expect(figuresIn(lineOf(pagedHeldBack))).toEqual([count(877), count(120)]);
     expect(lineOf(paged({ held: 120, truncated: false, drawn: 120 }))).toBe(
       "Oldest first. 120 claims in all, and every one of them is below — the read found no more.",
     );
     expect(lineOf(paged({ held: 30, truncated: false, drawn: 50 }))).toBe(
       "Oldest first. A count of claims answered 30; the reads returned the 50 below, and the read found no more.",
     );
+  });
+
+  it("says what the count read found and stops, where the window drew no rows [admin-window/BUG-0197]", () => {
+    // THE ARM THIS TICKET MOVES. A window whose COUNT read answered a number
+    // and whose ROW read drew nothing rendered the held-back clause anyway: it
+    // ranked a set with nothing in it — a superlative over `0` rows — and then
+    // apologised for withholding a rest, directly above the card whose whole
+    // job is to say the read came back empty. A window that drew none has
+    // nothing to rank and nothing to hold back, so the line states what the
+    // count read found and stops. (The sentence itself is quoted in the
+    // ticket, not here: this file spells no word of it.)
+    //
+    // No word is pinned: the states are rendered and compared with each other
+    // with every figure masked, so a copy edit that moves the clause moves
+    // both and this still grades the decision.
+    const drewNone = twoReads(0, 900);
+    // Non-vacuity, from the window's own facts: the count answered a non-zero
+    // number, the row read drew nothing, and the count exceeds the rows — the
+    // state the held-back clause is rendered in.
+    expect(drewNone.drawn).toBe(0);
+    expect(drewNone.held).toBe(900);
+    expect(drewNone.truncated).toBe(true);
+    // …and it is the HELD-BACK state, not one of the diverged ones: the count
+    // is larger than the rows drawn, which is the reading that used to make
+    // "the rest are not shown" sayable here.
+    expect(readsAgree(drewNone)).toBe(true);
+
+    // A DIFFERENT sentence from the drawn window's, not the same sentence with
+    // a `0` in it — which is the whole of the ticket, with every digit masked.
+    expect(shapeOf(0, 900)).not.toBe(shapeOf(37, 900));
+    // …and the same sentence whatever the count answered, because what dropped
+    // is the clause about the ROWS.
+    expect(shapeOf(0, 900)).toBe(shapeOf(0, 51));
+
+    // The only figures it prints are the cap and the count read's number: no
+    // rank, no rest, and no `0` standing in for a row count.
+    expect(figuresIn(textOf(drawn(matchedRows, drewNone)))).toEqual([count(50), count(900)]);
+
+    // The count clause is a fact its own read established and it stays — an
+    // operator who sees it over an empty card learns the real thing, that the
+    // two reads disagree.
+    expect(textOf(drawn(matchedRows, drewNone))).toContain(count(900));
+
+    // A press being available changes nothing here: the paged arm cannot reach
+    // the held-back clause on a window that drew no rows (it is not continued
+    // and the read has not ended), so both say the same thing.
+    expect(
+      digitMasked(
+        textOf(drawn(matchedRows, { ...PAGED, held: 900, truncated: true, drawn: 0 })),
+      ),
+    ).toBe(shapeOf(0, 900));
   });
 
   it("is one paragraph carrying one window, whichever kind it is", () => {
