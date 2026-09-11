@@ -1,8 +1,11 @@
 import * as cheerio from "cheerio";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import ClaimsPage from "@/app/claims/page";
 import { CLAIM_WINDOW } from "@/components/claims";
+import type { ClaimLine } from "@/lib/claims/lines";
 import { T } from "@/lib/db/tables";
+import { OFFSET_PARAM, PAGE_ROUTES } from "@/lib/paging/bounds";
+import { initialPage, requestPage, type PageState } from "@/lib/paging/machine";
 import {
   countRows,
   exactCount,
@@ -108,6 +111,35 @@ import {
  * declares the target — `tests/live/setup.ts` throws first, non-zero, with the
  * missing name.
  */
+
+/**
+ * The SIGN-IN GATE, and the one thing this file substitutes — campaign
+ * admin-window/TASK-0067.
+ *
+ * The paged walk below drives the app's own route handler
+ * (`GET /api/admin/claims/rows`) against staging, and that handler's first
+ * statement is `requireAdmin()`, which reads a NextAuth SESSION. A test
+ * process has none, so every page of the walk would be a 401 and the walk
+ * would grade nothing about the database — which is this tier's whole subject.
+ *
+ * So the gate answers as an allowlisted admin here, and NOTHING else is
+ * substituted: the route, its bound guard, its facet derivation, its reads and
+ * its answers are the app's, against staging. The gate's own behaviour is
+ * graded where it can be graded honestly — `tests/offline/paging/
+ * claims-route.test.ts` stubs it CLOSED and proves the order of the two (a
+ * refused gate issues no read at all), and `tests/http/` drives the real
+ * middleware. The count below asserts this handler still ASKS.
+ */
+const gate = vi.hoisted(() => ({ calls: 0 }));
+
+vi.mock("@/lib/admin", () => ({
+  requireAdmin: async () => {
+    gate.calls += 1;
+    return { user: { email: "live-suite@admin-window.local" } };
+  },
+}));
+
+const { GET } = await import("@/app/api/admin/claims/rows/route");
 
 type Params = Record<string, string>;
 
@@ -938,5 +970,185 @@ describe("a source is named against staging", () => {
     expect(narrowing.map((chip) => chip.label)).toEqual(
       [...narrowing.map((chip) => chip.label)].sort(),
     );
+  });
+});
+
+/* ── paging past the first window, against staging ───────────────────────── */
+
+/**
+ * THE PAGED WALK — campaign admin-window/TASK-0067, M3 EC4, SPEC F14.
+ *
+ * The first screen is a WINDOW, and this file already certifies that window.
+ * What is certified here is what the operator can do AFTER it: starting from
+ * the page the server rendered, press until the set ends, and check the ids
+ * that walk reached against a range walk THIS FILE writes, over the same view,
+ * in the order the page states above its list.
+ *
+ * Three claims, and each is graded from this test's own reads (ARCHITECTURE.md
+ * §10 rule 1 — nothing here asks `src/lib/db/claims.ts` what to expect):
+ *
+ *  - the walk REACHES PAST the first window's last row;
+ *  - the distinct ids it reaches are exactly the range walk's enumeration —
+ *    no id twice, none skipped;
+ *  - and there are as many of them as the HEAD FIGURE the page itself
+ *    rendered (`data-window-held`, the count the page states over the set its
+ *    list is drawn from).
+ *
+ * The state kind is named from `data-surface` before any number is compared,
+ * and the page's own affordance hook decides whether there is a walk to make
+ * at all: on a view that fits in one window there is no control, and this
+ * states that instead of inventing one (§10, common violations rows 6-8).
+ *
+ * **The race, and the device** (admin-window/TASK-0075). The scraper files
+ * claims into staging while this runs, and neither the page's read nor the
+ * walk may be given an upper edge — they are the APP's reads, not this file's
+ * — so the device is `whileStill`: the count is read, the page is rendered and
+ * walked, the count is read again, and the comparison is only made when the
+ * two agree. Every attempt makes the same exact comparison; running out of
+ * attempts throws rather than passing.
+ */
+describe("paging past the first window, against staging", () => {
+  /** One paging request, through the app's own route handler. */
+  async function viaHandler(url: string): Promise<unknown> {
+    const response = await GET(new Request(`http://localhost${url}`));
+    return response.json();
+  }
+
+  /** The bound a walked URL carried, so a walk can say what it asked for. */
+  const CAP_PAGES = 200;
+
+  /**
+   * Press until the set ends, from the state the FIRST SCREEN leaves behind.
+   *
+   * The driver is the app's (`requestPage`), the route is the app's, and the
+   * loop is this file's: it presses only from `idle`, stops at `exhausted`,
+   * and treats a refusal as a failure with the refusal's own words — a walk
+   * that silently stopped at a refused page would report a short set as the
+   * whole of it.
+   */
+  async function walk(
+    params: string,
+  ): Promise<{ rows: ClaimLine[]; bounds: (string | null)[]; presses: number }> {
+    const deps = {
+      route: PAGE_ROUTES.claims,
+      params,
+      size: CLAIM_WINDOW,
+      fetchJson: viaHandler,
+    };
+    const bounds: (string | null)[] = [];
+    const asked = async (url: string): Promise<unknown> => {
+      bounds.push(new URLSearchParams(url.split("?")[1]).get(OFFSET_PARAM));
+      return viaHandler(url);
+    };
+
+    let state: PageState<ClaimLine> = initialPage<ClaimLine>(CLAIM_WINDOW, true);
+    let presses = 0;
+    while (state.status === "idle" && presses < CAP_PAGES) {
+      state = await requestPage<ClaimLine>(state, { ...deps, fetchJson: asked });
+      presses += 1;
+      if (state.refusal !== null) {
+        throw new Error(
+          `the walk was refused at bound ${bounds[bounds.length - 1]}: ` +
+            `${state.refusal.object ?? "(no object)"} — ${state.refusal.reason}`,
+        );
+      }
+    }
+    expect(presses, "the walk hit its own page cap rather than the end of the set")
+      .toBeLessThan(CAP_PAGES);
+    return { rows: [...state.rows], bounds, presses };
+  }
+
+  /**
+   * THE ORACLE: every claim of the unnarrowed view, enumerated by a RANGE walk
+   * this file writes, in the order the page states — oldest first, an unknown
+   * instant last, `observation_id` breaking every tie.
+   *
+   * It is not the app's read: its own step, its own edges, its own columns.
+   * A page that stopped short would still be "a set of ids"; the only thing
+   * that catches it is a second enumeration made independently.
+   */
+  async function rangeWalk(): Promise<string[]> {
+    const db = independentClient();
+    const STEP = 500;
+    const ids: string[] = [];
+    for (let from = 0; from < VIEW_READ_CAP; from += STEP) {
+      const { data, error } = await db
+        .from(T.pendingClaims)
+        .select("observation_id")
+        .neq("bucket", PARKED_BUCKET)
+        .order("observed_at", { ascending: true, nullsFirst: false })
+        .order("observation_id", { ascending: true })
+        .range(from, from + STEP - 1);
+      if (error) throw new Error(`the range walk failed: ${JSON.stringify(error)}`);
+      const rows = (data ?? []) as { observation_id: string }[];
+      ids.push(...rows.map((row) => row.observation_id));
+      if (rows.length < STEP) return ids;
+    }
+    throw new Error(
+      `this test's own range walk reached ${VIEW_READ_CAP} claims without ` +
+        `ending, so it cannot say what the view holds`,
+    );
+  }
+
+  it("reaches every claim the view holds, once each, and no more", async () => {
+    const { made, held } = await whileStill(
+      () => countRows(() => claimCount()),
+      async () => {
+        const markup = await claimsMarkup();
+        const $ = cheerio.load(markup);
+        return {
+          markup,
+          first: claimIds(markup),
+          arms: $("[data-paging]")
+            .toArray()
+            .map((element) => $(element).attr("data-paging") ?? ""),
+          // The page's own head figure, read AFTER the state kind below.
+          line: $('[data-window="claims"]').attr("data-window-held") ?? null,
+          walked: (await walk("")).rows.map((row) => row.observationId),
+        };
+      },
+    );
+
+    // The state kind, before any number is compared.
+    const state = await gradeSurface({
+      markup: made.markup,
+      within: LIST,
+      object: T.pendingClaims,
+      counted: held,
+    });
+    if (state !== "ok") return;
+
+    // The gate really is asked, once per page of the walk.
+    expect(gate.calls, "the paging route answered without asking the gate").toBeGreaterThan(0);
+
+    if (held <= CLAIM_WINDOW) {
+      // A view that fits in one window is not a walk: the page offers no
+      // control, and this says so rather than inventing one. Staging held 877
+      // claims when this was written, so this is not the branch it runs.
+      expect(made.arms, "a view inside one window offered a control").toEqual([]);
+      expect(made.walked).toEqual([]);
+      return;
+    }
+
+    // There IS more, so the page says so — and the walk starts from the rows
+    // the server rendered.
+    expect(made.arms).toContain("more");
+    expect(made.first).toHaveLength(CLAIM_WINDOW);
+    expect(made.walked.length, "the walk reached nothing past the first window")
+      .toBeGreaterThan(0);
+    // …and it really is PAST the first window's last row.
+    expect(made.walked).not.toContain(made.first[made.first.length - 1]);
+
+    const reached = [...made.first, ...made.walked];
+    expect(new Set(reached).size, "a claim was reached twice").toBe(reached.length);
+
+    // The oracle: an independently written enumeration of the same view.
+    const enumerated = await rangeWalk();
+    expect([...reached].sort()).toEqual([...enumerated].sort());
+
+    // …and as many as the page's own head figure states.
+    expect(made.line, "the list stated no head figure").not.toBeNull();
+    expect(reached).toHaveLength(Number(made.line));
+    expect(Number(made.line)).toBe(held);
   });
 });

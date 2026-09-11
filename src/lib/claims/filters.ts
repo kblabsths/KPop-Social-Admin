@@ -414,14 +414,42 @@ export function claimsHref(
   filter: ClaimsFilter,
   tab: ClaimsTab = DEFAULT_TAB,
 ): string {
+  const search = claimsQuery(filter, tab);
+  return search.length === 0 ? path : `${path}?${search}`;
+}
+
+/**
+ * The facets a PAGING request carries: the narrowing this page APPLIED,
+ * serialized — campaign admin-window/TASK-0067, SPEC F14.
+ *
+ * It is the query half of `claimsHref` above and is spelled ONCE for both:
+ * the URL an operator bookmarks and the URL a press asks the route handler
+ * for state the same narrowing, in the same facet order, with "no narrowing"
+ * spelled the same way — by omission (LESSONS 5).
+ *
+ * **It is built from the FILTER, never from `searchParams`.** A parameter the
+ * page DROPPED — a bucket outside the offered vocabulary, a `source_id` that
+ * is not a uuid, a domain the URL respelled — narrowed no read the first
+ * screen made, so it must not travel to the handler and come back as a
+ * different narrowing under rows drawn from the first one
+ * (`lib/url/dropped-params.ts`, admin-window/BUG-0141; ARCHITECTURE.md common
+ * violations row 20 — what is SHOWN is what was USED).
+ *
+ * **What the caller hands in is the TAB's filter, not the list's.** The route
+ * handler re-derives the list's narrowing with `listFilterOf` from these same
+ * two arguments, exactly as the page does, so the standing tab's own bucket
+ * arrives by the tab rather than as a `?bucket=` — the page drops that facet
+ * from its URL on purpose, and a bucket nobody can see must not start
+ * travelling in one now (see `listFilterOf` above).
+ */
+export function claimsQuery(filter: ClaimsFilter, tab: ClaimsTab = DEFAULT_TAB): string {
   const query = new URLSearchParams();
   for (const facet of CLAIM_FACETS) {
     const value = filter[facet];
     if (value !== undefined) query.set(facet, value);
   }
   if (tab !== DEFAULT_TAB) query.set(TAB_PARAM, tab);
-  const search = query.toString();
-  return search.length === 0 ? path : `${path}?${search}`;
+  return query.toString();
 }
 
 /* ── the chips ───────────────────────────────────────────────────────────── */

@@ -7,7 +7,10 @@ import {
   tableNotInSchemaCache,
   undefinedTable,
   type Script,
+  type ScriptedAnswer,
 } from "../../fixtures/stub-client";
+import { pendingClaimRow } from "../../fixtures/rows";
+import { claimView } from "../claims/population";
 
 /**
  * Graceful absence, every page (campaign admin-window/TASK-0019).
@@ -927,4 +930,157 @@ describe("an empty surface is explained from two facts", () => {
       ).not.toContain("narrowing");
     },
   );
+});
+
+/* ── an affordance is only drawn where it can be honoured ────────────────── */
+
+/**
+ * The PAGING affordance's absence, graded for every surface at once — campaign
+ * admin-window/TASK-0067, SPEC F10 ("a control that cannot be honoured is
+ * never offered") and F14.
+ *
+ * It belongs HERE rather than in a per-page comment for the same reason the
+ * window-line rule below does (ARCHITECTURE.md §4.3, admin-window/BUG-0070):
+ * absence is one rule about the whole window, and the surface it would fail on
+ * next is the one nobody thought to check. `/claims` is the first surface to
+ * grow the control and `/browse` is the second (admin-window/TASK-0068); the
+ * sweep is over whatever the filesystem holds, so the second one inherits the
+ * rule instead of a comment about it.
+ *
+ * **The rule.** A page that could not read its rows draws NO paging element of
+ * any kind — not the control, not the refusal, and not either of the two
+ * sentences that stand where a control cannot: every one of them is a claim
+ * about a set this page never read. The hook is `data-paging`
+ * (`src/components/ui/paging.tsx`), so this reads structure and no copy.
+ *
+ * **And it is not vacuous**: the second case renders `/claims` against a
+ * database that ANSWERS, holding more claims than one window, and requires the
+ * control to be there — the two fixtures a guard needs (LESSONS 8). Without
+ * it, a page that stopped drawing the affordance entirely would pass the first
+ * case forever.
+ *
+ * **Why this is not the block above it.** "A surface offers a control only
+ * where the read behind it answered" counts CONTROLS — `button`, `form`,
+ * `textarea` — so it already forbids a paging button over an absent table, and
+ * it is the stronger rule for that one arm. It cannot see the other three:
+ * `PageMore` answers an exhausted set and a state past the bound ceiling with
+ * a SENTENCE and no control at all, and a refusal is a paragraph. Those are
+ * claims about a set too, and against a database that answered nothing they
+ * are claims made off no read, so they are graded here by the hook rather than
+ * by the tag.
+ */
+
+/** Every paging element in the markup, by the arm it drew. */
+function pagingArms(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("[data-paging]")
+    .toArray()
+    .map((element) => $(element).attr("data-paging") ?? "")
+    .sort();
+}
+
+/** How many times the paging hook is spelled at all — refusals included. */
+function pagingOccurrences(markup: string): number {
+  return (markup.match(/data-paging/g) ?? []).length;
+}
+
+/** `count` claims, oldest first by construction. */
+function longPopulation(count: number) {
+  return Array.from({ length: count }, (_, index) =>
+    pendingClaimRow("escalated", {
+      observation_id: `01920000-0000-7000-8000-0000000009${String(index).padStart(2, "0")}`,
+      observed_at: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
+    }),
+  );
+}
+
+/** A claims view holding more rows than one window, so a first screen fills. */
+function overOneWindow(): ScriptedAnswer {
+  return claimView(longPopulation(130));
+}
+
+/**
+ * A claims view whose COUNT and WINDOW READ disagree — 37 rows under a count
+ * of 900.
+ *
+ * They are two reads, and nothing makes them agree. The state it produces is
+ * off the bound grid, which is the ONE state that draws the limit arm, so it
+ * is what keeps the leg below from being a check that cannot fail.
+ */
+function countDisagrees(): ScriptedAnswer {
+  const view = claimView(longPopulation(37));
+  return (call) => {
+    const answer = view(call);
+    return answer.count === null ? answer : { ...answer, count: 900 };
+  };
+}
+
+describe("a paging affordance is only drawn where it can be honoured", () => {
+  it.each(SURFACES.map((surface) => [surface.route, surface] as const))(
+    "%s draws no paging element against a database that holds none of its objects",
+    async (route, surface) => {
+      for (const [code, absence] of ABSENCES) {
+        const script: Script = {};
+        for (const name of TABLE_NAMES) script[name] = { error: absence(name) };
+        scriptDatabase(script);
+        const markup = await renderSurface(surface);
+        expect(
+          pagingArms(markup),
+          `${route} offered paging over tables it could not read (${code})`,
+        ).toEqual([]);
+        expect(pagingOccurrences(markup), `${route} (${code})`).toBe(0);
+      }
+    },
+  );
+
+  it("draws no LIMIT arm on any first screen, whatever the database holds", async () => {
+    // The other half of the rule the page suite sweeps over its own fixtures
+    // (`tests/offline/claims/page.test.ts`, inside the render funnel): a first
+    // screen may never emit `data-paging="limit"`, the arm that stands where
+    // no press can be honoured. Here it is asked of every surface against the
+    // two databases this file already builds, so a page reached only from the
+    // absence suite is swept too.
+    for (const surface of SURFACES) {
+      for (const [label, base] of DATABASES) {
+        scriptDatabase(base(surface));
+        expect(
+          (await renderSurface(surface)).includes('data-paging="limit"'),
+          `${surface.route} drew the limit arm on a first screen (${label})`,
+        ).toBe(false);
+      }
+    }
+
+    // …and on the one fixture that can actually produce the state: a count and
+    // a window read that disagree. Without this the leg above would be a check
+    // that cannot fail on this tree — every database it builds holds fewer
+    // claims than one window.
+    const claims = SURFACES.find((surface) => surface.route === "/claims");
+    if (claims === undefined) throw new Error("no /claims surface");
+    scriptDatabase({ ...populatedScript(claims), [T.pendingClaims]: countDisagrees() });
+    const markup = await renderSurface(claims);
+    expect(cheerio.load(markup)("[data-claim]")).toHaveLength(37);
+    expect(markup.includes('data-paging="limit"')).toBe(false);
+    expect(pagingOccurrences(markup)).toBe(0);
+  });
+
+  it("/claims says not_provisioned instead, and draws the control when the read answers", async () => {
+    const claims = SURFACES.find((surface) => surface.route === "/claims");
+    if (claims === undefined) throw new Error("no /claims surface");
+
+    // The state EC5 names, off PostgREST's own schema-cache miss: the page
+    // renders its not-provisioned state and the control appears zero times.
+    const script: Script = {};
+    for (const name of TABLE_NAMES) script[name] = { error: tableNotInSchemaCache(name) };
+    scriptDatabase(script);
+    const absent = await renderSurface(claims);
+    expect(cheerio.load(absent)('[data-state="not_provisioned"]').length).toBeGreaterThan(0);
+    expect(pagingOccurrences(absent)).toBe(0);
+
+    // …and the same surface, against a database that ANSWERS with more claims
+    // than one window holds: the control is drawn. Without this half the case
+    // above would pass against a page that lost the affordance entirely.
+    scriptDatabase({ ...populatedScript(claims), [T.pendingClaims]: overOneWindow() });
+    const answered = await renderSurface(claims);
+    expect(pagingArms(answered)).toEqual(["more"]);
+  });
 });

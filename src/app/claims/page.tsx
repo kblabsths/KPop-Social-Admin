@@ -7,6 +7,7 @@ import {
   ClaimTabs,
   CLAIM_WINDOW,
   FilterBar,
+  PagedClaimList,
   type BucketStat,
 } from "@/components/claims";
 import {
@@ -45,6 +46,7 @@ import {
   CLEARED_BY,
   claimsHref,
   claimsNarrowed,
+  claimsQuery,
   clearNarrowing,
   droppedParams,
   filterBar,
@@ -65,6 +67,7 @@ import {
   type UnchippedNarrowing,
 } from "@/lib/claims/filters";
 import { claimLines } from "@/lib/claims/lines";
+import { pageBound } from "@/lib/paging/bounds";
 import { resolveBounds } from "@/lib/gauges/gauge";
 import {
   PENDING_CLAIMS_DEFAULTS,
@@ -1123,6 +1126,39 @@ export default async function ClaimsPage({
   // database returned them, named from the registry read.
   const listed = rows.kind === "ok" ? claimLines(rows.data, names) : [];
 
+  // WHETHER THE OPERATOR IS OFFERED MORE — the page's decision, and the whole
+  // of it (admin-window/TASK-0067, SPEC F14). Three facts, all of them already
+  // established above; nothing is read for this.
+  //
+  //  1. A COUNT said there is more. That is `truncated` — the same comparison
+  //     the window line states, off the count and never off the rows, so the
+  //     sentence above the list and the control below it can never disagree
+  //     about whether a 51st claim exists. A refused or ABSENT count is NOT a
+  //     reason to offer one: a control drawn on a guess would be this page
+  //     claiming a total no read established (ARCHITECTURE.md §4.3, LESSONS
+  //     2), so the honest arm is no affordance, and the refused count still
+  //     says so on its own sub-surface below.
+  //  2. The rows are a bound this surface can PAGE FROM. A count and a window
+  //     read are two reads and they can disagree — a count of 900 beside a
+  //     window read that returned 37 rows is reachable — and `initialPage(37,
+  //     true)` is a state whose every press `pageBound` refuses for ever, so
+  //     the widget would honestly draw its limit sentence and the operator
+  //     would get "no further rows" with no control and no way back (QA,
+  //     admin-window/BUG-0168). This is not a second ceiling check: the
+  //     ceiling is the WIDGET's rule and stays there. It is the question of
+  //     whether the state this page would HAND it is on the grid at all.
+  //  3. The rows read `ok` and drew something. `not_provisioned` and `error`
+  //     render exactly the state they render today, and an empty `ok` window
+  //     keeps the Empty card and the window line it has always had (§4.3,
+  //     admin-window/BUG-0070) — in all three, no wrapper and no paging
+  //     element in the markup at all.
+  const truncated = listCount.kind === "ok" && listCount.data > listed.length;
+  const pageable =
+    rows.kind === "ok" &&
+    listed.length > 0 &&
+    truncated &&
+    pageBound(String(listed.length), CLAIM_WINDOW).kind === "ok";
+
   return (
     <Page title="Claims">
       <ClaimTabs tabs={tabLinks(CLAIMS_PATH, filter, tab)} />
@@ -1211,8 +1247,11 @@ export default async function ClaimsPage({
               // The window is truncated exactly when the set it was drawn from
               // holds more than it drew — from the COUNT, never from the rows,
               // which is how a `limit 50` read that returned 50 rows says
-              // whether a 51st exists (admin-window/BUG-0138).
-              truncated: listCount.data > rows.data.length,
+              // whether a 51st exists (admin-window/BUG-0138). ONE derivation,
+              // shared with the paging affordance below, so the sentence over
+              // the list and the control under it can never come to disagree
+              // about whether a 51st claim exists (LESSONS 11).
+              truncated,
               over: CLAIMS_OBJECT,
               // No floor to name, and that is a fact of this read rather than
               // a gap: the list is drawn LONGEST-WAITING first, so its bottom
@@ -1250,6 +1289,22 @@ export default async function ClaimsPage({
           <div data-empty={listNarrowed ? "narrowing" : LIST_SURFACE}>
             <Empty holds={emptyWords.holds} filledBy={emptyWords.filledBy} />
           </div>
+        ) : pageable ? (
+          // The same rows, the same markup, the same order — plus the control
+          // beneath them. The narrowing a press carries is serialized from the
+          // FILTER the reads above were given, never from `searchParams`, so a
+          // parameter this page dropped cannot come back as a different
+          // narrowing under rows drawn from this one (admin-window/BUG-0141).
+          // The window is handed down from its ONE spelling here, and the
+          // wrapper feeds the control from the number the driver graded
+          // against (admin-window/BUG-0168).
+          <PagedClaimList
+            label={LIST_TITLE[tab]}
+            initial={listed}
+            total={listCount.kind === "ok" ? listCount.data : null}
+            params={claimsQuery(filter, tab)}
+            size={CLAIM_WINDOW}
+          />
         ) : (
           <ClaimList
             label={LIST_TITLE[tab]}
