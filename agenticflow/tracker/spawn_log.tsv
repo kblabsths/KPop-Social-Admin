@@ -28029,3 +28029,42 @@
 2026-09-11T09:38:41Z	qa-adversary	BUG-0181	14887	509	98496
 # STRANDED	2026-09-11T09:38:53Z	agent	1 uncommitted in primary checkout: .env.example
 2026-09-11T09:38:53Z	agent	-	-	-	-
+2026-09-11T09:39:09Z	architect	BUG-0185	spawned
+# STRANDED	2026-09-11T09:39:24Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T09:39:24Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:39:40Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T09:39:40Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:39:56Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T09:39:56Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:40:12Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T09:40:12Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:40:28Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T09:40:28Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:40:59Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T09:40:59Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:41:14Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T09:41:14Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:41:31Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T09:41:31Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:41:45Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T09:41:45Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:42:32Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T09:42:32Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:42:46Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T09:42:46Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:43:04Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T09:43:04Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:43:18Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T09:43:18Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:43:36Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T09:43:36Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:43:49Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0185.md
+2026-09-11T09:43:49Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:44:07Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0185.md
+2026-09-11T09:44:07Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:44:20Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0182.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0185.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0020.md
+2026-09-11T09:44:20Z	agent	-	-	-	-
+# STRANDED	2026-09-11T09:44:33Z	builder	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0182.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0183.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0185.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0020.md
+2026-09-11T09:44:33Z	builder	BUG-0183	26586	868	147795
+# STRANDED	2026-09-11T09:44:40Z	architect	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0182.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0183.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0185.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0020.md
+2026-09-11T09:44:40Z	architect	BUG-0183	17594	331	70087
