@@ -1438,7 +1438,39 @@ already ships.
 - `tests/http/**` (`npm run test:http`) — builds and starts the app on port
   8772 for the things only a real server proves: unauthenticated redirects to
   `/login` for every route, and the client-bundle scan for service-role
-  material. Needs no database.
+  material. Needs no database. **That "no database" is a hard ceiling
+  on what this tier can prove** — the rule below, not a detail.
+- **What the http tier CAN prove, and what it CANNOT** (added 2026-09-11,
+  architect, from admin-window/BUG-0171's close; DEBT-0019). The harness starts
+  the app with DB sentinels and there is no `admin_allowed_emails` to vouch for
+  anyone, so `requireAdmin()` — the first statement of every route handler —
+  **fails closed on every gated request, signed-in or not**: a bare `403`
+  carrying none of the handler's headers and none of its body. Therefore:
+  1. *Provable here:* the GATE's own behaviour (uncookied → `307` to `/login`;
+     cookied-but-unvouched → `403`; the inventory asserting every handler on
+     disk is gated); anything about an UNGATED surface (`/login`,
+     `/api/health`, the client-bundle scan for service-role material); and what
+     Next itself puts on a **page** answer — a gated page renders its named
+     refusals, still answers `200`, and carries the `Cache-Control` no offline
+     tier can see.
+  2. *Not provable here, ever:* any positive property of a route HANDLER's own
+     answer — its status, its body shape, its headers, which of its four arms
+     ran. All of it is behind the gate.
+  3. *An absence asserted on this tier passes VACUOUSLY on the 403*, so it is
+     never the proof of a positive property. `tests/http/paging.http.test.ts`'
+     "nothing either route puts on the wire is storable" is satisfied by a 403
+     that carries no `cache-control` at all — it would have stayed green
+     through the whole of BUG-0171's defect, which QA reproduced on its own
+     server. A case like that asserts the status it ACTUALLY graded, so a
+     harness that ever gains a database reddens and is re-authored deliberately
+     instead of silently grading something else.
+  4. *Where a handler's answer is proved instead:* offline, against a stub
+     client and a stub request, where the four arms exist
+     (`tests/offline/paging/*-route.test.ts`); and, where the claim must hold
+     on the real wire, by QA against a production build on staging with a
+     minted cookie, recorded as text in the ticket's History. A criterion may
+     REQUIRE that measurement; it may never be written as a stored check — a
+     builder lane can neither read `.env` nor mint a cookie.
 - **Shared fixture builders live in `tests/fixtures/`** — one place that builds
   a review item in each of its three shapes, a pending claim in each bucket, a
   cycle row, a run row, a source row, an event with provenance. A test that
@@ -1748,6 +1780,17 @@ of bugs would not have survived it.)*
    depends on the previous one that does, because worktrees isolate builds and
    not landings.
 
+10. **An http-tier clause names the status that tier will actually answer.**
+    Before writing "over HTTP …" into a criterion, say what the harness answers
+    that exact request: it has no database and no allowlist, so every gated ask
+    is a fail-closed `403` and a handler's own answer is unreachable there
+    (§10, "What the http tier CAN prove"). BUG-0171 shipped with the clause
+    "over HTTP … on a signed-in GET", which is unsatisfiable by design; QA
+    discharged it by hand on staging and the discovery cost a lane its session.
+    Write the positive claim against the offline stub, and where the wire
+    matters require a QA measurement recorded in the ticket — never a stored
+    check.
+
 ## Common violations
 
 The milestone structure walk maintains this ledger: violation class, count, one
@@ -1797,6 +1840,21 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-11, M3 test-tier amendment — an http-tier clause names what that
+  tier can answer (architect, from admin-window/BUG-0171's close).** §10's
+  `tests/http/**` bullet gains the ceiling that was implicit in "needs no
+  database": `requireAdmin()` fails closed on every gated request there, so a
+  handler's own answer — status, body, headers, which arm ran — is unreachable,
+  and an absence asserted on that tier passes vacuously on the 403. §13 gains
+  rule 10, the authoring half. Why here rather than in a ticket comment:
+  BUG-0171's criteria demanded a proof its own tier could not give, the builder
+  found it mid-lane and QA discharged it by hand against staging; the next
+  decomposition would have authored the same clause, because nothing written
+  down said the tier could not answer it. `DEBT-0019` is the one-file
+  consequence — the case asserts the status it actually graded, so a harness
+  that ever gains a database reddens instead of silently grading something
+  else.
 
 - **2026-09-10, M3 oracle-grain amendment — a block's empty card is not its
   surface's state (architect, ruling BUG-0169).** §10 gains one bullet: a

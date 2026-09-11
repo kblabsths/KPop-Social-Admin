@@ -1628,3 +1628,62 @@ registry is 3 static rows, both sides are keyed on ids the page itself rendered,
 and a new source arrives with a deploy rather than a scraper cycle. It carries a
 comment stating exactly that, and refuses if that read ever comes back larger
 than the small bound the comment names.
+
+## 2026-09-11 — an account carries the DATABASE's words: the one derivation widens from "a document" to "not the database's own words", and BUG-0016's "stack frame included" is reversed (architect, admin-window/BUG-0173, from QA's BUG-0170 residuals)
+
+BUG-0170 put the decision of what a failed read's account may carry in one
+place — `errorMessage`'s part assembly in `src/lib/db/result.ts` — and anchored
+it on one question: a part whose first non-blank character is `<` is a document
+and is replaced by an app-authored, counted clause. QA then measured three ways
+past it, all reachable from that same function: a 2xx non-JSON body becomes a
+697–802 character `SyntaxError` STACK whose first line quotes `"<!DOCTYPE "`
+(so it re-matches the very regex that ticket's pin asserts against) and whose
+rest is absolute server paths; a JSON envelope with no `message` field crosses
+whole through `messageOf`'s `JSON.stringify`, nested `<html>` and all; and a
+transport failure puts `at GetAddrInfoReqWrap.onlookupall (node:dns:121:26)` on
+the operator's card. **Ruled:** widen the ONE derivation rather than fix three
+sites. The class is stated positively — an account carries the parts the
+DATABASE authored — and it is decided by three anchored questions and no fourth:
+did WE serialise this part (provenance; no text inspected at all), does it begin
+`<`, does it carry V8 frame LINES (`at …` ending in `)` or `:line:col`). The
+first two REPLACE the part with a counted clause that quotes nothing; the third
+drops the frame lines only. **Doors closed, explicitly:** no scanning of prose
+for a document fragment anywhere inside it, no entity decoding, no tag
+stripping, no length cap on prose, no codepoint rules, and no matching on a
+runtime's vocabulary (`SyntaxError`, `is not valid JSON`, `ENOTFOUND`) — that is
+the blocklist-chased-one-family-at-a-time class (LESSONS 4, §7 common violations
+row 15), and it is why the `SyntaxError`'s own one-line diagnostic, its
+11-character quotation of the body included, is ACCEPTED as what crosses.
+**What this reverses:** BUG-0016's residual was pinned as "carries the client's
+whole account of a transport failure, untrimmed … stack frame included; trimming
+it silently is the defect" (`tests/offline/dashboard/page.test.ts`,
+`tests/offline/queues/page.test.ts`). What that ticket was protecting is the
+CAUSE, which postgrest-js puts in `details` AFTER the first frame line — so the
+cause still crosses whole (frame LINES are dropped, the part is never truncated
+at the first frame), and the trim is not silent: the part says how many frames
+went. `node:dns:121:26` and `node_modules/@supabase/postgrest-js/dist/index.mjs`
+are the runtime's location, not the database's account, and an operator reading
+a one-line refusal slot is owed the cause instead.
+
+## 2026-09-11 — the http tier has no database and never will: a criterion may not ask it to prove a handler's own answer (architect, admin-window/BUG-0171 close; ARCHITECTURE §10, §13 rule 10, DEBT-0019)
+
+`tests/http/**` builds and starts the real app with DB sentinels and no
+`admin_allowed_emails`, so `requireAdmin()` — the first statement of every route
+handler — fails closed on every gated request, signed-in or not, and a bare
+`403` carries neither the handler's headers nor its body. BUG-0171's criteria
+nonetheless demanded the new `Cache-Control` be asserted "over HTTP … on a
+signed-in GET"; the builder discovered mid-lane that the clause is
+unsatisfiable, QA reproduced it on its own server and discharged the claim by
+hand against staging. **Ruled:** the tier keeps its design — giving it a
+database or an allowlist would make it a second live suite with a credential
+story, which is exactly what STACK.md §4 refused — and the CRITERIA change
+instead. That tier may be asked for the gate's behaviour, for an ungated
+surface, and for what Next puts on a page answer; a handler's own answer is
+proved offline against a stub, and where the wire matters by a QA measurement on
+staging recorded in the ticket's History, never as a stored check (a builder
+lane can neither read `.env` nor mint a cookie). One corollary, recorded because
+it is the trap: an ABSENCE asserted on that tier passes vacuously on the 403 —
+the paging suite's "nothing either route puts on the wire is storable" would
+have stayed green through the whole of BUG-0171's defect — so such a case
+asserts the status it actually graded, and a harness that ever gains a database
+reddens rather than silently grading something else.
