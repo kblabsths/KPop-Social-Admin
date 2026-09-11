@@ -1473,4 +1473,55 @@ describe("the refusal line says who wrote the words", () => {
     expect(asMachine.mono).toContain("pending_claims");
     expect(asApp.mono).toContain("pending_claims");
   });
+
+  /**
+   * The two arms only a REJECTED fetch can reach, driven end to end through
+   * the real `fetchJson` — the face, not just the words.
+   *
+   * `asError`'s last-resort sentence is the app's own prose for a rejection
+   * that carried no words of its own, and criterion 1 is unconditional: a
+   * sentence this app wrote reads in sans on every arm, including the one no
+   * constant in the offline arm table reaches. Its neighbour is the control:
+   * a transport rejection that DID bring words keeps them AND keeps the
+   * machine's face, so neither assertion passes by rendering everything one
+   * way.
+   */
+  it("a rejection with no words of its own reads in the app's voice; one with words stays the machine's", async () => {
+    const LAST_RESORT = "the page request failed before it answered";
+
+    // Nothing to say: fetch rejects carrying a value with no message at all.
+    vi.stubGlobal("fetch", () => Promise.reject(undefined));
+    const wordless = await requestPage<Row>(BEFORE, DEPS);
+    expect(wordless.refusal?.reason).toBe(LAST_RESORT);
+    const ours = faces(
+      render(h(PageMore, { state: wordless, holds: HOLDS, size: SIZE, onPress: () => {} })),
+    );
+    expect(ours.sans).toContain(LAST_RESORT);
+    expect(ours.mono).not.toContain(LAST_RESORT);
+    // The route is still the machine identifier beside it, isolated alone.
+    expect(ours.mono).toContain(PAGE_ROUTES.claims);
+    expect(ours.isolated.map((run) => run.trim())).toEqual([PAGE_ROUTES.claims]);
+
+    // A non-Error rejection with no message reaches the same sentence: the
+    // words are the app's either way, so the face is too.
+    vi.stubGlobal("fetch", () => Promise.reject({ code: "ECONNRESET" }));
+    const objectThrown = await requestPage<Row>(BEFORE, DEPS);
+    expect(objectThrown.refusal?.reason).toBe(LAST_RESORT);
+    expect(objectThrown.refusal?.reasonFrom).toBe("this app");
+
+    // The discriminator: the transport's OWN words, which this app did not
+    // write, still read as the machine on the very same line.
+    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
+    const transport = await requestPage<Row>(BEFORE, DEPS);
+    expect(transport.refusal?.reason).toBe("Failed to fetch");
+    const theirs = faces(
+      render(h(PageMore, { state: transport, holds: HOLDS, size: SIZE, onPress: () => {} })),
+    );
+    expect(theirs.mono).toContain("Failed to fetch");
+    expect(theirs.sans).not.toContain("Failed to fetch");
+    // One isolated run carrying both, exactly as the answer-carried arm draws.
+    expect(theirs.isolated).toHaveLength(1);
+    expect(theirs.isolated[0]).toContain(PAGE_ROUTES.claims);
+    expect(theirs.isolated[0]).toContain("Failed to fetch");
+  });
 });
