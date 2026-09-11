@@ -34,12 +34,14 @@
  *     reference rather than a cell;
  *   - no HTTP, no client, no React.
  *
- * **It also holds two things that are not verdict vocabulary**: `factKey`, the
- * app's one spelling of a fact identifier (`events.venue`), and the one
- * definition of "blank" (`hasVisibleContent`, admin-window/BUG-0089). Both
- * live here for the same structural reason, spelled out at each function: the
- * surfaces and guards that need them may import this module, and this module
- * may import nothing.
+ * **It also holds three things that are not verdict vocabulary**: `factKey`,
+ * the app's one spelling of a fact identifier (`events.venue`), the one
+ * definition of "blank" (`hasVisibleContent`, admin-window/BUG-0089), and the
+ * app's one spelling of the em dash character with the absence question over
+ * it (`EM_DASH`/`isAbsentText`, admin-window/BUG-0184). All live here for the
+ * same structural reason, spelled out at each declaration: the surfaces and
+ * guards that need them may import this module, and this module may import
+ * nothing.
  *
  * **Absence is not this file's business.** Whether `settle_review_item` is
  * installed is answered by `readSettlementReadiness` reading the `verdicts`
@@ -114,6 +116,55 @@ export function visibleContent(text: string): string {
  */
 export function hasVisibleContent(text: unknown): boolean {
   return typeof text === "string" && visibleContent(text).length > 0;
+}
+
+/**
+ * The app's ONE spelling of the em dash CHARACTER (admin-window/BUG-0184).
+ *
+ * It is the character and not a meaning. The app writes this glyph for two
+ * unrelated jobs: it JOINS the two clauses of a composed sentence
+ * (`components/ui/error-line.tsx`, `components/ui/paging.tsx`, the edit fix
+ * sentences in `components/edit-refusal.ts`), and it is what `nullDash()`
+ * draws for a value that is not there. Naming the constant for the glyph is
+ * what lets both jobs share one spelling without one identifier meaning two
+ * things (ARCHITECTURE common violations row 18); the MEANING "no value"
+ * belongs to `nullDash()` and to `isAbsentText` below.
+ *
+ * It lives in this leaf for the reason `visibleContent` does: `format.ts`
+ * imports React and this module may import nothing, so a leaf that needs the
+ * character (`lib/paging/machine.ts`) can reach it only here. `format.ts`
+ * RE-EXPORTS this binding, so every `import { EM_DASH } from "@/lib/format"`
+ * call site is unchanged and the app still holds one spelling.
+ * `tests/offline/verdict/decision.test.ts` pins that it is spelled once.
+ */
+export const EM_DASH = "—";
+
+/**
+ * **Is this string one of the app's spellings of NO VALUE?** — the absence
+ * question, as distinct from `hasVisibleContent`'s ink question
+ * (admin-window/BUG-0184).
+ *
+ * Strictly WIDER than `hasVisibleContent`, and that is why both exist: a
+ * string is absent when it puts no ink on the page at all, OR when the only
+ * ink it puts there is the app's own dash. A lone em dash is an absence in
+ * this app by construction — it is what `nullDash()` renders and what
+ * `count(null)`, `absoluteUtc(null)` and `relativeAge(null).text` return — so
+ * a value that reads back as one is a value nothing filled in.
+ *
+ * **The two doors this does NOT open.** `hasVisibleContent` is not widened by
+ * this and keeps every caller it has: a lone dash an operator TYPED into a
+ * close note is content to the note guards, and a source the registry NAMES
+ * `—` has a name (`lib/sources/names.ts`). Blank and absent are two questions;
+ * this gives the second one a home a leaf can reach, it does not merge them.
+ *
+ * `isAbsent` in `lib/format.ts` — the app's one absence test over a whole
+ * `ReactNode` — delegates its STRING arm to this and nothing else, so there is
+ * one body and the two predicates agree by construction rather than by
+ * vigilance. `refuse()` in `lib/paging/machine.ts` asks it directly.
+ */
+export function isAbsentText(text: string): boolean {
+  const visible = visibleContent(text);
+  return visible === "" || visible === EM_DASH;
 }
 
 /**

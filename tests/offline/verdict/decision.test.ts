@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  EM_DASH,
   REFERENCE_FIELDS,
   VERDICT_ACTIONS,
   decisionRefusals,
   factKey,
+  hasVisibleContent,
+  isAbsentText,
   isReferenceField,
   noteRequired,
+  visibleContent,
   type VerdictAction,
   type VerdictDecision,
   type VerdictValue,
@@ -258,6 +262,151 @@ describe("the hand-spelling guard itself", () => {
     // And the producer spells it ONCE: a second join here is the same debt,
     // four lines from the function that exists to prevent it.
     expect(handSpelledFactKeys(codeText(FACT_KEY_PRODUCER))).toHaveLength(1);
+  });
+});
+
+/**
+ * A string literal whose WHOLE content is the em dash — the app SPELLING the
+ * character, as opposed to writing a sentence that contains one.
+ *
+ * The quote adjacency is the whole rule and it is deliberate. `"—"`, `'—'` and
+ * `` `—` `` are three ways of declaring the glyph and all three are spellings;
+ * `"KPop Social Space — Admin"` and `{" — "}` are prose and punctuation, where
+ * the dash is a character IN a sentence the app wrote, not a declaration of
+ * the character itself. A rule that flagged those would be unsatisfiable on
+ * this tree (admin-window/BUG-0184), and would say nothing about the defect it
+ * exists for: a second `const DASH = "—"` in some other file, drifting from
+ * the first the day one of them is changed (LESSONS 5).
+ */
+const WHOLE_DASH_LITERAL = /(["'`])—\1/g;
+
+/**
+ * Every spelling of the character in a file's CODE.
+ *
+ * Fed `codeText` (`tests/offline/source-tree.ts`) like the fact-key guard
+ * above, because the character appears in doc comments across the tree — this
+ * leaf's own docstrings included — and prose is not a spelling.
+ */
+function dashSpellings(code: string): string[] {
+  return code.match(WHOLE_DASH_LITERAL) ?? [];
+}
+
+/** The one file allowed to spell the character: `EM_DASH`'s declaration. */
+const EM_DASH_PRODUCER = "src/lib/verdict/decision.ts";
+
+describe("EM_DASH — the app's one spelling of the character", () => {
+  it("is the em dash and nothing else", () => {
+    // Built from the code point rather than pasted, so this assertion is an
+    // independent oracle rather than the constant agreeing with a copy of
+    // itself (the fact-key guard's reasoning, one file up).
+    expect(EM_DASH).toBe(String.fromCodePoint(0x2014));
+    expect(EM_DASH).toHaveLength(1);
+  });
+
+  it("flags a hand-spelling, in each quoting form this repo could write", () => {
+    for (const site of [
+      'export const EM_DASH = "—";',
+      "const DASH = '—';",
+      "const dash = `—`;",
+      '      <span className="text-muted">{"—"}</span>',
+    ]) {
+      expect(dashSpellings(site), site).toHaveLength(1);
+    }
+  });
+
+  it("says nothing about a dash the app wrote INSIDE a sentence", () => {
+    // Every one of these is on the landed tree, and the guard is unsatisfiable
+    // if it fires on one: the metadata title (`src/app/layout.tsx`), the two
+    // composed sentences on the record page, the spaced joiner in
+    // `components/cycles/cycle-health.tsx`, and the imported constant doing
+    // the joining in `components/edit-refusal.ts`.
+    for (const line of [
+      '  title: "KPop Social Space — Admin",',
+      '        `recorded as an admin override — a claim at the admin tier, ` +',
+      '        `applied through the pipeline and logged — and the pipeline then ` +',
+      '              {" — "}',
+      "  return `${subject} cannot be cleared ${EM_DASH} type a value into it.`;",
+      'const almost = "—x";',
+    ]) {
+      expect(dashSpellings(line), line).toEqual([]);
+    }
+  });
+
+  it("finds the character spelled in src/ nowhere but its own declaration", () => {
+    // The state this ticket lands: `src/lib/format.ts` declared a second copy
+    // and `src/components/edit-refusal.ts` a third (`const DASH = "—"`), so
+    // the app held three spellings of one character across two layers that
+    // could not import each other. format.ts now re-exports this binding and
+    // edit-refusal imports it.
+    const sites = sourceFiles().filter((file) => dashSpellings(codeText(file)).length > 0);
+    expect(sites).toEqual([EM_DASH_PRODUCER]);
+    expect(dashSpellings(codeText(EM_DASH_PRODUCER))).toHaveLength(1);
+  });
+});
+
+/**
+ * `isAbsentText` — the app's ONE absence-of-text question, and the half of it
+ * `hasVisibleContent` does not answer (admin-window/BUG-0184).
+ *
+ * Two predicates, two questions, on purpose: "is there any ink here" and "is
+ * this one of the app's spellings of no value". The second is strictly wider,
+ * because a lone em dash is what `nullDash()` draws for a value nobody filled
+ * in — so a reason that reads back as one is a refusal that said nothing.
+ */
+describe("isAbsentText", () => {
+  it("calls absent everything with no ink in it, wherever the invisible sits", () => {
+    for (const absent of ["", "   ", "\t\n", "\u200b", "\u2060", "\u00ad", "\ufeff", "\u00a0", "\u3164", "  \u200b  "]) {
+      expect(isAbsentText(absent), JSON.stringify(absent)).toBe(true);
+    }
+  });
+
+  it("calls absent the app's own dash, however it is padded", () => {
+    // The input BUG-0184 was filed for, asked of the app's own constant rather
+    // than retyped as a character (LESSONS 4/5).
+    for (const absent of [EM_DASH, ` ${EM_DASH} `, `\u200b${EM_DASH}\u200b`, `\n${EM_DASH}\t`]) {
+      expect(isAbsentText(absent), JSON.stringify(absent)).toBe(true);
+    }
+  });
+
+  it("keeps present anything with real ink in it, the dash included", () => {
+    // The must-NOT-flag half (LESSONS 8). A dash INSIDE words is punctuation
+    // in someone's sentence — the machine's refusals are full of them — and a
+    // braille blank is an assigned printable character, which is where
+    // `visibleContent`'s own docstring draws the line.
+    for (const present of [
+      "0",
+      "no value",
+      "\u2800",
+      `${EM_DASH}${EM_DASH}`,
+      `${EM_DASH}\u200b${EM_DASH}`,
+      `${EM_DASH}x`,
+      `column events.badcol ${EM_DASH} does not exist`,
+      "\u200bwhy it stands\u200b",
+    ]) {
+      expect(isAbsentText(present), JSON.stringify(present)).toBe(false);
+    }
+  });
+
+  it("is strictly WIDER than hasVisibleContent, and differs on exactly the dash", () => {
+    // Why both exist, stated as an assertion rather than as a comment: absent
+    // implies not-visible for every input EXCEPT the app's own dash, which has
+    // ink and still means nothing was filled in.
+    for (const text of ["", "   ", "\u200b", EM_DASH, ` ${EM_DASH} `, "0", `${EM_DASH}x`, "a note"]) {
+      const absent = isAbsentText(text);
+      const inked = hasVisibleContent(text);
+      const dashOnly = visibleContent(text) === EM_DASH;
+      expect(absent, JSON.stringify(text)).toBe(!inked || dashOnly);
+    }
+  });
+
+  it("leaves hasVisibleContent UNWIDENED — a dash an operator typed is still content", () => {
+    // The door deliberately left shut (BUG-0184 criterion 4). A lone dash in a
+    // close note is a thing a person typed, so the note guards still accept
+    // it; widening the ink question would change which verdicts the close form
+    // refuses, and that is a different ticket.
+    expect(hasVisibleContent(EM_DASH)).toBe(true);
+    const decision = decisionOf({ ...WELL_FORMED.wont_fix, note: EM_DASH });
+    expect(decisionRefusals(decision)).not.toContain("note_required");
   });
 });
 
