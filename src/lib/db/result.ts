@@ -451,37 +451,53 @@ function carriesDocument(part: string): boolean {
 
 /**
  * The surviving lines of ONE part, with every line an EARLIER kept line
- * ALREADY ENDS WITH dropped — the same sentence said once, not twice
- * (admin-window/DEBT-0020).
+ * ALREADY SAID dropped — the same sentence said once, not twice
+ * (admin-window/DEBT-0020, corrected by admin-window/BUG-0199).
  *
- * WHY A PART REPEATS ITSELF AT ALL, measured before a line of this was
- * written: postgrest-js builds a transport failure's `details` as the wrapper
- * line, a blank line, `Caused by: ${cause.name}: ${cause.message}`, and then
- * — when the cause carries one — the cause's whole `stack`, whose FIRST line
- * is `${cause.name}: ${cause.message}` again
+ * WHY A PART REPEATS ITSELF AT ALL, measured through the real client before a
+ * line of this was written: postgrest-js builds a transport failure's
+ * `details` as the wrapper line, a blank line, `Caused by: ${cause.name}:
+ * ${cause.message}`, then — when the cause carries a `code`, which node's
+ * always do — ` (${cause.code})` ON THAT SAME LINE, and then the cause's whole
+ * `stack`, whose FIRST line is `${cause.name}: ${cause.message}` again
  * (`node_modules/@supabase/postgrest-js/dist/index.mjs`, the
- * `errorDetails += "\n" + cause.stack` arm). The frames go by question 3 and
- * both prose lines stay, so the account stated one true sentence twice:
+ * `res.catch((fetchError) => …)` arm). The frames go by question 3 and both
+ * prose lines stay, so the account stated one true sentence twice:
  * `TypeError: fetch failed Caused by: Error: getaddrinfo ENOTFOUND db.invalid
- * Error: getaddrinfo ENOTFOUND db.invalid (1 runtime stack frame dropped)`.
- * `errorMessage`'s own dedup cannot reach it: that one drops a PART another
- * part contains, and both copies here live inside the one reduced `details`.
+ * (ENOTFOUND) Error: getaddrinfo ENOTFOUND db.invalid (1 runtime stack frame
+ * dropped)` — 158 characters, measured over a transport that rejects the way
+ * node's `fetch` rejects. `errorMessage`'s own dedup cannot reach it: that
+ * one drops a PART another part contains, and both copies here live inside
+ * the one reduced `details`.
  *
- * THE RULE IS ENDS-WITH, AND DELIBERATELY NOT CONTAINS. The repeat is a
- * SUFFIX of the line that already said it — `Caused by: X` said `X` last —
- * so the later line adds no word the account does not already carry, in that
- * order, at that end. A CONTAINS rule would also delete the line a longer
- * line merely BEGINS with, and that is a database wrapping its own message
- * onto a continuation line: both of those are its words and both cross whole
- * (admin-window/DEBT-0020's twin, LESSONS 8). Nothing is matched here — no
- * `Caused by:`, no error names, no frame vocabulary, no length cap: a
- * vocabulary would be the fourth question this file refuses to ask
- * (LESSONS 4, ARCHITECTURE.md §7 common violations row 15).
+ * THE RULE, AND THE ONE THING IT SPARES. A line goes when an earlier kept
+ * line ALREADY CARRIES IT WHOLE somewhere OTHER THAN AT ITS OWN START — the
+ * earlier line said every word of it, in that order, and said something of
+ * its own BEFORE it. `Caused by: <sentence> (<code>)` is that: the account
+ * has already stated the sentence, with an attribution the bare copy does not
+ * add.
  *
- * A line an earlier kept line ends with EXACTLY is dropped by the same rule,
- * because a line is its own suffix and one sentence stated twice is the whole
- * defect — the direction is the only thing that matters, not the length of
- * the overlap.
+ * What that spares is the twin this rule exists to survive
+ * (admin-window/DEBT-0020, LESSONS 8): a line an earlier line BEGINS WITH
+ * stays. That is a database message wrapped onto a continuation line which
+ * opens with the first line's own words — the shorter line is not an addition
+ * to the longer one, it is its opening, and both halves are the database's.
+ * A line an earlier line repeats EXACTLY is the limit case of that and stays
+ * for the same reason: the database said it twice, so the account does.
+ *
+ * WHY ENDS-WITH WAS WRONG, recorded so it does not come back: this rule first
+ * landed as `held.endsWith(line)`, derived from a hand-built cause carrying no
+ * `code`. Node's causes all carry one, postgrest-js writes it BETWEEN the
+ * attributing line and the stack head, and the ends-with test therefore missed
+ * every transport failure a deployed instance actually produces
+ * (admin-window/BUG-0199, measured at 158 and 167 characters through the real
+ * client).
+ *
+ * Nothing is MATCHED here — no `Caused by:`, no parenthesised code, no error
+ * names, no frame vocabulary, no length cap. The rule reads only where one
+ * line sits inside another, so ` (ENOTFOUND)` is never a spelling this file
+ * knows and a client that formats its attribution differently is answered by
+ * the same question (LESSONS 4, ARCHITECTURE.md §7 common violations row 15).
  *
  * It is ONE-DIRECTIONAL, over already-kept lines only: a line is judged
  * against what the account has committed to saying BEFORE it, never against
@@ -492,7 +508,10 @@ function carriesDocument(part: string): boolean {
 function saidOnce(lines: readonly string[]): string[] {
   const kept: string[] = [];
   for (const line of lines) {
-    if (kept.some((held) => held.endsWith(line))) continue;
+    const alreadySaid = kept.some(
+      (held) => held.includes(line) && !held.startsWith(line),
+    );
+    if (alreadySaid) continue;
     kept.push(line);
   }
   return kept;
@@ -501,12 +520,12 @@ function saidOnce(lines: readonly string[]): string[] {
 /**
  * A part that carries NO document, read LINE BY LINE: every line that is a
  * runtime STACK FRAME goes and is counted, and every other line is kept
- * verbatim and joined into one line — except a line the account has ALREADY
- * SAID, which crosses once rather than twice (`saidOnce` above,
- * admin-window/DEBT-0020). That pass runs HERE and only here: it reads the
- * lines that survived the frame drop, which is the one place this file
- * reshapes a part at all, so a part carrying no frame is still returned
- * exactly as it arrived.
+ * verbatim and joined into one line — except a line an earlier kept line has
+ * ALREADY SAID inside itself, which crosses once rather than twice
+ * (`saidOnce` above, admin-window/DEBT-0020). That pass runs HERE and only
+ * here: it reads the lines that survived the frame drop, which is the one
+ * place this file reshapes a part at all, so a part carrying no frame is
+ * still returned exactly as it arrived, repeated line and all.
  *
  * Question 2 IS NOT ASKED HERE AT ALL (admin-window/BUG-0187). It is asked
  * once, of the whole part, by this function's only caller — so a part that
