@@ -3297,6 +3297,117 @@ describe("a narrowing with no chip row", () => {
     expect(bucketCaption(narrowed)).toBe(bucketCaption(bare));
   });
 
+  /**
+   * THE STANDING TAB'S OWN BUCKET IS NOT A CONTROL ABOVE (QA on
+   * admin-window/BUG-0192; the hazard that ticket named in its own words).
+   *
+   * On the standing tab `listFilterOf` MERGES the tab's bucket into the list's
+   * filter and the URL's own `?bucket=` is dropped. The widened count that
+   * decides the chip clause must therefore drop the chip facets the URL
+   * carried **out of the filter the read was given** — and the bucket in that
+   * filter is the TAB's, not the URL's. Subtracting it compares this tab's
+   * rows against the OTHER tab's population, and the comparison then differs
+   * for a reason that has nothing to do with the chip bar.
+   *
+   * The state is one CLICK away, and this test reaches it that way: the tab
+   * link is followed off the markup rather than typed, so a page that stops
+   * carrying `?bucket=` across the tabs stops reaching it honestly rather than
+   * passing on a URL nobody can build.
+   *
+   * Non-vacuous in both directions: at `SOURCE.third` + `groups` the source
+   * chip removes NOT ONE row of the standing subset (fixture arithmetic
+   * below), so no clause may point at the chip bar; at `PARTIAL_SOURCE` +
+   * `SHARED_DOMAIN` it really does remove one, and the clause is there.
+   */
+  it.fails(
+    "claims no filter above on the standing tab when the chip set removed no row of it",
+    async () => {
+      /** Every head:true count of the view a render issued, as its facets. */
+      const countFacets = (stub: StubClient): Record<string, string>[] =>
+        stub.calls
+          .filter((call: RecordedCall) => call.table === T.pendingClaims)
+          .filter((call: RecordedCall) =>
+            call.steps.some(
+              (step) =>
+                step.method === "select" &&
+                (step.args[1] as { head?: boolean } | undefined)?.head === true,
+            ),
+          )
+          .map((call: RecordedCall) =>
+            Object.fromEntries(
+              call.steps
+                .filter((step) => step.method === "eq")
+                .map((step) => [String(step.args[0]), String(step.args[1])]),
+            ),
+          );
+
+      /** The claims of the standing subset a set of facets keeps. */
+      const standingRows = (facets: Record<string, string>) =>
+        matching({ ...facets, bucket: STANDING_BUCKET });
+
+      // The URL the operator is on: a bucket chip, a source chip and the
+      // control-less domain, all three really applied by the BUCKETS tab.
+      const onBuckets = { bucket: "escalated", source_id: SOURCE.third, domain: "groups" };
+      const buckets = await renderClaims(healthyScript(), onBuckets);
+      expect(droppedLine(buckets).lines).toBe(0);
+
+      // ...and the click: the standing tab's own href, read off the page.
+      const href =
+        cheerio.load(buckets)('[data-tab="standing"] a').attr("href") ?? "";
+      const params = Object.fromEntries(new URLSearchParams(href.split("?")[1] ?? ""));
+      // Non-vacuous: the click really does carry the bucket parameter over to
+      // a tab that drops it — which is the state under test.
+      expect(params.bucket).toBe(onBuckets.bucket);
+      expect(params.tab).toBe("standing");
+
+      const { markup, stub } = await renderWithStub(healthyScript(), params);
+      // Non-vacuous, the arithmetic: the source chip removed NO row of the
+      // standing subset under this domain, and the list is narrowed all the
+      // same (the domain did it), so the narrowed arm is the one on screen.
+      expect(standingRows({ source_id: SOURCE.third, domain: "groups" })).toEqual(
+        standingRows({ domain: "groups" }),
+      );
+      expect(standingRows({ domain: "groups" }).length).toBeGreaterThan(0);
+      expect(standingRows({ domain: "groups" }).length).toBeLessThan(
+        matching({ bucket: STANDING_BUCKET }).length,
+      );
+      expect(claimIds(markup)).toEqual(
+        oldestFirst(standingRows({ source_id: SOURCE.third, domain: "groups" })),
+      );
+
+      // THE SENTENCE: the chip bar shaped nothing here, so nothing points at
+      // it — and the line is the one the same page renders without the
+      // parameter it dropped, which is what "dropped" means.
+      expect(line(markup)).not.toContain(NARROWED_BY_FILTERS);
+      const withoutTheDroppedBucket = await renderClaims(healthyScript(), {
+        tab: "standing",
+        source_id: SOURCE.third,
+        domain: "groups",
+      });
+      expect(line(markup)).toBe(line(withoutTheDroppedBucket));
+
+      // THE READ: every count this tab issues is a count of THIS tab's subset.
+      // A count with the tab's bucket dropped is a count of the other tab's
+      // population, and no sentence on this page is about that set.
+      for (const facets of countFacets(stub)) {
+        expect(facets.bucket, JSON.stringify(facets)).toBe(STANDING_BUCKET);
+      }
+
+      // The other direction, under the same dropped bucket: a source that
+      // really does remove a row of this subset still earns the clause.
+      expect(
+        standingRows({ source_id: PARTIAL_SOURCE, domain: SHARED_DOMAIN }).length,
+      ).toBeLessThan(standingRows({ domain: SHARED_DOMAIN }).length);
+      const reallyNarrowed = await renderClaims(healthyScript(), {
+        tab: "standing",
+        bucket: "escalated",
+        source_id: PARTIAL_SOURCE,
+        domain: SHARED_DOMAIN,
+      });
+      expect(line(reallyNarrowed)).toContain(NARROWED_BY_FILTERS);
+    },
+  );
+
   it("puts a space between the value and the words around it", async () => {
     // The rule the tree-wide scanner cannot see in this file's transform
     // (`tests/offline/ui/copy.test.ts`), asserted on the rendering it now
