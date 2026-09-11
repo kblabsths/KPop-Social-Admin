@@ -2144,6 +2144,120 @@ describe("an account carries the parts the database authored", () => {
       }
     }
   });
+
+  /**
+   * ONE SENTENCE, ONCE — and the twin that forbids the greedy rule
+   * (admin-window/DEBT-0020, LESSONS 8).
+   *
+   * MEASURED on the pre-ticket tree before a line of the fix was written:
+   * this shape's account read `TypeError: fetch failed Caused by: Error:
+   * getaddrinfo ENOTFOUND db.invalid Error: getaddrinfo ENOTFOUND db.invalid
+   * (1 runtime stack frame dropped)` — one true sentence the database
+   * authored, stated twice. postgrest-js writes `Caused by: ${cause.name}:
+   * ${cause.message}` and then appends the cause's whole `stack`, whose FIRST
+   * line is `${cause.name}: ${cause.message}` again, so the repeat is a
+   * SUFFIX of the line that already said it. `errorMessage`'s part-level
+   * dedup cannot see it: both copies live inside the ONE reduced `details`.
+   *
+   * The twin is the half that keeps the fix honest. A rule that dropped any
+   * line another kept line CONTAINS would also delete a database message
+   * wrapped onto a continuation line that opens with the first line's own
+   * words — so both directions are graded here, on the same code path (each
+   * twin part carries a frame, which is the only state in which this file
+   * reshapes a part at all).
+   */
+  it("says a repeated cause sentence once, and a prefix-sharing line twice", () => {
+    /** Occurrences of `needle` in `haystack` — the whole grading below. */
+    const occurrences = (haystack: string, needle: string): number =>
+      haystack.split(needle).length - 1;
+
+    // The measured transport shape, built exactly as postgrest-js builds it:
+    // the wrapper line, a BLANK line, the attributed cause, the cause's stack
+    // (head line first), and V8 frames.
+    const sentence = "Error: getaddrinfo ENOTFOUND db.invalid";
+    const repeated = {
+      code: "",
+      message: "TypeError: fetch failed",
+      details: [
+        "TypeError: fetch failed",
+        "",
+        `Caused by: ${sentence}`,
+        sentence,
+        "    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:120:26)",
+        `    at async readRows (${DEPLOY}/src/lib/db/result.ts:476:20)`,
+      ].join("\n"),
+      hint: "",
+    };
+
+    const transport = classify(repeated, T.pendingClaims);
+    expect(transport.kind).toBe("error");
+    if (transport.kind !== "error") return;
+
+    // ONCE, and STILL THERE — the attributing line is the copy that survives,
+    // so the account still says who caused what.
+    expect(transport.message).toContain(sentence);
+    expect(occurrences(transport.message, sentence)).toBe(1);
+    expect(transport.message).toContain(`Caused by: ${sentence}`);
+    // Nothing else about the account moved: it still names the object read,
+    // still carries the wrapper once, still counts the frames in the app's
+    // own words, and still carries no runtime and no filesystem.
+    expect(transport.reading).toBe(T.pendingClaims);
+    expect(occurrences(transport.message, "TypeError: fetch failed")).toBe(1);
+    expect(transport.message).toMatch(/\b2\b[^)]{0,40}frame/);
+    expect(transport.message).not.toContain("node:dns:");
+    expect(transport.message).not.toContain("GetAddrInfoReqWrap");
+    expect(transport.message).not.toContain(DEPLOY);
+    // And the operator reads that one sentence once off the rendered card.
+    expect(occurrences(cardTextOf(transport), sentence)).toBe(1);
+
+    // THE TWIN — two lines that share a prefix but are not the same line.
+    // Each pair is the database's own words twice over and BOTH lines cross
+    // whole, whichever order they arrive in.
+    const TIMEOUT = "canceling statement due to statement timeout";
+    const CONSTRAINT = "duplicate key value violates unique constraint";
+    const wrapped = `${TIMEOUT} after 30000 ms, at the end of the statement`;
+    const PREFIX_SHARING: ReadonlyArray<readonly [string, string]> = [
+      // A message wrapped onto a second line that BEGINS with the first.
+      [TIMEOUT, wrapped],
+      // The same pair the other way round, so arrival order cannot save the
+      // rule from the greedy reading.
+      [wrapped, TIMEOUT],
+      // And two lines that merely SHARE a prefix, neither inside the other.
+      [`${CONSTRAINT} "groups_name_key"`, `${CONSTRAINT} "groups_slug_key"`],
+    ];
+
+    for (const [first, second] of PREFIX_SHARING) {
+      const arrived = `${first} ${second}`;
+      const twin = classify(
+        {
+          code: "",
+          message: "the statement was refused",
+          details: [
+            first,
+            second,
+            `    at async readRows (${DEPLOY}/src/lib/db/result.ts:476:20)`,
+          ].join("\n"),
+          hint: "",
+        },
+        T.pendingClaims,
+      );
+      expect(twin.kind, arrived).toBe("error");
+      if (twin.kind !== "error") continue;
+      // Both lines, whole, in the order they arrived — the same count of each
+      // the part itself carries, so a rule that deleted either one fails here.
+      expect(twin.message, arrived).toContain(arrived);
+      expect(occurrences(twin.message, first), `${arrived}: first`).toBe(
+        occurrences(arrived, first),
+      );
+      expect(occurrences(twin.message, second), `${arrived}: second`).toBe(
+        occurrences(arrived, second),
+      );
+      // Non-vacuous: this part really did go down the reshaping path, so the
+      // dedup ran over these two lines and kept them both.
+      expect(twin.message, arrived).toMatch(/\b1\b[^)]{0,40}frame/);
+      expect(twin.message, arrived).not.toContain(DEPLOY);
+    }
+  });
 });
 
 /**
