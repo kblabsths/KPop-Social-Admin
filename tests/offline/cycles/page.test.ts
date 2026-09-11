@@ -3632,6 +3632,43 @@ describe("the state a gauge surface is in, at the grain the oracle reads it", ()
     expect(ownCards(filled, SURFACE_HOOKS.cycle_health)).toEqual([]);
   });
 
+  /**
+   * QA pin, admin-window/BUG-0206 — the sibling half of admin-window/BUG-0203,
+   * on the panel directly below it on the same page.
+   *
+   * `LatencySection` composes the very `EmptyWords` this case needs
+   * (`src/components/cycles/latency.tsx`, `nothing = applies === 0 &&
+   * verdictUnsets === 0`) and hands them ONLY to its `Distribution` and its
+   * `TrendTable`; the four `GaugeCard`s above them render regardless, so a
+   * window that holds no decision still states `0`, `0`, `0` and a dash, each
+   * with its own sub-line, exactly where the two M3 user-sims read the four
+   * calm zeros they filed BUG-0203 for.
+   *
+   * Measured on staging 2026-09-11 18:03 UTC: the latency window
+   * [2026-09-04T18:03:40.727Z, 2026-09-11T18:03:40.727Z) holds 0 of the 1,712
+   * `field_provenance` rows the table holds, and the panel rendered `Applies
+   * in this window 0` / `Unset by a human decision 0` / `Applies with no claim
+   * found 0` two inches under the 69-row cycles table — the zeros exclude
+   * 1,712 rows and name none of them (LOOK_AND_FEEL, Zeroes).
+   *
+   * Strict: the day the divergence goes, this XPASSes and sends the reader to
+   * the ticket. Flipping it to a plain `it(...)` is part of that fix, and so
+   * is narrowing `LATENCY_COUNTS` out of the "states every labelled count as a
+   * real 0" case above, the way BUG-0203 narrowed `HEALTH_COUNTS` out of it.
+   */
+  it.fails(
+    "renders no latency figure where the window holds no decisions (admin-window/BUG-0206)",
+    async () => {
+      const markup = await renderCycles(emptyWindows());
+
+      for (const label of LATENCY_COUNTS) {
+        expect(figureLabels(markup), label).not.toContain(label);
+      }
+      // In their place, ONE card of the surface's own — not its two blocks'.
+      expect(ownCards(markup, SURFACE_HOOKS.resolution_latency)).toEqual(["empty"]);
+    },
+  );
+
   it("explains every card it excludes from two facts, not one", async () => {
     const markup = await renderCycles(emptyWindows());
     const $ = cheerio.load(markup);
