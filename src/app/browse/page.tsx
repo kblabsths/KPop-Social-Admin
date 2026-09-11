@@ -3,6 +3,7 @@ import { BrowseTable } from "@/components/browse/browse-table";
 import { ColumnSelector } from "@/components/browse/column-selector";
 import { PagedBrowseTable } from "@/components/browse/paged-browse-table";
 import {
+  DroppedParamsLine,
   Empty,
   Page,
   Section,
@@ -27,9 +28,12 @@ import {
   browseQuery,
   columnOptions,
   columnsHref,
+  columnsParamValue,
+  namedColumns,
   shownColumns,
   type BrowseColumnKey,
 } from "@/lib/browse/views";
+import { droppedParams } from "@/lib/url/dropped-params";
 
 /**
  * Browse — the curated recent-events view (campaign admin-window/TASK-0015).
@@ -122,6 +126,22 @@ export default async function BrowsePage({
   const params = (await searchParams) ?? {};
   const view = RECENT_EVENTS;
   const shown = shownColumns(view, params[COLUMNS_PARAM]);
+
+  // WHAT `cols` ACTUALLY CHOSE — the narrowing this page hands the dropped-
+  // parameter rule below (admin-window/BUG-0202). It is read from the same
+  // function `shownColumns` reads it from (`namedColumns`), never re-parsed
+  // here, so the columns on screen and the sentence about them can never come
+  // to disagree: a value naming at least one configured column is applied and
+  // is not named below, whatever else it carried; a value naming none chose
+  // nothing, the default set renders, and the line says so.
+  //
+  // The entry's VALUE is the canonical `cols` the page applied rather than the
+  // URL's raw text, for the same reason `/sources` hands over its filter: the
+  // rule asks what the render carried, and `undefined` is how "carried
+  // nothing" is spelled to it.
+  const chosen = namedColumns(view, params[COLUMNS_PARAM]);
+  const appliedColumns =
+    chosen.length === 0 ? undefined : columnsParamValue(chosen);
   const hrefFor = (keys: readonly BrowseColumnKey[]) =>
     columnsHref(view, BROWSE_PATH, keys);
 
@@ -278,6 +298,41 @@ export default async function BrowsePage({
 
   return (
     <Page title="Browse">
+      {/* What the URL asked for that this page did NOT do — the one sentence
+          `/claims`, `/queues`, `/cycles` and `/sources` already render, from
+          the same code (admin-window/BUG-0202; ARCHITECTURE.md common
+          violations row 9). It stands above the section because it is a fact
+          of the URL and not of any read: it renders the same over an `ok`
+          read, a refusal, an empty window and an events table that is not
+          there.
+
+          Tomas shares a Browse view by URL — the column chips survive in it —
+          so a `cols` the recipient's page discards is exactly the case that
+          must not be silent: `?cols=banana` drew all seven default columns
+          and said nothing, and the recipient read the sender's chosen view
+          off a default one (`M3-usersim-tomas.md`).
+
+          `cols` is the only key this route reads, so it is the only entry in
+          the applied narrowing; nothing is consumed elsewhere (there is no tab
+          strip here, and no press writes a parameter into this URL), so the
+          caller states its own empty consumed list rather than taking the
+          module's `tab` default — a `?tab=` here really is a parameter this
+          page did not apply. Nothing is withheld by name either: this route
+          has no word it may not render.
+
+          Per-TOKEN silence is deliberate: `?cols=title,banana` APPLIED `cols`,
+          so the line says nothing about it. The shared rule's vocabulary is
+          per KEY, and a token-level sentence would be a second kind of
+          sentence on one page — the thing admin-window/BUG-0141 moved this
+          module to prevent. */}
+      <DroppedParamsLine
+        dropped={droppedParams(
+          params,
+          { [COLUMNS_PARAM]: appliedColumns },
+          [],
+          [],
+        )}
+      />
       <Section title={view.title}>
         {drawn === null || eventsWindow === null ? (
           sectionBody

@@ -155,6 +155,32 @@ export function shownColumns(
   view: BrowseView,
   param: ColumnsParam,
 ): BrowseColumnKey[] {
+  const named = namedColumns(view, param);
+  if (named.length === 0) return inViewOrder(view, view.defaultColumns);
+  return named;
+}
+
+/**
+ * The configured columns the URL's value NAMED — empty when it named none.
+ *
+ * This is the question `shownColumns` asks on its way to the default set,
+ * exported because a caller that must say whether `cols` APPLIED needs the
+ * same answer and may not re-type the parse to get it (admin-window/BUG-0202;
+ * LESSONS 5, "a shared spelling gets imported, never retyped"). The two
+ * callers cannot come to disagree about what a `cols` value chose, because
+ * there is one reading of it: `shownColumns` is this function plus the
+ * default.
+ *
+ * Every rule of that reading lives here — a repeated key is read as one
+ * comma-joined list, blank pieces are dropped, duplicates collapse and the
+ * result is in the view's own column order — so `?cols=venue,title` and
+ * `?cols=title,venue,venue` name the same two columns, and `?cols=banana`
+ * names none at all.
+ */
+export function namedColumns(
+  view: BrowseView,
+  param: ColumnsParam,
+): BrowseColumnKey[] {
   const raw = (Array.isArray(param) ? param : [param ?? ""])
     .join(",")
     .split(",")
@@ -162,11 +188,10 @@ export function shownColumns(
     .filter((piece) => piece.length > 0);
 
   const configured = new Set<string>(configuredKeys(view));
-  const named = raw.filter((piece): piece is BrowseColumnKey =>
-    configured.has(piece),
+  return inViewOrder(
+    view,
+    raw.filter((piece): piece is BrowseColumnKey => configured.has(piece)),
   );
-  if (named.length === 0) return inViewOrder(view, view.defaultColumns);
-  return inViewOrder(view, named);
 }
 
 /** The `cols` value for a set of keys — the inverse of `shownColumns`. */
