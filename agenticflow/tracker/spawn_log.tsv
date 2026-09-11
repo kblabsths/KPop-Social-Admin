@@ -25646,3 +25646,10 @@
 2026-09-11T01:28:11Z	agent	-	-	-	-
 # STRANDED	2026-09-11T01:28:16Z	architect	11 uncommitted in primary checkout: .env.example, agenticflow/docs/DECISIONS.md, agenticflow/visions/admin-window/docs/ARCHITECTURE.md, agenticflow/visions/admin-window/tracker/receipts/TASK-0066.json, agenticflow/visions/admin-window/tracker/receipts/TASK-0075.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0169.md
 2026-09-11T01:28:16Z	architect	TASK-0075	28630	1177	158262
+# STRANDED	2026-09-11T01:28:43Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T01:28:43Z	agent	-	-	-	-
+2026-09-11T01:28:55Z	builder	TASK-0067	spawned
+# STRANDED	2026-09-11T01:28:55Z	qa-adversary	1 uncommitted in primary checkout: .env.example
+2026-09-11T01:28:55Z	qa-adversary	TASK-0066	27293	1169	174543
+# STRANDED	2026-09-11T01:29:04Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/TASK-0067.md
+2026-09-11T01:29:04Z	agent	-	-	-	-
