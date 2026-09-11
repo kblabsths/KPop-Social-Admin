@@ -1445,6 +1445,91 @@ describe("the classification buckets against staging", () => {
   });
 });
 
+/**
+ * TWO FIGURES ON ONE PAGE, EACH SAYING WHICH KIND IT IS — against the real
+ * page, with real rows (SPEC F15, M3 EC7, admin-window/TASK-0071).
+ *
+ * The page prints per-bucket claim counts twice: the bucket table's are
+ * `head: true, count: "exact"` reads of the WHOLE narrowing, and the gauge's
+ * come out of a scan capped at 1,000 rows. Staging held 877 claims on
+ * 2026-09-11, so the two AGREE here today and will stop agreeing on their own
+ * — which is exactly why the labels are unconditional and why this case grades
+ * their PRESENCE rather than a divergence staging cannot yet produce. The
+ * divergence itself is graded offline, on a fixture larger than the cap
+ * (`tests/offline/claims/page.test.ts`).
+ *
+ * Addressed by `data-surface`, and the surface's state kind is decided from
+ * `data-state` before anything on it is read.
+ */
+describe("which kind of fact a bucket figure is, against staging", () => {
+  /** The figure regions of one render: their hooks and the words above them. */
+  const regionsOf = (markup: string, kind: string) => {
+    const $ = cheerio.load(markup);
+    const region = $(`[data-figures="${kind}"]`);
+    return {
+      count: region.length,
+      /** The eyebrow's own words, read off the element that carries them. */
+      said: region
+        .find(`[data-figures-label="${kind}"]`)
+        .text()
+        .replace(/\s+/g, " ")
+        .trim(),
+      rows: region.find("tbody tr").length,
+    };
+  };
+
+  it("labels each place a bucket count stands, on both tabs", async () => {
+    const markup = await claimsMarkup();
+    // Rule 1 first: name the surfaces' state kinds before reading anything on
+    // them. Neither is compared to a number here — this case grades what the
+    // page SAYS about its figures — but a surface in its error or empty state
+    // has no figures for the labels to be about.
+    const buckets = await gradeSurface({
+      markup,
+      within: BUCKETS,
+      object: T.pendingClaims,
+      counted: () =>
+        countRows(() =>
+          exactCount(T.pendingClaims, independentClient()).neq("bucket", PARKED_BUCKET),
+        ),
+    });
+    const gauge = await gradeSurface({
+      markup,
+      within: GAUGE,
+      object: T.observations,
+      counted: () =>
+        countRows(() => exactCount(T.observations, independentClient()).eq("status", "pending")),
+      excluding: '[data-surface="gauge_population"]',
+    });
+    if (buckets !== "ok" || gauge !== "ok") return;
+
+    const totals = regionsOf(markup, "total");
+    const windowed = regionsOf(markup, "window");
+    // Each figure region exists exactly once and says its kind in TEXT a
+    // reader sees — never in the attribute alone — and the two do not say the
+    // same thing.
+    expect(totals.count, "the bucket table's figure region").toBe(1);
+    expect(windowed.count, "the gauge's figure region").toBe(1);
+    expect(totals.said).not.toBe("");
+    expect(windowed.said).not.toBe("");
+    expect(totals.said).not.toBe(windowed.said);
+    // Both really drew the buckets they are labelling.
+    expect(totals.rows).toBe(RENDERED_BUCKETS.length);
+    expect(windowed.rows).toBe(RENDERED_BUCKETS.length);
+    // And no sentence on the page relates the two figures, however they land.
+    expect(cheerio.load(markup).root().text()).not.toContain("%");
+
+    // The standing tab draws no bucket table, so there is nothing there for a
+    // window figure to disagree with — and its gauge figures still say what
+    // kind of fact they are, in the same words.
+    const standing = await claimsMarkup({ tab: "standing" });
+    const standingWindow = regionsOf(standing, "window");
+    expect(standingWindow.count).toBe(1);
+    expect(standingWindow.said).toBe(windowed.said);
+    expect(regionsOf(standing, "total").count).toBe(0);
+  });
+});
+
 describe("the parked bucket against staging", () => {
   it("is a string the database still spells, and the page never does", async () => {
     // Both halves matter: the view carries the vocabulary (it is empty BY

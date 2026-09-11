@@ -2024,16 +2024,25 @@ describe("absence and failure", () => {
     const bucketState = (markup: string): string | undefined =>
       cheerio.load(markup)('[data-surface="buckets"] [data-state]').attr("data-state");
 
-    // The two sentences the page owns, read off the app rather than typed
-    // here: the arm it renders when nothing narrows the counts, and the arm it
-    // renders when something does.
+    // The THREE sentences the page owns, read off the app rather than typed
+    // here: the arm it renders when nothing narrows the counts, the arm it
+    // renders when something does, and the arm it renders where a BUCKET
+    // facet is in force — the facet this table drops, so it narrows nothing
+    // here and the caption says what the table answers for instead
+    // (architect ruling 2026-09-11, admin-window/TASK-0071). The third arm is
+    // read off the app exactly as the other two are.
     const whole = bucketCaption(await renderClaims(healthyScript()));
     const narrowed = bucketCaption(
       await renderClaims(healthyScript(), { source_id: SOURCE.first }),
     );
+    const everyBucket = bucketCaption(
+      await renderClaims(healthyScript(), { bucket: "escalated" }),
+    );
+    const arms = [whole, narrowed, everyBucket];
     expect(whole).not.toBe("");
     expect(narrowed).not.toBe("");
-    expect(narrowed).not.toBe(whole);
+    expect(everyBucket).not.toBe("");
+    expect(new Set(arms).size).toBe(arms.length);
 
     // ── the read HAPPENED: the caption stands, on both arms ──────────────
     const emptyView: Script = {
@@ -2052,7 +2061,7 @@ describe("absence and failure", () => {
     ] as [string, Script, Record<string, string>][]) {
       const markup = await renderClaims(script, params);
       const said = bucketCaption(markup);
-      expect([whole, narrowed], label).toContain(said);
+      expect(arms, label).toContain(said);
       // Non-vacuous: this really is the healthy surface — no refusal card, and
       // a table that drew a count hook per bucket for the sentence to be about.
       expect(bucketState(markup), label).toBeUndefined();
@@ -2129,8 +2138,7 @@ describe("absence and failure", () => {
         // Neither arm, anywhere in the surface — not as the paragraph below
         // the table, and not moved somewhere else inside it.
         const said = bucketParagraphs(markup);
-        expect(said, label).not.toContain(whole);
-        expect(said, label).not.toContain(narrowed);
+        for (const arm of arms) expect(said, `${label} / ${arm}`).not.toContain(arm);
       }
     }
   });
@@ -2166,6 +2174,19 @@ describe("which arm the bucket caption takes", () => {
     expect(bareCaption).not.toBe("");
     expect(bareCounts.reduce((total, held) => total + held, 0)).toBeGreaterThan(0);
 
+    // The BLAMING arm, read off the app: the sentence `?source_id=` takes over
+    // a view it really narrows. Never typed here — a literal would pass while
+    // the page said something else (admin-window/TASK-0071).
+    const blaming = bucketCaption(
+      await renderClaims(healthyScript(), { source_id: SOURCE.first }),
+    );
+    expect(blaming).not.toBe(bareCaption);
+
+    // The arm a bucket facet takes, read off the FIRST of the five renders
+    // below; the other four are then graded against it, which is what says
+    // the clause names no bucket value without this file typing the clause.
+    let bucketArm: string | undefined;
+
     for (const bucket of RENDERED_BUCKETS) {
       const markup = await renderClaims(healthyScript(), { bucket });
       // The page really applied it: the chip is the current one and nothing
@@ -2176,8 +2197,82 @@ describe("which arm the bucket caption takes", () => {
       // ...and this table's figures did not move, so nothing above narrowed
       // these counts and the caption may not say otherwise.
       expect(bucketRows(markup).map((row) => row.claims), bucket).toEqual(bareCounts);
-      expect(bucketCaption(markup), bucket).toBe(bareCaption);
+
+      // THE ARM RULE (architect ruling 2026-09-11, admin-window/TASK-0071),
+      // which replaced byte-identity with the bare caption: this table stays
+      // unnarrowed by its own facet AND says so, so the sentence is neither
+      // the bare page's denial nor the blaming arm — and it is the SAME
+      // sentence under every bucket, so no clause of it names the bucket.
+      const said = bucketCaption(markup);
+      expect(said, bucket).not.toBe(blaming);
+      expect(said, bucket).not.toBe(bareCaption);
+      expect(said, bucket).not.toContain(bucket);
+      bucketArm ??= said;
+      expect(said, bucket).toBe(bucketArm);
     }
+  });
+
+  /**
+   * A FACET'S OWN TABLE STAYS UNNARROWED BY ITSELF AND SAYS SO (architect
+   * ruling 2026-09-11, folded into admin-window/TASK-0071 from QA's product
+   * residual on admin-window/TASK-0077).
+   *
+   * `/claims?bucket=<x>` draws this table's WHOLE distribution beside a list
+   * the same facet really narrowed — measured on staging 2026-09-11:
+   * awaiting_link 108, awaiting_row 770, three buckets at 0, identical to the
+   * bare page's. The figures are right and this ticket moves none of them.
+   * What ended is the page saying "nothing above narrows these counts" with
+   * the bucket chip standing active above it.
+   *
+   * **Graded as STRUCTURE, never as copy** (the ticket's own division: "a walk
+   * grades the copy, the checks grade the structure"). The rule this case
+   * pins is that the denial clause is REPLACED rather than merely appended to:
+   * the bare caption and the bucket-faceted one share a prefix and a suffix,
+   * and BOTH have something of their own in between. A page that kept the
+   * denial and bolted a clause onto the end leaves the bare arm's middle
+   * empty, and fails here.
+   *
+   * **Its twin is the render that must NOT take it** (LESSONS 8): a source
+   * facet the whole view carries anyway is a facet in force that this table is
+   * not narrowed by either, and its caption is still the bare page's to the
+   * byte — so the clause is gated on the BUCKET facet and not on "a facet is
+   * set".
+   */
+  it("says the bucket table answers for every bucket when a bucket facet is set", async () => {
+    const bare = await renderClaims(healthyScript());
+    const bareCaption = bucketCaption(bare);
+    const faceted = await renderClaims(healthyScript(), { bucket: "escalated" });
+    const facetedCaption = bucketCaption(faceted);
+
+    // Non-vacuous: the page really applied the facet, and it really removed no
+    // row of this table — so the caption is talking about a live facet that
+    // narrowed nothing here.
+    expect(chipsOf(faceted, "bucket").filter((chip) => chip.active)).toHaveLength(1);
+    expect(droppedLine(faceted).lines).toBe(0);
+    expect(bucketRows(faceted).map((row) => row.claims)).toEqual(
+      bucketRows(bare).map((row) => row.claims),
+    );
+
+    // The clause is its own arm, and names no bucket value.
+    expect(facetedCaption).not.toBe(bareCaption);
+    expect(facetedCaption).not.toContain("escalated");
+
+    // …and it REPLACED the denial rather than standing beside it: each arm has
+    // a clause of its own between the shared prefix and the shared suffix.
+    const [bareClause, facetedClause] = differingClause(bareCaption, facetedCaption);
+    expect(bareClause).not.toBe("");
+    expect(facetedClause).not.toBe("");
+
+    // THE TWIN: a facet in force that this table is not narrowed by, and no
+    // bucket facet — the caption is the bare page's, to the byte.
+    const allOnOne = healthyScript({
+      [T.pendingClaims]: claimView(
+        CLAIMS.map((claim) => ({ ...claim, source_id: SOURCE.first })),
+      ),
+    });
+    const carried = await renderClaims(allOnOne, { source_id: SOURCE.first });
+    expect(chipsOf(carried, "source_id").filter((chip) => chip.active)).toHaveLength(1);
+    expect(bucketCaption(carried)).toBe(bucketCaption(await renderClaims(allOnOne)));
   });
 
   it("blames a source or domain only when it removed a row of this table", async () => {
@@ -2357,8 +2452,17 @@ describe("which emptiness this is", () => {
     expect(emptyHook(narrowed)).not.toBe("narrowing");
     expect(emptyCard(narrowed)).toBe(emptyCard(bare));
     // The bucket table's caption is this page's other sentence about the same
-    // question, and it moves with the card rather than against it.
-    expect(bucketCaption(narrowed)).toBe(bucketCaption(bare));
+    // question, and it blames nothing either: the arm rule, not byte-identity
+    // with the bare caption (architect ruling 2026-09-11,
+    // admin-window/TASK-0071). A bucket facet over an empty view still leaves
+    // this table answering for every bucket, so the caption says that and
+    // never takes the arm `?source_id=` takes over a view it really narrows.
+    const blaming = bucketCaption(
+      await renderClaims(healthyScript(), { source_id: SOURCE.first }),
+    );
+    expect(blaming).not.toBe(bucketCaption(await renderClaims(healthyScript())));
+    expect(bucketCaption(narrowed)).not.toBe(blaming);
+    expect(bucketCaption(narrowed)).not.toContain("escalated");
     // Every bucket row is still a real zero, so the surface saying "nothing
     // here yet" is still showing what would fill it.
     expect(bucketRows(narrowed).map((row) => row.claims)).toEqual(
@@ -3781,6 +3885,29 @@ function droppedLine(markup: string) {
  * an answer, and the caption's ABSENCE is asserted over EVERY paragraph of the
  * surface instead — what the BUG-0144 pins above do.
  */
+/**
+ * The clause each of two sentences has of its OWN, between the prefix and the
+ * suffix they share — how this file grades a REPLACED clause without typing
+ * either sentence (admin-window/TASK-0071).
+ *
+ * A clause merely appended leaves the first sentence's own middle empty; a
+ * clause that replaced another leaves both non-empty. Neither word is spelled
+ * here, so a rewording of either arm moves this with it.
+ */
+function differingClause(left: string, right: string): [string, string] {
+  let head = 0;
+  while (head < left.length && head < right.length && left[head] === right[head]) head += 1;
+  let tail = 0;
+  while (
+    tail < left.length - head &&
+    tail < right.length - head &&
+    left[left.length - 1 - tail] === right[right.length - 1 - tail]
+  ) {
+    tail += 1;
+  }
+  return [left.slice(head, left.length - tail), right.slice(head, right.length - tail)];
+}
+
 function bucketCaption(markup: string): string {
   const $ = cheerio.load(markup);
   const surface = $('[data-surface="buckets"]');
@@ -6101,5 +6228,288 @@ describe("the affordance that continues the claim list", () => {
     expect(claimIds(markup)).toHaveLength(37);
     expect(pagingArms(markup)).toEqual(["limit"]);
     expect(/<button/.test(markup)).toBe(false);
+  });
+});
+
+/* ── two figures on one page never silently disagree (SPEC F15, M3 EC7) ──── */
+
+/**
+ * The Claims page prints per-bucket claim counts TWICE and reads them two
+ * different ways (campaign admin-window/TASK-0071).
+ *
+ * The bucket table's counts are `head: true, count: "exact"` reads of the
+ * WHOLE narrowing, one per bucket. The gauge's bucket distribution is computed
+ * over a scan capped at `GAUGE_ROW_CAP` rows. Below that cap the two agree;
+ * above it they diverge, and until this ticket nothing on screen said which
+ * was which. Staging held 877 claims on 2026-09-11 — this is live within
+ * months, not theoretical.
+ *
+ * The ruling is LABEL, not equalise: capping the head counts would make the
+ * page's totals wrong rather than windowed, and scanning the whole view to
+ * fill the gauge is the ~14-round-trip read admin-window/BUG-0138 removed. So
+ * each set of figures says, IN RENDERED TEXT, what kind of fact it is — and no
+ * sentence relates the two, because no single read established a relationship
+ * between them (LESSONS 2).
+ *
+ * **This suite's population is deliberately larger than the cap.** Every other
+ * fixture in this file is far below it, so on all of them the two figures are
+ * equal and the defect is invisible: a test written against `CLAIMS` would
+ * grade the labelling vacuously. Non-vacuity is asserted rather than assumed —
+ * every bucket really diverges here, in every URL walked.
+ *
+ * **Its instants are derived from the clock, which is this file's one
+ * exception to the fixed-instant rule** (`./population.ts`, "an age fixture
+ * that moved with the clock would make a failure unreproducible"). The gauge's
+ * window is `[now - 90 days, now)`, so a fixed instant falls out of it as the
+ * calendar moves and the divergence this suite exists to produce would quietly
+ * stop happening. Nothing here asserts on an AGE — only on counts, which are
+ * fully determined by the row INDEX — so a failure is still reproducible.
+ */
+const OVER_CAP_CLAIMS = 3_600;
+
+/**
+ * A population well BELOW the cap, built the same way — the twin fixture
+ * (LESSONS 8). The suite's other fixtures are below the cap too, but not one
+ * of them has the two figures EQUAL: `CLAIMS` deliberately holds a claim with
+ * no `observations` row, so the gauge's window is one short of the view and
+ * the small case would grade agreement over a divergence.
+ */
+const UNDER_CAP_CLAIMS = 300;
+
+/** The three sources and two domains the over-cap population spreads across. */
+const OVER_CAP_SOURCES = [SOURCE.first, SOURCE.second, SOURCE.third];
+const OVER_CAP_DOMAINS = ["events", "venues"];
+
+/**
+ * One claim per row, round-robin across buckets, sources and domains — the
+ * cycle lengths (5, 3, 2) are pairwise coprime, so every combination of the
+ * three appears the same number of times and every bucket has claims under
+ * every facet this suite walks.
+ *
+ * Oldest first by index: row 0 is the oldest, so the scan's cap keeps rows
+ * `0 … ROW_CAP - 1` and drops the rest.
+ */
+const OVER_CAP_BASE = Date.now();
+
+function scaledRows(total: number): PendingClaimRow[] {
+  return Array.from({ length: total }, (_unused, index) =>
+    pendingClaimRow(
+      RENDERED_BUCKETS[index % RENDERED_BUCKETS.length] as PendingClaimBucket,
+      {
+        observation_id: `01930000-0000-7000-8000-${String(index).padStart(12, "0")}`,
+        source_id: OVER_CAP_SOURCES[index % OVER_CAP_SOURCES.length],
+        domain: OVER_CAP_DOMAINS[index % OVER_CAP_DOMAINS.length],
+        observed_at: new Date(OVER_CAP_BASE - (total - index) * 60_000).toISOString(),
+      },
+    ),
+  );
+}
+
+const OVER_CAP_ROWS = scaledRows(OVER_CAP_CLAIMS);
+const UNDER_CAP_ROWS = scaledRows(UNDER_CAP_CLAIMS);
+
+/**
+ * The database behind one of those populations.
+ *
+ * `claimView` is the fixture DATABASE — it answers the query it was asked,
+ * whatever rows it holds — so the `observations` leg is answered by the same
+ * one rather than by a second hand-written responder that would drift from it
+ * (LESSONS 5). The cast is the whole of what the reuse costs: the parameter is
+ * typed for the view this suite's other fixtures use, and the body treats its
+ * rows as `Record<string, unknown>` from its first line.
+ *
+ * Every claim here HAS its observation, so the gauge's window is short of the
+ * view for exactly one reason: the scan's cap.
+ */
+function scaledScript(rows: readonly PendingClaimRow[]): Script {
+  const observations = rows.map((claim) =>
+    observationRow({
+      observation_id: claim.observation_id,
+      entity_id: claim.entity_id,
+      source_id: claim.source_id,
+      domain: claim.domain,
+      field: claim.field,
+      observed_at: claim.observed_at as string,
+      status: "pending",
+    }),
+  );
+  return {
+    [T.pendingClaims]: claimView(rows),
+    [T.observations]: claimView(observations as unknown as readonly PendingClaimRow[]),
+    [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
+  };
+}
+
+/** Every claim of a population the URL's source/domain facets keep. */
+function scaledMatching(
+  rows: readonly PendingClaimRow[],
+  params: Record<string, string> = {},
+): PendingClaimRow[] {
+  return rows.filter(
+    (claim) =>
+      (params.source_id === undefined || claim.source_id === params.source_id) &&
+      (params.domain === undefined || claim.domain === params.domain),
+  );
+}
+
+/**
+ * What the GAUGE's window holds, computed here rather than asked of the app:
+ * the narrowed population, oldest first, cut at the scan's cap.
+ */
+function scaledWindow(
+  rows: readonly PendingClaimRow[],
+  params: Record<string, string> = {},
+): PendingClaimRow[] {
+  return [...scaledMatching(rows, params)]
+    .sort((left, right) => {
+      const at = String(left.observed_at);
+      const bt = String(right.observed_at);
+      if (at !== bt) return at < bt ? -1 : 1;
+      return left.observation_id < right.observation_id ? -1 : 1;
+    })
+    .slice(0, ROW_CAP);
+}
+
+/** How many rows of a set are in one bucket. */
+const inOneBucket = (rows: readonly PendingClaimRow[], bucket: string): number =>
+  rows.filter((claim) => claim.bucket === bucket).length;
+
+/**
+ * A region of figures, by the kind of fact it says they are: the
+ * `data-figures` hook, the text of the eyebrow the reader sees, and the
+ * per-bucket figure the table inside it drew.
+ *
+ * The gauge's trend table publishes no per-row hook — it is the shared
+ * `TrendTable`, and this ticket adds no hook to a shared component — so its
+ * figure is read the way a reader reads it: the row whose first cell is the
+ * bucket, and the cell under the `claims` header.
+ */
+function figureRegion(markup: string, kind: "total" | "window") {
+  const $ = cheerio.load(markup);
+  const region = $(`[data-figures="${kind}"]`);
+  const table = region.find("table");
+  const headers = table
+    .find("thead th")
+    .toArray()
+    .map((element) => $(element).text().trim());
+  const claimsColumn = headers.indexOf("claims");
+  /** The eyebrow's own words, read off the element that carries them. */
+  const said = region
+    .find(`[data-figures-label="${kind}"]`)
+    .text()
+    .replace(/\s+/g, " ")
+    .trim();
+  return {
+    regions: region.length,
+    said,
+    figure(bucket: string): string | undefined {
+      const row = table
+        .find("tbody tr")
+        .toArray()
+        .find((element) => $(element).find("td").first().text().trim() === bucket);
+      if (row === undefined || claimsColumn < 0) return undefined;
+      return $(row).find("td").eq(claimsColumn).text().trim();
+    },
+  };
+}
+
+describe("two figures on one page never silently disagree", () => {
+  /**
+   * The three URLs the criterion names, each over a population the gauge's
+   * scan cannot reach the end of: bare, a source narrowing, and a domain
+   * narrowing. Both figures move under all three.
+   */
+  const WALKED: [string, Record<string, string>][] = [
+    ["bare", {}],
+    ["source facet", { source_id: SOURCE.second }],
+    ["domain facet", { domain: "venues" }],
+  ];
+
+  it("prints each bucket's two figures under a label saying which kind it is", async () => {
+    for (const [label, params] of WALKED) {
+      const markup = await renderClaims(scaledScript(OVER_CAP_ROWS), params);
+      const totals = figureRegion(markup, "total");
+      const windowed = figureRegion(markup, "window");
+      // Exactly one region of each kind, and each says its kind in TEXT a
+      // reader sees — never in the attribute alone (M3 EC7).
+      expect(totals.regions, label).toBe(1);
+      expect(windowed.regions, label).toBe(1);
+      expect(totals.said, label).not.toBe("");
+      expect(windowed.said, label).not.toBe("");
+      expect(totals.said, label).not.toBe(windowed.said);
+
+      for (const bucket of RENDERED_BUCKETS) {
+        const whole = inOneBucket(scaledMatching(OVER_CAP_ROWS, params), bucket);
+        const inWindow = inOneBucket(scaledWindow(OVER_CAP_ROWS, params), bucket);
+        const where = `${label} / ${bucket}`;
+        // NON-VACUOUS: this bucket really does read two different numbers in
+        // the two places, which is the state the labels exist for.
+        expect(whole, where).toBeGreaterThan(inWindow);
+        // …and each place printed the figure its own read produced.
+        expect(totals.figure(bucket), where).toBe(count(whole));
+        expect(windowed.figure(bucket), where).toBe(count(inWindow));
+      }
+    }
+  });
+
+  it("relates the two figures in no sentence, because no read established one", async () => {
+    for (const [label, params] of WALKED) {
+      const markup = await renderClaims(scaledScript(OVER_CAP_ROWS), params);
+      const text = cheerio.load(markup).root().text().replace(/\s+/g, " ");
+      // A percentage is a ratio across two reads however it is spelled, and
+      // this page has no honest one to print.
+      expect(text, label).not.toContain("%");
+      for (const bucket of RENDERED_BUCKETS) {
+        const whole = count(inOneBucket(scaledMatching(OVER_CAP_ROWS, params), bucket));
+        const inWindow = count(inOneBucket(scaledWindow(OVER_CAP_ROWS, params), bucket));
+        const gap = count(
+          inOneBucket(scaledMatching(OVER_CAP_ROWS, params), bucket) -
+            inOneBucket(scaledWindow(OVER_CAP_ROWS, params), bucket),
+        );
+        const where = `${label} / ${bucket}`;
+        // "N of M" across the two, either way round…
+        expect(text, where).not.toContain(`${inWindow} of ${whole}`);
+        expect(text, where).not.toContain(`${whole} of ${inWindow}`);
+        // …and their difference, which is a third figure no read produced.
+        expect(text, where).not.toContain(`${gap} of`);
+      }
+    }
+  });
+
+  it("says the same thing where the two figures agree, with no extra apology", async () => {
+    // The under-cap population's window holds every claim it has, so the two
+    // figures are EQUAL — and the page's words are the same words it uses
+    // where they are not. A label that appeared only on divergence would make
+    // the quiet state and the loud one two different screens, and would
+    // itself be a sentence about the RELATIONSHIP between two figures.
+    const small = await renderClaims(scaledScript(UNDER_CAP_ROWS));
+    const big = await renderClaims(scaledScript(OVER_CAP_ROWS));
+    const smallTotals = figureRegion(small, "total");
+    const smallWindow = figureRegion(small, "window");
+    // Non-vacuous in the other direction too: a page that labelled NEITHER
+    // region would satisfy an equality between two empty strings.
+    expect(smallTotals.said).not.toBe("");
+    expect(smallWindow.said).not.toBe("");
+    expect(smallTotals.said).toBe(figureRegion(big, "total").said);
+    expect(smallWindow.said).toBe(figureRegion(big, "window").said);
+
+    // Non-vacuous: on THIS fixture the two figures really are equal, so the
+    // words above are standing over agreement rather than over a divergence
+    // this case failed to notice.
+    for (const bucket of RENDERED_BUCKETS) {
+      expect(smallTotals.figure(bucket), bucket).toBe(smallWindow.figure(bucket));
+    }
+  });
+
+  it("labels the gauge's figures on the standing tab too", async () => {
+    // The standing tab draws no bucket table, so nothing collides there — the
+    // rule is the page's and not the pending tab's, so its gauge figures still
+    // say what kind of fact they are.
+    const markup = await renderClaims(healthyScript(), { tab: "standing" });
+    const windowed = figureRegion(markup, "window");
+    expect(windowed.regions).toBe(1);
+    expect(windowed.said).toBe(figureRegion(await renderClaims(healthyScript()), "window").said);
+    // …and there is no totals region to disagree with it.
+    expect(cheerio.load(markup)('[data-figures="total"]')).toHaveLength(0);
   });
 });
