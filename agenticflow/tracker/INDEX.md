@@ -1,9 +1,8 @@
-# Tracker index (regenerated 2026-09-11T05:40:58Z — do not edit)
+# Tracker index (regenerated 2026-09-11T05:50:30Z — do not edit)
 
 ## open
 - FEAT-0014 [P1][feat][M3] F16 — the second leg of a two-step join runs its chunks concurrently  (scope:src/lib/db/result.ts,src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/db/verdict.ts,tests/offline/db/result.test.ts,tests/live/claims.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts)
 - FEAT-0015 [P1][feat][M3] F14 — paging past the window, on Claims and on Browse  (deps:FEAT-0014(unmet:1) scope:src/app/claims/page.tsx,src/app/browse/page.tsx,src/app/api,src/components/claims,src/components/browse,src/lib/db/claims.ts,src/lib/db/browse.ts,src/lib/db/result.ts,tests/offline/claims/page.test.ts,tests/offline/browse/page.test.ts,tests/offline/absence/pages.test.ts,tests/live/claims.live.test.ts,tests/live/browse.live.test.ts)
-- BUG-0170 [P2][bug][M3] a failed read carries an INTERMEDIARY's HTML error page verbatim into the app's account, onto the claims card and through the paging route's error arm  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:TASK-0066)
 - BUG-0171 [P2][bug][M3] The claims rows route answers gated admin data with no Cache-Control, while every gated page carries one  (deps:TASK-0068 scope:src/app/api/admin/claims/rows/route.ts,tests/http/paging.http.test.ts,tests/offline/paging/claims-route.test.ts from:TASK-0066)
 - BUG-0172 [P2][bug][M3] /browse still says rows are withheld after the operator has paged to the end of the set  (scope:src/app/browse/page.tsx,src/components/browse/paged-browse-table.tsx,tests/offline/browse/page.test.ts from:TASK-0069)
 - DEBT-0017 [P2][debt][M3] Three paging-leaf truths: a ceiling-false invariant, a stale test title, and a closure guard that stops at a barrel  (deps:TASK-0076 scope:src/lib/paging/machine.ts,tests/offline/paging/machine.test.ts,tests/offline/claims/read.test.ts from:BUG-0168)
@@ -16,6 +15,9 @@
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
 ## built
+- BUG-0170 [P2][bug][M3] a failed read carries an INTERMEDIARY's HTML error page verbatim into the app's account, onto the claims card and through the paging route's error arm  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts @builder-261 from:TASK-0066)
+
+## qa
 - BUG-0167 [P2][bug][M3] the gauge's two legs truncate on different orders, so at the row cap a tie on the boundary instant drops claims the id list kept  (deps:TASK-0075 scope:src/lib/db/gauges.ts,src/lib/gauges/pending-claims.ts,tests/offline/gauges/pending-claims.test.ts,tests/live/claims.live.test.ts @builder-260 from:TASK-0074)
 
-Totals — built:1, done:17, open:13. Archived: 252.
+Totals — built:1, done:17, open:12, qa:1. Archived: 252.
