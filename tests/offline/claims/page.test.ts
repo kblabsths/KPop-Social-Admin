@@ -885,6 +885,38 @@ describe("the claim list's window", () => {
     expect(windowLine(many).text).not.toBe(windowLine(few).text);
   });
 
+  it.fails("states the rows that are BELOW it when the COUNT came back SMALLER than the rows drawn [admin-window/BUG-0186]", async () => {
+    // THE OTHER DIRECTION OF THE SAME TWO-READS DIVERGENCE (QA, off the
+    // admin-window/BUG-0183 close). `/claims` counts its matching set and
+    // draws its rows in TWO reads, and a claim the resolver applies between
+    // them makes the COUNT the SMALLER number. `truncated` is
+    // `listCount.data > listed.length`, so it goes FALSE, and the line takes
+    // the `didNotFill` branch — which names the COUNT and asserts the window
+    // holds everything the read found, over a screen holding MORE rows than
+    // the number it names, and (at 50 rows under a cap of 50) over a window
+    // that demonstrably filled.
+    //
+    // No word of the sentence is pinned: two screens holding DIFFERENT numbers
+    // of claims under the SAME count are rendered and compared against each
+    // other, exactly as the pin above does it. A line that describes the
+    // screen cannot say the same thing about both.
+    const full = await renderClaims(offGridScript(CLAIM_WINDOW, 30));
+    const short = await renderClaims(offGridScript(37, 30));
+
+    // Non-vacuity, from the page's own hooks and rows rather than any word:
+    // two different screens, one count, and no paging element in either.
+    expect(claimIds(full)).toHaveLength(CLAIM_WINDOW);
+    expect(claimIds(short)).toHaveLength(37);
+    expect(windowLine(full).held).toBe(30);
+    expect(windowLine(short).held).toBe(30);
+    expect(windowLine(full).truncated).toBe(false);
+    expect(windowLine(short).truncated).toBe(false);
+    expect(pagingOccurrences(full)).toBe(0);
+    expect(pagingOccurrences(short)).toBe(0);
+
+    expect(windowLine(full).text).not.toBe(windowLine(short).text);
+  });
+
   it("draws at most the window's rows however many claims the view holds", async () => {
     const markup = await renderClaims(crowdedScript(OVERFLOW));
     expect(claimIds(markup)).toHaveLength(CLAIM_WINDOW);
