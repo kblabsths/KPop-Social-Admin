@@ -1,3 +1,4 @@
+import * as cheerio from "cheerio";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -33,6 +34,8 @@ import {
   undefinedQualifiedColumn,
   undefinedTable,
 } from "../../fixtures/stub-client";
+import { StateOf } from "@/components/ui/state-of";
+import { h, render } from "../ui/markup";
 import {
   fieldProvenanceRow,
   observationRow,
@@ -1473,47 +1476,44 @@ describe("an account carries the parts the database authored", () => {
    * Found: a 442-character part yields a 1,380-character account (17 clauses);
    * measured wider, an 11,505-character part yields 32,020 characters.
    */
-  it.fails(
-    "counts ONE document once, however many lines it was printed on (admin-window/BUG-0182)",
-    () => {
-      // The shape a WAF actually serves: an interstitial, pretty-printed.
-      const page = [
-        "<!DOCTYPE html>",
-        '<html lang="en-US">',
-        "<head>",
-        "<title>Attention Required!</title>",
-        '<meta charset="UTF-8" />',
-        '<meta name="robots" content="noindex, nofollow" />',
-        '<link rel="stylesheet" href="/cdn-cgi/styles/cf.errors.css" />',
-        "</head>",
-        "<body>",
-        '<div id="cf-wrapper">',
-        '<div id="cf-error-details" class="cf-error-details-wrapper">',
-        "<h1>Sorry, you have been blocked</h1>",
-        "<h2>You are unable to access this site</h2>",
-        "</div>",
-        "</div>",
-        "</body>",
-        "</html>",
-      ].join("\n");
+  it("counts ONE document once, however many lines it was printed on (admin-window/BUG-0182)", () => {
+    // The shape a WAF actually serves: an interstitial, pretty-printed.
+    const page = [
+      "<!DOCTYPE html>",
+      '<html lang="en-US">',
+      "<head>",
+      "<title>Attention Required!</title>",
+      '<meta charset="UTF-8" />',
+      '<meta name="robots" content="noindex, nofollow" />',
+      '<link rel="stylesheet" href="/cdn-cgi/styles/cf.errors.css" />',
+      "</head>",
+      "<body>",
+      '<div id="cf-wrapper">',
+      '<div id="cf-error-details" class="cf-error-details-wrapper">',
+      "<h1>Sorry, you have been blocked</h1>",
+      "<h2>You are unable to access this site</h2>",
+      "</div>",
+      "</div>",
+      "</body>",
+      "</html>",
+    ].join("\n");
 
-      // REDUCED — the frameless part, one line below the client's own prose.
-      const part = `reference 8f3c1\n${page}`;
-      const below = classify(
-        { code: "", details: part, hint: "", message: "read failed" },
-        T.pendingClaims,
-      );
-      expect(below.kind).toBe("error");
-      if (below.kind !== "error") return;
-      // What the rule already gets right, and must keep getting right.
-      expect(below.message).toContain("read failed");
-      expect(below.message).toContain("reference 8f3c1");
-      expect(below.message).not.toContain("<");
-      expect(below.message).not.toContain("Sorry, you have been blocked");
-      // An account that counted a document cannot be longer than the document.
-      expect(below.message.length).toBeLessThan(part.length);
-    },
-  );
+    // REDUCED — the frameless part, one line below the client's own prose.
+    const part = `reference 8f3c1\n${page}`;
+    const below = classify(
+      { code: "", details: part, hint: "", message: "read failed" },
+      T.pendingClaims,
+    );
+    expect(below.kind).toBe("error");
+    if (below.kind !== "error") return;
+    // What the rule already gets right, and must keep getting right.
+    expect(below.message).toContain("read failed");
+    expect(below.message).toContain("reference 8f3c1");
+    expect(below.message).not.toContain("<");
+    expect(below.message).not.toContain("Sorry, you have been blocked");
+    // An account that counted a document cannot be longer than the document.
+    expect(below.message.length).toBeLessThan(part.length);
+  });
 
   /**
    * MUST NOT TOUCH (LESSONS 8) — the twin of the pin above, GREEN today and
@@ -1543,6 +1543,276 @@ describe("an account carries the parts the database authored", () => {
     expect(whole.message).not.toContain("<");
     expect(whole.message).toContain(String(page.length));
     expect(whole.message.length).toBeLessThan(page.length);
+  });
+
+  /**
+   * The clause the app says INSTEAD of a document, discovered FROM the app
+   * rather than retyped here.
+   *
+   * admin-window/BUG-0182 changes how many clauses one answer emits and does
+   * not touch `documentInstead`'s wording, so nothing below may pin that
+   * wording. The whole-part arm — the must-not-touch twin above — counts a
+   * part that IS a document at the length it arrived with, so classifying one
+   * page yields exactly the clause every other arm owes the same bytes.
+   */
+  const documentClause = (document: string): string => {
+    const counted = classify({ message: document }, T.pendingClaims);
+    if (counted.kind !== "error") throw new Error("a document part is an error");
+    return counted.message;
+  };
+
+  /**
+   * Everything the clause says APART from its number: the shared tail of two
+   * clauses whose documents differ in length. Counting occurrences of THIS
+   * counts the documents an account says it counted, without this file
+   * knowing one word of them.
+   */
+  const CLAUSE_WORDS = ((short: string, long: string) => {
+    let shared = 0;
+    while (
+      shared < short.length &&
+      short[short.length - 1 - shared] === long[long.length - 1 - shared]
+    ) {
+      shared += 1;
+    }
+    return short.slice(short.length - shared);
+  })(documentClause("<x>"), documentClause("<xx>"));
+
+  /** How many documents an account says it counted. */
+  const clausesIn = (account: string): number =>
+    account.split(CLAUSE_WORDS).length - 1;
+
+  /**
+   * What an operator actually READS off the rendered card — the account
+   * through `StateOf` -> `ErrorLine`, with its entities decoded, so an
+   * escaped leak (`&lt;html&gt;`) cannot hide from an assertion about `<`.
+   */
+  const cardTextOf = (result: {
+    kind: "error";
+    reading: string;
+    message: string;
+  }): string =>
+    cheerio.load(render(h(StateOf, { result })))('[data-state="error"]').text();
+
+  /**
+   * ONE document is ONE clause, at the length of the run AS IT ARRIVED —
+   * graded on the four shapes QA measured (admin-window/BUG-0182) as a
+   * PROPERTY of the account against the part it replaced, never against a
+   * recorded length: the lengths QA recorded were the defect's.
+   */
+  it("counts one document once on each shape QA measured", () => {
+    // The counter is not vacuous: it finds the app's own clause, and nothing
+    // else (LESSONS 8).
+    expect(CLAUSE_WORDS.length).toBeGreaterThan(10);
+    expect(clausesIn(documentClause("<x>"))).toBe(1);
+    expect(clausesIn("the read was refused with no words to explain it")).toBe(0);
+
+    // The shape a WAF actually serves: an interstitial, pretty-printed.
+    const interstitial = [
+      "<!DOCTYPE html>",
+      '<html lang="en-US">',
+      "<head>",
+      "<title>Attention Required!</title>",
+      '<meta charset="UTF-8" />',
+      '<meta name="robots" content="noindex, nofollow" />',
+      '<link rel="stylesheet" href="/cdn-cgi/styles/cf.errors.css" />',
+      "</head>",
+      "<body>",
+      '<div id="cf-wrapper">',
+      '<div id="cf-error-details" class="cf-error-details-wrapper">',
+      "<h1>Sorry, you have been blocked</h1>",
+      "<h2>You are unable to access this site</h2>",
+      "</div>",
+      "</div>",
+      "</body>",
+      "</html>",
+    ].join("\n");
+    const fuller = [
+      "<!DOCTYPE html>",
+      '<html lang="en-US">',
+      "<head>",
+      "<title>Attention Required! | Cloudflare</title>",
+      '<meta charset="UTF-8" />',
+      '<meta http-equiv="X-UA-Compatible" content="IE=Edge" />',
+      '<meta name="robots" content="noindex, nofollow" />',
+      '<meta name="viewport" content="width=device-width,initial-scale=1" />',
+      '<link rel="stylesheet" href="/cdn-cgi/styles/cf.errors.css" />',
+      "</head>",
+      "<body>",
+      '<div id="cf-wrapper">',
+      '<div id="cf-error-details" class="cf-error-details-wrapper">',
+      "<h1>Sorry, you have been blocked</h1>",
+      "<h2>You are unable to access this site</h2>",
+      "<p>You can email the site owner to let them know you were blocked.</p>",
+      '<p>Cloudflare Ray ID: <strong>8f3c1de4b7c90a13</strong></p>',
+      "</div>",
+      "</div>",
+      "</body>",
+      "</html>",
+    ].join("\n");
+    // Scale, and INDENTED: the run's own characters include the indentation
+    // the document arrived with, so the number is the document's length and
+    // not the sum of its trimmed lines.
+    const wide = [
+      "<!DOCTYPE html>",
+      '<html lang="en-US">',
+      "<body>",
+      ...Array.from(
+        { length: 395 },
+        (_unused, row) => `  <div class="cf-row-${row}">request blocked</div>`,
+      ),
+      "</body>",
+      "</html>",
+    ].join("\n");
+    const inCode = [
+      "<!DOCTYPE html>",
+      '<html lang="en-US">',
+      "<body>",
+      ...Array.from(
+        { length: 195 },
+        (_unused, row) => `  <p class="cf-note-${row}">request blocked</p>`,
+      ),
+      "</body>",
+      "</html>",
+    ].join("\n");
+
+    /**
+     * The frameless part one line below the client's own prose — the exact
+     * shape the per-line arm exists for (admin-window/BUG-0179).
+     */
+    const belowProse = (document: string) => {
+      const part = `reference 8f3c1\n${document}`;
+      return {
+        label: `a ${document.split("\n").length}-line document below the client's prose`,
+        document,
+        part,
+        prose: "reference 8f3c1",
+        error: { code: "", details: part, hint: "", message: "read failed" },
+      };
+    };
+
+    // The `code` beside a real message, whose FIRST line is not markup, so the
+    // whole-part arm passes over it (admin-window/BUG-0179).
+    const codePart = `edge-cache-status: refused\n${inCode}`;
+
+    /** Each shape: the document, the PART that carried it, and the error. */
+    const shapes: ReadonlyArray<{
+      readonly label: string;
+      readonly document: string;
+      readonly part: string;
+      readonly prose: string;
+      readonly error: unknown;
+    }> = [
+      belowProse(interstitial),
+      belowProse(fuller),
+      belowProse(wide),
+      {
+        label: "a 200-line document in the code beside a real message",
+        document: inCode,
+        part: codePart,
+        prose: "edge-cache-status: refused",
+        error: {
+          code: codePart,
+          message: "permission denied for view pending_claims",
+        },
+      },
+    ];
+
+    expect(shapes).toHaveLength(4);
+    expect(new Set(shapes.map((shape) => shape.document)).size).toBe(4);
+
+    for (const shape of shapes) {
+      const result = classify(shape.error, T.pendingClaims);
+      expect(result.kind, shape.label).toBe("error");
+      if (result.kind !== "error") continue;
+
+      // ONE document, counted ONCE, at the length of the run as it arrived —
+      // the same clause the whole-part arm owes the same bytes, which is the
+      // two granularities of one question agreeing.
+      expect(clausesIn(result.message), shape.label).toBe(1);
+      expect(result.message, shape.label).toContain(documentClause(shape.document));
+      // An account that COUNTED a document is shorter than what it counted.
+      expect(result.message.length, shape.label).toBeLessThan(shape.part.length);
+      // The prose standing beside the document still crosses verbatim.
+      expect(result.message, shape.label).toContain(shape.prose);
+
+      // COUNTED, NEVER QUOTED — on the DbResult and on the rendered card,
+      // read back with its entities decoded so an escaped leak cannot hide.
+      const card = cardTextOf(result);
+      expect(card, shape.label).toContain(result.message);
+      for (const read of [result.message, card]) {
+        expect(read, shape.label).not.toContain("<");
+        expect(read, shape.label).not.toContain("DOCTYPE");
+        expect(read, shape.label).not.toContain("html");
+        expect(read, shape.label).not.toContain("div");
+      }
+      const printed = shape.document
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 6);
+      expect(printed.length, shape.label).toBeGreaterThan(3);
+      for (const line of printed) {
+        expect(result.message, `${shape.label} quotes ${line}`).not.toContain(line);
+        expect(card, `${shape.label} renders ${line}`).not.toContain(line);
+      }
+    }
+  });
+
+  /**
+   * THE OVER-GROUPING TWIN (LESSONS 8), which forbids the lazy fix: a rule
+   * that folds a whole part into one clause, or that counts everything after
+   * the first `<` as one document, says ONE here and loses the line of the
+   * database's own prose standing between the two.
+   */
+  it("counts two documents in one part as two, not as one", () => {
+    const first = [
+      "<!DOCTYPE html>",
+      '<html lang="en-US">',
+      "<head>",
+      "<title>Attention Required!</title>",
+      "</head>",
+      "<body>",
+      "<h1>Sorry, you have been blocked</h1>",
+      "</body>",
+      "</html>",
+    ].join("\n");
+    const between = "reference 8f3c1 was refused at the edge";
+    const second = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      "<Error>",
+      "<Code>AccessDenied</Code>",
+      "<Message>Request blocked by the gateway</Message>",
+      "</Error>",
+    ].join("\n");
+    const part = `upstream said:\n${first}\n${between}\n${second}`;
+    expect(first.length).not.toBe(second.length);
+
+    const result = classify(
+      { code: "", details: part, hint: "", message: "read failed" },
+      T.pendingClaims,
+    );
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+
+    // TWO documents, each counted at its OWN length.
+    expect(clausesIn(result.message)).toBe(2);
+    expect(result.message).toContain(documentClause(first));
+    expect(result.message).toContain(documentClause(second));
+    // With the database's prose crossing verbatim BETWEEN them, and the
+    // client's own line still ahead of both.
+    expect(result.message).toContain(between);
+    expect(result.message).toContain("upstream said:");
+    expect(result.message).toContain("read failed");
+    const at = (words: string) => result.message.indexOf(words);
+    expect(at("upstream said:")).toBeLessThan(at(documentClause(first)));
+    expect(at(documentClause(first))).toBeLessThan(at(between));
+    expect(at(between)).toBeLessThan(at(documentClause(second)));
+    // Still counted, never quoted, and still shorter than what it counted.
+    expect(result.message).not.toContain("<");
+    expect(result.message).not.toContain("AccessDenied");
+    expect(result.message).not.toContain("Sorry, you have been blocked");
+    expect(result.message.length).toBeLessThan(part.length);
+    expect(cardTextOf(result)).not.toContain("<");
   });
 });
 

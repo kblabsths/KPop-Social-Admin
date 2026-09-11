@@ -429,9 +429,60 @@ function framesInstead(count: number): string {
 }
 
 /**
+ * One LINE of a part, with where it stood in that part.
+ *
+ * The offsets are what let a RUN of document lines be counted at the length it
+ * ARRIVED with — from the first line's first character to the last line's
+ * last, the newlines between them included, in whichever spelling (`\n` or
+ * `\r\n`) they came in. Splitting alone loses that, and the number would then
+ * be a sum of trimmed lines rather than the length of the document
+ * (admin-window/BUG-0182). The `text` sequence is exactly what
+ * `part.split(/\r?\n/)` gives; only the offsets are new.
+ */
+type PartLine = {
+  readonly text: string;
+  readonly start: number;
+  readonly end: number;
+};
+
+function linesOf(part: string): PartLine[] {
+  const lines: PartLine[] = [];
+  const newline = /\r?\n/g;
+  let start = 0;
+  let match: RegExpExecArray | null;
+  while ((match = newline.exec(part)) !== null) {
+    lines.push({ text: part.slice(start, match.index), start, end: match.index });
+    start = match.index + match[0].length;
+  }
+  lines.push({ text: part.slice(start), start, end: part.length });
+  return lines;
+}
+
+/**
  * A part read LINE BY LINE: every line that is a runtime STACK FRAME goes,
- * every line that is a DOCUMENT is counted where it stood, and every other
+ * every RUN of DOCUMENT lines is counted ONCE where it stood, and every other
  * line is kept verbatim and joined into one line.
+ *
+ * A RUN OF CONSECUTIVE DOCUMENT LINES IS ONE DOCUMENT (the architect's ruling
+ * of 2026-09-11, admin-window/BUG-0182). A WAF serves its interstitial
+ * pretty-printed, so the same page that is one clause when it IS the whole
+ * part used to be one clause PER LINE when it stood one line below the
+ * client's prose: seventeen sentences of this app's own words, each stating
+ * the length of a markup line rather than of anything that arrived, and an
+ * account two to three times LONGER than the part it replaced. What changes
+ * here is only how many clauses ONE answer emits — one per document instead of
+ * one per line. Nothing new is inspected: the same `isDocument` decides each
+ * line exactly as before, there is no fourth question, no length cap and no
+ * vocabulary match (ARCHITECTURE.md §7 common violations row 15, LESSONS 4).
+ *
+ * A run ENDS at the first line that is not a document: a line of the
+ * database's own prose (which still crosses verbatim, between the two clauses)
+ * or a runtime frame (which is dropped, and whose characters are no part of
+ * any document). Two documents separated by prose are therefore counted as
+ * two, each at its own length. A blank line neither speaks nor ends a run —
+ * blank lines are dropped BEFORE question 2 is asked, exactly as they always
+ * were, so a pretty-printed document that breathes is still one document, and
+ * the characters it breathed with are inside the run it arrived in.
  *
  * Question 2 is asked at both granularities, of EVERY part, because a document
  * does not have to be the first thing in a part to be one. A frameless
@@ -456,19 +507,42 @@ function framesInstead(count: number): string {
  * exactly as it arrived.
  */
 function askedLineByLine(part: string): string {
-  const lines = part.split(/\r?\n/);
-  const dropped = lines.filter(isRuntimeFrame).length;
+  const lines = linesOf(part);
+  const dropped = lines.filter((line) => isRuntimeFrame(line.text)).length;
   const carriesDocument = lines.some(
-    (line) => !isRuntimeFrame(line) && isDocument(line.trim()),
+    (line) => !isRuntimeFrame(line.text) && isDocument(line.text.trim()),
   );
   if (dropped === 0 && !carriesDocument) return part;
 
-  const said = lines
-    .filter((line) => !isRuntimeFrame(line))
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => (isDocument(line) ? documentInstead(line) : line))
-    .join(" ");
+  const spoken: string[] = [];
+  // The document being counted right now: where it began, and how far it has
+  // reached. `null` between documents.
+  let run: { start: number; end: number } | null = null;
+  const countTheRun = (): void => {
+    if (run === null) return;
+    // The run's OWN characters, as they arrived — never a per-line length and
+    // never the length of the whole part.
+    spoken.push(documentInstead(part.slice(run.start, run.end)));
+    run = null;
+  };
+
+  for (const line of lines) {
+    if (isRuntimeFrame(line.text)) {
+      countTheRun();
+      continue;
+    }
+    const trimmed = line.text.trim();
+    if (trimmed.length === 0) continue;
+    if (isDocument(trimmed)) {
+      run = { start: run === null ? line.start : run.start, end: line.end };
+      continue;
+    }
+    countTheRun();
+    spoken.push(trimmed);
+  }
+  countTheRun();
+
+  const said = spoken.join(" ");
   if (dropped === 0) return said;
   const counted = framesInstead(dropped);
   return said.length > 0 ? `${said} ${counted}` : counted;
