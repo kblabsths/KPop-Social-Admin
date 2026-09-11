@@ -5,6 +5,7 @@ import { SHAPES } from "@/lib/review/shapes";
 import type { ReviewItemRow } from "@/lib/review/shapes";
 import { reviewItemShapes, type ReviewItemRow as FixtureRow } from "../../fixtures/rows";
 import { codeLines, repoRoot, sourceFiles } from "../source-tree";
+import { mirrorDirFor, sweepDeadMirrorDirs } from "../../probe-area";
 
 /**
  * The structural half of admin-window/TASK-0006's acceptance criteria, asserted
@@ -34,6 +35,20 @@ import { codeLines, repoRoot, sourceFiles } from "../source-tree";
  * Two later tickets code against `shapes.ts` without reading it, so a second
  * copy of this derivation appearing anywhere is the defect these guard.
  */
+
+/**
+ * Clear out any mirror tree under `tests/.probes/` left by a run that DIED
+ * before its `finally` ran, once per worker, before anything below plants one
+ * (admin-window/BUG-0190).
+ *
+ * Only a directory whose pid names no live process goes — a concurrent run's
+ * mirror is untouched and the shared parent is never removed
+ * (`tests/probe-area.ts` states the whole rule). Without this nothing ever
+ * removed a corpse: the area is gitignored and ESLint-ignored, so neither
+ * `git status` nor any guard reported it, and a later run drawing the dead
+ * run's pid walked its files as its own mirror.
+ */
+sweepDeadMirrorDirs();
 
 const SHAPES_MODULE = "src/lib/review/shapes.ts";
 /** The one call site of `settle_review_item` (admin-window/TASK-0048). */
@@ -211,7 +226,7 @@ describe("the M2 close settles in exactly one place", () => {
  * proof is unchanged and the race is gone.
  */
 describe("the M2-close guard itself", () => {
-  const probeBase = path.join(repoRoot, "tests", ".probes", `m2-close-${process.pid}`);
+  const probeBase = mirrorDirFor("close-guard");
   const ACTION_PROBE = "src/lib/review/close-action.ts";
   const ROUTE_PROBE = "src/app/api/settle/route.ts";
 
@@ -266,7 +281,7 @@ describe("the M2-close guard itself", () => {
     // settle control most plausibly arrives as — inline in `queues/page.tsx`,
     // which TASK-0010 renders next. Measured caught on the real tree; pinned
     // here so a later narrowing of USE_SERVER cannot lose it silently.
-    const inlineBase = path.join(repoRoot, "tests", ".probes", `inline-${process.pid}`);
+    const inlineBase = mirrorDirFor("close-inline");
     const PAGE_PROBE = "src/app/queues/page.tsx";
     let served: string[] = [];
     let named: string[] = [];
@@ -298,44 +313,58 @@ describe("the M2-close guard itself", () => {
     expect(fs.existsSync(probeBase)).toBe(false);
   });
 
-  // EXPECTED FAILURE while admin-window/BUG-0190 stands: this run cannot tell
-  // its own mirror tree from one a dead run with the same pid left, so the
-  // assertion below is red on purpose. THE FIX FLIPS THIS BACK TO A PLAIN
-  // `it` — leave it as `it.fails` and the day the bug is fixed vitest reddens
-  // here and sends the reader to the ticket.
-  it.fails("is blind to a mirror tree left behind by a dead run that had this pid", () => {
-    // admin-window/BUG-0190. This guard's mirror tree is named from
-    // `process.pid` ALONE (`m2-close-${process.pid}`, above) and is removed
-    // only in the `finally` of each case, so a run KILLED mid-case leaves the
-    // whole tree on disk and nothing ever sweeps it: the area is gitignored
-    // and ESLint-ignored, so no guard and no `git status` reports it. pids are
-    // recycled, so a later worker drawing the dead run's number walks the
-    // corpse's files as if it had planted them — and every case here compares
-    // the walk with `toEqual`, so the corpse is reported as an extra source
-    // file of the mirror. admin-window/BUG-0188 fixed exactly this for
-    // `src/.probes/` (entropy in the name plus a dead-pid sweep,
-    // `tests/probe-area.ts`); the mirror trees under `tests/.probes/` still
-    // carry the pid-only naming it replaced.
+  it("is blind to a mirror tree left behind by a dead run that had this pid", () => {
+    // admin-window/BUG-0190, QA's pin, kept and widened by the fix. This
+    // guard's mirror tree used to be named from `process.pid` ALONE
+    // (`m2-close-${process.pid}`) and is removed only in the `finally` of each
+    // case, so a run KILLED mid-case left the whole tree on disk and nothing
+    // ever swept it: the area is gitignored and ESLint-ignored, so no guard
+    // and no `git status` reports it. pids are recycled, so a later worker
+    // drawing the dead run's number walked the corpse's files as if it had
+    // planted them — and every case here compares the walk with `toEqual`, so
+    // the corpse was reported as an extra source file of the mirror.
     //
-    // The corpse is planted at the path a DEAD run with this pid wrote to, not
-    // at `probeBase`, so the fix — a base this run alone can name — is what
-    // makes this pass, not a change to where the corpse goes.
-    const corpseBase = path.join(repoRoot, "tests", ".probes", `m2-close-${process.pid}`);
-    const corpse = path.join(corpseBase, "src/lib/review/corpse-of-a-killed-run.ts");
+    // The base now carries this run's entropy as well as its pid
+    // (`mirrorDirFor`, `tests/probe-area.ts` — the same answer
+    // admin-window/BUG-0188 gave `src/.probes/`), and the module-scope
+    // `sweepDeadMirrorDirs()` above removes the corpse once its pid is dead.
+    //
+    // Every corpse below is planted at a path a DEAD run with THIS pid wrote
+    // to, never at `probeBase`, so what makes this pass is the base this run
+    // alone can name — not a change to where the corpses go. All three
+    // spellings are here on purpose: the pre-fix pid-only name QA measured,
+    // the same name under today's label, and the shape a dead run of the
+    // FIXED code leaves — which is what proves the ENTROPY does the work
+    // rather than the label having been renamed.
+    const corpseBases = [
+      path.join(repoRoot, "tests", ".probes", `m2-close-${process.pid}`),
+      path.join(repoRoot, "tests", ".probes", `close-guard-${process.pid}`),
+      path.join(
+        repoRoot,
+        "tests",
+        ".probes",
+        `close-guard-${process.pid}-8b1f1d3e-0000-4000-8000-000000000000`,
+      ),
+    ];
     let walked: string[] = [];
     let served: string[] = [];
     try {
-      fs.mkdirSync(path.dirname(corpse), { recursive: true });
-      fs.writeFileSync(corpse, '"use server";\nexport async function corpse() {}\n', "utf8");
-      // Non-vacuous: the corpse really is on disk while the guard walks.
-      expect(fs.existsSync(corpse)).toBe(true);
+      for (const corpseBase of corpseBases) {
+        const corpse = path.join(corpseBase, "src/lib/review/corpse-of-a-killed-run.ts");
+        fs.mkdirSync(path.dirname(corpse), { recursive: true });
+        fs.writeFileSync(corpse, '"use server";\nexport async function corpse() {}\n', "utf8");
+        // Non-vacuous: every corpse really is on disk while the guard walks.
+        expect(fs.existsSync(corpse), corpse).toBe(true);
+      }
       write(ACTION_PROBE, ACTION_SOURCE);
       write(ROUTE_PROBE, ROUTE_SOURCE);
       walked = sourceFiles(probeBase);
       served = filesWhereCodeMatches(USE_SERVER, probeBase);
     } finally {
       fs.rmSync(probeBase, { force: true, recursive: true });
-      fs.rmSync(corpseBase, { force: true, recursive: true });
+      for (const corpseBase of corpseBases) {
+        fs.rmSync(corpseBase, { force: true, recursive: true });
+      }
     }
     expect([...walked].sort()).toEqual([ACTION_PROBE, ROUTE_PROBE].sort());
     expect(served).toEqual([ACTION_PROBE]);
@@ -394,7 +423,7 @@ describe("the fixture rows and the product's row type agree", () => {
  * side, and each rule is asserted to tell them apart.
  */
 describe("the one-call-site and close-route rules, guarding themselves", () => {
-  const probeBase = path.join(repoRoot, "tests", ".probes", `m2-one-call-${process.pid}`);
+  const probeBase = mirrorDirFor("close-one-call");
 
   /** The sanctioned call, in the seam — the input the rule must NOT report as an offender. */
   const SEAM_PROBE = "src/lib/db/verdict.ts";

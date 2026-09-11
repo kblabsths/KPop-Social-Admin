@@ -39,7 +39,8 @@ import {
 import { recordFields } from "@/components/records/fields";
 import { EDIT_CONFIG, decideEdit, decideReference } from "@/lib/edit/config";
 import { EM_DASH } from "@/lib/format";
-import { codeLinesIn, codeText, repoRoot, sourceFiles, sourceText } from "../source-tree";
+import { codeLinesIn, codeText, sourceFiles, sourceText } from "../source-tree";
+import { mirrorDirFor, sweepDeadMirrorDirs } from "../../probe-area";
 
 /**
  * The entity picker — how a `kind: reference` field is edited (campaign
@@ -62,6 +63,14 @@ import { codeLinesIn, codeText, repoRoot, sourceFiles, sourceText } from "../sou
  * recording spy the route suite already owns
  * (`tests/offline/edit/route.test.ts`, "the picker's choice").
  */
+
+/**
+ * Clear out any mirror tree under `tests/.probes/` left by a run that DIED
+ * before its `finally` ran, once per worker, before the guard below plants one
+ * (admin-window/BUG-0190). Only a directory whose pid names no live process
+ * goes; `tests/probe-area.ts` states the whole rule.
+ */
+sweepDeadMirrorDirs();
 
 const VENUE = "01920000-0000-7000-8000-0000000000a4";
 const DOME = "01920000-0000-7000-8000-0000000000b1";
@@ -2215,12 +2224,7 @@ describe("no code path submits a reference field's value as text", () => {
     // The guard's own two fixtures, on a MIRROR tree under `tests/.probes/`
     // rather than in the real `src/` — three offline suites walk that tree in
     // parallel (admin-window/BUG-0020, `../source-tree.ts`).
-    const probeBase = path.join(
-      repoRoot,
-      "tests",
-      ".probes",
-      `reference-cell-${process.pid}`,
-    );
+    const probeBase = mirrorDirFor("reference-cell");
     const SANCTIONED = "src/components/records/record-fields.tsx";
     const PROBE = "src/components/records/reference-cell.tsx";
     const COMMENT_ONLY = "src/components/records/notes.ts";

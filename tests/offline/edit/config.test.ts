@@ -19,6 +19,7 @@ import {
 import { isReferenceField } from "@/lib/verdict/decision";
 import { TABLE_NAMES } from "@/lib/db/tables";
 import { codeLines, repoRoot, sourceFiles, sourceText } from "../source-tree";
+import { mirrorDirFor, sweepDeadMirrorDirs } from "../../probe-area";
 
 /**
  * The edit config map — campaign admin-window/TASK-0017, acceptance test 7's
@@ -31,6 +32,14 @@ import { codeLines, repoRoot, sourceFiles, sourceText } from "../source-tree";
  * `tests/offline/db/layering.test.ts`: no second allowlist, no insert, no
  * delete, no write path to a resolver-owned table.
  */
+
+/**
+ * Clear out any mirror tree under `tests/.probes/` left by a run that DIED
+ * before its `finally` ran, once per worker, before anything below plants one
+ * (admin-window/BUG-0190). Only a directory whose pid names no live process
+ * goes; `tests/probe-area.ts` states the whole rule.
+ */
+sweepDeadMirrorDirs();
 
 const CONFIG_MODULE = "src/lib/edit/config.ts";
 const RECORDS_MODULE = "src/lib/db/records.ts";
@@ -1395,12 +1404,7 @@ describe("the write surface of the whole repo", () => {
     // the same table, which must NOT be flagged. Without both halves the
     // assertion above has never seen an input it should reject, and a guard
     // that flagged the read would forbid the record page (LESSONS 3).
-    const probeBase = path.join(
-      repoRoot,
-      "tests",
-      ".probes",
-      `resolver-write-${process.pid}`,
-    );
+    const probeBase = mirrorDirFor("resolver-write");
     const WRITE_PROBE = "src/lib/db/override-shortcut.ts";
     const READ_PROBE = "src/lib/db/read-the-event.ts";
     let flagged: string[] = [];
@@ -1514,7 +1518,7 @@ describe("the write surface of the whole repo", () => {
  * base directory differs.
  */
 describe("the admin_locked write guard itself", () => {
-  const probeBase = path.join(repoRoot, "tests", ".probes", `admin-locked-${process.pid}`);
+  const probeBase = mirrorDirFor("admin-locked");
 
   /** The provenance display spec §8 asks for: a read, and nothing else. */
   const READ_PROBE = "src/lib/records/provenance.ts";
@@ -1663,7 +1667,9 @@ describe("the argument scan and string literals", () => {
     read: (base: string) => T,
   ): T {
     planted += 1;
-    const base = path.join(repoRoot, "tests", ".probes", `strings-${process.pid}-${planted}`);
+    // One base per plant, and still a DIRECT child of the area so the sweep
+    // can read its pid: `strings-<pid>-<run id>-<n>` (admin-window/BUG-0190).
+    const base = `${mirrorDirFor("strings")}-${planted}`;
     try {
       for (const [file, source] of sources) {
         const full = path.join(base, file);
@@ -2000,9 +2006,15 @@ describe("the argument scan and string literals", () => {
     // suite's walker to trip over.
     const probes = path.join(repoRoot, "tests", ".probes");
     const mine = fs.existsSync(probes)
-      ? fs.readdirSync(probes).filter((name) => name.startsWith(`strings-${process.pid}-`))
+      ? fs.readdirSync(probes).filter((name) =>
+          name.startsWith(`${path.basename(mirrorDirFor("strings"))}-`),
+        )
       : [];
     expect(mine).toEqual([]);
+    // Non-vacuous: the prefix it filters on is the one the cases above plant
+    // under, so an empty list means removed rather than never-matched
+    // (admin-window/BUG-0190 renamed these bases).
+    expect(planted).toBeGreaterThan(0);
   });
 });
 
@@ -2022,7 +2034,7 @@ describe("the argument scan and string literals", () => {
  * readdir and their read reddens a stranger's suite (admin-window/BUG-0020).
  */
 describe("the one-call-site guard itself", () => {
-  const probeBase = path.join(repoRoot, "tests", ".probes", `one-call-${process.pid}`);
+  const probeBase = mirrorDirFor("one-call");
 
   /** The sanctioned call, in the file the rule names. */
   const SEAM_PROBE = "src/lib/db/verdict.ts";
