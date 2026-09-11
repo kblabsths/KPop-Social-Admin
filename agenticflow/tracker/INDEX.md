@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T05:18:08Z — do not edit)
+# Tracker index (regenerated 2026-09-11T05:27:07Z — do not edit)
 
 ## open
 - FEAT-0014 [P1][feat][M3] F16 — the second leg of a two-step join runs its chunks concurrently  (scope:src/lib/db/result.ts,src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/db/verdict.ts,tests/offline/db/result.test.ts,tests/live/claims.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts)
@@ -15,7 +15,7 @@
 - BUG-0164 [P3][bug][patch] /queues still carries the exit copy BUG-0161 replaced on /claims  (deps:TASK-0072(unmet:1) scope:src/app/queues/page.tsx,tests/offline/queues/page.test.ts,tests/offline/ui/copy.test.ts from:designer:endgame-walk)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - TASK-0069 [P1][task][M3] /browse pages further down its one curated view, and says so honestly  (deps:TASK-0067,TASK-0068,TASK-0076 scope:src/app/browse/page.tsx,src/components/browse/paged-browse-table.tsx,src/lib/browse/views.ts,tests/offline/browse/page.test.ts,tests/offline/browse/views.test.ts,tests/offline/absence/pages.test.ts,tests/live/browse.live.test.ts @builder-259)
 
-Totals — claimed:1, done:16, open:13. Archived: 252.
+Totals — built:1, done:16, open:13. Archived: 252.
