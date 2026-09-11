@@ -379,6 +379,29 @@ export const NARROWED_BY_FILTERS = "matching these filters";
 const THE_REST_IS_NOT_SHOWN = "the rest are not shown.";
 
 /**
+ * Which side of its CAP a window's ROWS landed on — the one clause this file
+ * gains (admin-window/BUG-0186), spelled beside the vocabulary it completes.
+ *
+ * It is `didNotFill`'s opening in the not-reached direction, word for word and
+ * figure for figure, and its complement in the other: a window that drew as
+ * many rows as its cap allowed may be hiding more, and that is a fact of the
+ * ROW read alone — the number of rows it came back with, against the number it
+ * was allowed. No second read is consulted here, which is the whole point: the
+ * clause it replaces took its verdict from a separate COUNT, so a count that
+ * came back smaller than the rows made a window that drew its whole cap say it
+ * did not fill.
+ *
+ * It states no relationship to the count and asserts no rest. What the count
+ * read established is stated as the count's own fact, in the clause beside
+ * this one.
+ */
+function rowsAgainstCap(below: number, limit: number): string {
+  return below < limit
+    ? `The window did not fill — ${count(below)} of at most ${count(limit)}.`
+    : `The window reached its cap — ${count(below)} of at most ${count(limit)}.`;
+}
+
+/**
  * How a scope of several narrowings is joined — one spelling, seen by both the
  * composing (`narrowedTo`) and the subtraction (`besides`), so a scope built by
  * a page can always be read back apart by this file.
@@ -621,6 +644,48 @@ export function readsAgree(info: DrawnWindow): boolean {
 }
 
 /**
+ * MAY THIS WINDOW SAY IT DID NOT FILL? The one place the `matched` arm's fill
+ * verdict is decided (admin-window/BUG-0186).
+ *
+ * The verdict is the ROW read's, against its own cap, and it is never the
+ * COUNT read's. `/claims` issues two reads — a count over the matching set and
+ * the window that draws the rows — and the arm's gate was `truncated`, which
+ * that page derives from the COUNT alone (`listCount.data > listed.length`).
+ * A count that comes back SMALLER than the rows drawn turns that gate off, so
+ * the did-not-fill clause rendered over a screen holding 50 claims under a cap
+ * of 50, naming the count's 30: a window that drew its whole cap saying it did
+ * not fill, and a sentence describing the screen with a number about something
+ * else. Two screens holding 50 and 37 claims said the same thing, byte for
+ * byte (measured on a988b00; the other direction of admin-window/BUG-0174 and
+ * admin-window/BUG-0183's divergence, which those tickets fixed for the clause
+ * next door).
+ *
+ * So both halves must hold, and both come from facts the window already
+ * carries — no field is added and no call site passes a new prop:
+ *
+ *  - the window's own rows fell SHORT of its cap (`drawn < limit`, which
+ *    `drawn` states since admin-window/BUG-0183) — a window that reached its
+ *    cap may be hiding rows, whatever any other read says;
+ *  - the two reads AGREE (`readsAgree`, the one derivation) — the clause ends
+ *    by asserting that the window holds everything the read found, which is a
+ *    relationship between the count and the rows, and only agreement
+ *    establishes it (LESSONS 2).
+ *
+ * A window that states NO rows on screen answers `true`: there is ONE read
+ * here and not two (`held` is that read's own rows, `heldFrom` absent meaning
+ * "this window"), so there is no second read to fall short of the cap against
+ * and nothing to disagree with — its sentence is the one it has always
+ * rendered, which is what admin-window/BUG-0183 left standing and this ticket
+ * pins byte for byte. It is asked only where the window is NOT truncated and
+ * no press can continue it; the other two states are the clauses beside it.
+ */
+function maySayItDidNotFill(info: DrawnWindow): boolean {
+  const below = onScreen(info);
+  if (below === null) return true;
+  return below < info.limit && readsAgree(info);
+}
+
+/**
  * How a continued window that has reached the end of its set ends — the read's
  * own verdict, in the app's voice.
  *
@@ -819,14 +884,48 @@ export function WindowLine(
         ? ""
         : ` ${counted}; the ${count(below)} longest-waiting are below — ${THE_REST_IS_NOT_SHOWN}`;
 
+    // What the line says where `didNotFill` may not speak: EACH READ AS ITS
+    // OWN FACT (admin-window/BUG-0186), and then the rows against their cap.
+    // Nothing here ranks one read out of the other, claims a rest the count no
+    // longer covers, or says the window holds everything "the read" found —
+    // with two reads disagreeing there is no one read for that sentence to be
+    // about, and with the cap reached there is no such claim to make.
+    //
+    // AGREEMENT is the whole difference between the two spellings:
+    //
+    //  - where the count and the rows are the same number, one read really did
+    //    establish that every claim it counted is on screen, so the line says
+    //    so in the words the ENDED paged window already uses;
+    //  - where they are not, the count is stated as a count and nothing else —
+    //    the spelling the paged arm's diverged sentence uses, deliberately
+    //    free of the superlative, which under a smaller count would read as a
+    //    ranking out of it ("30 claims in all; the 50 longest-waiting").
+    const eachReadsOwnFact =
+      below === null
+        ? ""
+        : readsAgree(info)
+          ? ` ${counted}, and every one of them is below. ${rowsAgainstCap(
+              below,
+              info.limit,
+            )}`
+          : ` A count of ${of} answered ${count(info.held)}. ${rowsAgainstCap(
+              below,
+              info.limit,
+            )}`;
+
     if (below === null || (continuedTo(info) === null && !ended(info))) {
-      // Unchanged, element for element and byte for byte: this is the first
+      // Unchanged, element for element and byte for byte, in every state but
+      // the two whose fill verdict came from the wrong read: this is the first
       // screen SPEC F14 keeps, and every window no press can continue.
       return (
         <WindowParagraph gauge={props.gauge} window={info}>
           {shows.lede} A window of at most {count(info.limit)} rows, not the whole{" "}
           {info.over}.
-          {info.truncated || pageable(info) ? holdsBack : didNotFill(info, shows.rows)}
+          {info.truncated || pageable(info)
+            ? holdsBack
+            : maySayItDidNotFill(info)
+              ? didNotFill(info, shows.rows)
+              : eachReadsOwnFact}
         </WindowParagraph>
       );
     }

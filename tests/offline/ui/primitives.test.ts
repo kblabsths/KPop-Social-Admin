@@ -803,6 +803,24 @@ describe("WindowLine", () => {
   /** A window whose read saw one facet of its object, and says which. */
   const NARROWED = "from bandsintown";
 
+  /**
+   * `DRAWN`'s read, come back SHORT of its cap — with the rows it put on
+   * screen stated, and its count agreeing with them (admin-window/BUG-0186).
+   *
+   * `DRAWN` states 50 rows on screen against a cap of 50, which is a window
+   * that REACHED its cap, so overriding `held` alone produced a window whose
+   * two reads disagreed AND whose rows filled the cap, under a sentence
+   * claiming it had not filled. Three of the four arms have one read and never
+   * noticed; `matched` — the arm `/claims` draws with a separate COUNT read —
+   * now states that state as the two reads it is, which is the whole of this
+   * ticket. The cases below mean "this window did not fill", so they say it
+   * with the rows the read drew and vary only what they are about.
+   */
+  const cameBackShort = (
+    held: number,
+    rest: Partial<DrawnWindow> = {},
+  ): DrawnWindow => ({ ...DRAWN, held, drawn: held, truncated: false, ...rest });
+
   /** The longest text both renderings share — the window's own sentence. */
   const sharedPrefix = (a: string, b: string): string => {
     let i = 0;
@@ -884,7 +902,7 @@ describe("WindowLine", () => {
     // rather than letting the last row read as the top of a long list. The
     // stamp is the WINDOW's own fact, rendered the way the app renders an
     // instant — no copy is pinned here.
-    const held = { ...DRAWN, held: 5, truncated: false };
+    const held = cameBackShort(5);
     for (const shows of EVERY_KIND) {
       const open = textOf(drawn(shows, held));
       expect(open, shows.of).toContain(absoluteUtc(DRAWN.oldest));
@@ -905,8 +923,8 @@ describe("WindowLine", () => {
     // standing in for one (admin-window/BUG-0004: an absence is rendered, and
     // an instant that was never read is not an absence in a sentence).
     for (const shows of EVERY_KIND) {
-      const text = textOf(drawn(shows, { ...DRAWN, held: 5, truncated: false, oldest: null }));
-      const dated = textOf(drawn(shows, { ...DRAWN, held: 5, truncated: false }));
+      const text = textOf(drawn(shows, cameBackShort(5, { oldest: null })));
+      const dated = textOf(drawn(shows, cameBackShort(5)));
       expect(text, shows.of).not.toContain(absoluteUtc(DRAWN.oldest));
       expect(text.length, shows.of).toBeLessThan(dated.length);
       expect(dated.startsWith(text.replace(/\.$/, "")), shows.of).toBe(true);
@@ -920,7 +938,7 @@ describe("WindowLine", () => {
     // holds everything below".
     for (const shows of EVERY_KIND) {
       const text = textOf(
-        drawn(shows, { ...DRAWN, held: 0, truncated: false, oldest: null }),
+        drawn(shows, cameBackShort(0, { oldest: null })),
       );
       expect(text, shows.of).toContain(shows.rows);
       expect(text, shows.of).not.toContain(absoluteUtc(DRAWN.oldest));
@@ -943,7 +961,7 @@ describe("WindowLine", () => {
       more: pointer,
     };
     expect(textOf(drawn(shows, { ...DRAWN, held: 50, truncated: true }))).toContain(pointer);
-    expect(textOf(drawn(shows, { ...DRAWN, held: 5, truncated: false }))).not.toContain(
+    expect(textOf(drawn(shows, cameBackShort(5)))).not.toContain(
       pointer,
     );
   });
@@ -991,7 +1009,7 @@ describe("WindowLine", () => {
     // that source's oldest run as the point before which NOTHING is retained —
     // of a table that retains older runs from every other source and renders
     // them on the same page without the facet.
-    const held = { ...DRAWN, held: 5, truncated: false };
+    const held = cameBackShort(5);
     for (const shows of EVERY_KIND) {
       const narrowed = textOf(drawn(shows, { ...held, scope: NARROWED }));
       // The floor is still stated — it is the floor of what the read saw —
@@ -1008,7 +1026,7 @@ describe("WindowLine", () => {
     // The same lie in the zero-row arm: "found no runs at all" stood over a
     // read that had looked at one source, directly above an empty card saying
     // the window holds "runs from <name>".
-    const empty = { ...DRAWN, held: 0, truncated: false, oldest: null };
+    const empty = cameBackShort(0, { oldest: null });
     for (const shows of EVERY_KIND) {
       const narrowed = textOf(drawn(shows, { ...empty, scope: NARROWED }));
       expect(narrowed, shows.of).toContain(`no ${shows.rows} ${NARROWED} at all`);
@@ -1030,7 +1048,7 @@ describe("WindowLine", () => {
     // say which population it is a window of: the reader who cannot see the
     // facet cannot check the cap either.
     for (const shows of EVERY_KIND) {
-      const open = textOf(drawn(shows, { ...DRAWN, held: 5, truncated: false, scope: NARROWED }));
+      const open = textOf(drawn(shows, cameBackShort(5, { scope: NARROWED })));
       const narrowed = textOf(drawn(shows, { ...DRAWN, truncated: true, scope: NARROWED }));
       expect(narrowed, shows.of).toContain(NARROWED);
       // Not just in the window's own sentence: the clause truncation ADDS —
@@ -1160,7 +1178,7 @@ describe("WindowLine", () => {
 
     // And a window that did NOT fill says nothing of the kind: there is no
     // rest to be missing, so the arm's other branch is untouched by all this.
-    const open = textOf(drawn(matched, { ...DRAWN, held: 5, truncated: false }));
+    const open = textOf(drawn(matched, cameBackShort(5)));
     expect(open).not.toContain("not shown");
   });
 
@@ -1170,8 +1188,8 @@ describe("WindowLine", () => {
     // asked for, to the byte, in every arm and both directions.
     const cases: Array<[string, DrawnWindow]> = [
       ["filled", { ...DRAWN, truncated: true }],
-      ["not filled", { ...DRAWN, held: 5, truncated: false }],
-      ["empty", { ...DRAWN, held: 0, truncated: false, oldest: null }],
+      ["not filled", cameBackShort(5)],
+      ["empty", cameBackShort(0, { oldest: null })],
     ];
     for (const shows of EVERY_KIND) {
       for (const [state, drew] of cases) {
@@ -1192,11 +1210,10 @@ describe("WindowLine", () => {
     // drops "nothing earlier is retained" from the unnarrowed arm is caught
     // where it is decided rather than on five pages.
     const floor = textOf(
-      drawn({ of: "newest", lede: "The adapters’ newest runs, newest first", rows: "runs" }, {
-        ...DRAWN,
-        held: 5,
-        truncated: false,
-      }),
+      drawn(
+        { of: "newest", lede: "The adapters’ newest runs, newest first", rows: "runs" },
+        cameBackShort(5),
+      ),
     );
     expect(floor).toContain(
       `runs recorded since ${absoluteUtc(DRAWN.oldest)}; nothing earlier is retained`,
@@ -1308,7 +1325,7 @@ describe("WindowLine", () => {
       // its own emptiness the way it always has, so the clause was narrowed
       // and not deleted.
       expect(
-        textOf(drawn(shows, { ...unpaged(PAGED), truncated: false, held: 12 })),
+        textOf(drawn(shows, { ...unpaged(PAGED), truncated: false, held: 12, drawn: 12 })),
         shows.of,
       ).toContain("did not fill");
     }
@@ -1552,6 +1569,190 @@ describe("WindowLine", () => {
       name.startsWith("data-window"),
     );
     expect(published.sort()).toEqual([...HOOKS_EVERY_WINDOW].sort());
+  });
+
+  /**
+   * THE FOUR STATES TWO READS LEAVE THE `matched` ARM IN — admin-window/BUG-0186.
+   *
+   * `/claims` issues the count and the window as TWO reads of one view, and
+   * the arm's fill verdict was the COUNT's: its gate is `truncated`, which the
+   * page derives from the count alone (`listCount.data > listed.length`). A
+   * claim the resolver applies between the two reads makes the count the
+   * SMALLER number, the gate goes false, and the did-not-fill clause rendered
+   * over a screen holding MORE rows than the number it named — at 50 rows
+   * under a cap of 50, over a window that had demonstrably filled. Measured on
+   * the pre-ticket tree: (50, 30), (49, 30), (37, 30), (30, 30) and (50, 50)
+   * all rendered ONE sentence, so a screen holding 50 and a screen holding 30
+   * were described identically.
+   *
+   * The verdict now comes from the ROW read against its own cap and from
+   * nothing else, and where it may not speak each read is stated as its own
+   * fact. Graded here, at the component, because the arm is a shared primitive
+   * and the state table is its own: the page reaches four of these states and
+   * the fixtures below reach all of them.
+   */
+  const matchedRows: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
+
+  /**
+   * The window `/claims` composes on its UNPAGED arm, with the two reads set
+   * independently: `drawn` is the rows the page put on screen, `held` is the
+   * count read's number, and `truncated` is the page's own derivation from the
+   * two (`src/app/claims/page.tsx`) rather than a fact this file sets by hand.
+   */
+  const twoReads = (rows: number, countRead: number): DrawnWindow => ({
+    limit: 50,
+    held: countRead,
+    truncated: countRead > rows,
+    over: "view",
+    // `/claims` draws longest-waiting first, so its bottom row is not its
+    // oldest and its window names no floor (admin-window/BUG-0109).
+    oldest: null,
+    scope: null,
+    drawn: rows,
+  });
+
+  /** Every run of digits masked, so no word of any sentence is pinned here. */
+  const digitMasked = (text: string): string => text.replace(/\d[\d,]*/g, "#");
+  const shapeOf = (rows: number, countRead: number): string =>
+    digitMasked(textOf(drawn(matchedRows, twoReads(rows, countRead))));
+
+  it("renders a DISTINCT sentence for each of the four states its two reads leave it in [admin-window/BUG-0186]", () => {
+    // Non-vacuity first, from the window's own hooks: every fixture really is
+    // the unpaged arm of a window the count did not exceed — the one state
+    // where the fill verdict is rendered at all.
+    for (const [rows, countRead] of [
+      [50, 50],
+      [50, 30],
+      [30, 30],
+      [37, 30],
+    ] as const) {
+      const where = `${rows} rows / count ${countRead}`;
+      const published = cheerio.load(drawn(matchedRows, twoReads(rows, countRead)))(
+        "[data-window]",
+      );
+      expect(published.attr("data-window-truncated"), where).toBe("false");
+      expect(published.attr("data-window-limit"), where).toBe(String(50));
+      expect(published.attr("data-window-held"), where).toBe(String(countRead));
+    }
+
+    // {the rows reached the cap, the rows fell short} x {the reads agree, they
+    // disagree}: four states, four sentences. No word of any of them is pinned
+    // — the four renderings are compared with each other, with every figure
+    // masked out, so a copy edit that changes all four together still passes
+    // and a state that says what another state says cannot.
+    const four = [shapeOf(50, 50), shapeOf(50, 30), shapeOf(30, 30), shapeOf(37, 30)];
+    expect(new Set(four).size, four.join("\n")).toBe(4);
+
+    // …and the verdict follows the ROWS against the cap rather than the count:
+    // two screens under ONE count that both fell short say the same thing, and
+    // the screen that reached the cap under that same count says another.
+    expect(shapeOf(49, 30)).toBe(shapeOf(37, 30));
+    expect(shapeOf(49, 30)).not.toBe(shapeOf(50, 30));
+    // An empty read lands in the short arms too, with the sentence that state
+    // has always had — never either of the two the cap was reached in.
+    expect(shapeOf(0, 0)).not.toBe(shapeOf(50, 50));
+    expect(shapeOf(0, 0)).not.toBe(shapeOf(50, 30));
+  });
+
+  it("prints no figure but the cap, the count read's number and the rows it drew [admin-window/BUG-0186]", () => {
+    // Every number in the line is a number one of this screen's reads
+    // established: no difference between the two reads, no percentage, no
+    // rank, and never the cap standing in for a row count. The truncated
+    // fixtures are here too, so the clause beside the changed one is held to
+    // the same rule. Every figure is below 1,000, so `count()` inserts no
+    // separator and a run of digits is a whole figure.
+    for (const [rows, countRead] of [
+      [50, 50],
+      [50, 30],
+      [30, 30],
+      [37, 30],
+      [49, 30],
+      [0, 0],
+      [37, 900],
+      [0, 900],
+    ] as const) {
+      const window = twoReads(rows, countRead);
+      const where = `${rows} rows / count ${countRead}`;
+      const established = [count(window.limit), count(countRead), count(rows)];
+      const printed = figuresIn(textOf(drawn(matchedRows, window)));
+      // Non-vacuous: the line really does print figures.
+      expect(printed.length, where).toBeGreaterThan(0);
+      for (const figure of printed) {
+        expect(established, `${where} printed ${figure}`).toContain(figure);
+      }
+    }
+  });
+
+  /**
+   * BYTE-IDENTITY FOR EVERY STATE THAT IS NOT THE DEFECT —
+   * admin-window/BUG-0186 criterion 4.
+   *
+   * The two arms the ruling changes are the only two that may move, so each
+   * other state is pinned against the sentence the pre-ticket tree rendered,
+   * to the byte (measured through this component on a988b00, which carries
+   * this file's pre-ticket `window-line.tsx` unchanged). These are the one
+   * place in this describe that pins product words, and they are here on
+   * purpose: the words are the designer's, and the ticket's job was to move
+   * two states and nothing else.
+   */
+  const FIRST_SCREEN = "Oldest first. A window of at most 50 rows, not the whole view.";
+
+  it("leaves every state but the two the ruling moves byte-identical [admin-window/BUG-0186]", () => {
+    const lineOf = (window: DrawnWindow) => textOf(drawn(matchedRows, window));
+
+    // (a) the held-back states — the count exceeded the rows, which is the
+    // clause admin-window/BUG-0183 fixed and this ticket may not touch.
+    expect(lineOf(twoReads(37, 900))).toBe(
+      `${FIRST_SCREEN} 900 claims in all; the 37 longest-waiting are below — the rest are not shown.`,
+    );
+    expect(lineOf(twoReads(0, 900))).toBe(
+      `${FIRST_SCREEN} 900 claims in all; the 0 longest-waiting are below — the rest are not shown.`,
+    );
+
+    // (b) the rows fell short of the cap and the two reads agree — the one
+    // state `didNotFill` may still speak in.
+    expect(lineOf(twoReads(30, 30))).toBe(
+      `${FIRST_SCREEN} The window did not fill — 30 of at most 50 — so it holds all the claims the read found.`,
+    );
+
+    // (c) the empty read, which is its own sentence.
+    expect(lineOf(twoReads(0, 0))).toBe(
+      `${FIRST_SCREEN} The window did not fill: the read happened and found no claims at all.`,
+    );
+
+    // (d) a window that states NO rows on screen: one read, not two, so there
+    // is nothing here to diverge and both arms say what they always said
+    // (admin-window/BUG-0183).
+    const silentWindow = (held: number, truncated: boolean): DrawnWindow => ({
+      limit: 50,
+      held,
+      truncated,
+      over: "view",
+      oldest: null,
+      scope: null,
+    });
+    expect(lineOf(silentWindow(900, true))).toBe(FIRST_SCREEN);
+    expect(lineOf(silentWindow(30, false))).toBe(
+      `${FIRST_SCREEN} The window did not fill — 30 of at most 50 — so it holds all the claims the read found.`,
+    );
+
+    // (e) the PAGED arm, in all three of its states — including the
+    // disagreeing one, which is where a window whose reads diverge already
+    // stated each read as its own fact (admin-window/BUG-0174). The ruling
+    // moves the unpaged arm to that same rule and leaves these untouched.
+    const paged = (facts: Partial<DrawnWindow>): DrawnWindow => ({
+      ...PAGED,
+      ...facts,
+    });
+    expect(lineOf(paged({ held: 877, truncated: true, drawn: 120 }))).toBe(
+      "Oldest first. 877 claims in all; the 120 longest-waiting are below — the rest are not shown.",
+    );
+    expect(lineOf(paged({ held: 120, truncated: false, drawn: 120 }))).toBe(
+      "Oldest first. 120 claims in all, and every one of them is below — the read found no more.",
+    );
+    expect(lineOf(paged({ held: 30, truncated: false, drawn: 50 }))).toBe(
+      "Oldest first. A count of claims answered 30; the reads returned the 50 below, and the read found no more.",
+    );
   });
 
   it("is one paragraph carrying one window, whichever kind it is", () => {
