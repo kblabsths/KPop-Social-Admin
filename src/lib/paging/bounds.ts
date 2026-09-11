@@ -36,6 +36,28 @@ export type PagedSurface = keyof typeof PAGE_ROUTES;
 export const OFFSET_PARAM = "offset";
 
 /**
+ * What a paging route answers `Cache-Control` with — the SAME directives every
+ * gated PAGE in this app already answers (admin-window/TASK-0068).
+ *
+ * Next sets exactly this string on a dynamically rendered page
+ * (`node_modules/next/dist/server/base-server.js`, read on 16.2.2), so every
+ * screen behind the sign-in gate is already unstorable. A Route Handler
+ * answers with NO `Cache-Control` at all unless it writes one — and the rows
+ * these routes serve are the only admin answers a browser store, a corporate
+ * proxy or anything later placed in front of Railway could keep. Without this
+ * the first screen and its continuation would be ONE surface under TWO cache
+ * policies.
+ *
+ * Declared HERE, once, beside `PAGE_ROUTES` and `OFFSET_PARAM` — the
+ * vocabulary both routes already share — because a second string typed into a
+ * second route is how the two drift (LESSONS 5). Every arm of every paging
+ * answer carries it: the `ok` page, `not_provisioned`, `error` and the 400
+ * refusal alike.
+ */
+export const PAGE_ANSWER_CACHE_CONTROL =
+  "private, no-cache, no-store, max-age=0, must-revalidate";
+
+/**
  * The largest offset any bound may name.
  *
  * A ceiling, not a page count: it bounds what a request may ask the database
@@ -125,19 +147,62 @@ export function pageBound(raw: string | null | undefined, size: number): PageBou
 }
 
 /**
+ * The arm that carries ROWS, named so a surface can extend it without
+ * re-spelling the whole answer.
+ *
+ * `exhausted` is the read's own answer about the end of the set; it never
+ * carries a total (§4.3: a concatenation is still not a total), and `offset`
+ * ECHOES the bound the request carried rather than being recomputed from
+ * `rows.length`.
+ */
+export interface PageOk<Row> {
+  kind: "ok";
+  rows: Row[];
+  offset: number;
+  exhausted: boolean;
+}
+
+/**
+ * The three arms that carry NO rows, named once so a surface extending the
+ * `ok` arm does not re-spell them (and cannot accidentally re-spell one of
+ * them differently).
+ */
+export type PageWithoutRows =
+  | { kind: "not_provisioned"; missing: string }
+  | { kind: "error"; reading: string; message: string }
+  | { kind: "refused"; reason: string; bound: string };
+
+/**
  * What a paging request answers — the JSON shape, on both sides of the wire.
  *
  * The three arms of `DbResult` (§4.1) plus the bound refusal, so a refused
  * page reaches the client naming the SAME object the page's own
- * not-provisioned card would name. `exhausted` is the read's own answer about
- * the end of the set; no arm ever carries a total (§4.3: a concatenation is
- * still not a total).
+ * not-provisioned card would name.
  */
-export type PageAnswer<Row> =
-  | { kind: "ok"; rows: Row[]; offset: number; exhausted: boolean }
-  | { kind: "not_provisioned"; missing: string }
-  | { kind: "error"; reading: string; message: string }
-  | { kind: "refused"; reason: string; bound: string };
+export type PageAnswer<Row> = PageOk<Row> | PageWithoutRows;
+
+/**
+ * A page answer whose `ok` arm ALSO carries this surface's own leg notes.
+ *
+ * Browse is read by FOUR queries (ARCHITECTURE.md §4.3): the events window
+ * decides the rows, and the venue and provenance legs FILL columns over that
+ * window's ids. Each leg reports its own refusal, and the first screen renders
+ * those reports above the table — so a page whose provenance leg refused must
+ * not reach the client as events with a silently empty Sources column. **The
+ * legs travel with the answer or not at all.**
+ *
+ * The notes ride the `ok` arm ONLY: the other three arms have no rows and so
+ * no columns for a leg to have failed to fill. `Notes` is the surface's own
+ * type — this leaf may not name a `DbResult`, not even as a type (§4 rule 7),
+ * which is why the shape is a parameter and `lib/db/browse.ts` supplies it.
+ *
+ * `isPageAnswer` accepts one unchanged: it checks each arm's OWN fields and an
+ * extra field is not a missing one, so a client that does not know about notes
+ * reads the page exactly as before.
+ */
+export type NotedPageAnswer<Row, Notes> =
+  | (PageOk<Row> & { notes: Notes })
+  | PageWithoutRows;
 
 /** Every field of `shape` present on `value` with the type named. */
 function hasFields(value: object, shape: Record<string, "string" | "number" | "boolean" | "array">): boolean {

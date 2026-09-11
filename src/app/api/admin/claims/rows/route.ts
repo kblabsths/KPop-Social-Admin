@@ -1,11 +1,6 @@
 import { CLAIM_WINDOW } from "@/components/claims";
 import { requireAdmin } from "@/lib/admin";
-import {
-  filterFrom,
-  listFilterOf,
-  tabFrom,
-  type SearchParams,
-} from "@/lib/claims/filters";
+import { filterFrom, listFilterOf, tabFrom } from "@/lib/claims/filters";
 import { claimLines, type ClaimLine } from "@/lib/claims/lines";
 import { RENDERABLE_BUCKETS, readClaimWindow } from "@/lib/db/claims";
 import { pageAnswerOf } from "@/lib/db/paging";
@@ -14,6 +9,7 @@ import { idsOf } from "@/lib/gauges/gauge";
 import { STANDING_BUCKET } from "@/lib/gauges/standing-disagreements";
 import { OFFSET_PARAM, pageBound, type PageAnswer } from "@/lib/paging/bounds";
 import { sourceNamesOf } from "@/lib/sources/names";
+import { searchParamsOf } from "@/lib/url/search-params";
 
 /**
  * The claims list, CONTINUED — campaign admin-window/TASK-0066, SPEC F14.
@@ -83,33 +79,6 @@ import { sourceNamesOf } from "@/lib/sources/names";
  * the page today.
  */
 
-/**
- * A URL's query as NEXT hands `searchParams` to a page — the shape
- * `lib/claims/filters.ts` reads, so this route and `/claims` answer a repeated
- * key identically.
- *
- * A repeated key becomes an ARRAY in the order it was sent, which is what Next
- * does with `?bucket=a&bucket=b`; `firstValue` in that leaf then takes the
- * first, as `URLSearchParams.get()` would. Building a plain record instead
- * would silently keep the LAST value and the two surfaces would disagree about
- * which narrowing a hand-edited URL asked for.
- *
- * It is a SHAPE adapter and parses no facet: every question about what a value
- * MEANS is the leaf's (admin-window/TASK-0066). The browse paging route
- * (admin-window/TASK-0068) needs the same adapter — it belongs in a shared
- * leaf the day it has a second caller, never a second copy.
- */
-function searchParamsOf(query: URLSearchParams): SearchParams {
-  const params: SearchParams = {};
-  for (const [key, value] of query) {
-    const seen = params[key];
-    if (seen === undefined) params[key] = value;
-    else if (Array.isArray(seen)) seen.push(value);
-    else params[key] = [seen, value];
-  }
-  return params;
-}
-
 export async function GET(request: Request): Promise<Response> {
   const gate = await requireAdmin();
   if (gate.error) return gate.error;
@@ -128,7 +97,12 @@ export async function GET(request: Request): Promise<Response> {
     return Response.json(refusal, { status: 400 });
   }
 
-  // The page's own narrowing, derived by the page's own functions.
+  // The page's own narrowing, derived by the page's own functions, off the
+  // record the ONE shared adapter builds (`lib/url/search-params.ts`, lifted
+  // out of this file by admin-window/TASK-0068 the day the browse paging route
+  // needed the same shape — LESSONS 5). It is a null-prototype record, so a
+  // key the URL carries is always an own property: `Object.hasOwn` or `in`,
+  // never `params.hasOwnProperty`.
   const params = searchParamsOf(url.searchParams);
   const filter = listFilterOf(
     filterFrom(params, RENDERABLE_BUCKETS),
