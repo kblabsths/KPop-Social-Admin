@@ -16,8 +16,16 @@
  */
 import { describe, expect, it } from "vitest";
 import { callFunction, readCount, readRows } from "@/lib/db/result";
+import { readSettlementReadiness } from "@/lib/db/verdict";
 import { T } from "@/lib/db/tables";
-import { codeOf, countRows, exactCount, independentClient } from "./parity";
+import {
+  codeOf,
+  countRows,
+  exactCount,
+  functionsOnStaging,
+  independentClient,
+  objectIsAbsent,
+} from "./parity";
 import { APP_URL_ENV_NAME, declaredTarget, stagingHost } from "./setup";
 
 describe("the live harness", () => {
@@ -52,75 +60,46 @@ describe("the live harness", () => {
   });
 });
 
-/* ── the absent FUNCTION, on the real database (admin-window/TASK-0047) ───── */
+/* ── an absent FUNCTION, on the real database (admin-window/TASK-0047) ───── */
 
 /**
- * The function M2 settles a review item through. It does not exist on staging
- * and will not until Ben installs FEAT-0009's handoff artifact — which is what
- * makes this probe free and permanent, the same trick ARCHITECTURE.md §4.1
- * already records for the absent `verdicts` table.
+ * A name no migration installs — the absence fixture, and it is a NAME rather
+ * than a state of somebody's handoff.
+ *
+ * Until admin-window/BUG-0215 this probe used `settle_review_item`, on the
+ * premise that it "does not exist on staging and will not until Ben installs
+ * FEAT-0009's handoff artifact". It was installed on 2026-09-11, mid-campaign,
+ * and took the premise with it: this file's absence case went red, and the
+ * case written the same way in `edit.live.test.ts` applied a real admin
+ * override to a catalog row before anything could stop it. What these two
+ * cases actually grade is the READER and the CLASSIFICATION — neither was ever
+ * about that particular function — so the fixture is a name that cannot be
+ * installed by anyone's migration, and the probe outlives every handoff.
  */
-const SETTLE_FUNCTION = "settle_review_item";
+const ABSENT_FUNCTION = "admin_window_no_such_function";
 
 /**
- * A function that IS installed on staging — the second fixture this probe
- * owes (LESSONS 3). It is named to prove the reader below can SEE a function,
- * so "not there" means absent rather than "the reader found nothing at all".
+ * A function that IS installed on staging — the second fixture this probe owes
+ * (LESSONS 3). It is named to prove the reader below can SEE a function, so
+ * "not there" means absent rather than "the reader found nothing at all".
  * It is never CALLED: `apply_resolution` writes the catalog.
  */
 const INSTALLED_FUNCTION = "apply_resolution";
 
 /**
- * Every function staging exposes over PostgREST, from the database's own
- * schema description (`GET /rest/v1/`, the OpenAPI document PostgREST
- * generates from the live catalog — the same source
- * `residue.live.test.ts` reads column types from).
- *
- * This is a READ, not a call, and it is what makes the probe below safe: the
- * absence is established before anything is invoked, so the day the artifact
- * is installed this file fails saying so instead of calling a function that
- * settles review items.
- *
- * Reads the APP's names, which `setup.ts` has already pointed at staging;
- * nothing here prints the target or the key.
+ * The settlement function, named here so this file can say which world it is
+ * in — and never so that it is called. Installed on staging since 2026-09-11;
+ * a call to it records a verdict the service role cannot delete, which no
+ * suite that must sweep what it wrote may make (acceptance test 13).
  */
-async function functionsOnStaging(): Promise<Set<string>> {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error(
-      "the harness has no target: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY " +
-        "are unset, which means tests/live/setup.ts did not run.",
-    );
-  }
-  const response = await fetch(`${url.replace(/\/+$/, "")}/rest/v1/`, {
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      Accept: "application/openapi+json",
-    },
-  });
-  if (!response.ok) {
-    throw new Error(
-      `could not read the schema description of ${stagingHost}: HTTP ` +
-        `${response.status}. Without it this probe cannot tell an absent ` +
-        `function from an unreadable database.`,
-    );
-  }
-  const body = (await response.json()) as { paths?: Record<string, unknown> };
-  return new Set(
-    Object.keys(body.paths ?? {})
-      .filter((route) => route.startsWith("/rpc/"))
-      .map((route) => route.slice("/rpc/".length)),
-  );
-}
+const SETTLE_FUNCTION = "settle_review_item";
 
 describe("a function this database does not have", () => {
   it("is absent by the database's own account, while another one is there", async () => {
     // Both fixtures, one read: the reader can see a function, and it does not
-    // see this one. Measured 2026-09-08 on the declared staging target: 54
-    // functions exposed, `apply_resolution` among them, `settle_review_item`
-    // not.
+    // see this one. Measured 2026-09-11 on the declared staging target: 56
+    // functions exposed, `apply_resolution` and `settle_review_item` among
+    // them, `admin_window_no_such_function` not.
     const functions = await functionsOnStaging();
     expect(
       functions.has(INSTALLED_FUNCTION),
@@ -128,42 +107,74 @@ describe("a function this database does not have", () => {
         `tell absence from a reader that sees nothing`,
     ).toBe(true);
     expect(
-      functions.has(SETTLE_FUNCTION),
-      `${SETTLE_FUNCTION} is now installed on ${stagingHost}. This probe ` +
-        `graded the ABSENT case (admin-window/TASK-0047) and must be ` +
-        `retargeted rather than left to call an installed settlement ` +
-        `function`,
+      functions.has(ABSENT_FUNCTION),
+      `${stagingHost} exposes ${ABSENT_FUNCTION}. That name exists to be ` +
+        `absent; something installed it, and this probe needs a new one`,
     ).toBe(false);
   });
 
   it("classifies as not_provisioned naming it, never as an error", async () => {
-    // The call is safe because of the case above: there is no function, so
-    // PostgREST refuses at the schema cache and nothing is written. Skipped
-    // implicitly if that case failed — this one re-establishes absence itself
-    // before it calls anything.
+    // The call is safe because of the case above: there is no such function,
+    // so PostgREST refuses at the schema cache and nothing is written. This
+    // case re-establishes that absence itself before it calls anything, and
+    // the settlement function — which IS installed and does write — is read
+    // for, never called (admin-window/BUG-0215).
     const functions = await functionsOnStaging();
-    expect(functions.has(SETTLE_FUNCTION)).toBe(false);
+    expect(functions.has(ABSENT_FUNCTION)).toBe(false);
 
     // The test's OWN read of the same object gets the absence code
     // (ARCHITECTURE.md §10, rule 3: never inferred from "nothing rendered").
-    const { error } = await independentClient().rpc(SETTLE_FUNCTION, {
-      p_decision: { action: "keep_current" },
-    });
+    const { error } = await independentClient().rpc(ABSENT_FUNCTION, {});
     expect(
       ["PGRST202", "42883"],
-      `${stagingHost} answered a call to the absent ${SETTLE_FUNCTION} with ` +
+      `${stagingHost} answered a call to the absent ${ABSENT_FUNCTION} with ` +
         `code ${codeOf(error)}`,
     ).toContain(codeOf(error));
 
     // …and the APP's own path — the seam a function call goes through — turns
     // that into the state the close slot renders.
-    const result = await callFunction(SETTLE_FUNCTION, (db) =>
-      db.rpc(SETTLE_FUNCTION, { p_decision: { action: "keep_current" } }),
+    const result = await callFunction(ABSENT_FUNCTION, (db) =>
+      db.rpc(ABSENT_FUNCTION, {}),
     );
     expect(result).toEqual({
       kind: "not_provisioned",
-      missing: SETTLE_FUNCTION,
+      missing: ABSENT_FUNCTION,
     });
+  });
+
+  /**
+   * WHICH WORLD IS THIS — the question every live case that touches the §9
+   * settlement path now branches on (admin-window/BUG-0215).
+   *
+   * Two paths to one answer (ARCHITECTURE §10): this file's own read of
+   * `verdicts`, and the app's readiness seam, which is what the record page
+   * asks before it offers an override control. They must say the same thing,
+   * or a page's branch and a test's branch are reading different databases.
+   *
+   * The settlement FUNCTION's presence is read beside it and stated in the
+   * log, never called: an override it applied would write a `verdicts` row the
+   * service role cannot delete, so no suite that must sweep what it wrote may
+   * make that call (acceptance test 13).
+   */
+  it("agrees with the app's readiness seam about the settlement log", async () => {
+    const logAbsent = await objectIsAbsent(T.verdicts);
+    const readiness = await readSettlementReadiness();
+    expect(readiness.kind, `this test read ${T.verdicts} as ` +
+      `${logAbsent ? "absent" : "present"}`).toBe(
+      logAbsent ? "not_provisioned" : "ok",
+    );
+    if (readiness.kind === "not_provisioned") {
+      expect(readiness.missing).toBe(T.verdicts);
+    }
+
+    const functions = await functionsOnStaging();
+    console.log(
+      `${stagingHost}: ${T.verdicts} is ${logAbsent ? "absent" : "present"}, ` +
+        `${SETTLE_FUNCTION} is ` +
+        `${functions.has(SETTLE_FUNCTION) ? "INSTALLED" : "absent"} ` +
+        `(of ${functions.size} function(s) exposed). The live suite branches ` +
+        `on these two reads and calls ${SETTLE_FUNCTION} in neither branch.`,
+    );
   });
 
   it("does not let a table read borrow that absence (admin-window/BUG-0080)", async () => {

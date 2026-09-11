@@ -5,18 +5,21 @@ import { GENERAL_FIX, refusalFix } from "@/components/edit-refusal";
 import { submitFieldEdit, type FetchLike } from "@/components/records/submit";
 import {
   columnOfRegistryField,
+  decideEdit,
   EDITABLE_TABLES,
   EDIT_CONFIG,
   mappedColumns,
   mappedRegistryFields,
 } from "@/lib/edit/config";
-import { FN } from "@/lib/db/tables";
+import { FN, T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
 import {
   ABSENCE_CODES,
   assertState,
   codeOf,
+  functionsOnStaging,
   independentClient,
+  objectIsAbsent,
   renderPage,
   StateMismatchError,
   stateOf,
@@ -77,6 +80,17 @@ import {
  * `finally` — the sandbox's own undo, which puts every row back rather than
  * the one column that was touched — and `residue.live.test.ts` is the
  * independent check that it ran.
+ *
+ * **And it never settles anything** (admin-window/BUG-0215). The §9 settlement
+ * path — the `verdicts` table and the `settle_review_item` function — arrived
+ * on staging mid-campaign, on 2026-09-11, and two cases here had its absence
+ * written into them as a premise rather than read from the database: one went
+ * red over a page behaving as designed, and the other APPLIED a real admin
+ * override, rewriting a catalog row and leaving `verdicts` rows the service
+ * role cannot delete. So both worlds are read (`settlementPath()` below) and
+ * graded on their own terms, and no case in this file applies an override or
+ * calls that function in either world: a write this suite cannot sweep is a
+ * write it does not make (acceptance test 13).
  */
 
 vi.mock("@/lib/admin", () => ({
@@ -168,6 +182,52 @@ async function subject(config: Keyed): Promise<{ id: string; row: Row }> {
     );
   }
   return { id: String(row[config.pk]), row };
+}
+
+/* ── which settlement world is this database in? ──────────────────────────── */
+
+/**
+ * The §9 settlement path, as this file's OWN reads find it — never assumed
+ * (campaign admin-window/BUG-0215).
+ *
+ * Two facts, because the two halves answer different questions and they can
+ * arrive apart (on 2026-09-11 they did, four minutes apart):
+ *
+ *  - `logPresent` — the `verdicts` TABLE, which is what the record page's
+ *    readiness seam reads (`readSettlementReadiness`, `src/lib/db/verdict.ts`)
+ *    and therefore what decides whether the page offers a control at all.
+ *  - `seamPresent` — the `settle_review_item` FUNCTION, which is what the
+ *    route's override arm CALLS, and therefore what decides whether a
+ *    value-carrying edit of a resolver-owned column would be APPLIED.
+ *
+ * Both are reads. The function is read out of the database's own schema
+ * description and never invoked: an override this suite applied would write a
+ * `verdicts` row the service role cannot delete, so it could never be swept
+ * (acceptance test 13) — which is exactly what the unbranched form of the
+ * case below did on 2026-09-11, rewriting a real event's title.
+ *
+ * Read once per file run: the state of a staging project does not change under
+ * one suite, and asking eleven times would be eleven round trips for one
+ * answer.
+ */
+interface SettlementPath {
+  readonly logPresent: boolean;
+  readonly seamPresent: boolean;
+}
+
+let settlementRead: SettlementPath | undefined;
+
+async function settlementPath(): Promise<SettlementPath> {
+  if (settlementRead !== undefined) return settlementRead;
+  const [logAbsent, functions] = [
+    await objectIsAbsent(T.verdicts),
+    await functionsOnStaging(),
+  ];
+  settlementRead = {
+    logPresent: !logAbsent,
+    seamPresent: functions.has(FN.settleReviewItem),
+  };
+  return settlementRead;
 }
 
 /* ── the struck tables: no surface, no write, and the row untouched ───────── */
@@ -300,41 +360,96 @@ describe("a forged edit", () => {
   });
 
   /**
-   * The override path against staging, where the function is ABSENT — the
-   * graded normal case of the whole milestone (campaign
-   * admin-window/TASK-0054, FEAT-0011 criterion 2; ARCHITECTURE §9.2).
-   *
    * A MAPPED column of `events` and of `venues`, edited through the app's one
-   * write route, with a real service-role client behind it. The answer must be
-   * the honest one — not provisioned, naming what is missing — and the row
-   * must be byte-identical afterwards, read back independently. Neither a fake
-   * success nor a direct write, which is the pair this ticket exists to
-   * prevent.
+   * write route with a real service-role client behind it — and answered out
+   * of the settlement path's OWN state, whichever state that is (campaign
+   * admin-window/TASK-0054, FEAT-0011 criterion 2, ARCHITECTURE §9.2; branched
+   * by admin-window/BUG-0215).
    *
-   * It writes nothing on any path, so it needs no sweep: if it ever did write,
-   * the row comparison below is what would say so.
+   * **The property, which holds in both worlds**: this app never writes a
+   * resolver-owned column itself. Every path out of this route for such a
+   * column either refuses before the database or hands the value to the
+   * settlement seam — so the row staging holds is byte-identical afterwards,
+   * read back independently. Neither a fake success nor a direct write, which
+   * is the pair this case exists to prevent.
+   *
+   * **This suite APPLIES no override, in either world.** An applied override
+   * writes a `verdicts` row, and the service role cannot delete one, so it
+   * could never be swept (acceptance test 13). That is measured, not
+   * theoretical: `settle_review_item` was installed on staging on 2026-09-11
+   * and the unbranched form of this case rewrote a real event's title
+   * (`01a03c9b-…` from `XG` to a probe value) and left two verdicts behind
+   * before anything noticed (admin-window/BUG-0215). So what it sends turns on
+   * the read above:
+   *
+   *  - **the seam is ABSENT** — the value-carrying override goes out and can
+   *    only be refused: there is no such function, PostgREST stops at the
+   *    schema cache, nothing is written anywhere, and the answer must be 503
+   *    naming what is missing.
+   *  - **the seam is INSTALLED** — the same column is probed with a CLEAR,
+   *    which an override envelope cannot express: `decisionRefusals` invariant
+   *    5 refuses it `value_payload_missing` and the route answers 400 BEFORE
+   *    it calls anything. It is the one refusal that belongs to this arm alone
+   *    — the direct arm would answer 200 and null the column — so it is also
+   *    what shows the mapped column really went down the override path. The
+   *    "before it calls anything" half is pinned offline against a mocked seam
+   *    (`tests/offline/edit/route.test.ts`, "refuses a clear rather than
+   *    sending an override that says nothing"), which is what makes sending it
+   *    at a database that WOULD apply an override safe.
    */
-  it("answers a mapped column's override with the absence, and changes nothing", async () => {
+  it("hands a mapped column to the settlement path, and writes nothing itself", async () => {
+    const settlement = await settlementPath();
     for (const table of ["events", "venues"]) {
       const config = EDIT_CONFIG[table];
       const field = config.editable[0];
       expect(field, `${table} has no editable column`).toBeTypeOf("string");
+
+      // The ARM this column takes, established in process before a request
+      // leaves, out of the same map the route reads. Everything below rests on
+      // it: down a `direct` arm the clear the installed branch sends would be
+      // written to a catalog column rather than refused.
+      const decision = decideEdit(config.table, field);
+      if (!decision.allowed) {
+        throw new Error(
+          `${config.table}.${field} is no longer on the edit map: ` +
+            `${decision.refusal.message}`,
+        );
+      }
+      expect(decision.edit.path, `${config.table}.${field}`).toBe("override");
+
       const { id, row } = await subject(config);
 
-      const { status, body } = await patch(config.table, id, {
-        field,
-        value: `${PROBE} override`,
-      });
-      const where = `${config.table}.${field}: ${JSON.stringify(body)}`;
-      // 503, naming the object the seam called — never 200, never 500.
-      expect(status, where).toBe(503);
-      const answered = body as { error?: string; missing?: string; ok?: unknown };
-      expect(answered.ok, where).toBeUndefined();
-      expect(answered.missing, where).toBe(FN.settleReviewItem);
-      expect(String(answered.error), where).toContain(FN.settleReviewItem);
+      if (!settlement.seamPresent) {
+        const { status, body } = await patch(config.table, id, {
+          field,
+          value: `${PROBE} override`,
+        });
+        const where = `${config.table}.${field}: ${JSON.stringify(body)}`;
+        // 503, naming the object the seam called — never 200, never 500.
+        expect(status, where).toBe(503);
+        const answered = body as { error?: string; missing?: string; ok?: unknown };
+        expect(answered.ok, where).toBeUndefined();
+        expect(answered.missing, where).toBe(FN.settleReviewItem);
+        expect(String(answered.error), where).toContain(FN.settleReviewItem);
+      } else {
+        const { status, body } = await patch(config.table, id, {
+          field,
+          value: null,
+        });
+        const where =
+          `${config.table}.${field} (${FN.settleReviewItem} is installed on ` +
+          `this database, so this case probes the arm without applying an ` +
+          `override): ${JSON.stringify(body)}`;
+        expect(status, where).toBe(400);
+        const answered = body as { refusals?: unknown; ok?: unknown };
+        expect(answered.ok, where).toBeUndefined();
+        expect(answered.refusals, where).toContain("value_payload_missing");
+      }
 
-      // The row staging holds, read again, column for column.
-      expect(await wholeRow(config, id), where).toEqual(row);
+      // The claim both branches share, and the point of the criterion: not
+      // "it said no" but "the row staging holds is what it held" — every
+      // column, against the read taken before the request.
+      expect(await wholeRow(config, id), `${config.table} ${id}`).toEqual(row);
     }
   });
 });
@@ -359,23 +474,58 @@ function provenanceOf(markup: string, field: string): string | null {
 }
 
 describe("a resolver-owned record page", () => {
-  it("renders from staging with no editable widget on it, and names why", async () => {
-    // The override path's own absence, at the surface: with nothing on staging
-    // to record an override, the page degrades to the read-only surface M1
-    // shipped — no control at all — and says so once, above the table
-    // (FEAT-0011 criterion 2). The two halves are asserted together because
-    // either alone is passable: a page with no controls and no reason is the
-    // regression this ticket must not ship.
+  /**
+   * The surface in the state its OWN settlement read is in — the two worlds
+   * of the override path, graded apart (campaign admin-window/BUG-0215,
+   * FEAT-0011 criterion 2).
+   *
+   * Until the handoff landed this case asserted the closed world
+   * unconditionally, "with nothing on staging to record an override". That
+   * premise stopped being true on 2026-09-11 and the case went red over a page
+   * that was behaving exactly as designed. So the world is READ — this file's
+   * own read of `verdicts`, which is the object the page's readiness seam
+   * reads — and each world is graded on its own terms, both halves together,
+   * because either half alone is passable: a page with no control and no
+   * reason is one regression, and a page that describes an override it does
+   * not offer is the other (admin-window/BUG-0205).
+   *
+   * Whichever world it is in, the page says which: the regime note is the one
+   * line that stands in both, and it is the line that changes with them.
+   */
+  it("renders from staging in the state its own settlement read is in", async () => {
+    const settlement = await settlementPath();
     for (const table of ["events", "venues"]) {
-      const { id } = await subject(EDIT_CONFIG[table]);
+      const config = EDIT_CONFIG[table];
+      const { id } = await subject(config);
       const markup = await renderPage(RecordPage, {
         params: Promise.resolve({ table, id }),
       });
       expect(markup, table).toContain(id);
-      expect(markup, table).not.toMatch(/<(button|input|textarea|select)[\s>]/);
       const $ = cheerio.load(markup);
-      expect($('[data-note="override-unavailable"]').length, table).toBe(1);
-      expect($('[data-state="not_provisioned"]').length, table).toBeGreaterThan(0);
+      // Said once, in both worlds, and never twice.
+      expect($('[data-note="regime"]').length, table).toBe(1);
+
+      if (!settlement.logPresent) {
+        // CLOSED: the page degrades to the read-only surface M1 shipped — no
+        // control at all — and says so once, above the table, naming the
+        // object that is missing.
+        expect(markup, table).not.toMatch(/<(button|input|textarea|select)[\s>]/);
+        expect($('[data-note="override-unavailable"]').length, table).toBe(1);
+        expect($('[data-state="not_provisioned"]').length, table).toBeGreaterThan(0);
+        continue;
+      }
+
+      // OPEN: what the readiness read allows is actually offered — a control
+      // on every mapped editable column, addressed by NAME — and the line
+      // withdrawing the override is gone with the reason for it.
+      expect($('[data-note="override-unavailable"]').length, table).toBe(0);
+      for (const field of config.editable) {
+        expect(
+          $(`[aria-label="${field} of ${table}"]`).length,
+          `${table}.${field} drew no edit control, so this page is not the ` +
+            `open state its settlement read says it is in`,
+        ).toBe(1);
+      }
     }
   });
 
