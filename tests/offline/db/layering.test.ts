@@ -1,7 +1,16 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { allSourceFiles, codeText, repoRoot, sourceText } from "../source-tree";
+import {
+  PROBE_PARENT,
+  RUN_ID,
+  isProcessAlive,
+  pidOfProbeDir,
+  probeDirFor,
+  sweepDeadProbeDirs,
+} from "../../probe-area";
 
 /**
  * The structural rules of ARCHITECTURE.md §4, asserted against the source tree
@@ -49,9 +58,7 @@ const CARRIED_OVER = ["src/lib/supabase.ts"];
  */
 
 /**
- * The dot-hidden area every probe this file plants lives under — gitignored,
- * holding probes and nothing else — and THIS RUN's directory beneath it, one
- * per self-guard.
+ * THIS RUN's directory under the shared probe area, one per self-guard.
  *
  * Two vitest runs share one checkout routinely here: a QA lane attacking the
  * landed tree while a receipt re-runs a ticket's stored checks, and `npm test`
@@ -59,21 +66,38 @@ const CARRIED_OVER = ["src/lib/supabase.ts"];
  * three-way collision (admin-window/DEBT-0018): one run read the other run's
  * probe content back at its own path, one run's cleanup deleted the other's
  * probe mid-scan, and removing the SHARED parent raced a concurrent
- * `mkdirSync`. So each guard writes beneath a directory carrying
- * `process.pid` — the idiom `tests/offline/edit/config.test.ts` and
- * `tests/offline/toolchain.test.ts` already use — and its `finally` removes
- * THAT directory, never the parent every run shares.
+ * `mkdirSync`. So each guard writes beneath its own directory and its
+ * `finally` removes THAT directory, never the parent every run shares.
+ *
+ * The name carries this run's ENTROPY as well as its pid
+ * (`tests/probe-area.ts`, admin-window/BUG-0188): pids are recycled, and a
+ * pid-only name meant a run that drew a dead run's number adopted its corpse
+ * as its own probe and graded it — reporting the service-role key the corpse
+ * holds by design as a violation, in a lane that planted nothing.
  */
-const PROBE_PARENT = "src/.probes";
-const CREDENTIAL_PROBE_DIR = `${PROBE_PARENT}/credential-guard-${process.pid}`;
-const LEAF_PROBE_DIR = `${PROBE_PARENT}/leaf-import-guard-${process.pid}`;
+const CREDENTIAL_PROBE_DIR = probeDirFor("credential-guard");
+const LEAF_PROBE_DIR = probeDirFor("leaf-import-guard");
+
+/**
+ * Clear out any probe directory left by a run that DIED before its `finally`
+ * ran (admin-window/BUG-0188), once per worker, before anything below walks
+ * the tree.
+ *
+ * Only a directory whose pid names no live process goes — a concurrent run's
+ * is untouched, and the shared parent is never removed (`tests/probe-area.ts`
+ * states the whole rule). Without this nothing ever removed a corpse: each
+ * `finally` takes one directory and the parent a run used to sweep is now
+ * deliberately untouchable, so a killed run's `require()` fixture reddened
+ * `npm run lint` in that checkout permanently and invisibly.
+ */
+sweepDeadProbeDirs();
 
 /**
  * True for a probe under the shared parent that THIS run did not plant —
  * another concurrent run's, or one left by a run that died.
  *
- * The test is on the directory BOUNDARY (`${dir}/`), so a run whose pid merely
- * starts with this one's digits is foreign too.
+ * The test is on the directory BOUNDARY (`${dir}/`), so a directory whose name
+ * merely starts with this one's is foreign too.
  */
 function isForeignProbe(file: string): boolean {
   return (
@@ -289,12 +313,20 @@ describe("the credential guard itself", () => {
     expect(PROBE.split("/").some((segment) => segment.startsWith("."))).toBe(true);
   });
 
-  it("writes where no other run of this suite writes", () => {
+  it("writes where no other run of this suite writes, alive or dead", () => {
     // The uniqueness invariant admin-window/DEBT-0018 bought: the directory
     // this run removes is its OWN, not the parent every run shares.
     expect(probeDir).not.toBe(path.join(repoRoot, PROBE_PARENT));
-    expect(path.basename(probeDir)).toContain(String(process.pid));
     expect(PROBE.startsWith(`${PROBE_PARENT}/`)).toBe(true);
+    // The pid is in the name because the sweep reads it (admin-window/BUG-0188)...
+    expect(pidOfProbeDir(path.basename(probeDir))).toBe(process.pid);
+    // ...and the pid is NOT the whole name, which is the half that makes a
+    // dead run's directory unforgeable: a corpse named from a recycled pid
+    // alone cannot be this run's own.
+    expect(path.basename(probeDir)).not.toBe(`credential-guard-${process.pid}`);
+    expect(path.basename(probeDir)).toContain(RUN_ID);
+    // And the two guards of this file never share a directory either.
+    expect(CREDENTIAL_PROBE_DIR).not.toBe(LEAF_PROBE_DIR);
   });
 
   it("is blind to another run's probe, and leaves it where it found it", () => {
@@ -303,10 +335,15 @@ describe("the credential guard itself", () => {
     // BY DESIGN — while this run scans. It must be invisible to these rules
     // and untouched by this run's cleanup, or each lane reddens the other.
     //
-    // The foreign name is this pid with a digit appended: a directory whose
-    // name merely STARTS with ours is another run's, and the filter has to
-    // say so.
-    const foreignProbe = `${PROBE_PARENT}/credential-guard-${process.pid}9/__credential_guard_probe__.ts`;
+    // The foreign name is THIS run's directory name with a digit appended: a
+    // directory whose name merely STARTS with ours is another run's, and the
+    // filter has to say so.
+    //
+    // It carries this run's (live) pid on purpose, so the sweep of
+    // admin-window/BUG-0188 — which removes only a directory whose pid names
+    // no live process — cannot be what makes this case pass or fail, here or
+    // in a concurrent run's worker.
+    const foreignProbe = `${CREDENTIAL_PROBE_DIR}9/__credential_guard_probe__.ts`;
     const foreignPath = path.join(repoRoot, foreignProbe);
     fs.mkdirSync(path.dirname(foreignPath), { recursive: true });
     fs.writeFileSync(
@@ -337,25 +374,23 @@ describe("the credential guard itself", () => {
     }
   });
 
-  // EXPECTED FAILURE while admin-window/BUG-0188 stands: this run cannot tell
-  // its own probe from a corpse wearing the same pid, so the assertion below
-  // is red on purpose. THE FIX FLIPS THIS BACK TO A PLAIN `it` — leave it as
-  // `it.fails` and the day the bug is fixed vitest reddens here and sends the
-  // reader to the ticket.
-  it.fails("is blind to a probe left behind by a dead run that had this pid", () => {
-    // admin-window/BUG-0188. A run killed mid-scan leaves its probe directory on disk, and since
-    // admin-window/DEBT-0018 nothing ever removes it: each run removes only
-    // its OWN directory, and the shared parent — the one thing a run used to
-    // sweep — is deliberately never removed. pids are reused, so a later run
-    // whose worker fork draws the dead run's number adopts the corpse as its
-    // OWN probe and GRADES it. A probe holds
+  it("is blind to a probe left behind by a dead run that had this pid", () => {
+    // admin-window/BUG-0188, filed as an `it.fails` pin and flipped back by
+    // the fix. A run killed mid-scan leaves its probe directory on disk, and
+    // since admin-window/DEBT-0018 no `finally` removes it: each run removes
+    // only its OWN directory, and the shared parent — the one thing a run used
+    // to sweep — is deliberately never removed. pids are reused, so a later
+    // run whose worker fork drew the dead run's number adopted the corpse as
+    // its OWN probe and GRADED it. A probe holds
     // `process.env.SUPABASE_SERVICE_ROLE_KEY` on purpose, so the credential
-    // rule then reports a violation in a lane that planted nothing.
+    // rule reported a violation in a lane that planted nothing.
     //
     // A dead run's directory name was derived from its pid ALONE, so the path
-    // below is exactly what it left behind: a run's identity has to carry
-    // more than the pid for it to tell its own probe from a corpse wearing
-    // the same number.
+    // below is exactly what one left behind, wearing the pid this run drew.
+    // It is foreign now because a run's identity carries entropy as well
+    // (`probeDirFor`), not because anything swept it: the pid in that name is
+    // this live process's, so the corpse sweep must leave it exactly where the
+    // walk below finds it.
     const corpse = `${PROBE_PARENT}/credential-guard-${process.pid}/__credential_guard_probe__.ts`;
     const corpsePath = path.join(repoRoot, corpse);
     fs.mkdirSync(path.dirname(corpsePath), { recursive: true });
@@ -370,6 +405,10 @@ describe("the credential guard itself", () => {
       expect(allSourceFiles()).toContain(corpse);
       expect(gradedSourceFiles()).not.toContain(corpse);
       expect(withoutDeprecated(filesWhereCodeMatches(SERVICE_ROLE_KEY_READ))).toEqual([CLIENT]);
+      // Blind, not swept: the sweep leaves any directory whose pid is alive,
+      // and this one wears a live pid. Blindness is the entropy rule's doing.
+      expect(sweepDeadProbeDirs()).not.toContain(path.basename(path.dirname(corpse)));
+      expect(fs.existsSync(corpsePath)).toBe(true);
     } finally {
       fs.rmSync(path.dirname(corpsePath), { force: true, recursive: true });
     }
@@ -847,7 +886,10 @@ describe("the leaf-import guard itself", () => {
     // The concurrency property, for this guard (admin-window/DEBT-0018): a
     // second run's probe is on disk while this one scans, and this run's
     // `finally` must not carry it off with its own directory.
-    const foreignProbe = `${PROBE_PARENT}/leaf-import-guard-${process.pid}9/__leaf_import_probe__.ts`;
+    // Named from this run's own (live) directory plus a digit, for the reason
+    // the credential guard's twin states: a live pid, so the corpse sweep is
+    // not what decides this case.
+    const foreignProbe = `${LEAF_PROBE_DIR}9/__leaf_import_probe__.ts`;
     const foreignPath = path.join(repoRoot, foreignProbe);
     fs.mkdirSync(path.dirname(foreignPath), { recursive: true });
     fs.writeFileSync(
@@ -867,6 +909,36 @@ describe("the leaf-import guard itself", () => {
     }
   });
 
+  it("is blind to a probe left behind by a dead run that had this pid", () => {
+    // admin-window/BUG-0188's other half. The corpse a killed run leaves in
+    // THIS guard's loop is the `require()` fixture below, which is what
+    // reddened `npm run lint` permanently; the credential rule is what would
+    // report it. A pid-only name made it this run's own on a recycled pid, so
+    // the filter has to call it foreign — and, wearing a live pid, the sweep
+    // must leave it be.
+    const corpse = `${PROBE_PARENT}/leaf-import-guard-${process.pid}/__leaf_import_probe__.ts`;
+    const corpsePath = path.join(repoRoot, corpse);
+    fs.mkdirSync(path.dirname(corpsePath), { recursive: true });
+    fs.writeFileSync(
+      corpsePath,
+      'const { T } = require("@/lib/db/tables");\nexport const key = process.env.SUPABASE_SERVICE_ROLE_KEY;\n',
+      "utf8",
+    );
+    try {
+      // Non-vacuous: the walk really lists it.
+      expect(allSourceFiles()).toContain(corpse);
+      expect(gradedSourceFiles()).not.toContain(corpse);
+      expect(withoutDeprecated(filesWhereCodeMatches(SERVICE_ROLE_KEY_READ))).toEqual([CLIENT]);
+      // And this run's own leaf scan is unaffected by it.
+      expect(scanLeafProbe('import { hasVisibleContent } from "@/lib/verdict/decision";\n')).toEqual(
+        [],
+      );
+      expect(fs.existsSync(corpsePath)).toBe(true);
+    } finally {
+      fs.rmSync(path.dirname(corpsePath), { force: true, recursive: true });
+    }
+  });
+
   it("reads the leaf set through the same scanner, on the real files", () => {
     // Non-vacuous the other way: the scanner reaches the actual leaves rather
     // than only a probe, and a file it cannot read would report [] forever.
@@ -877,3 +949,133 @@ describe("the leaf-import guard itself", () => {
     }
   });
 });
+
+/**
+ * The probe area itself — the ground both guards above stand on
+ * (`tests/probe-area.ts`, admin-window/BUG-0188).
+ *
+ * Two rules, and the whole risk lives in the second: a janitor that removes a
+ * directory a LIVE run is writing to would put back exactly the collision
+ * admin-window/DEBT-0018 removed. So every case below is asserted against a
+ * fixture tree under `tests/.probes/`, never against the shared `src/.probes/`
+ * that concurrent runs are writing to — the sweep takes a base for that
+ * reason, the same way the source-tree walkers do.
+ */
+describe("the probe area both guards write in", () => {
+  const base = path.join(repoRoot, "tests", ".probes", `probe-area-${process.pid}-${RUN_ID}`);
+  const parent = path.join(base, PROBE_PARENT);
+
+  /**
+   * A pid that named a real process and names none now: a child spawned,
+   * waited for, and exited. Asserted dead rather than assumed, so a recycled
+   * number cannot make a case below pass or fail quietly.
+   */
+  function deadPid(): number {
+    const child = spawnSync(process.execPath, ["-e", ""], { timeout: 30_000 });
+    const pid = child.pid as number;
+    expect(typeof pid, "the child reported no pid").toBe("number");
+    expect(isProcessAlive(pid), `pid ${pid} was recycled between exit and this read`).toBe(false);
+    return pid;
+  }
+
+  /** Plant a probe directory with `name` in the fixture tree; return its path. */
+  function plant(name: string): string {
+    const dir = path.join(parent, name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "__credential_guard_probe__.ts"),
+      "export const key = process.env.SUPABASE_SERVICE_ROLE_KEY;\n",
+      "utf8",
+    );
+    return dir;
+  }
+
+  afterAll(() => {
+    fs.rmSync(base, { force: true, recursive: true });
+  });
+
+  it("reads a pid as alive for a running process and dead for an exited one", () => {
+    // Two fixtures (LESSONS 8): a liveness test that answered `true` for
+    // everything would make the sweep a no-op, and one that answered `false`
+    // for everything would make it delete live runs' probes.
+    expect(isProcessAlive(process.pid)).toBe(true);
+    expect(isProcessAlive(process.ppid)).toBe(true);
+    expect(isProcessAlive(deadPid())).toBe(false);
+  });
+
+  it("names each run's directory with its pid AND its own entropy", () => {
+    const dir = probeDirFor("some-guard");
+    expect(dir.startsWith(`${PROBE_PARENT}/`)).toBe(true);
+    expect(pidOfProbeDir(path.basename(dir))).toBe(process.pid);
+    expect(dir).toContain(RUN_ID);
+    // The entropy is what a dead run cannot share: the pid-only name it used
+    // to write is a different directory from this run's.
+    expect(path.basename(dir)).not.toBe(`some-guard-${process.pid}`);
+    expect(probeDirFor("some-guard")).not.toBe(probeDirFor("other-guard"));
+  });
+
+  it("refuses a label carrying a digit, which the pid read would mistake for a pid", () => {
+    // The naming rule and the sweep's parse are one contract: a label with a
+    // digit SEGMENT (`probe-2-guard-1234`) hands the sweep the number 2, and
+    // pid 2 is alive on every machine — or, worse, is some live stranger's.
+    expect(() => probeDirFor("probe-2-guard")).toThrow(/no digit/);
+    expect(pidOfProbeDir("probe-2-guard-1234")).toBe(2);
+  });
+
+  it("reads no pid out of a name this module did not write", () => {
+    expect(pidOfProbeDir("credential-guard-424243-abc")).toBe(424243);
+    expect(pidOfProbeDir("no-pid-here")).toBe(null);
+    expect(pidOfProbeDir("")).toBe(null);
+    // pid 0 is the caller's own process group to `process.kill`, never a
+    // forked probe's pid.
+    expect(pidOfProbeDir("credential-guard-0-abc")).toBe(null);
+  });
+
+  it("removes a probe directory whose pid names no live process", () => {
+    const corpse = plant(`credential-guard-${deadPid()}-${randomUUIDLike()}`);
+    // Non-vacuous: the corpse is really on disk, with its file, before the
+    // sweep runs.
+    expect(fs.existsSync(path.join(corpse, "__credential_guard_probe__.ts"))).toBe(true);
+
+    expect(sweepDeadProbeDirs(base)).toContain(path.basename(corpse));
+    expect(fs.existsSync(corpse)).toBe(false);
+    // And the parent every run shares is still there — the one thing
+    // admin-window/DEBT-0018 forbids removing, because removing it races a
+    // concurrent run's `mkdirSync`.
+    expect(fs.existsSync(parent)).toBe(true);
+  });
+
+  it("leaves a directory whose pid IS alive, and one it cannot read a pid from", () => {
+    // The guarantee that must survive the sweep: a concurrent run's probe is
+    // untouched. Both live fixtures name processes that really exist — this
+    // worker and the vitest process that forked it.
+    const mine = plant(`credential-guard-${process.pid}-${randomUUIDLike()}`);
+    const theirs = plant(`leaf-import-guard-${process.ppid}-${randomUUIDLike()}`);
+    // A pid-only name, as a run before admin-window/BUG-0188 wrote it: alive,
+    // so it stays.
+    const legacy = plant(`credential-guard-${process.pid}`);
+    const unreadable = plant("guard-without-a-pid");
+    const corpse = plant(`leaf-import-guard-${deadPid()}-${randomUUIDLike()}`);
+
+    const swept = sweepDeadProbeDirs(base);
+
+    expect(swept).toEqual([path.basename(corpse)]);
+    for (const kept of [mine, theirs, legacy, unreadable]) {
+      expect(fs.existsSync(kept), kept).toBe(true);
+    }
+    expect(fs.existsSync(corpse)).toBe(false);
+  });
+
+  it("reports nothing, and throws nothing, when the area is not there at all", () => {
+    const empty = path.join(base, "no-such-checkout");
+    expect(sweepDeadProbeDirs(empty)).toEqual([]);
+    // A first run in a fresh checkout: the area is created by the first probe,
+    // never by the sweep.
+    expect(fs.existsSync(path.join(empty, PROBE_PARENT))).toBe(false);
+  });
+});
+
+/** Entropy for a fixture name, without a second import of `node:crypto`. */
+function randomUUIDLike(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
