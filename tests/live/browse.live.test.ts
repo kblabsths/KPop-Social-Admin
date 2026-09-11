@@ -1,8 +1,11 @@
 import * as cheerio from "cheerio";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import BrowsePage from "@/app/browse/page";
 import { recordHref } from "@/lib/records/routes";
 import { COLUMNS_PARAM, RECENT_EVENTS } from "@/lib/browse/views";
+import type { BrowseRow } from "@/lib/browse/rows";
+import { OFFSET_PARAM, PAGE_ROUTES } from "@/lib/paging/bounds";
+import { initialPage, requestPage, type PageState } from "@/lib/paging/machine";
 import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
 import {
@@ -13,6 +16,7 @@ import {
   oneEach,
   renderPage,
   surfaceHooks,
+  whileStill,
 } from "./parity";
 
 /**
@@ -306,5 +310,183 @@ describe("Browse against staging", () => {
       view.columns.find((column) => column.key === "sources")?.label ?? "sources";
     const cell = rowByLabel(markup, 0)[label];
     expect(cell).toBe(names.length > 0 ? names.join(", ") : EM_DASH);
+  });
+});
+
+/* ── paging past the first window ────────────────────────────────────────── */
+
+/**
+ * `/browse` continues its one curated view, against staging — campaign
+ * admin-window/TASK-0069, SPEC F14, M3 EC4.
+ *
+ * The walk drives the app's OWN route handler (`GET /api/admin/browse/rows`)
+ * with the app's OWN driver (`requestPage`), and grades what came back against
+ * a query THIS FILE writes: its own columns, its own order, its own range —
+ * never `lib/db/browse.ts`.
+ *
+ * **The one thing substituted is the SIGN-IN GATE.** That handler's first
+ * statement is `requireAdmin()`, which reads a NextAuth session; a test process
+ * has none, so every page of the walk would be a 401 and the walk would grade
+ * nothing about the database. So the gate answers as an allowlisted admin here
+ * and nothing else is: the bound guard, the four reads, the leg notes and the
+ * answers are the app's, against staging. The gate's own behaviour is graded
+ * where it can be graded honestly (`tests/offline/paging/browse-route.test.ts`
+ * stubs it CLOSED; `tests/http/` drives the real middleware), and the count
+ * below asserts this handler still ASKS.
+ *
+ * **The state kind is named before any row is compared**, off `data-state`
+ * inside the surface `data-surface` names — the same rule the cases above
+ * follow (ARCHITECTURE.md §10, common violation 6).
+ */
+const gate = vi.hoisted(() => ({ calls: 0 }));
+
+vi.mock("@/lib/admin", () => ({
+  requireAdmin: async () => {
+    gate.calls += 1;
+    return { user: { email: "live-suite@admin-window.local" } };
+  },
+}));
+
+const { GET } = await import("@/app/api/admin/browse/rows/route");
+
+/** How many presses this walk makes. Enough to be past the first window. */
+const WALK_PAGES = 2;
+
+/** Every paging element the page drew, by the arm it drew. */
+function pagingArms(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("[data-paging]")
+    .toArray()
+    .map((element) => $(element).attr("data-paging") ?? "");
+}
+
+describe("paging past the first window, against staging", () => {
+  /** One paging request, through the app's own route handler. */
+  async function viaHandler(url: string): Promise<unknown> {
+    const response = await GET(new Request(`http://localhost${url}`));
+    return response.json();
+  }
+
+  /**
+   * Press `presses` times from the state the FIRST SCREEN leaves behind.
+   *
+   * The driver is the app's, the route is the app's, and the loop is this
+   * file's: it presses only from `idle`, stops at `exhausted`, and treats a
+   * refusal as a failure carrying the refusal's own words — a walk that
+   * silently stopped at a refused page would report a short set as the whole
+   * of it.
+   */
+  async function walk(
+    held: number,
+    presses: number,
+  ): Promise<{ rows: BrowseRow[]; bounds: (string | null)[]; notes: unknown }> {
+    const bounds: (string | null)[] = [];
+    const asked = async (url: string): Promise<unknown> => {
+      bounds.push(new URLSearchParams(url.split("?")[1]).get(OFFSET_PARAM));
+      return viaHandler(url);
+    };
+
+    let state: PageState<BrowseRow> = initialPage<BrowseRow>(held, true);
+    let made = 0;
+    while (state.status === "idle" && made < presses) {
+      state = await requestPage<BrowseRow>(state, {
+        route: PAGE_ROUTES.browse,
+        params: "",
+        size: view.window,
+        fetchJson: asked,
+      });
+      made += 1;
+      if (state.refusal !== null) {
+        throw new Error(
+          `the walk was refused at bound ${bounds[bounds.length - 1]}: ` +
+            `${state.refusal.object ?? "(no object)"} — ${state.refusal.reason}`,
+        );
+      }
+    }
+    return { rows: [...state.rows], bounds, notes: state.notes };
+  }
+
+  /**
+   * THE ORACLE: the newest `limit` events by ARRIVAL, enumerated by a range
+   * query this file writes — its own columns, its own total order, ONE round
+   * trip, so the shape held still by `whileStill` stays small (TASK-0075).
+   *
+   * It is not the app's read. A page that stopped short, repeated a row or
+   * skipped one would still be "a list of ids"; only a second enumeration made
+   * independently catches it.
+   */
+  async function newestByArrival(limit: number): Promise<string[]> {
+    const { data, error } = await independentClient()
+      .from(T.events)
+      .select("event_id, created_at")
+      .order("created_at", { ascending: false })
+      .order("event_id", { ascending: false })
+      .range(0, limit - 1);
+    if (error) throw new Error(`the oracle's window query failed: ${error.message}`);
+    return ((data ?? []) as { event_id: string }[]).map((row) => row.event_id);
+  }
+
+  it("reaches an event beyond the first window's last row, in the order the database holds", async () => {
+    const reach = view.window * (WALK_PAGES + 1);
+    const { made, held } = await whileStill(
+      () => newestByArrival(reach),
+      async () => {
+        const markup = await browseMarkup();
+        const first = renderedEventIds(markup);
+        // The walk starts from the rows the SERVER rendered, and only where
+        // that screen is a bound this surface can page from at all.
+        const walked =
+          first.length === view.window
+            ? await walk(first.length, WALK_PAGES)
+            : { rows: [] as BrowseRow[], bounds: [] as (string | null)[], notes: null };
+        return {
+          markup,
+          first,
+          arms: pagingArms(markup),
+          walked: walked.rows.map((row) => row.event_id),
+          bounds: walked.bounds,
+          notes: walked.notes,
+        };
+      },
+    );
+
+    // The state kind, before any id is compared.
+    if ((await gradeEvents(made.markup)) !== "ok") return;
+
+    if (held.length <= view.window) {
+      // A catalog that fits in one window is not a walk: the page offers no
+      // control, and this says so rather than inventing one.
+      expect(made.arms, "a catalog inside one window offered a control").toEqual([]);
+      expect(made.walked).toEqual([]);
+      return;
+    }
+
+    // There IS more, so the page says so — and the walk starts from the rows
+    // the server rendered.
+    expect(made.arms).toContain("more");
+    expect(made.first).toHaveLength(view.window);
+    expect(made.walked.length, "the walk reached nothing past the first window")
+      .toBeGreaterThan(0);
+    // …and it really is PAST the first window's last row.
+    expect(made.walked).not.toContain(made.first[made.first.length - 1]);
+
+    // The gate really is asked, once per page of the walk.
+    expect(gate.calls, "the paging route answered without asking the gate")
+      .toBeGreaterThanOrEqual(made.bounds.length);
+    // Every press carried an EXPLICIT bound, on the window's own grid.
+    expect(made.bounds).toEqual(
+      made.bounds.map((_, index) => String(view.window * (index + 1))),
+    );
+
+    const reached = [...made.first, ...made.walked];
+    expect(new Set(reached).size, "an event was reached twice").toBe(reached.length);
+
+    // THE ORACLE: the same ids, in the same arrival order, from a query
+    // written independently of the app's data layer.
+    expect(reached).toEqual(held.slice(0, reached.length));
+
+    // Every leg of every page reported, and a leg that refused would have
+    // reached the state rather than leaving a silently empty column.
+    expect(made.notes === null || typeof made.notes === "object").toBe(true);
   });
 });

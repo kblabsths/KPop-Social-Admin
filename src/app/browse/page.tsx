@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { BrowseTable } from "@/components/browse/browse-table";
 import { ColumnSelector } from "@/components/browse/column-selector";
+import { PagedBrowseTable } from "@/components/browse/paged-browse-table";
 import {
   Empty,
   Page,
@@ -10,10 +11,12 @@ import {
   drawnWindow,
   oldestIn,
 } from "@/components/ui";
-import { EVENTS_OBJECT, readRecentEvents } from "@/lib/db/browse";
+import { EVENTS_OBJECT, readRecentEvents, type DbUnavailable } from "@/lib/db/browse";
+import { pageBound } from "@/lib/paging/bounds";
 import {
   COLUMNS_PARAM,
   RECENT_EVENTS,
+  browseQuery,
   columnOptions,
   columnsHref,
   shownColumns,
@@ -74,6 +77,12 @@ const BROWSE_PATH = "/browse";
  * unreadable events. The `<Section>` therefore takes no `surface` of its own —
  * one page, one element answering to a name, the same rule that leaves
  * `/cycles`'s runs `<Section>` unnamed beside its hand-written wrapper.
+ *
+ * **In the PAGED arm the wrapper renders this div, not this file**
+ * (admin-window/TASK-0069): it must wrap the table ALONE, with the paged legs'
+ * notes as siblings after it, or a refused provenance leg would be graded by
+ * the live oracle as an unreadable events window. Exactly one element carries
+ * the name in every state, which is what the pin above grades.
  */
 const EVENTS_SURFACE = "events";
 
@@ -136,6 +145,45 @@ export default async function BrowsePage({
     body = <BrowseTable view={view} shown={shown} rows={events.data} />;
   }
 
+  // WHETHER THE OPERATOR IS OFFERED MORE — the page's decision, and the whole
+  // of it (admin-window/TASK-0069, SPEC F14).
+  //
+  // Browse's events read is a WINDOW read with NO COUNT BESIDE IT: it returns
+  // rows and nothing else. So there is no total to compare against, and the
+  // honest signal that there is more is that the window came back FULL — asked
+  // of the one function that answers that question, of the `held` this page is
+  // about to hand down, rather than re-derived beside it. `pageBound` is `ok`
+  // exactly when that `held` is a bound this surface can page from, so:
+  //
+  //  - a SHORT window is never pageable, and no state is ever constructed off
+  //    the bound grid (`initialPage(37, true)` is a state whose every press
+  //    `pageBound` refuses for ever — QA, admin-window/BUG-0168). The window
+  //    line above already states that case in its own numbers: "The window did
+  //    not fill — 12 of at most 50 — so it holds all the events the read
+  //    found";
+  //  - an EMPTY window is refused by the same call (a bound below the window
+  //    is not a bound), so the `Empty` card stands exactly as it did;
+  //  - `not_provisioned` and `error` render exactly what they render today.
+  //
+  // In every one of those arms no paging element exists in the markup at all —
+  // a control that cannot be honoured is never offered (SPEC F10).
+  const pageable =
+    events.kind === "ok" &&
+    pageBound(String(events.data.length), view.window).kind === "ok";
+  // The rows the wrapper is handed, or `null` where this page draws the body
+  // itself — which is every other state, exactly as it drew it before.
+  const drawn = events.kind === "ok" && pageable ? events.data : null;
+
+  // THE OBJECTS THIS PAGE HAS ALREADY REPORTED, above the table — its own two
+  // legs, in the database's own spelling. A leg named once is not named again
+  // below the rows: the same object twice tells the operator nothing and
+  // doubles a red line. The identity is the OBJECT and not the leg key,
+  // because the object is what both sides read from the same database.
+  const reported = [listing.venues, listing.provenance].flatMap(
+    (leg: DbUnavailable | null) =>
+      leg === null ? [] : [leg.kind === "not_provisioned" ? leg.missing : leg.reading],
+  );
+
   return (
     <Page title="Browse">
       <Section title={view.title}>
@@ -168,7 +216,25 @@ export default async function BrowsePage({
         />
         {listing.venues ? <StateOf result={listing.venues} /> : null}
         {listing.provenance ? <StateOf result={listing.provenance} /> : null}
-        <div data-surface={EVENTS_SURFACE}>{body}</div>
+        {drawn === null ? (
+          <div data-surface={EVENTS_SURFACE}>{body}</div>
+        ) : (
+          // The same rows, the same markup, the same order — plus whatever a
+          // press appends beneath them. The wrapper owns the surface div (it
+          // wraps the TABLE alone, so a paged leg note is never graded as the
+          // events read), and the window is handed down from its ONE spelling
+          // here: the view's own `window`, which the wrapper never names
+          // (admin-window/BUG-0168).
+          <PagedBrowseTable
+            surface={EVENTS_SURFACE}
+            view={view}
+            shown={shown}
+            initial={drawn}
+            params={browseQuery(view, shown)}
+            size={view.window}
+            reported={reported}
+          />
+        )}
       </Section>
     </Page>
   );
