@@ -617,76 +617,25 @@ export function filterBar(
 /* ── the exit ────────────────────────────────────────────────────────────── */
 
 /**
- * The app's word for the ONE control that clears every narrowing at once
- * (admin-window/BUG-0161).
+ * The exit's WORDS — its label, the name of the row it stands in, and the
+ * sentence an empty card names it with — are `src/lib/url/narrowing.ts`'.
  *
- * `ANY_LABEL` clears ONE facet and says so; this clears the whole filter. The
- * two are different promises and carry different words, because
- * `/claims?domain=zzz` made the difference load-bearing: every chip on the
- * page — both `all` chips included — carried `domain=zzz` forward, so the one
- * action the empty card named ("the 'all' chip on any row shows everything
- * again") returned the operator to the same zeroed page, and the narrowing
- * that emptied it had no control on the screen at all.
+ * They were declared here, and `/queues` carries the same five narrowings and
+ * the same chipless one without being able to import a claims module
+ * (admin-window/BUG-0164). Re-exported rather than moved out of this file's
+ * surface, so every caller that already reads the claims vocabulary from here
+ * keeps one import and the two spellings cannot diverge — the shape
+ * `lib/format.ts` re-exports the absence glyph in (ARCHITECTURE.md §4 rule 7).
  */
-export const CLEAR_LABEL = "clear filters";
+export { CLEAR_EYEBROW, CLEAR_LABEL, CLEARED_BY } from "@/lib/url/narrowing";
 
-/**
- * What the row holding that control is CALLED — its `role="group"` name, and
- * the eyebrow standing over it.
- *
- * The app's own word rather than a parameter name: the row is not a facet, so
- * unlike every chip row above it there is no identifier to render (the chip
- * rows' eyebrows are `MicroLabel.identifier`, this one is words).
+/*
+ * The exit CONTROL is `clearNarrowing` in `src/lib/url/narrowing.ts` — one
+ * declaration for every surface (admin-window/BUG-0164), called by this page
+ * with its two facts: `hasNarrowingFacet(filter)` above, and
+ * `claimsHref(path, {}, tab)` — this page with NOTHING set, on the tab the
+ * operator is on.
  */
-export const CLEAR_EYEBROW = "narrowing";
-
-/**
- * The exit: where "no narrowing at all, on this tab" is, or `null` when this
- * URL narrows nothing and there is nothing to clear.
- *
- * It is `claimsHref` over the EMPTY filter, which is what makes it total over
- * `CLAIM_FACETS` rather than over the facets that happen to render a chip: a
- * facet added tomorrow — chipped or not — is dropped by this href on the day
- * it is read, because the href is built from the filter that has nothing set
- * instead of by subtracting the narrowings someone remembered. Anything the
- * URL carried that this page never applied goes with it, since `claimsHref`
- * writes only what the page understood.
- *
- * The TAB is kept, and is the one narrowing this deliberately does not clear:
- * a tab is a control the operator can see and cross back from (`tabLinks`),
- * which is exactly what the facets it does clear are not.
- */
-export function clearNarrowing(
-  path: string,
-  filter: ClaimsFilter,
-  tab: ClaimsTab = DEFAULT_TAB,
-): FilterChoice | null {
-  if (!hasNarrowingFacet(filter)) return null;
-  return { label: CLEAR_LABEL, href: claimsHref(path, {}, tab), active: false };
-}
-
-/**
- * The words an empty surface names that control with — assembled here, beside
- * the control, so the card and the chip cannot come to disagree about what
- * clicking it does (LESSONS 5: a shared spelling gets imported, never
- * retyped). `CLEAR_LABEL` is interpolated rather than spelled a second time,
- * so the card quotes the chip's own word by construction.
- *
- * Three pieces, because the facet's name is a machine identifier and takes the
- * app's one identifier face in markup (`ui/Identifier`, LOOK_AND_FEEL Voice
- * bar 5) — the same split `UnchippedNarrowing` makes for the same reason.
- */
-export const CLEARED_BY = {
-  /** The whole promise, and it is the control's own promise. */
-  chip: `The '${CLEAR_LABEL}' chip above clears every filter in this URL`,
-  /** …before the first control-less facet's own name. */
-  including: ", including ",
-  /** …between two of them, on a page that ever has two. */
-  and: ", ",
-  /** …and after the last, saying why the operator could not find it. */
-  withNoChip: ", which has no chip row of its own",
-  end: ".",
-} as const;
 
 /** One tab: its word, where it goes, and whether we are on it. */
 export interface TabLink {

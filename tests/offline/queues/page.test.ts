@@ -9,6 +9,7 @@ import {
   reviewItemEdgePopulation,
   type ReviewItemRow,
 } from "../../fixtures/rows";
+import type { ReviewItemFilter } from "@/lib/review/shapes";
 import {
   permissionDenied,
   stubClient,
@@ -17,6 +18,14 @@ import {
   type Script,
   type ScriptedResponse,
 } from "../../fixtures/stub-client";
+import {
+  ANY_LABEL,
+  SOURCE_FACET,
+  isNarrowedBeyond,
+  queuesHref,
+  type QueuesTab,
+} from "@/lib/review/queue-filters";
+import { CLEAR_LABEL, CLEARED_BY, clearNarrowing } from "@/lib/url/narrowing";
 import {
   classesOf,
   expectDrawnAsLinkAtRest,
@@ -1129,10 +1138,10 @@ describe("a zero that a filter produced", () => {
     // admin-window/BUG-0133, which is the ticket that owns this state. It used
     // to read "`status` is a reason the block is empty and the card may say
     // so": it is not. With nothing in the table there was no row for `status`
-    // to remove, the block renders exactly what the bare `/queues` renders, and
-    // "Widen a filter above" is advice that leads to the same zero. A table
-    // with no rows and a filter that matched nothing never share a rendering
-    // (LOOK_AND_FEEL, the four states).
+    // to remove, the block renders exactly what the bare `/queues` renders, so
+    // blaming the filter would send the operator to clear one that hides
+    // nothing. A table with no rows and a filter that matched nothing never
+    // share a rendering (LOOK_AND_FEEL, the four states).
     //
     // The true half of the rule — a facet that really DID remove rows still
     // names its scope — is pinned on the POPULATED table by the two siblings
@@ -2463,5 +2472,188 @@ describe("a source narrowing", () => {
       expect(scopeOf(markup).id, spelling).toBe(CARRIED);
       expect(droppedLine(markup).lines, spelling).toBe(0);
     }
+  });
+});
+
+/* ── the way out of a narrowing (admin-window/BUG-0164) ──────────────────── */
+
+/**
+ * **The exit the empty card names works** — admin-window/BUG-0164, which is
+ * admin-window/BUG-0161 arriving on the second page that needed it.
+ *
+ * BUG-0161 measured the defect on `/claims` and fixed it there; this page kept
+ * the retired advice — widen a filter above, any row's `all` chip — and the
+ * advice is false here for the same reason it was false there. `source_id` has
+ * no chip row (`SOURCE_FACET`) and every chip on the page carries it forward,
+ * all four `all` chips included, so on `/queues?source_id=<id>` the one action
+ * the card named returned the operator to the same zeroed queues and the only
+ * exits left were the sidebar and the address bar.
+ *
+ * The property graded here is that ticket's human-check, run as a test: from a
+ * narrowed-empty page, follow ONLY the control the card names, and arrive
+ * somewhere that renders review items. It is graded by FOLLOWING the href the
+ * page wrote — rendering the page again at it — rather than by comparing it
+ * against a URL spelled here, so a page that keeps a facet in that href fails
+ * even where the string looks right.
+ *
+ * The words are imported from the module that declares them, never spelled
+ * here: this file pins no copy of the app's own, and the rule that there is
+ * exactly one declaration of them is `tests/offline/ui/copy.test.ts`'.
+ */
+describe("the way out of a narrowing", () => {
+  /** Registered, well-formed, carried by no row of the fixture. */
+  const NO_ROWS = ID.sourceTicketmaster;
+
+  /** The exit control the filter bar draws, or `undefined` where it draws none. */
+  function exitOf(markup: string): { label: string; href: string } | undefined {
+    const anchor = cheerio.load(markup)("[data-clear-narrowing] a");
+    if (anchor.length === 0) return undefined;
+    return { label: anchor.text().trim(), href: anchor.attr("href") ?? "" };
+  }
+
+  /** The same, insisting there is one — so a missing exit names its own state. */
+  function theExit(markup: string, state: string): { label: string; href: string } {
+    const exit = exitOf(markup);
+    if (exit === undefined) throw new Error(`no exit is drawn on ${state}`);
+    return exit;
+  }
+
+  /** The card of a block that says a NARROWING emptied it, as squashed text. */
+  function narrowedCard(markup: string, kind: string): string {
+    return squash(
+      cheerio.load(markup)(`[data-queue="${kind}"] [data-empty="narrowing"]`).text(),
+    );
+  }
+
+  /** Where an href this page wrote leads, as parameters to render it again. */
+  const at = (href: string): Record<string, string | string[]> =>
+    paramsOf(href.split("?")[1] ?? "");
+
+  /**
+   * Every URL below empties a queue block through a narrowing this page
+   * applied: the chipless facet alone, the same beside a chip facet, and a
+   * chip facet on its own.
+   */
+  const DEAD_ENDS: ReadonlyArray<readonly [string, string, string]> = [
+    ["the facet with no chip row, alone", `source_id=${NO_ROWS}`, "decision"],
+    ["that facet beside a chip facet", `source_id=${NO_ROWS}&status=settled`, "signal"],
+    ["a chip facet that empties the other queue", "kind=signal", "decision"],
+  ];
+
+  it.each(DEAD_ENDS)("is on the screen when %s emptied a queue", async (state, query, kind) => {
+    const markup = await renderQueues(healthyScript(), paramsOf(query));
+    // Non-vacuous: this really is a zeroed block, blamed on the narrowing and
+    // not on an empty table.
+    expect(idsIn(markup, kind), state).toEqual([]);
+    expect(emptyArmOf(markup, kind), state).toBe("narrowing");
+
+    // Criterion 1: the card names the control, in the control's own word.
+    const exit = theExit(markup, state);
+    expect(narrowedCard(markup, kind), state).toContain(exit.label);
+    expect(exit.label, state).toBe(CLEAR_LABEL);
+
+    // ...and following it — clicking only what the card named — arrives at a
+    // page that renders items, with nothing left to clear.
+    const arrived = await renderQueues(healthyScript(), at(exit.href));
+    expect(idsIn(arrived).length, state).toBeGreaterThan(0);
+    expect(exitOf(arrived), state).toBeUndefined();
+  });
+
+  it("says the one sentence the app has for an exit, on the page that kept the old one", async () => {
+    // The whole of admin-window/BUG-0164: this card and `/claims`' carry one
+    // spelling, so the same empty state cannot read two ways in one app. The
+    // promise is asserted from the module that declares it; that it is
+    // declared exactly once is graded over the tree in `ui/copy.test.ts`.
+    const markup = await renderQueues(healthyScript(), paramsOf(`source_id=${NO_ROWS}`));
+    for (const kind of KIND_NAMES) {
+      const card = narrowedCard(markup, kind);
+      expect(card, kind).toContain(CLEARED_BY.chip);
+      // The facet with no chip row is NAMED, so the sentence says both what
+      // the control clears and why the operator could not find that narrowing.
+      expect(card, kind).toContain(SOURCE_FACET);
+      expect(card, kind).toContain(CLEARED_BY.withNoChip);
+    }
+  });
+
+  it("names no chipless facet the URL did not set", async () => {
+    // The other arm: with only chip facets in force the sentence is the
+    // promise alone — naming `source_id` there would blame a narrowing nobody
+    // applied (LESSONS 2).
+    const markup = await renderQueues(healthyScript(), paramsOf("kind=signal"));
+    const card = narrowedCard(markup, "decision");
+    expect(card).toContain(CLEARED_BY.chip);
+    expect(card).not.toContain(SOURCE_FACET);
+    expect(card).not.toContain(CLEARED_BY.withNoChip);
+  });
+
+  it("draws no exit where the URL narrowed nothing", async () => {
+    // A control that clears nothing is a control that lies (LOOK_AND_FEEL bar
+    // 13), so the row is absent from the unnarrowed page — and from a page
+    // carrying parameters this one never applied, which the dropped-parameter
+    // line explains instead.
+    const UNNARROWED = [
+      "",
+      "source_id=not-a-uuid",
+      "record_id=01920000-0000-7000-8000-0000000009ff",
+    ];
+    for (const query of UNNARROWED) {
+      const markup = await renderQueues(healthyScript(), paramsOf(query));
+      expect(exitOf(markup), query || "(bare)").toBeUndefined();
+    }
+  });
+
+  it("draws the exit on a narrowed page whose queues are NOT empty", async () => {
+    // Criterion 2's other half, which the dead ends above cannot reach: a
+    // narrowing is un-clearable in EVERY state it reaches, not only the one
+    // where it emptied a queue. `?queue=entity_link` still draws rows, still
+    // moves every figure on the page, and still has no `all` chip that drops
+    // it while a source is set — so the exit is on screen there too.
+    const narrowed = await renderQueues(healthyScript(), paramsOf("queue=entity_link"));
+    expect(idsIn(narrowed).length).toBeGreaterThan(0);
+    expect(exitOf(narrowed)).toBeDefined();
+
+    // …and on the empty TABLE under a facet, where no filter is to blame for
+    // the zero (admin-window/BUG-0133): the cards there name what fills a
+    // queue, and the control that clears the URL is a different question from
+    // the words that explain the emptiness.
+    const bare = await renderQueues(EMPTY_TABLE, paramsOf("kind=signal"));
+    for (const kind of KIND_NAMES) expect(emptyArmOf(bare, kind), kind).toBe("queue");
+    expect(exitOf(bare)).toBeDefined();
+  });
+
+  it("leaves the chip rows doing exactly the job they did", async () => {
+    // The exit is a row of its own; it takes nothing away from the chips,
+    // whose `all` still means "this facet, unset" and still composes with the
+    // others — which is exactly why an `all` chip can never be the exit.
+    const markup = await renderQueues(
+      healthyScript(),
+      paramsOf(`source_id=${NO_ROWS}&status=settled`),
+    );
+    for (const facet of ["kind", "queue", "shape", "status"]) {
+      const chips = chipsOf(markup, facet);
+      expect(chips.length, facet).toBeGreaterThan(1);
+      expect(chips[0].label, facet).toBe(ANY_LABEL);
+      expect(chips[0].href, facet).not.toContain(`${facet}=`);
+      // …and the chipless narrowing travels on, which is the whole difference
+      // between widening one row and taking the exit.
+      expect(chips[0].href, facet).toContain(`${SOURCE_FACET}=${NO_ROWS}`);
+    }
+    // The exit is not a facet, so it renders no facet group and sets no
+    // parameter of its own.
+    expect(cheerio.load(markup)("[data-clear-narrowing] [data-facet]")).toHaveLength(0);
+    expect(at(theExit(markup, "both facets set").href)).toEqual({});
+  });
+
+  it("keeps the tab it was taken from", async () => {
+    // A tab is a control the operator can see and cross back from, so it is
+    // the one narrowing the exit does not clear. The filter bar renders on the
+    // queues tab only, so this is graded on the href the leaf writes.
+    // Composed exactly as the page composes it.
+    const exitOn = (filter: ReviewItemFilter, tab: QueuesTab) =>
+      clearNarrowing(isNarrowedBeyond(filter, {}), queuesHref("/queues", {}, tab));
+    expect(exitOn({ source_id: NO_ROWS }, "verdict_log")?.href).toBe(
+      "/queues?tab=verdict_log",
+    );
+    expect(exitOn({}, "verdict_log")).toBeNull();
   });
 });

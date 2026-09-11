@@ -1,5 +1,6 @@
-import { Chip, Eyebrow } from "@/components/ui";
+import { Chip, ClearRow, Eyebrow } from "@/components/ui";
 import type { FilterFacet } from "@/lib/review/queue-filters";
+import type { ExitChoice } from "@/lib/url/narrowing";
 
 /**
  * The Queues page's filters — campaign admin-window/TASK-0010.
@@ -19,7 +20,24 @@ import type { FilterFacet } from "@/lib/review/queue-filters";
  *
  * A pure component: plain props, no fetching (ARCHITECTURE.md §4 rule 1).
  */
-export function FilterBar({ facets }: { facets: readonly FilterFacet[] }) {
+export function FilterBar({
+  facets,
+  clear = null,
+}: {
+  facets: readonly FilterFacet[];
+  /**
+   * The one control that clears EVERY narrowing the URL applied, or `null`
+   * where it applied none (`clearNarrowing`, admin-window/BUG-0164).
+   *
+   * Drawn by `ui/ClearRow` — the same module that assembles the sentence the
+   * empty card names it with, so the promise and the control cannot come
+   * apart. It is a row of this bar rather than a link inside that card because
+   * a narrowing with no control is un-clearable in every state, not only the
+   * one where it emptied a queue: `?source_id=<id>` narrows a page that still
+   * draws rows just as thoroughly.
+   */
+  clear?: ExitChoice | null;
+}) {
   return (
     <div className="flex flex-col gap-2">
       {facets.map((group) => (
@@ -41,6 +59,7 @@ export function FilterBar({ facets }: { facets: readonly FilterFacet[] }) {
           ))}
         </div>
       ))}
+      <ClearRow clear={clear} />
     </div>
   );
 }

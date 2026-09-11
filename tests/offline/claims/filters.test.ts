@@ -10,7 +10,6 @@ import {
   TABS,
   claimsHref,
   claimsQuery,
-  clearNarrowing,
   droppedParams,
   facetChips,
   filterBar,
@@ -29,6 +28,10 @@ import {
   type ClaimsTab,
   type FacetOptions,
 } from "@/lib/claims/filters";
+// The exit CONTROL is declared once for every surface (admin-window/BUG-0164);
+// what this leaf still owns is the pair of facts the page hands it — "did this
+// URL narrow anything" and "where is this page with nothing set".
+import { clearNarrowing } from "@/lib/url/narrowing";
 import { recordHref } from "@/lib/records/routes";
 // The vocabulary's own home (admin-window/TASK-0072): the shape and the two
 // functions over it are the URL leaf's, the facet TABLE below is this page's.
@@ -736,9 +739,13 @@ describe("the empty card names an exit that clears every narrowing the page appl
     return filterFrom(Object.fromEntries(new URLSearchParams(query)), BUCKETS);
   };
 
+  /** The exit this page offers — composed exactly as `src/app/claims/page.tsx` composes it. */
+  const exitOffered = (filter: ClaimsFilter, tab: ClaimsTab = DEFAULT_TAB) =>
+    clearNarrowing(hasNarrowingFacet(filter), claimsHref(PATH, {}, tab));
+
   /** The exit, or a failure naming the state that was left without one. */
   const exitFrom = (filter: ClaimsFilter, tab: ClaimsTab = DEFAULT_TAB) => {
-    const exit = clearNarrowing(PATH, filter, tab);
+    const exit = exitOffered(filter, tab);
     if (exit === null) {
       throw new Error(`no exit offered for ${JSON.stringify(filter)} on ${tab}`);
     }
@@ -748,17 +755,17 @@ describe("the empty card names an exit that clears every narrowing the page appl
   it("is offered exactly where the URL narrowed something", () => {
     // Nothing set: no row, because there is nothing to clear and a control
     // that clears nothing is a control that lies (LOOK_AND_FEEL bar 13).
-    expect(clearNarrowing(PATH, filterFrom({}, BUCKETS))).toBeNull();
+    expect(exitOffered(filterFrom({}, BUCKETS))).toBeNull();
     // A parameter the page did NOT apply is not a narrowing either: the
     // dropped-parameter line says what happened to it, and this row stays
     // away rather than offering to clear a filter nobody is under.
-    expect(clearNarrowing(PATH, filterFrom({ domain: "  " }, BUCKETS))).toBeNull();
-    expect(clearNarrowing(PATH, filterFrom({ source_id: "not-a-uuid" }, BUCKETS))).toBeNull();
+    expect(exitOffered(filterFrom({ domain: "  " }, BUCKETS))).toBeNull();
+    expect(exitOffered(filterFrom({ source_id: "not-a-uuid" }, BUCKETS))).toBeNull();
     // And every facet on its own gets one.
     for (const facet of CLAIM_FACETS) {
       const filter = filterFrom({ [facet]: A_VALUE[facet] }, BUCKETS);
       expect(hasNarrowingFacet(filter), facet).toBe(true);
-      expect(clearNarrowing(PATH, filter), facet).not.toBeNull();
+      expect(exitOffered(filter), facet).not.toBeNull();
     }
   });
 
@@ -820,7 +827,10 @@ describe("the empty card names an exit that clears every narrowing the page appl
       // strip is the control that crosses back (`tabLinks`), so nothing here
       // is left without one.
       expect(appliedBy(exit.href), tab).toEqual({});
-      expect(exit.href, tab).toBe(claimsHref(PATH, {}, tab));
+      // Spelled here rather than taken from `claimsHref`, which is what the
+      // page composes the exit FROM: an assertion against the builder's own
+      // output would hold however that builder changed.
+      expect(exit.href, tab).toBe(tab === DEFAULT_TAB ? PATH : `${PATH}?tab=${tab}`);
       expect(tabFrom(Object.fromEntries(new URLSearchParams(exit.href.split("?")[1] ?? ""))), tab)
         .toBe(tab);
     }
