@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   PENDING_CLAIM_BUCKETS,
@@ -593,25 +594,113 @@ describe("the claims leaf reaches nothing that can reach a database", () => {
   const LEAF = "src/lib/claims/lines.ts";
   const FORBIDDEN = /@supabase\/supabase-js|process\s*\.\s*env/;
 
-  /** The `src/**` modules a file imports, by the four spellings that reach one. */
-  function importsOf(file: string): string[] {
-    return codeText(file)
+  /** One reach out of a file: the specifier AS WRITTEN, and where it points. */
+  type Reach = {
+    /** The specifier exactly as the import line spelled it. */
+    specifier: string;
+    /**
+     * An `src/**` reach as a repo-relative path with NO extension — which
+     * file that is, `resolveSource` answers — or a package name carried
+     * through unchanged, which is not a path at all.
+     */
+    target: string;
+  };
+
+  /** The modules a file imports, by the four spellings that reach one. */
+  function importsOf(file: string, read: (file: string) => string = codeText): Reach[] {
+    return read(file)
       .split("\n")
       .filter((line) => /^\s*import\b|\brequire\s*\(|\bimport\s*\(|\bfrom\s+["']/.test(line))
       .map((line) => line.match(/["']([^"']*)["']/)?.[1])
       .filter((specifier): specifier is string => specifier !== undefined)
-      .map((specifier) =>
-        specifier.startsWith("@/")
-          ? `src/${specifier.slice(2)}`
-          : specifier.startsWith(".")
-            ? `${file.replace(/\/[^/]*$/, "")}/${specifier}`
-            : specifier,
-      )
-      .map((target) =>
-        target.startsWith("src/")
-          ? `${target.replace(/\.tsx?$/, "").replace(/\/\.\//g, "/")}.ts`
-          : target,
-      );
+      .map((specifier) => {
+        if (specifier.startsWith("@/")) return { specifier, target: `src/${specifier.slice(2)}` };
+        if (specifier.startsWith(".")) {
+          return {
+            specifier,
+            target: path.posix.normalize(`${file.replace(/\/[^/]*$/, "")}/${specifier}`),
+          };
+        }
+        return { specifier, target: specifier };
+      })
+      .map(({ specifier, target }) => ({
+        specifier,
+        target: target.startsWith("src/") ? target.replace(/\.tsx?$/, "") : target,
+      }));
+  }
+
+  /**
+   * The file an `src/**` reach really names, or `null` when nothing under
+   * `src/` answers to it — **the BARREL included** (admin-window/DEBT-0017).
+   *
+   * `@/components/ui` is `src/components/ui/index.ts`, not
+   * `src/components/ui.ts`. Mapped to the latter and handed to `codeText` it
+   * read as the EMPTY STRING — `sourceText` answers "" for a path that is not
+   * a readable file, by design, so that a probe vanishing mid-walk is not a
+   * failure — and the whole subtree behind the barrel went unscanned while the
+   * walk below reported green over a closure it had never read. The leaf's
+   * imports all resolve today, so that was latent: exactly the shape of guard
+   * that greens the day it stops working.
+   *
+   * **Not shared with `tests/offline/db/layering.test.ts`'s `importTarget`,
+   * deliberately** (LESSONS 4). That one answers a different question — is
+   * this ONE import outside the closed leaf allowlist — for which a barrel is
+   * already correctly "not a leaf", and it never reads the target's text at
+   * all. Teaching it to resolve index files would change what it grades and
+   * buy nothing; a resolver shared between the two would be one predicate
+   * answering two questions.
+   */
+  function resolveSource(target: string, tree: Set<string> = sourceTree()): string | null {
+    for (const candidate of [
+      `${target}.ts`,
+      `${target}.tsx`,
+      `${target}/index.ts`,
+      `${target}/index.tsx`,
+    ]) {
+      if (tree.has(candidate)) return candidate;
+    }
+    return null;
+  }
+
+  /** The one walk of `src/`, as a set, read once per call site that needs it. */
+  function sourceTree(): Set<string> {
+    return new Set(sourceFiles());
+  }
+
+  /**
+   * The closure walk itself, over a TEXT READER so it can be driven on
+   * fixtures — no probe file is written into the tree other walkers are
+   * reading in parallel (admin-window/BUG-0029's hazard, `../source-tree`).
+   * Returns every file it read; an unresolvable `src/` reach, a forbidden
+   * import and a forbidden word are all assertion FAILURES from inside it.
+   */
+  function closureOf(entry: string, read: (file: string) => string = codeText): Set<string> {
+    const tree = sourceTree();
+    const seen = new Set<string>([entry]);
+    const queue = [entry];
+    while (queue.length > 0) {
+      const file = queue.shift() as string;
+      expect(read(file), `${file} names a client or a credential`).not.toMatch(FORBIDDEN);
+      for (const { specifier, target } of importsOf(file, read)) {
+        expect(target, `${file} imports it`).not.toMatch(/^src\/lib\/db\//);
+        expect(target, `${file} imports it`).not.toMatch(FORBIDDEN);
+        if (!target.startsWith("src/")) continue;
+        const resolved = resolveSource(target, tree);
+        // NEVER empty text that skips a subtree in silence: a reach into
+        // `src/` that names no file is this guard failing to do its job, and
+        // it says whose line it was and what that line asked for.
+        expect(
+          resolved,
+          `${file} imports "${specifier}", which resolves to no file under src/ — the closure behind it would go unread`,
+        ).not.toBeNull();
+        const next = resolved as string;
+        if (!seen.has(next)) {
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+    }
+    return seen;
   }
 
   it("is a real file with real imports, so nothing below passes vacuously", () => {
@@ -619,24 +708,94 @@ describe("the claims leaf reaches nothing that can reach a database", () => {
     expect(importsOf(LEAF).length).toBeGreaterThan(0);
   });
 
+  it("resolves a BARREL specifier to the index file it really names", () => {
+    // Both fixtures (LESSONS 8). The barrel is the one that used to read as
+    // empty text, and the plain module beside it is the spelling that must
+    // still resolve to its own file.
+    const tree = sourceTree();
+    expect(tree.has("src/components/ui/index.ts")).toBe(true);
+    expect(tree.has("src/components/ui.ts")).toBe(false);
+    expect(resolveSource("src/components/ui", tree)).toBe("src/components/ui/index.ts");
+    expect(resolveSource(LEAF.replace(/\.ts$/, ""), tree)).toBe(LEAF);
+    expect(resolveSource("src/lib/claims/nothing-is-here", tree)).toBeNull();
+  });
+
   it("never reaches lib/db, supabase-js or process.env, at any depth", () => {
-    const seen = new Set<string>([LEAF]);
-    const queue = [LEAF];
-    while (queue.length > 0) {
-      const file = queue.shift() as string;
-      expect(codeText(file), `${file} names a client or a credential`).not.toMatch(
-        FORBIDDEN,
-      );
-      for (const target of importsOf(file)) {
-        expect(target, `${file} imports it`).not.toMatch(/^src\/lib\/db\//);
-        expect(target, `${file} imports it`).not.toMatch(FORBIDDEN);
-        if (target.startsWith("src/") && !seen.has(target)) {
-          seen.add(target);
-          queue.push(target);
-        }
-      }
-    }
+    const seen = closureOf(LEAF);
     // The closure really was walked: the leaf's three direct imports at least.
     expect(seen.size).toBeGreaterThan(3);
+  });
+
+  /**
+   * The guard proved on fixtures rather than on the tree, through the reader
+   * `closureOf` takes: each fixture below is a module map, and the FILE PATHS
+   * in it are real ones so that resolution is the real resolution. What is
+   * fake is only the text they are said to contain.
+   */
+  describe("the guard itself, on fixtures it must flag and one it must not", () => {
+    const IMPORTER = "src/lib/claims/lines.ts";
+    const BARREL = "src/components/ui/index.ts";
+    const readingFrom =
+      (text: Record<string, string>) =>
+      (file: string): string =>
+        text[file] ?? "";
+    /** The assertion message a failing walk carried, or "" if it passed. */
+    function failureOf(walk: () => unknown): string {
+      try {
+        walk();
+      } catch (thrown) {
+        return thrown instanceof Error ? thrown.message : String(thrown);
+      }
+      return "";
+    }
+
+    it("FAILS naming the importer and the specifier when an src/ reach reaches no file", () => {
+      const GHOST = "@/lib/claims/nothing-is-here";
+      const failure = failureOf(() =>
+        closureOf(IMPORTER, readingFrom({ [IMPORTER]: `import { x } from "${GHOST}";` })),
+      );
+      expect(failure, "a specifier that resolves to nothing passed the guard").not.toBe("");
+      expect(failure).toContain(IMPORTER);
+      expect(failure).toContain(GHOST);
+    });
+
+    it("FAILS on each forbidden reach found BEHIND a barrel, two hops from the entry", () => {
+      // The defect the resolver closes, driven: before it, the barrel read as
+      // empty text and all three of these were invisible to the walk.
+      const behind = [
+        'import { createClient } from "@supabase/supabase-js";',
+        'import { readClaimWindow } from "@/lib/db/claims";',
+        "const key = process.env.SUPABASE_SERVICE_ROLE_KEY;",
+      ];
+      for (const planted of behind) {
+        const failure = failureOf(() =>
+          closureOf(
+            IMPORTER,
+            readingFrom({
+              [IMPORTER]: 'import { Button } from "@/components/ui";',
+              [BARREL]: planted,
+            }),
+          ),
+        );
+        expect(failure, planted).not.toBe("");
+        // And it failed for the reach BEHIND the barrel, not for some
+        // accident of the fixture: the file the message names is the barrel.
+        expect(failure, planted).toContain(BARREL);
+      }
+    });
+
+    it("passes over the same shape with nothing forbidden behind it, having ENTERED the barrel", () => {
+      // The must-NOT-flag fixture, and the proof that the three above failed
+      // for their content and not for their shape: the same two hops, with
+      // the barrel really read.
+      const seen = closureOf(
+        IMPORTER,
+        readingFrom({
+          [IMPORTER]: 'import { Button } from "@/components/ui";',
+          [BARREL]: 'import { EM_DASH } from "@/lib/format";',
+        }),
+      );
+      expect([...seen]).toContain(BARREL);
+    });
   });
 });

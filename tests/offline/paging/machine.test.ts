@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { EM_DASH, isAbsent } from "@/lib/format";
-import { OFFSET_PARAM, PAGE_ROUTES, pageBound, type PageAnswer } from "@/lib/paging/bounds";
+import {
+  MAX_PAGE_OFFSET,
+  OFFSET_PARAM,
+  PAGE_ROUTES,
+  pageBound,
+  type PageAnswer,
+} from "@/lib/paging/bounds";
+import { PageMore } from "@/components/ui/paging";
 import {
   AppAuthoredError,
   initialPage,
@@ -12,6 +19,8 @@ import {
   type PageState,
   type ReasonAuthor,
 } from "@/lib/paging/machine";
+
+import { h, render } from "../ui/markup";
 
 /**
  * The one-press driver — campaign admin-window/TASK-0063, ARCHITECTURE.md §4.3
@@ -221,7 +230,7 @@ describe("requestPage", () => {
     });
   });
 
-  it("appends an ok answer in the order received and grows the bound by the row count", async () => {
+  it("appends an ok answer in the order received and grows the bound by the WINDOW", async () => {
     const { urls, deps } = answering(
       { kind: "ok", rows: rows("c", "d"), offset: 4, exhausted: false },
       { kind: "ok", rows: rows("e", "f"), offset: 6, exhausted: false },
@@ -416,8 +425,10 @@ describe("requestPage", () => {
      * THE INVARIANT THAT KILLS THE CLASS (admin-window/BUG-0168, criterion 3),
      * asserted over the whole matrix above rather than case by case: after ANY
      * press, either the bound the next press would carry is one this app
-     * serves, or the set is over. `held` leaves the bound grid only on the
-     * final page.
+     * serves, or the set is over. Below `MAX_PAGE_OFFSET` — which is the whole
+     * of this matrix — the final page is the only place `held` leaves the
+     * bound grid; the ceiling is the other place, and it has a case of its own
+     * below rather than a sentence here (admin-window/DEBT-0017).
      *
      * It is what makes residual 5 unreachable too: a second consumer wiring
      * the widget slightly differently cannot re-open the hole, because the
@@ -453,6 +464,67 @@ describe("requestPage", () => {
         }
       }
       expect([...endings].sort()).toEqual(["exhausted", "idle"]);
+    });
+
+    /**
+     * THE SECOND PLACE `held` MAY SIT OFF THE GRID — the ceiling
+     * (admin-window/DEBT-0017).
+     *
+     * The invariant above is asserted over starts that never reach
+     * `MAX_PAGE_OFFSET`, and `requestPage`'s header used to read the final
+     * page as the ONLY escape from the grid. It is not: a full window served
+     * AT the ceiling appends by rule 2 like any other page, so `held` lands
+     * one window ABOVE the ceiling with the set not over and the status
+     * `idle`. Nothing in the driver clamps that, and nothing should — the set
+     * really does continue and this module may not say otherwise — so the
+     * honest answer belongs to the widget, whose limit arm withdraws the
+     * control without claiming the set finished (ruled 2026-09-10,
+     * admin-window/TASK-0067).
+     *
+     * Driven END TO END on purpose: the markup below is rendered over the
+     * state `requestPage` actually produced, not over one typed beside it, so
+     * the leaf and the widget cannot drift into disagreeing about this state.
+     * `tests/offline/ui/paging.test.ts` owns the arm itself over hand-built
+     * props; this owns the join.
+     */
+    it("a FULL window served AT the ceiling: idle, held past MAX_PAGE_OFFSET, and PageMore draws its limit arm", async () => {
+      // Non-vacuity: the bound this press carries is one this app SERVES, so
+      // what follows is a legitimate press and not one already off the grid.
+      expect(pageBound(String(MAX_PAGE_OFFSET), SIZE).kind).toBe("ok");
+
+      const { urls, deps } = answering({
+        kind: "ok",
+        rows: served(SIZE),
+        offset: MAX_PAGE_OFFSET,
+        exhausted: false,
+      } satisfies PageAnswer<Row>);
+      const next = await requestPage(paged(MAX_PAGE_OFFSET, "a", "b"), deps);
+
+      expect(urls).toHaveLength(1);
+      // Rule 2 is unchanged at the ceiling: the page landed whole, in order.
+      expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "s0", "s1"]);
+      expect(next.held).toBe(MAX_PAGE_OFFSET + SIZE);
+      expect(next.held).toBeGreaterThan(MAX_PAGE_OFFSET);
+      expect(next.status).toBe("idle");
+      expect(next.refusal).toBeNull();
+      // The bound the NEXT press would carry is one this app refuses — the
+      // second escape hatch, which the header now names.
+      expect(pageBound(String(next.held), SIZE).kind).toBe("refused");
+
+      // And the widget answers that state with its limit arm: no control at
+      // all, and no sentence claiming the set is complete.
+      const html = render(
+        h(PageMore, {
+          state: next,
+          holds: "claims",
+          size: SIZE,
+          readsAgree: true,
+          onPress: () => {},
+        }),
+      );
+      expect(html).toContain('data-paging="limit"');
+      expect(html).not.toContain('data-paging="exhausted"');
+      expect(html).not.toContain("<button");
     });
   });
 
