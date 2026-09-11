@@ -253,3 +253,5 @@
 2026-09-11T12:34:12Z	artifact_gate	blocked write outside repo: /tmp_live_pids
 2026-09-11T13:06:45Z	evidence_budget	qa_evidence_overbudget: BUG-0184 4032/4000 chars
 2026-09-11T13:53:58Z	artifact_gate	blocked write outside repo: /tmp_ignore
+2026-09-11T14:03:50Z	artifact_gate	blocked write outside repo: /tmp/dummy
+2026-09-11T14:06:18Z	artifact_gate	blocked write outside repo: /tmp/x.ts
