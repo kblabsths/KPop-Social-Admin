@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T06:44:02Z — do not edit)
+# Tracker index (regenerated 2026-09-11T06:55:33Z — do not edit)
 
 ## open
 - FEAT-0014 [P1][feat][M3] F16 — the second leg of a two-step join runs its chunks concurrently  (scope:src/lib/db/result.ts,src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/db/verdict.ts,tests/offline/db/result.test.ts,tests/live/claims.live.test.ts,tests/live/queues.live.test.ts,tests/live/review-item.live.test.ts)
@@ -14,7 +14,7 @@
 - DEBT-0019 [P3][debt][M3] The http tier's storable assertion passes on the gate's 403, so it grades nothing the handler answered — make the vacuity visible  (scope:tests/http/paging.http.test.ts from:BUG-0171)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - TASK-0077 [P1][task][M3] claims.live stops being sized by staging: bounded oracles, a window with headroom, and a walk small enough to hold still  (deps:BUG-0167 scope:tests/live/claims.live.test.ts,tests/live/parity.ts,tests/offline/live-guard.test.ts,agenticflow/tracker/evidence @builder-264 from:TASK-0075)
 
-Totals — claimed:1, done:22, open:12. Archived: 252.
+Totals — built:1, done:22, open:12. Archived: 252.
