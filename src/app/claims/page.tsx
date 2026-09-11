@@ -1250,7 +1250,7 @@ export default async function ClaimsPage({
         // holds: a press is a read on this surface, and a server-rendered
         // constant above rows a press changes is the contradiction QA
         // measured (admin-window/BUG-0172).
-        <PagedWindowLine gauge={LIST_WINDOW} window={listWindow} shows={listShows} />
+        <PagedWindowLine gauge={LIST_WINDOW} shows={listShows} />
       ) : (
         <WindowLine gauge={LIST_WINDOW} window={listWindow} shows={listShows} />
       )}
@@ -1367,15 +1367,24 @@ export default async function ClaimsPage({
       ) : null}
 
       <Section title={LIST_TITLE[tab]} surface={LIST_SURFACE}>
-        {pageable ? (
+        {pageable && listWindow !== null ? (
           // The window this surface pages by is spelled ONCE, here, and handed
           // to the driver that grades every page against it. The narrowing a
           // press carries is serialized from the FILTER the reads above were
           // given, never from `searchParams`, so a parameter this page dropped
           // cannot come back as a different narrowing under rows drawn from
           // this one (admin-window/BUG-0141).
+          //
+          // THE FIRST SCREEN'S WINDOW GOES IN HERE, AND NOWHERE ELSE
+          // (admin-window/BUG-0180). The provider combines it with the press
+          // state once, so the line above the rows and the sentence below them
+          // read one object and one verdict over it. `listWindow` is non-null
+          // in every state `pageable` is true — it needs the same two `ok`
+          // reads — and the condition says so out loud rather than asserting
+          // it.
           <PagingProvider
             initial={initialPage<ClaimLine>(listed.length, truncated)}
+            window={listWindow}
             deps={{
               route: PAGE_ROUTES.claims,
               params: claimsQuery(filter, tab),

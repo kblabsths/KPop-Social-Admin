@@ -238,7 +238,7 @@ export default async function BrowsePage({
         // that every fact in it is a fact of the read the operator NOW holds:
         // a press is a read on this surface, and a server-rendered constant
         // above rows a press changes is the contradiction QA measured.
-        <PagedWindowLine gauge={EVENTS_WINDOW} window={eventsWindow} shows={shows} />
+        <PagedWindowLine gauge={EVENTS_WINDOW} shows={shows} />
       )}
       <ColumnSelector
         label="Columns"
@@ -270,13 +270,19 @@ export default async function BrowsePage({
   return (
     <Page title="Browse">
       <Section title={view.title}>
-        {drawn === null ? (
+        {drawn === null || eventsWindow === null ? (
           sectionBody
         ) : (
           // The window this surface pages by is spelled ONCE, here, and handed
-          // to the driver that grades every page against it.
+          // to the driver that grades every page against it — and so is the
+          // first screen's WINDOW, which the provider combines with the press
+          // state once for the line and the sentence alike
+          // (admin-window/BUG-0180). `eventsWindow` is non-null in every state
+          // `drawn` is — both need the events read to have answered `ok` — and
+          // the condition says so rather than asserting it.
           <PagingProvider
             initial={initialPage<BrowseRow>(drawn.length, pageable)}
+            window={eventsWindow}
             deps={{
               route: PAGE_ROUTES.browse,
               params: browseQuery(view, shown),

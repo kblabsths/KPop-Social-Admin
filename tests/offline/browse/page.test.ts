@@ -28,7 +28,8 @@ import {
 import { recordHref } from "@/lib/records/routes";
 import { BrowseTable } from "@/components/browse/browse-table";
 import { PagedBrowseTable } from "@/components/browse/paged-browse-table";
-import { PagingProvider } from "@/components/ui/paging";
+import { PageMore, PagingProvider } from "@/components/ui/paging";
+import type { DrawnWindow } from "@/components/ui/window-line";
 import { codeLinesIn, sourceText } from "../source-tree";
 import { h, render, textOf } from "../ui/markup";
 import {
@@ -124,15 +125,20 @@ vi.mock("@/components/ui/paging", async (importActual) => {
     PagingProvider: (props: {
       initial: (typeof paging.calls)[number]["initial"];
       deps: (typeof paging.calls)[number]["deps"];
+      window: unknown;
       children: unknown;
     }) => {
       paging.calls.push({ initial: props.initial, deps: props.deps });
       // The REAL provider, started from the state under test, with a probe
-      // added beside the page's own children to hand the press back out.
+      // added beside the page's own children to hand the press back out. The
+      // WINDOW is the page's own, passed straight through: this file overrides
+      // the paging STATE and nothing the page composed
+      // (admin-window/BUG-0180).
       return h(
         actual.PagingProvider as never,
         {
           initial: (paging.override === null ? props.initial : paging.override) as never,
+          window: props.window as never,
           deps: props.deps as never,
         },
         props.children as never,
@@ -149,6 +155,28 @@ vi.mock("@/components/ui/paging", async (importActual) => {
 });
 
 const { default: BrowsePage } = await import("@/app/browse/page");
+
+/**
+ * A window of the shape `/browse` composes — the rows ITS OWN read came back
+ * with, and no count beside them (`heldFrom: "this window"`,
+ * admin-window/BUG-0174).
+ *
+ * Handed to the provider by the two renders below that build a wrapper
+ * directly, the way the page hands its own (admin-window/BUG-0180). Nothing
+ * about this surface can reach the two-reads divergence `/claims` can: once
+ * its read has ended, what it holds IS what it counted.
+ */
+function thisWindow(held: number, limit: number): DrawnWindow {
+  return {
+    limit,
+    held,
+    truncated: held >= limit,
+    over: "view",
+    oldest: null,
+    scope: null,
+    heldFrom: "this window",
+  };
+}
 
 const EVENT_NEW = "01920000-0000-7000-8000-000000000b02";
 const EVENT_OLD = "01920000-0000-7000-8000-000000000b01";
@@ -1038,6 +1066,11 @@ function pagingArms(markup: string): string[] {
     .map((element) => $(element).attr("data-paging") ?? "");
 }
 
+/** Every paging element's own markup, for a byte comparison of two renders. */
+function pagingHtml(markup: string): string {
+  return cheerio.load(markup)("[data-paging]").toString();
+}
+
 /** How many times the paging hook is spelled at all — refusals included. */
 function pagingOccurrences(markup: string): number {
   return (markup.match(/data-paging/g) ?? []).length;
@@ -1522,6 +1555,7 @@ describe("the affordance that continues the recent-events view", () => {
           PagingProvider,
           {
             initial: initialPage<BrowseRow>(windowSize, true),
+            window: thisWindow(windowSize, windowSize),
             deps: { route: PAGE_ROUTES.browse, params: "", size: windowSize },
             children: null,
           },
@@ -1570,6 +1604,7 @@ describe("the affordance that continues the recent-events view", () => {
         PagingProvider,
         {
           initial: initialPage<BrowseRow>(short, more),
+          window: thisWindow(short, view.window),
           deps: { route: PAGE_ROUTES.browse, params: "", size: view.window },
           children: null,
         },
@@ -1683,6 +1718,46 @@ describe("the affordance that continues the recent-events view", () => {
     // The set is complete on screen; the window did not "fail to fill" — it
     // filled, and was then continued to the end.
     expect(windowLine(exhausted).text).not.toContain(DID_NOT_FILL);
+  });
+
+  it("says the set is complete when its read ends, because it has no second read to disagree with [admin-window/BUG-0180]", async () => {
+    // Criterion 4. `/claims` counts its matching set and draws its rows in TWO
+    // reads, so a press can end the set short of the count and the sentence
+    // under the table may not call that view complete. `/browse` reads no
+    // count beside its rows at all (`heldFrom: "this window"`), so once its
+    // read has ended what it holds IS what it counted: the verdict is `true`
+    // by construction and this surface's markup does not move in any state.
+    //
+    // Graded by rendering the app's own widget over the SAME state and each
+    // verdict, so no word of either sentence is pinned here (LESSONS 5) — and
+    // it cannot pass vacuously: the agreeing reconstruction must MATCH the
+    // page and the diverged one must not.
+    const script = windowScript(view.window);
+    // The first screen, which is what hands the driver the deps a press uses.
+    await renderBrowse(script);
+    paging.override = await pressedWith(
+      pageAnswer(view.window, { venues: null, provenance: null }),
+      pageAnswer(view.window * 2, { venues: null, provenance: null }, view.window - 10),
+    );
+    const exhausted = await renderBrowse(script);
+    const held = view.window * 3 - 10;
+    expect(pagingArms(exhausted)).toEqual(["exhausted"]);
+    expect(eventIds(exhausted)).toHaveLength(held);
+
+    const widget = (readsAgree: boolean): string =>
+      pagingHtml(
+        render(
+          h(PageMore, {
+            state: { rows: [], held, status: "exhausted", refusal: null, notes: null },
+            holds: "events",
+            size: view.window,
+            readsAgree,
+            onPress: () => {},
+          }),
+        ),
+      );
+    expect(pagingHtml(exhausted)).toBe(widget(true));
+    expect(pagingHtml(exhausted)).not.toBe(widget(false));
   });
 
   /** The line's sentence, with no word of it pinned — read for what it omits. */

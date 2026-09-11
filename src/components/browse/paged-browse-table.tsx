@@ -127,9 +127,13 @@ export function PagedBrowseTable({
   reported: readonly string[];
 }): ReactNode {
   // The surface's one state, published by the provider the page wrapped this
-  // in: the rows a press appended, the press itself, and the window the driver
-  // graded them against. Nothing here decides any of the three.
-  const { state, press, size } = usePaging<BrowseRow>();
+  // in: the rows a press appended, the press itself, the window the driver
+  // graded them against, and whether this window's two reads agree. Nothing
+  // here decides any of the four. This surface reads no count beside its rows
+  // (`heldFrom: "this window"`), so a window its read has ENDED holds exactly
+  // what it counted and the verdict is `true` by construction — which is why
+  // nothing this file renders can move (admin-window/BUG-0180).
+  const { state, press, size, readsAgree } = usePaging<BrowseRow>();
 
   // The legs the pages THIS STATE took in reported, in the record's own order
   // (the route composes them and JSON preserves it), each named at most once
@@ -158,7 +162,13 @@ export function PagedBrowseTable({
       {/* The app's own noun for what this surface holds, in the glossary's one
           word (LESSONS 6) — the same word the page's window line uses, and the
           word the control's label is built from: "Show the next 50 events". */}
-      <PageMore state={state} holds={HOLDS} size={size} onPress={press} />
+      <PageMore
+        state={state}
+        holds={HOLDS}
+        size={size}
+        readsAgree={readsAgree}
+        onPress={press}
+      />
     </div>
   );
 }

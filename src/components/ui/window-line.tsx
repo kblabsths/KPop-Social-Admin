@@ -542,6 +542,43 @@ function onScreen(info: DrawnWindow): number {
 }
 
 /**
+ * DO THIS WINDOW'S TWO READS AGREE? The ONE derivation
+ * (admin-window/BUG-0174, admin-window/BUG-0180).
+ *
+ * A count and a window read are TWO reads (`/claims` counts the matching set
+ * and draws its rows separately), and only where they agree has ONE read
+ * established a relationship between them that a sentence may assert
+ * (LESSONS 2). The two readings, which is the whole of the expression below:
+ *
+ *  - a window still offering more agrees while the count is LARGER than the
+ *    rows drawn — that is what makes "the rest are not shown" a statement of
+ *    the count rather than an invention;
+ *  - a window the read has ENDED agrees where the rows drawn ARE the count,
+ *    and then the set really is complete on screen.
+ *
+ * It decides which SENTENCE is sayable and nothing else: `truncated` keeps its
+ * own one derivation (the paging state's status, LESSONS 11) and nothing here
+ * re-derives it by counting rows.
+ *
+ * **It is EXPORTED because two surfaces ask it of one window** — the matched
+ * arm below and the terminal sentence of `PageMore`, which replaces the
+ * control and is the element an operator actually acts on. That sentence used
+ * to assert the completeness this arm had just declined to assert, three lines
+ * apart on one screen, because the control held no window and compared
+ * nothing (admin-window/BUG-0180). It is asked of the ONE `DrawnWindow` the
+ * page composed — never re-derived beside it, and never a size heuristic under
+ * a new name (admin-window/BUG-0174).
+ *
+ * A window whose `held` counts its OWN rows has no second read to disagree
+ * with, so once its read has ended (`truncated` false) `onScreen` IS `held`
+ * and this answers `true` by construction — which is why `/browse` cannot
+ * reach the diverged sentence at all.
+ */
+export function readsAgree(info: DrawnWindow): boolean {
+  return info.truncated ? onScreen(info) < info.held : onScreen(info) === info.held;
+}
+
+/**
  * How a continued window that has reached the end of its set ends — the read's
  * own verdict, in the app's voice.
  *
@@ -746,22 +783,11 @@ export function WindowLine(
       );
     }
 
-    // DO THIS WINDOW'S TWO READS AGREE? The count and the rows are two reads
-    // (`/claims` counts the matching set and draws the window separately), and
-    // only where they agree has ONE read established the relationship a clause
-    // would assert (LESSONS 2, admin-window/BUG-0174):
-    //
-    //  - a window still offering more agrees while the count is LARGER than
-    //    the rows drawn — that is what makes "the rest are not shown" a
-    //    statement of the count rather than an invention;
-    //  - a window the read has ended agrees where the rows drawn ARE the
-    //    count, and then the set is complete on screen and the sentence says
-    //    so instead of ranking a set with nothing outside it.
-    //
-    // This decides which SENTENCE is sayable and nothing else: `truncated`
-    // keeps its one derivation (the paging state's status, LESSONS 11) and no
-    // clause here re-derives it by counting rows.
-    const agree = info.truncated ? below < info.held : below === info.held;
+    // Do this window's two reads agree? Asked of the ONE derivation above,
+    // which the control's terminal sentence asks of this same window
+    // (admin-window/BUG-0180) — the reading of it a reader needs is there, and
+    // this arm no longer carries a second copy of the expression.
+    const agree = readsAgree(info);
     const complete = ` ${counted}, and every one of them is below — ${THE_READ_FOUND_NO_MORE}`;
     // Where they disagree, each read is stated as its own and nothing asserts
     // a relationship between them: not "the 50 longest-waiting of 877", which
