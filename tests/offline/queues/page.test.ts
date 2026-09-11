@@ -919,14 +919,22 @@ describe("when a read fails", () => {
     expect(idsIn(markup)).toEqual([]);
   });
 
-  it("carries the client's whole account of a transport failure, untrimmed", async () => {
+  it("carries the CAUSE of a transport failure, and says how many frames it dropped", async () => {
+    // The same rewrite as `/`'s case, for the same reason
+    // (admin-window/BUG-0173, reversing one line of admin-window/BUG-0016):
+    // the cause out of `details` still crosses whole — it sits AFTER the first
+    // frame line, so nothing may truncate there — while the runtime's own
+    // frame lines are dropped and counted rather than shown.
     const markup = await renderQueues({
       [T.reviewItems]: { error: transportFailure() },
     });
     const text = textOf(markup);
 
     expect(text).toContain("Caused by");
-    expect(text).toContain("makeNetworkError");
+    expect(text).toContain("bad port");
+    expect(text).toMatch(/\b1\b[^)]{0,40}frame/);
+    expect(text).not.toContain("node:internal");
+    expect(text).not.toMatch(/:\d+:\d+\)/);
   });
 
   it("refuses rather than rendering a partial list when the read has no count", async () => {

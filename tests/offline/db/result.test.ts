@@ -644,6 +644,381 @@ describe("the database client's own account", () => {
 });
 
 /**
+ * An account carries the parts the DATABASE authored (admin-window/BUG-0173).
+ *
+ * admin-window/BUG-0170 put the decision in one place and asked one question
+ * of each part: is this a document? QA's close measured three residuals of the
+ * same class arriving one field over or one quote deep — so the ONE derivation
+ * grows to three questions and stops there:
+ *
+ *  1. did WE serialise this part because the value carried no string
+ *     `message` (provenance — no text is inspected at all);
+ *  2. is its first non-blank character `<`;
+ *  3. does it carry runtime stack frames — a line whose text after leading
+ *     whitespace begins `at ` and ends in `)` or in `:<digits>:<digits>`.
+ *
+ * A part the CLIENT authored ABOUT a failure is not the database's words, and
+ * is answered the way a document is: counted, never quoted.
+ */
+describe("an account carries the parts the database authored", () => {
+  /** The one-line diagnostic a runtime writes when a 2xx body is not JSON. */
+  const NOT_JSON = `SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON`;
+
+  /** Where the app is deployed — every absolute path below hangs off it. */
+  const DEPLOY = "/Users/admin/deploys/kspace-admin";
+  const POSTGREST = `${DEPLOY}/node_modules/@supabase/postgrest-js/dist/index.mjs`;
+
+  /**
+   * QA's (a): an intermediary answered 2xx with a document, postgrest-js's
+   * `JSON.parse` threw, and postgrest-js handed the thrown error's `stack`
+   * back as `details`. Measured at 697-802 characters against staging
+   * 2026-09-10; this literal is 723.
+   */
+  const NOT_JSON_STACK = [
+    NOT_JSON,
+    "    at JSON.parse (<anonymous>)",
+    "    at parseJSONFromBytes (node:internal/deps/undici/undici:5589:19)",
+    "    at successSteps (node:internal/deps/undici/undici:5570:27)",
+    `    at ${POSTGREST}:122:30`,
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)",
+    `    at async PostgrestBuilder.then (${POSTGREST}:110:20)`,
+    `    at async readRows (${DEPLOY}/src/lib/db/result.ts:476:20)`,
+    `    at async loadPendingClaims (${DEPLOY}/src/lib/db/claims.ts:88:18)`,
+  ].join("\n");
+
+  const notJsonBody = {
+    code: "",
+    details: NOT_JSON_STACK,
+    hint: "",
+    message: NOT_JSON,
+  };
+
+  /**
+   * QA's (c): the transport failure that is reachable today, measured at
+   * `/claims` with the database URL pointed at `db.invalid`. The CAUSE lives
+   * on the second line, AFTER the wrapper and BEFORE the frame — which is why
+   * a part is never truncated at its first frame (admin-window/BUG-0016).
+   */
+  const dnsFailure = {
+    code: "",
+    details:
+      "TypeError: fetch failed\n" +
+      "    Caused by: Error: getaddrinfo ENOTFOUND db.invalid\n" +
+      "        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:121:26)",
+    hint: "",
+    message: "TypeError: fetch failed",
+  };
+
+  /**
+   * QA's (b): an intermediary's JSON envelope with no `message` field of its
+   * own, which `messageOf` had to serialise whole. 114 characters, asserted
+   * below rather than trusted.
+   */
+  const envelope = {
+    success: false,
+    errors: [{ code: 10015, message: "prohibited" }],
+    ray: "8f2c1de4b7c90a13-LHR-6f0a2b9c1d5e7a4133",
+  };
+
+  /** The same class, nesting a document one quote deep so it begins with `[`. */
+  const nestedDocument = [{ message: "<html>nope</html>" }];
+
+  /**
+   * The fixture that stops question 3 from becoming a prose filter: a database
+   * message whose indented second line begins "at " and is no frame, because
+   * it ends in neither `)` nor `:<digits>:<digits>`.
+   */
+  const indentedProse = {
+    code: "23514",
+    details:
+      "Failing row contains (7f3a, 2026-09-11, open).\n" +
+      "    at the end of the statement the window was still open",
+    hint: null,
+    message:
+      'new row for relation "resolution_runs" violates check constraint "runs_window_ck"',
+  };
+
+  it("drops the runtime frames of a stack, keeping the cause and saying how many went", () => {
+    // REDUCED (1) — the 2xx-non-JSON stack. Eight frame lines go; the
+    // runtime's own one-line diagnostic stays, an 11-character quotation of
+    // the body included. That sentence is the runtime's, it is bounded, and
+    // chasing it would cost the detector this rule exists to refuse.
+    expect(NOT_JSON_STACK.length).toBeGreaterThanOrEqual(697);
+    expect(NOT_JSON_STACK.length).toBeLessThanOrEqual(802);
+
+    const parsed = classify(notJsonBody, T.pendingClaims);
+    expect(parsed.kind).toBe("error");
+    if (parsed.kind !== "error") return;
+    expect(parsed.reading).toBe(T.pendingClaims);
+    expect(parsed.message).toContain(NOT_JSON);
+    // Bounded, and carrying no server's filesystem.
+    expect(parsed.message.length).toBeLessThan(200);
+    expect(parsed.message).not.toContain("node_modules");
+    expect(parsed.message).not.toContain("src/lib/db");
+    expect(parsed.message).not.toContain(DEPLOY);
+    expect(parsed.message).not.toContain("node:internal");
+    expect(parsed.message).not.toContain("JSON.parse");
+    // Counted, in the app's own words with the number in them — eight frames
+    // went, and an operator can see that they did.
+    expect(parsed.message).toMatch(/\b8\b[^)]{0,40}frame/);
+
+    // REDUCED (2) — the measured DNS failure. The wrapper says nothing on its
+    // own, so the cause must cross whole from AFTER the wrapper line, and the
+    // frame must not.
+    const transport = classify(dnsFailure, T.pendingClaims);
+    expect(transport.kind).toBe("error");
+    if (transport.kind !== "error") return;
+    expect(transport.reading).toBe(T.pendingClaims);
+    expect(transport.message).toContain("fetch failed");
+    expect(transport.message).toContain("getaddrinfo ENOTFOUND db.invalid");
+    expect(transport.message).toMatch(/\b1\b[^)]{0,40}frame/);
+    expect(transport.message).not.toContain("node:dns:");
+    expect(transport.message).not.toContain("GetAddrInfoReqWrap");
+    // The wrapper is still said once, not twice, after the reduction.
+    expect(transport.message.split("TypeError: fetch failed")).toHaveLength(2);
+
+    // The kept lines are re-asked questions 1-2. This part opens with prose,
+    // so the document question passes over it; the document is on the line
+    // BELOW, above a frame. Dropping the frame must not hand that line to an
+    // operator — it is counted where it stands, and the prose around it stays.
+    const page = "<html><body>504 Gateway Time-out</body></html>";
+    const documentInside = classify(
+      {
+        code: "",
+        details: `upstream said:\n${page}\n    at Object.parse (${POSTGREST}:41:11)`,
+        hint: "",
+        message: "read failed",
+      },
+      T.pendingClaims,
+    );
+    expect(documentInside.kind).toBe("error");
+    if (documentInside.kind !== "error") return;
+    expect(documentInside.message).toContain("upstream said:");
+    expect(documentInside.message).not.toContain("<");
+    expect(documentInside.message).not.toContain("Gateway Time-out");
+    expect(documentInside.message).toContain(String(page.length));
+    expect(documentInside.message).toMatch(/\b1\b[^)]{0,40}frame/);
+
+    // MUST NOT TOUCH — a database message whose indented line begins "at "
+    // and is not a frame. It crosses whole: same newline, same indentation,
+    // same words, and no count of frames nobody dropped.
+    const prose = classify(indentedProse, T.resolutionRuns);
+    expect(prose.kind).toBe("error");
+    if (prose.kind !== "error") return;
+    expect(prose.message).toContain(indentedProse.message);
+    expect(prose.message).toContain(indentedProse.details);
+    expect(prose.message).not.toMatch(/frame/i);
+  });
+
+  it("counts a body it had to serialise, and nothing of what it said", () => {
+    // REDUCED (3) — the 114-character envelope with no `message` of its own.
+    // Nothing about it is inspected: the question is who wrote the part.
+    const serialised = JSON.stringify(envelope);
+    expect(serialised.length).toBe(114);
+
+    const counted = classify(envelope, T.pendingClaims);
+    expect(counted.kind).toBe("error");
+    if (counted.kind !== "error") return;
+    expect(counted.reading).toBe(T.pendingClaims);
+    expect(counted.message).toContain("114");
+    // Neither the envelope's keys nor its values reach the account.
+    for (const spelling of [
+      "success",
+      "errors",
+      "ray",
+      "message",
+      "prohibited",
+      "10015",
+      envelope.ray,
+      "false",
+      "{",
+    ]) {
+      expect(counted.message, `quotes ${spelling}`).not.toContain(spelling);
+    }
+    // An app-authored clause, not a bare number and not a generic apology: an
+    // operator can tell that something other than the database answered.
+    const withoutTheCount = counted.message.replace("114", "").trim();
+    expect(withoutTheCount.split(/\s+/).length).toBeGreaterThan(3);
+    expect(counted.message.toLowerCase()).not.toContain("something went wrong");
+    expect(counted.message.toLowerCase()).not.toContain("sorry");
+
+    // REDUCED (4) — the same class nesting a document one quote deep. Its
+    // first character is `[`, so the document question never sees it; the
+    // provenance question does.
+    const nested = classify(nestedDocument, T.pendingClaims);
+    expect(nested.kind).toBe("error");
+    if (nested.kind !== "error") return;
+    expect(nested.message).toContain(String(JSON.stringify(nestedDocument).length));
+    expect(nested.message).not.toContain("<");
+    expect(nested.message).not.toContain("nope");
+    expect(nested.message).not.toContain("html");
+
+    // A serialised body that hid a credential is still counted, and the
+    // redaction that runs last has nothing left to find.
+    const keyed = classify({ status: 403, detail: `apikey=${jwtShaped}` }, T.sources);
+    expect(keyed.kind).toBe("error");
+    if (keyed.kind !== "error") return;
+    expect(keyed.message).not.toContain(jwtShaped);
+    expect(keyed.message).not.toContain("apikey");
+
+    // MUST NOT TOUCH (1) — a value that HAS a string message was never
+    // serialised, whatever else it carries. STACK.md §5's launch diagnosis
+    // depends on this exact sentence reaching the panel.
+    const unset = classify(new Error("SUPABASE_URL is not set"), T.pendingClaims);
+    expect(unset.kind).toBe("error");
+    if (unset.kind !== "error") return;
+    expect(unset.message).toBe("SUPABASE_URL is not set");
+
+    // MUST NOT TOUCH (2) — the four-field PostgREST refusal, every field in
+    // order and the code still in parentheses.
+    const refusal = {
+      code: "42501",
+      message: "permission denied for view pending_claims",
+      details: "the read used the anon role",
+      hint: "GRANT SELECT ON pending_claims TO service_role.",
+    };
+    const denied = classify(refusal, T.pendingClaims);
+    expect(denied.kind).toBe("error");
+    if (denied.kind !== "error") return;
+    const at = (part: string) => denied.message.indexOf(part);
+    expect(at(refusal.message)).toBeGreaterThanOrEqual(0);
+    expect(at(refusal.details)).toBeGreaterThan(at(refusal.message));
+    expect(at(refusal.hint)).toBeGreaterThan(at(refusal.details));
+    expect(denied.message).toContain("(42501)");
+  });
+
+  /**
+   * The non-vacuity table (LESSONS 8): every anchor proved on an input it MUST
+   * reduce AND on one it must NOT. Five rows of each, and a row that grades
+   * nothing is a row that proves nothing — so each carries at least one
+   * spelling the account must hold and, when it is a reduction, at least one
+   * the account must never hold.
+   */
+  const HANGUL_DUPLICATE = {
+    code: "23505",
+    message: 'duplicate key value violates unique constraint "groups_name_key"',
+    details: "Key (name)=(르세라핌) already exists.",
+    hint: null,
+  };
+  const OPERATOR_MESSAGE = "operator does not exist: text <-> integer";
+  const CLOUDFLARE_WITH_A_KEY =
+    `<!DOCTYPE html>\n<html><body>apikey=${jwtShaped}</body></html>`;
+
+  const ACCOUNT_FIXTURES: ReadonlyArray<
+    readonly [string, boolean, unknown, readonly string[], readonly string[]]
+  > = [
+    [
+      "a runtime stack quoting a document it could not parse",
+      true,
+      notJsonBody,
+      [NOT_JSON],
+      ["node_modules", "node:internal", DEPLOY],
+    ],
+    [
+      "the measured transport failure, frames and all",
+      true,
+      dnsFailure,
+      ["getaddrinfo ENOTFOUND db.invalid"],
+      ["node:dns:", "GetAddrInfoReqWrap"],
+    ],
+    [
+      "an intermediary's JSON envelope with no message of its own",
+      true,
+      envelope,
+      ["114"],
+      ["success", "ray", "prohibited"],
+    ],
+    [
+      "an envelope nesting a document one quote deep",
+      true,
+      nestedDocument,
+      ["33"],
+      ["<", "nope", "html"],
+    ],
+    [
+      "an intermediary's document carrying a key (admin-window/BUG-0170)",
+      true,
+      { code: "", message: CLOUDFLARE_WITH_A_KEY },
+      [String(CLOUDFLARE_WITH_A_KEY.length)],
+      ["<!DOCTYPE", jwtShaped, "apikey"],
+    ],
+    [
+      "a four-field PostgREST refusal",
+      false,
+      {
+        code: "42501",
+        message: "permission denied for view pending_claims",
+        details: "the read used the anon role",
+        hint: "GRANT SELECT ON pending_claims TO service_role.",
+      },
+      [
+        "permission denied for view pending_claims",
+        "the read used the anon role",
+        "GRANT SELECT ON pending_claims TO service_role.",
+        "(42501)",
+      ],
+      [],
+    ],
+    [
+      "an angle-bracket operator on a TABLE read, the bracket-scrub fixture",
+      false,
+      { code: "42883", details: null, hint: null, message: OPERATOR_MESSAGE },
+      [OPERATOR_MESSAGE],
+      [],
+    ],
+    [
+      "a duplicate key quoting a Hangul value",
+      false,
+      HANGUL_DUPLICATE,
+      [HANGUL_DUPLICATE.message, HANGUL_DUPLICATE.details, "르세라핌"],
+      [],
+    ],
+    [
+      "a database message whose indented line begins 'at ' and is no frame",
+      false,
+      indentedProse,
+      [indentedProse.message, indentedProse.details],
+      [],
+    ],
+    [
+      "an app-thrown Error the launch diagnosis depends on",
+      false,
+      new Error("SUPABASE_URL is not set"),
+      ["SUPABASE_URL is not set"],
+      [],
+    ],
+  ];
+
+  it("grades ten fixtures: five the rule must reduce, five it must never touch", () => {
+    expect(ACCOUNT_FIXTURES).toHaveLength(10);
+    expect(ACCOUNT_FIXTURES.filter(([, reduced]) => reduced)).toHaveLength(5);
+    expect(ACCOUNT_FIXTURES.filter(([, reduced]) => !reduced)).toHaveLength(5);
+    for (const [label, reduced, , carries, never] of ACCOUNT_FIXTURES) {
+      expect(carries.length, label).toBeGreaterThan(0);
+      if (reduced) expect(never.length, label).toBeGreaterThan(0);
+    }
+  });
+
+  it.each(ACCOUNT_FIXTURES)(
+    "%s",
+    (label, _reduced, error, carries, never) => {
+      const result = classify(error, T.pendingClaims);
+      expect(result.kind, label).toBe("error");
+      if (result.kind !== "error") return;
+      expect(result.reading, label).toBe(T.pendingClaims);
+      for (const words of carries) {
+        expect(result.message, `${label}: must carry ${words}`).toContain(words);
+      }
+      for (const words of never) {
+        expect(result.message, `${label}: must not carry ${words}`).not.toContain(
+          words,
+        );
+      }
+    },
+  );
+});
+
+/**
  * The account reaches a screen, so it must not carry a credential.
  *
  * The host of an unreachable database IS the client's own account of what it
