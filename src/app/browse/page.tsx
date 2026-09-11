@@ -219,6 +219,15 @@ export default async function BrowsePage({
           // which rows are read, so this window's floor is the catalog's own
           // (admin-window/BUG-0114).
           scope: null,
+          // WHETHER A PRESS CAN CONTINUE THIS WINDOW — the same expression
+          // that chooses which component renders the line below (`drawn !==
+          // null`), so one page-level fact reaches both and they cannot come
+          // to disagree. It is STATED rather than inferred from `drawn`'s
+          // presence on the window, which is a fact about the rows on screen
+          // and not about an affordance (admin-window/BUG-0183,
+          // ARCHITECTURE.md §4.3 rule 4). On the paged arm `PagingProvider`
+          // spreads this window, so it rides through untouched.
+          continues: drawn !== null,
         })
       : null;
   const shows = { of: "catalog", rows: "events" } as const;

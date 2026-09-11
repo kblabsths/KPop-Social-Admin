@@ -19,6 +19,7 @@ import {
   NARROWED_BY_FILTERS,
   WindowLine,
   narrowedTo,
+  readsAgree,
   type DrawnSentence,
   type DrawnWindow,
   type ReadWindow,
@@ -790,6 +791,13 @@ describe("WindowLine", () => {
     // The read covered the whole object. Every case below that does not say
     // otherwise is the unnarrowed one (admin-window/BUG-0114).
     scope: null,
+    // The rows this window PUT ON SCREEN — it filled its cap of 50, so that is
+    // what it drew. Stated, because the clauses that name what is below the
+    // line take their number from here and from nowhere else: `limit` is the
+    // size of a window and never a description of a screen
+    // (admin-window/BUG-0183). No `continues`: this is an unpaged window, and
+    // its nine call sites state none.
+    drawn: 50,
   };
 
   /** A window whose read saw one facet of its object, and says which. */
@@ -1232,6 +1240,27 @@ describe("WindowLine", () => {
     over: "view",
     oldest: null,
     scope: null,
+    // The first screen of a paged surface: it filled its cap, so the rows it
+    // put on screen ARE the cap, and no press has grown them yet.
+    drawn: 50,
+    // …and a press CAN continue it. Stated by the page, never read off
+    // `drawn`'s presence (admin-window/BUG-0183): the window above states the
+    // very same rows and offers no press at all.
+    continues: true,
+  };
+  /**
+   * The same window on a surface NO press can continue — every fact of the
+   * read kept, the affordance unstated (admin-window/BUG-0183).
+   *
+   * `continues` and `drawn` are two facts now, so "no press behind it" is
+   * spelled by dropping the affordance and NOT by dropping the rows on screen:
+   * a window that states no rows on screen is a third thing, graded on its own
+   * below.
+   */
+  const unpaged = (window: DrawnWindow): DrawnWindow => {
+    const facts = { ...window };
+    delete facts.continues;
+    return facts;
   };
   const PAGED_ARMS: DrawnSentence[] = [
     { of: "catalog", rows: "events" },
@@ -1240,12 +1269,18 @@ describe("WindowLine", () => {
 
   it("renders the first screen's own sentence, to the byte, until a press appends a row", () => {
     // SPEC F14's "the first screen does not change": a paged surface is drawn
-    // only on a window that FILLED, so before any press `drawn` is the cap and
-    // every arm must render exactly the markup it rendered before this fact
-    // existed — the sentence, the hooks and the element.
+    // only on a window that FILLED, so before any press the rows it put on
+    // screen ARE the cap, and every arm must render exactly the markup the
+    // SAME window renders on a surface no press can continue — the sentence,
+    // the hooks and the element.
+    //
+    // The comparison is against the unpaged window rather than against a
+    // window with no `drawn`, because those are now two different facts: the
+    // rows on screen are stated by both surfaces, and only the affordance
+    // differs (admin-window/BUG-0183).
     for (const shows of EVERY_KIND) {
+      expect(drawn(shows, PAGED), shows.of).toBe(drawn(shows, unpaged(PAGED)));
       expect(drawn(shows, { ...PAGED, drawn: PAGED.limit }), shows.of).toBe(drawn(shows, PAGED));
-      expect(drawn(shows, { ...PAGED, drawn: null }), shows.of).toBe(drawn(shows, PAGED));
     }
   });
 
@@ -1269,11 +1304,11 @@ describe("WindowLine", () => {
         expect(text, `${shows.of} truncated=${truncated}`).not.toContain("did not fill");
         expect(text, `${shows.of} truncated=${truncated}`).toContain(count(120));
       }
-      // …and the SAME window with no press behind it still states its own
-      // emptiness the way it always has, so the clause was narrowed and not
-      // deleted.
+      // …and the SAME window on a surface no press can continue still states
+      // its own emptiness the way it always has, so the clause was narrowed
+      // and not deleted.
       expect(
-        textOf(drawn(shows, { ...PAGED, truncated: false, held: 12 })),
+        textOf(drawn(shows, { ...unpaged(PAGED), truncated: false, held: 12 })),
         shows.of,
       ).toContain("did not fill");
     }
@@ -1417,6 +1452,77 @@ describe("WindowLine", () => {
     const text = textOf(drawn(matched, { ...PAGED, held: 877, truncated: false, drawn: 50 }));
     expect(text).toContain(count(877));
     expect(text).toContain(count(50));
+  });
+
+  /** Every figure a rendered line prints, in the app's own formatting. */
+  const figuresIn = (text: string): string[] =>
+    text.match(/\d{1,3}(?:,\d{3})*/g) ?? [];
+
+  it("names no rows below a window that states none, and invents no figure in their place", () => {
+    // CRITERION 3, admin-window/BUG-0183. `drawn` is the rows a window PUT ON
+    // SCREEN; a window that states none has no such number, so the two arms
+    // that name what is BELOW the line name nothing at all — and never reach
+    // for the cap, which is the size of a window and not a description of a
+    // screen. Neither page can reach this state now that both state the rows
+    // they drew, so the window is built here directly.
+    const silent: DrawnWindow = {
+      limit: 50,
+      held: 900,
+      truncated: true,
+      over: "view",
+      oldest: null,
+      scope: null,
+    };
+    /** The same read, stating what it drew — the window both pages compose. */
+    const states = (rows: number): DrawnWindow => ({ ...silent, drawn: rows });
+
+    for (const shows of PAGED_ARMS) {
+      // Whether a press could continue it does not conjure a number either:
+      // continuability and the rows on screen are two facts (criterion 2).
+      for (const continues of [undefined, true] as const) {
+        const window: DrawnWindow =
+          continues === undefined ? silent : { ...silent, continues: true };
+        const where = `${shows.of} / continues=${String(continues)}`;
+        const html = drawn(shows, window);
+        // Every figure it prints is one the WINDOW states, and here that is
+        // the cap alone, stated as a cap. Nothing stands in for the rows.
+        expect(figuresIn(textOf(html)), where).toEqual([count(silent.limit)]);
+        // …and it is still a window line, with the hooks an oracle reads.
+        expect(tagsOf(html), where).toEqual(["p"]);
+        expect(cheerio.load(html)("[data-window]").length, where).toBe(1);
+      }
+    }
+
+    // The matched arm, where the clause that vanished lived: the silent line
+    // says only what two windows drawing DIFFERENT numbers of rows both say,
+    // and stops before the clause those two disagree in. No word is pinned —
+    // the renderings are compared against each other.
+    const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
+    const line = textOf(drawn(matched, silent));
+    const many = textOf(drawn(matched, states(37)));
+    const few = textOf(drawn(matched, states(10)));
+    expect(many).not.toBe(few);
+    expect(many.startsWith(line)).toBe(true);
+    expect(few.startsWith(line)).toBe(true);
+    expect(line.length).toBeLessThan(sharedPrefix(many, few).length);
+
+    // `didNotFill` is untouched: it names `held`, a figure a read really
+    // established, so a window that did not fill still renders it.
+    for (const shows of PAGED_ARMS) {
+      expect(
+        textOf(drawn(shows, { ...silent, held: 12, truncated: false })),
+        shows.of,
+      ).toContain(count(12));
+    }
+
+    // A comparison no read supports is not an agreement (criterion 3): one
+    // read happened here, not two, so there is nothing to agree.
+    expect(readsAgree(silent)).toBe(false);
+    expect(readsAgree({ ...silent, held: 0, truncated: false })).toBe(false);
+    // Non-vacuity: the same read STATING its rows answers both verdicts.
+    expect(readsAgree(states(37))).toBe(true);
+    expect(readsAgree({ ...states(37), held: 37, truncated: false })).toBe(true);
+    expect(readsAgree({ ...states(900), held: 900, truncated: true })).toBe(false);
   });
 
   it("states nothing of its own from whose number `held` is", () => {
