@@ -1814,6 +1814,94 @@ describe("an account carries the parts the database authored", () => {
     expect(result.message.length).toBeLessThan(part.length);
     expect(cardTextOf(result)).not.toContain("<");
   });
+
+  /**
+   * ONE pretty-printed document whose TEXT NODES sit on their own lines.
+   *
+   * Every document fixture above prints each element on its own line, so every
+   * line of them begins `<` and the run rule sees one unbroken document. A WAF
+   * interstitial is not always served that way: a long sentence, a Ray ID and
+   * an IP routinely sit on lines of their own between their tags, and such a
+   * line begins with a letter or a digit. The run rule then reads it as the
+   * DATABASE'S prose — it ends the run, it is kept VERBATIM, and the document
+   * is counted once per fragment.
+   *
+   * Expected (the standing property, admin-window/BUG-0170 and BUG-0173:
+   * "text this app did not author never sits inside a sentence this app
+   * wrote", and admin-window/BUG-0182: an account that COUNTED a document is
+   * shorter than what it counted).
+   *
+   * The two assertions are the two faces of that one property, and neither
+   * names a mechanism: the fix is a ruling, not a builder's choice.
+   */
+  it.fails("counts a pretty-printed document whose text sits on its own lines (admin-window/BUG-0187)", () => {
+    const interstitial = [
+      "<!DOCTYPE html>",
+      '<html lang="en-US">',
+      "<head>",
+      "<title>Attention Required! | Cloudflare</title>",
+      "</head>",
+      "<body>",
+      '<div id="cf-error-details">',
+      "<h1>",
+      "Sorry, you have been blocked",
+      "</h1>",
+      "<h2>",
+      "You are unable to access this site",
+      "</h2>",
+      "<p>",
+      "You can email the site owner to let them know you were blocked.",
+      "</p>",
+      "<p>Cloudflare Ray ID:</p>",
+      "8f3c1de4b7c90a13",
+      "<p>Your IP:</p>",
+      "203.0.113.7",
+      "</div>",
+      "</body>",
+      "</html>",
+    ].join("\n");
+    /** Text only the INTERMEDIARY authored — none of it may reach a sentence. */
+    const itsOwnText = [
+      "Sorry, you have been blocked",
+      "You are unable to access this site",
+      "You can email the site owner to let them know you were blocked.",
+      "8f3c1de4b7c90a13",
+      "203.0.113.7",
+    ];
+
+    // MUST NOT TOUCH (LESSONS 8) — the same bytes as the WHOLE part are one
+    // clause today and leak nothing, which is the answer the other
+    // granularity owes and the guard against "count less" as a fix.
+    const whole = classify({ message: interstitial }, T.pendingClaims);
+    expect(whole.kind).toBe("error");
+    if (whole.kind !== "error") return;
+    expect(clausesIn(whole.message)).toBe(1);
+    for (const text of itsOwnText) expect(whole.message).not.toContain(text);
+
+    // The same document one line below the client's own prose — the shape the
+    // per-line arm exists for (admin-window/BUG-0179).
+    const part = `reference 8f3c1\n${interstitial}`;
+    const below = classify(
+      { code: "", details: part, hint: "", message: "read failed" },
+      T.pendingClaims,
+    );
+    expect(below.kind).toBe("error");
+    if (below.kind !== "error") return;
+    // What the rule already gets right, and must keep getting right.
+    expect(below.message).toContain("read failed");
+    expect(below.message).toContain("reference 8f3c1");
+    expect(below.message).not.toContain("<");
+
+    // COUNTED, NEVER QUOTED — on the result and on the rendered card.
+    const card = cardTextOf(below);
+    for (const read of [below.message, card]) {
+      for (const text of itsOwnText) {
+        expect(read, `quotes ${text}`).not.toContain(text);
+      }
+    }
+    // And an account that COUNTED a document is shorter than what it counted.
+    expect(below.message.length).toBeLessThan(part.length);
+  });
 });
 
 /**
