@@ -2182,6 +2182,15 @@ describe("the surface hooks the live parity oracle addresses", () => {
  * TEST put in the URL, and where a case needs the phrase itself it computes it
  * by DIFFERENCE between the two renders rather than retyping the sentence.
  */
+/**
+ * The instant of a render, which differs between two renders by construction.
+ *
+ * Module-scope because two sections mask it: the window lines' own words, and
+ * the whole-page comparison of admin-window/BUG-0201 below. Two spellings of
+ * one mask is the class LESSONS 5 names.
+ */
+const INSTANT = /\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/g;
+
 describe("what the two scan-window lines say they read", () => {
   /**
    * The files this section's line and figures come out of: the component that
@@ -2196,9 +2205,6 @@ describe("what the two scan-window lines say they read", () => {
     "src/lib/gauges/settled-values.ts",
     "src/lib/db/gauges.ts",
   ];
-
-  /** The instant of a render, which differs between two renders by construction. */
-  const INSTANT = /\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/g;
 
   /**
    * One window line's words, with both instants masked.
@@ -2359,6 +2365,208 @@ describe("what the two scan-window lines say they read", () => {
         expect(codeText(file), `${file}: ${word}`).not.toContain(word);
       }
     }
+  });
+});
+
+/* -- what the URL asked for that this page did not do (BUG-0201) ---------- */
+
+/**
+ * The dropped-parameter sentence, on THIS page (campaign admin-window/BUG-0201).
+ *
+ * Tomas asked `/sources` for one source with `?source_id=deadbeef` and got the
+ * whole registry back under no notice of any kind, with both gauges quietly
+ * reporting every source: "if I had glanced at that screen believing I had
+ * narrowed to one source, I would have read three sources' rows as one
+ * source's story" (`M3-usersim-tomas.md`). The page really may not narrow by
+ * that value - it can equal no row anywhere - so dropping it is right and
+ * dropping it SILENTLY is the bug (LOOK_AND_FEEL bar 13).
+ *
+ * Every case below is graded at the SURFACE, through the two hooks the shared
+ * line ships (`data-dropped-params`, `data-dropped-param`), never against the
+ * app's copy: the rule and its words belong to `lib/url/dropped-params.ts` and
+ * `components/ui/dropped-params.tsx`, which carry their own suites. What is
+ * this page's to prove is WHICH narrowing it hands over - the filter its reads
+ * carried, never the URL - and that nothing else on the page moved.
+ */
+describe("a parameter this page did not apply", () => {
+  /** What the page says it did not apply: the shared line's two hooks. */
+  function droppedLine(markup: string) {
+    const $ = cheerio.load(markup);
+    const line = $("[data-dropped-params]");
+    return {
+      lines: line.length,
+      total: line.length === 0 ? 0 : Number(line.attr("data-dropped-params")),
+      names: line
+        .find("[data-dropped-param]")
+        .toArray()
+        .map((element) => $(element).attr("data-dropped-param") ?? ""),
+      text: line.text().replace(/\s+/g, " ").trim(),
+    };
+  }
+
+  /**
+   * The edge of a window, as its own hook carries it: an ISO instant with
+   * MILLISECONDS, which two renders never share either. Masked beside the
+   * words, so what is compared below is what the page chose and not its clock
+   * - a fixture instant (`2026-09-01T05:00:00Z`, no fraction) is stable and
+   * deliberately outside this pattern, so a row's own timestamps still count.
+   */
+  const WINDOW_EDGE = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g;
+
+  /** A render with both of its clocks masked and nothing else touched. */
+  function masked(markup: string): string {
+    return markup.replace(INSTANT, "<instant>").replace(WINDOW_EDGE, "<edge>");
+  }
+
+  /**
+   * The whole page with that one line removed and both clocks masked - which
+   * is everything this ticket promised not to move.
+   */
+  function withoutDroppedLine(markup: string): string {
+    const $ = cheerio.load(markup);
+    $("[data-dropped-params]").remove();
+    return masked($.html());
+  }
+
+  /** The same id, spelled the way a paste that lost the hyphens spells it. */
+  const HYPHENLESS = SOURCE.ticketmaster.replace(/-/g, "");
+
+  /** ZERO WIDTH SPACE: a key a reader would see nothing of at all. */
+  const NO_INK = "​";
+
+  /** RIGHT-TO-LEFT OVERRIDE: a key this sentence may not spell, in one. */
+  const UNSPELLABLE_KEY = "so‮rce";
+
+  it("names a source_id it could not use as a parameter it did not apply", async () => {
+    // The bare page says nothing, because nothing was asked and dropped.
+    const bare = await renderSources(healthyScript());
+    expect(droppedLine(bare).lines).toBe(0);
+
+    // The URL of the finding. The page still answers with the WHOLE registry
+    // - that half is correct and unchanged - and now names the parameter it
+    // could not use, so three sources' rows cannot be read as one source's.
+    const unusable = await renderSources(healthyScript(), { source_id: "deadbeef" });
+    expect(sourceIds(unusable)).toEqual(SOURCES.map((source) => source.source_id));
+    expect(droppedLine(unusable).names).toEqual(["source_id"]);
+    expect(droppedLine(unusable).total).toBe(1);
+    // The NAME is spelled; the VALUE never is (LOOK_AND_FEEL bar 3).
+    expect(droppedLine(unusable).text).not.toContain("deadbeef");
+
+    // An id this page really did narrow by is NOT named - in every spelling
+    // canonicalisation accepts, since the read carried the canonical one.
+    for (const spelling of [SOURCE.ticketmaster, HYPHENLESS]) {
+      const narrowed = await renderSources(healthyScript(), { source_id: spelling });
+      // Non-vacuous: that URL really did narrow the table to the one source.
+      expect(sourceIds(narrowed), spelling).toEqual([SOURCE.ticketmaster]);
+      expect(droppedLine(narrowed).lines, spelling).toBe(0);
+    }
+    // The guard's other passing fixture: a well-formed id the registry does
+    // not hold still NARROWED, so it is not a dropped parameter - what came
+    // back is `data-empty="narrowing"`'s to say and it already says it.
+    const absent = await renderSources(healthyScript(), {
+      source_id: "01920000-0000-7000-8000-0000000000ff",
+    });
+    expect(cheerio.load(absent)("[data-empty]").attr("data-empty")).toBe("narrowing");
+    expect(droppedLine(absent).lines).toBe(0);
+  });
+
+  it("names a key this route does not read at all, whatever it is called", async () => {
+    // `?q=`, `?table=` and `?limit=` are keys other surfaces of this app offer
+    // and this one never looks at; `?tab=` is one too, because this route has
+    // no tab strip to consume it - so the caller hands the rule an empty
+    // consumed list, exactly as `/cycles`, the other tabless route, does.
+    for (const key of ["q", "table", "limit", "tab"]) {
+      const markup = await renderSources(healthyScript(), { [key]: "sources" });
+      expect(droppedLine(markup).names, key).toEqual([key]);
+      // Nothing was narrowed by it, and the registry it answered with is whole.
+      expect(sourceIds(markup), key).toEqual(SOURCES.map((source) => source.source_id));
+    }
+
+    // Two at once are both named, in the order the URL carried them, and an
+    // applied facet beside them is not named at all.
+    const several = await renderSources(healthyScript(), {
+      source_id: SOURCE.ticketmaster,
+      table: "sources",
+      limit: "-1",
+    });
+    expect(droppedLine(several).names).toEqual(["table", "limit"]);
+    expect(droppedLine(several).total).toBe(2);
+    expect(sourceIds(several)).toEqual([SOURCE.ticketmaster]);
+  });
+
+  it("says nothing for a request that named nothing, and counts a name it may not spell", async () => {
+    // The module's own rules, reached through this caller: a key with no
+    // value, a value with no key, and a key a reader would see nothing of all
+    // asked for nothing, so there is no narrowing to have dropped
+    // (admin-window/BUG-0127, admin-window/BUG-0136).
+    const silent: [string, Record<string, string>][] = [
+      ["a facet carrying no value", { source_id: "" }],
+      ["a key this route does not read, carrying no value", { table: "" }],
+      ["a value with no key at all", { "": "deadbeef" }],
+      ["a key with no ink in it", { [NO_INK]: "1" }],
+    ];
+    for (const [name, params] of silent) {
+      const markup = await renderSources(healthyScript(), params);
+      expect(droppedLine(markup).lines, name).toBe(0);
+    }
+
+    // ...and the arm it MUST flag: a key outside the renderable allowlist is
+    // still reported, COUNTED rather than spelled, so no bidi control from a
+    // URL sits inside a sentence this app wrote (admin-window/BUG-0137).
+    const unspellable = await renderSources(healthyScript(), {
+      [UNSPELLABLE_KEY]: "1",
+    });
+    expect(droppedLine(unspellable).total).toBe(1);
+    expect(droppedLine(unspellable).names).toEqual([]);
+    expect(unspellable).not.toContain(UNSPELLABLE_KEY);
+  });
+
+  it("states it over a read that refused, because it is a fact of the URL", async () => {
+    // The line stands beside the chip row rather than inside a section, so it
+    // renders the same over an `ok` read, a refusal and a registry that is not
+    // there - the two states where the chips themselves are not drawn at all.
+    const states: [string, Script][] = [
+      [
+        "absent registry",
+        healthyScript({ [T.sources]: { error: tableNotInSchemaCache(T.sources) } }),
+      ],
+      [
+        "refused registry",
+        healthyScript({ [T.sources]: { error: permissionDenied(T.sources) } }),
+      ],
+    ];
+    for (const [name, script] of states) {
+      const markup = await renderSources(script, { source_id: "deadbeef" });
+      expect(droppedLine(markup).names, name).toEqual(["source_id"]);
+      // The read's own state is still the page's answer about the read.
+      expect(sourceIds(markup), name).toEqual([]);
+    }
+  });
+
+  it("moves nothing else on the page", async () => {
+    // The registry table, both gauges, every window line and every scope
+    // phrase are what they were at the same URL before this line existed: a
+    // dropped parameter reaches no filter, so the page under the line is the
+    // bare page, byte for byte with the render instants masked.
+    const bare = await renderSources(healthyScript());
+    const urls: Record<string, string>[] = [
+      { source_id: "deadbeef" },
+      { table: "sources" },
+      { [UNSPELLABLE_KEY]: "1" },
+    ];
+    for (const params of urls) {
+      const markup = await renderSources(healthyScript(), params);
+      // Non-vacuous: there IS a line in each of these renders to remove.
+      expect(droppedLine(markup).total, JSON.stringify(params)).toBe(1);
+      expect(withoutDroppedLine(markup), JSON.stringify(params)).toBe(
+        withoutDroppedLine(bare),
+      );
+    }
+    // And a page that dropped nothing renders no line to remove at all, so
+    // the comparison above is between a page WITH the sentence and the page
+    // as it stands today rather than between two stripped renders.
+    expect(droppedLine(bare).lines).toBe(0);
+    expect(withoutDroppedLine(bare)).toBe(masked(cheerio.load(bare).html()));
   });
 });
 
