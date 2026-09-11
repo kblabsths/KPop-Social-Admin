@@ -6,12 +6,20 @@ import { pageBound } from "@/lib/paging/bounds";
 import {
   AppAuthoredError,
   type PageDeps,
+  type PageRefusal,
   type PageState,
-  type ReasonAuthor,
   pressing,
   requestPage,
 } from "@/lib/paging/machine";
 import { Button } from "./button";
+// The app's ONE spelling of state 3's sentence, and the ONE spelling of what
+// creates the objects this window reads — imported, never retyped (LESSONS 5,
+// admin-window/DEBT-0003). By RELATIVE path, like `./button` and
+// `./window-line`, and never through the `src/components/ui` barrel: a server
+// module importing a value out of a "use client" module builds green offline
+// and answers 500 in production (admin-window/BUG-0094).
+import { NotProvisionedClause } from "./not-provisioned";
+import { ARRIVES_WITH } from "./state-of";
 import {
   type DrawnSentence,
   type DrawnWindow,
@@ -514,12 +522,7 @@ export function PageMore({
         // it is decided by whether a control is DRAWN and not by the status
         // alone: "press it again" beside no control is an instruction to press
         // nothing (LESSONS 1, CONTENT — the fix is never wishful).
-        <Refusal
-          reason={state.refusal.reason}
-          reasonFrom={state.refusal.reasonFrom}
-          object={state.refusal.object}
-          retryable={drawsControl}
-        />
+        <Refusal refusal={state.refusal} retryable={drawsControl} />
       )}
       {exhausted ? (
         agree ? (
@@ -559,6 +562,27 @@ export function PageMore({
  * Why the last press added no rows — the object, the reason, then what the
  * operator can do about it in the app's own voice, in that order.
  *
+ * ## Two conditions, and only one of them is breakage (admin-window/BUG-0176)
+ *
+ * A press this app could not COMPLETE is broken and reads in the broken red.
+ * A backing object that is not in this database is UNAVAILABLE, and
+ * LOOK_AND_FEEL is explicit: "red means broken, never unavailable. A missing
+ * backing table is gray." MEASURED defect — the wrapper carried `text-broken`
+ * on every arm, so the one arm about absence was painted as breakage, said its
+ * object twice (`pending_claims — pending_claims is not …`), never said what
+ * fills it, and closed with "Press it again to ask for the same rows." for a
+ * table no press can create.
+ *
+ * So the absent arm renders the app's ONE spelling of data-surface state 3
+ * (`NotProvisionedClause`, `./not-provisioned` — the same clause the card
+ * renders), in the card's own `text-ink-secondary`, with the object inside the
+ * `<Identifier>` box that clause carries and NO instruction at all: the half
+ * of copy bar 3 that says what to do is the clause naming what creates it,
+ * because there is nothing here for the operator to press. Everything else
+ * about the line is unchanged — the marker, the role, the placement above the
+ * control, and the rule that a refusal appends no row, moves no bound and
+ * removes no control.
+ *
  * ## The face says who is talking (admin-window/BUG-0175)
  *
  * Mono carries every value the database produced; sans carries every word the
@@ -587,17 +611,25 @@ export function PageMore({
  * wrote needs no isolation from itself.
  */
 function Refusal({
-  reason,
-  reasonFrom,
-  object,
+  refusal,
   retryable,
 }: {
-  reason: string;
-  /** Who wrote `reason`, stated by the refusal — never re-derived here. */
-  reasonFrom: ReasonAuthor;
-  object: string | null;
+  /** The FACTS the driver published — never re-derived here. */
+  refusal: PageRefusal;
   retryable: boolean;
 }): ReactNode {
+  if (refusal.condition === "not provisioned") {
+    // Gray from the card's own token, the object in its own isolated box
+    // exactly once, what creates it in the app's one spelling, and no fix the
+    // operator cannot take.
+    return (
+      <p data-paging-refusal="" role="alert" className="type-body text-ink-secondary">
+        <NotProvisionedClause missing={refusal.missing} arrivesWith={ARRIVES_WITH} />
+      </p>
+    );
+  }
+
+  const { reason, reasonFrom, object } = refusal;
   const named = object !== null && !isAbsent(object);
   const machineWrote = reasonFrom === "the machine";
   const fix = retryable

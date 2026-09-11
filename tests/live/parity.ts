@@ -40,6 +40,7 @@ import * as cheerio from "cheerio";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EM_DASH } from "@/lib/format";
+import type { PageRefusal } from "@/lib/paging/machine";
 
 /** A parity comparison that came out unequal. */
 export class ParityError extends Error {
@@ -939,6 +940,22 @@ export async function whileStill<Held, Made>(
       `looking at the same rows. This is a statement about staging, not a ` +
       `verdict on the page.`,
   );
+}
+
+/**
+ * A paging refusal in ONE diagnostic line, for a live walk that cannot
+ * continue — one spelling for every live file that drives the paging driver
+ * (LESSONS 5; admin-window/BUG-0176 split `PageRefusal` into two conditions
+ * and the walks each read the fields of one).
+ *
+ * It is a TEST's account of a refusal, never the app's sentence: what the
+ * operator reads is composed by `Refusal` (`src/components/ui/paging.tsx`) and
+ * nothing here is a second spelling of it.
+ */
+export function refusalText(refusal: PageRefusal): string {
+  return refusal.condition === "not provisioned"
+    ? `${refusal.missing} — not provisioned (the object is not in this database)`
+    : `${refusal.object ?? "(no object)"} — ${refusal.reason}`;
 }
 
 /** A value clipped to something a failure message can carry on one line. */

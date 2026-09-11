@@ -7,6 +7,7 @@ import {
   pressing,
   requestPage,
   type PageDeps,
+  type PageRefusal,
   type PageState,
   type ReasonAuthor,
 } from "@/lib/paging/machine";
@@ -49,6 +50,22 @@ function recorder(reply: (url: string) => unknown): {
 function answering(...answers: unknown[]): { urls: string[]; deps: PageDeps } {
   let index = 0;
   return recorder(() => answers[index++]);
+}
+
+/**
+ * The BROKEN arm's facts, with the condition asserted on the way through —
+ * every case below that reads `reason`, `reasonFrom` or `object` is about a
+ * press this app could not complete (admin-window/BUG-0176).
+ *
+ * The absent arm carries none of those fields, by construction, so this is
+ * also where a test asking the wrong arm for prose fails loudly rather than
+ * reading `undefined`.
+ */
+type BrokenRefusal = Extract<PageRefusal, { condition: "broken" }>;
+function broken(refusal: PageRefusal | null): BrokenRefusal {
+  expect(refusal, "there is no refusal to read").not.toBeNull();
+  expect((refusal as PageRefusal).condition).toBe("broken");
+  return refusal as BrokenRefusal;
 }
 
 /** A surface that has rendered a first screen of `held` rows and paged in two. */
@@ -293,6 +310,7 @@ describe("requestPage", () => {
         {
           ...before,
           refusal: {
+            condition: "broken",
             reason: "the read failed",
             object: "pending_claims",
             reasonFrom: "the machine",
@@ -358,8 +376,8 @@ describe("requestPage", () => {
       // The next press asks for the SAME bound, so the set stays reachable.
       expect(next.held).toBe(4);
       expect(next.status).toBe("idle");
-      expect(next.refusal?.object).toBe(PAGE_ROUTES.claims);
-      expect(next.refusal?.reason.length).toBeGreaterThan(0);
+      expect(broken(next.refusal).object).toBe(PAGE_ROUTES.claims);
+      expect(broken(next.refusal).reason.length).toBeGreaterThan(0);
       expect(urls).toHaveLength(1);
     });
 
@@ -375,7 +393,7 @@ describe("requestPage", () => {
         expect(next.rows.map((row) => row.id), `exhausted: ${exhausted}`).toEqual(["a", "b"]);
         expect(next.held, `exhausted: ${exhausted}`).toBe(4);
         expect(next.status, `exhausted: ${exhausted}`).toBe("idle");
-        expect(next.refusal?.object, `exhausted: ${exhausted}`).toBe(PAGE_ROUTES.claims);
+        expect(broken(next.refusal).object, `exhausted: ${exhausted}`).toBe(PAGE_ROUTES.claims);
         expect(urls, `exhausted: ${exhausted}`).toHaveLength(1);
       }
     });
@@ -389,7 +407,7 @@ describe("requestPage", () => {
         const next = await requestPage(before, { ...deps, size });
         expect(next.rows.map((row) => row.id), `size ${size}`).toEqual(["a", "b"]);
         expect(next.held, `size ${size}`).toBe(4);
-        expect(next.refusal?.object, `size ${size}`).toBe(PAGE_ROUTES.claims);
+        expect(broken(next.refusal).object, `size ${size}`).toBe(PAGE_ROUTES.claims);
       }
     });
 
@@ -465,11 +483,15 @@ describe("requestPage", () => {
     } as const;
 
     /** An `ok` page of a full window, optionally carrying a `notes` field. */
-    const page = (ids: string[], notes?: unknown): unknown => {
+    // `offset` is the bound the PRESS this page answers carries, because the
+    // driver refuses a page that declares any other (admin-window/BUG-0176):
+    // the first press of these cases asks for 4, and a second press after two
+    // appended rows asks for 6.
+    const page = (ids: string[], notes?: unknown, offset = 4): unknown => {
       const answer: Record<string, unknown> = {
         kind: "ok",
         rows: rows(...ids),
-        offset: 4,
+        offset,
         exhausted: false,
       };
       if (notes !== undefined) answer.notes = notes;
@@ -536,12 +558,12 @@ describe("requestPage", () => {
         expect(next.rows.map((row) => row.id), name).toEqual(["a", "b"]);
         expect(next.held, name).toBe(4);
         expect(next.status, name).toBe("idle");
-        expect(next.refusal?.object, name).toBe(PAGE_ROUTES.claims);
-        expect(next.refusal?.reason.length, name).toBeGreaterThan(0);
+        expect(broken(next.refusal).object, name).toBe(PAGE_ROUTES.claims);
+        expect(broken(next.refusal).reason.length, name).toBeGreaterThan(0);
         expect(urls, name).toHaveLength(1);
         // The reason is THIS APP's: not one character of the field it refused,
         // and no figure it would have to pluralise.
-        const reason = next.refusal?.reason ?? "";
+        const reason = broken(next.refusal).reason ?? "";
         expect(reason, name).not.toContain("unavailable");
         expect(reason, name).not.toContain("provenance");
         expect(reason, name).not.toContain("kind");
@@ -564,7 +586,7 @@ describe("requestPage", () => {
       // the silently-empty-column defect one press later.
       const { deps } = answering(
         page(["c", "d"], { venues: null, provenance: PROVENANCE_GONE }),
-        page(["e", "f"], { venues: null, provenance: null }),
+        page(["e", "f"], { venues: null, provenance: null }, 6),
       );
       const first = await requestPage(paged(4, "a", "b"), deps);
       const second = await requestPage(first, deps);
@@ -582,7 +604,7 @@ describe("requestPage", () => {
       // the refusal, and a key no page had mentioned appears.
       const { deps } = answering(
         page(["c", "d"], { venues: null }),
-        page(["e", "f"], { venues: VENUES_BROKE, provenance: PROVENANCE_GONE }),
+        page(["e", "f"], { venues: VENUES_BROKE, provenance: PROVENANCE_GONE }, 6),
       );
       const first = await requestPage(paged(4, "a", "b"), deps);
       expect(first.notes).toEqual({ venues: null });
@@ -693,6 +715,92 @@ describe("requestPage", () => {
   });
 
   /**
+   * A PAGE THIS PRESS DID NOT ASK FOR — admin-window/BUG-0176, criterion 11
+   * (QA's residual off admin-window/BUG-0174).
+   *
+   * `requestPage` asks for `state.held` and every `ok` answer DECLARES its own
+   * `offset`, yet the driver never read it: a full window of offset-0 rows
+   * answered to a press carrying 50 was appended with no refusal, so the list
+   * silently held one window twice — while an OVER-LONG page off the same wire
+   * was refused out loud.
+   *
+   * Both directions are driven here (LESSONS 8): a declared bound that does
+   * not match refuses and appends nothing, and the matching bound every honest
+   * answer carries still appends. Reachable only if a route misanswers — both
+   * of this app's own routes echo `pageBound`'s own offset — which is the same
+   * class as OVERLONG_PAGE and SHORT_PAGE.
+   */
+  describe("an ok answer's declared bound", () => {
+    const held = paged(4, "a", "b");
+
+    it("refuses a page that declares a bound this press did not ask for", async () => {
+      // A FULL, well-formed window — it fails on ONE fact: it is the page for
+      // a different point in the set.
+      const { urls, deps } = answering({
+        kind: "ok",
+        rows: rows("c", "d"),
+        offset: 0,
+        exhausted: false,
+      } satisfies PageAnswer<Row>);
+      const standing = { venues: null };
+      const next = await requestPage({ ...held, notes: standing }, deps);
+
+      // Refused on exactly OVERLONG_PAGE's terms.
+      expect(next.rows.map((row) => row.id)).toEqual(["a", "b"]);
+      expect(next.held).toBe(4);
+      expect(next.status).toBe("idle");
+      expect(next.notes).toBe(standing);
+      expect(broken(next.refusal).object).toBe(PAGE_ROUTES.claims);
+      expect(broken(next.refusal).reasonFrom).toBe("this app");
+      // No figure of the answer's is quoted back as ours — not the bound it
+      // declared, not the one this press sent.
+      expect(broken(next.refusal).reason).not.toMatch(/\d/);
+      expect(urls).toHaveLength(1);
+    });
+
+    it("reads the bound BEFORE the exhaustion arm, so no unasked page ends the set", async () => {
+      // An empty page is exhaustion — but only from the page this press asked
+      // for. Read in the other order, a stale answer would end the set.
+      const { deps } = answering({ kind: "ok", rows: [], offset: 0, exhausted: true });
+      const next = await requestPage(held, deps);
+      expect(next.status).toBe("idle");
+      expect(broken(next.refusal).object).toBe(PAGE_ROUTES.claims);
+    });
+
+    it("reads the bound BEFORE the notes, so an unasked page's legs are never read", async () => {
+      // The same unasked page, once with legs this app cannot read and once
+      // with none: the refusal is the SAME one, so the bound rule won the race
+      // and the foreign notes field was never consulted.
+      const unasked = { kind: "ok", rows: rows("c", "d"), offset: 0, exhausted: false };
+      const plain = await requestPage(held, answering(unasked).deps);
+      const withNotes = await requestPage(
+        held,
+        answering({ ...unasked, notes: "the provenance leg failed" }).deps,
+      );
+      expect(broken(withNotes.refusal).reason).toBe(broken(plain.refusal).reason);
+      expect(withNotes.notes).toBe(held.notes);
+    });
+
+    it("takes the matching bound every honest answer carries — the must-NOT-flag half", async () => {
+      // The same driver, the same shape, one field different: the bound this
+      // press actually asked for. Without this half the rule above would pass
+      // against a driver that refused every page.
+      const { deps } = answering(
+        { kind: "ok", rows: rows("c", "d"), offset: 4, exhausted: false },
+        { kind: "ok", rows: rows("e", "f"), offset: 6, exhausted: false },
+      );
+      const first = await requestPage(held, deps);
+      expect(first.refusal).toBeNull();
+      expect(first.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d"]);
+      // And the bound the SECOND press carries is the one it grew to, so a
+      // route echoing what it was asked keeps paging forever.
+      const second = await requestPage(first, deps);
+      expect(second.refusal).toBeNull();
+      expect(second.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d", "e", "f"]);
+    });
+  });
+
+  /**
    * M3 EC5 / §4.3: a refused page never half-fills the list. Every arm of a
    * refusal — the two `DbResult` ones, the bound one, and the three ways a
    * body never becomes an answer at all — is graded on the same three
@@ -723,8 +831,18 @@ describe("requestPage", () => {
         expect(next.rows.map((row) => row.id)).toEqual(["a", "b"]);
         expect(next.held).toBe(4);
         expect(next.status).toBe("idle");
-        expect(next.refusal?.object ?? null).toBe(object);
-        expect(next.refusal?.reason.length).toBeGreaterThan(0);
+        const refusal = next.refusal;
+        expect(refusal, name).not.toBeNull();
+        if (refusal === null) return;
+        // The object this refusal is about, whichever condition it carries:
+        // the broken arms name it beside their words, and the absent arm IS
+        // the name (admin-window/BUG-0176).
+        expect(
+          refusal.condition === "not provisioned" ? refusal.missing : refusal.object ?? null,
+        ).toBe(object);
+        // Words, where there are words to have: the absent arm carries a fact,
+        // and the sentence an operator reads is the component's.
+        if (refusal.condition === "broken") expect(refusal.reason.length).toBeGreaterThan(0);
       });
     }
 
@@ -736,9 +854,9 @@ describe("requestPage", () => {
       expect(next.rows.map((row) => row.id)).toEqual(["a", "b"]);
       expect(next.held).toBe(4);
       expect(next.status).toBe("idle");
-      expect(next.refusal?.object).toBe(PAGE_ROUTES.claims);
+      expect(broken(next.refusal).object).toBe(PAGE_ROUTES.claims);
       // The transport's own words, not a sentence of ours over the top.
-      expect(next.refusal?.reason).toContain("Failed to fetch");
+      expect(broken(next.refusal).reason).toContain("Failed to fetch");
     });
 
     it("never extends the list: a body that never parsed", async () => {
@@ -749,7 +867,7 @@ describe("requestPage", () => {
       const next = await requestPage(held, deps);
       expect(next.rows.map((row) => row.id)).toEqual(["a", "b"]);
       expect(next.status).toBe("idle");
-      expect(next.refusal?.object).toBe(PAGE_ROUTES.claims);
+      expect(broken(next.refusal).object).toBe(PAGE_ROUTES.claims);
     });
 
     it("carries the database's own words, and names the object the page would name", async () => {
@@ -760,6 +878,9 @@ describe("requestPage", () => {
       });
       const next = await requestPage(held, deps);
       expect(next.refusal).toEqual({
+        // A press this app could not COMPLETE — breakage, and red
+        // (admin-window/BUG-0176).
+        condition: "broken",
         reason: "connection refused",
         object: "pending_claims",
         // Postgres wrote those words; the line renders them in mono
@@ -768,11 +889,112 @@ describe("requestPage", () => {
       });
     });
 
-    it("names the absent object in the not-provisioned refusal", async () => {
+    /**
+     * THE ARM CARRIES FACTS; THE COMPONENT OWNS THE SENTENCE —
+     * admin-window/BUG-0176, criteria 2 and 5.
+     *
+     * MEASURED defect: this arm composed `${missing} is not provisioned` AND
+     * passed the same name as the object, so the line read `pending_claims —
+     * pending_claims is not provisioned`. The fix is structural rather than a
+     * reword: the refusal carries the NAME and no prose, so there is no
+     * sentence for the name to be repeated inside, and a lib module does not
+     * author a sentence it would need a component to spell (§4, one-way
+     * dependency).
+     */
+    it("the not-provisioned arm carries the object and composes no sentence", async () => {
       const { deps } = answering({ kind: "not_provisioned", missing: "pending_claims" });
       const next = await requestPage(held, deps);
-      expect(next.refusal?.object).toBe("pending_claims");
-      expect(next.refusal?.reason).toContain("pending_claims");
+      // The WHOLE refusal, so nothing else can be riding along: no reason, no
+      // author, no second copy of the name under another key.
+      expect(next.refusal).toEqual({ condition: "not provisioned", missing: "pending_claims" });
+      expect(Object.keys(next.refusal ?? {}).sort()).toEqual(["condition", "missing"]);
+      // The name occurs exactly ONCE in everything this arm published.
+      const published = JSON.stringify(next.refusal);
+      expect(published.split("pending_claims")).toHaveLength(2);
+
+      // MUST-NOT-FLAG twin (LESSONS 8): the arm one line above in the switch
+      // still carries prose, its author and its object, so "composes no
+      // sentence" is a fact about THIS arm and not about a driver that stopped
+      // composing anything.
+      const failed = answering({
+        kind: "error",
+        reading: "pending_claims",
+        message: "connection refused",
+      });
+      const errored = await requestPage(held, failed.deps);
+      expect(broken(errored.refusal).reason).toBe("connection refused");
+      expect(broken(errored.refusal).object).toBe("pending_claims");
+    });
+
+    /**
+     * A REFUSAL WITH NO WORDS IS WORDED BY THIS APP — admin-window/BUG-0176,
+     * criterion 14, the paging layer's answer to the question
+     * admin-window/BUG-0179 answered one level down for a READ.
+     *
+     * MEASURED defect: `{kind:"refused", reason:""}` reached `refuse()`
+     * verbatim, and the line rendered an empty `type-body` span followed by
+     * "Press it again to ask for the same rows." — copy bar 3 inverted, inside
+     * a `role="alert"` that announces it.
+     *
+     * The substitution is at `refuse()`, the single construction point, so
+     * every reason-carrying arm inherits it and the component gains no branch.
+     */
+    it("a refusal that carried no words still says a press was refused", async () => {
+      // Every blank the APP calls blank, not just the empty string: the app's
+      // one definition (`hasVisibleContent`) counts format characters and
+      // hangul fillers as ink-less, and a fresh `trim()` here would be the
+      // fourth copy of a character class four M2 bugs are made of.
+      for (const blank of ["", "   ", "\u200b\u00ad", "\t\n", "\u3164"]) {
+        const { deps } = answering({ kind: "refused", reason: blank, bound: "75" });
+        const said = broken((await requestPage(held, deps)).refusal);
+
+        // The app's own words, and enough of them to read as a sentence.
+        expect(said.reason.trim(), JSON.stringify(blank)).toBe(said.reason);
+        expect(said.reason.split(/\s+/).length, JSON.stringify(blank)).toBeGreaterThan(3);
+        expect(said.reason, JSON.stringify(blank)).toMatch(/refus/i);
+        // The PAGING layer's own clause: it is about a press, and it is not
+        // the data layer's twin, which is about a read (common violations
+        // row 18 — one identifier, one meaning).
+        expect(said.reason, JSON.stringify(blank)).toMatch(/press/i);
+        expect(said.reason, JSON.stringify(blank)).not.toContain("the read was refused");
+        // Nothing invented: no figure of any kind, no status, no apology.
+        expect(said.reason, JSON.stringify(blank)).not.toMatch(/\d/);
+        expect(said.reason.toLowerCase(), JSON.stringify(blank)).not.toContain("something went wrong");
+        expect(said.reason.toLowerCase(), JSON.stringify(blank)).not.toContain("sorry");
+        // The author flips WITH the words: the clause is this app's sentence,
+        // so it never reads in the machine's face.
+        expect(said.reasonFrom, JSON.stringify(blank)).toBe("this app");
+      }
+
+      // The MACHINE face of the same emptiness: a wordless `error` arm gets
+      // the app's clause and the app's author, while the object the answer
+      // named is untouched.
+      const errored = answering({ kind: "error", reading: "pending_claims", message: "" });
+      const machine = broken((await requestPage(held, errored.deps)).refusal);
+      expect(machine.reasonFrom).toBe("this app");
+      expect(machine.object).toBe("pending_claims");
+      expect(machine.reason).toMatch(/refus/i);
+
+      // MUST NOT TOUCH (LESSONS 8): every arm carrying real words renders
+      // byte-identically, the machine's own string included.
+      const kept = answering(
+        { kind: "error", reading: "pending_claims", message: "canceling statement due to statement timeout" },
+        { kind: "refused", reason: "a bound of 61 is not a multiple of the 50-row window", bound: "61" },
+      );
+      const theirs = broken((await requestPage(held, kept.deps)).refusal);
+      expect(theirs.reason).toBe("canceling statement due to statement timeout");
+      expect(theirs.reasonFrom).toBe("the machine");
+      const ours = broken((await requestPage(held, kept.deps)).refusal);
+      expect(ours.reason).toBe("a bound of 61 is not a multiple of the 50-row window");
+      expect(ours.reasonFrom).toBe("this app");
+
+      // And the not-provisioned arm is OUTSIDE this rule: it carries a fact,
+      // never a reason, so nothing was substituted into it.
+      const absent = answering({ kind: "not_provisioned", missing: "pending_claims" });
+      expect((await requestPage(held, absent.deps)).refusal).toEqual({
+        condition: "not provisioned",
+        missing: "pending_claims",
+      });
     });
 
     it("is cleared by the next press that succeeds", async () => {
@@ -863,7 +1085,12 @@ describe("pressing", () => {
       rows: rows("a"),
       held: 2,
       status: "idle",
-      refusal: { reason: "the read failed", object: "pending_claims", reasonFrom: "the machine" },
+      refusal: {
+        condition: "broken",
+        reason: "the read failed",
+        object: "pending_claims",
+        reasonFrom: "the machine",
+      },
       notes: null,
     };
     expect(pressing(refused).refusal).toBe(refused.refusal);
@@ -973,9 +1200,14 @@ describe("every refusal says who wrote its reason", () => {
 
   /**
    * Every arm, with the author the ticket ruled for it. The four sentences
-   * this app composed, the route's own bound refusal and the not-provisioned
-   * arm are ours; the database's error string and anything a failed fetch
-   * threw on its own account are not.
+   * this app composed and the route's own bound refusal are ours; the
+   * database's error string and anything a failed fetch threw on its own
+   * account are not.
+   *
+   * The not-provisioned arm is NOT in this table any more: since
+   * admin-window/BUG-0176 it carries a fact and no reason at all, so there is
+   * no authored string on it to ask the question of. Its own case is above
+   * ("the not-provisioned arm carries the object and composes no sentence").
    */
   const ARMS: ReadonlyArray<readonly [string, ReasonAuthor, () => Promise<PageState<Row>>]> = [
     [
@@ -1021,11 +1253,6 @@ describe("every refusal says who wrote its reason", () => {
         }),
     ],
     [
-      "a table this database has not been given",
-      "this app",
-      () => answered({ kind: "not_provisioned", missing: "pending_claims" }),
-    ],
-    [
       "the database's own error string",
       "the machine",
       () =>
@@ -1059,9 +1286,9 @@ describe("every refusal says who wrote its reason", () => {
       const next = await press();
       // Non-vacuity: this really is a refusal, with words on it.
       expect(next.refusal, name).not.toBeNull();
-      expect(next.refusal?.reason.length, name).toBeGreaterThan(0);
-      expect(next.refusal?.reasonFrom, name).toBe(author);
-      seen.add(next.refusal?.reasonFrom as ReasonAuthor);
+      expect(broken(next.refusal).reason.length, name).toBeGreaterThan(0);
+      expect(broken(next.refusal).reasonFrom, name).toBe(author);
+      seen.add(broken(next.refusal).reasonFrom);
     }
     // Both halves are really exercised (LESSONS 8): a table that only ever
     // said "this app" would pass against a constant.
@@ -1077,10 +1304,10 @@ describe("every refusal says who wrote its reason", () => {
       "the page request came back declaring a page and carrying an incomplete one, so there is no page to add";
     const ours = await threw(new AppAuthoredError(sentence));
     const theirs = await threw(new Error(sentence));
-    expect(ours.refusal?.reason).toBe(sentence);
-    expect(theirs.refusal?.reason).toBe(ours.refusal?.reason);
-    expect(ours.refusal?.reasonFrom).toBe("this app");
-    expect(theirs.refusal?.reasonFrom).toBe("the machine");
+    expect(broken(ours.refusal).reason).toBe(sentence);
+    expect(broken(theirs.refusal).reason).toBe(broken(ours.refusal).reason);
+    expect(broken(ours.refusal).reasonFrom).toBe("this app");
+    expect(broken(theirs.refusal).reasonFrom).toBe("the machine");
   });
 
   it("and never with the words: a sentence no constant in this app spells is still this app's", async () => {
@@ -1088,8 +1315,8 @@ describe("every refusal says who wrote its reason", () => {
     // move, because nothing ever read them.
     const invented = "a sentence this app has not written yet, in the app's own voice";
     const next = await threw(new AppAuthoredError(invented));
-    expect(next.refusal?.reason).toBe(invented);
-    expect(next.refusal?.reasonFrom).toBe("this app");
+    expect(broken(next.refusal).reason).toBe(invented);
+    expect(broken(next.refusal).reasonFrom).toBe("this app");
   });
 
   it("a press that succeeds still leaves no refusal to ask the question of", async () => {
