@@ -889,6 +889,56 @@ describe("the claim list's window", () => {
     expect(windowLine(many).text).not.toBe(windowLine(few).text);
   });
 
+  it("states what the COUNT read found and nothing about rows, where the window drew NONE [admin-window/BUG-0197]", async () => {
+    // THE THIRD STATE OF THE SAME TWO READS (QA, off the
+    // admin-window/BUG-0197 close). `/claims` counts its matching set and
+    // draws its rows separately, so the row read can come back EMPTY under a
+    // count that answered a number. A window that drew none has nothing to
+    // rank and nothing to hold back, so the line states what the count read
+    // found and stops, over the card whose whole job is to say the read came
+    // back empty. Graded HERE, at the surface that composes the window
+    // (`drawn: listed.length`, src/app/claims/page.tsx) — the primitive's own
+    // grading of the clause is tests/offline/ui/primitives.test.ts.
+    //
+    // No word of the line is pinned: the figures it prints are read off it in
+    // the app's own formatting, and the sentences are compared with each other
+    // with every digit masked.
+    const none = await renderClaims(offGridScript(0, 900));
+    const fewer = await renderClaims(offGridScript(0, 51));
+    const drew = await renderClaims(offGridScript(37, 900));
+
+    // Non-vacuity, from the page's own hooks and rows rather than any word:
+    // the count answered a non-zero number, the window drew nothing, and this
+    // is the held-back state the clause used to be rendered in.
+    expect(claimIds(none)).toHaveLength(0);
+    expect(claimIds(drew)).toHaveLength(37);
+    expect(windowLine(none).held).toBe(900);
+    expect(windowLine(none).truncated).toBe(true);
+    expect(windowLine(none).limit).toBe(CLAIM_WINDOW);
+
+    // Every figure the line prints, in the order it prints them: the cap and
+    // the count read's number — and, where rows were drawn, the rows. A
+    // screen holding none prints no third figure at all.
+    const figuresIn = (markup: string) =>
+      windowLine(markup).text.match(/\d{1,3}(?:,\d{3})*/g) ?? [];
+    expect(figuresIn(none)).toEqual([count(CLAIM_WINDOW), count(900)]);
+    expect(figuresIn(drew)).toEqual([count(CLAIM_WINDOW), count(900), count(37)]);
+
+    // A DIFFERENT sentence from the drawn screen's under the very same count,
+    // and the SAME one whatever the count answered — what is gone is the
+    // clause about the ROWS, not a figure inside it.
+    const masked = (markup: string) => windowLine(markup).text.replace(/\d[\d,]*/g, "#");
+    expect(masked(none)).not.toBe(masked(drew));
+    expect(masked(none)).toBe(masked(fewer));
+
+    // …and the surface around it is unmoved: the card below still states that
+    // the read found nothing, and no paging element claims a rest.
+    expect(
+      cheerio.load(none)('[data-surface="claims"] [data-empty]').attr("data-empty"),
+    ).toBe("claims");
+    expect(pagingOccurrences(none)).toBe(0);
+  });
+
   it("names the rows ON SCREEN when the COUNT read came back SMALLER than the rows drawn [admin-window/BUG-0186]", async () => {
     // THE OTHER DIRECTION OF THE SAME TWO-READS DIVERGENCE (QA, off the
     // admin-window/BUG-0183 close). `/claims` counts its matching set and
