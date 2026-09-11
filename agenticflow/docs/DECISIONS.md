@@ -1784,3 +1784,37 @@ are bounded, both keep the read's name and the account's other parts, and both
 err in the direction this campaign chose in BUG-0170. Evidence of a real body
 in the glued-mid-line shape re-opens THIS BAR as a ruling — it never adds a
 fourth question.
+
+## 2026-09-11 — the queue-health live case is retry-free because `review_items.status` has no writer, and that is a dated fact, not a property
+
+TASK-0070 made `/queues`' queue-health gauge publish BOTH edges of its window
+(`[since, until)`) and `tests/live/queues.live.test.ts` count the interval the
+page states rather than one it resolves for itself, which is why that case
+carries no `whileStill` retry: a row the reviewers file mid-test carries
+`opened_at = now()`, at or after `until`, so it is outside both legs and the
+two paths meet on one closed interval (`tests/live/parity.ts`, `snapshotAsOf`).
+**That argument covers `opened_at` and nothing else.** The per-slice figures
+the same case compares are `status = 'open'` counts, and a status that MOVES
+between the page's render and the test's count changes one path and not the
+other, whatever the `opened_at` bounds do — a shared upper edge on the
+insertion time cannot make a mutable column deterministic.
+
+Recorded because QA named the reason the case is safe anyway, and it is a fact
+of this build rather than of the design: **nothing writes `review_items.status`
+today.** Admin's only direct write is `walk_sandbox` (`src/lib/edit/config.ts`,
+regime `sandbox`), `settle_review_item` is not installed on staging (M2's §9
+handoff, still awaiting Ben), the verdict path is `override`-shaped and
+item-less, and the scraper does not touch the column. The status column is
+immutable in practice, so the open counts cannot move under the comparison.
+
+**The trigger, stated so the next reader does not have to re-derive it: the
+first writer of `review_items.status` — the installed `settle_review_item`,
+any settle/verdict surface built on it, or a reviewer tool in the sibling —
+re-opens this.** On that day the per-slice open-count legs of
+`tests/live/queues.live.test.ts` (and the equivalent open counts in
+`tests/live/review-item.live.test.ts`) need the treatment `snapshotAsOf`
+already describes: one explicit upper edge shared by every leg, or `whileStill`
+where a leg cannot be given one. The window LENGTH assertion and the
+`opened_at` population count are unaffected either way. No retry is added now:
+a retry written against a stationary column hides the day it starts moving, and
+this entry is the cheaper record.
