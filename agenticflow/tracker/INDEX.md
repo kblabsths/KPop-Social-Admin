@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T05:59:44Z — do not edit)
+# Tracker index (regenerated 2026-09-11T06:00:44Z — do not edit)
 
 ## open
 - BUG-0172 [P1][bug][M3] A paged surface still says rows are withheld after the walk reached the end of the set — /browse and /claims  (scope:src/app/browse/page.tsx,src/app/claims/page.tsx,src/components/browse/paged-browse-table.tsx,src/components/claims/paged-claim-list.tsx,src/components/ui/paging.tsx,src/components/ui/window-line.tsx,tests/offline/browse/page.test.ts,tests/offline/claims/page.test.ts,tests/offline/ui/paging.test.ts,tests/offline/ui/primitives.test.ts,tests/offline/absence/pages.test.ts,tests/offline/shell/client-boundary.test.ts from:TASK-0069)
@@ -14,10 +14,10 @@
 - BUG-0164 [P3][bug][patch] /queues still carries the exit copy BUG-0161 replaced on /claims  (deps:TASK-0072(unmet:1) scope:src/app/queues/page.tsx,tests/offline/queues/page.test.ts,tests/offline/ui/copy.test.ts from:designer:endgame-walk)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - BUG-0171 [P2][bug][M3] The claims rows route answers gated admin data with no Cache-Control, while every gated page carries one  (deps:TASK-0068 scope:src/app/api/admin/claims/rows/route.ts,tests/http/paging.http.test.ts,tests/offline/paging/claims-route.test.ts @builder-262 from:TASK-0066)
 
 ## qa
 - BUG-0170 [P2][bug][M3] a failed read carries an INTERMEDIARY's HTML error page verbatim into the app's account, onto the claims card and through the paging route's error arm  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts @builder-261 from:TASK-0066)
 
-Totals — claimed:1, done:18, open:12, qa:1. Archived: 252.
+Totals — built:1, done:18, open:12, qa:1. Archived: 252.
