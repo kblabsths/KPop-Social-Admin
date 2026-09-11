@@ -237,11 +237,43 @@ function claimIds(markup: string): string[] {
  */
 
 /**
- * The cap this test's own read of the view will accept. The read must come
- * back UNDER it: a set that reached the cap is a truncated read, and grading a
- * window against a truncated expectation would pass for the wrong reason.
+ * NO READ IN THIS FILE ASKS FOR MORE ROWS THAN THE ASSERTION IT FEEDS COMPARES
+ * (admin-window/TASK-0077, the architect's ruling of 2026-09-11).
+ *
+ * This file used to read the WHOLE view three times over — `claimsFromDatabase`,
+ * `bucketCensus` and `sourceCensus`, each `.limit(5000)` — and tally it in
+ * TypeScript. That is a shape sized by STAGING rather than by what it compares,
+ * and it dies at PostgREST's row ceiling: staging held 877 pending claims when
+ * the ticket was written and 878 when it was built (2026-09-11), against a
+ * ceiling of 1,000 that no `.limit()` raises. The day the view crosses it every
+ * case in this file would refuse permanently — and this file is the stored
+ * check of five downstream tickets, so the first thing it would teach a bounced
+ * builder is that the product is broken.
+ *
+ * Two shapes replace it, and both are bounded by the ASSERTION:
+ *
+ *  - a "whole" figure is the DATABASE's own exact count, taken on the SAME
+ *    request as the rows it accompanies (`{ count: "exact" }` answers in the
+ *    response's own range header and is not subject to the row ceiling), so
+ *    TASK-0075's one-round-trip shape survives and no second count is ever
+ *    taken beside a read — that pair was the race TASK-0075 killed;
+ *  - a row set is read at the bound the assertion compares: the oldest
+ *    `CLAIM_SLICE` claims in the page's own order, never the view.
  */
-const VIEW_READ_CAP = 5000;
+
+/**
+ * How many rows of the page's own order this file's oracle reads: the window
+ * the page draws, plus a margin of exactly one more window.
+ *
+ * The margin is what proves the drawn rows are the longest-waiting ones — the
+ * boundary between drawn and undrawn is inside the slice — and it is a second
+ * window rather than a handful of rows because the unnarrowed paging case
+ * grades a whole SECOND SCREEN against it: one press returns rows
+ * `CLAIM_WINDOW..CLAIM_SLICE` of this same order, so the bound is the
+ * assertion's own size and not a number picked for comfort.
+ */
+const ORACLE_WINDOWS = 2;
+const CLAIM_SLICE = CLAIM_WINDOW * ORACLE_WINDOWS;
 
 /**
  * PostgREST's own row ceiling, which no `.limit()` can raise (`db-max-rows`).
@@ -256,39 +288,102 @@ const VIEW_READ_CAP = 5000;
 const ROW_CEILING = 1000;
 
 /**
- * Refuse a read that came back AT OR ABOVE what it could have held.
+ * Refuse a slice the database CUT — a bound that now means something.
  *
- * The same discipline as the identity proof's two cap guards, applied to every
- * single-read shape this file holds still: a truncated read makes every figure
- * taken from it a statement about the cap rather than about the view, and a
- * page graded against one passes or fails for the wrong reason.
+ * It used to refuse a read that came back at or above its own `.limit()`,
+ * which on a read of the whole view was a guard on the SIZE OF STAGING: it
+ * would have started refusing everything in this file at 1,000 claims and
+ * said nothing about the page. Every row read here is now deliberately
+ * bounded, so the question is no longer "did this reach a cap" but "did the
+ * database hand back the slice that was asked for": with the exact count
+ * riding the SAME request, a sound slice holds exactly `min(bound, whole)`
+ * rows. Anything else was cut — by PostgREST's ceiling, which no `.limit()`
+ * raises, or by anything else — and a cut slice cannot say which claims are
+ * oldest, which is the whole of what the window cases grade.
  */
-function refuseTruncated(rows: readonly unknown[], bound: number, what: string): void {
-  const ceiling = Math.min(bound, ROW_CEILING);
-  if (rows.length >= ceiling) {
-    throw new Error(
-      `${what} came back with ${rows.length} row(s), at or above the ${ceiling} ` +
-        `it can hold (its own bound ${bound}, PostgREST's ceiling ${ROW_CEILING}). ` +
-        `It is TRUNCATED, so it cannot say what the view holds and nothing may ` +
-        `be graded against it.`,
-    );
-  }
+function refuseTruncated(
+  rows: readonly unknown[],
+  bound: number,
+  whole: number,
+  what: string,
+): void {
+  const expected = Math.min(bound, whole);
+  if (rows.length === expected) return;
+  throw new Error(
+    `${what} asked for ${bound} row(s) of a set the database counts at ` +
+      `${whole} on the same request, so it should have come back with ` +
+      `${expected}; it came back with ${rows.length}. ` +
+      (rows.length >= ROW_CEILING
+        ? `That is PostgREST's own row ceiling (${ROW_CEILING}), which no ` +
+          `.limit() raises. `
+        : "") +
+      `The slice was CUT, so it cannot say which claims are oldest and ` +
+      `nothing may be graded against it.`,
+  );
 }
 
 /**
- * Count each value, with every known key present as a real 0 and the keys in a
- * FIXED order.
+ * The count that rode the request — or a refusal, never a sentinel.
  *
- * The order matters because `whileStill` compares the two reads by
- * `JSON.stringify`: a record whose keys arrive in whatever order PostgREST
- * returned the rows would differ between two identical reads and be reported
- * as a database that moved.
+ * `countRows` (`tests/live/parity.ts`) says this about a count-ONLY request
+ * and is what every bare count in this file goes through; this is the same
+ * rule for a request that carries rows AND the count, which `countRows`
+ * cannot answer because it hands back only the number. A `select()` written
+ * without `{ count: "exact" }` answers with `error: null` and `count: null`,
+ * and coercing that to `0` is how a page rendering nothing gets a free pass
+ * (admin-window/BUG-0007).
  */
-function tally(values: readonly string[], known: readonly string[]): Record<string, number> {
-  const counts = new Map<string, number>(known.map((key) => [key, 0]));
-  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+function wholeOf(count: number | null, what: string): number {
+  if (typeof count !== "number" || !Number.isFinite(count)) {
+    throw new Error(
+      `${what} came back with no count. The whole figure must ride the SAME ` +
+        `request as the rows — \`select(…, { count: "exact" })\` — because a ` +
+        `count taken beside a read is a second race, not a second opinion ` +
+        `(admin-window/TASK-0075).`,
+    );
+  }
+  return count;
+}
+
+/**
+ * N exact counts, issued CONCURRENTLY and awaited ONCE.
+ *
+ * **Measured, not assumed** (admin-window/TASK-0077 criterion 2). PostgREST's
+ * aggregate form — one request, no ceiling, e.g. `select("bucket, count()")`
+ * grouped over the view — was tried first against staging on 2026-09-11 and
+ * this project REFUSES it: `PGRST123, "Use of aggregate functions is not
+ * allowed"` (Supabase ships `db-aggregates-enabled = false`), for the grouped
+ * form and for a bare `count()` alike. So a census is N bounded counts instead
+ * — and they go out together: N requests, ONE wait. Sequential counts inside a
+ * held shape are BANNED (~4.3 s per attempt, measured by QA on this file,
+ * admin-window/TASK-0075); so is reading the view's rows to tally them, which
+ * is the shape that dies at the row ceiling.
+ *
+ * Each leg is GET-shaped through `exactCount`, never `head: true`: a HEAD
+ * response carries no body, so a failed count comes back as `code=undefined,
+ * msg=""` — a `57014` statement timeout reported as a blank — and
+ * `tests/offline/live-guard.test.ts` pins that no live TEST issues one. The
+ * architect's ruling named `head: true` for this shape; a GET-shaped count
+ * with `.range(0, 0)` is the same one request, equally immune to the row
+ * ceiling (the count rides the range header), costs one row, and keeps the
+ * database's own error code. That is the only deviation, and it is here so
+ * that no standing pin has to be weakened to land this.
+ *
+ * The keys come back SORTED, because `whileStill` compares two reads by
+ * `JSON.stringify` and a record whose key order follows the network would
+ * report itself as a database that moved.
+ */
+type CountQuery = PromiseLike<{ count: number | null; error: unknown }>;
+
+async function countsTogether(
+  legs: Readonly<Record<string, CountQuery>>,
+): Promise<Record<string, number>> {
+  const keys = Object.keys(legs).sort();
+  const counted = await Promise.all(keys.map((key) => countRows(() => legs[key])));
   const out: Record<string, number> = {};
-  for (const key of [...counts.keys()].sort()) out[key] = counts.get(key) as number;
+  keys.forEach((key, index) => {
+    out[key] = counted[index];
+  });
   return out;
 }
 
@@ -300,15 +395,35 @@ interface ClaimInstant {
 }
 
 /**
- * The claims the list on `tab` matches, with their instants — THIS TEST's own
- * read of the view, written without `lib/db/claims.ts`.
+ * What this file knows about the claims the list on `tab` matches: the OLDEST
+ * `CLAIM_SLICE` of them in the page's own order, and how many there are
+ * altogether.
+ */
+interface ClaimSlice {
+  /** The oldest claims the assertion compares, oldest first. */
+  oldest: ClaimInstant[];
+  /** What the DATABASE counted, on the same request as those rows. */
+  whole: number;
+}
+
+/**
+ * The oldest claims the list on `tab` matches, with their instants, and the
+ * size of the whole matching set — THIS TEST's own read of the view, written
+ * without `lib/db/claims.ts`.
  *
- * **ONE ROUND TRIP, and its LENGTH is the count** (admin-window/TASK-0075).
- * Every case that holds this read still against a render takes `whole` from
- * `rows.length` rather than issuing a second `countRows` beside it: two reads
- * inside one held shape can disagree with each other, and QA measured exactly
- * that — `expected 878 to be 877` out of `gradeWindow`'s first assertion, which
- * compared this read with a count taken a moment later.
+ * **ONE ROUND TRIP, bounded by the ASSERTION** (admin-window/TASK-0075, bound
+ * by admin-window/TASK-0077). It used to read the whole view and call its
+ * LENGTH the count; both halves are replaced, neither is relaxed:
+ *
+ *  - the rows are the oldest `CLAIM_SLICE` in the page's stated order —
+ *    oldest first, an unknown instant last, `observation_id` breaking every
+ *    tie — ordered BY THE DATABASE, which is the order the window cases need
+ *    and the only part of the view they compare. The margin past
+ *    `CLAIM_WINDOW` is what proves the drawn rows are the longest-waiting
+ *    ones: the boundary between drawn and undrawn falls inside the slice.
+ *  - `whole` is the database's own exact count, riding the SAME request, so
+ *    it is neither a second read beside this one (the race TASK-0075 killed)
+ *    nor subject to the row ceiling this file used to live under.
  *
  * **ONE leg since admin-window/BUG-0138**, because the view carries the
  * instant itself: the scraper handoff carries `observations.observed_at`
@@ -317,28 +432,33 @@ interface ClaimInstant {
  * here would grade the page against a shape the page does not have, and hide
  * the very refusal the precondition case exists to report.
  */
-async function claimsFromDatabase(tab?: string): Promise<ClaimInstant[]> {
+async function claimsFromDatabase(tab?: string): Promise<ClaimSlice> {
   const db = independentClient();
-  const scoped = db.from(T.pendingClaims).select("observation_id, observed_at");
-  const { data, error } = await (
+  const scoped = db
+    .from(T.pendingClaims)
+    .select("observation_id, observed_at", { count: "exact" });
+  const what = `this test's own read of the claims the ${tab ?? "buckets"} tab matches`;
+  const { data, count, error } = await (
     tab === "standing"
       ? scoped.eq("bucket", STANDING_BUCKET)
       : scoped.neq("bucket", PARKED_BUCKET)
   )
+    // The page's stated order, asked of the database rather than sorted here:
+    // `nullsFirst: false` is the "an unknown instant sorts LAST" half of it.
+    .order("observed_at", { ascending: true, nullsFirst: false })
     .order("observation_id", { ascending: true })
-    .limit(VIEW_READ_CAP);
+    .limit(CLAIM_SLICE);
   if (error) throw new Error(`the claim query failed: ${JSON.stringify(error)}`);
   const rows = (data ?? []) as { observation_id: string; observed_at: string | null }[];
-  // A truncated read cannot say what the OLDEST claims are, which is the whole
-  // of what the window cases grade — and the count they grade the page against
-  // is now this read's own length, so a truncation would understate it too.
-  refuseTruncated(
-    rows,
-    VIEW_READ_CAP,
-    `this test's own read of the claims the ${tab ?? "buckets"} tab matches`,
-  );
+  const whole = wholeOf(count, what);
+  // A slice the database cut cannot say what the OLDEST claims are, which is
+  // the whole of what the window cases grade.
+  refuseTruncated(rows, CLAIM_SLICE, whole, what);
 
-  return rows.map((row) => ({ id: row.observation_id, observedAt: row.observed_at }));
+  return {
+    oldest: rows.map((row) => ({ id: row.observation_id, observedAt: row.observed_at })),
+    whole,
+  };
 }
 
 /**
@@ -386,32 +506,39 @@ function windowLine(markup: string): {
  * number, the age boundary between drawn and undrawn, and the window line's
  * own figures.
  *
- * `whole` is `held`'s own LENGTH — one read, one number (admin-window/
- * TASK-0075). It used to be a separate `countRows` the caller passed in, and
+ * `whole` is the count the database took on the SAME request as `held.oldest`
+ * — one read, one number (admin-window/TASK-0075, bounded by admin-window/
+ * TASK-0077). It used to be a separate `countRows` the caller passed in, and
  * the first thing this function did was assert the two agreed; on a live
  * staging they do not have to, and QA measured the red that comes of it
  * (`expected 878 to be 877`, a claim filed between the two reads). A count the
  * caller cannot take at the same instant as the rows is not a second opinion,
- * it is a second race.
+ * it is a second race — and a count taken from the LENGTH of a whole-view read
+ * is a figure sized by staging, which is the ceiling this file just climbed
+ * out from under.
  */
-function gradeWindow(markup: string, held: readonly ClaimInstant[]): void {
-  const whole = held.length;
+function gradeWindow(markup: string, held: ClaimSlice): void {
+  const whole = held.whole;
 
   const rendered = claimIds(markup);
   expect(new Set(rendered).size, "no claim is drawn twice").toBe(rendered.length);
   expect(rendered).toHaveLength(Math.min(CLAIM_WINDOW, whole));
   expect(rendered).toEqual(
-    oldestFirst(held)
+    oldestFirst(held.oldest)
       .slice(0, CLAIM_WINDOW)
       .map((claim) => claim.id),
   );
 
   // The same property without the tie-break: nothing left undrawn is older
   // than anything drawn. Equal instants satisfy it, so this holds through the
-  // tie the cap actually falls inside on staging.
+  // tie the cap actually falls inside on staging. It is asked of the SLICE —
+  // the oldest `CLAIM_SLICE` claims — which is where the boundary lives: a
+  // window taken from anywhere but the oldest end is caught by the margin
+  // rows, and reading the rest of the view would add nothing to the property
+  // and a truncation risk to the read (admin-window/TASK-0077).
   const drawn = new Set(rendered);
   const ages = (keep: boolean) =>
-    held.filter((claim) => drawn.has(claim.id) === keep).map(ageOf);
+    held.oldest.filter((claim) => drawn.has(claim.id) === keep).map(ageOf);
   const inside = ages(true);
   const outside = ages(false);
   if (inside.length > 0 && outside.length > 0) {
@@ -494,6 +621,56 @@ describe("the two shapes of the pending-claims gauge against staging", () => {
   const GAUGE_CAP = 1000;
   const ID_CHUNK = 100;
 
+  /**
+   * THE TEST'S day window, which is NOT the gauge's (admin-window/TASK-0077).
+   *
+   * `GAUGE_DAYS` above is what the PRODUCT reads: 90 days, and that is
+   * unchanged. This is the window the identity proof below runs over, and it
+   * is smaller on purpose. The proof is about the two SHAPES selecting the
+   * same claims over the same edges — it holds over any window — so the window
+   * is chosen to leave the two legs HEADROOM under `GAUGE_CAP`: at 90 days
+   * both legs sat at 878 against a 1,000-row cap, ~120 rows from the day this
+   * file's own proof would have refused permanently.
+   *
+   * Chosen from a measurement, not a guess. Measured on staging 2026-09-11,
+   * the matching set at each window tried: 7 days -> 1, 8 -> 1, 9 -> 23,
+   * **10 -> 23**, 11 -> 878, 14 -> 878, 30 -> 878, 90 -> 878. Staging's
+   * pending population is six instants, not a smooth spread — 847 of the 878
+   * claims were filed in one burst 10.5 days before that measurement — so the
+   * choice is the LARGEST window measured at or under half the cap: 10 days,
+   * 23 claims, 2.3% of the cap, and non-vacuous by 23.
+   *
+   * Both directions now instruct rather than truncate: at or above
+   * `REFUSE_ABOVE` the proof throws naming the window and the number, and an
+   * empty window says so in the same words. The 2026-09-11 census is the map
+   * the next reader re-picks from.
+   */
+  const PROOF_DAYS = 10;
+
+  /** 80% of the cap: the proof refuses here rather than at the cap itself. */
+  const REFUSE_ABOVE = GAUGE_CAP * 0.8;
+
+  /**
+   * What a leg that is too big, or empty, tells the next reader to do. The
+   * refusal a truncated comparison would have hidden.
+   */
+  function refuseWindow(what: string, got: number): string {
+    return (
+      `${what} came back with ${got} claim(s) over this TEST's ${PROOF_DAYS}-day ` +
+      `window (\`PROOF_DAYS\`, which is not the gauge's ${GAUGE_DAYS}-day bound). ` +
+      (got >= REFUSE_ABOVE
+        ? `That is at or above ${REFUSE_ABOVE}, 80% of the ${GAUGE_CAP}-row cap ` +
+          `both legs are capped at, so this proof is close to comparing two ` +
+          `CUTS instead of two shapes. NARROW \`PROOF_DAYS\` until the set sits ` +
+          `at or under half the cap`
+        : `A proof over an empty set proves nothing, so WIDEN \`PROOF_DAYS\` ` +
+          `until the set is non-vacuous again while staying at or under half ` +
+          `the cap`) +
+      `, and record what you measured at each window you tried — the ` +
+      `2026-09-11 census is in this constant's own comment.`
+    );
+  }
+
   interface Claim {
     observation_id: string;
     bucket: string;
@@ -531,7 +708,9 @@ describe("the two shapes of the pending-claims gauge against staging", () => {
     // below is the two SHAPES and not the two clocks. No tolerance anywhere:
     // the comparison stays exact identity.
     const asOf = snapshotAsOf();
-    const since = snapshotAsOf(GAUGE_DAYS * 86_400_000);
+    // The TEST's window, not the gauge's — see `PROOF_DAYS`. Both legs take
+    // the SAME two edges, captured once, exactly as before.
+    const since = snapshotAsOf(PROOF_DAYS * 86_400_000);
 
     // SHAPE A — what the gauge does now: one window over the view's own instant.
     const windowed = await db
@@ -569,9 +748,22 @@ describe("the two shapes of the pending-claims gauge against staging", () => {
     if (scan.error) throw new Error(`the scan failed: ${JSON.stringify(scan.error)}`);
     const scanned = (scan.data ?? []) as { observation_id: string }[];
 
-    // Neither leg may be at its cap: a truncated read would make this a
-    // question about where two windows were cut, not about which claims they
-    // hold (the rule `VIEW_READ_CAP` states above).
+    // THE INSTRUCTION, before either cap guard: a leg at 80% of the cap is
+    // close enough to comparing two CUTS that the next reader is told what to
+    // do about it — which window this is, what it measured, and how to
+    // re-pick — rather than being handed a truncated comparison or a bare
+    // `expected 1000 to be less than 1000` (admin-window/TASK-0077).
+    if (fromWindow.length >= REFUSE_ABOVE) {
+      throw new Error(refuseWindow("the windowed claims read", fromWindow.length));
+    }
+    if (scanned.length >= REFUSE_ABOVE) {
+      throw new Error(refuseWindow("the observations scan", scanned.length));
+    }
+    // Neither leg may be at its cap. Unreachable while the refusal above
+    // holds, and kept: it is the property the comparison actually needs — a
+    // truncated read makes this a question about where two windows were cut,
+    // not about which claims they hold — and it is what still speaks if the
+    // refusal's threshold is ever moved.
     expect(
       fromWindow.length,
       `the windowed claims read returned its cap (${GAUGE_CAP}), so this ` +
@@ -582,9 +774,13 @@ describe("the two shapes of the pending-claims gauge against staging", () => {
       `the observations scan returned its cap (${GAUGE_CAP}), same reason`,
     ).toBeLessThan(GAUGE_CAP);
     // …and non-vacuous: staging really holds pending claims in this window.
-    // The window is still 90 days minus the settle margin, and staging held
-    // 877 pending claims in it when this was measured (2026-09-10), so the
-    // upper edge narrows the set by the seconds it must and by nothing else.
+    // 23 of them when this was measured (2026-09-11, a 10-day window over a
+    // population of six instants), so the upper edge narrows the set by the
+    // seconds it must and by nothing else. An empty window is an instruction
+    // here too, in the same words and for the opposite reason.
+    if (fromWindow.length === 0) {
+      throw new Error(refuseWindow("the windowed claims read", 0));
+    }
     expect(fromWindow.length).toBeGreaterThan(0);
 
     const ids = scanned.map((row) => row.observation_id);
@@ -740,73 +936,133 @@ describe("the Claims page's surface hooks against staging", () => {
 });
 
 /**
- * ONE ROUND TRIP: every claim the bucket table on this URL counts, tallied by
- * bucket in TypeScript (admin-window/TASK-0075, attempt 2).
+ * ONE WAIT, NO ROWS: what the bucket table on this URL counts, per bucket,
+ * from the database's own counts (admin-window/TASK-0075, bounded by
+ * admin-window/TASK-0077).
  *
- * Attempt 1 held six sequential count queries still — `whole` plus one per
- * bucket — and QA measured what that costs: each `whileStill` attempt kept a
- * ~4 s window open, three attempts kept it open three times over, and a scraper
- * cycle wrote through every one of them. The intermittent wrong-count red
- * simply became an intermittent attempts-exhausted red on the same trigger.
- * `whileStill`'s protection decays with the DURATION of the shape it holds, so
- * the shape is now a single `select` at a single instant.
+ * Three shapes have stood here. Attempt 1 held six SEQUENTIAL counts still and
+ * QA measured what that costs: a ~4 s window per `whileStill` attempt, three
+ * attempts, a scraper cycle writing through every one — the intermittent
+ * wrong-count red simply became an intermittent attempts-exhausted red.
+ * Attempt 2 read every row of the view and tallied it in TypeScript: one round
+ * trip, ~170 ms, and dead the day the view crosses PostgREST's 1,000-row
+ * ceiling (877 when it was written; 878 when this was). This is attempt 3:
+ * `whole` plus one count per bucket, issued CONCURRENTLY in one `Promise.all`
+ * — six requests, ONE wait, none of them reading a row of the view and none of
+ * them subject to the ceiling. Measured on staging 2026-09-11: ~0.73-0.81 s
+ * per held shape against the row-tally's ~0.16-0.18 s, and against the ~4.3 s
+ * of the sequential shape this rule exists to ban.
  *
- * `whole` is this read's own LENGTH, and it is what `gradeSurface` is handed —
- * never a second count beside it. The tally is written from the migration's
- * bucket vocabulary, never from `src/lib/db/claims.ts`; `PARKED_BUCKET` is
- * excluded in the query itself, so the tally can never count a parked claim.
+ * `whole` is counted in its own leg rather than summed from the buckets: a
+ * bucket the migration gained and this file has not heard of would be invisible
+ * to a sum, and the point of `whole` is to be the figure the SURFACE is graded
+ * against. The bucket vocabulary is spelled from the migration, never from
+ * `src/lib/db/claims.ts`, and `PARKED_BUCKET` never enters a count.
  */
 async function bucketCensus(
   source?: string,
 ): Promise<{ whole: number; buckets: Record<string, number> }> {
-  const scoped = independentClient()
-    .from(T.pendingClaims)
-    .select("bucket")
-    .neq("bucket", PARKED_BUCKET);
-  const { data, error } = await (
-    source === undefined ? scoped : scoped.eq("source_id", source)
-  ).limit(VIEW_READ_CAP);
-  if (error) throw new Error(`the bucket census failed: ${JSON.stringify(error)}`);
-  const rows = (data ?? []) as { bucket: string }[];
-  refuseTruncated(
-    rows,
-    VIEW_READ_CAP,
-    `this test's own bucket census${source === undefined ? "" : ` of ${source}`}`,
-  );
-  return {
-    whole: rows.length,
-    buckets: tally(
-      rows.map((row) => row.bucket),
-      RENDERED_BUCKETS,
-    ),
+  const db = independentClient();
+  const claims = () => {
+    const count = exactCount(T.pendingClaims, db);
+    return source === undefined ? count : count.eq("source_id", source);
   };
+  const legs: Record<string, CountQuery> = {
+    whole: claims().neq("bucket", PARKED_BUCKET),
+  };
+  for (const bucket of RENDERED_BUCKETS) legs[`bucket:${bucket}`] = claims().eq("bucket", bucket);
+
+  const counted = await countsTogether(legs);
+  const buckets: Record<string, number> = {};
+  for (const bucket of [...RENDERED_BUCKETS].sort()) {
+    buckets[bucket] = counted[`bucket:${bucket}`];
+  }
+  return { whole: counted.whole, buckets };
 }
 
 /**
- * ONE ROUND TRIP: the source of every claim the view holds, tallied by source.
+ * The sources registry, whole — a BOUNDED enumeration (3 rows on staging,
+ * measured 2026-09-11), and the only enumeration of sources this file has.
  *
- * Two figures the spelling case needs — the whole view's size and the size of
- * the narrowing — come out of this one read, so the "is this really a
- * narrowing" guard can never be two counts disagreeing with each other. Its
- * keys are also the source list the per-source case iterates, so that case
- * enumerates sources without a second read of its own.
+ * The census below used to enumerate sources out of the view's own rows, which
+ * meant reading every row of the view to learn three ids. The registry is the
+ * place that enumerates sources, it is tiny, and a registry that is no longer
+ * tiny is a refusal rather than a read this file quietly grew — the same bound
+ * the chip case's accepted exception rests on.
+ */
+const REGISTRY_BOUND = 10;
+
+async function sourceRegistry(): Promise<string[]> {
+  const { data, error } = await independentClient().from(T.sources).select("source_id");
+  if (error) throw new Error(`this test could not read ${T.sources}: ${JSON.stringify(error)}`);
+  const ids = (data ?? []).map((row) => (row as { source_id: string }).source_id).sort();
+  if (ids.length === 0) {
+    throw new Error(
+      `${T.sources} named no source at all, so this test can enumerate none — ` +
+        `a registry it cannot read proves nothing about the view's sources ` +
+        `(admin-window/BUG-0007).`,
+    );
+  }
+  if (ids.length > REGISTRY_BOUND) {
+    throw new Error(
+      `${T.sources} came back with ${ids.length} sources, past the ${REGISTRY_BOUND} ` +
+        `this file is written for (3 on staging, measured 2026-09-11). The ` +
+        `per-source shapes here are one request per source and the chip case's ` +
+        `accepted exception rests on the registry being small and static: ` +
+        `both need re-deciding by the architect before this grows.`,
+    );
+  }
+  return ids;
+}
+
+/**
+ * ONE WAIT, NO ROWS: how many claims each registered source holds, and how
+ * many the view holds altogether.
+ *
+ * Same shape and same reasons as `bucketCensus` — concurrent exact counts, no
+ * row of the view read, nothing subject to the row ceiling. Measured on
+ * staging 2026-09-11: ~0.43 s for `whole` + 3 sources + the completeness leg.
+ *
+ * The completeness leg is what the row-tally version got for free: a census
+ * enumerated from the REGISTRY would silently miss a source the view carries
+ * and the registry does not, so one leg counts exactly those claims and this
+ * refuses unless it is ZERO (0 on staging, measured 2026-09-11). Two figures
+ * the spelling case needs — the whole view's size and the size of the
+ * narrowing — still come out of ONE wait, so the "is this really a narrowing"
+ * guard can never be two counts disagreeing with each other.
  */
 async function sourceCensus(): Promise<{ whole: number; bySource: Record<string, number> }> {
-  const { data, error } = await independentClient()
-    .from(T.pendingClaims)
-    .select("source_id")
-    .neq("bucket", PARKED_BUCKET)
-    .limit(VIEW_READ_CAP);
-  if (error) throw new Error(`the source census failed: ${JSON.stringify(error)}`);
-  const rows = (data ?? []) as { source_id: string }[];
-  refuseTruncated(rows, VIEW_READ_CAP, "this test's own source census");
-  return {
-    whole: rows.length,
-    bySource: tally(
-      rows.map((row) => row.source_id),
-      [],
-    ),
+  const db = independentClient();
+  const registered = await sourceRegistry();
+  const claims = () => exactCount(T.pendingClaims, db).neq("bucket", PARKED_BUCKET);
+  const legs: Record<string, CountQuery> = {
+    whole: claims(),
+    // `not in (…)`: the claims no registered source accounts for.
+    unregistered: claims().not("source_id", "in", `(${registered.join(",")})`),
   };
+  for (const source of registered) legs[`source:${source}`] = claims().eq("source_id", source);
+
+  const counted = await countsTogether(legs);
+  if (counted.unregistered !== 0) {
+    throw new Error(
+      `${counted.unregistered} claim(s) carry a source_id that ${T.sources} ` +
+        `does not name, so a census enumerated from the registry would miss ` +
+        `them. This file enumerates sources from the registry (${registered.length} ` +
+        `of them) and cannot say anything about a source it never heard of.`,
+    );
+  }
+  // THE SOURCES THE VIEW CARRIES, which is what the row-tally census this
+  // replaced answered and what all three of its callers ask it: a source the
+  // registry names and the view holds no claim for is not a narrowing of this
+  // population, and enumerating it here would send the per-source case to walk
+  // a page whose bucket table is five real zeros — a different surface's
+  // question, and not this census's to answer (staging's registry holds one
+  // such source, `test_harness_control`, measured 2026-09-11).
+  const bySource: Record<string, number> = {};
+  for (const source of registered) {
+    if (counted[`source:${source}`] > 0) bySource[source] = counted[`source:${source}`];
+  }
+  return { whole: counted.whole, bySource };
 }
 
 describe("the classification buckets against staging", () => {
@@ -1010,7 +1266,7 @@ describe("the classification buckets against staging", () => {
       markup,
       within: LIST,
       object: T.pendingClaims,
-      counted: held.length,
+      counted: held.whole,
     });
     if (state !== "ok") return;
 
@@ -1032,7 +1288,7 @@ describe("the classification buckets against staging", () => {
       markup,
       within: LIST,
       object: T.pendingClaims,
-      counted: held.length,
+      counted: held.whole,
     });
     if (state !== "ok") {
       // Staging holds 0 standing claims today, so this is the branch that runs
@@ -1041,8 +1297,11 @@ describe("the classification buckets against staging", () => {
       // emptiness nobody checked is how a broken list passes.
       if (state === "empty") {
         // `held` is the same read the kind was decided from, taken inside the
-        // window this render sits in — not a second read of the bucket.
-        expect(held).toEqual([]);
+        // window this render sits in — not a second read of the bucket. Both
+        // halves are asserted: the database counted nothing (`whole`), and the
+        // oldest-slice read drew nothing to be counted.
+        expect(held.whole).toBe(0);
+        expect(held.oldest).toEqual([]);
         expect(claimIds(markup)).toEqual([]);
         // An empty window is still a window the page LOOKED in, so the line
         // stands beside the Empty card and states a real zero — the only state
@@ -1105,7 +1364,7 @@ describe("the parked bucket against staging", () => {
         markup,
         within: LIST,
         object: T.pendingClaims,
-        counted: held.length,
+        counted: held.whole,
       });
       expect(markup, JSON.stringify(params)).not.toContain(PARKED_BUCKET);
       checked.push(JSON.stringify(params));
@@ -1180,7 +1439,7 @@ describe("a source is named against staging", () => {
       markup,
       within: LIST,
       object: T.pendingClaims,
-      counted: held.length,
+      counted: held.whole,
     });
 
     const $ = cheerio.load(markup);
@@ -1209,6 +1468,35 @@ describe("a source is named against staging", () => {
     }
   });
 
+  /**
+   * AN ARCHITECT-ACCEPTED EXCEPTION, NOT A PATTERN TO COPY (admin-window/
+   * TASK-0077, the ruling of 2026-09-11; QA's TASK-0075 residual).
+   *
+   * This case and `registryNames()` above compare page labels against the
+   * sources registry OUTSIDE `whileStill`, which everywhere else in this file
+   * is the defect. It is accepted HERE, for reasons that are facts about this
+   * pair of reads and about nothing else:
+   *
+   *  - **it cannot race the scraper.** The registry is not claim data: a new
+   *    source arrives with a DEPLOY, not with a scraper cycle, and it held 3
+   *    rows byte-identical over 20 s when QA measured it (2026-09-10), and 3
+   *    rows again on 2026-09-11.
+   *  - **both sides are keyed on ids THE PAGE ITSELF RENDERED.** The registry
+   *    read asks for exactly the ids the chips carry, so there is no "set the
+   *    page drew vs set the database holds" comparison to be raced: a source
+   *    arriving between the render and the read is a source neither side
+   *    mentions.
+   *  - **it would fail loudly and reproducibly, never quietly.** A chip whose
+   *    id the registry stopped naming renders as a uuid and reds this case on
+   *    every run, which is the opposite of the intermittent it-passed-anyway
+   *    that a raced comparison gives.
+   *
+   * The condition the acceptance carries: an exception that silently GREW is
+   * the one nobody re-checks, so this refuses if the registry read comes back
+   * larger than `REGISTRY_BOUND` (10) — three times what staging holds. Past
+   * that the "static 3-row registry" premise is no longer a fact about this
+   * database and the exception has to be re-decided rather than inherited.
+   */
   it("names the source_id chips the same way, each still narrowing by its id", async () => {
     const markup = await claimsMarkup();
     const $ = cheerio.load(markup);
@@ -1229,6 +1517,18 @@ describe("a source is named against staging", () => {
     });
     const named = await registryNames(ids);
     expect(named.size).toBeGreaterThan(0);
+    // The condition on the accepted exception above, checked where the
+    // exception is taken.
+    if (named.size > REGISTRY_BOUND) {
+      throw new Error(
+        `${T.sources} named ${named.size} of this page's chips, past the ` +
+          `${REGISTRY_BOUND} this case's architect-accepted exception is ` +
+          `conditioned on (3 on staging, measured 2026-09-11). Comparing page ` +
+          `labels against the registry outside \`whileStill\` rests on that ` +
+          `registry being small and static; at this size it has to be ` +
+          `re-decided, not inherited.`,
+      );
+    }
 
     narrowing.forEach((chip, index) => {
       expect(chip.label, ids[index]).toBe(named.get(ids[index]) ?? ids[index]);
@@ -1268,15 +1568,33 @@ describe("a source is named against staging", () => {
  * at all: on a view that fits in one window there is no control, and this
  * states that instead of inventing one (§10, common violations rows 6-8).
  *
- * **The race, and the device** (admin-window/TASK-0075). The scraper files
- * claims into staging while this runs, and neither the page's read nor the
- * walk may be given an upper edge — they are the APP's reads, not this file's
- * — so the device is `whileStill`: this file's own bounded read of the view is
- * taken, the page is rendered, walked AND enumerated, and the read is taken
- * again; the comparison is only made when the two agree. Every attempt makes
- * the same exact comparison; running out of attempts throws rather than
- * passing. Everything compared is made inside that one window — the oracle
- * included, which is what the 878-vs-877 red of 2026-09-10 was about.
+ * **The race, the device, and the SIZE OF THE WALKED SET** (admin-window/
+ * TASK-0075, re-shaped by admin-window/TASK-0077). The scraper files claims
+ * into staging while this runs, and neither the page's read nor the walk may be
+ * given an upper edge — they are the APP's reads, not this file's — so the
+ * device is `whileStill`: this file's own bounded read of the set is taken, the
+ * page is rendered, walked AND enumerated, and the read is taken again; the
+ * comparison is only made when the two agree.
+ *
+ * That device's protection decays with the DURATION of what it holds, and this
+ * case's make was the longest in the file by far — a render plus a ~14-request
+ * walk of 878 claims plus the enumeration, 7-20 s measured — against a
+ * staging that churns in bursts (the view went 887 -> 879 inside one make on
+ * 2026-09-10, and 877 -> 887 across a run). `attempts: 5` bought five long
+ * windows; what nobody had pulled was the lever on the SET. So the walk now
+ * walks a NARROWING chosen at RUN TIME from the census this file already makes
+ * cheap — the smallest facet value still larger than one window, so the walk
+ * must reach past the first window's last row — rendered, walked and
+ * enumerated with that same facet. On staging 2026-09-11 that is
+ * `bucket=awaiting_link`, 108 claims, a 3-page walk.
+ *
+ * **What is given up, and what is kept.** Given up: the claim that the walk is
+ * complete over the UNNARROWED view — which is not a property offset paging
+ * has over a draining view anyway (a page boundary that moves mid-walk
+ * legitimately skips an id). Kept, on a set small enough to hold still: the
+ * completeness claim itself, exactly as strict, plus the unnarrowed page's own
+ * cheap assertion below — the first screen and ONE press, two requests, graded
+ * by state kind first. Nothing is skipped, widened or given a tolerance.
  */
 describe("paging past the first window, against staging", () => {
   /** One paging request, through the app's own route handler. */
@@ -1329,24 +1647,145 @@ describe("paging past the first window, against staging", () => {
     return { rows: [...state.rows], bounds, presses };
   }
 
+  /** ONE press, from the same state — the app's driver, asked exactly once. */
+  async function onePress(params: string): Promise<PageState<ClaimLine>> {
+    const state = await requestPage<ClaimLine>(initialPage<ClaimLine>(CLAIM_WINDOW, true), {
+      route: PAGE_ROUTES.claims,
+      params,
+      size: CLAIM_WINDOW,
+      fetchJson: viaHandler,
+    });
+    if (state.refusal !== null) {
+      throw new Error(
+        `the press was refused: ${state.refusal.object ?? "(no object)"} — ` +
+          `${state.refusal.reason}`,
+      );
+    }
+    return state;
+  }
+
+  /** One facet value the page offers, and how big it was at census time. */
+  interface Narrowing {
+    facet: string;
+    value: string;
+    count: number;
+  }
+
+  /** The URL that narrowing asks for — `{}` where there is no narrowing. */
+  function facetOf(chosen: Narrowing | null): Params {
+    return chosen === null ? {} : { [chosen.facet]: chosen.value };
+  }
+
+  /** What this run walked, in the words any failure here prints. */
+  function chose(chosen: Narrowing | null, whole: number): string {
+    return chosen === null
+      ? `no narrowing was larger than one window, so this walked the ` +
+          `UNNARROWED view (${whole} claims)`
+      : `this run walked ?${chosen.facet}=${chosen.value}, the smallest ` +
+          `narrowing larger than one window (${chosen.count} claims at census; ` +
+          `the set held ${whole} when it was walked)`;
+  }
+
   /**
-   * THE ORACLE: every claim of the unnarrowed view, enumerated by a RANGE walk
-   * this file writes, in the order the page states — oldest first, an unknown
+   * THE NARROWING THIS RUN WALKS, chosen at RUN TIME — never a hard-coded id.
+   *
+   * The candidates are the values of the two facets the page offers chips for
+   * (`bucket` and `source_id`; `domain` narrows but has no enumeration, which
+   * is why the page offers it no chips either), sized by the censuses this
+   * file already makes out of bounded counts. The pick is the SMALLEST
+   * candidate still larger than one window — small so the make is short,
+   * larger than a window so the walk must reach past the first screen's last
+   * row and the case cannot go vacuous.
+   *
+   * Chosen OUTSIDE any still window: it decides what to compare, never what
+   * the comparison is, and the count that every assertion below is graded
+   * against is re-read inside the window. So a claim filed between the census
+   * and the walk changes which narrowing is walked at worst, never the verdict.
+   *
+   * `null` means no candidate qualified — every facet value fits inside one
+   * window — in which case the unnarrowed view is itself small (the buckets
+   * partition it) and is what gets walked.
+   */
+  async function narrowingToWalk(): Promise<{ chosen: Narrowing | null; census: number }> {
+    const [buckets, sources] = await Promise.all([bucketCensus(), sourceCensus()]);
+    const candidates: Narrowing[] = [
+      ...Object.entries(buckets.buckets).map(([value, count]) => ({
+        facet: "bucket",
+        value,
+        count,
+      })),
+      ...Object.entries(sources.bySource).map(([value, count]) => ({
+        facet: "source_id",
+        value,
+        count,
+      })),
+    ]
+      .filter((candidate) => candidate.count > CLAIM_WINDOW)
+      // Smallest first; ties broken by name, so two equal narrowings do not
+      // make this a different case on two runs.
+      .sort(
+        (left, right) =>
+          left.count - right.count ||
+          (`${left.facet}=${left.value}` < `${right.facet}=${right.value}` ? -1 : 1),
+      );
+    return { chosen: candidates[0] ?? null, census: buckets.whole };
+  }
+
+  /**
+   * THE SENTINEL: the ids of the set this run walks, and its size, in ONE
+   * bounded round trip.
+   *
+   * An id set is a stricter sentinel than a count — a claim filed while
+   * another is resolved moves no count at all — and it is bounded by what the
+   * walk compares: the whole narrowed set, plus one window of margin so the
+   * read does not report a set that merely GREW as a set that was cut. The
+   * count rides the same request (`refuseTruncated` grades the slice against
+   * it), so no second count is ever taken beside this.
+   */
+  async function narrowedIds(
+    facet: Params,
+    bound: number,
+  ): Promise<{ ids: string[]; whole: number }> {
+    const db = independentClient();
+    let query = db
+      .from(T.pendingClaims)
+      .select("observation_id", { count: "exact" })
+      .neq("bucket", PARKED_BUCKET);
+    for (const [name, value] of Object.entries(facet)) query = query.eq(name, value);
+    const what = `this test's own read of the set behind ${JSON.stringify(facet)}`;
+    const { data, count, error } = await query
+      .order("observed_at", { ascending: true, nullsFirst: false })
+      .order("observation_id", { ascending: true })
+      .limit(bound);
+    if (error) throw new Error(`${what} failed: ${JSON.stringify(error)}`);
+    const rows = (data ?? []) as { observation_id: string }[];
+    const whole = wholeOf(count, what);
+    refuseTruncated(rows, bound, whole, what);
+    return { ids: rows.map((row) => row.observation_id), whole };
+  }
+
+  /**
+   * THE ORACLE: every claim of the walked set, enumerated by a RANGE walk this
+   * file writes, in the order the page states — oldest first, an unknown
    * instant last, `observation_id` breaking every tie.
    *
    * It is not the app's read: its own step, its own edges, its own columns.
    * A page that stopped short would still be "a set of ids"; the only thing
-   * that catches it is a second enumeration made independently.
+   * that catches it is a second enumeration made independently. It carries the
+   * SAME facet the page and the walk carried, so what it enumerates is the set
+   * the walk claims to have reached.
    */
-  async function rangeWalk(): Promise<string[]> {
+  async function rangeWalk(facet: Params, bound: number): Promise<string[]> {
     const db = independentClient();
     const STEP = 500;
     const ids: string[] = [];
-    for (let from = 0; from < VIEW_READ_CAP; from += STEP) {
-      const { data, error } = await db
+    for (let from = 0; from < bound; from += STEP) {
+      let query = db
         .from(T.pendingClaims)
         .select("observation_id")
-        .neq("bucket", PARKED_BUCKET)
+        .neq("bucket", PARKED_BUCKET);
+      for (const [name, value] of Object.entries(facet)) query = query.eq(name, value);
+      const { data, error } = await query
         .order("observed_at", { ascending: true, nullsFirst: false })
         .order("observation_id", { ascending: true })
         .range(from, from + STEP - 1);
@@ -1356,28 +1795,41 @@ describe("paging past the first window, against staging", () => {
       if (rows.length < STEP) return ids;
     }
     throw new Error(
-      `this test's own range walk reached ${VIEW_READ_CAP} claims without ` +
-        `ending, so it cannot say what the view holds`,
+      `this test's own range walk of ${JSON.stringify(facet)} reached ${bound} ` +
+        `claims without ending, so it cannot say what that set holds`,
     );
   }
 
-  it("reaches every claim the view holds, once each, and no more", async () => {
+  it("reaches every claim the walked narrowing holds, once each, and no more", async () => {
+    // The narrowing, and the bound every read of it takes: its size plus one
+    // window of headroom for what staging files while this runs.
+    const { chosen, census } = await narrowingToWalk();
+    const facet = facetOf(chosen);
+    const bound = (chosen?.count ?? census) + CLAIM_WINDOW;
+    if (bound >= ROW_CEILING) {
+      throw new Error(
+        `${chose(chosen, census)}, and ${bound} rows is at or past PostgREST's ` +
+          `row ceiling (${ROW_CEILING}), so this file cannot enumerate it in a ` +
+          `bounded read. Staging has outgrown every narrowing the page offers ` +
+          `and the shape of this case needs re-deciding (admin-window/TASK-0077).`,
+      );
+    }
+
     // EVERYTHING this case compares is made inside ONE still window
     // (admin-window/TASK-0075). The oracle used to be issued after the window
     // closed, which left the comparison it exists for racing the scraper: under
     // the full live suite on 2026-09-10 the walk reached 878 ids while the
     // enumeration taken moments later held 877, the odd one out carrying a
     // uuidv7 prefix minted during the walk. So `rangeWalk()` is part of what is
-    // MADE, and what is held still is this file's own bounded read of the view
-    // — ONE round trip, refusing rather than truncating, and its LENGTH is the
-    // count the surface's kind is graded against (never a second count beside
-    // it). An id set is also a stricter sentinel than a count: a claim filed
-    // while another is resolved moves no count at all.
+    // MADE, and what is held still is this file's own bounded read of the
+    // walked set — ONE round trip, its count riding the same request, and that
+    // count is what the surface's kind is graded against.
     const { made, held } = await whileStill(
-      () => claimsFromDatabase(),
+      () => narrowedIds(facet, bound),
       async () => {
-        const markup = await claimsMarkup();
+        const markup = await claimsMarkup(facet);
         const $ = cheerio.load(markup);
+        const params = new URLSearchParams(facet).toString();
         return {
           markup,
           first: claimIds(markup),
@@ -1386,23 +1838,18 @@ describe("paging past the first window, against staging", () => {
             .map((element) => $(element).attr("data-paging") ?? ""),
           // The page's own head figure, read AFTER the state kind below.
           line: $('[data-window="claims"]').attr("data-window-held") ?? null,
-          walked: (await walk("")).rows.map((row) => row.observationId),
+          walked: (await walk(params)).rows.map((row) => row.observationId),
           // The oracle, made in the same window as the walk it grades.
-          enumerated: await rangeWalk(),
+          enumerated: await rangeWalk(facet, bound),
         };
       },
-      // FIVE attempts, not the default three, and the shape held still is still
-      // ONE round trip (`parity.ts`, rule 4 of the 2026-09-10 corollary). What
-      // it buys is more INDEPENDENT still windows, never a widened comparison:
-      // every attempt makes the same exact comparison and exhaustion throws.
-      // This call site alone needs them because its `make` is the longest in
-      // the file — a render plus a ~14-request walk plus the enumeration, 7-20 s
-      // measured — and staging churns in bursts: on 2026-09-10 this case
-      // watched the view go 887 → 879 inside one make while the resolver drained
-      // pending claims, and 877 → 887 across a run.
-      5,
+      // The default three attempts. The make is a render, a 2-3 page walk and
+      // one enumeration — seconds, not the 7-20 s the unnarrowed walk cost —
+      // so this no longer needs five long windows to land one (admin-window/
+      // TASK-0077).
     );
-    const whole = held.length;
+    const whole = held.whole;
+    const walked = chose(chosen, whole);
 
     // The state kind, before any number is compared.
     const state = await gradeSurface({
@@ -1417,33 +1864,101 @@ describe("paging past the first window, against staging", () => {
     expect(gate.calls, "the paging route answered without asking the gate").toBeGreaterThan(0);
 
     if (whole <= CLAIM_WINDOW) {
-      // A view that fits in one window is not a walk: the page offers no
-      // control, and this says so rather than inventing one. Staging held 877
-      // claims when this was written, so this is not the branch it runs.
-      expect(made.arms, "a view inside one window offered a control").toEqual([]);
-      expect(made.walked).toEqual([]);
+      // A set that fits in one window is not a walk: the page offers no
+      // control, and this says so rather than inventing one. The narrowing was
+      // chosen precisely because it did not fit, so reaching here means it
+      // drained between the census and the window — graded, not skipped.
+      expect(made.arms, `${walked}: a set inside one window offered a control`).toEqual([]);
+      expect(made.walked, walked).toEqual([]);
       return;
     }
 
     // There IS more, so the page says so — and the walk starts from the rows
     // the server rendered.
-    expect(made.arms).toContain("more");
-    expect(made.first).toHaveLength(CLAIM_WINDOW);
-    expect(made.walked.length, "the walk reached nothing past the first window")
+    expect(made.arms, walked).toContain("more");
+    expect(made.first, walked).toHaveLength(CLAIM_WINDOW);
+    expect(made.walked.length, `${walked}: the walk reached nothing past the first window`)
       .toBeGreaterThan(0);
     // …and it really is PAST the first window's last row.
-    expect(made.walked).not.toContain(made.first[made.first.length - 1]);
+    expect(made.walked, walked).not.toContain(made.first[made.first.length - 1]);
 
     const reached = [...made.first, ...made.walked];
-    expect(new Set(reached).size, "a claim was reached twice").toBe(reached.length);
+    expect(new Set(reached).size, `${walked}: a claim was reached twice`).toBe(reached.length);
 
-    // The oracle: an independently written enumeration of the same view, made
+    // The oracle: an independently written enumeration of the same set, made
     // inside this window.
-    expect([...reached].sort()).toEqual([...made.enumerated].sort());
+    expect([...reached].sort(), walked).toEqual([...made.enumerated].sort());
 
     // …and as many as the page's own head figure states.
+    expect(made.line, `${walked}: the list stated no head figure`).not.toBeNull();
+    expect(reached, walked).toHaveLength(Number(made.line));
+    expect(Number(made.line), walked).toBe(whole);
+  }, 120_000);
+
+  it("answers ONE press past the unnarrowed first screen, from the oldest end", async () => {
+    // What the unnarrowed page keeps: a cheap, still-holdable assertion — one
+    // render and ONE press, two requests, against this file's own bounded read
+    // of the oldest `CLAIM_SLICE` claims. The press's whole page is graded, not
+    // just its existence: rows `CLAIM_WINDOW..CLAIM_SLICE` of the page's own
+    // order are exactly the second window, which is why the oracle's slice is
+    // two windows deep and not a handful of rows more than one.
+    //
+    // What is NOT claimed here is completeness over the unnarrowed view: offset
+    // paging over a draining view legitimately skips ids, so that claim is made
+    // above, on a narrowing small enough to hold still (admin-window/TASK-0077).
+    const { made, held } = await whileStill(
+      () => claimsFromDatabase(),
+      async () => {
+        const markup = await claimsMarkup();
+        const $ = cheerio.load(markup);
+        const pressed = await onePress("");
+        return {
+          markup,
+          first: claimIds(markup),
+          arms: $("[data-paging]")
+            .toArray()
+            .map((element) => $(element).attr("data-paging") ?? ""),
+          line: $('[data-window="claims"]').attr("data-window-held") ?? null,
+          pressed: pressed.rows.map((row) => row.observationId),
+          status: pressed.status,
+        };
+      },
+    );
+
+    // The state kind, before any number is compared.
+    const state = await gradeSurface({
+      markup: made.markup,
+      within: LIST,
+      object: T.pendingClaims,
+      counted: held.whole,
+    });
+    if (state !== "ok") return;
+
+    const oldest = held.oldest.map((claim) => claim.id);
+    expect(made.first, "the first screen is not the oldest window").toEqual(
+      oldest.slice(0, CLAIM_WINDOW),
+    );
+
+    if (held.whole <= CLAIM_WINDOW) {
+      // One window holds the whole view: no control, and a press that reaches
+      // nothing. Staging held 878 claims when this was written, so this is not
+      // the branch it runs.
+      expect(made.arms, "a view inside one window offered a control").toEqual([]);
+      expect(made.pressed).toEqual([]);
+      expect(made.status).toBe("exhausted");
+      return;
+    }
+
+    expect(made.arms).toContain("more");
+    // The SECOND window, in the page's own order, exactly.
+    expect(made.pressed, "one press did not answer the second window").toEqual(
+      oldest.slice(CLAIM_WINDOW, CLAIM_SLICE),
+    );
+    // Full-or-exhausted, graded from this test's own count: a full window
+    // continues, a short one says the set has ended.
+    expect(made.status).toBe(held.whole >= CLAIM_SLICE ? "idle" : "exhausted");
+    // …and the head figure over the unnarrowed set is the database's count.
     expect(made.line, "the list stated no head figure").not.toBeNull();
-    expect(reached).toHaveLength(Number(made.line));
-    expect(Number(made.line)).toBe(whole);
+    expect(Number(made.line)).toBe(held.whole);
   });
 });

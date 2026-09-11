@@ -20,6 +20,7 @@ import {
   MarkupReadError,
   ParityCountError,
   ParityError,
+  STAGING_MOVED,
   StateMismatchError,
   assertParity,
   assertState,
@@ -1419,6 +1420,54 @@ describe("QA: whileStill, attacked", () => {
     expect(swapped).not.toContain("bytes");
     expect(swapped).toContain("[400].id");
     expect(swapped).toContain("filed-");
+  });
+
+  /**
+   * EXHAUSTION AND A DEFECT STOP SHARING ONE VOICE (admin-window/TASK-0077
+   * criterion 5; QA's TASK-0075 residual).
+   *
+   * They still share the runner's exit code — that is the runner's — but the
+   * message now opens with a fixed marker before the what-moved report, so a
+   * builder meeting a red in a downstream lane's stored check can tell in one
+   * glance that the database would not hold still rather than reading it as a
+   * verdict on the page. Pinned here, in the offline suite, because the live
+   * files that raise it cannot be relied on to be RUN.
+   */
+  it("opens an exhaustion with the marker that says the database moved", async () => {
+    let tick = 0;
+    const failure = await whileStill(async () => ({ whole: 877 + tick++ }), async () => "markup").then(
+      () => new Error("whileStill handed back a pair the read moved under"),
+      (thrown: unknown) => thrown as Error,
+    );
+
+    // The marker is the FIRST thing in the message, before anything else.
+    expect(failure.message.startsWith(STAGING_MOVED)).toBe(true);
+    // …and it is the agreed marker, not any prefix that happens to be there.
+    expect(STAGING_MOVED).toMatch(/^STAGING MOVED:/);
+    // The what-moved report it already carried still follows it, so the marker
+    // added a glance and took nothing away.
+    expect(failure.message).toMatch(/whole \d+ → \d+/);
+    expect(failure.message).toContain("3 attempts");
+  });
+
+  it("marks nothing but an exhaustion, so the marker means one thing", async () => {
+    // A pair that held still carries no marker anywhere, and neither does a
+    // refusal raised by the read itself — the marker names the database
+    // moving, never a failure the make or the read threw.
+    const settled = await whileStill(async () => ({ whole: 877 }), async () => "markup");
+    expect(JSON.stringify(settled)).not.toContain(STAGING_MOVED);
+
+    const thrown = await whileStill(
+      async () => {
+        throw new Error("the bucket census failed: 57014");
+      },
+      async () => "markup",
+    ).then(
+      () => new Error("whileStill swallowed the read's own refusal"),
+      (error: unknown) => error as Error,
+    );
+    expect(thrown.message).not.toContain(STAGING_MOVED);
+    expect(thrown.message).toContain("57014");
   });
 });
 
