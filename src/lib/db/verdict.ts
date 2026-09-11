@@ -1,3 +1,4 @@
+import { accountText, type AccountSegment } from "../account/authored";
 import {
   ROW_CAP,
   callFunction,
@@ -173,10 +174,19 @@ export async function settleReviewItem(
 ): Promise<DbResult<VerdictReceipt>> {
   const refusals = decisionRefusals(decision);
   if (refusals.length > 0) {
+    // This app's own constant followed by `decisionRefusals`' identifiers —
+    // no database wrote a word of it — so it is ONE `"this app"` segment.
+    // It must NOT be split at the refusals: `accountText` joins segments with
+    // exactly one SPACE and these are joined with `", "`, so splitting would
+    // change the account's bytes (admin-window/BUG-0200 criterion 3).
+    const authored: AccountSegment[] = [
+      { words: `${REFUSED_BEFORE_SEND} ${refusals.join(", ")}`, author: "this app" },
+    ];
     return {
       kind: "error",
       reading: FN.settleReviewItem,
-      message: `${REFUSED_BEFORE_SEND} ${refusals.join(", ")}`,
+      message: accountText(authored),
+      authored,
     };
   }
 
@@ -189,7 +199,14 @@ export async function settleReviewItem(
 
   const receipt = receiptOf(result.data);
   if (receipt === null) {
-    return { kind: "error", reading: FN.settleReviewItem, message: NO_RECEIPT };
+    // This app's own constant about a reply it could not read: one segment.
+    const authored: AccountSegment[] = [{ words: NO_RECEIPT, author: "this app" }];
+    return {
+      kind: "error",
+      reading: FN.settleReviewItem,
+      message: accountText(authored),
+      authored,
+    };
   }
   return { kind: "ok", data: receipt };
 }

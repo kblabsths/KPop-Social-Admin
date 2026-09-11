@@ -3804,11 +3804,10 @@ describe("an account this app composed about a read it could not grade", () => {
     );
   }
 
-  // STRICT XFAIL (admin-window/BUG-0200): `it.fails` passes only while the
-  // body FAILS, so this is green on the run branch today and turns RED the
-  // moment the three arms carry authorship — which sends the next reader to
-  // the ticket and makes un-marking it part of the fix, never an oversight.
-  it.fails("says THIS APP wrote it, so it does not read in the machine's face", async () => {
+  // Was QA's strict xfail (`it.fails`) while the three arms carried no
+  // authorship; admin-window/BUG-0200 gave them theirs, so it is a plain `it`
+  // and stays green.
+  it("says THIS APP wrote it, so it does not read in the machine's face", async () => {
     for (const [name, made] of [
       ["a set the cap truncated", truncatedSet],
       ["a complete read that got no count", completeWithoutCount],
