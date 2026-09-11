@@ -487,6 +487,18 @@ may do:
   the set; it silently converts a truncated or mangled answer into "you have
   seen everything", which is the false-totality claim this whole section
   exists to make impossible.
+- **The count that grades exhaustion is the READ's own count — nothing drops a
+  row after `.range()`** (amended 2026-09-10, architect, from QA's TASK-0066
+  residual (c)). `exhausted` is decided by how many rows the bounded query
+  returned, so a row removed in TypeScript *after* the range — a filter, a
+  dedupe, a slice — turns a full page into a short one and ends the operator's
+  paging with rows still behind it. Any narrowing a paged read needs is applied
+  IN the query, before the range; code below it may shape, join and label rows
+  but may not remove one. Live example of the shape to avoid, not a defect
+  today: `readClaimWindow` applies `selectClaims` after its `.range()`, and it
+  is harmless only because the query carries the same `neq`. A helper leg that
+  fills columns may never shorten a page either (common violations row 14).
+
 - **A concatenation is still not a total.** No sentence on either surface may
   claim that what the operator has paged through is the whole set. The only
   totality claim on these pages remains what it is today: their own exact
@@ -597,6 +609,20 @@ it is a pure synchronous component that takes plain props.**
   (userMiddlewareOrRoute)` precedes `else if (!authorized)`), so wrapping the
   gate to add one line of logic silently removes the sign-in redirect from
   every route. That is a gate bypass, not a refactor.
+
+- **An answer that carries gated data says it may not be stored** (amended
+  2026-09-10, architect, from QA's TASK-0066 residual (a)). Next already sets
+  `Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate` on
+  every dynamically rendered page (`node_modules/next/dist/server/
+  base-server.js`), but a Route Handler is given NO `Cache-Control` at all
+  unless it writes one — so without this rule the only answers in this app that
+  carry admin ROWS across the wire are also the only ones a browser store, a
+  forward proxy or any future edge may keep. A route serving gated data answers
+  with the same directives its surface's page does, on EVERY arm including the
+  refusal, from **one declared constant** (`PAGE_ANSWER_CACHE_CONTROL`,
+  `lib/paging/bounds.ts`) rather than a string retyped per route. It is a
+  statement about the data, not about a deployment: it does not depend on what
+  is or is not in front of Railway.
 
 ## 6. The data model, by reference
 
@@ -1690,6 +1716,27 @@ this table from here.)*
   patched per call site. The losing reading is pinned, not deleted: the
   labelled figures must still read a real `0` at a counted zero, offline and
   live.
+
+- **2026-09-10, M3 residual-fold pass — two rules the second paging surface
+  would otherwise have had to discover (architect, from QA's TASK-0066
+  residuals).** **§4.3 kind 3** gains *the count that grades exhaustion is the
+  READ's own count*: nothing may drop a row between `.range()` and the answer,
+  because a row removed in code turns a full page into a short one and a short
+  page is EXHAUSTION under the full-or-exhausted rule directly above it — the
+  operator's paging then ends with rows still behind it. Written as a contract
+  rather than as a TASK-0068 criterion because the trap is latent in the
+  landed claims read (`selectClaims` after `.range()`, harmless only while the
+  query carries the same `neq`) and the next paged read would copy the shape
+  before anyone re-read the ticket. **§5** gains *an answer that carries gated
+  data says it may not be stored*: pages get Next's `private, no-cache,
+  no-store, max-age=0, must-revalidate`; Route Handlers get nothing unless they
+  say so, and the row-serving routes are exactly the answers that must not sit
+  in a store. One declared constant, every arm, independent of what is in front
+  of Railway. TASK-0068 carries both; BUG-0171 carries the header to the claims
+  route behind it. The third residual — the `URLSearchParams` adapter's
+  `__proto__` key — is a ticket, not a contract line: it is one leaf's
+  `Object.create(null)`, folded into TASK-0068, which is what gives the adapter
+  its second caller.
 
 - **2026-09-10, M3 ruling pass — the paging contract gets its client half, and
   two leaf directories join the list (architect).** **§4.3 kind 3** gains
