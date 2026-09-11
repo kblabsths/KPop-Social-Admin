@@ -51,6 +51,7 @@ import {
   filterFrom,
   hasChipNarrowing,
   hasNarrowingFacet,
+  listFilterOf,
   sourceHref,
   type FacetLabel,
   tabFrom,
@@ -889,8 +890,12 @@ export default async function ClaimsPage({
   // the bucket TABLE's drops the bucket facet, because that table answers "how
   // many claims in every bucket, for this source"; the POPULATION's is the
   // tab's subset with no facet at all — fact 2 of the four-state rule.
-  const listFilter: ClaimsFilter =
-    tab === "standing" ? { ...filter, bucket: STANDING_BUCKET } : filter;
+  // ONE derivation, shared with the paging route handler that continues this
+  // list at the next offset (admin-window/TASK-0066): the rows a press adds
+  // must belong to the narrowing the rows above them came from, so the tab's
+  // own subset is `listFilterOf` in `lib/claims/filters.ts` and is not spelled
+  // again here or there (LESSONS 5).
+  const listFilter: ClaimsFilter = listFilterOf(asked, tab, STANDING_BUCKET);
   const tableFilter = withFacet(filter, "bucket", undefined);
   const populationFilter: ClaimsFilter =
     tab === "standing" ? { bucket: STANDING_BUCKET } : {};

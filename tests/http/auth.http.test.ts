@@ -256,6 +256,9 @@ describe("the route inventory", () => {
       "/sources",
     ]);
     expect(handlers).toEqual([
+      // The claims paging route (campaign admin-window/TASK-0066): GET only,
+      // gated by the same proxy, and swept below like every other route.
+      "/api/admin/claims/rows",
       "/api/admin/records/[table]/[id]",
       // The close's one write path (campaign admin-window/TASK-0049): POST
       // only, gated by the same proxy, and swept below like every other route.
@@ -270,9 +273,10 @@ describe("the route inventory", () => {
     // …and the sweep therefore covers everything else, the API route included.
     expect(GATED_ROUTES).toContain(`/api/admin/records/events/${SAMPLE_ID}`);
     expect(GATED_ROUTES).toContain(`/api/admin/review-items/${SAMPLE_ID}/settle`);
+    expect(GATED_ROUTES).toContain("/api/admin/claims/rows");
     expect(GATED_ROUTES).not.toContain("/login");
-    expect(GATED.filter((route) => route.kind === "handler").length).toBe(2);
-    expect(GATED.length).toBe(10);
+    expect(GATED.filter((route) => route.kind === "handler").length).toBe(3);
+    expect(GATED.length).toBe(11);
   });
 
   it("keeps the gate as an export, never as a wrapped handler", () => {
@@ -906,6 +910,21 @@ const CREDENTIAL_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   // The current secret-key form, and Supabase personal access tokens.
   ["a Supabase secret-key prefix", /\bsb_secret_[A-Za-z0-9_-]{8,}/],
   ["a Supabase access-token prefix", /\bsbp_[A-Za-z0-9]{16,}/],
+  // The PostgREST role name itself. It is not a credential, but a client
+  // bundle carrying the word is a bundle that was handed a service-role
+  // client or its key's payload — the leak one step before the value
+  // (campaign admin-window/TASK-0066, M3 EC6).
+  ["the service-role role name", /\bservice_role\b/],
+  // A staging name in client output means the build inlined one: the app
+  // reads `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` and never a `STAGING_`
+  // name at all (STACK §5; `tests/offline/db/layering.test.ts` pins the
+  // source side of the same rule).
+  ["a staging env name", /\bSTAGING_SUPABASE[A-Z0-9_]*/],
+  // Any Supabase project host, by SHAPE — a 20-character project ref. Named
+  // by shape and never by ref, so this pins no project into the repo and
+  // still catches staging and production alike. Every read is server-side,
+  // so no client byte has a reason to carry one.
+  ["a Supabase project host", /\b[a-z0-9]{20}\.supabase\.co\b/],
 ];
 
 /** Fails naming the pattern and where it hit — never quoting what it matched. */
@@ -985,6 +1004,11 @@ describe("the client bundle", () => {
       jwtShaped,
       "sb_secret_AAAAAAAAAAAAAAAAAAAA",
       "sbp_AAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      'const role = "service_role";',
+      "const name = process.env.STAGING_SUPABASE_URL;",
+      // A host of the right SHAPE and no project's: 20 characters of the
+      // ref alphabet, spelling nothing.
+      "https://aaaaaaaaaaaaaaaaaaaa.supabase.co",
     ];
     expect(samples.length).toBe(CREDENTIAL_PATTERNS.length);
     samples.forEach((sample, index) => {

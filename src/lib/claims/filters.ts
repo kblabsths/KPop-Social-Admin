@@ -284,6 +284,39 @@ export function tabFrom(params: SearchParams = {}): ClaimsTab {
 }
 
 /**
+ * The narrowing the claim LIST reads under — the tab's own subset of what the
+ * URL asked for, derived ONCE for both surfaces that read it
+ * (admin-window/TASK-0066).
+ *
+ * The first screen (`src/app/claims/page.tsx`) and the paging route handler
+ * (`src/app/api/admin/claims/rows/route.ts`) issue the SAME `readClaimWindow`
+ * at two offsets of one order, so the narrowing under them has to be one
+ * derivation and not two spellings of it: a paged row set that belonged to a
+ * different narrowing than the rows above it is the defect this function
+ * exists to make unwritable (LESSONS 5; ARCHITECTURE.md common violations
+ * row 20 — what is SHOWN is what was USED).
+ *
+ * The standing tab IS a bucket (`bucket = 'standing_disagreement'`,
+ * resolver.md §7), so on that tab the URL's own bucket facet is dropped and
+ * the tab's bucket is set instead: a bucket chip there would look like a
+ * narrowing and do nothing, and a bucket nobody can see must not travel in the
+ * URL. Every other facet the URL asked for is carried through untouched.
+ *
+ * `standingBucket` is handed IN for the reason every vocabulary in this file
+ * is: this is a pure domain leaf and the constant lives beside the gauge that
+ * is that bucket (`lib/gauges/standing-disagreements.ts`), which reaches
+ * `lib/db/**`. One spelling, handed down — never a second copy typed here.
+ */
+export function listFilterOf(
+  asked: ClaimsFilter,
+  tab: ClaimsTab,
+  standingBucket: string,
+): ClaimsFilter {
+  if (tab !== "standing") return asked;
+  return { ...withFacet(asked, "bucket", undefined), bucket: standingBucket };
+}
+
+/**
  * Is anything narrowed STRUCTURALLY — does this URL carry a claim facet that
  * can remove a claim at all? Fact 1 of the two the four states turn on, and
  * never the whole answer on its own.
