@@ -1732,3 +1732,55 @@ third cannot arrive; and **nobody merges the two questions** — widening
 would silently change which close notes the verdict form refuses and make a
 source the registry NAMES `—` render as no name at all (`lib/sources/
 names.ts`). Two questions, two predicates, one character, one home.
+
+## 2026-09-11 — the account's foreign-text rule stops taking anchors and takes a bar
+
+Seven tickets on one derivation (`errorMessage` in `lib/db/result.ts`:
+BUG-0170 → 0173 → 0179 → 0181 → 0185 → 0182 → 0187), each one a different QA
+lane measuring the shape the previous ruling's anchored question did not
+reach, and each repair colliding with the twin the previous ruling had pinned.
+BUG-0182 grouped a run of consecutive document lines into one clause; BUG-0187
+then measured a WAF interstitial served with its TEXT on its own lines, where
+the run ends at every text line — part 402 characters → account 664, growth
+linear in the page's text nodes (64 nodes → 6,881 characters), with "Sorry,
+you have been blocked", a Ray ID and an IP crossing verbatim into the operator
+card and the PATCH route's JSON body. The obvious repair (a non-document line
+between two document runs belongs to the document) is the exact inverse of
+BUG-0182's over-grouping twin, and one predicate cannot tell the two apart.
+**Ruled:** stop anchoring and state the bar. **The PART is the unit: a part
+that carries a document ANYWHERE is not the database's words, and is replaced
+whole by ONE clause counted at the length of the part as the client delivered
+it** — no line of it crosses, no frames clause, no second clause. Question 2
+is asked once per part; the per-line and per-run document question, the
+`PartLine` offsets and the run bookkeeping are deleted, so the derivation ends
+this chain smaller than it started and the two granularities that have
+disagreed since BUG-0179 become one code path.
+
+The justification is provenance, not shape-chasing: Postgres does not speak
+markup, so a part carrying markup was authored by something that does and no
+line of it is attributable to the database. The suite's own fixtures are the
+evidence — every prose line the landed rule let cross beside a document is the
+intermediary's (`reference 8f3c1` is a WAF reference id; `upstream said:`;
+`edge-cache-status: refused`), and there is no fixture anywhere of a Postgres
+message sharing a part with markup. Six landed assertions that blessed such a
+line crossing are inverted by name in BUG-0187's criteria, so no builder has
+to judge a QA pin.
+
+**The doors this closes:** the eighth anchor (no tag matching, no entity
+decoding, no length cap, no vocabulary ever arrives on this path), and the
+per-field exception. **The doors it deliberately leaves open, decided here so
+they are not re-litigated:** a MULTI-LINE database message still crosses whole
+(Postgres wraps its own DETAIL; counting it would replace a check-constraint
+message with a number); a part carrying FRAMES still gives up its non-frame
+lines (the transport cause sentence `Caused by: … ENOTFOUND` is what BUG-0016
+exists to preserve, and V8's frame format is specified, unlike a family of
+adversary text); and markup GLUED AFTER PROSE ON ONE LINE is not caught,
+because the only predicate that would — `part.includes("<")` — is refused by
+the database's own `operator does not exist: text <-> integer`. The accepted
+cost of the bar, stated plainly: a real Postgres message whose wrapped line
+happened to begin `<` would be counted instead of quoted, and a part carrying
+a document plus a stack is counted at a number that includes the stack. Both
+are bounded, both keep the read's name and the account's other parts, and both
+err in the direction this campaign chose in BUG-0170. Evidence of a real body
+in the glued-mid-line shape re-opens THIS BAR as a ruling — it never adds a
+fourth question.

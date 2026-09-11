@@ -373,17 +373,36 @@ export type DbResult<T> =
   LOOK_AND_FEEL: "the app shows what the database said."
 - **An account carries the parts the DATABASE authored, and every string in it
   passes ONE derivation** (`errorMessage` in `lib/db/result.ts`; BUG-0170 →
-  BUG-0173 → BUG-0179). Each part of the client's account — `message`,
-  `details`, `hint`, the `cause` chain **and the `code`** — is asked the same
-  three questions in the same order: did WE serialise it (provenance, no text
-  inspected at all), is it a DOCUMENT (first non-blank character `<`), does it
-  carry RUNTIME FRAMES. A part that answers is replaced by an app-authored
-  clause that COUNTS it and quotes none of it; a part that answers none crosses
-  verbatim, however long it is. There is no fourth question and no field with a
-  rule of its own — a length cap, a codepoint filter or a vocabulary match on
-  one field is the blocklist Common violations row 15 was promoted for. An
-  account with nothing left to say says THAT, in the app's own words, rather
-  than rendering blank.
+  BUG-0173 → BUG-0179 → BUG-0181 → BUG-0185 → BUG-0182 → BUG-0187). Each part
+  of the client's account — `message`, `details`, `hint`, the `cause` chain
+  **and the `code`** — is asked the same three questions in the same order: did
+  WE serialise it (provenance, no text inspected at all), is it a DOCUMENT,
+  does it carry RUNTIME FRAMES. A part that answers is replaced by an
+  app-authored clause that COUNTS it and quotes none of it; a part that answers
+  none crosses verbatim, however long it is. There is no fourth question and no
+  field with a rule of its own — a length cap, a codepoint filter or a
+  vocabulary match on one field is the blocklist Common violations row 15 was
+  promoted for. An account with nothing left to say says THAT, in the app's own
+  words, rather than rendering blank.
+- **THE PART IS THE UNIT, and a part that carries a DOCUMENT anywhere is
+  FOREIGN AS A WHOLE** (the bar, ruled 2026-09-11 on BUG-0187; it replaces the
+  three line-level anchors BUG-0179 and BUG-0182 had added). Question 2 is
+  asked ONCE per part — never per line, never per run: does ANY line of the
+  part, after its leading whitespace, begin `<`? If yes, the part is replaced
+  by exactly ONE counted clause at the length of the part **as the client
+  delivered it**, and nothing else is said about that part: no line of it
+  crosses, no frames clause, no second clause, whatever else it carried. If no,
+  the part is the database's words — frames dropped and counted, every other
+  line kept verbatim, and a part in which nothing answers returned
+  byte-untouched. Postgres does not speak markup: a part carrying markup was
+  authored by something that does, and no line of it is attributable to the
+  database. Three limits are DECIDED, not missing: **multi-line is not
+  foreign** (a wrapped DETAIL still crosses whole), **frames are not foreign**
+  (the transport cause sentence still crosses, BUG-0016), and **markup glued
+  after prose on ONE line is not caught** — the only predicate that would,
+  `includes("<")`, is refused by the database's own `operator does not exist:
+  text <-> integer`. Evidence of a real body in that last shape re-opens THIS
+  BAR as a ruling; it never adds a fourth question.
 - `missing` carries the name from `tables.ts`, so the rendered
   not-provisioned card can say which table is absent and what creates it
   (LOOK_AND_FEEL state 3, Voice bar 4).
@@ -1881,6 +1900,8 @@ decomposition brief of every ticket touching that surface.
 
 | 22 | **One field carrying two facts, the second one INFERRED from the first's size or presence** | 2 (one interface, one week) | `DrawnWindow` in `src/components/ui/window-line.tsx`. BUG-0174: `PagedWindowLine` decided what `held` COUNTS by asking whether it was bigger than the cap (`held <= limit ? drawn : held`) — two meanings of one field guessed apart by size; fixed by having the page STATE it (`heldFrom`). BUG-0183: `drawn`'s PRESENCE carries both "the rows on screen" and "a press may continue this window" (`pageable(info)` is `drawn != null`), so the unpaged `/claims` line could not state its own row count without also inheriting the paged arms, and `onScreen` fell back to the CAP — three screens holding 37, 10 and 49 claims each told the operator that 50 were below the line (QA, measured offline 2026-09-11) | **PROMOTED at 2, 2026-09-11 (architect, BUG-0183's ruling)** — §4.3 gains, beside the window-line rules: **a fact a sentence depends on is STATED by whoever knows it, never inferred from another field's size or from whether it is present.** The cost is not the wrong sentence; it is that the second surface cannot state a true fact without silently changing the first one's rendering, which is what made a one-line fix into an interface split. Both instances were caught only after they shipped a wrong number, because a presence test reads like a type guard. Cited in the decomposition brief of every ticket adding a field to a shared render contract: if a renderer asks `x != null` or compares a value to a cap to decide WHICH SENTENCE to say, the fact it is really asking for has no owner yet. |
 
+| 23 | **A derivation whose BAR was never stated positively, extended by one anchored question per QA lane — the account's foreign-text rule, seven tickets deep** | 7 | One class, one property each, all in `src/lib/db/result.ts`'s account derivation: BUG-0170 (a document reaching an app sentence → the `<` question), BUG-0173 (a body we serialised → the provenance question), BUG-0179 (the same question answered two ways depending on what else the part carried → asked at two granularities, and of the `code`), BUG-0181 (a mined column name → an identifier allowlist), BUG-0185 (which STRING may be mined → `databaseMessage`), BUG-0182 (one document counted once per LINE, account 2-3x LONGER than the page), BUG-0187 (a page whose TEXT sits on its own lines ends the run at every text line: part 402 → account 664, linear in text nodes, the intermediary's sentences and its Ray ID quoted verbatim). Every one was found by a different QA lane, on the shape the previous anchor did not cover, and each repair collided with the twin the previous ruling had pinned | **PROMOTED at 7, 2026-09-11 (architect, BUG-0187's ruling) — and the fix is to state the BAR, not to add the eighth anchor.** §4.1 gains "the PART is the unit, and a part carrying a document anywhere is foreign as a whole", with its three limits decided in the same breath. The ruling DELETES machinery (the per-line document question, the `PartLine` offsets and the run bookkeeping) rather than adding it, and collapses the two granularities into one code path. The lesson generalises past this file and is cited in the brief of any ticket that repairs a DERIVATION: when the third ticket in a class arrives, the defect is that no one wrote down what the derivation may not do — an anchored question answers the shape in front of you, a bar answers the shapes nobody has measured. **How the next lane grades it:** against the bar (does any line of a document-carrying part appear in the account?), never against the anchors. |
+
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
 findings on TASK-0001/0003/0006; rows 4–5 at the second pass the same day,
 from measurement of the open tickets' own checks; row 6 at the third pass, from
@@ -1888,6 +1909,27 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-11, M3 §4.1 — the account's foreign-text rule gets a BAR instead
+  of a fourth anchor (architect, ruling admin-window/BUG-0187).** §4.1 gains
+  the bullet above: the PART is the unit, and a part that carries a document
+  anywhere is foreign as a whole, counted once at the length it arrived with.
+  Why here rather than in the ticket: seven tickets (BUG-0170 → 0173 → 0179 →
+  0181 → 0185 → 0182 → 0187, Common violations row 23) each extended one
+  derivation by one anchored question, and each next QA lane measured the
+  shape the new anchor did not reach — the last one an account that grew
+  LONGER than the page it summarised while quoting 64 of its text lines. The
+  anchors were not wrong; what was missing was a statement of what the
+  derivation may never do. **The doors this closes:** a per-line or per-run
+  document question (deleted, with the `PartLine` offsets that served it); two
+  granularities of one question that can answer differently; and "the prose
+  standing beside a counted document crosses" — every such line measured in
+  this suite is the intermediary's own, and Postgres does not speak markup.
+  **The doors it deliberately leaves open, so they are not re-litigated:**
+  multi-line database prose still crosses whole, a part carrying frames still
+  gives up its cause sentence, and markup glued mid-line is not caught —
+  `includes("<")` is refused by `operator does not exist: text <-> integer`.
+  Evidence in that last shape re-opens the bar; it never adds a question.
 
 - **2026-09-11, M3 §4 rule 7 amendment — the em dash and the absence-of-text
   predicate are leaf property (architect, ruling admin-window/BUG-0184).**
