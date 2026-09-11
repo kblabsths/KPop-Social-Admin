@@ -1908,3 +1908,40 @@ rows in the 90-day rejection window and the offline fixtures are far under the
 cap, so only the words change. `RejectionSection` keeps re-selecting the rows
 it was handed (the `selectPendingClaims` idiom): the query narrows, the section
 selects again, and neither is the other's excuse.
+
+## 2026-09-11 — Authorship is a FACT the account carries, not a question a renderer asks (ruling on BUG-0196)
+
+A failed read's account crosses `lib/db` → view as ONE string, and the four
+clauses this app writes into it (`documentInstead`, `serialisedInstead`,
+`framesInstead`, `REFUSED_WITHOUT_WORDS` in `src/lib/db/result.ts`) therefore
+render in the mono face LOOK_AND_FEEL reserves for the machine's words — in
+`ErrorLine` on every page and in the paging refusal's machine arm. The fix is
+ruled in BUG-0175's shape, and the shape is the decision: `errorMessage`'s
+derivation yields the account as an ORDERED LIST OF TYPED SEGMENTS — words plus
+who wrote them, in the two-value `"this app"` / `"the machine"` vocabulary
+`ReasonAuthor` already spells — the §4.1 `message` string becomes the JOIN of
+those segments, the fact travels every seam the account already travels
+(`lib/db/paging.ts` → `PageAnswer`/`isPageAnswer` in `lib/paging/bounds.ts` →
+`refuse()` in `lib/paging/machine.ts`) without being re-derived at the far end,
+and ONE run-splitting derivation serves both renderers.
+
+**The door this closes:** a view may never ask "does this sentence look like
+one of ours". That is the fourth question §4.1 refuses, in a component instead
+of in the derivation — a vocabulary match on foreign text, which Common
+violations row 15 was promoted for and which LESSONS 4 says gets widened by
+whichever question broke last. Authorship is decided exactly once, where the
+words are written, and is carried; the renderer reads a fact and sets a face.
+The test of it is that rewording any app clause moves no face, which is the bar
+`reasonFrom` has passed since BUG-0175.
+
+**Two costs accepted out loud.** (1) The §4.1 error arm grows a second member,
+so the contract's snippet and every hand-built `{kind:"error"}` fixture in the
+test tree are in the blast radius — which is why BUG-0196's scope names the
+three hops that retype the account (`state-of.tsx`, `gauges/state.tsx`,
+`app/queues/[reviewItemId]/page.tsx`) and the two test files that construct
+`ErrorLine` directly. (2) On the WIRE the authorship is OPTIONAL and its
+absence means what renders today — the whole account is the machine's. A
+stricter validator would turn a hand-forced `{kind,reading,message}` answer
+into "the page request answered something this app cannot read", breaking every
+forced-arm probe the walks and the live tier depend on, and would put a fourth
+question on the wire. Tolerant there, exact at the author.
