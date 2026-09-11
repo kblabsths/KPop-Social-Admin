@@ -26647,3 +26647,11 @@
 2026-09-11T05:58:50Z	agent	-	-	-	-
 # STRANDED	2026-09-11T05:58:52Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0167.json, tests/offline/db/__qa_probe.test.ts, tests/offline/db/__qa_probe2.test.ts
 2026-09-11T05:58:52Z	agent	-	-	-	-
+# STRANDED	2026-09-11T05:59:21Z	agent	3 uncommitted in primary checkout: .env.example, tests/offline/db/__qa_probe.test.ts, tests/offline/db/__qa_probe2.test.ts
+2026-09-11T05:59:21Z	agent	-	-	-	-
+# STRANDED	2026-09-11T05:59:21Z	agent	3 uncommitted in primary checkout: .env.example, tests/offline/db/__qa_probe.test.ts, tests/offline/db/__qa_probe2.test.ts
+2026-09-11T05:59:21Z	agent	-	-	-	-
+# STRANDED	2026-09-11T05:59:24Z	agent	3 uncommitted in primary checkout: .env.example, tests/offline/db/__qa_probe.test.ts, tests/offline/db/__qa_probe2.test.ts
+2026-09-11T05:59:24Z	agent	-	-	-	-
+# STRANDED	2026-09-11T05:59:34Z	qa-adversary	3 uncommitted in primary checkout: .env.example, tests/offline/db/__qa_probe.test.ts, tests/offline/db/__qa_probe2.test.ts
+2026-09-11T05:59:34Z	qa-adversary	BUG-0167	14529	1096	118140
