@@ -90,6 +90,13 @@ const LATENCY = '[data-surface="resolution_latency"]';
  * cases stopped running in exactly the state that reddened
  * (admin-window/BUG-0169).
  *
+ * What the two gauges DO at a counted zero is no longer the same, and that one
+ * rule is what keeps them comparable. Latency still states its figures there,
+ * so its blocks' cards are the only ones inside it and it grades `ok`. Cycle
+ * health renders no figure there at all since admin-window/BUG-0203 — the card
+ * standing where its figures stood is the read behind them, so it is the
+ * SURFACE's own, carries no marker, and grades it `empty`.
+ *
  * **One constant, both gauges.** Two hand-typed selectors would be two rules,
  * and the next gauge surface added here inherits this one (LESSONS 11 / 5).
  *
@@ -324,10 +331,20 @@ describe("the two gauges on this page against staging", () => {
             .lt("started_at", window.until),
         );
       },
-      emptyAtZero: false,
+      // Cycle health renders NO figure over a window that holds no cycle
+      // (admin-window/BUG-0203): the card standing where its four figures
+      // stood is the surface's own, so a counted zero is the EMPTY state here
+      // and there is no labelled figure for `figure` to read. The exclusion
+      // still keeps its two distributions' cards out of that verdict.
       excluding: GAUGE_BLOCKS,
-      figure: "Cycles in this window",
     });
+    if (state === "empty") {
+      // The other half of the same rule: the emptiness is stated once. A
+      // figure standing beside those words is the reading both M3 user-sims
+      // took off this panel.
+      expect(() => readNumber(markup, "Cycles in this window")).toThrow();
+      return;
+    }
     if (state !== "ok") return;
     // A truncated window makes every count a floor, and a floor is not a
     // parity claim — the page says so, and this test believes it.

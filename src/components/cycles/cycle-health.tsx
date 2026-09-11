@@ -5,7 +5,7 @@ import {
   spreadRows,
   type EmptyWords,
 } from "@/components/gauges";
-import { WindowLine } from "@/components/ui";
+import { Empty, WindowLine } from "@/components/ui";
 import { STATE_WORD } from "@/lib/cycles/state";
 import { absoluteUtc, count, counted, duration, orDash, relativeAge } from "@/lib/format";
 import type { CycleHealth } from "@/lib/gauges/cycle-health";
@@ -101,7 +101,9 @@ export function CycleHealthSection({
       : `${count(health.overCadence)} ran longer than the ${cadence} cadence`;
   // A window with no cycles at all is the state a reviewer sees first against
   // a database whose resolver has not run. It is an emptiness with a reason,
-  // so it is said in the page's own words rather than left to a table of zeros.
+  // so it is said in the page's own words rather than left to a table of zeros
+  // — and it is said ONCE: these words stand where the figures stand, and the
+  // two distributions below take the same words (admin-window/BUG-0203).
   const empty: EmptyWords | undefined =
     health.cycles === 0
       ? {
@@ -117,33 +119,48 @@ export function CycleHealthSection({
         window={info}
         measured="Cycles started"
       />
-      <div className="grid grid-cols-2 gap-4">
-        <GaugeCard
-          label="Cycles in this window"
-          value={health.cycles}
-          floor={info.truncated}
-          sub={overCadence}
-        />
-        <GaugeCard
-          label="Facts examined"
-          value={health.factsExamined}
-          floor={info.truncated}
-          sub={`${count(health.held)} held, and a held fact writes nothing`}
-        />
-        <GaugeCard
-          label="Writes"
-          value={writes.total}
-          floor={info.truncated}
-          sub={`${count(writes.applied)} applied, ${count(writes.escalated)} escalated, ${count(writes.entitiesCreated)} created`}
-        />
-        <GaugeCard
-          label="Errors"
-          value={health.errors}
-          floor={info.truncated}
-          tone={health.errors > 0 ? "broken" : "default"}
-          sub={`${counted(health.cyclesWithErrors, "cycle")} reported one`}
-        />
-      </div>
+      {empty === undefined ? (
+        <div className="grid grid-cols-2 gap-4">
+          <GaugeCard
+            label="Cycles in this window"
+            value={health.cycles}
+            floor={info.truncated}
+            sub={overCadence}
+          />
+          <GaugeCard
+            label="Facts examined"
+            value={health.factsExamined}
+            floor={info.truncated}
+            sub={`${count(health.held)} held, and a held fact writes nothing`}
+          />
+          <GaugeCard
+            label="Writes"
+            value={writes.total}
+            floor={info.truncated}
+            sub={`${count(writes.applied)} applied, ${count(writes.escalated)} escalated, ${count(writes.entitiesCreated)} created`}
+          />
+          <GaugeCard
+            label="Errors"
+            value={health.errors}
+            floor={info.truncated}
+            tone={health.errors > 0 ? "broken" : "default"}
+            sub={`${counted(health.cyclesWithErrors, "cycle")} reported one`}
+          />
+        </div>
+      ) : (
+        // Four figures derived from a set with no members, each with its own
+        // sub-line, answered the same emptiness a second way two inches above
+        // the words that already stated it — and a wall of zeros under a
+        // heading reading HEALTH reads as good news at a glance
+        // (admin-window/BUG-0203, filed from two independent user-sim walks).
+        // The Empty state stands where the figures stood: what this surface
+        // holds, and the one thing that fills it. No eyebrow — the section
+        // heading above already names the surface (`ui/empty.tsx`) — and no
+        // colour, no severity, no word about staleness: an emptiness is not a
+        // verdict. The window line above is untouched and still names the
+        // interval the read carried.
+        <Empty holds={empty.holds} filledBy={empty.filledBy} />
+      )}
       <Distribution
         label="Cycle outcomes"
         dimension="outcome"
