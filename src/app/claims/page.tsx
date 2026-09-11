@@ -236,6 +236,26 @@ const NOTHING_MATCHED = {
  */
 
 /**
+ * WHAT A SURFACE THAT DROPS THE BUCKET FACET ANSWERS FOR — the predicate the
+ * two sentences on this page that state it SHARE (admin-window/BUG-0204).
+ *
+ * Two reads of this page apply every facet but the bucket: the bucket table
+ * (`tableFilter`, which drops it so the distribution is the whole one) and the
+ * gauges (`gaugeFilter`, because `observations` has no bucket column at all).
+ * Both therefore owe the operator the same fact where a bucket chip stands
+ * active above them — these figures are not that chip's — and a fact two
+ * surfaces state is ONE spelling, imported, never retyped (LESSONS 5): a
+ * rewording moves both sentences together, and neither can drift into
+ * describing a different set from the other.
+ *
+ * It is the PREDICATE alone. Each surface names its own subject, because they
+ * are not the same subject: the table draws counts over the whole narrowing,
+ * the gauge draws counts AND ages inside a window.
+ */
+const ANSWERS_FOR_EVERY_BUCKET =
+  "answer for every bucket; the bucket filter above does not narrow them";
+
+/**
  * What the bucket table's figures are figures OF — the sentence under it, in
  * the two states the page can be in (admin-window/BUG-0123).
  *
@@ -314,8 +334,7 @@ const BUCKET_CAPTION = {
    * true of the source, and this clause is what keeps "the filters above" from
    * being read as the bucket chip.
    */
-  everyBucket:
-    " — these counts answer for every bucket; the bucket filter above does not narrow them",
+  everyBucket: ` — these counts ${ANSWERS_FOR_EVERY_BUCKET}`,
 } as const;
 
 /**
@@ -823,6 +842,23 @@ interface GaugeNarrowing {
   chipNarrowing: boolean;
   /** Did a narrowing of this URL empty this surface — both facts, ANDed? */
   emptied: boolean;
+  /**
+   * Is a BUCKET facet in force on this page — the one facet these reads drop
+   * (admin-window/BUG-0204)?
+   *
+   * The same question the bucket caption one Section up already answers
+   * (`BucketCaption.bucketFaceted`), asked here for the same reason and
+   * answered from the same fact of the same filter, so one page cannot give
+   * two answers to "did my bucket chip reach this number". It is NOT a
+   * narrowing of this read and never enters `scope`: `gaugeFilter` drops the
+   * facet, so nothing it names was applied here — which is precisely what the
+   * clause it gates says.
+   *
+   * False on the standing tab in every state, because that tab carries no
+   * bucket facet at all (`filter`, the page function): its bucket is its own
+   * and is not a control above these figures.
+   */
+  bucketFaceted: boolean;
 }
 
 /**
@@ -849,6 +885,41 @@ const NO_CLAIMS_IN_WINDOW: EmptyWords = {
     "A claim the resolver cannot apply yet appears here, and its wait is measured.",
 };
 
+/**
+ * THE GAUGE'S OWN SCOPE, where a BUCKET facet is in force
+ * (admin-window/BUG-0204, from the M3 user-sim walk of Marisa).
+ *
+ * `/claims?bucket=awaiting_link` put "108 claims match these filters" over the
+ * list and "CLAIMS IN THIS WINDOW 877" one screen below it, and
+ * `?bucket=escalated` put the empty list's card over the same 877 — two
+ * numbers about the same thing on one screen, with the gauge's line the only
+ * caption on the page that did not say what its own figures answer for. The
+ * figures were right then and are unmoved now: this section reads
+ * `observations` by source and domain, `gaugeFilter` is untouched, and no read,
+ * leg or bound changed. What changed is that the sentence over them says so.
+ *
+ * The page used to record that silence as intended — "`?bucket=` alone narrows
+ * this section's figures not at all, and its sentence says so by saying
+ * nothing" — and saying nothing is not how this page says anything else
+ * (LOOK_AND_FEEL bar 13; the same ruling the bucket caption's `everyBucket`
+ * clause carries, 2026-09-11).
+ *
+ * It states SCOPE and nothing more, on the caption's own terms: the predicate
+ * is the caption's, imported (`ANSWERS_FOR_EVERY_BUCKET`); it names no bucket
+ * VALUE; it claims no narrowing, because nothing narrowed these figures; it
+ * never takes the chip-blaming phrase a real narrowing takes
+ * (`NARROWED_BY_FILTERS`, which this section still says only where a chip
+ * facet really removed rows from this window); and it says nothing about the
+ * list above it or about why that list is empty — an empty surface is
+ * explained from two facts, and they are that card's, not this line's
+ * (LESSONS 2 and 3).
+ *
+ * A SENTENCE and not a clause, because of where it lands: the window line's
+ * own words end on a full stop ("…not the whole table."), so the same words
+ * the caption folds in with a dash are said here as the sentence after it.
+ */
+const GAUGE_ANSWERS_FOR_EVERY_BUCKET = `These figures ${ANSWERS_FOR_EVERY_BUCKET}.`;
+
 /** The standing gauge's per-source table, when it drew no source. */
 const NO_STANDING_SOURCES: EmptyWords = {
   holds: "sources holding a contradiction in this window",
@@ -871,6 +942,11 @@ function PendingClaimsGauge({
         window={gauge.window}
         measured="Claims observed"
         scope={narrowing.scope}
+        // What this read ANSWERS FOR, where the page carries a facet it drops
+        // (admin-window/BUG-0204). It is not a `scope` phrase and may never
+        // become one: `scope` is what the read CARRIED, and this names the one
+        // facet it did not.
+        answersFor={narrowing.bucketFaceted ? GAUGE_ANSWERS_FOR_EVERY_BUCKET : null}
       />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
@@ -984,6 +1060,12 @@ function StandingGauge({
         // the same `gaugeFilter`, so its sentence carries the same narrowing
         // on the same rule — one defect, both tabs (admin-window/BUG-0163).
         scope={narrowing.scope}
+        // …and NOT the every-bucket sentence its sibling takes
+        // (admin-window/BUG-0204, criterion 6). This tab owns its bucket
+        // rather than carrying it as a URL facet — the page function drops
+        // `?bucket=` here — so there is no chip standing above these figures
+        // for a sentence to answer, and `bucketFaceted` is false in every
+        // state this line renders anyway.
       />
       <GaugeCard
         label="Live contradictions in this window"
@@ -1116,6 +1198,14 @@ export default async function ClaimsPage({
   // would make these two facts again, and the second would then be derived
   // from that read's own filter rather than by widening this one.
   const chippedWithoutBucket = hasChipFacet(tableFilter);
+  // IS A BUCKET FACET IN FORCE — the fact the two sentences over those two
+  // reads state, derived once (admin-window/BUG-0204, LESSONS 5 and 11). The
+  // bucket caption and the gauge's window line say the same thing about the
+  // same facet, so they may not decide separately whether it is set. Read off
+  // `filter` — the filter the page applied, which the standing tab carries no
+  // bucket in — and never off `searchParams`, which may hold a bucket this
+  // page dropped.
+  const bucketFaceted = filter.bucket !== undefined;
   // Is a facet OUTSIDE the chip family in force — the other half of the
   // attribution question (`isFamilyNarrowing`, admin-window/BUG-0192)? Today
   // that family is exactly `?domain=`, which is what `narrowings` holds, so it
@@ -1148,8 +1238,13 @@ export default async function ClaimsPage({
   // `.eq()` under it cannot come to disagree (admin-window/BUG-0163). Its own
   // answers follow from it and from nothing else — the chip half of them is
   // `chippedWithoutBucket` above, that question asked of a filter identical to
-  // this one in every chip facet: `?bucket=` alone narrows this section's
-  // figures not at all, and its sentence says so by saying nothing.
+  // this one in every chip facet.
+  //
+  // `?bucket=` alone therefore narrows this section's figures not at all, and
+  // the section SAYS that rather than leaving it to be inferred from a silence
+  // (admin-window/BUG-0204). It is no part of this narrowing — `scope` is what
+  // the read carried — so it travels as `bucketFaceted` below, which is the
+  // one fact the caption one Section up already states in the same words.
   const gaugeNarrowing = gaugeFilter(filter);
   const gaugeStructural = hasNarrowingFacet(gaugeNarrowing);
   const gaugeNarrowings = unchippedNarrowings(
@@ -1435,6 +1530,7 @@ export default async function ClaimsPage({
     narrowings: gaugeNarrowings,
     chipNarrowing: gaugeChipNarrowing,
     emptied: gaugeEmptied,
+    bucketFaceted,
   };
   const gaugePopulationRefused =
     gaugePopulation === null || gaugePopulation.kind === "ok" ? undefined : gaugePopulation;
@@ -1698,7 +1794,7 @@ export default async function ClaimsPage({
                   narrowed={bucketsNarrowed}
                   narrowings={narrowings}
                   chipNarrowing={bucketChipNarrowing}
-                  bucketFaceted={filter.bucket !== undefined}
+                  bucketFaceted={bucketFaceted}
                 />
               ) : null}
             </>

@@ -1631,23 +1631,39 @@ describe("the gauge's window line", () => {
   });
 
   /**
-   * The other half of the same rule (admin-window/BUG-0163): the sentence is
-   * narrowed EXACTLY where the read was, and nowhere else.
+   * The other half of the same rule (admin-window/BUG-0163): the sentence
+   * claims a NARROWING exactly where the read carried one, and nowhere else.
    *
    * `gaugeFilter` hands the gauge the source and the domain and drops the
    * bucket — the gauges read `observations`, which has no bucket — so
-   * `?bucket=` moves no figure in this section and may move no word of its
-   * sentence either. Graded by comparing two renders of the page rather than
-   * against copy typed here: a facet the read did not carry must leave the
-   * line byte-identical, on both tabs.
+   * `?bucket=` moves no figure in this section and may claim no narrowing of
+   * its sentence either.
+   *
+   * **What admin-window/BUG-0204 changed here, and what it did not.** Until
+   * that ticket this pinned the line BYTE-IDENTICAL under `?bucket=` on both
+   * tabs, which is how the gauge came to be the one caption on the page that
+   * said nothing about a chip standing active above it (the M3 user-sim walk:
+   * an empty claim list one screen above a gauge reading 877). The buckets
+   * tab's line now ADDS a sentence saying what it answers for — graded by the
+   * pin below — and everything this test was protecting still holds and is
+   * still graded here: no figure moved, the added words claim no narrowing and
+   * name no bucket value, and the STANDING tab, which carries no bucket facet
+   * at all, is byte-identical still.
    */
-  it("says nothing about a facet its own read did not carry", async () => {
+  it("claims no narrowing for a facet its own read did not carry", async () => {
     const gaugeLine = (markup: string) =>
       cheerio
         .load(markup)('[data-surface="gauge"] [data-window]')
         .text()
         .replace(/\s+/g, " ")
         .trim();
+    /** Everything the gauge section DRAWS, its own window line aside. */
+    const gaugeFigures = (markup: string) => {
+      const $ = cheerio.load(markup);
+      const surface = $('[data-surface="gauge"]');
+      surface.find("[data-window]").remove();
+      return surface.text().replace(/\s+/g, " ").trim();
+    };
 
     for (const tab of ["buckets", "standing"]) {
       const bare = await renderClaims(healthyScript(), { tab });
@@ -1656,11 +1672,142 @@ describe("the gauge's window line", () => {
         bucket: "escalated",
       });
       expect(gaugeLine(bare), tab).not.toBe("");
-      // Byte-identical: the bucket facet narrowed the page, not this read.
-      expect(gaugeLine(bucketed), tab).toBe(gaugeLine(bare));
+      // NO FIGURE MOVED, on either tab: the bucket facet narrowed the page,
+      // not this read.
+      expect(gaugeFigures(bucketed), tab).toBe(gaugeFigures(bare));
+      // The standing tab carries no bucket facet at all, so its line is the
+      // bare page's to the byte; the buckets tab's may only have GAINED words.
+      if (tab === "standing") {
+        expect(gaugeLine(bucketed), tab).toBe(gaugeLine(bare));
+      } else {
+        const [subtracted, added] = differingClause(gaugeLine(bare), gaugeLine(bucketed));
+        expect(subtracted, tab).toBe("");
+        expect(added, tab).not.toBe("");
+        // …and what it gained claims no narrowing and names no bucket value.
+        expect(added, tab).not.toContain(NARROWED_BY_FILTERS);
+        expect(added, tab).not.toContain("escalated");
+      }
       // …and the unnarrowed sentence names no narrowing at all.
       expect(gaugeLine(bare), tab).not.toContain(NARROWED_BY_FILTERS);
       expect(gaugeLine(bare), tab).not.toContain("domain");
+    }
+  });
+
+  /**
+   * THE GAUGE SAYS WHAT IT ANSWERS FOR, where a BUCKET facet is in force
+   * (admin-window/BUG-0204, from the M3 user-sim walk of Marisa).
+   *
+   * On staging, `/claims?bucket=awaiting_link` put "108 claims match these
+   * filters" over the list and "CLAIMS IN THIS WINDOW — 877" one screen below
+   * it, and `?bucket=escalated` put the list's empty card over that same 877:
+   * two numbers about the same thing on one screen, and the gauge's line was
+   * the ONE caption on the page that did not say what its own figures answer
+   * for. The bucket table two Sections up has the identical property — its
+   * read drops the bucket facet too — and says so in a clause of its own
+   * (the ruling of 2026-09-11); this is that fact, said by the other surface
+   * that has it.
+   *
+   * **Graded as structure, never as copy.** The sentence is read off the app
+   * by subtracting the bare page's line from the faceted one
+   * (`differingClause`), so a rewording moves this test with it. What IS
+   * asserted about the words is what the criteria forbid them to be: no bucket
+   * value, and never the chip-blaming phrase a real narrowing takes
+   * (`NARROWED_BY_FILTERS`) — nothing narrowed these figures.
+   *
+   * Non-vacuous in four directions: the page really applied the facet (its
+   * chip is active and nothing was dropped), the gauge's own read really did
+   * NOT carry it (no `bucket` predicate reaches `observations`), no figure in
+   * the section moved, and the bare page carries no such sentence at all.
+   */
+  it("says the bucket filter does not narrow the gauge [admin-window/BUG-0204]", async () => {
+    const gaugeLine = (markup: string) =>
+      cheerio
+        .load(markup)('[data-surface="gauge"] [data-window]')
+        .text()
+        .replace(/\s+/g, " ")
+        .trim();
+    const gaugeFigures = (markup: string) => {
+      const $ = cheerio.load(markup);
+      const surface = $('[data-surface="gauge"]');
+      surface.find("[data-window]").remove();
+      return surface.text().replace(/\s+/g, " ").trim();
+    };
+
+    const bare = await renderClaims(healthyScript());
+    const bareLine = gaugeLine(bare);
+    expect(bareLine).not.toBe("");
+
+    // ── the clause, read off the app at the first of the two buckets ──────
+    const link = await renderWithStub(healthyScript(), { bucket: "awaiting_link" });
+    const linkLine = gaugeLine(link.markup);
+    const [subtracted, clause] = differingClause(bareLine, linkLine);
+    expect(clause, "the gauge's line gained nothing under a bucket facet").not.toBe("");
+    expect(subtracted, "the gauge's line lost words it had no reason to lose").toBe("");
+
+    // Non-vacuous: the facet really is applied — its chip is the active one
+    // and the page threw no parameter away…
+    expect(
+      chipsOf(link.markup, "bucket").filter((chip) => chip.active).map((chip) => chip.label),
+    ).toEqual(["awaiting_link"]);
+    expect(droppedLine(link.markup).lines).toBe(0);
+    // …and the gauge's own read did NOT carry it: nothing narrows the scan of
+    // `observations` by bucket, which is the whole reason for the sentence.
+    expect(
+      link.stub.calls
+        .filter((call) => call.table === T.observations)
+        .flatMap((call) => call.steps)
+        .filter((step) => step.method === "eq")
+        .map((step) => step.args[0]),
+    ).not.toContain("bucket");
+    // NO FIGURE MOVED (the ticket's criterion 5).
+    expect(gaugeFigures(link.markup)).toBe(gaugeFigures(bare));
+
+    // ── absent on the bare page, and identical at the other bucket ────────
+    expect(bareLine).not.toContain(clause);
+    const escalated = await renderClaims(healthyScript(), { bucket: "escalated" });
+    // Byte-identical to the first: the sentence is about the FACET being in
+    // force, so it can name no bucket value…
+    expect(gaugeLine(escalated)).toBe(linkLine);
+    expect(clause).not.toContain("escalated");
+    expect(clause).not.toContain("awaiting_link");
+    // …and it never blames the chip bar for a narrowing nothing performed.
+    expect(clause).not.toContain(NARROWED_BY_FILTERS);
+
+    // …and it stands in the state the walk quoted: a bucket whose list came
+    // back EMPTY, under a gauge that never applied that facet and still
+    // figures. That is the screen the sentence exists for.
+    const emptyList = await renderClaims(
+      healthyScript({
+        [T.pendingClaims]: claimView(CLAIMS.filter((claim) => claim.bucket !== "escalated")),
+      }),
+      { bucket: "escalated" },
+    );
+    expect(claimIds(emptyList)).toEqual([]);
+    expect(gaugeLine(emptyList)).toContain(clause);
+
+    // ── ADDED to a real narrowing's phrase, never instead of it ───────────
+    const sourceOnly = gaugeLine(
+      await renderClaims(healthyScript(), { source_id: SOURCE.first }),
+    );
+    const both = await renderClaims(healthyScript(), {
+      bucket: "awaiting_link",
+      source_id: SOURCE.first,
+    });
+    // Non-vacuous: the source really narrowed this read, so the line under
+    // test is the narrowed arm and not the bare page's.
+    expect(sourceOnly).not.toBe(bareLine);
+    expect(sourceOnly).toContain(NARROWED_BY_FILTERS);
+    expect(gaugeLine(both)).toContain(NARROWED_BY_FILTERS);
+    const [lost, gained] = differingClause(sourceOnly, gaugeLine(both));
+    expect(lost).toBe("");
+    expect(gained).toContain(clause);
+
+    // ── the standing tab is not this ticket's surface ─────────────────────
+    // It owns its bucket rather than carrying it as a URL facet, so no chip
+    // stands above these figures and its line is unchanged in every state.
+    for (const params of [{}, { bucket: "escalated" }] as Record<string, string>[]) {
+      const markup = await renderClaims(healthyScript(), { tab: "standing", ...params });
+      expect(gaugeLine(markup), JSON.stringify(params)).not.toContain(clause);
     }
   });
 
