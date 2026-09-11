@@ -303,15 +303,20 @@ describe("the source-tree walk", () => {
     `source-tree-${process.pid}-${randomUUID()}`,
   );
   const REAL = "src/lib/real.ts";
-  /** The one path `db/layering.test.ts` plants under the REAL `src/`. */
-  const LAYERING_PROBE = "src/.probes/__credential_guard_probe__.ts";
-  const DOT_HIDDEN = LAYERING_PROBE;
+  /**
+   * The dot-hidden area under `src/` that probes are planted in — gitignored,
+   * holding probes and nothing else. `db/layering.test.ts` and the isolated
+   * probe-race pin each write beneath a `process.pid` directory inside it
+   * (admin-window/DEBT-0018), so no single spelling names what is in there.
+   */
+  const PROBE_AREA = "src/.probes";
+  const DOT_HIDDEN = `${PROBE_AREA}/some-run-1/__a_probe__.ts`;
   const UNDERSCORED = "src/__loose_probe__.ts";
   const DANGLING = "src/dangling.ts";
 
   beforeAll(() => {
     mkdirSync(path.join(base, "src", "lib"), { recursive: true });
-    mkdirSync(path.join(base, "src", ".probes"), { recursive: true });
+    mkdirSync(path.join(base, path.dirname(DOT_HIDDEN)), { recursive: true });
     writeFileSync(path.join(base, REAL), "export const real = 1;\n");
     writeFileSync(path.join(base, DOT_HIDDEN), "export const probe = 2;\n");
     writeFileSync(path.join(base, UNDERSCORED), "export const loose = 3;\n");
@@ -378,8 +383,8 @@ describe("the source-tree walk", () => {
     // The filter is a no-op over names no compiler skips — asserted here as a
     // deep equality, against a TEMP base like every other case in this
     // describe. It is NOT asserted over the real `src/`: `db/layering.test.ts`
-    // plants `src/.probes/__credential_guard_probe__.ts` ~20 times a run in a
-    // parallel worker of this same project, and `sourceFiles()` deep-equals
+    // plants a probe under `src/.probes/` ~20 times a run, in a parallel
+    // worker of this same project, and `sourceFiles()` deep-equals
     // `allSourceFiles()` is false for exactly as long as that path is on disk,
     // because hiding it from one walk and not the other IS the design. An
     // equality over the shared tree is therefore decided by another worker's
@@ -405,14 +410,22 @@ describe("the source-tree walk", () => {
     // way. The day one is, this reddens instead of the rule going quiet.
     //
     // Stated as the SET DIFFERENCE rather than an equality, so it holds
-    // whether or not layering's probe happens to be on disk right now: the
-    // only path the filter is ever allowed to swallow is that probe. A real
-    // source file named with a leading `.` segment or `__` still lands in this
-    // difference and still reddens, which is the whole value of the case.
+    // whether or not a probe happens to be on disk right now: the only paths
+    // the filter is ever allowed to swallow are the ones in the probe area. A
+    // real source file named with a leading `.` segment or `__` anywhere else
+    // under `src/` still lands in this difference and still reddens, which is
+    // the whole value of the case.
+    //
+    // The exclusion is the AREA, not one spelling: since
+    // admin-window/DEBT-0018 each run's probes sit under a `process.pid`
+    // directory in there, and the leaf-import probe was never the one spelling
+    // this case named — so a concurrent leaf scan could redden it.
     const all = allSourceFiles();
     const visible = sourceFiles();
     expect(visible.length).toBeGreaterThan(5);
-    expect(all.filter((file) => !visible.includes(file) && file !== LAYERING_PROBE)).toEqual([]);
+    expect(
+      all.filter((file) => !visible.includes(file) && !file.startsWith(`${PROBE_AREA}/`)),
+    ).toEqual([]);
     // And the other direction — the filter drops files, it never invents one.
     expect(visible.filter((file) => !all.includes(file))).toEqual([]);
   });
