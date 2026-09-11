@@ -1996,3 +1996,219 @@ describe("the affordance that continues the recent-events view", () => {
     }
   });
 });
+
+/* ── what the URL asked for that this page did not do (BUG-0202) ─────────── */
+
+/**
+ * The dropped-parameter sentence, on THIS page (campaign admin-window/BUG-0202).
+ *
+ * Tomas hand-edited a Browse URL: "`?cols=banana` renders all seven columns
+ * and says nothing… `?table=venues` and `?q=BTS` are swallowed without a
+ * word" (`M3-usersim-tomas.md`). He shares a column view BY URL, so a `cols`
+ * the recipient's page discards is the case that matters most: the recipient
+ * reads the sender's chosen view off a default one, and nothing on screen says
+ * the choice was dropped (LOOK_AND_FEEL bar 13).
+ *
+ * Every case below is graded at the SURFACE, through the two hooks the shared
+ * line ships (`data-dropped-params`, `data-dropped-param`), never against the
+ * app's copy: the rule and its words belong to `lib/url/dropped-params.ts` and
+ * `components/ui/dropped-params.tsx`, which carry their own suites. What is
+ * this page's to prove is WHICH narrowing it hands over — the columns the
+ * render actually chose, never the URL's raw text — and that nothing else on
+ * the page moved.
+ */
+describe("a parameter this page did not apply", () => {
+  /** What the page says it did not apply: the shared line's two hooks. */
+  function droppedLine(markup: string) {
+    const $ = cheerio.load(markup);
+    const line = $("[data-dropped-params]");
+    return {
+      lines: line.length,
+      total: line.length === 0 ? 0 : Number(line.attr("data-dropped-params")),
+      names: line
+        .find("[data-dropped-param]")
+        .toArray()
+        .map((element) => $(element).attr("data-dropped-param") ?? ""),
+      text: line.text().replace(/\s+/g, " ").trim(),
+    };
+  }
+
+  /** The whole page with that one line removed — everything this ticket promised not to move. */
+  function withoutDroppedLine(markup: string): string {
+    const $ = cheerio.load(markup);
+    $("[data-dropped-params]").remove();
+    return $.html();
+  }
+
+  /** The default view's column labels, as the page draws them with no `cols` at all. */
+  const DEFAULT_HEADERS = shownColumns(view, undefined).map((key) => labelOf(key));
+
+  /** ZERO WIDTH SPACE: a key a reader would see nothing of at all. */
+  const NO_INK = "​";
+
+  /** RIGHT-TO-LEFT OVERRIDE: a key this sentence may not spell, in one. */
+  const UNSPELLABLE_KEY = "co‮ls";
+
+  it("names a cols value that chose no column as a parameter it did not apply", async () => {
+    // The bare page says nothing, because nothing was asked and dropped.
+    const bare = await renderBrowse(healthyScript());
+    expect(droppedLine(bare).lines).toBe(0);
+
+    // The URL of the finding. The page still draws the seven default columns
+    // — that half is correct and unchanged — and now names the parameter it
+    // could not use, so the default view cannot be read as a chosen one.
+    const banana = await renderBrowse(healthyScript(), { [COLUMNS_PARAM]: "banana" });
+    expect(headers(banana)).toEqual(DEFAULT_HEADERS);
+    expect(droppedLine(banana).names).toEqual([COLUMNS_PARAM]);
+    expect(droppedLine(banana).total).toBe(1);
+    // The NAME is spelled; the VALUE never is (LOOK_AND_FEEL bar 3).
+    expect(droppedLine(banana).text).not.toContain("banana");
+
+    // A list in which NO token names a configured column is the same case.
+    const none = await renderBrowse(healthyScript(), {
+      [COLUMNS_PARAM]: "nope,alsonope",
+    });
+    expect(headers(none)).toEqual(DEFAULT_HEADERS);
+    expect(droppedLine(none).names).toEqual([COLUMNS_PARAM]);
+
+    // The guard's passing fixtures. A value that chose a column APPLIED, and
+    // is not named — including the partial case this ticket deliberately keeps
+    // silent: `cols` counts as applied when at least one of its tokens named a
+    // column, and the fat-fingered token inside an otherwise-good list is not
+    // a sentence of its own (the rule's vocabulary is per KEY, not per token).
+    for (const value of ["title", "title,banana"]) {
+      const applied = await renderBrowse(healthyScript(), { [COLUMNS_PARAM]: value });
+      // Non-vacuous: that URL really did choose the columns on screen.
+      expect(headers(applied), value).toEqual([labelOf("title")]);
+      expect(droppedLine(applied).lines, value).toBe(0);
+    }
+  });
+
+  it("names a key this route does not read at all, whatever it is called", async () => {
+    // The two Tomas typed, plus keys other surfaces of this app offer and this
+    // one never looks at. `?tab=` is one too, because this route has no tab
+    // strip to consume it — so the caller hands the rule an empty consumed
+    // list, exactly as `/cycles` and `/sources`, the other tabless routes, do.
+    for (const key of ["table", "q", "limit", "tab", "columns"]) {
+      const markup = await renderBrowse(healthyScript(), { [key]: "venues" });
+      expect(droppedLine(markup).names, key).toEqual([key]);
+      // Nothing was narrowed or re-columned by it: the default view stands.
+      expect(headers(markup), key).toEqual(DEFAULT_HEADERS);
+      expect(bodyRows(markup), key).toHaveLength(2);
+    }
+
+    // Two at once are both named, in the order the URL carried them, and an
+    // APPLIED `cols` beside them is not named at all.
+    const several = await renderBrowse(healthyScript(), {
+      [COLUMNS_PARAM]: "title",
+      table: "venues",
+      q: "BTS",
+    });
+    expect(droppedLine(several).names).toEqual(["table", "q"]);
+    expect(droppedLine(several).total).toBe(2);
+    expect(headers(several)).toEqual([labelOf("title")]);
+  });
+
+  it("says nothing for a request that named nothing, and counts a name it may not spell", async () => {
+    // The module's own rules, reached through this caller: a key with no
+    // value, a value with no key, and a key a reader would see nothing of all
+    // asked for nothing, so there is no narrowing to have dropped
+    // (admin-window/BUG-0127, admin-window/BUG-0136). `?cols=` is the URL
+    // saying nothing about columns, which is a real state and not an error.
+    const silent: [string, Record<string, string>][] = [
+      ["cols carrying no value", { [COLUMNS_PARAM]: "" }],
+      ["a key this route does not read, carrying no value", { table: "" }],
+      ["a value with no key at all", { "": "banana" }],
+      ["a key with no ink in it", { [NO_INK]: "1" }],
+    ];
+    for (const [name, params] of silent) {
+      const markup = await renderBrowse(healthyScript(), params);
+      expect(droppedLine(markup).lines, name).toBe(0);
+      expect(headers(markup), name).toEqual(DEFAULT_HEADERS);
+    }
+
+    // ...and the arm it MUST flag: a key outside the renderable allowlist is
+    // still reported, COUNTED rather than spelled, so no bidi control from a
+    // URL sits inside a sentence this app wrote (admin-window/BUG-0137).
+    const unspellable = await renderBrowse(healthyScript(), {
+      [UNSPELLABLE_KEY]: "1",
+    });
+    expect(droppedLine(unspellable).total).toBe(1);
+    expect(droppedLine(unspellable).names).toEqual([]);
+    expect(unspellable).not.toContain(UNSPELLABLE_KEY);
+  });
+
+  it("states it over every state of the read, because it is a fact of the URL", async () => {
+    // The line stands above the section rather than inside it, so it renders
+    // the same over an `ok` read, a refusal, an events table that is not there
+    // and a window that came back empty — the states where there is no table
+    // to read the column choice off at all, and where a silent drop is
+    // therefore least recoverable.
+    const states: [string, Script][] = [
+      ["absent events", healthyScript({ [T.events]: { error: tableNotInSchemaCache(T.events) } })],
+      ["refused events", healthyScript({ [T.events]: { error: permissionDenied(T.events) } })],
+      ["empty window", healthyScript({ [T.events]: { data: [] } })],
+    ];
+    for (const [name, script] of states) {
+      const markup = await renderBrowse(script, { [COLUMNS_PARAM]: "banana" });
+      expect(droppedLine(markup).names, name).toEqual([COLUMNS_PARAM]);
+      // Non-vacuous: each of these really is a state with no event on screen,
+      // so the sentence above is standing over a page that drew no rows —
+      // the read's own state is still the page's answer about the read.
+      expect(markup, name).not.toContain("newest arrival");
+    }
+  });
+
+  it("moves nothing else on the page", async () => {
+    // The column chips and their hrefs, the window line, the table, the rows
+    // and every leg note are what they were at the same URL before this line
+    // existed: a dropped parameter reaches no read and no column set, so the
+    // page under the line is the bare page, byte for byte.
+    const bare = await renderBrowse(healthyScript());
+    const urls: Record<string, string>[] = [
+      { [COLUMNS_PARAM]: "banana" },
+      { table: "venues" },
+      { q: "BTS" },
+      { [UNSPELLABLE_KEY]: "1" },
+    ];
+    for (const params of urls) {
+      const markup = await renderBrowse(healthyScript(), params);
+      // Non-vacuous: there IS a line in each of these renders to remove.
+      expect(droppedLine(markup).total, JSON.stringify(params)).toBe(1);
+      expect(withoutDroppedLine(markup), JSON.stringify(params)).toBe(
+        withoutDroppedLine(bare),
+      );
+    }
+    // And a page that dropped nothing renders no line to remove at all, so
+    // the comparison above is between a page WITH the sentence and the page
+    // as it stands today rather than between two stripped renders.
+    expect(droppedLine(bare).lines).toBe(0);
+    expect(withoutDroppedLine(bare)).toBe(cheerio.load(bare).html());
+  });
+
+  it("reads a repeated cols the same way the columns did", async () => {
+    // Two readings of one key answer one question — this page's own decides
+    // which columns the render CARRIED (`namedColumns`, which reads a repeated
+    // key as one comma-joined list, exactly as `shownColumns` does), and
+    // `lib/url/dropped-params.ts`' `firstValue` decides what the SENTENCE
+    // judges. A URL repeating the key is the seam where they could come to
+    // disagree, and a disagreement is the finding itself twice over: a page
+    // that re-columned by a value while reporting it dropped, or one that
+    // swallowed a usable value in silence.
+    const usableSecond = await renderBrowse(healthyScript(), {
+      [COLUMNS_PARAM]: ["banana", "title"],
+    });
+    // The second value chose the column on screen, so `cols` APPLIED and the
+    // page claims no dropped parameter it did in fact act on.
+    expect(headers(usableSecond)).toEqual([labelOf("title")]);
+    expect(droppedLine(usableSecond).lines).toBe(0);
+
+    const usableNeither = await renderBrowse(healthyScript(), {
+      [COLUMNS_PARAM]: ["banana", "nope"],
+    });
+    // Neither value chose anything, so the default set stands AND the line
+    // says so.
+    expect(headers(usableNeither)).toEqual(DEFAULT_HEADERS);
+    expect(droppedLine(usableNeither).names).toEqual([COLUMNS_PARAM]);
+  });
+});
