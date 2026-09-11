@@ -68,6 +68,7 @@ import {
   tabFrom,
   tabLinks,
   withFacet,
+  withoutChipFacets,
   type ClaimsFilter,
   type ClaimsTab,
   type SearchParams,
@@ -77,8 +78,10 @@ import {
 // the same sentence read one declaration (admin-window/TASK-0072, LESSONS 5).
 // The facet TABLE stays the page's own, above.
 import {
+  isFamilyNarrowing,
   unchippedNarrowings,
   unchippedPhrase,
+  type SurfacePopulation,
   type UnchippedNarrowing,
 } from "@/lib/url/narrowing";
 import { claimLines, type ClaimLine } from "@/lib/claims/lines";
@@ -365,7 +368,7 @@ function listScope(
   tab: ClaimsTab,
   narrowed: boolean,
   narrowings: readonly UnchippedNarrowing[],
-  chipped: boolean,
+  chipNarrowing: boolean,
 ): readonly string[] | null {
   return narrowedTo([
     tab === "standing" ? `in the ${STANDING_BUCKET} bucket` : null,
@@ -390,11 +393,16 @@ function listScope(
     // `narrowed` is the LIST's two-fact answer, handed in rather than asked
     // for here (admin-window/DEBT-0008): the window line and the empty card it
     // stands beside describe one set, so they may not decide separately
-    // whether a filter is what shaped it. `chipped` is the second gate and a
-    // different question — is a filter the operator can SEE set at all — so a
-    // window narrowed only by the domain says the domain and never claims a
-    // chip row did it (admin-window/BUG-0160).
-    narrowed && chipped ? NARROWED_BY_FILTERS : null,
+    // whether a filter is what shaped it.
+    //
+    // `chipNarrowing` is the second gate, and since admin-window/BUG-0192 it
+    // is an EFFECT and not a presence: "matching these filters" ATTRIBUTES
+    // this window's narrowing to the chip bar, so it renders only where the
+    // chip family really removed rows from THIS list (`isFamilyNarrowing`).
+    // A window narrowed only by the domain says the domain and never claims a
+    // chip row did it (admin-window/BUG-0160); a chip set beside a domain that
+    // did all of it says nothing about the chip bar either.
+    narrowed && chipNarrowing ? NARROWED_BY_FILTERS : null,
   ]);
 }
 
@@ -443,7 +451,7 @@ function NarrowedBy({
 function BucketCaption({
   narrowed,
   narrowings,
-  chipped,
+  chipNarrowing,
   bucketFaceted,
 }: {
   narrowed: boolean;
@@ -457,8 +465,14 @@ function BucketCaption({
    * chip bar for these counts would be pointing at a control that shaped
    * nothing here. The list's own line still asks the UNDROPPED filter, because
    * the bucket facet really does narrow the list.
+   *
+   * And since admin-window/BUG-0192 it is that facet's EFFECT on these rows
+   * and not its presence on the URL (`isFamilyNarrowing`): this clause
+   * attributes the table's narrowing to the controls above it, so a source
+   * chip standing beside a domain that removed every one of these rows on its
+   * own earns no mention here. Presence is never evidence of effect.
    */
-  chipped: boolean;
+  chipNarrowing: boolean;
   /**
    * Is a BUCKET facet in force? The one facet of this page that this table
    * drops on purpose, so it can never be what narrowed these counts — and the
@@ -483,11 +497,12 @@ function BucketCaption({
           set it did not draw (admin-window/DEBT-0008, LOOK_AND_FEEL bar 13). */}
       <NarrowedBy narrowings={narrowed ? narrowings : []} />
       {BUCKET_CAPTION.inIt}
-      {/* Asked of `chipped` over the table's OWN filter (admin-window/BUG-0191),
+      {/* Asked of the table's OWN filter (admin-window/BUG-0191) and of what
+          that filter's chip facets DID to these rows (admin-window/BUG-0192),
           so this clause and the every-bucket clause below stay two separate
           facts: this one says what narrowed these counts, that one says which
           chip is standing above them. */}
-      {narrowed && chipped ? BUCKET_CAPTION.underTheFilters : ""}
+      {narrowed && chipNarrowing ? BUCKET_CAPTION.underTheFilters : ""}
       {/* The two clauses that state this TABLE's scope, and only ever one of
           them: "nothing above narrows these counts" is the whole truth only
           where no facet of this page is in force at all, and the every-bucket
@@ -534,14 +549,19 @@ function BucketCaption({
 function narrowedEmpty(
   holds: ReactNode,
   narrowings: readonly UnchippedNarrowing[],
-  chipped: boolean,
+  chipNarrowing: boolean,
 ): { holds: ReactNode; filledBy: ReactNode } {
   return {
     holds: (
       <>
         {holds}
         <NarrowedBy narrowings={narrowings} />
-        {chipped ? ` ${NOTHING_MATCHED.filters}` : ""}
+        {/* The chip clause ATTRIBUTES this emptiness to the controls above, so
+            it is that family's effect on this surface and not its presence on
+            the URL (`isFamilyNarrowing`, admin-window/BUG-0192). The
+            control-less narrowings beside it state what the read CARRIED and
+            keep their own gate (admin-window/BUG-0160). */}
+        {chipNarrowing ? ` ${NOTHING_MATCHED.filters}` : ""}
       </>
     ),
     filledBy: (
@@ -807,8 +827,12 @@ interface GaugeNarrowing {
   scope: readonly string[] | null;
   /** The control-less narrowings, for the markup face of the same words. */
   narrowings: readonly UnchippedNarrowing[];
-  /** Is a narrowing the operator can SEE set on this read? */
-  chipped: boolean;
+  /**
+   * Did a narrowing the operator can SEE remove rows from this read? The
+   * EFFECT question since admin-window/BUG-0192, on the same rule the bucket
+   * caption one Section up answers — its clause points at the same chip bar.
+   */
+  chipNarrowing: boolean;
   /** Did a narrowing of this URL empty this surface — both facts, ANDed? */
   emptied: boolean;
 }
@@ -821,7 +845,7 @@ interface GaugeNarrowing {
  */
 function gaugeEmpty(words: EmptyWords, narrowing: GaugeNarrowing): EmptyWords {
   return narrowing.emptied
-    ? narrowedEmpty(words.holds, narrowing.narrowings, narrowing.chipped)
+    ? narrowedEmpty(words.holds, narrowing.narrowings, narrowing.chipNarrowing)
     : words;
 }
 
@@ -1099,6 +1123,28 @@ export default async function ClaimsPage({
   // would make these two facts again, and the second would then be derived
   // from that read's own filter rather than by widening this one.
   const chippedWithoutBucket = hasChipFacet(tableFilter);
+  // Is a facet OUTSIDE the chip family in force — the other half of the
+  // attribution question (`isFamilyNarrowing`, admin-window/BUG-0192)? Today
+  // that family is exactly `?domain=`, which is what `narrowings` holds, so it
+  // is read off the same derivation the sentences name it from rather than
+  // from a second reading of the URL. With no other family in force, every row
+  // this surface lost it lost to the chips, and the surface's own two facts
+  // ARE the chip family's effect — which is why only the state below buys a
+  // count.
+  const unchippedInForce = narrowings.length > 0;
+  // THE ONE STATE THAT COSTS A READ: both families in force. There the two
+  // facts cannot separate the chips' effect from the domain's, so the page
+  // buys it — the same read with the chip facets the URL carried dropped.
+  //
+  // `listFilter` minus those facets and `tableFilter` minus them are the SAME
+  // filter (they differ only by the bucket facet, which is a chip), so ONE
+  // count serves the list's window line, the bucket caption and the empty card
+  // — the one-binding shape admin-window/BUG-0191 established. The SUBTRACTION
+  // is `asked`', never the applied filter's: the standing tab's own bucket is
+  // merged in by `listFilterOf` and is not a control above, so dropping it
+  // would compare this tab's rows against the other tab's population.
+  const chipsNarrowingNeedsCount = chipped && unchippedInForce;
+  const withoutChipFilter = withoutChipFacets(listFilter, asked);
 
   // The GAUGE's narrowing is not the page's: `gaugeFilter` drops the bucket
   // facet, because the gauges read `observations` by source and domain and
@@ -1123,6 +1169,18 @@ export default async function ClaimsPage({
   // `[since, until)` on `observed_at` and so does the count
   // (admin-window/TASK-0070).
   const gaugeBounds = resolveBounds({}, PENDING_CLAIMS_DEFAULTS);
+  // The same attribution question for the GAUGE, whose set is a WINDOW: its
+  // line points at the same chip bar, so it is answered on the same rule and
+  // its widened count carries the window's own edges (`readClaimCountIn`, the
+  // way `gaugePopulation` already does). The tab's own subset is kept, the
+  // URL's chip facets are dropped, and the control-less ones stay — that is
+  // what makes this a count of THIS read with one family removed.
+  const gaugeChipsNarrowingNeedsCount =
+    chippedWithoutBucket && gaugeNarrowings.length > 0;
+  const gaugeWithoutChipFilter: ClaimsFilter = {
+    ...populationFilter,
+    ...withoutChipFacets(gaugeNarrowing, asked),
+  };
 
   // ONE composition, every leg independent (§4.3, the interface contract of
   // admin-window/BUG-0138). Nothing here is sequenced: no leg needs an id, a
@@ -1139,6 +1197,8 @@ export default async function ClaimsPage({
     standing,
     population,
     gaugePopulation,
+    withoutChips,
+    gaugeWithoutChips,
   ] = await Promise.all([
       readClaimWindow({ filter: listFilter, limit: CLAIM_WINDOW }),
       // The count the LIST's window line states — under the same narrowing the
@@ -1203,6 +1263,19 @@ export default async function ClaimsPage({
       // is a bounded `head: true` count and never a row read — the shape
       // `lib/url/narrowing.ts` prescribes where fact 2 costs a query.
       gaugeStructural ? readClaimCountIn(gaugeBounds, populationFilter) : null,
+      // THE ATTRIBUTION FACT, for the list, the bucket caption and the empty
+      // card at once (admin-window/BUG-0192): the same read with the chip
+      // facets the URL carried dropped. A bounded `head: true` count, joined
+      // to this same composition as a conditional leg — exactly as
+      // `population` above is — so the page's read DEPTH is still one and
+      // nothing is issued in a state where it could not change a word
+      // (admin-window/DEBT-0012). Where only one family is in force the two
+      // facts already answer, and this is not asked at all.
+      chipsNarrowingNeedsCount ? readClaimCount(withoutChipFilter) : null,
+      // The same fact for the gauge's WINDOW, over the gauge's own bounds.
+      gaugeChipsNarrowingNeedsCount
+        ? readClaimCountIn(gaugeBounds, gaugeWithoutChipFilter)
+        : null,
     ]);
 
   const names = sourceNamesOf(registry.kind === "ok" ? registry.data : []);
@@ -1245,15 +1318,34 @@ export default async function ClaimsPage({
   // falls back to the structural rule alone and says so on its own sub-surface
   // below, rather than claiming a scope no read supports — the shape
   // admin-window/BUG-0135 landed on `/queues`.
-  const listNarrowed =
+  const listSurface: SurfacePopulation | null =
     population !== null && population.kind === "ok" && listCount.kind === "ok"
-      ? claimsNarrowed(filter, {
-          rendered: listCount.data,
-          population: population.data,
-        })
-      : structural;
+      ? { rendered: listCount.data, population: population.data }
+      : null;
+  const listNarrowed =
+    listSurface === null ? structural : claimsNarrowed(filter, listSurface);
+  // The widened count, where one was bought and answered. An unanswered one is
+  // `undefined` and the attribution rule then says NOTHING about the chip bar
+  // rather than guessing (`isFamilyNarrowing`, admin-window/BUG-0192) — the
+  // same silence a surface whose own two facts a refusal took keeps, which is
+  // why the answers below are false where `listSurface` is null. A clause no
+  // read supports is exactly what this rule exists to stop, and the refusal
+  // itself is still reported on its own sub-surface.
+  const withoutChipsCount: number | undefined =
+    withoutChips !== null && withoutChips.kind === "ok" ? withoutChips.data : undefined;
+  // DID THE CHIP FAMILY REMOVE ROWS FROM THE LIST? The list's read carries the
+  // URL's bucket facet, so a bucket chip really can be what narrowed it — this
+  // is the UNDROPPED filter's question, as the list's own two facts are.
+  const listChipNarrowing =
+    listSurface !== null &&
+    isFamilyNarrowing({
+      inForce: chipped,
+      othersInForce: unchippedInForce,
+      surface: listSurface,
+      withoutFamily: withoutChipsCount,
+    });
   const emptyWords: { holds: ReactNode; filledBy: ReactNode } = listNarrowed
-    ? narrowedEmpty(LIST_HOLDS, narrowings, chipped)
+    ? narrowedEmpty(LIST_HOLDS, narrowings, listChipNarrowing)
     : tab === "standing"
       ? NOTHING_STANDING
       : NOTHING_HELD;
@@ -1266,10 +1358,25 @@ export default async function ClaimsPage({
     perBucket !== null && oldest !== null
       ? bucketStats(filter, tab, perBucket, oldest)
       : [];
-  const bucketsNarrowed =
+  const bucketSurface: SurfacePopulation | null =
     population !== null && population.kind === "ok" && total.kind === "ok"
-      ? claimsNarrowed(filter, { rendered: total.data, population: population.data })
-      : structural;
+      ? { rendered: total.data, population: population.data }
+      : null;
+  const bucketsNarrowed =
+    bucketSurface === null ? structural : claimsNarrowed(filter, bucketSurface);
+  // …and the same attribution question over THIS table's rows, off the filter
+  // its reads were given (admin-window/BUG-0191) and the one count both
+  // surfaces share: at `?source_id=A&domain=B` where the domain drew every one
+  // of these rows on its own, this caption points at no control above
+  // (admin-window/BUG-0192).
+  const bucketChipNarrowing =
+    bucketSurface !== null &&
+    isFamilyNarrowing({
+      inForce: chippedWithoutBucket,
+      othersInForce: unchippedInForce,
+      surface: bucketSurface,
+      withoutFamily: withoutChipsCount,
+    });
 
   // The one leg whose refusal is reported beside the surfaces it feeds rather
   // than as a surface's own state: it renders no row, and decides only which
@@ -1292,13 +1399,27 @@ export default async function ClaimsPage({
       : standing !== null && standing.kind === "ok"
         ? standing.data.claims
         : null;
-  const gaugeEmptied =
+  const gaugeSurface: SurfacePopulation | null =
     gaugePopulation !== null && gaugePopulation.kind === "ok" && gaugeClaims !== null
-      ? claimsNarrowed(gaugeNarrowing, {
-          rendered: gaugeClaims,
-          population: gaugePopulation.data,
-        })
-      : gaugeStructural;
+      ? { rendered: gaugeClaims, population: gaugePopulation.data }
+      : null;
+  const gaugeEmptied =
+    gaugeSurface === null ? gaugeStructural : claimsNarrowed(gaugeNarrowing, gaugeSurface);
+  // The chip family's effect on THIS window — the same rule the caption above
+  // answers, over the gauge's own set and its own widened count
+  // (admin-window/BUG-0192). One answer reaches this section's line and its
+  // empty card, so the two cannot come to disagree (admin-window/BUG-0191).
+  const gaugeChipNarrowing =
+    gaugeSurface !== null &&
+    isFamilyNarrowing({
+      inForce: chippedWithoutBucket,
+      othersInForce: gaugeNarrowings.length > 0,
+      surface: gaugeSurface,
+      withoutFamily:
+        gaugeWithoutChips !== null && gaugeWithoutChips.kind === "ok"
+          ? gaugeWithoutChips.data
+          : undefined,
+    });
   const gaugeWords: GaugeNarrowing = {
     // What the READ carried, in the one spelling `lib/claims/filters.ts` owns
     // for a control-less facet and the one `window-line.tsx` owns for the chip
@@ -1307,10 +1428,14 @@ export default async function ClaimsPage({
     // read, not the rows.
     scope: narrowedTo([
       ...gaugeNarrowings.map(unchippedPhrase),
-      chippedWithoutBucket ? NARROWED_BY_FILTERS : null,
+      // The chip clause is an ATTRIBUTION and renders only where this read's
+      // chip facets really removed rows from this window
+      // (admin-window/BUG-0192); the control-less phrases above it state what
+      // the read CARRIED and are unconditional, as a window line's scope is.
+      gaugeChipNarrowing ? NARROWED_BY_FILTERS : null,
     ]),
     narrowings: gaugeNarrowings,
-    chipped: chippedWithoutBucket,
+    chipNarrowing: gaugeChipNarrowing,
     emptied: gaugeEmptied,
   };
   const gaugePopulationRefused =
@@ -1409,7 +1534,7 @@ export default async function ClaimsPage({
           oldest: null,
           // What the READS below narrowed to, from the same tab and the same
           // filter they carried (admin-window/BUG-0114).
-          scope: listScope(tab, listNarrowed, narrowings, chipped),
+          scope: listScope(tab, listNarrowed, narrowings, listChipNarrowing),
           // THE ROWS THIS PAGE PUT ON SCREEN — stated on BOTH arms, from the
           // rows it actually rendered (admin-window/BUG-0183). The clause that
           // names what is below the line names this number, so it is a number
@@ -1571,7 +1696,7 @@ export default async function ClaimsPage({
                 <BucketCaption
                   narrowed={bucketsNarrowed}
                   narrowings={narrowings}
-                  chipped={chippedWithoutBucket}
+                  chipNarrowing={bucketChipNarrowing}
                   bucketFaceted={filter.bucket !== undefined}
                 />
               ) : null}

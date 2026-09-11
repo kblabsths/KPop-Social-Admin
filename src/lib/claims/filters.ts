@@ -155,6 +155,36 @@ export function hasChipFacet(filter: ClaimsFilter): boolean {
   return CHIP_FACETS.some((facet) => filter[facet] !== undefined);
 }
 
+/**
+ * The same read with every CHIP facet **the URL carried** dropped — the widened
+ * narrowing whose count answers "did the chip family remove any of these rows"
+ * (`isFamilyNarrowing`, `lib/url/narrowing.ts`; admin-window/BUG-0192).
+ *
+ * Two arguments and not one, and that is the whole rule: `applied` is the
+ * filter a surface's read was really given, `asked` is what the URL asked for.
+ * The subtraction takes the chip facets out of `asked`, so a facet a SURFACE
+ * merged in of its own accord survives it. The one such facet today is the
+ * standing tab's own bucket (`listFilterOf`): it is not a control above,
+ * nothing on screen offers it, and dropping it would compare this tab's rows
+ * against the OTHER tab's population — an attribution answered off the wrong
+ * set, which is the class this function is part of fixing.
+ *
+ * It is this page's vocabulary applied to a shared rule, which is why it lives
+ * here and the rule does not: `CHIP_FACETS` is the claims page's own set, and
+ * the leaf that decides attribution takes booleans and numbers so it can stay
+ * free of every filter type in the app (§4 rule 7).
+ */
+export function withoutChipFacets(
+  applied: ClaimsFilter,
+  asked: ClaimsFilter,
+): ClaimsFilter {
+  const widened: ClaimsFilter = { ...applied };
+  for (const facet of CHIP_FACETS) {
+    if (asked[facet] !== undefined) delete widened[facet];
+  }
+  return widened;
+}
+
 /** The narrowing a URL asks for. Every field optional; absent means unnarrowed. */
 export type ClaimsFilter = Partial<Record<ClaimFacet, string>>;
 

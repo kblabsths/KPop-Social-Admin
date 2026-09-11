@@ -71,6 +71,65 @@ export function isSurfaceNarrowed(
   return structural && surface.rendered !== surface.population;
 }
 
+/**
+ * **Did THIS FAMILY of facets remove rows from this surface?** — the
+ * ATTRIBUTION question, one level below `isSurfaceNarrowed`'s "is this surface
+ * narrowed at all" (architect ruling 2026-09-11, ARCHITECTURE.md §4.3;
+ * admin-window/BUG-0192).
+ *
+ * A clause that points at a control — "under the filters above", "matching
+ * these filters" — or at a named facet is a claim about rows THIS read lost to
+ * THAT subject, so it may render only where that subject's own effect is
+ * established. **Presence is never evidence of effect**: one chip earned two
+ * opposite verdicts on two staging URLs while `hasChipFacet`'s presence answer
+ * and `isSurfaceNarrowed`'s effect answer were ANDed as though they were one
+ * question (admin-window/BUG-0191's residual, measured on staging
+ * 2026-09-11). A clause that merely states what the read CARRIED ("in the
+ * events domain", admin-window/BUG-0160) is not an attribution and keeps its
+ * presence gate.
+ *
+ * Three states, and only one of them costs anything:
+ *
+ *  - **not in force** — nothing to attribute, whatever the rows did;
+ *  - **in force, and no facet outside the family is** — every row this surface
+ *    lost, it lost to this family, so the surface's own two facts ARE the
+ *    family's effect (`isSurfaceNarrowed`) and no read is added;
+ *  - **both in force** — the two families' effects are not separable from the
+ *    two facts, and the answer is bought: the rows the same read draws with
+ *    this family's facets DROPPED, against the rows it drew. Equal means the
+ *    others did all of it and this family removed nothing.
+ *
+ * **An absent `withoutFamily` answers false**, which is the page saying
+ * NOTHING about that control rather than guessing: silence is true in every
+ * state, and an attribution is not. That is also the honest answer where the
+ * count refused — a clause no read supports is exactly what this rule exists
+ * to stop.
+ *
+ * It stays a PURE LEAF beside `isSurfaceNarrowed` (ARCHITECTURE.md §4 rule 7):
+ * booleans and numbers, no filter type, no import — so the same rule serves
+ * any surface's families and no page can reach a database through it.
+ */
+export function isFamilyNarrowing(args: {
+  /** A facet of the family the clause names is set on this read. */
+  inForce: boolean;
+  /** A facet OUTSIDE that family is set on this read. */
+  othersInForce: boolean;
+  /** This surface's own two facts. */
+  surface: SurfacePopulation;
+  /**
+   * Rows the same read draws with the family's facets dropped — supplied only
+   * where both families are in force, which is the only state that needs it,
+   * and absent where the read that would establish it did not answer.
+   */
+  withoutFamily?: number;
+}): boolean {
+  if (!args.inForce) return false;
+  if (!args.othersInForce) return isSurfaceNarrowed(true, args.surface);
+  return (
+    args.withoutFamily !== undefined && args.surface.rendered !== args.withoutFamily
+  );
+}
+
 /* ── the narrowings a surface renders NO control for ──────────────────────── */
 
 /**

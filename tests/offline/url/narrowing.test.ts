@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isFamilyNarrowing, isSurfaceNarrowed } from "@/lib/url/narrowing";
 import { codeLines, codeLinesIn, codeText, sourceFiles } from "../source-tree";
 
 /**
@@ -94,6 +95,18 @@ const OWNER: Readonly<Record<string, string>> = {
   isBlockNarrowed: "src/lib/review/queue-filters.ts",
   /** The two-fact rule itself, for every surface (admin-window/DEBT-0008). */
   isSurfaceNarrowed: "src/lib/url/narrowing.ts",
+  /** Did ONE FAMILY of facets remove rows from this surface — the ATTRIBUTION
+   * question, one level below the rule above (admin-window/BUG-0192). It is in
+   * this map for the reason `hasChipFacet` is: presence, effect and
+   * attribution are three questions about one chip, and a page that spelled
+   * any two of them with one word gave one chip two opposite verdicts on two
+   * staging URLs. */
+  isFamilyNarrowing: "src/lib/url/narrowing.ts",
+  /** A claims read MINUS the chip facets the URL carried — this page's
+   * vocabulary applied to the rule above, and the one place the subtraction is
+   * spelled (admin-window/BUG-0192). A second copy would be the one that
+   * forgot the standing tab's own bucket is not a control above. */
+  withoutChipFacets: "src/lib/claims/filters.ts",
   /** The app's ONE claim predicate: claim rows + a `ClaimsFilter`, bucket arm
    * included (admin-window/DEBT-0014). */
   selectClaims: "src/lib/db/claims.ts",
@@ -374,5 +387,126 @@ describe("the narrowing vocabulary has one name per question", () => {
     for (const owner of new Set(Object.values(OWNER))) {
       expect(files, owner).toContain(owner);
     }
+  });
+});
+
+/**
+ * THE ATTRIBUTION RULE'S OWN THREE STATES (admin-window/BUG-0192).
+ *
+ * `isFamilyNarrowing` is the leaf a sentence asks before it points at a
+ * control: "did THIS family of facets remove rows from this surface". The rule
+ * it enforces is the architect's of 2026-09-11 (ARCHITECTURE.md §4.3) —
+ * presence is never evidence of effect — and it is graded here, on numbers
+ * alone, because that is the whole of what the leaf sees: it takes booleans
+ * and counts, imports nothing, and reaches no database.
+ *
+ * Each state is asserted in BOTH directions (LESSONS 8): a state that could
+ * only ever answer one way would pass vacuously.
+ */
+describe("did this family of facets narrow this surface", () => {
+  it("says nothing about a family that is not in force", () => {
+    // Whatever the rows did, this family did none of it — including over a
+    // surface some OTHER facet really narrowed, which is the state a presence
+    // answer would have got wrong by never being asked.
+    expect(
+      isFamilyNarrowing({
+        inForce: false,
+        othersInForce: true,
+        surface: { rendered: 2, population: 10 },
+        withoutFamily: 2,
+      }),
+    ).toBe(false);
+    expect(
+      isFamilyNarrowing({
+        inForce: false,
+        othersInForce: false,
+        surface: { rendered: 10, population: 10 },
+      }),
+    ).toBe(false);
+  });
+
+  it("is the surface's own two-fact answer where no other family is in force", () => {
+    // Every row this surface lost, it lost to this family, so the answer is
+    // `isSurfaceNarrowed` and no read is bought — asserted against that
+    // function rather than against a number typed here, so the two rules
+    // cannot come apart.
+    for (const surface of [
+      { rendered: 4, population: 10 },
+      { rendered: 10, population: 10 },
+      { rendered: 0, population: 0 },
+    ]) {
+      expect(
+        isFamilyNarrowing({ inForce: true, othersInForce: false, surface }),
+        JSON.stringify(surface),
+      ).toBe(isSurfaceNarrowed(true, surface));
+    }
+    // …and that really is both answers, so neither direction is vacuous.
+    expect(
+      isFamilyNarrowing({
+        inForce: true,
+        othersInForce: false,
+        surface: { rendered: 4, population: 10 },
+      }),
+    ).toBe(true);
+    expect(
+      isFamilyNarrowing({
+        inForce: true,
+        othersInForce: false,
+        surface: { rendered: 10, population: 10 },
+      }),
+    ).toBe(false);
+  });
+
+  it("asks the count with this family dropped where both families are in force", () => {
+    // The surface is narrowed in BOTH of these — same two facts — and the
+    // widened count is the whole difference between them: where the same read
+    // draws the same rows without this family's facets, the others did all of
+    // it and this family removed nothing.
+    const surface = { rendered: 3, population: 10 };
+    expect(
+      isFamilyNarrowing({
+        inForce: true,
+        othersInForce: true,
+        surface,
+        withoutFamily: 3,
+      }),
+    ).toBe(false);
+    expect(
+      isFamilyNarrowing({
+        inForce: true,
+        othersInForce: true,
+        surface,
+        withoutFamily: 6,
+      }),
+    ).toBe(true);
+  });
+
+  it("says NOTHING where the count that would establish it is absent", () => {
+    // Silence is true in every state and an attribution is not, so an
+    // unsupplied count — the leg that was never issued, or the one that
+    // refused — answers false rather than falling back to the two facts, which
+    // in this state cannot tell the two families apart.
+    const surface = { rendered: 3, population: 10 };
+    expect(
+      isFamilyNarrowing({ inForce: true, othersInForce: true, surface }),
+    ).toBe(false);
+    expect(
+      isFamilyNarrowing({
+        inForce: true,
+        othersInForce: true,
+        surface,
+        withoutFamily: undefined,
+      }),
+    ).toBe(false);
+    // Non-vacuous: the same surface with the count supplied answers true, so
+    // this is the absence being graded and not the numbers.
+    expect(
+      isFamilyNarrowing({
+        inForce: true,
+        othersInForce: true,
+        surface,
+        withoutFamily: 10,
+      }),
+    ).toBe(true);
   });
 });
