@@ -149,20 +149,56 @@ function errorCode(error: unknown): string | null {
 }
 
 /**
- * The `message` field alone, verbatim — what CLASSIFICATION reads.
+ * The words the DATABASE authored, verbatim, or `null` when it authored none.
  *
- * Kept separate from the full account below on purpose: the column-absent
- * arm mines this string for the column the database named, so it must see
- * exactly what the database put in `message`. A `details` payload quoting some
- * other identifier would otherwise be read as the missing column, and the
- * classification is required to be unchanged (admin-window/BUG-0016).
+ * PROVENANCE, in the shape admin-window/BUG-0179 already established for the
+ * account: the one fact no amount of reading the text could recover is WHO
+ * WROTE IT. A value that IS a string is the client's own sentence; a record
+ * whose `message` is a string carries the database's. Anything else — no
+ * `message` field, a `null` one, a number, a nested object — means the
+ * database said nothing here, and `null` says exactly that.
+ *
+ * This is what CLASSIFICATION reads, and the only thing it may read. The
+ * column-absent arm mines the returned string for the column the database
+ * named, so it must see exactly what the database put in `message`: a
+ * `details` payload quoting some other identifier would otherwise be read as
+ * the missing column (admin-window/BUG-0016), and this app's own
+ * `JSON.stringify` rendering of a foreign envelope would hand over a JSON KEY
+ * — a field name the envelope's author chose and ordered — as the column half
+ * of `missing` (admin-window/BUG-0185).
+ *
+ * Asked of the VALUE's shape only. Nothing here inspects the text: a message
+ * the database really did author is returned however long, however empty and
+ * whatever it says.
+ */
+function databaseMessage(error: unknown): string | null {
+  if (typeof error === "string") return error;
+  const message = asRecord(error)?.message;
+  return typeof message === "string" ? message : null;
+}
+
+/**
+ * A string for the ACCOUNT to render — the database's own words where there
+ * are any, and this app's serialisation of the whole value where there are
+ * not.
+ *
+ * Expressed through `databaseMessage`, because "did the database author this
+ * string?" is one question with one home: `databaseMessage` returning `null`
+ * is exactly the state this function answers by rendering the value through
+ * `JSON.stringify`, so the account's provenance and the classification's
+ * cannot drift apart (ARCHITECTURE.md Common violations rows 15 and 20).
+ *
+ * CLASSIFICATION does not read this — it reads `databaseMessage` — and the
+ * difference is deliberate: the account must still SAY something about a
+ * record that carried no sentence, and `accountParts` marks that part
+ * `serialised` so `errorMessage` counts it instead of quoting it
+ * (admin-window/BUG-0173, admin-window/BUG-0179). Returning `null` or `""`
+ * here would blank the account instead (admin-window/BUG-0016).
  */
 function messageOf(error: unknown): string {
-  if (typeof error === "string") return error;
-  const record = asRecord(error);
-  const message = record?.message;
-  if (typeof message === "string") return message;
-  if (record !== null) {
+  const authored = databaseMessage(error);
+  if (authored !== null) return authored;
+  if (asRecord(error) !== null) {
     try {
       return JSON.stringify(error);
     } catch {
@@ -631,6 +667,12 @@ function lastSegment(name: string): string | null {
  * Either way any qualifier is dropped: the table `classify` reports is the one
  * the query asked for, from `tables.ts` (ARCHITECTURE.md §4.1).
  *
+ * The string handed in is the DATABASE's own — `databaseMessage`, never
+ * `messageOf` — so "the first quoted run anywhere" is bounded by PROVENANCE
+ * as well as by the grammar. A value the database put no sentence in never
+ * reaches here at all, which is what keeps a JSON key of this app's own
+ * rendering of a foreign envelope out of `missing` (admin-window/BUG-0185).
+ *
  * The quoted spelling is a first quoted run ANYWHERE in the message, with no
  * `column` word required of it — that is what makes the honest PostgREST form
  * resolve, and it is also what let a foreign envelope's own prose be named as
@@ -662,12 +704,17 @@ function columnFromMessage(message: string): string | null {
  * spelling the message used, quoted or bare and qualified.
  *
  * The column half is the only part of `missing` that comes from OUTSIDE this
- * app, so it is admitted only when it matches the app's own object grammar
- * (`COLUMN_NAME`). A message naming no column, or naming something that is
- * not a column name this app could have spelled, falls back to the object the
- * query asked for rather than putting a stranger's text where an object name
- * belongs (admin-window/BUG-0181). Consumers inherit an object name and are
- * asked to isolate nothing.
+ * app, so it passes two gates. PROVENANCE first: the only string mined is
+ * `databaseMessage(error)`, the words the DATABASE authored. A value carrying
+ * no message at all — no `message` field, a `null`, a number, a nested object
+ * — named no column, whatever this app's own serialisation of it happens to
+ * contain, so it falls back to the object the query asked for exactly as a
+ * message naming no column does (admin-window/BUG-0185). Then GRAMMAR: a
+ * mined name is admitted only when it matches the app's own object grammar
+ * (`COLUMN_NAME`), so naming something that is not a column name this app
+ * could have spelled falls back the same way, rather than putting a
+ * stranger's text where an object name belongs (admin-window/BUG-0181).
+ * Consumers inherit an object name and are asked to isolate nothing.
  *
  * A function-absent code names nothing further: `missing` is the name the
  * caller passed, which is the name it called (admin-window/TASK-0047).
@@ -699,11 +746,18 @@ export function classify(
   });
   if (code === null) return refuse();
 
+  // The one string CLASSIFICATION may read: what the DATABASE said, or `null`
+  // when it said nothing. Never `messageOf`, whose fallback is this app's own
+  // rendering of the value (admin-window/BUG-0185).
+  const said = databaseMessage(error);
+
   if (ABSENCE_CODES[asked].has(code)) {
     // The absent OPERATOR shares `42883` with the absent function, and a
     // function's own body can raise it; it is not an absence of what was
-    // asked for, so it falls through to `error`.
-    if (asked === "function" && MISSING_OPERATOR.test(messageOf(error))) {
+    // asked for, so it falls through to `error`. A message the database did
+    // not author tests nothing and makes no operator claim, so a silent
+    // `42883` stays the absent function the caller asked for.
+    if (asked === "function" && said !== null && MISSING_OPERATOR.test(said)) {
       return refuse();
     }
     return { kind: "not_provisioned", missing };
@@ -712,7 +766,7 @@ export function classify(
   // A column is absent OF the table that was asked for, so it is an absence
   // only for a table read — the column codes cannot describe a function call.
   if (asked === "table" && COLUMN_ABSENT_CODES.has(code)) {
-    const column = columnFromMessage(messageOf(error));
+    const column = said === null ? null : columnFromMessage(said);
     if (column === null || column === missing || missing.endsWith(`.${column}`)) {
       return { kind: "not_provisioned", missing };
     }

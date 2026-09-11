@@ -301,21 +301,25 @@ describe("classify", () => {
   });
 
   /**
-   * `messageOf`'s own contract (src/lib/db/result.ts): the column-absent arm
-   * reads the `message` field ALONE, "so it must see exactly what the database
-   * put in `message`. A `details` payload quoting some other identifier would
-   * otherwise be read as the missing column." An envelope whose `message` is
+   * `databaseMessage`'s own contract (src/lib/db/result.ts — the accessor
+   * this ticket moved that contract to): the column-absent arm reads the
+   * `message` field ALONE, "so it must see exactly what the database put in
+   * `message`: a `details` payload quoting some other identifier would
+   * otherwise be read as the missing column". An envelope whose `message` is
    * not a string put no column anywhere, so the verdict names the object the
    * QUERY asked for rather than a name taken out of the app's own rendering of
    * the error record (campaign admin-window/BUG-0185).
    *
-   * PINNED `it.fails` while admin-window/BUG-0185 is open — it is RED against
-   * the current derivation (`missing` comes back `review_items.code`, mined
-   * out of `JSON.stringify(error)`). The day the divergence goes, this turns
-   * red the other way and sends the reader to that ticket; lifting the pin
-   * back to `it(` is part of its fix.
+   * LANDED derivation (admin-window/BUG-0185): classification reads
+   * `databaseMessage(error)` — the words the DATABASE authored, `null` when
+   * it authored none — and never `messageOf`, whose fallback is this app's
+   * own `JSON.stringify` rendering of the whole record. `null` means no
+   * column was named, so the verdict is the arm that already exists, naming
+   * the object the query asked for. Before that, every shape below came back
+   * `review_items.code`: the first quoted run of the app's own JSON, which is
+   * a field NAME the envelope's author chose and ordered.
    */
-  it.fails("mines a column only out of what the database put in message", () => {
+  it("mines a column only out of what the database put in message", () => {
     // MUST NOT ADMIT: no `message` string means no column was named.
     const NO_MESSAGE: ReadonlyArray<[string, unknown]> = [
       ["no message field at all", { code: "42703" }],
@@ -342,6 +346,33 @@ describe("classify", () => {
     expect(
       classify({ code: "42703", message: 'column "severity" does not exist' }, T.reviewItems),
     ).toEqual({ kind: "not_provisioned", missing: `${T.reviewItems}.severity` });
+  });
+
+  it("asks the operator exception of the database's words too, not the app's", () => {
+    // The file's other CLASSIFICATION read of a message moved with the one
+    // above, because it is the same question: what the DATABASE said about
+    // what is missing (admin-window/BUG-0185, criterion 3). A message the
+    // database did not author tests nothing and makes no operator claim.
+    const SILENT: ReadonlyArray<[string, unknown]> = [
+      ["no message field at all", { code: "42883" }],
+      ["a null message", { code: "42883", message: null }],
+      [
+        "an operator sentence the app would have to serialise to see",
+        { code: "42883", message: { text: "operator does not exist: text <-> integer" } },
+      ],
+    ];
+    for (const [shape, error] of SILENT) {
+      // "A 42883 that says nothing at all is still an absent function to a
+      // caller that asked for one" — src/lib/db/result.ts's own standing rule.
+      expect(classify(error, SETTLE_FUNCTION, "function"), shape).toEqual({
+        kind: "not_provisioned",
+        missing: SETTLE_FUNCTION,
+      });
+    }
+
+    // MUST FLAG (the twin, LESSONS 8): the honest operator message on the
+    // same read still refuses the absence.
+    expect(classify(missingOperator(), SETTLE_FUNCTION, "function").kind).toBe("error");
   });
 
   it("carries the database's own message verbatim for any other failure", () => {
