@@ -83,12 +83,15 @@ const OWNER: Readonly<Record<string, string>> = {
    * it, and how to read it off that surface's own filter. */
   UnchippedFacet: "src/lib/url/narrowing.ts",
   /** Where "no narrowing at all, on this tab" IS — the one control that undoes
-   * every facet a claims URL applied, the ones with no chip row included
+   * every facet a URL applied, the ones with no chip row included
    * (admin-window/BUG-0161). It is in this map because it is the inverse of
    * the two questions above it: a second copy that subtracted the facets
    * someone remembered, rather than building the href from the empty filter,
-   * is exactly how a page comes to offer an exit that does not exit. */
-  clearNarrowing: "src/lib/claims/filters.ts",
+   * is exactly how a page comes to offer an exit that does not exit — and it
+   * MOVED here from `src/lib/claims/filters.ts` when `/queues` needed the same
+   * control and this rule caught the second declaration
+   * (admin-window/BUG-0164). Each surface still hands in its own two facts. */
+  clearNarrowing: "src/lib/url/narrowing.ts",
   /** Narrowed BEYOND what a block already applies to itself? Fact 1, queues. */
   isNarrowedBeyond: "src/lib/review/queue-filters.ts",
   /** The queues-domain adapter of the two-fact rule. */

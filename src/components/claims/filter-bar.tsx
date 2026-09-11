@@ -1,5 +1,6 @@
-import { Chip, Eyebrow } from "@/components/ui";
-import { CLEAR_EYEBROW, type FilterChoice, type FilterFacet } from "@/lib/claims/filters";
+import { Chip, ClearRow, Eyebrow } from "@/components/ui";
+import { type FilterFacet } from "@/lib/claims/filters";
+import type { ExitChoice } from "@/lib/url/narrowing";
 
 /**
  * The Claims page's filters — campaign admin-window/TASK-0012.
@@ -34,13 +35,12 @@ export function FilterBar({
    * The one control that clears EVERY narrowing the URL applied, or `null`
    * where it applied none (`clearNarrowing`, admin-window/BUG-0161).
    *
-   * It is a row of this bar rather than a link inside the empty card because
-   * a narrowing with no control is un-clearable in every state, not only the
-   * one where it emptied the list: `?domain=zzz` narrows a page that still
-   * draws rows just as thoroughly, and the operator who wants out of it is on
-   * the same screen either way. The card names this chip; the chip is here.
+   * It is a row of this bar rather than a link inside the empty card, and it
+   * is drawn by `ui/ClearRow` — the same module that assembles the sentence
+   * the card names it with, so the promise and the control cannot come apart
+   * (admin-window/BUG-0164).
    */
-  clear?: FilterChoice | null;
+  clear?: ExitChoice | null;
 }) {
   return (
     <div className="flex flex-col gap-2">
@@ -67,20 +67,7 @@ export function FilterBar({
           ))}
         </div>
       ))}
-      {clear === null ? null : (
-        <div
-          data-clear-narrowing
-          role="group"
-          aria-label={CLEAR_EYEBROW}
-          className="flex flex-wrap items-center gap-2"
-        >
-          {/* The app's own words, so this eyebrow is `micro` prose and not the
-              mono identifier every chip row above it carries: the row sets no
-              parameter and there is no parameter name to render. */}
-          <Eyebrow label={CLEAR_EYEBROW} />
-          <Chip label={clear.label} href={clear.href} active={clear.active} />
-        </div>
-      )}
+      <ClearRow clear={clear} />
     </div>
   );
 }

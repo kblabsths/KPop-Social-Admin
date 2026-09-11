@@ -1,6 +1,7 @@
 import {
   isSurfaceNarrowed,
   type SurfacePopulation,
+  type UnchippedFacet,
 } from "@/lib/url/narrowing";
 import {
   KINDS,
@@ -588,6 +589,48 @@ export function facetChips(
 export function filterBar(path: string, filter: ReviewItemFilter): FilterFacet[] {
   return FACETS.map((facet) => facetChips(path, filter, facet));
 }
+
+/* ── the exit (admin-window/BUG-0164) ────────────────────────────────────── */
+
+/**
+ * THIS surface's table of control-less facets — how to read each off a
+ * `ReviewItemFilter` and what to call it — in `NARROWING_FACETS` order.
+ *
+ * Exactly `SOURCE_FACET` today: the four in `FACETS` draw a chip row each, and
+ * the source's vocabulary is unbounded data this page never reads. The
+ * vocabulary is this page's and stays here, beside the filters it is read off;
+ * the SHAPE (`UnchippedFacet`, `UnchippedNarrowing`) and the functions over it
+ * belong to `src/lib/url/narrowing.ts` (admin-window/TASK-0072), which is what
+ * `/claims` declares its own table against.
+ *
+ * The words are the ones the empty card's exit sentence needs — the facet is
+ * named there as an identifier, the value beside it — and they read the way
+ * `SourceScope` says the same narrowing one element higher up the page.
+ */
+export const QUEUES_UNCHIPPED_FACETS: readonly UnchippedFacet<ReviewItemFilter>[] =
+  [
+    {
+      facet: SOURCE_FACET,
+      before: "of source ",
+      after: "",
+      value: (filter: ReviewItemFilter) => filter[SOURCE_FACET],
+    },
+  ];
+
+/*
+ * The exit CONTROL is `clearNarrowing` in `src/lib/url/narrowing.ts` — one
+ * declaration for every surface (admin-window/BUG-0164), called by this page
+ * with its two facts: `isNarrowedBeyond(filter, {})` — did this URL narrow
+ * anything at all — and `queuesHref(path, {}, tab)`, this page with NOTHING
+ * set, on the tab the operator is on.
+ *
+ * Why this page needs one: an `all` chip clears ITS OWN facet and carries
+ * every other one forward, `source_id` included, so on
+ * `/queues?source_id=<id>&status=settled` no chip on the page returns the
+ * operator to an unnarrowed queue. That is the defect admin-window/BUG-0161
+ * fixed on `/claims` while this page's empty card went on promising the
+ * chip-row way out that never existed (admin-window/BUG-0164).
+ */
 
 /* ── the tab strip ───────────────────────────────────────────────────────── */
 

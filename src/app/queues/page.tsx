@@ -16,6 +16,7 @@ import {
   type EmptyWords,
 } from "@/components/gauges";
 import {
+  ClearedBy,
   DroppedParamsLine,
   Empty,
   Identifier,
@@ -41,6 +42,7 @@ import {
 } from "@/lib/gauges/queue-health";
 import { recordHref } from "@/lib/records/routes";
 import {
+  QUEUES_UNCHIPPED_FACETS,
   SOURCE_FACET,
   TAB_PARAM,
   filterBar,
@@ -55,6 +57,7 @@ import {
   type SearchParams,
 } from "@/lib/review/queue-filters";
 import { droppedParams } from "@/lib/url/dropped-params";
+import { clearNarrowing, unchippedNarrowings } from "@/lib/url/narrowing";
 import {
   KINDS,
   oldestOpenedAt,
@@ -214,11 +217,37 @@ const OPEN_LABEL: Record<Kind, string> = {
  * unchanged: `NOTHING_IN_QUEUE[kind]` is the old `NOTHING_HERE[kind]`.
  */
 
-/** The emptiness that has a REASON: the filters, not the database. */
-const NOTHING_MATCHED: EmptyWords = {
-  holds: "items matching these filters",
-  filledBy: "Widen a filter above; the 'all' chip on any row shows everything again.",
-};
+/** What an emptiness with a REASON holds: the filters narrowed it, not the database. */
+const NOTHING_MATCHED_HOLDS = "items matching these filters";
+
+/**
+ * The emptiness that has a REASON, and the ONE way out of it
+ * (admin-window/BUG-0164).
+ *
+ * The exit used to be two sentences and neither exited: the first told the
+ * operator to widen a filter above and the second pointed at any row's `all`
+ * chip. Both are false the moment `?source_id=` is set — every chip on this
+ * page carries that parameter forward, all four `all` chips included, and it
+ * has no chip row of its own (`SOURCE_FACET`) — so the card's advice returned
+ * the operator to the same zeroed queue.
+ *
+ * admin-window/BUG-0161 replaced exactly that sentence on `/claims`, which
+ * carries the same shape of narrowing, and this page kept the old copy for a
+ * milestone: one empty state, two readings, one app. What stands here now is
+ * that page's sentence IMPORTED — `ui/ClearedBy`, assembled beside the chip it
+ * names — never retyped, which is the defect that produced this ticket
+ * (LESSONS 5).
+ */
+function narrowedEmpty(filter: ReviewItemFilter): EmptyWords {
+  return {
+    holds: NOTHING_MATCHED_HOLDS,
+    filledBy: (
+      <ClearedBy
+        narrowings={unchippedNarrowings(filter, QUEUES_UNCHIPPED_FACETS)}
+      />
+    ),
+  };
+}
 
 /**
  * Where a review item opens, from its id alone — the one spelling of that URL
@@ -381,7 +410,7 @@ function Queue({
   // disappears at zero cannot be scanned in the same place every morning
   // (admin-window/BUG-0027; LOOK_AND_FEEL bar 1 and "counts sit in fixed
   // positions"). The `Empty` card is untouched and stays where rows go.
-  const words = narrowed ? NOTHING_MATCHED : NOTHING_IN_QUEUE[kind];
+  const words = narrowed ? narrowedEmpty(filter) : NOTHING_IN_QUEUE[kind];
   return (
     <QueueList
       {...shared}
@@ -689,7 +718,18 @@ export default async function QueuesPage({
   return (
     <Page title="Queues">
       {tabs}
-      <FilterBar facets={filterBar(QUEUES_PATH, filter)} />
+      {/* The chip rows, and under them the ONE control that clears every
+          narrowing at once — `all` clears its own facet and carries the other
+          four forward, `source_id` included, so no chip on this page is an
+          exit from a filter (admin-window/BUG-0164). It draws nothing where
+          the URL narrowed nothing. */}
+      <FilterBar
+        facets={filterBar(QUEUES_PATH, filter)}
+        clear={clearNarrowing(
+          isNarrowedBeyond(filter, {}),
+          queuesHref(QUEUES_PATH, {}, tab),
+        )}
+      />
       {droppedLine(filter)}
       {/* The source narrowing has no chip row to show it active, so the page
           states it in a line of its own — with the id verbatim and a link back

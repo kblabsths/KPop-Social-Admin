@@ -207,3 +207,109 @@ export function unchippedNarrowings<Filter>(
 export function unchippedPhrase(narrowing: UnchippedNarrowing): string {
   return `${narrowing.before}${narrowing.value}${narrowing.after}`;
 }
+
+/* ── the exit every narrowed surface offers ──────────────────────────────── */
+
+/**
+ * The app's word for the ONE control that clears every narrowing at once
+ * (admin-window/BUG-0161).
+ *
+ * A facet's own "all" chip clears ONE facet and says so; this clears the whole
+ * filter. The two are different promises and carry different words, because
+ * `/claims?domain=zzz` made the difference load-bearing: every chip on the
+ * page — both `all` chips included — carried `domain=zzz` forward, so the one
+ * action the empty card named returned the operator to the same zeroed page,
+ * and the narrowing that emptied it had no control on the screen at all.
+ *
+ * **It lives here rather than beside one page's filters** (campaign
+ * admin-window/BUG-0164). It was `src/lib/claims/filters.ts`' alone, and
+ * `/queues` — which carries the same five narrowings and the same chipless
+ * one — kept the sentence BUG-0161 replaced, so one empty state read two ways
+ * on two pages of one app. A shared spelling gets imported, never retyped
+ * (LESSONS 5); what each surface still supplies is the href of its own
+ * unnarrowed page, because only that surface can write its own URL
+ * (`clearNarrowing` below).
+ */
+export const CLEAR_LABEL = "clear filters";
+
+/**
+ * What the row holding that control is CALLED — its `role="group"` name, and
+ * the eyebrow standing over it.
+ *
+ * The app's own word rather than a parameter name: the row is not a facet, so
+ * unlike every chip row above it there is no identifier to render (the chip
+ * rows' eyebrows are `MicroLabel.identifier`, this one is words).
+ */
+export const CLEAR_EYEBROW = "narrowing";
+
+/**
+ * The words an empty surface names that control with — assembled here, beside
+ * the label, so the card and the chip cannot come to disagree about what
+ * clicking it does (LESSONS 5: a shared spelling gets imported, never
+ * retyped). `CLEAR_LABEL` is interpolated rather than spelled a second time,
+ * so the card quotes the chip's own word by construction.
+ *
+ * Five pieces, because the facet's name is a machine identifier and takes the
+ * app's one identifier face in markup (`ui/Identifier`, LOOK_AND_FEEL Voice
+ * bar 5) — the same split `UnchippedNarrowing` makes for the same reason.
+ * `ui/ClearedBy` is the ONE thing that assembles them, and no page assembles
+ * them itself.
+ */
+export const CLEARED_BY = {
+  /** The whole promise, and it is the control's own promise. */
+  chip: `The '${CLEAR_LABEL}' chip above clears every filter in this URL`,
+  /** …before the first control-less facet's own name. */
+  including: ", including ",
+  /** …between two of them, on a page that ever has two. */
+  and: ", ",
+  /** …and after the last, saying why the operator could not find it. */
+  withNoChip: ", which has no chip row of its own",
+  end: ".",
+} as const;
+
+/** One exit control: what it says, where it goes, and whether we are on it. */
+export interface ExitChoice {
+  label: string;
+  href: string;
+  active: boolean;
+}
+
+/**
+ * The exit itself: where "no narrowing at all, on this tab" is, or `null` when
+ * this URL narrows nothing and there is nothing to clear.
+ *
+ * **One declaration for every surface** (admin-window/BUG-0164, the vocabulary
+ * rule of admin-window/DEBT-0010). It was `/claims`' alone, and `/queues`
+ * needed the same control for the same reason; a second copy of it would be a
+ * second answer to one question, which is the class this map-guarded module
+ * exists to prevent.
+ *
+ * It takes the two facts and writes no URL of its own, because only a surface
+ * can spell its own:
+ *
+ *  - `narrowed` — did this URL apply a narrowing AT ALL? Each surface's own
+ *    question, under its own name (`hasNarrowingFacet` for `/claims`,
+ *    `isNarrowedBeyond(filter, {})` for `/queues`), for the reason
+ *    `isSurfaceNarrowed` takes a boolean: a leaf that took the filters would
+ *    have to know every filter type in the app.
+ *  - `unnarrowedHref` — where this surface is with NOTHING set, on the tab the
+ *    operator is on. **Built from the EMPTY filter, never by subtracting the
+ *    facets someone remembered**: that is what makes the exit total over the
+ *    surface's facets rather than over the ones that happen to draw a chip, so
+ *    a facet added tomorrow is dropped by this href on the day it is read.
+ *    Both call sites pass `<surface>Href(path, {}, tab)` and each page's own
+ *    test follows the rendered href back to a page that narrows nothing.
+ *
+ * The TAB is the one narrowing this deliberately does not clear — it is a
+ * control the operator can see and cross back from, which is exactly what the
+ * facets it does clear are not — and it stays because the caller's href
+ * carries it.
+ */
+export function clearNarrowing(
+  narrowed: boolean,
+  unnarrowedHref: string,
+): ExitChoice | null {
+  return narrowed
+    ? { label: CLEAR_LABEL, href: unnarrowedHref, active: false }
+    : null;
+}

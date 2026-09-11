@@ -19,6 +19,7 @@ import {
 } from "@/components/gauges";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import {
+  ClearedBy,
   DroppedParamsLine,
   Empty,
   Eyebrow,
@@ -51,11 +52,9 @@ import type { DbResult } from "@/lib/db/result";
 import { readSources } from "@/lib/db/sources";
 import { count, counted, duration } from "@/lib/format";
 import {
-  CLEARED_BY,
   claimsHref,
   claimsNarrowed,
   claimsQuery,
-  clearNarrowing,
   droppedParams,
   CLAIMS_UNCHIPPED_FACETS,
   filterBar,
@@ -79,6 +78,7 @@ import {
 // the same sentence read one declaration (admin-window/TASK-0072, LESSONS 5).
 // The facet TABLE stays the page's own, above.
 import {
+  clearNarrowing,
   isFamilyNarrowing,
   unchippedNarrowings,
   unchippedPhrase,
@@ -218,21 +218,22 @@ const NOTHING_STANDING: EmptyWords = {
 const NOTHING_MATCHED = {
   /** What the chip facets narrow to, in the window line's own spelling. */
   filters: NARROWED_BY_FILTERS,
-  /**
-   * The way out — ONE control, named in its own words and rendered by the
-   * filter bar above (`CLEARED_BY` / `clearNarrowing`,
-   * admin-window/BUG-0161).
-   *
-   * It used to be two sentences and neither exited: "Widen a filter above;
-   * the 'all' chip on any row shows everything again" was false the moment
-   * `?domain=` was set — every chip on the page carries that parameter
-   * forward, both `all` chips included — and the second sentence sent the
-   * operator to the address bar, which is not a control this page draws.
-   * The words are imported from beside the control rather than typed here, so
-   * the card cannot name a chip that says something else (LESSONS 5).
-   */
-  clearedBy: CLEARED_BY,
 } as const;
+
+/*
+ * The other half of that card — the way OUT — is `ui/ClearedBy`, assembled
+ * beside the control it names (admin-window/BUG-0161).
+ *
+ * It used to be two sentences and neither exited: the first told the operator
+ * to widen a filter above and the second pointed at any row's `all` chip,
+ * which was false the moment `?domain=` was set — every chip on the page
+ * carries that parameter forward, both `all` chips included — while the
+ * remaining way out was the address bar, which is not a control this page
+ * draws. Those words are now spelled NOWHERE under `src/`, on this page or on
+ * `/queues`, which kept them a ticket longer (admin-window/BUG-0164); the
+ * sentence that replaced them is one exported thing both pages import, so the
+ * card cannot name a chip that says something else (LESSONS 5).
+ */
 
 /**
  * What the bucket table's figures are figures OF — the sentence under it, in
@@ -565,27 +566,13 @@ function narrowedEmpty(
         {chipNarrowing ? ` ${NOTHING_MATCHED.filters}` : ""}
       </>
     ),
-    filledBy: (
-      <>
-        {NOTHING_MATCHED.clearedBy.chip}
-        {/* Each facet the page renders no chip row for, named by the
-            parameter the URL spells it with — so the sentence says both what
-            the one control clears and why the operator could not find the
-            narrowing that emptied this list. */}
-        {narrowings.map((narrowing, index) => (
-          <Fragment key={narrowing.facet}>
-            {index === 0
-              ? NOTHING_MATCHED.clearedBy.including
-              : NOTHING_MATCHED.clearedBy.and}
-            <Identifier>{narrowing.facet}</Identifier>
-            {index === narrowings.length - 1
-              ? NOTHING_MATCHED.clearedBy.withNoChip
-              : ""}
-          </Fragment>
-        ))}
-        {NOTHING_MATCHED.clearedBy.end}
-      </>
-    ),
+    // The one exit, and each facet the page renders no chip row for, named by
+    // the parameter the URL spells it with — so the sentence says both what
+    // the one control clears and why the operator could not find the narrowing
+    // that emptied this list. Assembled by `ui/ClearedBy`, which is also where
+    // the chip the sentence quotes is drawn, and which `/queues` says word for
+    // word (admin-window/BUG-0164).
+    filledBy: <ClearedBy narrowings={narrowings} />,
   };
 }
 
@@ -1655,7 +1642,10 @@ export default async function ClaimsPage({
         // not only the one where it emptied the list (admin-window/BUG-0161).
         // It is `null` where the URL narrowed nothing, so the row appears
         // exactly where there is something to clear.
-        clear={clearNarrowing(CLAIMS_PATH, filter, tab)}
+        clear={clearNarrowing(
+          hasNarrowingFacet(filter),
+          claimsHref(CLAIMS_PATH, {}, tab),
+        )}
       />
       <DroppedParamsLine
         dropped={droppedParams(params, filter, [UNRENDERABLE_BUCKET])}

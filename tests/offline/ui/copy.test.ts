@@ -556,3 +556,112 @@ function glossaryOffenders(base?: string): string[] {
     glossaryViolationsIn(sourceText(file, base)).map((hit) => `${file} ${hit}`),
   );
 }
+
+/* ── the exit sentence, one spelling for the whole app ───────────────────── */
+
+/**
+ * **The way out of a narrowing is ONE sentence, declared once** — campaign
+ * admin-window/BUG-0161, and admin-window/BUG-0164, which exists because it
+ * was not.
+ *
+ * BUG-0161 measured the defect on staging at `/claims?domain=zzz`: the empty
+ * card told the operator to widen a filter above and to use any row's `all`
+ * chip, while every anchor on the page carried `domain=zzz` forward, both
+ * `all` chips included — so the one action it named returned to the same
+ * zeroed page. It replaced that sentence on `/claims`. `/queues` carries the
+ * same shape of narrowing (`source_id` has no chip row either) and kept the
+ * old words for a milestone, so one empty state read two ways on two pages of
+ * one app.
+ *
+ * Two rules over the whole tree, because the class is a RETYPED SPELLING and
+ * neither page's own test can see the other page (LESSONS 5):
+ *
+ *  1. the retired advice is spelled nowhere under `src/` — not as copy, not in
+ *     a comment quoting it back, which is how the second copy survived the
+ *     first fix;
+ *  2. the sentence that replaced it is declared in exactly ONE module, and
+ *     every surface that says it imports it from there.
+ *
+ * Asserted over the source TREE rather than over two files, for the reason the
+ * inter-element-space rule above is: a third surface written tomorrow is
+ * covered on the day it is written, and no per-page test has to remember.
+ */
+describe("the exit an empty surface names", () => {
+  /**
+   * The retired advice, in the fragments that identify it. Either one is the
+   * defect: the first is the whole of the first sentence, and the second is
+   * what the `all`-chip half promised.
+   */
+  const RETIRED = ["Widen a filter above", "shows everything again"] as const;
+
+  /** The fragment that identifies the replacement, wherever it is written. */
+  const REPLACEMENT = "chip above clears every filter in this URL";
+
+  /** Where the app's ONE declaration of it lives. */
+  const HOME = "src/lib/url/narrowing.ts";
+
+  const sitesOf = (needle: string, base?: string): string[] =>
+    sourceFiles(base).flatMap((file) => {
+      const lines = sourceText(file, base).split("\n");
+      return lines.flatMap((line, index) =>
+        line.includes(needle) ? [`${file}:${index + 1}`] : [],
+      );
+    });
+
+  it("flags the retired advice and clears the sentence that replaced it", () => {
+    // The RED state of the rule below, on a tree of its own, so the assertion
+    // over `src/` can never go vacuous: one file carrying the old copy, one
+    // carrying the new. Both fragments are found, and the replacement is not
+    // mistaken for either.
+    const base = path.join(
+      repoRoot,
+      "tests",
+      ".probes",
+      `copy-exit-${process.pid}-${randomUUID()}`,
+    );
+    const OLD = "src/app/old/page.tsx";
+    const NEW = "src/app/new/page.tsx";
+    try {
+      mkdirSync(path.join(base, "src", "app", "old"), { recursive: true });
+      mkdirSync(path.join(base, "src", "app", "new"), { recursive: true });
+      writeFileSync(
+        path.join(base, OLD),
+        "const words = \"Widen a filter above; the 'all' chip on any row shows everything again.\";\n",
+      );
+      writeFileSync(
+        path.join(base, NEW),
+        `const words = "The 'clear filters' ${REPLACEMENT}.";\n`,
+      );
+
+      expect(sourceFiles(base)).toEqual([NEW, OLD]);
+      for (const fragment of RETIRED) {
+        expect(sitesOf(fragment, base), fragment).toEqual([`${OLD}:1`]);
+      }
+      expect(sitesOf(REPLACEMENT, base)).toEqual([`${NEW}:1`]);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves the retired advice nowhere under src/", () => {
+    // Non-vacuous: this is plainly the real tree, and it holds both pages the
+    // sentence lived on.
+    const files = sourceFiles();
+    expect(files.length).toBeGreaterThan(50);
+    expect(files).toContain("src/app/queues/page.tsx");
+    expect(files).toContain("src/app/claims/page.tsx");
+    for (const fragment of RETIRED) expect(sitesOf(fragment), fragment).toEqual([]);
+  });
+
+  it("declares the replacement once, and nowhere else in the tree", () => {
+    // One exported thing: every surface that says this sentence imports it, so
+    // a page cannot come to promise an exit in words of its own. The home is
+    // the shared narrowing leaf rather than either page's filters, because a
+    // leaf may not import another surface's module.
+    expect(sitesOf(REPLACEMENT).map((site) => site.split(":")[0])).toEqual([HOME]);
+    // …and both pages that say it reach it by import.
+    for (const page of ["src/app/queues/page.tsx", "src/app/claims/page.tsx"]) {
+      expect(sourceText(page), page).toContain("ClearedBy");
+    }
+  });
+});
