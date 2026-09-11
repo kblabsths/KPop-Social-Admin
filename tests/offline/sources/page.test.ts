@@ -1494,6 +1494,66 @@ describe("the settled-values trend", () => {
     expect(notProvisioned(markup)).toContain(T.observations);
     expect(sourceIds(markup)).toEqual(SOURCES.map((source) => source.source_id));
   });
+
+  /**
+   * **The figures move, and no word in this section moves with them** —
+   * admin-window/BUG-0194, filed by QA against the landed TASK-0073 tree.
+   *
+   * The settled-values scan is the fleet's (`readRejectionStampGauge()` takes
+   * no filter), so its window LINE correctly names no narrowing — that is
+   * TASK-0073's own ruling and it is not in question here. But
+   * `RejectionSection` narrows the ROWS it reports, so under `?source_id=`
+   * both cards under that line carry one source's figures while every word
+   * above and around them is byte-identical to the fleet's rendering. A
+   * reader is given a narrowed number under an unnarrowed sentence, which is
+   * the class LESSONS 2 names.
+   *
+   * The assertion is fix-agnostic on purpose: it asks only that SOME word in
+   * the line-and-cards head change when the figures change. Narrowing the
+   * read at the query, or scoping the card labels, both satisfy it; nothing
+   * about which is dictated here. Non-vacuous by construction — the figures
+   * are asserted to differ first, off the rendering itself.
+   *
+   * Pinned `it.fails` while the bug is live (the idiom this suite used for
+   * admin-window/BUG-0022): the day the section says it, this turns red and
+   * sends the reader to the ticket.
+   */
+  it.fails(
+    "says nothing about the narrowing its own figures carry [BUG-0194]",
+    async () => {
+      const bare = await renderSources(healthyScript());
+      const narrowed = await renderSources(healthyScript(), {
+        source_id: SOURCE.ticketmaster,
+      });
+
+      /**
+       * This section's head: the sentence about the read, and the cards whose
+       * figures sit under it — its WORDS (every digit masked, so two clocks
+       * and two counts cannot make two renderings differ on their own) and its
+       * FIGURES, read off the same markup.
+       */
+      const headOf = (markup: string) => {
+        const $ = cheerio.load(markup);
+        const line = $('[data-window="rejections"]');
+        expect(line.length).toBe(1);
+        const cards = line.next();
+        const text = (node: cheerio.Cheerio<never>) =>
+          node.text().replace(/\s+/g, " ").trim();
+        return {
+          words: `${text(line)} ${text(cards)}`.replace(/[\d,]+/g, "#").trim(),
+          figures: text(cards).match(/\d[\d,]*/g) ?? [],
+        };
+      };
+
+      // The narrowing really does move this section's figures — otherwise the
+      // silence below would be about a page that says nothing either way.
+      expect(headOf(bare).figures.length).toBeGreaterThan(0);
+      expect(headOf(narrowed).figures).not.toEqual(headOf(bare).figures);
+
+      // ...and not one word of the sentence over them changes to say so.
+      expect(headOf(narrowed).words).not.toBe(headOf(bare).words);
+    },
+  );
 });
 
 /**
