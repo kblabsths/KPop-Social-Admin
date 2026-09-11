@@ -3467,6 +3467,102 @@ describe("a narrowing with no chip row", () => {
     );
   });
 
+  /**
+   * THE WHOLE STATE SPACE OF THE RULE, SWEPT (QA, admin-window/BUG-0192 +
+   * BUG-0193 re-check).
+   *
+   * The three pins above each grade ONE state. This class has now been wrong
+   * three times in three different states — a chip the URL merely named
+   * (BUG-0191's residual), a chip family whose effect was never measured
+   * (BUG-0192), and a bucket the SURFACE merged in being subtracted with the
+   * URL's (BUG-0193) — and each time the state that broke was one nobody had
+   * written a pin for. So this grades every state both tabs can be in, against
+   * arithmetic computed from the fixture population and never typed:
+   *
+   *  - the clause is read off the app (`NARROWED_BY_FILTERS`), never spelled
+   *    here, so a rewording moves it and does not redden this;
+   *  - the expectation is `rows(applied) !== rows(applied minus the chip
+   *    facets THIS URL contributed)` — on the standing tab the tab's own
+   *    bucket is not one of them, which is the whole of BUG-0193;
+   *  - and on that tab every `head:true` count the render issued must carry
+   *    the tab's own bucket, so no attribution is ever decided off the other
+   *    tab's population.
+   *
+   * Non-vacuous in both directions by its own census (90 of 128 states carry
+   * the clause), and it really grades the fix: at
+   * `?tab=standing&bucket=…&source_id=<third>&domain=groups` the applied read
+   * holds 1 claim and so does the correctly widened one — while the widened
+   * read of BOTH defective subtractions holds 2, which would earn the clause
+   * this asserts is absent.
+   */
+  it("says a chip narrowed the list in exactly the states a chip removed a row", async () => {
+    const census = { states: 0, clause: 0, counts: 0 };
+    const failures: string[] = [];
+    for (const tab of [undefined, "standing"] as const) {
+      for (const bucket of [undefined, "escalated", "agreeing", STANDING_BUCKET]) {
+        for (const source of [undefined, SOURCE.first, SOURCE.second, SOURCE.third]) {
+          for (const domain of [undefined, "events", "groups", "venues"]) {
+            const params: Record<string, string> = {};
+            if (tab !== undefined) params.tab = tab;
+            if (bucket !== undefined) params.bucket = bucket;
+            if (source !== undefined) params.source_id = source;
+            if (domain !== undefined) params.domain = domain;
+            const where = JSON.stringify(params);
+            const { markup, stub } = await renderWithStub(healthyScript(), params);
+
+            // The read the list was given, and the same read with only the
+            // chip facets the URL CONTRIBUTED to it dropped. The standing
+            // tab's bucket is the surface's own and is in neither subtraction.
+            const applied =
+              tab === "standing"
+                ? { bucket: STANDING_BUCKET, source_id: source, domain }
+                : { bucket, source_id: source, domain };
+            const widened =
+              tab === "standing"
+                ? { bucket: STANDING_BUCKET, source_id: undefined, domain }
+                : { bucket: undefined, source_id: undefined, domain };
+            const chipInForce =
+              tab === "standing"
+                ? source !== undefined
+                : bucket !== undefined || source !== undefined;
+            const rows = (facets: Record<string, string | undefined>) =>
+              matching(
+                Object.fromEntries(
+                  Object.entries(facets).filter(([, value]) => value !== undefined),
+                ) as Record<string, string>,
+              ).length;
+            const expected = chipInForce && rows(applied) !== rows(widened);
+
+            census.states += 1;
+            if (expected) census.clause += 1;
+            const said = line(markup).includes(NARROWED_BY_FILTERS);
+            if (said !== expected) {
+              failures.push(
+                `${where}: said=${said} expected=${expected} ` +
+                  `(applied ${rows(applied)}, widened ${rows(widened)})`,
+              );
+            }
+
+            if (tab === "standing") {
+              for (const facets of countFacets(stub)) {
+                census.counts += 1;
+                if (facets.bucket !== STANDING_BUCKET) {
+                  failures.push(`${where}: a count left the tab: ${JSON.stringify(facets)}`);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(failures.join("\n")).toBe("");
+    // The sweep graded something in both directions, and the standing tab's
+    // counts were really inspected.
+    expect(census.clause).toBeGreaterThan(0);
+    expect(census.states - census.clause).toBeGreaterThan(0);
+    expect(census.counts).toBeGreaterThan(census.states / 2);
+  });
+
   it("puts a space between the value and the words around it", async () => {
     // The rule the tree-wide scanner cannot see in this file's transform
     // (`tests/offline/ui/copy.test.ts`), asserted on the rendering it now
