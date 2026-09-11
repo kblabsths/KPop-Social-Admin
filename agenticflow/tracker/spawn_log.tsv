@@ -31421,3 +31421,27 @@
 2026-09-11T18:10:57Z	agent	-	-	-	-
 # STRANDED	2026-09-11T18:10:59Z	qa-adversary	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0203.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0203.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0204.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0206.md
 2026-09-11T18:10:59Z	qa-adversary	BUG-0203	20628	741	111665
+# STRANDED	2026-09-11T18:11:29Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T18:11:29Z	agent	-	-	-	-
+# STRANDED	2026-09-11T18:12:01Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T18:12:01Z	agent	-	-	-	-
+# STRANDED	2026-09-11T18:12:32Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T18:12:32Z	agent	-	-	-	-
+# STRANDED	2026-09-11T18:13:04Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T18:13:04Z	agent	-	-	-	-
+# STRANDED	2026-09-11T18:13:36Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T18:13:36Z	agent	-	-	-	-
+# STRANDED	2026-09-11T18:14:08Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T18:14:08Z	agent	-	-	-	-
+# STRANDED	2026-09-11T18:14:40Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T18:14:40Z	agent	-	-	-	-
+# STRANDED	2026-09-11T18:15:11Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T18:15:11Z	agent	-	-	-	-
+# STRANDED	2026-09-11T18:15:43Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T18:15:43Z	agent	-	-	-	-
+# STRANDED	2026-09-11T18:16:45Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T18:16:45Z	agent	-	-	-	-
+# STRANDED	2026-09-11T18:17:17Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0204.md
+2026-09-11T18:17:17Z	agent	-	-	-	-
+# STRANDED	2026-09-11T18:17:18Z	builder	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0204.md
+2026-09-11T18:17:18Z	builder	BUG-0204	29162	1126	156755
