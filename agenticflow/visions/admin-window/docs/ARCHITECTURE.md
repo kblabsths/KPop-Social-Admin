@@ -241,8 +241,11 @@ lib/gauges/**   ->  lib/db/**            ->  @supabase/supabase-js
 <leaf> = the PURE DOMAIN LEAVES, the bottom of the app:
          lib/review/**, lib/browse/**, lib/claims/**, lib/cycles/**,
          lib/records/**, lib/sources/**, lib/url/**, lib/verdict/**,
-         lib/format.ts, lib/edit/config.ts
+         lib/order/**, lib/paging/**, lib/format.ts, lib/edit/config.ts
          (a leaf may import a leaf — rule 7, second paragraph)
+         (the EXECUTABLE list is `LEAF_MODULES` in
+          tests/offline/db/layering.test.ts — same set, one is the
+          documentation of the other; amended 2026-09-10, see History)
 ```
 
 1. **`components/**` never imports from `lib/db/**` and never fetches.** A
@@ -467,6 +470,23 @@ may do:
   refused page never extends the list**: the rendered row count after a refusal
   equals the row count before it, and the refusal names the object beside the
   rows it did not add.
+- **Full-or-exhausted, on BOTH sides of the wire** (amended 2026-09-10,
+  architect, from BUG-0168 — the driver half of the bullet above). A page
+  answer is `ok` with **exactly the window's rows** and the set continues, or
+  it is `ok` with **at most the window's rows** and `exhausted` is true. The
+  route derives that flag from its own read (`exhausted === rows.length <
+  size`) and never emits any other combination. The client's driver holds the
+  same contract as an invariant it CHECKS, because what comes over a wire is
+  foreign data: a short page that says the set continues, and a page longer
+  than the window, are **refused out loud** — no rows appended, the bound
+  unmoved, the control retained for a retry — exactly as a body that is not a
+  page answer at all is. The property this buys, and the one a paging surface
+  may rely on: **after any press, either the bound the next press would carry
+  is one this app may serve, or the state is `exhausted`.** The rejected
+  alternative was to let the driver *reinterpret* a short page as the end of
+  the set; it silently converts a truncated or mangled answer into "you have
+  seen everything", which is the false-totality claim this whole section
+  exists to make impossible.
 - **A concatenation is still not a total.** No sentence on either surface may
   claim that what the operator has paged through is the whole set. The only
   totality claim on these pages remains what it is today: their own exact
@@ -1410,8 +1430,13 @@ already ships.
   "nothing settles anything in M1" actually means.
 - **One owner per structural guard.** The write surface of the whole repo is
   asserted in `tests/offline/edit/config.test.ts`; the M2-close pin is
-  `tests/offline/review/one-place.test.ts`; layering is
-  `tests/offline/db/layering.test.ts`. A ticket that needs one of those
+  `tests/offline/review/one-place.test.ts`; layering — the leaf set, the
+  credential seam, the table-name seam — is `tests/offline/db/layering.test.ts`;
+  the **twice-exported-name** guard is the `OWNER` map in
+  `tests/offline/url/narrowing.test.ts`, NOT layering (recorded 2026-09-10:
+  DEBT-0016's criteria named the wrong file and the builder had to rule around
+  it — a criterion that needs this guarantee names the OWNER map). A ticket
+  that needs one of those
   guarantees **runs that file** as a check instead of hand-rolling a second
   predicate that will drift from it.
 
@@ -1631,6 +1656,22 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-10, M3 ruling pass — the paging contract gets its client half, and
+  two leaf directories join the list (architect).** **§4.3 kind 3** gains
+  *full-or-exhausted, on both sides of the wire*: the route emits only
+  full-and-continuing or short-and-exhausted, and the driver REFUSES anything
+  else instead of reinterpreting it, so `held` leaves the bound grid only on
+  the last page and the surface can never silently claim a set is complete
+  (BUG-0168, found by QA on TASK-0064; the ruling and the door it closes are in
+  DECISIONS.md, same date). **§4's leaf list** was two directories behind the
+  executable rule it documents — `lib/order/**` (DEBT-0016) and `lib/paging/**`
+  (TASK-0063) were in `LEAF_MODULES` and not here; `lib/cycles/**` already
+  covered `lib/cycles/state.ts`. The doc now points at `LEAF_MODULES` as the
+  executable copy, so the next reader amends both. **§10's one-owner bullet**
+  now names the owner of the twice-exported-name guard (the `OWNER` map in
+  `tests/offline/url/narrowing.test.ts`), which DEBT-0016's criteria got wrong
+  and its builder had to rule around at the bench.
 
 - **2026-09-10, M3 opening amendment — paging is legal, inside a frame
   (architect).** Three contracts amended before any M3 page diff, which is what

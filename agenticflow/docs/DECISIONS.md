@@ -1400,3 +1400,67 @@ pending-claims gauge's two-step join — `readPendingObservations` awaited, then
 thing TASK-0074 is allowed to attack. A future latency ticket on any surface
 states the page's DEPTH before it proposes a fix; a round-trip census alone
 does not justify one.
+
+## 2026-09-10 — a paged answer is full-or-exhausted, and the client REFUSES anything else rather than reinterpreting it
+
+QA found on TASK-0064 (BUG-0168) that an `ok` page of 30 rows for a 50-row
+window carrying `exhausted: false` leaves `held` at 80 — off the grid
+`pageBound` enforces — so `PageMore` draws its `limit` arm ("this view shows no
+further rows") one line under an answer that said the set continues, and the
+rest of the set needs a page reload. Two endings were honest and the pin
+accepted either: the driver calls a short page the end of the set (what its own
+`ok`-arm comment already claimed), or the route's contract is full-or-exhausted
+and a short continuing page is refused out loud. **Ruled: the contract, not the
+reinterpretation.** `/api/admin/*/rows` answers exactly the window's rows with
+the set continuing, or at most the window's rows with `exhausted` true —
+`exhausted === rows.length < size`, derived from the read it just made — and
+`requestPage` treats any other combination (short-and-continuing, or longer
+than the window) as what it is, foreign data on a wire: a refusal that appends
+no rows, leaves `held` unmoved and keeps the control for a retry, the same arm
+a body that is not a page answer takes. **The door this closes:** the client
+never *infers* the end of a set. Deriving exhaustion client-side is the cheaper
+fix and it converts a truncated, proxied or stale-deploy answer into "you have
+seen everything" — a false totality claim on the one surface whose whole reason
+to exist is Ben's "not being able to load all claims if I want to is a huge
+oversight", and the failure mode §4.3 exists to make impossible. What the
+contract buys in exchange is an invariant every paging surface may rely on and
+every future consumer inherits for free: **after any press, either the next
+bound is one this app may serve, or the state is `exhausted`** — so `held`
+leaves the bound grid only on the final page, and no second consumer of the
+driver can re-open BUG-0168 by wiring the widget slightly differently. The
+window itself stops being supplied twice with nothing reconciling the two
+copies (`PageDeps.size` was never read by the driver, QA residual 4): the
+driver now reads it — it is the number the invariant is checked against — and
+the hook hands the same value back out for the widget's `size` prop.
+
+## 2026-09-10 — a live proof is graded against a population that cannot move under it: bound the window or hold it still, never a tolerance
+
+`tests/live/claims.live.test.ts`'s set-equality proof (TASK-0074: the windowed
+claims read and the id-list join select the same claims) reddened 3 of 5
+consecutive runs for one builder — 877 ids from the first read, 879 from the
+second, the two extra carrying a uuidv7 prefix hours newer than the rest — and
+was green twice for the next lane an hour later. Staging is written by the
+scraper continuously; the test's two legs each carry a lower edge
+(`.gte("observed_at", since)`) and an implicit upper edge of *now at the
+instant that leg was issued*, so the population is different for each. **Ruled,
+for every live test in this repo:**
+1. **Where the test writes every query** (an identity or set-equality proof
+   between two shapes), capture ONE instant at the top and give every leg the
+   same explicit UPPER edge, ending strictly before now with a settle margin.
+   Deterministic, no retry, and it sharpens the proof: what is compared is the
+   two shapes, not the two clocks.
+2. **Where one leg is the app's own read** and cannot take an upper edge (a
+   rendered page against a test query), use `whileStill` in
+   `tests/live/parity.ts` — already the ruled device for this class since the
+   2026-09-02 `/cycles` 38-vs-39 finding — which reads before and after, hands
+   the pair back only when the database did not move, and throws rather than
+   passing when staging will not hold still.
+3. **Never a numeric tolerance.** "±2 claims" cannot tell an insert from a
+   drop, and it is exactly the slack that would have hidden BUG-0167, where the
+   two legs of the same gauge diverged by a single claim out of 877. A live
+   proof about the SHAPE of a read grades by identity or it proves nothing.
+**The door this closes:** flakiness in this tier is never bought with a retry
+loop around the assertion, a `--retry` flag, a skip, or a widened comparison.
+It is bought by making the two reads address the same rows — which is a
+statement the test can make in its own query — and a staging table that will
+not hold still remains a fact the suite states out loud.
