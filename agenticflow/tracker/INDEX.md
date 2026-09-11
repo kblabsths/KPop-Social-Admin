@@ -1,8 +1,8 @@
-# Tracker index (regenerated 2026-09-11T09:29:50Z — do not edit)
+# Tracker index (regenerated 2026-09-11T09:38:01Z — do not edit)
 
 ## open
 - BUG-0182 [P2][bug][M3] One pretty-printed document is counted once per line, so the account grows larger than the page it summarised  (deps:BUG-0181(unmet:1) scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0179)
-- BUG-0183 [P2][bug][M3] The window line says 50 claims are below it while 37 are on screen — the unpaged arm falls back to the cap  (deps:BUG-0176 scope:src/components/ui/window-line.tsx,src/app/claims/page.tsx,src/app/browse/page.tsx,tests/offline/claims/page.test.ts,tests/offline/ui/primitives.test.ts,tests/offline/browse/page.test.ts from:BUG-0180)
+- BUG-0185 [P2][bug][M3] A column-absent envelope with no message string has its column mined out of the app's own JSON rendering of the error record — classify names a column nothing ever mentioned  (deps:BUG-0181(unmet:1) scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0181)
 - DEBT-0017 [P2][debt][M3] Three paging-leaf truths: a ceiling-false invariant, a stale test title, and a closure guard that stops at a barrel  (deps:BUG-0176 scope:src/lib/paging/machine.ts,tests/offline/paging/machine.test.ts,tests/offline/claims/read.test.ts from:BUG-0168)
 - DEBT-0018 [P2][debt][M3] Two vitest runs in one checkout redden the layering suite: its self-guards write a FIXED probe path and remove the shared parent  (scope:tests/offline/db/layering.test.ts,tests/isolated/probe-race.isolated.test.ts from:BUG-0170)
 - FEAT-0016 [P2][feat][M3] F15 — every windowed figure is true about the read that produced it  (scope:src/app/claims/page.tsx,src/app/sources/page.tsx,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/gauges,src/components/claims,src/components/sources,src/components/ui/window-line.tsx,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/sources/read.test.ts,tests/offline/gauges,tests/live/claims.live.test.ts,tests/live/sources.live.test.ts)
@@ -13,12 +13,15 @@
 - BUG-0164 [P3][bug][patch] /queues still carries the exit copy BUG-0161 replaced on /claims  (deps:TASK-0072(unmet:1) scope:src/app/queues/page.tsx,tests/offline/queues/page.test.ts,tests/offline/ui/copy.test.ts from:designer:endgame-walk)
 - BUG-0177 [P3][bug][M3] The paging control is the only full-width button in the app — 1216px with a centred label, where every other button is intrinsic width  (deps:BUG-0180 scope:src/components/ui/paging.tsx,tests/offline/ui/paging.test.ts)
 - BUG-0178 [P3][bug][M3] The bound-ceiling sentence reads as exhaustion — "This view shows no further rows" beside a window line that says rows are not shown  (deps:BUG-0177(unmet:1) scope:src/components/ui/paging.tsx,tests/offline/ui/paging.test.ts)
-- BUG-0184 [P3][bug][M3] A paged refusal whose reason is the app's own em dash is announced as the whole of a red alert — the one blank criterion 14 left uncovered  (scope:src/lib/paging/machine.ts,tests/offline/paging/machine.test.ts from:BUG-0176)
+- BUG-0184 [P3][bug][M3] A paged refusal whose reason is the app's own em dash is announced as the whole of a red alert — the one blank criterion 14 left uncovered  (deps:DEBT-0017(unmet:1) scope:src/lib/paging/machine.ts,src/lib/verdict/decision.ts,src/lib/format.ts,src/components/edit-refusal.ts,tests/offline/paging/machine.test.ts,tests/offline/verdict/decision.test.ts,tests/offline/format.test.ts from:BUG-0176)
 - DEBT-0019 [P3][debt][M3] The http tier's storable assertion passes on the gate's 403, so it grades nothing the handler answered — make the vacuity visible  (scope:tests/http/paging.http.test.ts from:BUG-0171)
 - DEBT-0020 [P3][debt][patch] The transport account states its cause sentence twice: postgrest-js appends cause.stack, whose head repeats the Caused-by line  (deps:BUG-0179,BUG-0182(unmet:1) scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0173)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## built
+## claimed
+- BUG-0183 [P2][bug][M3] The window line says 50 claims are below it while 37 are on screen — the unpaged arm falls back to the cap  (deps:BUG-0176 scope:src/components/ui/window-line.tsx,src/app/claims/page.tsx,src/app/browse/page.tsx,tests/offline/claims/page.test.ts,tests/offline/ui/primitives.test.ts,tests/offline/browse/page.test.ts @builder-272 from:BUG-0180)
+
+## qa
 - BUG-0181 [P2][bug][M3] A foreign column-absent envelope makes the app name an intermediary's own text as the missing object — classify()'s mined column is admitted unvalidated  (deps:BUG-0179 scope:src/lib/db/result.ts,tests/offline/db/result.test.ts @builder-271 from:BUG-0175)
 
-Totals — built:1, done:30, open:16. Archived: 252.
+Totals — claimed:1, done:30, open:16, qa:1. Archived: 252.

@@ -1708,3 +1708,27 @@ size heuristic BUG-0174 deleted (`held <= limit ? drawn : held`) is exactly
 what a second derivation grows back into. A surface with no second read
 (`/browse`, `heldFrom: "this window"`) answers `true` by construction, which is
 why its markup cannot move.
+
+## 2026-09-11 — the em dash, and the difference between blank and absent
+
+The app has one definition of blank (`hasVisibleContent`, `lib/verdict/
+decision.ts`) and one definition of absent (`isAbsent`, `lib/format.ts`), and
+they are NOT the same question: a lone em dash is ink to the first and nothing
+to the second, which is the whole reason `orDash`/`nullDash` exist. Until now
+the second lived in a module that imports React, so the pure leaves — the
+bottom of the app, where `requestPage` decides whether a refusal carries words
+— could ask only the first, and BUG-0184 is what that costs: a wire answering
+`{kind:"refused", reason:"—"}` reached the operator as a red `role="alert"`
+reading `—` plus "Press it again", the shape BUG-0176 criterion 14 was written
+to remove, one input short. **Ruled:** `EM_DASH` and a new `isAbsentText` move
+into the pure leaf `lib/verdict/decision.ts` beside `visibleContent`, and
+`lib/format.ts` re-exports the constant and delegates `isAbsent`'s string arm,
+so the leaf and the renderer agree by construction rather than by vigilance.
+The doors this closes, both of them: **nobody re-types the character** — it is
+spelled once in `src/`, guarded over the comment-stripped source, so the
+second hand-spelling (`const DASH` in `components/edit-refusal.ts`) goes and a
+third cannot arrive; and **nobody merges the two questions** — widening
+`hasVisibleContent` to swallow the dash would have been the cheap fix, and it
+would silently change which close notes the verdict form refuses and make a
+source the registry NAMES `—` render as no name at all (`lib/sources/
+names.ts`). Two questions, two predicates, one character, one home.

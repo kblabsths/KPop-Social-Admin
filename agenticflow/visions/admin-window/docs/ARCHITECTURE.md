@@ -318,6 +318,26 @@ lib/gauges/**   ->  lib/db/**            ->  @supabase/supabase-js
    `lib/db/**` back-edge applies unchanged between leaves); and a leaf that
    another leaf imports states in its docstring which question it owns, so
    the next reader widens it for that question or not at all.
+
+   **The absence GLYPH lives in the leaf as well** (ruled 2026-09-11,
+   admin-window/BUG-0184). `EM_DASH` and `isAbsentText` — "is this string
+   one of the app's spellings of NO VALUE", which is `visibleContent(t)`
+   being `""` or being the dash — are declared in `lib/verdict/decision.ts`
+   beside `visibleContent`; `lib/format.ts` **re-exports** the constant and
+   delegates `isAbsent`'s string arm to the predicate, so its whole public
+   surface is unchanged and the two answers cannot diverge. Two rules
+   follow, and both are what the ruling is for. **The character is spelled
+   once**: a string literal whose whole content is the em dash appears in
+   exactly one file of `src/` (pinned in `tests/offline/verdict/
+   decision.test.ts` over the comment-stripped source — the dash inside an
+   authored sentence is punctuation, not a spelling), because a leaf that
+   cannot reach `format.ts` would otherwise retype it, which is the fourth
+   copy of a character class four M2 bugs are made of. **Blank is not
+   absent**: `hasVisibleContent` asks "is there ink here" and `isAbsentText`
+   asks "is this the app's way of writing nothing" — a lone dash is content
+   to the first and an absence to the second, which is why a source the
+   registry NAMES `—` keeps its name while a refusal reading `—` is worded
+   by this app. Neither may be widened into the other.
 8. **`next.config.ts` is a build host, and it may import the leaf — only the
    leaf.** It imports `EDITABLE_TABLES` from `lib/edit/config.ts` so the
    rewrite that backstops an unmapped `/records/<table>/<id>` URL is derived
@@ -1868,6 +1888,21 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-11, M3 §4 rule 7 amendment — the em dash and the absence-of-text
+  predicate are leaf property (architect, ruling admin-window/BUG-0184).**
+  Rule 7 ¶2 gains the paragraph above. Why here rather than in the ticket: QA
+  measured a paged refusal whose reason is the app's own `—` reaching the
+  operator as the whole of a red alert, and the cause was structural, not a
+  builder's slip — `machine.ts` is a leaf, `isAbsent` and `EM_DASH` live in
+  `format.ts`, which imports React, so the leaf could ask only the first
+  clause of the app's own absence question and could not see the character at
+  all. A rule that says "one definition of blank" while the definition sits
+  where half the askers cannot reach it produces exactly this, one input at a
+  time. **The door this closes:** no module re-types the glyph to get at it,
+  and no one widens `hasVisibleContent` to cover the dash instead — the two
+  questions stay two, with the wider one now reachable from the bottom of the
+  app.
 
 - **2026-09-11, M3 account amendment — the one derivation covers every field of
   the account, the `code` included (architect, ruling admin-window/BUG-0179).**
