@@ -652,39 +652,101 @@ describe("a resolver-owned record page", () => {
       }
     }
 
+    /**
+     * How many record pages this case renders at once
+     * (admin-window/BUG-0208).
+     *
+     * The population is EVERY decided event — 108 distinct ids on staging,
+     * measured 2026-09-11 — and one record page is ~6 sequential PostgREST
+     * round trips, so rendered ONE AT A TIME this case cost 41,174 ms solo and
+     * blew the 60,000 ms budget on 3 of 3 full-suite runs, which is the bug.
+     *
+     * **Why 2 and not more.** This is `CHUNK_FANOUT`'s reasoning
+     * (`src/lib/db/result.ts`) applied to a test — concurrent reads of a
+     * database three repos share are a bound, not a dial — and here the bound
+     * is MEASURED rather than borrowed. At a fanout of 4 this case ran in
+     * 23-35 s under the suite, but `claims.live.test.ts`'s heaviest case went
+     * red on 3 of 9 full-suite runs with `pending_claims` refused blank (the
+     * 57014 statement timeout that view has always sat close to — see that
+     * file's own header), against 0 of 5 before this change and 0 of 4 for
+     * that file run alone. At a fanout of 2 the whole suite passed 7 of 7.
+     * Extra render concurrency here is paid for by a different file's
+     * timeout, so this stays at 2.
+     */
+    const RENDER_FANOUT = 2;
+
     const dashed: string[] = [];
-    for (const id of ids) {
-      const markup = await renderPage(RecordPage, {
-        params: Promise.resolve({ table: config.table, id }),
-      });
-      for (const column of mappedColumns(config)) {
-        const line = provenanceOf(markup, column);
-        expect(line, `${id}.${column}`).not.toBeNull();
-        const decision = latest.get(`${id}\u0000${column}`);
-        if (decision === undefined) {
-          // No decision on this fact: the app's one absence marker, and the
-          // re-key must not have invented a line here either.
-          expect(line, `${id}.${column}`).toBe(EM_DASH);
-          continue;
-        }
-        if (line === EM_DASH) {
-          dashed.push(`${id}.${column}`);
-          continue;
-        }
-        if (decision.admin_locked === true) {
-          expect(line, `${id}.${column}`).toContain("admin-set");
-        } else if (typeof decision.source_id === "string") {
-          expect(line, `${id}.${column}`).toContain(
-            names.get(decision.source_id) ?? decision.source_id,
-          );
+    /** Ids actually rendered and graded — the population, or "every" is a lie. */
+    const graded: string[] = [];
+    // Batches, and each batch is awaited whole and then graded IN ID ORDER:
+    // WHAT is asserted, and which id's failure surfaces first, are the serial
+    // loop's answers however the requests interleave (the same guarantee, for
+    // the same reason, as `readRowsByIds`).
+    for (let start = 0; start < ids.length; start += RENDER_FANOUT) {
+      const batch = ids.slice(start, start + RENDER_FANOUT);
+      const rendered = await Promise.allSettled(
+        batch.map((id) =>
+          renderPage(RecordPage, {
+            params: Promise.resolve({ table: config.table, id }),
+          }),
+        ),
+      );
+      for (const [offset, id] of batch.entries()) {
+        const outcome = rendered[offset];
+        // A render that threw is THIS id's failure, raised in id order.
+        // `allSettled` is what keeps the batch's other renders from being
+        // lost to an unhandled rejection on the way out.
+        if (outcome.status === "rejected") throw outcome.reason;
+        const markup = outcome.value;
+        graded.push(id);
+        for (const column of mappedColumns(config)) {
+          const line = provenanceOf(markup, column);
+          expect(line, `${id}.${column}`).not.toBeNull();
+          const decision = latest.get(`${id}\u0000${column}`);
+          if (decision === undefined) {
+            // No decision on this fact: the app's one absence marker, and the
+            // re-key must not have invented a line here either.
+            expect(line, `${id}.${column}`).toBe(EM_DASH);
+            continue;
+          }
+          if (line === EM_DASH) {
+            dashed.push(`${id}.${column}`);
+            continue;
+          }
+          if (decision.admin_locked === true) {
+            expect(line, `${id}.${column}`).toContain("admin-set");
+          } else if (typeof decision.source_id === "string") {
+            expect(line, `${id}.${column}`).toContain(
+              names.get(decision.source_id) ?? decision.source_id,
+            );
+          }
         }
       }
     }
 
+    // "EVERY event" is a claim about coverage, so the batching answers for it:
+    // every decided id was rendered, in order, exactly once. A batch walk that
+    // skipped an id would otherwise pass this case by not looking
+    // (admin-window/BUG-0208).
+    expect(graded, "record pages rendered and graded").toEqual(ids);
+
     // The defect in one assertion, over the whole population: not one decided
     // fact on any of these events renders "no source behind this value".
     expect(dashed, "decided facts still rendering the absence marker").toEqual([]);
-  });
+    // A stated budget, not the project's `live` default of 60s
+    // (admin-window/BUG-0208) — and it is load-bearing, not decorative.
+    // Measured on this tree against staging `ubfjjqlvnpnoborczbdb` on
+    // 2026-09-11: 41,174 ms rendered serially solo, 23,349 ms batched solo,
+    // and 37,393 / 38,579 / 39,314 / 39,671 / 41,020 / 60,938 /
+    // 66,006 ms under the eleven-file parallel run `npm run test:live` is,
+    // over 7 consecutive green runs. Two of those seven exceed the 60s
+    // default on their own, so the batching alone would not have closed this
+    // bug: the case walks a 108-page population over a network whose latency
+    // is the whole cost, and the default budget was never sized for it. 180s
+    // is ~2.7x the worst of those runs (which was taken with another lane's
+    // suite on the machine); it bounds a hang. It is not permission to walk
+    // more rows, and it is not a licence to raise the fanout above.
+  }, 180_000);
 });
 
 /* ── the walk sandbox: the write path's own table ─────────────────────────── */
