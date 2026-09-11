@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-11T11:19:12Z — do not edit)
+# Tracker index (regenerated 2026-09-11T11:26:14Z — do not edit)
 
 ## open
 - BUG-0188 [P2][bug][M3] A probe directory left by a KILLED vitest run is never swept, and a later run that draws its pid grades the corpse as its own probe  (scope:tests/offline/db/layering.test.ts,tests/isolated/probe-race.isolated.test.ts from:DEBT-0018)
@@ -14,7 +14,7 @@
 - DEBT-0020 [P3][debt][patch] The transport account states its cause sentence twice: postgrest-js appends cause.stack, whose head repeats the Caused-by line  (deps:BUG-0179,BUG-0182,BUG-0187 scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0173)
 - TASK-0060 [P3][task][patch] Route the last two source-name renderers through lib/sources/names.ts — and close that class  (deps:TASK-0073(unmet:1) scope:src/components/sources/registry-table.tsx,src/components/sources/trends.tsx,src/lib/sources/names.ts,tests/offline/sources/names.test.ts,tests/offline/sources/page.test.ts from:qa:BUG-0159)
 
-## claimed
+## built
 - TASK-0070 [P2][task][M3] A scan and the count printed beside it read the same window: ReadBounds carries both edges, and all five scans apply them  (deps:TASK-0067,BUG-0167,BUG-0169,BUG-0186 scope:src/lib/db/gauges.ts,src/lib/db/claims.ts,src/lib/gauges,src/app/claims/page.tsx,tests/offline/gauges,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/live/claims.live.test.ts,tests/live/sources.live.test.ts,tests/live/cycles.live.test.ts,tests/live/queues.live.test.ts @builder-279)
 
-Totals — claimed:1, done:38, open:12. Archived: 252.
+Totals — built:1, done:38, open:12. Archived: 252.
