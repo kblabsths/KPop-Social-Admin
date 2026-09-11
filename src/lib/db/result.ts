@@ -429,134 +429,82 @@ function framesInstead(count: number): string {
 }
 
 /**
- * One LINE of a part, with where it stood in that part.
+ * Does ANY line of this part, after its leading whitespace, begin `<`?
  *
- * The offsets are what let a RUN of document lines be counted at the length it
- * ARRIVED with — from the first line's first character to the last line's
- * last, the newlines between them included, in whichever spelling (`\n` or
- * `\r\n`) they came in. Splitting alone loses that, and the number would then
- * be a sum of trimmed lines rather than the length of the document
- * (admin-window/BUG-0182). The `text` sequence is exactly what
- * `part.split(/\r?\n/)` gives; only the offsets are new.
+ * Question 2 of `partOfAccount`, asked ONCE of the whole part (the
+ * architect's ruling of 2026-09-11, admin-window/BUG-0187): a part carrying a
+ * document ANYWHERE was authored by something that speaks markup, and
+ * Postgres does not — so this app cannot attribute any line of such a part to
+ * the database, and the part is replaced whole by one counted clause.
+ *
+ * `isDocument` decides each line exactly as it decides a whole part, and
+ * nothing new is inspected here: no tag matching, no entity decoding, no
+ * length cap, no vocabulary and no `includes("<")` (ARCHITECTURE.md §7 common
+ * violations row 15, LESSONS 4). A database message that merely CONTAINS
+ * angle brackets — `operator does not exist: text <-> integer` — has no line
+ * beginning `<` and is untouched; a runtime frame can never answer this
+ * question, because `isRuntimeFrame` requires its line to begin `at `.
  */
-type PartLine = {
-  readonly text: string;
-  readonly start: number;
-  readonly end: number;
-};
-
-function linesOf(part: string): PartLine[] {
-  const lines: PartLine[] = [];
-  const newline = /\r?\n/g;
-  let start = 0;
-  let match: RegExpExecArray | null;
-  while ((match = newline.exec(part)) !== null) {
-    lines.push({ text: part.slice(start, match.index), start, end: match.index });
-    start = match.index + match[0].length;
-  }
-  lines.push({ text: part.slice(start), start, end: part.length });
-  return lines;
+function carriesDocument(part: string): boolean {
+  return part.split(/\r?\n/).some((line) => isDocument(line.trim()));
 }
 
 /**
- * A part read LINE BY LINE: every line that is a runtime STACK FRAME goes,
- * every RUN of DOCUMENT lines is counted ONCE where it stood, and every other
- * line is kept verbatim and joined into one line.
+ * A part that carries NO document, read LINE BY LINE: every line that is a
+ * runtime STACK FRAME goes and is counted, and every other line is kept
+ * verbatim and joined into one line.
  *
- * A RUN OF CONSECUTIVE DOCUMENT LINES IS ONE DOCUMENT (the architect's ruling
- * of 2026-09-11, admin-window/BUG-0182). A WAF serves its interstitial
- * pretty-printed, so the same page that is one clause when it IS the whole
- * part used to be one clause PER LINE when it stood one line below the
- * client's prose: seventeen sentences of this app's own words, each stating
- * the length of a markup line rather than of anything that arrived, and an
- * account two to three times LONGER than the part it replaced. What changes
- * here is only how many clauses ONE answer emits — one per document instead of
- * one per line. Nothing new is inspected: the same `isDocument` decides each
- * line exactly as before, there is no fourth question, no length cap and no
- * vocabulary match (ARCHITECTURE.md §7 common violations row 15, LESSONS 4).
+ * Question 2 IS NOT ASKED HERE AT ALL (admin-window/BUG-0187). It is asked
+ * once, of the whole part, by this function's only caller — so a part that
+ * reaches here is the database's own words, and the per-line and per-run
+ * document bookkeeping this function used to carry (admin-window/BUG-0182,
+ * with its line offsets) is DELETED rather than extended: the two
+ * granularities that had answered differently on every shape since
+ * admin-window/BUG-0179 are one code path now.
  *
- * A run ENDS at the first line that is not a document: a line of the
- * database's own prose (which still crosses verbatim, between the two clauses)
- * or a runtime frame (which is dropped, and whose characters are no part of
- * any document). Two documents separated by prose are therefore counted as
- * two, each at its own length. A blank line neither speaks nor ends a run —
- * blank lines are dropped BEFORE question 2 is asked, exactly as they always
- * were, so a pretty-printed document that breathes is still one document, and
- * the characters it breathed with are inside the run it arrived in.
+ * Frames stay a LINE question because V8's is a SPECIFIED format, and a part
+ * is not foreign for carrying a stack: `Caused by: Error: getaddrinfo
+ * ENOTFOUND db.invalid` sits between the wrapper and the frames, and it is
+ * the cause admin-window/BUG-0016 exists to preserve. The part is never
+ * truncated at the first frame either, because postgrest-js puts the real
+ * cause AFTER it — reading down to the first frame is exactly the bug
+ * admin-window/BUG-0016 fixed, and it does not come back.
  *
- * Question 2 is asked at both granularities, of EVERY part, because a document
- * does not have to be the first thing in a part to be one. A frameless
- * `details` of "reference 8f3c1\n<!DOCTYPE html>…" used to cross whole while
- * the identical document one line above a stack frame was counted — the same
- * question answered two ways depending on what else the part happened to carry
- * (QA residual (b) of admin-window/BUG-0173, answered in
- * admin-window/BUG-0179). One question asked at two granularities is still one
- * question: nothing new is inspected here, and there is no line-level
- * deduplication either — the transport account's twice-stated cause sentence
- * is admin-window/DEBT-0020, not this.
- *
- * The part is never truncated at the first frame, because postgrest-js puts
- * the real cause AFTER it — reading down to the first frame is exactly the bug
- * admin-window/BUG-0016 fixed, and it does not come back. (Question 1 needs no
- * re-asking: a serialised part never reaches here, since provenance is
- * answered first.)
- *
- * A part where NO line answers either question is returned UNTOUCHED — not
- * re-joined, not re-indented, not re-spaced, and with no count of frames
- * nobody dropped. A database message that happens to span lines crosses
- * exactly as it arrived.
+ * A part where NO line is a frame is returned UNTOUCHED — not re-joined, not
+ * re-indented, not re-spaced, and with no count of frames nobody dropped. A
+ * database message that happens to span lines crosses exactly as it arrived,
+ * which is what a check constraint's DETAIL wrapped onto a continuation line
+ * needs (ARCHITECTURE.md §4.1).
  */
 function askedLineByLine(part: string): string {
-  const lines = linesOf(part);
-  const dropped = lines.filter((line) => isRuntimeFrame(line.text)).length;
-  const carriesDocument = lines.some(
-    (line) => !isRuntimeFrame(line.text) && isDocument(line.text.trim()),
-  );
-  if (dropped === 0 && !carriesDocument) return part;
+  const lines = part.split(/\r?\n/);
+  const dropped = lines.filter((line) => isRuntimeFrame(line)).length;
+  if (dropped === 0) return part;
 
-  const spoken: string[] = [];
-  // The document being counted right now: where it began, and how far it has
-  // reached. `null` between documents.
-  let run: { start: number; end: number } | null = null;
-  const countTheRun = (): void => {
-    if (run === null) return;
-    // The run's OWN characters, as they arrived — never a per-line length and
-    // never the length of the whole part.
-    spoken.push(documentInstead(part.slice(run.start, run.end)));
-    run = null;
-  };
-
-  for (const line of lines) {
-    if (isRuntimeFrame(line.text)) {
-      countTheRun();
-      continue;
-    }
-    const trimmed = line.text.trim();
-    if (trimmed.length === 0) continue;
-    if (isDocument(trimmed)) {
-      run = { start: run === null ? line.start : run.start, end: line.end };
-      continue;
-    }
-    countTheRun();
-    spoken.push(trimmed);
-  }
-  countTheRun();
-
-  const said = spoken.join(" ");
-  if (dropped === 0) return said;
+  const said = lines
+    .filter((line) => !isRuntimeFrame(line))
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join(" ");
   const counted = framesInstead(dropped);
   return said.length > 0 ? `${said} ${counted}` : counted;
 }
 
 /**
  * The three questions this app asks of ONE part of an account, in order, and
- * there is no fourth (admin-window/BUG-0173).
+ * there is no fourth (admin-window/BUG-0173, admin-window/BUG-0187).
  *
  *  1. Did WE serialise it? Provenance, inspecting no text at all.
- *  2. Is it a DOCUMENT? Its first non-blank character is `<` — asked of the
- *     whole part, and then of each of its lines, which is one question at two
- *     granularities rather than a second question.
- *  3. Does it carry RUNTIME FRAMES? Those lines go; every other line stays.
+ *  2. Does it CARRY A DOCUMENT? Any line of it, after its leading whitespace,
+ *     begins `<` — asked ONCE, of the PART, never per line and never per run.
+ *     A part that answers is not the database's words at all and is replaced
+ *     WHOLE by one clause counting it at the length the client delivered it,
+ *     any appended frames included. No line of it crosses, no frames clause
+ *     follows it and nothing else is said about it, because nothing was read
+ *     past the document (ARCHITECTURE.md §4.1, which carries this bar;
+ *     admin-window/BUG-0187).
+ *  3. Does it carry RUNTIME FRAMES? Asked only of a part that carries no
+ *     document: those lines go and are counted, every other line stays.
  *
  * `null` means the part was blank and carries nothing to say.
  */
@@ -564,7 +512,7 @@ function partOfAccount({ raw, serialised }: AccountPart): string | null {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return null;
   if (serialised) return serialisedInstead(raw);
-  if (isDocument(trimmed)) return documentInstead(raw);
+  if (carriesDocument(trimmed)) return documentInstead(raw);
   return askedLineByLine(trimmed);
 }
 
