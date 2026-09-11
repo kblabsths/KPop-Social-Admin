@@ -4,8 +4,10 @@ import { createContext, type ReactNode, useContext, useRef, useState } from "rea
 import { EM_DASH, isAbsent } from "@/lib/format";
 import { pageBound } from "@/lib/paging/bounds";
 import {
+  AppAuthoredError,
   type PageDeps,
   type PageState,
+  type ReasonAuthor,
   pressing,
   requestPage,
 } from "@/lib/paging/machine";
@@ -148,21 +150,32 @@ export async function fetchJson(url: string): Promise<unknown> {
     throw asError(thrown);
   }
 
-  if (!declaresJson(response)) throw new Error(ANSWERED_BY_SOMETHING_ELSE);
+  // `AppAuthoredError`, not `Error`: these two sentences are THIS APP's prose,
+  // and the driver reads the face off the thrown type rather than off the
+  // words (admin-window/BUG-0175). Reword either sentence and nothing moves.
+  if (!declaresJson(response)) throw new AppAuthoredError(ANSWERED_BY_SOMETHING_ELSE);
 
   try {
     return await response.json();
   } catch {
     // The parser's words stop here. What the operator reads is the app's.
-    throw new Error(UNREADABLE_ANSWER);
+    throw new AppAuthoredError(UNREADABLE_ANSWER);
   }
 }
 
-/** Whatever a rejection carried, as an `Error` that has something to say. */
+/**
+ * Whatever a rejection carried, as an `Error` that has something to say.
+ *
+ * A transport rejection with words of its own keeps them AND keeps its type,
+ * so the driver reads it as the machine talking. The last line is the one case
+ * where there are no words to carry: the sentence is then THIS APP's, so it is
+ * thrown as one (admin-window/BUG-0175) and reaches the operator in sans, like
+ * every other sentence this app wrote.
+ */
 function asError(thrown: unknown): Error {
   if (thrown instanceof Error && thrown.message.length > 0) return thrown;
   if (typeof thrown === "string" && thrown.length > 0) return new Error(thrown);
-  return new Error("the page request failed before it answered");
+  return new AppAuthoredError("the page request failed before it answered");
 }
 
 /**
@@ -434,6 +447,7 @@ export function PageMore({
         // nothing (LESSONS 1, CONTENT — the fix is never wishful).
         <Refusal
           reason={state.refusal.reason}
+          reasonFrom={state.refusal.reasonFrom}
           object={state.refusal.object}
           retryable={drawsControl}
         />
@@ -460,43 +474,75 @@ export function PageMore({
 }
 
 /**
- * Why the last press added no rows — both halves, the way every refusal in
- * this app is written: the object and the words the answer itself carried,
- * then what the operator can do about it in the app's own voice.
+ * Why the last press added no rows — the object, the reason, then what the
+ * operator can do about it in the app's own voice, in that order.
  *
- * The object may be `null` — a bound refusal is about the bound this state
- * already holds, so there is no third thing to name — and a line with nothing
- * to name gets the reason alone rather than a dangling em dash, asked of the
- * app's one definition of absence (`isAbsent`, `lib/format`).
+ * ## The face says who is talking (admin-window/BUG-0175)
  *
- * `dir="ltr"` isolates the foreign run: the reason and the object are the
- * answer's own text, and text this app did not author never reorders a
- * sentence this app wrote (ARCHITECTURE.md §7).
+ * Mono carries every value the database produced; sans carries every word the
+ * app wrote, and that split is enforced by which primitive you use, not by
+ * remembering (LOOK_AND_FEEL → Typography; ARCHITECTURE.md §7). This line used
+ * ONE mono span for both authors, so the app's own 22-word sentence about a
+ * page it could not read claimed an authorship it does not have and sat in the
+ * same 11px mono red run as a Postgres timeout string.
+ *
+ * `reasonFrom` is the whole derivation, and it is DECIDED ELSEWHERE — at
+ * `refuse()` in `src/lib/paging/machine.ts`, where the refusal is built. This
+ * component compares no string to anything: reword any of the app's sentences
+ * and no face moves.
+ *
+ * What does NOT change with the face: the object is a machine identifier and
+ * stays in the `data` mono step in every arm, the em dash still separates it
+ * from the reason, and the fix still comes last in sans. The object may be
+ * `null` — a bound refusal is about the bound this state already holds, so
+ * there is no third thing to name — and a line with nothing to name gets the
+ * reason alone rather than a dangling em dash, asked of the app's one
+ * definition of absence (`isAbsent`, `lib/format`).
+ *
+ * `dir="ltr"` isolates the run this app did NOT author (ARCHITECTURE.md §7),
+ * and after this ticket it isolates exactly that run: the identifier always,
+ * plus the reason only when the reason is the machine's. A sentence this app
+ * wrote needs no isolation from itself.
  */
 function Refusal({
   reason,
+  reasonFrom,
   object,
   retryable,
 }: {
   reason: string;
+  /** Who wrote `reason`, stated by the refusal — never re-derived here. */
+  reasonFrom: ReasonAuthor;
   object: string | null;
   retryable: boolean;
 }): ReactNode {
   const named = object !== null && !isAbsent(object);
+  const machineWrote = reasonFrom === "the machine";
+  const fix = retryable
+    ? "Press it again to ask for the same rows."
+    : "Reload this view to read it again.";
   return (
     <p
       data-paging-refusal=""
       role="alert"
       className="flex flex-wrap items-baseline gap-2 text-broken"
     >
-      <span className="type-data" dir="ltr">
-        {named ? `${object} ${EM_DASH} ${reason}` : reason}
-      </span>
-      <span className="type-body">
-        {retryable
-          ? "Press it again to ask for the same rows."
-          : "Reload this view to read it again."}
-      </span>
+      {machineWrote ? (
+        // One foreign run: the identifier and the words the answer carried.
+        <span className="type-data" dir="ltr">
+          {named ? `${object} ${EM_DASH} ${reason}` : reason}
+        </span>
+      ) : (
+        <>
+          {named ? (
+            <span className="type-data" dir="ltr">
+              {object}
+            </span>
+          ) : null}
+          <span className="type-body">{named ? `${EM_DASH} ${reason}` : reason}</span>
+        </>
+      )}
+      <span className="type-body">{fix}</span>
     </p>
   );
 }

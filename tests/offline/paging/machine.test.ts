@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { OFFSET_PARAM, PAGE_ROUTES, pageBound, type PageAnswer } from "@/lib/paging/bounds";
 import {
+  AppAuthoredError,
   initialPage,
   pageUrl,
   pressing,
   requestPage,
   type PageDeps,
   type PageState,
+  type ReasonAuthor,
 } from "@/lib/paging/machine";
 
 /**
@@ -288,7 +290,14 @@ describe("requestPage", () => {
         exhausted: false,
       } satisfies PageAnswer<Row>);
       const next = await requestPage(
-        { ...before, refusal: { reason: "the read failed", object: "pending_claims" } },
+        {
+          ...before,
+          refusal: {
+            reason: "the read failed",
+            object: "pending_claims",
+            reasonFrom: "the machine",
+          },
+        },
         deps,
       );
       expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "s0", "s1"]);
@@ -750,7 +759,13 @@ describe("requestPage", () => {
         message: "connection refused",
       });
       const next = await requestPage(held, deps);
-      expect(next.refusal).toEqual({ reason: "connection refused", object: "pending_claims" });
+      expect(next.refusal).toEqual({
+        reason: "connection refused",
+        object: "pending_claims",
+        // Postgres wrote those words; the line renders them in mono
+        // (admin-window/BUG-0175).
+        reasonFrom: "the machine",
+      });
     });
 
     it("names the absent object in the not-provisioned refusal", async () => {
@@ -848,7 +863,7 @@ describe("pressing", () => {
       rows: rows("a"),
       held: 2,
       status: "idle",
-      refusal: { reason: "the read failed", object: "pending_claims" },
+      refusal: { reason: "the read failed", object: "pending_claims", reasonFrom: "the machine" },
       notes: null,
     };
     expect(pressing(refused).refusal).toBe(refused.refusal);
@@ -921,5 +936,164 @@ describe("the double press, composed from the two pure pieces", () => {
       expect(urls).toHaveLength(1);
       expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d"]);
     });
+  });
+});
+
+
+/**
+ * WHO WROTE THE REASON — admin-window/BUG-0175.
+ *
+ * The refusal a press leaves behind carries the one fact the FACE answers, and
+ * it is set HERE, at the single construction point every arm passes through.
+ * The component reads it and derives nothing: it never compares a reason to
+ * one of this app's sentences, which is a rule retyped as data (LESSONS 4 and
+ * 5) and would flip a face the day a sentence is reworded.
+ *
+ * Both kinds are graded, and every arm a press can reach is in the table.
+ */
+describe("every refusal says who wrote its reason", () => {
+  const held = paged(4, "a", "b");
+  const served = (count: number): Row[] =>
+    Array.from({ length: count }, (_, index) => ({ id: `s${index}` }));
+
+  /** A press whose request rejects with exactly this value. */
+  const threw = (value: unknown): Promise<PageState<Row>> =>
+    requestPage(
+      held,
+      recorder(() => {
+        throw value;
+      }).deps,
+    );
+
+  /** A press the stub answers with this body. */
+  const answered = (body: unknown, over: Partial<PageDeps> = {}): Promise<PageState<Row>> => {
+    const { deps } = answering(body);
+    return requestPage(held, { ...deps, ...over });
+  };
+
+  /**
+   * Every arm, with the author the ticket ruled for it. The four sentences
+   * this app composed, the route's own bound refusal and the not-provisioned
+   * arm are ours; the database's error string and anything a failed fetch
+   * threw on its own account are not.
+   */
+  const ARMS: ReadonlyArray<readonly [string, ReasonAuthor, () => Promise<PageState<Row>>]> = [
+    [
+      "a body that is not a page answer at all",
+      "this app",
+      () => answered({ rows: rows("c", "d") }),
+    ],
+    [
+      "a page short of the window that did not say the set ended",
+      "this app",
+      () => answered({ kind: "ok", rows: served(SIZE - 1), offset: 4, exhausted: false }),
+    ],
+    [
+      "a page longer than the window",
+      "this app",
+      () => answered({ kind: "ok", rows: served(SIZE + 1), offset: 4, exhausted: false }),
+    ],
+    [
+      "a view with no window to read a page by",
+      "this app",
+      () => answered({ kind: "ok", rows: served(2), offset: 4, exhausted: false }, { size: 0 }),
+    ],
+    [
+      "legs reported in a vocabulary this app cannot read",
+      "this app",
+      () =>
+        answered({
+          kind: "ok",
+          rows: rows("c", "d"),
+          offset: 4,
+          exhausted: false,
+          notes: "the provenance leg failed",
+        }),
+    ],
+    [
+      "the route's own bound refusal",
+      "this app",
+      () =>
+        answered({
+          kind: "refused",
+          reason: "a bound of 61 is not a multiple of the 50-row window",
+          bound: "61",
+        }),
+    ],
+    [
+      "a table this database has not been given",
+      "this app",
+      () => answered({ kind: "not_provisioned", missing: "pending_claims" }),
+    ],
+    [
+      "the database's own error string",
+      "the machine",
+      () =>
+        answered({
+          kind: "error",
+          reading: "pending_claims",
+          message: "canceling statement due to statement timeout",
+        }),
+    ],
+    [
+      "a sentence this app threw through fetchJson",
+      "this app",
+      () => threw(new AppAuthoredError("the page request answered nothing this app could use")),
+    ],
+    [
+      "a transport rejection carrying its own words",
+      "the machine",
+      () => threw(new TypeError("Failed to fetch")),
+    ],
+    [
+      "a rejection that is not an Error at all",
+      "the machine",
+      () => threw("NetworkError when attempting to fetch resource"),
+    ],
+    ["a rejection carrying nothing", "the machine", () => threw(undefined)],
+  ];
+
+  it("names an author on every arm a press can reach, and both kinds occur", async () => {
+    const seen = new Set<ReasonAuthor>();
+    for (const [name, author, press] of ARMS) {
+      const next = await press();
+      // Non-vacuity: this really is a refusal, with words on it.
+      expect(next.refusal, name).not.toBeNull();
+      expect(next.refusal?.reason.length, name).toBeGreaterThan(0);
+      expect(next.refusal?.reasonFrom, name).toBe(author);
+      seen.add(next.refusal?.reasonFrom as ReasonAuthor);
+    }
+    // Both halves are really exercised (LESSONS 8): a table that only ever
+    // said "this app" would pass against a constant.
+    expect([...seen].sort()).toEqual(["the machine", "this app"]);
+  });
+
+  it("authorship travels with the THROW: the SAME words are the machine's when this app did not throw them", async () => {
+    // The proof that no reason string is compared to a constant anywhere. One
+    // of this app's own sentences, thrown twice — once as the type that says
+    // this app wrote it, once as a plain Error a runtime could have raised —
+    // reaches the operator with identical words and opposite faces.
+    const sentence =
+      "the page request came back declaring a page and carrying an incomplete one, so there is no page to add";
+    const ours = await threw(new AppAuthoredError(sentence));
+    const theirs = await threw(new Error(sentence));
+    expect(ours.refusal?.reason).toBe(sentence);
+    expect(theirs.refusal?.reason).toBe(ours.refusal?.reason);
+    expect(ours.refusal?.reasonFrom).toBe("this app");
+    expect(theirs.refusal?.reasonFrom).toBe("the machine");
+  });
+
+  it("and never with the words: a sentence no constant in this app spells is still this app's", async () => {
+    // The other half. Reword any of the four sentences and the face does not
+    // move, because nothing ever read them.
+    const invented = "a sentence this app has not written yet, in the app's own voice";
+    const next = await threw(new AppAuthoredError(invented));
+    expect(next.refusal?.reason).toBe(invented);
+    expect(next.refusal?.reasonFrom).toBe("this app");
+  });
+
+  it("a press that succeeds still leaves no refusal to ask the question of", async () => {
+    const { deps } = answering({ kind: "ok", rows: rows("c", "d"), offset: 4, exhausted: false });
+    expect((await requestPage(held, deps)).refusal).toBeNull();
   });
 });

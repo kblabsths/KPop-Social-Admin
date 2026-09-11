@@ -46,6 +46,56 @@ import { isPageAnswer, isPageNotes, OFFSET_PARAM, type PageAnswer, type PageNote
 export interface PageRefusal {
   reason: string;
   object: string | null;
+  /**
+   * Who wrote `reason` — the one question the FACE answers
+   * (admin-window/BUG-0175).
+   *
+   *  `"this app"`    → prose this app composed; renders in the `body` sans
+   *                    step, the face this app uses for its own words.
+   *  `"the machine"` → words this app did not write — the answer's own
+   *                    `message`, or whatever a failed fetch threw; renders in
+   *                    the `data` mono step, where the operator reads it as the
+   *                    machine talking.
+   *
+   * MEASURED defect: all five arms rendered in `type-data`, so
+   * `canceling statement due to statement timeout` (Postgres said it) and
+   * `the page request answered something this app cannot read` (we said it)
+   * were the same 11px mono red run, and the operator lost the one signal the
+   * type split exists to give.
+   *
+   * It is SET HERE, at `refuse()` — the single construction point every arm
+   * passes through — and the component only reads it. It is never recovered by
+   * comparing `reason` to one of this module's constants: that is a rule
+   * retyped as data (LESSONS 4 and 5), and it would silently flip a face the
+   * day one of those sentences is reworded.
+   */
+  reasonFrom: ReasonAuthor;
+}
+
+/** The two answers to "who wrote this refusal's reason". */
+export type ReasonAuthor = "this app" | "the machine";
+
+/**
+ * An `Error` whose message THIS APP composed — admin-window/BUG-0175.
+ *
+ * Declared once, here, beside the fact it decides. `fetchJson`
+ * (`src/components/ui/paging.tsx`) throws its two authored sentences as one of
+ * these; every other rejection that reaches `requestPage` carries a runtime's
+ * own words (a network `TypeError`, a string, a non-`Error` value) and is
+ * `"the machine"`.
+ *
+ * **Authorship travels with the THROW, never with the words.** The alternative
+ * — asking whether a caught message equals `ANSWERED_BY_SOMETHING_ELSE` — is
+ * the same rule written twice in two files, and a reworded sentence would move
+ * a face without anything failing. A plain `Error` carrying, by coincidence,
+ * the very text of one of this app's sentences is still the machine's: nothing
+ * this app wrote threw it.
+ */
+export class AppAuthoredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AppAuthoredError";
+  }
 }
 
 /** Everything one paging surface knows between presses. */
@@ -174,12 +224,22 @@ export function pageUrl(deps: PageDeps, offset: number): string {
  * account of columns that are STILL unfilled on screen, and a press that added
  * nothing cannot have filled them.
  */
-function refuse<Row>(state: PageState<Row>, reason: string, object: string | null): PageState<Row> {
+function refuse<Row>(
+  state: PageState<Row>,
+  reason: string,
+  object: string | null,
+  /**
+   * Stated by the arm, never inferred from `reason`. It has no default on
+   * purpose: a new arm must answer the question rather than inherit whichever
+   * face the last one happened to want (admin-window/BUG-0175).
+   */
+  reasonFrom: ReasonAuthor,
+): PageState<Row> {
   return {
     rows: state.rows,
     held: state.held,
     status: "idle",
-    refusal: { reason, object },
+    refusal: { reason, object, reasonFrom },
     notes: state.notes,
   };
 }
@@ -249,6 +309,22 @@ function reasonOf(thrown: unknown): string {
 }
 
 /**
+ * A rejection, as a refusal: its words AND who wrote them, decided together at
+ * one point so the two can never disagree (admin-window/BUG-0175).
+ *
+ * This is the ONE site that cannot answer the authorship question at the call:
+ * a rejected `fetchJson` carries either a sentence this app composed or a
+ * runtime's own words, and only the thrown VALUE says which. `instanceof` is
+ * the whole derivation — no message is compared to anything.
+ */
+function refusalFor(thrown: unknown): { reason: string; reasonFrom: ReasonAuthor } {
+  if (thrown instanceof AppAuthoredError && thrown.message.length > 0) {
+    return { reason: thrown.message, reasonFrom: "this app" };
+  }
+  return { reason: reasonOf(thrown), reasonFrom: "the machine" };
+}
+
+/**
  * ONE press. Returns the next state; never throws.
  *
  * In order (ARCHITECTURE.md §4.3 read kind 3, SPEC F14):
@@ -302,11 +378,18 @@ export async function requestPage<Row>(
   try {
     body = await deps.fetchJson(pageUrl(deps, state.held));
   } catch (thrown) {
-    return refuse(state, reasonOf(thrown), deps.route);
+    const { reason, reasonFrom } = refusalFor(thrown);
+    return refuse(state, reason, deps.route, reasonFrom);
   }
 
   if (!isPageAnswer(body)) {
-    return refuse(state, "the page request answered something this app cannot read", deps.route);
+    // This app's own sentence about what arrived — it quotes nothing.
+    return refuse(
+      state,
+      "the page request answered something this app cannot read",
+      deps.route,
+      "this app",
+    );
   }
   const answer = body as PageAnswer<Row>;
 
@@ -319,7 +402,7 @@ export async function requestPage<Row>(
       // honest answer is a refusal rather than a list grown by an amount
       // nobody can check.
       if (!Number.isInteger(deps.size) || deps.size <= 0) {
-        return refuse(state, WINDOWLESS, deps.route);
+        return refuse(state, WINDOWLESS, deps.route, "this app");
       }
 
       // An empty page is the end of the set, and is the ONE row count this
@@ -344,10 +427,10 @@ export async function requestPage<Row>(
       // they exist for foreign data on a wire, exactly as `isPageAnswer`'s arm
       // does.
       if (served > deps.size) {
-        return refuse(state, OVERLONG_PAGE, deps.route);
+        return refuse(state, OVERLONG_PAGE, deps.route, "this app");
       }
       if (served < deps.size && !answer.exhausted) {
-        return refuse(state, SHORT_PAGE, deps.route);
+        return refuse(state, SHORT_PAGE, deps.route, "this app");
       }
 
       // THE LEGS TRAVEL TO THE STATE, OR THE PRESS IS REFUSED — never dropped.
@@ -360,7 +443,7 @@ export async function requestPage<Row>(
       let notes = state.notes;
       if (Object.hasOwn(answer, "notes")) {
         const reported = (answer as { notes?: unknown }).notes;
-        if (!isPageNotes(reported)) return refuse(state, UNREADABLE_NOTES, deps.route);
+        if (!isPageNotes(reported)) return refuse(state, UNREADABLE_NOTES, deps.route, "this app");
         notes = mergedNotes(state.notes, reported);
       }
 
@@ -376,10 +459,18 @@ export async function requestPage<Row>(
       };
     }
     case "not_provisioned":
-      return refuse(state, `${answer.missing} is not provisioned`, answer.missing);
+      // This app composes that sentence around the name the answer gave; the
+      // NAME is the machine's and stays mono as the identifier on the line.
+      // Its ink, its wording and its fix are admin-window/BUG-0176's and are
+      // untouched here.
+      return refuse(state, `${answer.missing} is not provisioned`, answer.missing, "this app");
     case "error":
-      return refuse(state, answer.message, answer.reading);
+      // The only arm whose reason is not ours: the database's own string,
+      // carried across the wire byte-identical (§4.1).
+      return refuse(state, answer.message, answer.reading, "the machine");
     case "refused":
-      return refuse(state, answer.reason, null);
+      // The route's own bound refusal, written by `src/lib/paging/bounds.ts` —
+      // which is this app, on the other side of a fetch.
+      return refuse(state, answer.reason, null, "this app");
   }
 }
