@@ -9,7 +9,9 @@ import {
   gradeSurface,
   independentClient,
   renderPage,
+  snapshotAsOf,
   surfaceHooks,
+  whileStill,
 } from "./parity";
 
 /**
@@ -423,7 +425,19 @@ describe("the two shapes of the pending-claims gauge against staging", () => {
 
   it("the windowed claims read and the id-list join select the same claims", async () => {
     const db = independentClient();
-    const since = new Date(Date.now() - GAUGE_DAYS * 86_400_000).toISOString();
+    // ONE instant, captured before either leg is issued and handed to both
+    // (`snapshotAsOf`, tests/live/parity.ts; admin-window/TASK-0075). This test
+    // writes every query it compares, so the two legs take the SAME explicit
+    // upper edge rather than each racing the clock: the scraper files pending
+    // claims into staging while this runs, and two claims arriving between the
+    // two legs read as two claims one shape selected and the other did not
+    // (measured 2026-09-10 — 877 expected, 879 received, both extras carrying a
+    // uuidv7 prefix hours newer than the rest of the set). Both edges come from
+    // this one helper and neither is re-derived per leg, so what is compared
+    // below is the two SHAPES and not the two clocks. No tolerance anywhere:
+    // the comparison stays exact identity.
+    const asOf = snapshotAsOf();
+    const since = snapshotAsOf(GAUGE_DAYS * 86_400_000);
 
     // SHAPE A — what the gauge does now: one window over the view's own instant.
     const windowed = await db
@@ -431,6 +445,7 @@ describe("the two shapes of the pending-claims gauge against staging", () => {
       .select("observation_id, bucket, source_id, domain")
       .neq("bucket", PARKED_BUCKET)
       .gte("observed_at", since)
+      .lt("observed_at", asOf)
       .order("observed_at", { ascending: true })
       .order("observation_id", { ascending: true })
       .limit(GAUGE_CAP);
@@ -441,11 +456,14 @@ describe("the two shapes of the pending-claims gauge against staging", () => {
 
     // SHAPE B — what it used to do: scan `observations`, then look the view up
     // by the ids, in chunks of 100, the way `readRowsByIds` chunks them.
+    // …the same window, the same two edges. The id-chunk legs below need no
+    // edge of their own: they are bounded by the ids this scan returned.
     const scan = await db
       .from(T.observations)
       .select("observation_id, observed_at")
       .eq("status", "pending")
       .gte("observed_at", since)
+      .lt("observed_at", asOf)
       .order("observed_at", { ascending: true })
       .limit(GAUGE_CAP);
     if (scan.error) throw new Error(`the scan failed: ${JSON.stringify(scan.error)}`);
@@ -464,6 +482,9 @@ describe("the two shapes of the pending-claims gauge against staging", () => {
       `the observations scan returned its cap (${GAUGE_CAP}), same reason`,
     ).toBeLessThan(GAUGE_CAP);
     // …and non-vacuous: staging really holds pending claims in this window.
+    // The window is still 90 days minus the settle margin, and staging held
+    // 877 pending claims in it when this was measured (2026-09-10), so the
+    // upper edge narrows the set by the seconds it must and by nothing else.
     expect(fromWindow.length).toBeGreaterThan(0);
 
     const ids = scanned.map((row) => row.observation_id);
@@ -508,32 +529,79 @@ describe("the Claims page's surface hooks against staging", () => {
   });
 });
 
+/**
+ * Every count the bucket-table cases compare, read as ONE shape
+ * (admin-window/TASK-0075).
+ *
+ * One shape, because this is the page-vs-database class: the page's own read
+ * carries no upper edge and this file may not give it one, so the device is
+ * `whileStill` (tests/live/parity.ts) — the counts are read, the page is
+ * rendered, the counts are read again, and the pair is used only if the
+ * database did not move in between. `whileStill` can only hold still what one
+ * `read` returns, so the count that decides the surface's KIND and the five
+ * per-bucket counts it then grades are read together; a claim arriving between
+ * them would otherwise be a bucket the page "miscounted".
+ *
+ * Written from the migration's bucket vocabulary, never from
+ * `src/lib/db/claims.ts` — the rule the whole file follows.
+ */
+async function bucketCounts(
+  source?: string,
+): Promise<{ whole: number; buckets: Record<string, number> }> {
+  const whole = await countRows(() => {
+    const query = claimCount();
+    return source === undefined ? query : query.eq("source_id", source);
+  });
+  const buckets: Record<string, number> = {};
+  for (const bucket of RENDERED_BUCKETS) {
+    buckets[bucket] = await countRows(() => {
+      const query = exactCount(T.pendingClaims).eq("bucket", bucket);
+      return source === undefined ? query : query.eq("source_id", source);
+    });
+  }
+  return { whole, buckets };
+}
+
 describe("the classification buckets against staging", () => {
   it("renders each bucket's count exactly as the view holds it", async () => {
-    const markup = await claimsMarkup();
+    // The scraper files claims into staging while this runs, so the render and
+    // the counts are pinned to one still moment (`whileStill`; the same device
+    // cycles.live.test.ts and dashboard.live.test.ts use, ruled for this class
+    // on 2026-09-02). A claim arriving between them reads as a count the page
+    // got wrong — measured on this very case, 2026-09-10, admin-window/
+    // TASK-0075. Every comparison below is still exact equality: `whileStill`
+    // makes the SAME comparison on every attempt and throws rather than passing
+    // when the database will not hold still.
+    const { made: markup, held } = await whileStill(
+      () => bucketCounts(),
+      () => claimsMarkup(),
+    );
     const state = await gradeSurface({
       markup,
       within: BUCKETS,
       object: T.pendingClaims,
-      counted: () => countRows(() => claimCount()),
+      counted: held.whole,
     });
     if (state !== "ok") return;
 
     for (const bucket of RENDERED_BUCKETS) {
-      const expected = await countRows(() =>
-        exactCount(T.pendingClaims).eq("bucket", bucket),
-      );
-      expect(renderedCount(markup, bucket), bucket).toBe(expected);
+      expect(renderedCount(markup, bucket), bucket).toBe(held.buckets[bucket]);
     }
   });
 
   it("renders each bucket's count exactly as the view holds it, per source filter", async () => {
-    const markup = await claimsMarkup();
+    // Page against database again, so `whileStill` again — once for the whole
+    // view, and once per source below, because each narrowed page is its own
+    // comparison with its own counts (admin-window/TASK-0075).
+    const { made: markup, held } = await whileStill(
+      () => bucketCounts(),
+      () => claimsMarkup(),
+    );
     const state = await gradeSurface({
       markup,
       within: BUCKETS,
       object: T.pendingClaims,
-      counted: () => countRows(() => claimCount()),
+      counted: held.whole,
     });
     if (state !== "ok") return;
 
@@ -549,8 +617,10 @@ describe("the classification buckets against staging", () => {
     ];
 
     for (const source of sources) {
-      const narrowed = await claimsMarkup({ source_id: source });
-      const held = await countRows(() => claimCount().eq("source_id", source));
+      const { made: narrowed, held: counts } = await whileStill(
+        () => bucketCounts(source),
+        () => claimsMarkup({ source_id: source }),
+      );
       // A source with no claim of its own is an EMPTY bucket table with real
       // zeros in it, not an absent view — the page states the figure either
       // way (rule 2).
@@ -558,14 +628,13 @@ describe("the classification buckets against staging", () => {
         markup: narrowed,
         within: BUCKETS,
         object: T.pendingClaims,
-        counted: held,
+        counted: counts.whole,
       });
       if (narrowedState !== "ok") continue;
       for (const bucket of RENDERED_BUCKETS) {
-        const expected = await countRows(() =>
-          exactCount(T.pendingClaims).eq("bucket", bucket).eq("source_id", source),
+        expect(renderedCount(narrowed, bucket), `${source} / ${bucket}`).toBe(
+          counts.buckets[bucket],
         );
-        expect(renderedCount(narrowed, bucket), `${source} / ${bucket}`).toBe(expected);
       }
     }
   });

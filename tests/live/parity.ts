@@ -853,6 +853,34 @@ export async function gradeSurface(input: SurfaceGrade): Promise<PageStateKind> 
 /* ── comparing against a database that is being written to ────────────────── */
 
 /**
+ * The instant every leg of one live identity proof reads UP TO — captured
+ * once, handed to each leg, ending strictly before now so a row arriving
+ * mid-test lands outside the window both legs asked for.
+ *
+ * Where a test writes EVERY query it compares — an identity or set-equality
+ * proof between two shapes of the same read — this is the device, not
+ * `whileStill`: one explicit upper edge shared by every leg is deterministic,
+ * needs no retry, and sharpens the proof, because what is then compared is the
+ * two shapes rather than the two clocks. (`whileStill` stays the device where
+ * one leg is the APP's own read and cannot be given an upper edge.)
+ *
+ * The settle margin is for INSERT LATENCY AND CLOCK SKEW, not for jitter: a
+ * row is stamped `observed_at` by the writer and becomes visible to a reader a
+ * moment later, and this process's clock and the database's are not the same
+ * clock. Ending the window a few seconds short of now is what keeps a row that
+ * was already in flight when the first leg was issued from landing inside the
+ * window the second leg asks for. It is NOT slack in a comparison — every leg
+ * still grades by exact identity — so keep it small; a proof that disagrees is
+ * never answered by widening it.
+ *
+ * Default 5 s, measured in milliseconds, returned as ISO 8601 (UTC) because
+ * that is what PostgREST compares a `timestamptz` against.
+ */
+export function snapshotAsOf(settleMs = 5_000): string {
+  return new Date(Date.now() - settleMs).toISOString();
+}
+
+/**
  * Make something from the page and read the database around it, and only hand
  * both back when the database did not move in between.
  *
