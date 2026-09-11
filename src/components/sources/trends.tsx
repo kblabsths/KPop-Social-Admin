@@ -3,7 +3,7 @@ import { GaugeCard, TrendTable, type TrendMeasure } from "@/components/gauges";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { Identifier, WindowLine } from "@/components/ui";
 import { count, counted, pluralise } from "@/lib/format";
-import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
+import { isSourceNamed, sourceLabel, sourceNamesOf } from "@/lib/sources/names";
 import { sourcesHref, type SourceNarrowing } from "@/lib/sources/routes";
 import type {
   AwaitingRowPoint,
@@ -259,6 +259,12 @@ export function RejectionSection({
   // Deliberately NOT the page's registry read: this section's figures and its
   // labels then come from one read, and a registry leg that refused cannot
   // rename a row the gauge did name.
+  //
+  // The `null` test here is the TYPE narrowing `sourceNamesOf` needs and NOT a
+  // blank-name rule (admin-window/TASK-0060): a split whose name came back
+  // with no ink in it keeps its entry, travels into the map as the registry
+  // wrote it, and is judged by `sourceLabel` and `isSourceNamed` alone — the
+  // one place that decides what an unreadable name means.
   const names = sourceNamesOf(
     bySource.flatMap((split) =>
       split.source === null
@@ -293,13 +299,21 @@ export function RejectionSection({
   const rerejected = reported.reduce((total, split) => total + split.rerejected, 0);
   // The closing sentence obeys the same rule as the cards. Both facts it
   // reports are per-source facts: an unattributed rejection is missing its
-  // REASON, not its source, and an unnamed source is one row of `reported` whose
-  // registry lookup came back empty. Read off the whole gauge they were the
+  // REASON, not its source, and an unnamed source is one row of `reported` the
+  // registry named nothing for. Read off the whole gauge they were the
   // SCAN's totals, so a bandsintown row moved a page narrowed to ticketmaster
   // (admin-window/BUG-0022) — and deleting the sentence would have lost two
   // facts the operator needs, so they are scoped rather than dropped.
   const unattributed = reported.reduce((total, split) => total + split.unattributed, 0);
-  const unnamed = reported.filter((split) => split.source === null).length;
+  // **How many of these rows are wearing an id, asked of the rule that put
+  // them in one** (admin-window/TASK-0060). This counted `split.source ===
+  // null`, which is only ONE of the two ways the registry names no source: a
+  // row that existed with an ink-less name was labelled by its id in the table
+  // above by `sourceLabel` and not counted here, so the sentence stated a
+  // number the rows beside it disagreed with (LESSONS 11). One question, one
+  // predicate, one map — `isSourceNamed` is `sourceLabel`'s own reading of the
+  // registry's answer.
+  const unnamed = reported.filter((split) => !isSourceNamed(names, split.sourceId)).length;
 
   return (
     <>
@@ -377,11 +391,21 @@ export function RejectionSection({
               "they are",
             )} counted in neither column.`
           : ""}
+        {/* The words say what the count now counts: the registry naming
+            nothing READABLE for a source is the same fact to an operator as it
+            holding no row for one, and both put an id where a name goes
+            (admin-window/TASK-0060). A sentence saying "had no registry row"
+            over a row that came back blank would claim more than its read
+            established (LESSONS 2). */}
         {unnamed === 0
           ? ""
           : unnamed === 1 && narrowed !== null
-            ? " This source had no registry row in this read, so it is named by id."
-            : ` ${count(unnamed)} of these sources had no registry row in this read, so they are named by id.`}
+            ? " The registry gave this source no name in this read, so it is named by id."
+            : ` The registry gave ${count(unnamed)} of these sources no name in this read, so ${pluralise(
+                unnamed,
+                "it is",
+                "they are",
+              )} named by id.`}
       </p>
     </>
   );

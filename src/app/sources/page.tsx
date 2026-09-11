@@ -251,7 +251,10 @@ export default async function SourcesPage({
   // CHIPS take the same map (admin-window/BUG-0159): a chip is a source
   // labelled by its id too, and it spelled `source.source` raw — no fallback
   // at all — so one blank registry row made this page give two answers for one
-  // source in one render.
+  // source in one render. The registry TABLE's own name cell takes it for the
+  // same reason and was the last site of that class on this page
+  // (admin-window/TASK-0060), so every source this page names — chip, row,
+  // trend — is named by one rule from one read.
   const names = sourceNamesOf(held);
 
   // Which emptiness this is, from TWO facts and not from the URL alone
@@ -297,7 +300,7 @@ export default async function SourcesPage({
           <>
             <DataTable<SourceState>
               label="Sources"
-              columns={sourceColumns(filter)}
+              columns={sourceColumns(filter, names)}
               rows={sources.kind === "ok" ? shown : []}
               rowKey={(row) => row.source_id}
               placeholder={

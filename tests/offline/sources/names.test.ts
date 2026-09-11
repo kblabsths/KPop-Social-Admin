@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
+import { isSourceNamed, sourceLabel, sourceNamesOf } from "@/lib/sources/names";
 import { hasVisibleContent } from "@/lib/verdict/decision";
 import { codeLines, codeLinesIn, codeText, sourceFiles } from "../source-tree";
 import { SOURCE, SOURCE_NAME, SOURCES } from "./population";
@@ -156,6 +156,55 @@ describe("what a source is called on screen", () => {
     }
   });
 
+  /**
+   * **The count and the label are the same question** (admin-window/TASK-0060).
+   *
+   * `/sources`' settled-values sentence says how many of the rows above it are
+   * wearing an id instead of a name. It answered that itself, as `split.source
+   * === null`, which is one of the TWO ways the registry names no source — so
+   * a row that existed with an ink-less name was labelled by its id above and
+   * left out of the count below, and one page gave two answers about one row
+   * (LESSONS 11). Both fixtures are asserted against `sourceLabel` in the same
+   * map, so the two can never part company again.
+   */
+  it("answers 'is this named' exactly as the label answers 'what is it called'", () => {
+    const named = sourceNamesOf(ROWS);
+    for (const id of [...Object.keys(SOURCE_NAME), "01920000-0000-7000-8000-0000000009ff"]) {
+      expect(isSourceNamed(named, id), id).toBe(sourceLabel(named, id) !== id);
+    }
+    // The two ways the registry names no source — a row with no ink in it, and
+    // no row at all — and the one way it does. Every case is graded against
+    // the label in the same breath.
+    for (const blank of INK_LESS) {
+      const spelling = JSON.stringify(blank);
+      const names = sourceNamesOf([
+        { source_id: SOURCE.ticketmaster, source: blank },
+        { source_id: SOURCE.bandsintown, source: "bandsintown" },
+      ]);
+      // The input it MUST flag: present, and naming nothing readable.
+      expect(isSourceNamed(names, SOURCE.ticketmaster), spelling).toBe(false);
+      expect(sourceLabel(names, SOURCE.ticketmaster), spelling).toBe(SOURCE.ticketmaster);
+      // The input it must NOT (LESSONS 8): a sibling with a name, in the same
+      // map, so the predicate answers per ROW.
+      expect(isSourceNamed(names, SOURCE.bandsintown), spelling).toBe(true);
+      expect(sourceLabel(names, SOURCE.bandsintown), spelling).toBe("bandsintown");
+      // And the id the map has no entry for at all.
+      expect(isSourceNamed(names, SOURCE.fandom), spelling).toBe(false);
+      expect(isSourceNamed(new Map(), SOURCE.ticketmaster), spelling).toBe(false);
+    }
+  });
+
+  it("calls a name with any ink in it a name, however odd the app finds it", () => {
+    // The other direction, on the values `isAbsent` and a tidier-upper would
+    // disagree about: a padded name, an em dash, a name that reads like an id.
+    // Each is a name the registry wrote, so the count of id-worn rows must not
+    // claim it.
+    for (const name of ["ticketmaster", "  ticketmaster  ", "\u2014", "band\u200bsintown"]) {
+      const names = sourceNamesOf([{ source_id: SOURCE.ticketmaster, source: name }]);
+      expect(isSourceNamed(names, SOURCE.ticketmaster), JSON.stringify(name)).toBe(true);
+    }
+  });
+
   it("gives back an id that is not exactly a registry key, never a neighbour's name", () => {
     // The lookup is by exact id, as the database keys it. An id that differs
     // by a character, a space or a case gets ITSELF back rather than the name
@@ -262,6 +311,13 @@ describe("what a source is called has one owner", () => {
       // The narrowing chips: a source labelled by its id, and the one site of
       // the class that carried NO fallback at all (admin-window/BUG-0159).
       "src/components/sources/source-chips.tsx",
+      // The registry's OWN name column — the last site of the class
+      // (admin-window/TASK-0060). It rendered `{row.source}` raw, which is
+      // invisible to the `??` scanner above for the same reason the chips
+      // were, and it is the one cell on the page whose row already holds the
+      // string: having it in hand is not permission to decide what to say
+      // about it.
+      "src/components/sources/registry-table.tsx",
     ]) {
       expect(files, caller).toContain(caller);
       expect(codeText(caller), caller).toContain("sourceLabel");
@@ -299,11 +355,19 @@ describe("the leaf stays a leaf", () => {
     ]);
   });
 
-  it("exports the two halves of the rule and nothing else", () => {
+  /**
+   * The ratchet on the leaf's SIZE: a fourth export is a fourth thing a caller
+   * may ask about a source's name, and the class this leaf ends is surfaces
+   * asking the question their own way. `isSourceNamed` was the third
+   * (admin-window/TASK-0060) — the answer `sourceLabel` already computes,
+   * exported because `/sources` counts the rows it labelled by id and was
+   * deciding that a second time.
+   */
+  it("exports the three parts of the rule and nothing else", () => {
     const declarations = /export\s+(?:function|const|type|interface)\s+(\w+)/g;
     const exported = [...codeLines(LEAF).join("\n").matchAll(declarations)].map(
       (match) => match[1],
     );
-    expect(exported).toEqual(["sourceNamesOf", "sourceLabel"]);
+    expect(exported).toEqual(["sourceNamesOf", "sourceLabel", "isSourceNamed"]);
   });
 });
