@@ -1048,6 +1048,53 @@ describe("the settle_review_item migration", () => {
   });
 
   /**
+   * The collision arm in the grammar the sibling actually raises codes in
+   * (admin-window/BUG-0212; QA on admin-window/BUG-0207).
+   *
+   * Attribution is per LINE against this campaign's handoff notes, and next
+   * door a SQLSTATE is raised on a line of its own:
+   * `using errcode = 'KSnnn',` — 100+ such lines across the sibling's
+   * migrations and `tools/staging` (measured 2026-09-11; `KS024` alone has
+   * 22, our own installed `KS029` has 20). Our note carries that same line
+   * verbatim for each of the four codes it allocates, so a LATER sibling
+   * migration that raises one of them for a meaning of its own writes a line
+   * this corpus already holds, is attributed to us, and passes.
+   *
+   * The fixture above proves the arm in PYTHON (`X = "KSnnn"`), a spelling
+   * the note happens not to carry per code; this one uses the sibling's own
+   * SQL idiom, taken from the shipped block so it cannot drift from it.
+   * PINNED FAILING (admin-window/BUG-0212): `it.fails` is this runner's strict
+   * xfail — the day attribution stops swallowing the idiom line this test
+   * XPASSes, goes red, and sends the reader to the ticket, whose fix flips
+   * it back to a plain `it`.
+   */
+  it.fails("flags a stranger's raise of an allocated code in the sibling's own SQL idiom", () => {
+    const allocated = allocatedCodes();
+    expect(allocated.length).toBeGreaterThan(0);
+
+    // The idiom line for the first allocated code, read off the artifact we
+    // ship rather than typed here.
+    const claim = allocated[0];
+    const idiom = shipped.text
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.includes(claim) && /errcode/i.test(line));
+    expect(idiom, `${claim} raised in the shipped block`).toBeDefined();
+
+    // A stranger's function next door, raising that code for its own reason.
+    // Nothing else in it spells a KS code at all — which is how a real
+    // migration reads: the code is named once, on the raise.
+    const stranger = [
+      "raise exception 'staging lease % could not be renewed', p_lease_id",
+      idiom as string,
+      "detail  = format('lease_id=%s', p_lease_id),",
+      "hint    = 'take a fresh lease';",
+    ].join("\n");
+
+    expect(unattributedSpellings(stranger, allocated)).toEqual([idiom]);
+  });
+
+  /**
    * admin-window/BUG-0082, on the function side. On this project a newly
    * created function is BORN with EXECUTE granted to `public`, `anon`,
    * `authenticated` and `service_role` by an `ALTER DEFAULT PRIVILEGES` nobody
