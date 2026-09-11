@@ -17,6 +17,10 @@ import {
   usePageRows,
   usePaging,
 } from "@/components/ui/paging";
+import type { ReactNode } from "react";
+import { RECENT_EVENTS, configuredKeys } from "@/lib/browse/views";
+import { NARROW_THE_VIEW, PagedClaimList } from "@/components/claims/paged-claim-list";
+import { PagedBrowseTable } from "@/components/browse/paged-browse-table";
 import { WindowLine, type DrawnSentence, type DrawnWindow } from "@/components/ui/window-line";
 import {
   MAX_PAGE_OFFSET,
@@ -61,6 +65,19 @@ type Row = { id: string };
 const HOLDS = "claims";
 const SIZE = 50;
 
+/**
+ * WHAT THE SURFACE OF EVERY FIXTURE BELOW OFFERS THE OPERATOR at the bound
+ * ceiling — `/claims`' own next step, imported from the surface that supplies
+ * it and never retyped here (LESSONS 5, admin-window/BUG-0198).
+ *
+ * The fixture of this whole file is a `/claims` surface: `HOLDS` is its noun
+ * and `PAGE_ROUTES.claims` is its route. Its next step travels with it, so the
+ * widget's arms are graded on a surface that really exists. A surface that
+ * offers nothing hands `null`, which is what `/browse` does and what the
+ * `PagedBrowseTable` block below grades.
+ */
+const NEXT_STEP = NARROW_THE_VIEW;
+
 /** A state a surface would really be in: a first screen, and nothing paged in yet. */
 function state(over: Partial<PageState<Row>> = {}): PageState<Row> {
   return { rows: [], held: SIZE, status: "idle", refusal: null, notes: null, ...over };
@@ -72,9 +89,13 @@ function state(over: Partial<PageState<Row>> = {}): PageState<Row> {
  * case below this line is about — and the diverged one is passed explicitly
  * where it is the subject.
  */
-const more = (over: Partial<PageState<Row>> = {}, readsAgree = true): string =>
+const more = (
+  over: Partial<PageState<Row>> = {},
+  readsAgree = true,
+  nextStep: string | null = NEXT_STEP,
+): string =>
   render(
-    h(PageMore, { state: state(over), holds: HOLDS, size: SIZE, readsAgree, onPress: () => {} }),
+    h(PageMore, { state: state(over), holds: HOLDS, size: SIZE, readsAgree, nextStep, onPress: () => {} }),
   );
 
 /**
@@ -303,6 +324,7 @@ describe("PageMore draws its five states from props", () => {
             holds: HOLDS,
             size: SIZE,
             readsAgree: true,
+            nextStep: NEXT_STEP,
             onPress: () => {},
           }),
         ),
@@ -462,7 +484,7 @@ describe("a page answer for an object this database does not have", () => {
       },
     );
     const html = render(
-      h(PageMore, { state: next, holds: HOLDS, size: SIZE, readsAgree: true, onPress: () => {} }),
+      h(PageMore, { state: next, holds: HOLDS, size: SIZE, readsAgree: true, nextStep: NEXT_STEP, onPress: () => {} }),
     );
     const drawn = line(html);
     const words = drawn.text().trim().split(/\s+/);
@@ -911,6 +933,7 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
         holds: HOLDS,
         size: SIZE,
         readsAgree: true,
+        nextStep: NEXT_STEP,
         onPress: () => {},
       })),
     );
@@ -1062,6 +1085,7 @@ describe("usePageRows binds the driver to a press", () => {
           holds: HOLDS,
           size: SIZE,
           readsAgree: true,
+          nextStep: NEXT_STEP,
           onPress: bound.press,
         });
       }),
@@ -1236,6 +1260,7 @@ describe("usePageRows binds the driver to a press", () => {
             holds: HOLDS,
             size: bound.size,
             readsAgree: true,
+            nextStep: NEXT_STEP,
             onPress: bound.press,
           });
         }),
@@ -1352,6 +1377,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
               holds: HOLDS,
               size: published.size,
               readsAgree: published.readsAgree,
+              nextStep: NEXT_STEP,
               onPress: published.press,
             }),
           );
@@ -1585,6 +1611,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
             holds: HOLDS,
             size: SIZE,
             readsAgree: true,
+            nextStep: NEXT_STEP,
             onPress: () => {},
           }),
         ),
@@ -1598,6 +1625,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
             holds: HOLDS,
             size: SIZE,
             readsAgree: false,
+            nextStep: NEXT_STEP,
             onPress: () => {},
           }),
         ),
@@ -1712,6 +1740,211 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
       expect(control.length, name).toBeGreaterThan(0);
       expect(restates(line, control), `${name}: "${line}" / "${control}"`).toBe(false);
     }
+  });
+
+  /**
+   * WHAT THE OPERATOR CAN DO NEXT IS THE SURFACE'S TO SAY — campaign
+   * admin-window/BUG-0198.
+   *
+   * The ceiling arm's NOUN was per-surface from the start; its next step was
+   * not, and the one surface whose noun reads "events" was told to narrow a
+   * view it offers no way to narrow: `/browse`'s single parameter is
+   * `columns`, which "chooses which COLUMNS render and never which rows are
+   * read" (`src/app/browse/page.tsx`), and the page draws no facet at all. So
+   * the step is SUPPLIED by the surface now — `/claims` carries its own
+   * sentence, `/browse` carries none — and no default lives in the widget for
+   * a surface added later to inherit unchecked (the architect's ruling of
+   * 2026-09-11).
+   *
+   * Both readings below are the REAL wrappers the two pages render, inside
+   * this module's own provider, at the `held` the driver leaves a surface at
+   * past `MAX_PAGE_OFFSET`. Nothing here types a sentence: `/claims`' step is
+   * imported from the surface that supplies it, and `/browse`'s absence of one
+   * is graded against what the widget itself renders when it is handed none.
+   */
+  describe("the bound ceiling's next step comes from the surface", () => {
+    /** The `held` a surface sits at past the ceiling — one window beyond it. */
+    const CEILING = MAX_PAGE_OFFSET + SIZE;
+
+    /** One whole surface at the ceiling: this provider, and the page's own body. */
+    const drawn = <Row,>(route: string, window: DrawnWindow, body: ReactNode): string =>
+      render(
+        h(
+          PagingProvider,
+          {
+            initial: initialPage<Row>(CEILING, true),
+            window,
+            deps: { route, params: "", size: SIZE },
+            children: null,
+          },
+          body,
+        ),
+      );
+
+    /** `/browse`'s own reading: its window line and its own table wrapper. */
+    const browse = (): string =>
+      drawn<Row>(
+        PAGE_ROUTES.browse,
+        { ...WINDOW, held: CEILING, heldFrom: "this window" },
+        h(
+          "div",
+          null,
+          h(PagedWindowLine, { gauge: "events", shows: CATALOG }),
+          h(PagedBrowseTable, {
+            surface: "events",
+            view: RECENT_EVENTS,
+            shown: configuredKeys(RECENT_EVENTS),
+            initial: [],
+            reported: [],
+          }),
+        ),
+      );
+
+    /** `/claims`' own reading, of the same arm, on the same state. */
+    const claims = (): string =>
+      drawn<Row>(
+        PAGE_ROUTES.claims,
+        counted(MAX_PAGE_OFFSET * 2),
+        h(
+          "div",
+          null,
+          h(PagedWindowLine, { gauge: "claims", shows: MATCHED }),
+          h(PagedClaimList, { label: "All claims", initial: [] }),
+        ),
+      );
+
+    /** The sentences an arm renders, in the order it renders them. */
+    const sentencesOf = (said: string): string[] =>
+      said
+        .split(/(?<=\.)\s+/)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0);
+
+    /** The widget alone, at the same state, for a surface supplying `nextStep`. */
+    const widget = (holds: string, nextStep: string | null): string =>
+      render(
+        h(PageMore, {
+          state: { rows: [], held: CEILING, status: "idle", refusal: null, notes: null },
+          holds,
+          size: SIZE,
+          readsAgree: true,
+          nextStep,
+          onPress: () => {},
+        }),
+      );
+
+    /** What one arm of a rendered surface says. */
+    const ceilingArm = (html: string): string => saidBy(html, '[data-paging="limit"]');
+
+    it("`/browse` is told what stopped the paging, and nothing its URL cannot do", () => {
+      const html = browse();
+      const $ = cheerio.load(html);
+      // Non-vacuity: this really is the ceiling arm, at a bound this app
+      // refuses, with no control under it (criterion 3).
+      expect(pageBound(String(CEILING), SIZE).kind).toBe("refused");
+      expect($("[data-paging]").attr("data-paging")).toBe("limit");
+      expect($("[data-paging]").length).toBe(1);
+      expect(controls(html)).toBe(0);
+
+      const said = ceilingArm(html);
+      // CRITERION 2: what stopped the paging is still named, with this app's
+      // own bound read off `MAX_PAGE_OFFSET` and through the app's one
+      // thousands-separated count — so a ceiling that moves moves this
+      // assertion with it rather than reddening it.
+      expect(said).toContain(count(MAX_PAGE_OFFSET));
+      // CRITERION 1: and the arm ENDS there. One sentence, and in particular
+      // not the instruction `/claims` supplies, which this surface offers no
+      // way to carry out.
+      expect(sentencesOf(said)).toHaveLength(1);
+      expect(said).not.toContain(NARROW_THE_VIEW);
+      // MUST FLAG, or the two assertions above pass on a widget that can no
+      // longer say anything at all (LESSONS 8): the same widget, at the same
+      // state, DOES draw a second sentence when a surface supplies one.
+      expect(sentencesOf(ceilingArm(widget("events", NARROW_THE_VIEW)))).toHaveLength(2);
+      // …and what this wrapper draws is exactly the widget handed NO next
+      // step, which is the wrapper's own answer to the question.
+      expect(said).toBe(ceilingArm(widget("events", null)));
+    });
+
+    it("`/claims` still gets a next step, and it is that surface's own", () => {
+      const html = claims();
+      expect(cheerio.load(html)("[data-paging]").attr("data-paging")).toBe("limit");
+      expect(controls(html)).toBe(0);
+
+      const said = ceilingArm(html);
+      // CRITERION 4: two sentences, and the second is the one the SURFACE
+      // exports — imported here, never retyped (LESSONS 5). `/claims` draws
+      // its bucket tabs and its source filter above this list and every one of
+      // them reads fewer claims, which is what makes the instruction one an
+      // operator on this surface can carry out.
+      expect(sentencesOf(said)).toHaveLength(2);
+      expect(sentencesOf(said)[1]).toBe(NARROW_THE_VIEW);
+      // CRITERIA 2 AND 6: the half before it is the SAME half, to the byte,
+      // that the widget renders with no next step at all — the surface's
+      // sentence is appended verbatim and nothing else in the arm moved.
+      expect(said).toBe(`${ceilingArm(widget(HOLDS, null))} ${NARROW_THE_VIEW}`);
+    });
+
+    it("every other arm is byte-identical whether a surface supplies a next step or not", () => {
+      // CRITERION 6: this ticket moves one arm's second sentence and nothing
+      // else, so every other arm renders the same markup under either answer.
+      const arms: [string, Partial<PageState<Row>>, boolean][] = [
+        ["idle", {}, true],
+        ["loading", { status: "loading" }, true],
+        ["exhausted, the two reads agree", { status: "exhausted" }, true],
+        ["exhausted, the two reads diverge", { status: "exhausted" }, false],
+        [
+          "refused",
+          {
+            refusal: {
+              condition: "broken",
+              reason: "the read failed",
+              object: "pending_claims",
+              reasonFrom: "the machine",
+            },
+          },
+          true,
+        ],
+      ];
+      for (const [name, over, agree] of arms) {
+        expect(more(over, agree, NARROW_THE_VIEW), name).toBe(more(over, agree, null));
+      }
+      // Non-vacuity: the ONE arm this ticket moves does differ between them.
+      expect(more({ held: CEILING }, true, NARROW_THE_VIEW)).not.toBe(
+        more({ held: CEILING }, true, null),
+      );
+    });
+
+    it("keeps no next step of its own, for any surface, and says whatever it is handed", () => {
+      // CRITERION 8 (architect, 2026-09-11). A next step kept in the widget as
+      // a DEFAULT and opted out of by the surfaces that cannot honour it is
+      // the road this ticket rules out: the surface added next would inherit
+      // advice nobody checked it can take. So the instruction is not in this
+      // module at all — asked through the constant the surface exports rather
+      // than retyped here, which is this ticket's own check as a test.
+      expect(sourceText("src/components/ui/paging.tsx")).not.toContain(NARROW_THE_VIEW);
+      // Presence of the fix beside absence of the defect (LESSONS 12): what a
+      // surface hands over is what the arm says, verbatim and unexamined.
+      const supplied = "Ask the resolver for a narrower view.";
+      expect(ceilingArm(widget("events", supplied)).endsWith(supplied)).toBe(true);
+    });
+
+    it("neither surface's ceiling arm restates its own window line", () => {
+      // CRITERION 3, on both real readings: the line states the WINDOW's
+      // verdict and the arm states the CONTROL's, so one screen never answers
+      // one question twice (LESSONS 11, admin-window/BUG-0178 criterion 9).
+      // Both strings come off the rendered surface; nothing here pins a word.
+      for (const [name, html] of [
+        ["/browse", browse()],
+        ["/claims", claims()],
+      ] as const) {
+        const line = closingClause(html);
+        const control = terminalSentence(html);
+        expect(line.length, name).toBeGreaterThan(0);
+        expect(control.length, name).toBeGreaterThan(0);
+        expect(restates(line, control), `${name}: "${line}" / "${control}"`).toBe(false);
+      }
+    });
   });
 
   it("refuses to draw a paged surface outside its provider", () => {
@@ -1840,6 +2073,7 @@ describe("a page that arrives short of the window", () => {
         holds: HOLDS,
         size: SIZE,
         readsAgree: true,
+        nextStep: NEXT_STEP,
         onPress: () => {},
       }),
     );
@@ -1858,6 +2092,7 @@ describe("a page that arrives short of the window", () => {
         holds: HOLDS,
         size: SIZE,
         readsAgree: true,
+        nextStep: NEXT_STEP,
         onPress: () => {},
       }),
     );
@@ -1910,6 +2145,7 @@ describe("the refusal line says who wrote the words", () => {
         holds: HOLDS,
         size: SIZE,
         readsAgree: true,
+        nextStep: NEXT_STEP,
         onPress: () => {},
       }));
   }
@@ -2154,6 +2390,7 @@ describe("the refusal line says who wrote the words", () => {
         holds: HOLDS,
         size: SIZE,
         readsAgree: true,
+        nextStep: NEXT_STEP,
         onPress: () => {},
       })),
     );
@@ -2181,6 +2418,7 @@ describe("the refusal line says who wrote the words", () => {
         holds: HOLDS,
         size: SIZE,
         readsAgree: true,
+        nextStep: NEXT_STEP,
         onPress: () => {},
       })),
     );

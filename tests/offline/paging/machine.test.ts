@@ -8,6 +8,7 @@ import {
   type PageAnswer,
 } from "@/lib/paging/bounds";
 import { PageMore } from "@/components/ui/paging";
+import { NARROW_THE_VIEW } from "@/components/claims/paged-claim-list";
 import {
   AppAuthoredError,
   initialPage,
@@ -519,6 +520,11 @@ describe("requestPage", () => {
           holds: "claims",
           size: SIZE,
           readsAgree: true,
+          // The next step is the SURFACE's, and this fixture is a `/claims`
+          // one (admin-window/BUG-0198). Nothing here grades the sentence —
+          // `tests/offline/ui/paging.test.ts` owns the arm's words on both
+          // surfaces; this owns the join, and the join does not move with it.
+          nextStep: NARROW_THE_VIEW,
           onPress: () => {},
         }),
       );

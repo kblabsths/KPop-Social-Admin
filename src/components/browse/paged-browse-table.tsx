@@ -162,11 +162,24 @@ export function PagedBrowseTable({
       {/* The app's own noun for what this surface holds, in the glossary's one
           word (LESSONS 6) — the same word the page's window line uses, and the
           word the control's label is built from: "Show the next 50 events". */}
+      {/* AND NO NEXT STEP, because this surface has none to offer
+          (admin-window/BUG-0198). Where paging stops at this app's bound
+          ceiling, `PageMore` says what stopped it and that it is not the end
+          of the set; the sentence after that is the SURFACE's, and only a
+          surface knows whether its own URL can remove a row. This one cannot:
+          `/browse`'s single parameter is `columns`, which "chooses which
+          COLUMNS render and never which rows are read"
+          (`src/app/browse/page.tsx`, `scope: null`), and the page draws no
+          facet — so an instruction to narrow the view would be one an
+          operator here cannot carry out (LOOK_AND_FEEL copy bar 3; LESSONS 1,
+          CONTENT — the fix is never wishful). `null` is that answered, not
+          forgotten: the prop is required. */}
       <PageMore
         state={state}
         holds={HOLDS}
         size={size}
         readsAgree={readsAgree}
+        nextStep={null}
         onPress={press}
       />
     </div>

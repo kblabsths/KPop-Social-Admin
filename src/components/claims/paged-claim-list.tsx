@@ -61,6 +61,27 @@ import { ClaimList } from "./claim-list";
 /** What this surface holds, in the app's own word. */
 const HOLDS = "claims";
 
+/**
+ * WHAT THIS SURFACE OFFERS THE OPERATOR once this app has stopped paging at
+ * its own bound ceiling — this surface's sentence, living on this surface
+ * (admin-window/BUG-0198).
+ *
+ * `PageMore`'s ceiling arm names what stopped the paging and that it is not
+ * the end of the set; the step after that is per-surface, because only a
+ * surface knows whether its own URL can remove a row. `/claims` can: the page
+ * draws the bucket tabs and the `source_id` filter bar above this list
+ * (`src/app/claims/page.tsx`), and every one of them reads FEWER claims — so
+ * narrowing really is how this surface is worked, and this instruction is one
+ * an operator here can carry out. It is exported so the surface's own test
+ * reads the sentence rather than retyping it (LESSONS 5); it is deliberately
+ * NOT in `@/components/claims`' barrel, which may re-export a component from
+ * this client module and nothing else (admin-window/BUG-0094).
+ *
+ * A surface that cannot be narrowed hands `PageMore` no next step at all
+ * rather than this one — see `../browse/paged-browse-table.tsx`.
+ */
+export const NARROW_THE_VIEW = "Narrow the view and page the smaller set.";
+
 /** @see the module docstring above — the whole rule lives there. */
 export function PagedClaimList({
   label,
@@ -96,6 +117,7 @@ export function PagedClaimList({
         holds={HOLDS}
         size={size}
         readsAgree={readsAgree}
+        nextStep={NARROW_THE_VIEW}
         onPress={press}
       />
     </div>

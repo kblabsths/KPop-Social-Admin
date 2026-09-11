@@ -1786,6 +1786,12 @@ describe("the affordance that continues the recent-events view", () => {
             holds: "events",
             size: view.window,
             readsAgree,
+            // What this surface offers at the bound ceiling: nothing, because
+            // `?columns=` removes no row (admin-window/BUG-0198). The arm
+            // under test here is the exhausted one, which reads no next step
+            // either way — this is the wrapper's own answer, spelled so the
+            // fixture is the surface this file is about.
+            nextStep: null,
             onPress: () => {},
           }),
         ),
