@@ -30769,3 +30769,5 @@
 2026-09-11T16:19:38Z	qa-adversary	BUG-0198	8773	422	95062
 # STRANDED	2026-09-11T16:19:48Z	agent	4 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0198.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0198.md, agenticflow/visions/admin-window/tracker/tickets/DEBT-0020.md
 2026-09-11T16:19:48Z	agent	-	-	-	-
+# STRANDED	2026-09-11T16:19:50Z	builder	1 uncommitted in primary checkout: .env.example
+2026-09-11T16:19:50Z	builder	DEBT-0020	28508	3859	156033
