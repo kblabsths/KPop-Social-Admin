@@ -351,6 +351,19 @@ export type DbResult<T> =
   schema cache), `42P01` (undefined_table), `42703` (undefined_column). Every
   other error is `kind: "error"` carrying the database's own message —
   LOOK_AND_FEEL: "the app shows what the database said."
+- **An account carries the parts the DATABASE authored, and every string in it
+  passes ONE derivation** (`errorMessage` in `lib/db/result.ts`; BUG-0170 →
+  BUG-0173 → BUG-0179). Each part of the client's account — `message`,
+  `details`, `hint`, the `cause` chain **and the `code`** — is asked the same
+  three questions in the same order: did WE serialise it (provenance, no text
+  inspected at all), is it a DOCUMENT (first non-blank character `<`), does it
+  carry RUNTIME FRAMES. A part that answers is replaced by an app-authored
+  clause that COUNTS it and quotes none of it; a part that answers none crosses
+  verbatim, however long it is. There is no fourth question and no field with a
+  rule of its own — a length cap, a codepoint filter or a vocabulary match on
+  one field is the blocklist Common violations row 15 was promoted for. An
+  account with nothing left to say says THAT, in the app's own words, rather
+  than rendering blank.
 - `missing` carries the name from `tables.ts`, so the rendered
   not-provisioned card can say which table is absent and what creates it
   (LOOK_AND_FEEL state 3, Voice bar 4).
@@ -1840,6 +1853,25 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-11, M3 account amendment — the one derivation covers every field of
+  the account, the `code` included (architect, ruling admin-window/BUG-0179).**
+  §4.1 gains the bullet above. Why here rather than in the ticket: BUG-0170
+  put the decision in one place and asked one question; BUG-0173 grew it to
+  three and pinned "no fourth question"; QA then measured the SAME harm arriving
+  through the one field the loop never sees (a 4,530-character Cloudflare
+  document rendered into three `/claims` error cards through `code`), plus two
+  more faces of the same unevenness — a non-2xx with an empty body rendering
+  `pending_claims —` with no failure named, and a document on line 2 of a
+  frameless part crossing whole. Three tickets on one function is the signature
+  of a rule that lives in ticket comments instead of the contract: what was
+  written down was the QUESTIONS, never the rule that every string reaching an
+  account is asked them. **The door this closes:** no field of an account gets a
+  bound of its own. If a part is unbounded, the answer is a rule for every part
+  — never a cap on the field that last hurt. BUG-0179 carries all three faces;
+  DEBT-0020 carries the cosmetic residual (the transport account's twice-stated
+  cause sentence) behind it, deliberately not folded, because a fourth pass over
+  prose inside a part is exactly what this bullet refuses to grow casually.
 
 - **2026-09-11, M3 test-tier amendment — an http-tier clause names what that
   tier can answer (architect, from admin-window/BUG-0171's close).** §10's
