@@ -1016,6 +1016,46 @@ describe("an account carries the parts the database authored", () => {
       }
     },
   );
+
+  /**
+   * PIN — QA, admin-window/BUG-0179. An account carries the parts the
+   * DATABASE authored, and the `code` arm is the one field of the client's
+   * account that is never asked that question: it trails in parentheses
+   * verbatim, whatever it holds and however long it is.
+   *
+   * Reachable by the SAME path as the envelope fixture above, one field over.
+   * postgrest-js hands the parsed body back AS the error object for ANY
+   * non-2xx response (`error = JSON.parse(body)`,
+   * node_modules/@supabase/postgrest-js/dist/index.mjs:143), so an
+   * intermediary that refuses with a JSON envelope authors every field of it,
+   * `code` included. Measured through the real `@supabase/supabase-js` client
+   * with a stubbed transport, and again at `/claims` on a production build
+   * with SUPABASE_URL pointed at a local 403-answering intermediary: three
+   * error cards each carried 4,530 characters of the document.
+   *
+   * Expected: the account counts the envelope and quotes no value of it.
+   * Found: the envelope is counted AND its `code` is appended whole.
+   */
+  it.fails(
+    "never trails a foreign code verbatim after the clause that counted its body (admin-window/BUG-0179)",
+    () => {
+      const page = `<!DOCTYPE html>\n<html><body>${"x".repeat(4400)}</body></html>`;
+      const refused = { success: false, ray: "8f3c1attack", code: page };
+      const serialised = JSON.stringify(refused);
+
+      const result = classify(refused, T.pendingClaims);
+      expect(result.kind).toBe("error");
+      if (result.kind !== "error") return;
+
+      // The counted clause is right and stays right.
+      expect(result.message).toContain(String(serialised.length));
+      // Nothing of what arrived may sit inside it — the code included.
+      expect(result.message).not.toContain("<!DOCTYPE");
+      expect(result.message).not.toMatch(/<\/?html[\s>]/);
+      // And the account stays a line an operator can read.
+      expect(result.message.length).toBeLessThan(400);
+    },
+  );
 });
 
 /**
