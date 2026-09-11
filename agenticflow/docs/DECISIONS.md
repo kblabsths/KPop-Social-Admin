@@ -1687,3 +1687,24 @@ the paging suite's "nothing either route puts on the wire is storable" would
 have stayed green through the whole of BUG-0171's defect — so such a case
 asserts the status it actually graded, and a harness that ever gains a database
 reddens rather than silently grading something else.
+
+## 2026-09-11 — one surface, one answer to "did the read establish completeness"
+
+`/claims` reads its count and its rows SEPARATELY, so the two can disagree, and
+BUG-0174 taught the window line to say so instead of asserting a relationship
+no single read established. The sentence that REPLACES the paging control kept
+asserting it: `PageMore`'s exhausted arm says "All claims in this view are
+shown" byte-identically whether 130 of a count of 130 are drawn or 50 of a
+count of 877 (BUG-0180). **Ruled:** the control's terminal sentences state what
+the READ established and nothing more, and the fact that lets them do so is
+derived ONCE — `readsAgree(info: DrawnWindow)`, lifted out of the window line's
+`matched` arm and applied over the single `DrawnWindow` a page composes for its
+line (`heldFrom` decides whose number `held` is; `truncated` is the driver's
+status and nothing else). The verdict is handed to `PageMore` already decided.
+The door this closes: the control may not ask the question itself. A count
+plumbed into the widget so it can compare would give one surface two answers to
+one question in the hooks — the shape of BUG-0172 and of LESSONS 11 — and the
+size heuristic BUG-0174 deleted (`held <= limit ? drawn : held`) is exactly
+what a second derivation grows back into. A surface with no second read
+(`/browse`, `heldFrom: "this window"`) answers `true` by construction, which is
+why its markup cannot move.
