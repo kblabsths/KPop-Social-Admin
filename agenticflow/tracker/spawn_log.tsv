@@ -29986,3 +29986,6 @@
 2026-09-11T14:29:12Z	builder	BUG-0192	17359	815	116470
 # STRANDED	2026-09-11T14:29:22Z	agent	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/TASK-0073.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0192.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0194.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0073.md
 2026-09-11T14:29:22Z	agent	-	-	-	-
+# STRANDED	2026-09-11T14:29:47Z	qa-adversary	5 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/TASK-0073.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0194.md, agenticflow/visions/admin-window/tracker/tickets/FEAT-0016.md, agenticflow/visions/admin-window/tracker/tickets/TASK-0073.md
+2026-09-11T14:29:47Z	qa-adversary	TASK-0073	20920	840	130679
+2026-09-11T14:30:03Z	qa-adversary	BUG-0192	spawned
