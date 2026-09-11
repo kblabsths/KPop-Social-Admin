@@ -52,6 +52,35 @@ const OWNER: Readonly<Record<string, string>> = {
   trimInkPadding: "src/lib/url/text.ts",
   /** Does this URL carry a claim facet at all? Fact 1, claims domain. */
   hasNarrowingFacet: "src/lib/claims/filters.ts",
+  /** Is a facet the claims page draws a CHIP for SET on this filter? The
+   * PRESENCE question, and its name now says so (architect ruling 2026-09-11,
+   * ARCHITECTURE.md §4.3). It is in this map beside `hasNarrowingFacet` for
+   * the reason the map exists: it sat under a name built from the word the
+   * EFFECT questions own (`isSurfaceNarrowed`, `claimsNarrowed`), which is how
+   * one chip came to earn two opposite sentences on two staging URLs
+   * (admin-window/BUG-0191's residual). Presence and effect are two questions
+   * and neither may be read as the other. */
+  hasChipFacet: "src/lib/claims/filters.ts",
+  /** A filter + a surface's own table of control-less facets → the narrowings
+   * that read carried (admin-window/TASK-0072). It was `/claims`' alone, in
+   * `src/lib/claims/filters.ts`, so a second surface saying the same sentence
+   * had to retype the shape — the class that has taken five bugs on this
+   * family (LESSONS 5). The facet TABLE stays each surface's own
+   * (`CLAIMS_UNCHIPPED_FACETS`); this and the two names around it are the
+   * URL leaf's. */
+  unchippedNarrowings: "src/lib/url/narrowing.ts",
+  /** One such narrowing → the phrase a window line's `scope` takes. The other
+   * face of the same words is markup (`NarrowedBy`, `/claims`), which is why
+   * the narrowing is carried in PIECES and joined by whoever renders it. */
+  unchippedPhrase: "src/lib/url/narrowing.ts",
+  /** The SHAPE those two are expressed in — the narrowing a read carried, in
+   * pieces. A type is in this map for the same reason a function is: two
+   * modules declaring `UnchippedNarrowing` is two meanings of one word, and
+   * the type checker would not object (common violations row 18). */
+  UnchippedNarrowing: "src/lib/url/narrowing.ts",
+  /** …and the shape of a surface's declaration of one such facet: what to call
+   * it, and how to read it off that surface's own filter. */
+  UnchippedFacet: "src/lib/url/narrowing.ts",
   /** Where "no narrowing at all, on this tab" IS — the one control that undoes
    * every facet a claims URL applied, the ones with no chip row included
    * (admin-window/BUG-0161). It is in this map because it is the inverse of
@@ -116,7 +145,13 @@ function declares(name: string, lines: readonly string[]): boolean {
     // though importers rename it — measured under QA, each of them walked
     // straight past this detector while `export function` was caught
     // (campaign admin-window/DEBT-0010, QA round 1).
-    `^export\\s+(?:default\\s+)?(?:async\\s+)?(?:function|const|let|var|class)\\s+${name}\\b`,
+    // `interface` and `type` joined them when the vocabulary gained a SHAPE
+    // (admin-window/TASK-0072): `UnchippedNarrowing` is a name two modules can
+    // declare with two meanings just as thoroughly as a function is, and a
+    // detector that knew only value declarations would grade that rule
+    // vacuously. `export type { X } from …` is not matched — the name does not
+    // follow the keyword there — so a barrel is still a barrel.
+    `^export\\s+(?:default\\s+)?(?:async\\s+)?(?:function|const|let|var|class|interface|type)\\s+${name}\\b`,
   );
   return lines.some((line) => declaration.test(line.trim()));
 }
@@ -200,6 +235,14 @@ export { narrowedTo };
     "export default function": `export default function narrowedTo(a: string) {\n  return a;\n}`,
     "export async function": `export async function narrowedTo(a: string) {\n  return a;\n}`,
     "export const arrow": `export const narrowedTo = (a: string) => a;`,
+    // The two the vocabulary's own SHAPE is spelled with
+    // (admin-window/TASK-0072). Both were measured against the real tree
+    // before they were pinned: with the detector's value-only alternation, a
+    // second `export interface UnchippedNarrowing` anywhere in `src/` left the
+    // guard green.
+    "export interface": `export interface narrowedTo {\n  facet: string;\n}`,
+    "export type": `export type narrowedTo = string;`,
+    "export interface, generic": `export interface narrowedTo<Filter> {\n  value: (filter: Filter) => string;\n}`,
   };
 
   for (const [spelling, fixture] of Object.entries(ALSO_A_DECLARATION)) {
@@ -241,6 +284,17 @@ export const ordered = (rows: readonly VerdictLogRow[]) =>
 
   it("leaves a module that imports and CALLS `newestFirst` alone", () => {
     expect(declares("newestFirst", codeLinesIn(NEWEST_FIRST_CALLER))).toBe(false);
+  });
+
+  it("does not flag a TYPE-ONLY re-export of the name", () => {
+    // The other direction of the two spellings above (LESSONS 8): a barrel
+    // carrying the shape onward is not a second owner of it, and `export type
+    // { … }` puts the keyword and the name on one line without declaring
+    // anything. `src/lib/claims/filters.ts` imports the shape this way.
+    const barrel = `export type { narrowedTo } from "./window-line";`;
+    expect(declares("narrowedTo", codeLinesIn(barrel))).toBe(false);
+    const typeImport = `import { type narrowedTo } from "@/lib/url/narrowing";`;
+    expect(declares("narrowedTo", codeLinesIn(typeImport))).toBe(false);
   });
 
   it("does not flag a NAMED FUNCTION EXPRESSION bound to another name", () => {

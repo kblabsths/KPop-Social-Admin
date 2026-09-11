@@ -8,6 +8,7 @@ import {
   StatCard,
   StateOf,
   WindowLine,
+  narrowedTo,
   oldestIn,
 } from "@/components/ui";
 import { count } from "@/lib/format";
@@ -73,10 +74,10 @@ function noRunsFrom(source: string): EmptyWords {
  *
  * **The phrase is BARE TEXT in the app's own paragraph, and it is safe because
  * of WHAT REACHES IT** (admin-window/BUG-0153; ARCHITECTURE.md §7, common
- * violations rows 15 and 20). `WindowLine.scope` is a sentence FRAGMENT, split
- * back apart by `besides`/`narrows` (`src/components/ui/window-line.tsx`), so
- * no element can travel through it and no box can isolate the name once
- * `population()` has interpolated it — `/cycles?source=%E2%80%AEbandsintown`
+ * violations rows 15 and 20). `WindowLine.scope` is a list of PHRASES the line
+ * joins at render (`src/components/ui/window-line.tsx`), so no element can
+ * travel through it and no box can isolate the name once `population()` has
+ * interpolated it — `/cycles?source=%E2%80%AEbandsintown`
  * reversed 87 characters of this page's own words, an unterminated U+202E's
  * scope being the whole `<p>`. What closes it is the DERIVATION §7 states as
  * the rule, asked where the facet becomes a query value: `canonicalUrlText`
@@ -327,7 +328,11 @@ export function AdapterRuns({
             // names is that source's and never the table's — the table
             // retains older runs from other sources and this same page
             // renders them without the facet (admin-window/BUG-0114).
-            scope: runsScope(runs.data.source),
+            // One phrase, composed through the app's one scope composer
+            // rather than handed over as a bare string: a window's scope is a
+            // phrase LIST, and this read carries exactly one narrowing or none
+            // (admin-window/TASK-0072).
+            scope: narrowedTo([runsScope(runs.data.source)]),
           }}
           shows={{
             of: "newest",

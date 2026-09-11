@@ -39,6 +39,7 @@ import { canonicalUrlText } from "@/lib/url/text";
 import {
   isSurfaceNarrowed,
   type SurfacePopulation,
+  type UnchippedFacet,
 } from "@/lib/url/narrowing";
 
 /* ── the parameter names ─────────────────────────────────────────────────── */
@@ -82,36 +83,18 @@ export type ChipFacet = (typeof CHIP_FACETS)[number];
  * total `Record` over it, so a facet arriving here with no words to be named
  * by is a compile error rather than a narrowing the page applies in silence,
  * which is the whole defect this vocabulary exists for.
+ *
+ * It is this page's own facet union and carries no `Unchipped` SHAPE: the
+ * shape is `src/lib/url/narrowing.ts`' and is declared exactly once
+ * (admin-window/TASK-0072).
  */
-export type UnchippedFacet = Exclude<ClaimFacet, ChipFacet>;
+type UnchippedClaimFacet = Exclude<ClaimFacet, ChipFacet>;
 
-/** Every facet of a URL that narrows with no chip to read it off. */
-export const UNCHIPPED_FACETS: readonly UnchippedFacet[] = CLAIM_FACETS.filter(
-  (facet): facet is UnchippedFacet =>
+/** Every facet of a claims URL that narrows with no chip to read it off. */
+const UNCHIPPED_CLAIM_FACETS: readonly UnchippedClaimFacet[] = CLAIM_FACETS.filter(
+  (facet): facet is UnchippedClaimFacet =>
     !(CHIP_FACETS as readonly string[]).includes(facet),
 );
-
-/**
- * One narrowing the page applied and renders no control for — the facet, the
- * value the query carried, and the app's words around it.
- *
- * The words are handed back in THREE pieces rather than as one sentence
- * because the same phrase is rendered through two channels: the window line's
- * `scope` is a string the `matched` arm splits and subtracts phrases from
- * (`components/ui/window-line.tsx`), while the bucket caption and the empty
- * card are markup, where the value is a machine identifier and takes the
- * app's one identifier face (`ui/Identifier`, LOOK_AND_FEEL Voice bar 5).
- * One spelling, two faces — never two spellings (LESSONS 5).
- */
-export interface UnchippedNarrowing {
-  facet: UnchippedFacet;
-  /** The value, verbatim as the `.eq()` carried it. */
-  value: string;
-  /** The words before it, so the phrase reads straight after the row noun. */
-  before: string;
-  /** The words after it. */
-  after: string;
-}
 
 /**
  * What each control-less facet is CALLED in a sentence about it.
@@ -120,45 +103,55 @@ export interface UnchippedNarrowing {
  * so an operator reading "claims in the events domain" off the screen can
  * write `?domain=events` back into the address bar (LOOK_AND_FEEL bar 11).
  */
-const UNCHIPPED_WORDS: Record<UnchippedFacet, { before: string; after: string }> = {
+const UNCHIPPED_WORDS: Record<UnchippedClaimFacet, { before: string; after: string }> = {
   domain: { before: "in the ", after: " domain" },
 };
 
 /**
- * Every narrowing this URL applied that the page renders no control for, in
- * `CLAIM_FACETS` order — empty when the URL carries none.
+ * THIS surface's table of control-less facets — how to read each off a
+ * `ClaimsFilter` and what to call it — in `CLAIM_FACETS` order.
  *
- * It answers what the READ carried, not whether the read came back smaller: a
- * surface asks `claimsNarrowed` that second question and decides from both
- * whether to say any of this at all (admin-window/DEBT-0008).
+ * The vocabulary is the page's and stays here, beside the filters it is read
+ * off; the SHAPE it is expressed in (`UnchippedFacet`, `UnchippedNarrowing`)
+ * and the two functions over it (`unchippedNarrowings`, `unchippedPhrase`)
+ * belong to `src/lib/url/narrowing.ts`, so a second surface saying the same
+ * sentence imports them instead of retyping them (admin-window/TASK-0072,
+ * LESSONS 5). This module declares none of those three and re-exports none of
+ * them: one declaration, one home.
  */
-export function unchippedNarrowings(filter: ClaimsFilter): UnchippedNarrowing[] {
-  return UNCHIPPED_FACETS.flatMap((facet) => {
-    const value = filter[facet];
-    return value === undefined ? [] : [{ facet, value, ...UNCHIPPED_WORDS[facet] }];
-  });
-}
-
-/** The same narrowing as one string — what a window line's `scope` takes. */
-export function unchippedPhrase(narrowing: UnchippedNarrowing): string {
-  return `${narrowing.before}${narrowing.value}${narrowing.after}`;
-}
+export const CLAIMS_UNCHIPPED_FACETS: readonly UnchippedFacet<ClaimsFilter>[] =
+  UNCHIPPED_CLAIM_FACETS.map((facet) => ({
+    facet,
+    ...UNCHIPPED_WORDS[facet],
+    value: (filter: ClaimsFilter) => filter[facet],
+  }));
 
 /**
- * Does this URL narrow through a control the page actually renders?
+ * Does this URL set a facet the page actually renders a CONTROL for?
  *
- * The other half of `unchippedNarrowings`, and the reason both live here: a
- * sentence may say "these filters" or "the filters above" only where a filter
- * the operator can SEE is set (admin-window/BUG-0160). `/claims?domain=events`
- * narrows every count on the page with both chip rows reading `all`, so those
- * two phrases pointed at controls that said nothing was filtered — while the
- * narrowing that really applied was named nowhere on the screen.
+ * The other half of `CLAIMS_UNCHIPPED_FACETS`, and the reason both live here:
+ * a sentence may say "these filters" or "the filters above" only where a
+ * filter the operator can SEE is set (admin-window/BUG-0160).
+ * `/claims?domain=events` narrows every count on the page with both chip rows
+ * reading `all`, so those two phrases pointed at controls that said nothing
+ * was filtered — while the narrowing that really applied was named nowhere on
+ * the screen.
+ *
+ * **It answers PRESENCE and says so in its name** (architect ruling
+ * 2026-09-11, ARCHITECTURE.md §4.3): is a chip facet SET on this filter. It is
+ * not an EFFECT question and must never be read as one — whether a facet
+ * removed a row is `claimsNarrowed` / `isSurfaceNarrowed`, which take a
+ * population. Its old name spelled this presence answer with the word the
+ * effect questions own, and one chip earned two opposite sentences on two
+ * staging URLs while the two answers were ANDed in one clause
+ * (admin-window/BUG-0191's residual; the rendered arms are
+ * admin-window/BUG-0192's).
  *
  * It is NOT `hasNarrowingFacet` with a different set by accident: that one
  * answers "can this URL remove a row at all" (fact 1 of the four states) and
  * must go on counting every facet, chipped or not.
  */
-export function hasChipNarrowing(filter: ClaimsFilter): boolean {
+export function hasChipFacet(filter: ClaimsFilter): boolean {
   return CHIP_FACETS.some((facet) => filter[facet] !== undefined);
 }
 

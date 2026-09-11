@@ -2850,7 +2850,7 @@ describe("a narrowing with no chip row", () => {
    * same rule is a chip that is set and narrows this table by NOTHING:
    * `?bucket=X&domain=Y`. This table's read drops the bucket facet on purpose
    * (`bucketStats`), so the domain did all the narrowing and the bucket chip
-   * did none — while `chipped` WAS `hasChipNarrowing(filter)` over the
+   * did none — while `chipped` WAS `hasChipFacet(filter)` over the
    * UNDROPPED filter, which the bucket facet alone satisfies. The caption
    * therefore blamed "the filters above" and then said, in its next clause,
    * that the one filter above does not narrow these counts. Since
@@ -2861,7 +2861,7 @@ describe("a narrowing with no chip row", () => {
    * bucket counts 0/108/741/0/0 — identical to `?domain=events` and NOT to the
    * bare page's 0/108/769/0/0 — with the chip rows reading `awaiting_row` and
    * `all`. The gauge section one screen down already asks the right filter
-   * (it asked `hasChipNarrowing` of `gaugeFilter(filter)`; since
+   * (it asked `hasChipFacet` of `gaugeFilter(filter)`; since
    * admin-window/BUG-0191 both surfaces read ONE binding).
    *
    * Neither phrase is typed here. The chip clause is READ OFF THE APP: the

@@ -108,8 +108,16 @@ export interface DrawnWindow extends WindowFacts {
    * `source` the runs read hands back, the filter the claim list selected on —
    * never from a second reading of the URL, which is how the two come to
    * disagree.
+   *
+   * **It is a LIST OF PHRASES, joined once at render** (admin-window/TASK-0072,
+   * the M2 close's ruling 4). It used to be the joined string, composed by
+   * `narrowedTo` and then SPLIT BACK APART by `besides` and `narrows` in this
+   * same file — so a facet value carrying the join string could forge a
+   * segment, and a phrase built out of two could be subtracted in half. The
+   * round trip is gone: nothing here splits anything, the join happens where
+   * the sentence is written, and a value is one phrase whatever is inside it.
    */
-  scope: string | null;
+  scope: readonly string[] | null;
   /**
    * The rows THIS WINDOW PUT ON SCREEN — the number an operator can count
    * below the line, stated by whoever drew them (admin-window/BUG-0183).
@@ -226,7 +234,7 @@ export function drawnWindow(read: {
   held: number;
   over: WindowObject;
   oldest: string | null;
-  scope: string | null;
+  scope: readonly string[] | null;
   /**
    * Whose number `held` is, where the call site has one to state — carried
    * through untouched, because it is the page's statement and not a fact this
@@ -402,24 +410,43 @@ function rowsAgainstCap(below: number, limit: number): string {
 }
 
 /**
- * How a scope of several narrowings is joined — one spelling, seen by both the
- * composing (`narrowedTo`) and the subtraction (`besides`), so a scope built by
- * a page can always be read back apart by this file.
+ * How a scope of several narrowings is joined into the words the line says —
+ * one spelling, used in exactly ONE place (`scopeWords` below), which is the
+ * moment the sentence is written.
+ *
+ * It used to be seen by the composition AND by a subtraction that split the
+ * joined string back apart, so the round trip was only as sound as the values
+ * that went through it: a facet value carrying `", "` forged a segment nobody
+ * composed. A scope is a list now (`DrawnWindow.scope`), so there is nothing
+ * to read back apart and this constant is render vocabulary and nothing else
+ * (admin-window/TASK-0072).
  */
 const NARROWING_JOIN = ", ";
+
+/**
+ * The scope as the WORDS a clause says — the one join, at render.
+ *
+ * Every clause that puts a scope into a sentence comes through here, so the
+ * app has one spelling of "several narrowings, read as one phrase" and no
+ * clause can invent a second separator.
+ */
+function scopeWords(scope: readonly string[] | null): string | null {
+  return scope === null ? null : scope.join(NARROWING_JOIN);
+}
 
 /**
  * The `scope` of a read narrowed by more than one thing — the phrases in the
  * order they read, with the ones that do not apply left out, and `null` when
  * none of them do.
  *
- * A call site composes its scope through here rather than joining its own
- * strings, because the `matched` arm reads one back OUT again
- * (admin-window/BUG-0118); the two halves of that round trip are next to each
- * other on purpose.
+ * A call site composes its scope through here rather than assembling its own
+ * list, because the `matched` arm asks this same scope which narrowings it
+ * carries (`narrows`) and subtracts one of them (`besides`); the phrases stay
+ * phrases the whole way, and nothing in this file takes one apart
+ * (admin-window/TASK-0072, admin-window/BUG-0118).
  *
  * **This is the only `narrowedTo` in the app** (admin-window/DEBT-0010). It
- * takes narrowing PHRASES and returns a scope SENTENCE FRAGMENT; the facet
+ * takes narrowing PHRASES and returns the scope as a PHRASE LIST; the facet
  * canonicaliser that used to share the word lived in `src/lib/db/runs.ts` and
  * took a `?source=` to a query value. Nothing but the type checker stood
  * between the two imports, so the word now belongs to this one — and that
@@ -429,9 +456,9 @@ const NARROWING_JOIN = ", ";
  */
 export function narrowedTo(
   narrowings: readonly (string | null)[],
-): string | null {
+): readonly string[] | null {
   const named = narrowings.filter((phrase): phrase is string => phrase !== null);
-  return named.length === 0 ? null : named.join(NARROWING_JOIN);
+  return named.length === 0 ? null : named;
 }
 
 /**
@@ -441,11 +468,12 @@ export function narrowedTo(
  * requirement is that the clause name the population, not that it name it
  * twice).
  */
-function besides(scope: string | null, stated: string): string | null {
+function besides(
+  scope: readonly string[] | null,
+  stated: string,
+): readonly string[] | null {
   if (scope === null) return null;
-  return narrowedTo(
-    scope.split(NARROWING_JOIN).filter((phrase) => phrase !== stated),
-  );
+  return narrowedTo(scope.filter((phrase) => phrase !== stated));
 }
 
 /**
@@ -460,8 +488,8 @@ function besides(scope: string | null, stated: string): string | null {
  * (admin-window/BUG-0123). Asked of the same `scope` the subtraction reads, so
  * the two cannot come to disagree about what the window was narrowed by.
  */
-function narrows(scope: string | null, stated: string): boolean {
-  return scope !== null && scope.split(NARROWING_JOIN).includes(stated);
+function narrows(scope: readonly string[] | null, stated: string): boolean {
+  return scope !== null && scope.includes(stated);
 }
 
 /**
@@ -476,8 +504,9 @@ function narrows(scope: string | null, stated: string): boolean {
  * so its sentences are the ones the app rendered before a facet existed, to the
  * byte.
  */
-function population(rows: string, scope: string | null): string {
-  return scope === null ? rows : `${rows} ${scope}`;
+function population(rows: string, scope: readonly string[] | null): string {
+  const words = scopeWords(scope);
+  return words === null ? rows : `${rows} ${words}`;
 }
 
 /**
@@ -514,8 +543,9 @@ function didNotFill(info: DrawnWindow, rows: string): string {
   // narrowed, the same words carry the facet — nothing earlier FROM THAT
   // SOURCE is retained, which is true, where the bare sentence was not
   // (admin-window/BUG-0114).
+  const scoped = scopeWords(info.scope);
   const earlier =
-    info.scope === null ? "nothing earlier" : `nothing earlier ${info.scope}`;
+    scoped === null ? "nothing earlier" : `nothing earlier ${scoped}`;
   const floor =
     info.oldest === null
       ? ""
@@ -776,7 +806,7 @@ export function WindowLine(
          * page over, unfixed here and reported in this ticket's handoff rather
          * than silently changed.
          */
-        scope?: string | null;
+        scope?: readonly string[] | null;
         shows?: undefined;
       }
     | {

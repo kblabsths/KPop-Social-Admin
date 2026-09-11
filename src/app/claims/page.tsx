@@ -57,23 +57,30 @@ import {
   claimsQuery,
   clearNarrowing,
   droppedParams,
+  CLAIMS_UNCHIPPED_FACETS,
   filterBar,
   filterFrom,
-  hasChipNarrowing,
+  hasChipFacet,
   hasNarrowingFacet,
   listFilterOf,
   sourceHref,
   type FacetLabel,
   tabFrom,
   tabLinks,
-  unchippedNarrowings,
-  unchippedPhrase,
   withFacet,
   type ClaimsFilter,
   type ClaimsTab,
   type SearchParams,
-  type UnchippedNarrowing,
 } from "@/lib/claims/filters";
+// The narrowing vocabulary itself — the SHAPE and the two functions over it —
+// from the leaf that owns URL meaning, so this page and the next surface to say
+// the same sentence read one declaration (admin-window/TASK-0072, LESSONS 5).
+// The facet TABLE stays the page's own, above.
+import {
+  unchippedNarrowings,
+  unchippedPhrase,
+  type UnchippedNarrowing,
+} from "@/lib/url/narrowing";
 import { claimLines, type ClaimLine } from "@/lib/claims/lines";
 import { PAGE_ROUTES, pageBound } from "@/lib/paging/bounds";
 import { initialPage } from "@/lib/paging/machine";
@@ -359,7 +366,7 @@ function listScope(
   narrowed: boolean,
   narrowings: readonly UnchippedNarrowing[],
   chipped: boolean,
-): string | null {
+): readonly string[] | null {
   return narrowedTo([
     tab === "standing" ? `in the ${STANDING_BUCKET} bucket` : null,
     // The narrowings this page renders NO control for — `?domain=`, today the
@@ -401,12 +408,12 @@ function listScope(
  * no such narrowing.
  *
  * **The window line's copy of these words is plain prose, not mono.** A
- * `DrawnWindow.scope` is a STRING the `matched` arm splits on and subtracts
- * phrases from (`components/ui/window-line.tsx`), so the value cannot carry an
- * element there without rewriting that primitive and every page's window
- * tests; it is the same face the tab's `standing_disagreement` already wears
- * in that line. Noted rather than hidden — one face per identifier is
- * LESSONS 6, and closing that gap is a change to the shared window primitive.
+ * `DrawnWindow.scope` is a list of PHRASES the line joins at render
+ * (`components/ui/window-line.tsx`), so the value cannot carry an element
+ * there without rewriting that primitive and every page's window tests; it is
+ * the same face the tab's `standing_disagreement` already wears in that line.
+ * Noted rather than hidden — one face per identifier is LESSONS 6, and closing
+ * that gap is a change to the shared window primitive.
  */
 function NarrowedBy({
   narrowings,
@@ -512,7 +519,7 @@ function BucketCaption({
  * `chipped` and `narrowings` cannot both be empty here: this arm renders only
  * where `claimsNarrowed` is true, which needs a facet of `CLAIM_FACETS`, and
  * every one of those is either a chip facet or carries words of its own
- * (`UNCHIPPED_FACETS` is `CLAIM_FACETS` minus `CHIP_FACETS`, and the words are
+ * (`CLAIMS_UNCHIPPED_FACETS` covers `CLAIM_FACETS` minus `CHIP_FACETS`, and its words are
  * a total `Record` over it).
  *
  * **`holds` is the surface's own noun, because two surfaces now take these
@@ -796,8 +803,8 @@ function bucketStats(
  * sentence and the query come to disagree.
  */
 interface GaugeNarrowing {
-  /** The phrase the window line reads after its noun, or null. */
-  scope: string | null;
+  /** The phrases the window line reads after its noun, or null. */
+  scope: readonly string[] | null;
   /** The control-less narrowings, for the markup face of the same words. */
   narrowings: readonly UnchippedNarrowing[];
   /** Is a narrowing the operator can SEE set on this read? */
@@ -1075,8 +1082,8 @@ export default async function ClaimsPage({
   // This one is asked of the UNDROPPED filter, which is the filter the LIST
   // was read under: the bucket facet really does remove claims from the list,
   // so "matching these filters" is true of it there.
-  const chipped = hasChipNarrowing(filter);
-  const narrowings = unchippedNarrowings(filter);
+  const chipped = hasChipFacet(filter);
+  const narrowings = unchippedNarrowings(filter, CLAIMS_UNCHIPPED_FACETS);
   // The SAME question asked of the filter the bucket table and the gauge were
   // read under — `filter` with the bucket facet dropped
   // (admin-window/BUG-0191). Neither of those reads applies that facet, so at
@@ -1091,7 +1098,7 @@ export default async function ClaimsPage({
   // cannot answer differently. A chip facet that only ONE of them dropped
   // would make these two facts again, and the second would then be derived
   // from that read's own filter rather than by widening this one.
-  const chippedWithoutBucket = hasChipNarrowing(tableFilter);
+  const chippedWithoutBucket = hasChipFacet(tableFilter);
 
   // The GAUGE's narrowing is not the page's: `gaugeFilter` drops the bucket
   // facet, because the gauges read `observations` by source and domain and
@@ -1104,7 +1111,10 @@ export default async function ClaimsPage({
   // figures not at all, and its sentence says so by saying nothing.
   const gaugeNarrowing = gaugeFilter(filter);
   const gaugeStructural = hasNarrowingFacet(gaugeNarrowing);
-  const gaugeNarrowings = unchippedNarrowings(gaugeNarrowing);
+  const gaugeNarrowings = unchippedNarrowings(
+    gaugeNarrowing,
+    CLAIMS_UNCHIPPED_FACETS,
+  );
   // The bounds BOTH gauge reads run under, resolved here rather than twice
   // inside them, so the window the section states and the window the
   // population count is taken over are one interval and not two instants a
