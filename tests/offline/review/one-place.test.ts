@@ -298,6 +298,49 @@ describe("the M2-close guard itself", () => {
     expect(fs.existsSync(probeBase)).toBe(false);
   });
 
+  // EXPECTED FAILURE while admin-window/BUG-0190 stands: this run cannot tell
+  // its own mirror tree from one a dead run with the same pid left, so the
+  // assertion below is red on purpose. THE FIX FLIPS THIS BACK TO A PLAIN
+  // `it` — leave it as `it.fails` and the day the bug is fixed vitest reddens
+  // here and sends the reader to the ticket.
+  it.fails("is blind to a mirror tree left behind by a dead run that had this pid", () => {
+    // admin-window/BUG-0190. This guard's mirror tree is named from
+    // `process.pid` ALONE (`m2-close-${process.pid}`, above) and is removed
+    // only in the `finally` of each case, so a run KILLED mid-case leaves the
+    // whole tree on disk and nothing ever sweeps it: the area is gitignored
+    // and ESLint-ignored, so no guard and no `git status` reports it. pids are
+    // recycled, so a later worker drawing the dead run's number walks the
+    // corpse's files as if it had planted them — and every case here compares
+    // the walk with `toEqual`, so the corpse is reported as an extra source
+    // file of the mirror. admin-window/BUG-0188 fixed exactly this for
+    // `src/.probes/` (entropy in the name plus a dead-pid sweep,
+    // `tests/probe-area.ts`); the mirror trees under `tests/.probes/` still
+    // carry the pid-only naming it replaced.
+    //
+    // The corpse is planted at the path a DEAD run with this pid wrote to, not
+    // at `probeBase`, so the fix — a base this run alone can name — is what
+    // makes this pass, not a change to where the corpse goes.
+    const corpseBase = path.join(repoRoot, "tests", ".probes", `m2-close-${process.pid}`);
+    const corpse = path.join(corpseBase, "src/lib/review/corpse-of-a-killed-run.ts");
+    let walked: string[] = [];
+    let served: string[] = [];
+    try {
+      fs.mkdirSync(path.dirname(corpse), { recursive: true });
+      fs.writeFileSync(corpse, '"use server";\nexport async function corpse() {}\n', "utf8");
+      // Non-vacuous: the corpse really is on disk while the guard walks.
+      expect(fs.existsSync(corpse)).toBe(true);
+      write(ACTION_PROBE, ACTION_SOURCE);
+      write(ROUTE_PROBE, ROUTE_SOURCE);
+      walked = sourceFiles(probeBase);
+      served = filesWhereCodeMatches(USE_SERVER, probeBase);
+    } finally {
+      fs.rmSync(probeBase, { force: true, recursive: true });
+      fs.rmSync(corpseBase, { force: true, recursive: true });
+    }
+    expect([...walked].sort()).toEqual([ACTION_PROBE, ROUTE_PROBE].sort());
+    expect(served).toEqual([ACTION_PROBE]);
+  });
+
   it("scans a real tree that does carry directives", () => {
     // The rule's green must not be the green of a scanner that reads no
     // directive at all: `"use client"` is all over this app, on code lines, and
