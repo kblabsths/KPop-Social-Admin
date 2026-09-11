@@ -797,5 +797,32 @@ describe("the claims leaf reaches nothing that can reach a database", () => {
       );
       expect([...seen]).toContain(BARREL);
     });
+
+    /**
+     * A RELATIVE barrel spelling, and the walk continuing PAST it — the
+     * resolver's other new path, added by QA attacking admin-window/DEBT-0017.
+     *
+     * `../ui` from inside `src/components/**` reaches the same barrel the `@/`
+     * fixtures above use, through `path.posix.normalize` rather than through
+     * the alias branch, and the forbidden reach here sits THREE hops from the
+     * entry so the failure also proves the queue keeps resolving after a
+     * resolved index file rather than stopping at the first one.
+     */
+    it("resolves a RELATIVE barrel spelling and keeps walking past it", () => {
+      const FROM = "src/components/claims/window-line.tsx";
+      const THIRD = "src/lib/claims/filters.ts";
+      const failure = failureOf(() =>
+        closureOf(
+          FROM,
+          readingFrom({
+            [FROM]: 'import { Button } from "../ui";',
+            [BARREL]: 'import { sourceHref } from "@/lib/claims/filters";',
+            [THIRD]: 'import { readClaimWindow } from "@/lib/db/claims";',
+          }),
+        ),
+      );
+      expect(failure, "a reach three hops out passed the guard").not.toBe("");
+      expect(failure).toContain(THIRD);
+    });
   });
 });
