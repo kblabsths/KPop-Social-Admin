@@ -582,6 +582,114 @@ describe("the affordance's look", () => {
     }
   });
 
+  /** A refusal a press can be retried after — so the control is drawn beside it. */
+  const BROKEN_PAGE = {
+    condition: "broken",
+    reason: "no relation exists",
+    object: "pending_claims",
+    reasonFrom: "the machine",
+  } as const;
+
+  /**
+   * Classes that make an element fill the line it is on, whatever its content
+   * measures; classes that make an element size ITSELF; and the container
+   * settings that stop a flex column stretching its children. Three sets, so
+   * the question below is asked as CSS asks it rather than by pinning the one
+   * spelling this component happens to use — swap `self-start` for `w-fit` and
+   * these assertions still grade the same property.
+   */
+  const FILLS_ITS_LINE = /^(w-full|w-screen|min-w-full|basis-full|flex-1|grow)$/;
+  const SIZES_ITSELF = /^(self-(start|end|center|baseline)|w-(fit|max|min|auto))$/;
+  const STRETCHES_NOTHING = /^items-(start|end|center|baseline)$/;
+  /** What fills its container's width in normal flow, absent any flex. */
+  const BLOCK_LEVEL = new Set(["p", "div", "ul", "ol", "table"]);
+
+  const classList = (attribute: string | undefined): string[] =>
+    (attribute ?? "").split(/\s+/).filter(Boolean);
+
+  /**
+   * Is this element's BOX stretched to its container's width — the structural
+   * half of admin-window/BUG-0177, asked of the rendered markup?
+   *
+   * A pixel width needs a browser and is the walk's half of that bar
+   * (criterion 6). What an offline tier CAN decide is the layout question the
+   * measurement came out of: a flex column stretches a child across the cross
+   * axis unless the container says otherwise or the child sizes itself, and a
+   * child carrying a fill-the-line class is stretched however it is contained.
+   * That is the rule applied here, to the DELIVERED element and its real
+   * parent — never to the source, and never to one class name.
+   */
+  function stretchedToItsContainer(html: string, selector: string): boolean {
+    const $ = cheerio.load(html);
+    const element = $(selector);
+    expect(element.length, `${selector} is not in this markup`).toBe(1);
+    const own = classList(element.attr("class"));
+    if (own.some((className) => FILLS_ITS_LINE.test(className))) return true;
+    if (own.some((className) => SIZES_ITSELF.test(className))) return false;
+    const container = classList(element.parent().attr("class"));
+    const flexColumn = container.includes("flex") && container.includes("flex-col");
+    if (!flexColumn) return BLOCK_LEVEL.has(element.prop("tagName")?.toLowerCase() ?? "");
+    return !container.some((className) => STRETCHES_NOTHING.test(className));
+  }
+
+  it("the control is sized by its label, not by its column [admin-window/BUG-0177]", () => {
+    // Both arms that DRAW a control, because the inert one is the same button
+    // and a slab that only stops being a slab while idle is not a fix.
+    for (const [arm, html] of [
+      ["idle", more()],
+      ["loading", more({ status: "loading" })],
+      ["refused, still retryable", more({ refusal: BROKEN_PAGE })],
+    ] as const) {
+      const $ = cheerio.load(html);
+      const control = $("[data-paging]");
+      expect(control.prop("tagName")?.toLowerCase(), arm).toBe("button");
+      expect(stretchedToItsContainer(html, "[data-paging]"), arm).toBe(false);
+      // The fix is ADDED to the shared primitive, not a restyle of it: every
+      // class a bare secondary Button renders is still on this control, so its
+      // ink, border, radius, padding and type step are the app's and only its
+      // width moved (criterion 3).
+      const primitive = classesOf(render(h(Button, {}, "x")));
+      expect(classList(control.attr("class")), arm).toEqual(
+        expect.arrayContaining(primitive),
+      );
+    }
+  });
+
+  it("the wrapper stretches the sentences and not the button [admin-window/BUG-0177]", () => {
+    // One state holding the control, the refusal line and the sentences'
+    // container all at once, so the wrapper under test is the real one.
+    const withRefusal = more({ refusal: BROKEN_PAGE });
+    const $ = cheerio.load(withRefusal);
+    expect($("[data-paging]").parent().is($("[data-paging-refusal]").parent())).toBe(true);
+    expect(stretchedToItsContainer(withRefusal, "[data-paging]")).toBe(false);
+    // …and the paragraphs beside it still fill the column and wrap in it —
+    // the refusal line here, and each terminal sentence in the arm that draws
+    // it (criteria 2 and 4: still text, still one element per arm).
+    expect(stretchedToItsContainer(withRefusal, "[data-paging-refusal]")).toBe(true);
+    for (const [arm, html] of [
+      ["exhausted", more({ status: "exhausted" })],
+      ["exhausted, reads disagree", more({ status: "exhausted" }, false)],
+      ["limit", more({ held: MAX_PAGE_OFFSET + SIZE })],
+    ] as const) {
+      const sentence = cheerio.load(html)("[data-paging]");
+      expect(sentence.length, arm).toBe(1);
+      expect(sentence.prop("tagName")?.toLowerCase(), arm).toBe("p");
+      expect(stretchedToItsContainer(html, "[data-paging]"), arm).toBe(true);
+    }
+  });
+
+  it("moves no other button's width: the width lives at this call site [admin-window/BUG-0177]", () => {
+    // The primitive is where every other control in the app gets its box, so
+    // the only proof criterion 5 needs offline is that the primitive renders
+    // no width or alignment of its own — a Button called anywhere else is
+    // byte-identical to what it was.
+    for (const variant of ["primary", "secondary", "destructive"] as const) {
+      const classes = classesOf(render(h(Button, { variant }, "x")));
+      expect(classes.filter((c) => SIZES_ITSELF.test(c)), variant).toEqual([]);
+      expect(classes.filter((c) => FILLS_ITS_LINE.test(c)), variant).toEqual([]);
+    }
+  });
+
   it("says the app's words, with no build id and no count that disagrees with its noun", () => {
     for (const sample of SAMPLES) {
       expect(runTogetherWords(sample.html), sample.name).toEqual([]);

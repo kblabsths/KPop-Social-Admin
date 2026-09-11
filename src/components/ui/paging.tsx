@@ -546,7 +546,20 @@ export function PageMore({
           This view shows no further rows.
         </p>
       ) : (
+        // `self-start` is the whole of the shape fix (admin-window/BUG-0177):
+        // this wrapper is a flex column, whose default `align-items: stretch`
+        // sized the control by the content column rather than by its label —
+        // 1216px at 1440, a hairline-bordered, centre-labelled slab reading as
+        // a banner, and by area the loudest control on a page where it is
+        // correctly the SECONDARY one. The override sits on the ITEM and not
+        // on the container on purpose: the refusal line and the two terminal
+        // sentences above are paragraphs that must keep filling the column and
+        // wrapping in it, so the container keeps stretching them while the one
+        // child that must be intrinsic opts out. Nothing about the Button
+        // primitive moves — the width was never its doing, and every other
+        // call site renders exactly as it did.
         <Button
+          className="self-start"
           data-paging={state.status === "loading" ? "loading" : "more"}
           disabled={state.status === "loading"}
           onClick={onPress}
