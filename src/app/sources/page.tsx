@@ -123,8 +123,8 @@ function firstValue(value: ParamValue): string | undefined {
  * admin-window/BUG-0139).
  *
  * It takes no read's rows, which is what lets the three reads below be issued
- * TOGETHER: the awaiting-row gauge narrows at the query (`observations.source_id`
- * is a real column on the side it scans), so a narrowing that waited for the
+ * TOGETHER: both gauges narrow at the query (`observations.source_id` is a real
+ * column on the side each of them scans), so a narrowing that waited for the
  * registry's rows would put the sequential round trip straight back.
  *
  * The one thing it asks of a value is that it be a uuid AT ALL, and that is a
@@ -193,24 +193,6 @@ function scopeOf(given: SourceNarrowing): readonly string[] | null {
   );
 }
 
-/**
- * The filter the settled-values read is given: NONE, and that is a fact of
- * `readRejectionStampGauge()` (`lib/gauges/settled-values.ts`), which takes no
- * filter at all — its scan reads every source's adjudications in the window
- * and `RejectionSection` narrows the ROWS it returned.
- *
- * So that line names no narrowing, in either URL, and this constant is where
- * that is said out loud rather than by a `null` nobody can check. Naming one
- * would be the defect this ticket fixes with its halves swapped: the sentence
- * ends "a window of at most N rows, not the whole table", and over a
- * fleet-wide scan that cap and its truncation verdict belong to the fleet's
- * rows, not to one source's — the split that made `/cycles?source=<name>`
- * state one source's floor over the whole `runs` table
- * (admin-window/BUG-0114). The day that read takes a filter, it takes this
- * one, and the line follows with no second edit.
- */
-const REJECTIONS_READ: SourceNarrowing = {};
-
 /* ── the page ────────────────────────────────────────────────────────────── */
 
 export default async function SourcesPage({
@@ -235,22 +217,26 @@ export default async function SourcesPage({
   // after the other: the registry, whole — every narrowing below is
   // `selectSources`' — and the two gauges, which are the other kind of read,
   // bounded ordered WINDOWS (§4.3 kind 2), each naming the window it shows.
-  // The awaiting-row window narrows at the query, because
-  // `observations.source_id` is a real column on the side it scans; the
-  // rejection gauge takes no filter, so its narrowing happens over the rows it
-  // returned. Each keeps its own `DbResult` and its own Section state, so no
-  // leg's refusal removes another leg's rows (§4.1, common violations row 14).
+  // BOTH gauges narrow at the QUERY, because `observations.source_id` is a real
+  // column on the side each of them scans (admin-window/BUG-0194 gave the
+  // rejection scan the facet the awaiting-row scan already carried). Each keeps
+  // its own `DbResult` and its own Section state, so no leg's refusal removes
+  // another leg's rows (§4.1, common violations row 14).
   //
-  // The awaiting-row read's own options object is named, so the filter that
-  // read is GIVEN and the words its window line says about that read come from
-  // one expression and cannot come to disagree (admin-window/TASK-0073,
-  // admin-window/BUG-0163). The rejection read is given none — `REJECTIONS_READ`
-  // above says why.
+  // Each read's own options object is NAMED, and the same object is handed to
+  // the read and to `scopeOf`: the filter a read was GIVEN and the words its
+  // window line says about that read are then one expression and cannot come to
+  // disagree (admin-window/TASK-0073, admin-window/BUG-0163). That is also why
+  // the settled-values line moves with its figures now — the section reports one
+  // source's rows because the SCAN read one source's rows, so the cap in that
+  // sentence, the truncation verdict under it and the figures beside it are all
+  // over one population (admin-window/BUG-0194, admin-window/BUG-0114).
   const awaitingRead = { filter };
+  const rejectionsRead = { filter };
   const [sources, trend, rejections] = await Promise.all([
     listSources(),
     readAwaitingRowTrend(awaitingRead),
-    readRejectionStampGauge(),
+    readRejectionStampGauge(rejectionsRead),
   ]);
 
   const held = sources.kind === "ok" ? sources.data : [];
@@ -348,7 +334,7 @@ export default async function SourcesPage({
           <RejectionSection
             gauge={rejections.data}
             filter={filter}
-            scope={scopeOf(REJECTIONS_READ)}
+            scope={scopeOf(rejectionsRead.filter)}
           />
         ) : (
           <StateOf result={rejections} eyebrow={REJECTION_LABEL} />

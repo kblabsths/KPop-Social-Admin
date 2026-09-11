@@ -134,6 +134,56 @@ describe("fetchRejectionStamps", () => {
     expect(lookup.find((s) => s.method === "limit")?.args).toEqual([3]);
   });
 
+  /**
+   * **The scan carries the narrowing the figures over it carry** —
+   * admin-window/BUG-0194.
+   *
+   * It took no filter at all until then: `/sources` scanned every source's
+   * adjudications and its settled-values section selected one source's rows out
+   * of what came back, so the cap in the window line, the truncation verdict
+   * derived from it and the figures beside it were over three different
+   * populations (admin-window/BUG-0114, ARCHITECTURE.md §4.3).
+   *
+   * Two fixtures, which is what makes it a guard (LESSONS 8): the call that
+   * MUST carry the `eq`, and the call that must not — proved on the narrowed
+   * call alone, a read that narrowed unconditionally would pass.
+   */
+  it("narrows the scan by the source facet at the query, and carries no eq when given none", async () => {
+    const eqsOf = (stub: ReturnType<typeof withRows>) =>
+      stub.calls[0].steps.filter((step) => step.method === "eq").map((step) => step.args);
+
+    const narrowedStub = withRows(rejections(), sources());
+    const narrowed = await fetchRejectionStamps(
+      { now: NOW, days: 15, limit: 900, filter: { source_id: SOURCE_A } },
+      narrowedStub.asSupabaseClient(),
+    );
+    expect(eqsOf(narrowedStub)).toContainEqual(["source_id", SOURCE_A]);
+
+    const bareStub = withRows(rejections(), sources());
+    await fetchRejectionStamps({ now: NOW, days: 15, limit: 900 }, bareStub.asSupabaseClient());
+    expect(eqsOf(bareStub)).toEqual([]);
+
+    // The facet narrows the POPULATION and nothing else: the window the
+    // aggregate publishes is still the bounds that scan was issued under, both
+    // edges and the cap, so the sentence over the figures describes the read
+    // that happened.
+    expect(narrowed.kind).toBe("ok");
+    if (narrowed.kind !== "ok") throw new Error("the narrowed fetch refused");
+    const scan = narrowedStub.calls[0].steps;
+    expect(scan.find((step) => step.method === "gte")?.args).toEqual([
+      "rejected_at",
+      narrowed.data.window.since,
+    ]);
+    expect(scan.find((step) => step.method === "lt")?.args).toEqual([
+      "rejected_at",
+      narrowed.data.window.until,
+    ]);
+    expect(scan.find((step) => step.method === "limit")?.args).toEqual([
+      narrowed.data.window.limit,
+    ]);
+    expect(narrowed.data.window.until).toBe(NOW);
+  });
+
   it("bounds the query even when the caller passes nothing", async () => {
     const stub = withRows([], []);
     await fetchRejectionStamps({}, stub.asSupabaseClient());
@@ -297,6 +347,20 @@ describe("readRejectionStampGauge", () => {
     const stub = withRows(rejections(), sources());
     const result = await readRejectionStampGauge({ now: NOW, days: 15 }, stub.asSupabaseClient());
     expect(result.kind === "ok" && result.data.rerejected).toBe(4);
+  });
+
+  it("hands the narrowing it was given down to the scan — the entry point /sources calls", async () => {
+    // The page reaches the query through this function alone, so the facet is
+    // proved where the page hands it over as well as where it is applied
+    // (admin-window/BUG-0194).
+    const stub = withRows(rejections(), sources());
+    await readRejectionStampGauge(
+      { now: NOW, days: 15, filter: { source_id: SOURCE_B } },
+      stub.asSupabaseClient(),
+    );
+    expect(
+      stub.calls[0].steps.filter((step) => step.method === "eq").map((step) => step.args),
+    ).toContainEqual(["source_id", SOURCE_B]);
   });
 
   it("passes a not-provisioned database straight through", async () => {

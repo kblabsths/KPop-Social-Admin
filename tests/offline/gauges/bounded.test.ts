@@ -733,7 +733,7 @@ const SCANS_WITH_EDGES: {
         rejected_by: "resolver",
       }),
     idOf: (row) => (row as { observation_id: string }).observation_id,
-    run: (bounds, db) => readRejectionStamps(bounds, db),
+    run: (bounds, db) => readRejectionStamps(bounds, {}, db),
   },
   {
     // The SIXTH scan run under the same bounds object, and it is in

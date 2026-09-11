@@ -462,10 +462,13 @@ describe("the per-source trends against staging", () => {
    * `src/components/ui/window-line.tsx`). That biconditional is asserted per
    * surface per URL, and only then are the two sentences compared.
    *
-   * The two reads are not the same read, which is the whole finding:
-   * `readAwaitingRowTrend({ filter })` carries `?source_id=` at the query, and
-   * `readRejectionStampGauge()` takes no filter at all — so the first line
-   * differs between a narrowed URL and a bare one and the second does not.
+   * **Both scans carry the facet now** (admin-window/BUG-0194):
+   * `readAwaitingRowTrend({ filter })` always did, and
+   * `readRejectionStampGauge({ filter })` took none at all while the figures
+   * under its line were narrowed anyway — one sentence, one cap and one
+   * truncation verdict over a population the figures were not over. So each
+   * line differs between a narrowed URL and a bare one, and each names the
+   * facet ITS OWN read carried.
    *
    * **Measured on staging 2026-09-11** (`ubfjjqlvnpnoborczbdb`): bare, the
    * awaiting surface is `ok` and its line names no narrowing; narrowed to the
@@ -473,7 +476,8 @@ describe("the per-source trends against staging", () => {
    * claim in the window — and the line names the narrowing anyway, which is
    * this ticket's "a narrowed scan that returned nothing still names its
    * narrowing", observed rather than argued. The rejection surface is `empty`
-   * under both URLs and its line is byte-identical between them.
+   * under both URLs — staging holds no adjudication in the 90-day window — and
+   * its narrowed line names the narrowing over that empty window all the same.
    */
   it("names the narrowing each scan carried, and nothing the scan did not", async () => {
     const bare = await sourcesMarkup();
@@ -522,13 +526,16 @@ describe("the per-source trends against staging", () => {
       expect(lineOf(narrowed, "awaiting_row")).not.toBe(lineOf(bare, "awaiting_row"));
     }
 
-    // The scan that carried NONE names none, under both URLs: its window is
-    // the fleet's adjudications, and only the rows below it are narrowed.
+    // The settled-values scan, graded by the same rule as the one above it: it
+    // carries the narrowing at the query now, so its line names it and the bare
+    // line does not. An empty narrowed window is still a window, and the line
+    // says the narrowing regardless of what came back.
     const rejectionLines =
       hasLine(bare, REJECTIONS, "rejections") && hasLine(narrowed, REJECTIONS, "rejections");
     if (rejectionLines) {
-      expect(lineOf(narrowed, "rejections")).not.toContain(sourceId);
-      expect(lineOf(narrowed, "rejections")).toBe(lineOf(bare, "rejections"));
+      expect(lineOf(narrowed, "rejections")).toContain(sourceId);
+      expect(lineOf(bare, "rejections")).not.toContain(sourceId);
+      expect(lineOf(narrowed, "rejections")).not.toBe(lineOf(bare, "rejections"));
     }
   });
 
