@@ -1,328 +1,318 @@
 # Build judgments — campaign `admin-window`
 
-The calls the build made on Ben's behalf, most consequential first, at most
-fifteen. Rewritten **whole** at each milestone close; this is the **M1
-edition**, written 2026-09-02. Each entry names the **contract location that
-was silent or self-contradictory**, what was decided, who decided it, and
-where it is recorded.
+The calls the build made on Ben's behalf, most consequential first. Rewritten
+**whole** at each milestone close; this is the **M3 edition**, written
+2026-09-11, and it replaces the M1 edition rather than extending it. Each entry
+names the **contract location that was silent or self-contradictory**, what was
+decided, who decided it, and where it is recorded.
 
-Entries 1–7 are **Ben's own rulings** — recorded here because the build had to
-be told, not because anyone here decided them. Every one arrived through a
-blocked ASK ticket, which is the ground rule this file exists beside: *"a gap
-in the contracts is a blocked ticket, never a judgment call silently made"*
-(`admin-build.md`, Ground rules). Nothing still open appears below as settled;
-the open questions have their own section at the end.
+M3 EC12 caps this edition at **eight** entries where M1's was capped at fifteen,
+so this is a harder cut than a summary: where two rulings of the same family
+close one door, they are one entry here and two dated paragraphs there.
+`agenticflow/docs/DECISIONS.md` is the complete record — **63** dated paragraphs
+at this close, eleven of them from 2026-09-11 alone. This file is the eight a
+reviewer should read first, and nothing below is a call a role made silently:
+every one arrived through a blocked ticket or a human ruling, which is the
+ground rule this file exists beside — *"a gap in the contracts is a blocked
+ticket, never a judgment call silently made"* (`admin-build.md`, Ground rules).
 
-`agenticflow/docs/DECISIONS.md` is the complete record — twenty-three dated
-paragraphs at this close. This file is the fifteen a reviewer should read
-first. The two trailing sections use `###` deliberately, so that a count of
-`^## ` lines is exactly the entry count.
+Nothing still open appears below as settled; the open questions, including the
+two the M3 endgame leaves to Ben, have their own section at the end. The two
+trailing sections use `###` deliberately, so that a count of `^## ` lines is
+exactly the entry count.
 
 ---
 
-## 1. The app reads `SUPABASE_*`; only the live suite reads `STAGING_SUPABASE_*`
+## 1. Admin changes a catalog value only through the override path — direct catalog editing is struck
 
-`src/lib/db/client.ts` is unchanged and no `STAGING_` name appears anywhere
-under `src/`. `tests/live/setup.ts` is the one file that reads the four
-staging names and refuses, loudly and without fallback, when either credential
-name is unset. Parity therefore stays two independently-written PostgREST
-paths: `STAGING_SUPABASE_DB_URL` exists as a name and is read by nothing.
+`groups` and `idols` left `EDIT_CONFIG` outright: no record page, no PATCH
+branch, no regime of their own, and no flag or scaffold left behind. Two regimes
+remain — `resolver_owned` (`events`, `venues`, overridden through the gate) and
+`sandbox` (`walk_sandbox` alone, a staging-only fixture table in nobody's
+domain). The teeth are structural rather than typed, because a `Regime` member
+would not stop the struck path returning under a new name: the pin is
+`tests/offline/edit/config.test.ts` — **the only table whose write path is
+`direct` is `walk_sandbox`** — proved on two fixtures. The same strike retired
+the interim walk-write exception (one field of a real catalog row, restored in a
+`finally`), so no walk and no test writes a `groups` or `idols` row again.
 
-*Contradictory at*: `admin-build.md` Ground rules — *"live work targets the
-staging project through `STAGING_SUPABASE_*` names … an unset name is a
-refusal, never a fallback"* against *"the deployed Railway service is never
-repointed … every push to `main` must leave the app deployable"*. The deployed
-service reads `SUPABASE_*`.
-*Decided by*: **Ben**, 2026-09-02 (the pg-driver half by the architect, same
-day). *Recorded*: DECISIONS.md 2026-09-02; ARCHITECTURE §12; SERVICES.md;
-`admin-window/TASK-0021`.
+*Contradictory at*: the frozen `VISION.md`'s own sentence *"groups/idols edit
+directly within it"* against `admin-observability.md` §8, which describes the
+edit surface only as an override stamped through the observation pipeline. The
+contradiction had been load-bearing since M1 — the M1 edition's entry 2 built a
+whole live-test practice on the direct half.
+*Decided by*: **Ben**, 2026-09-08, by striking that sentence from the frozen
+vision (`vision.py amend --strike`, human-only): *"admin edits catalog tables
+only through the observation pipeline; do not re-implement direct edits."* The
+same-day question of whether the two tables could keep read-only record pages
+was re-ruled by the **architect** on a builder's blocked question: cut, not
+deferred.
+*Recorded*: DECISIONS.md 2026-09-08 (two paragraphs); ARCHITECTURE §9.2, §13.8
+and Common violations row 12; STACK.md §5's retired walk branch;
+`admin-window/TASK-0040`.
 
-## 2. A live test may write `groups` and `idols`, and nothing else
+## 2. Paging exists, and its boundary was decided at the contract rather than in a page
 
-One field of an existing row, prior value restored in a `finally`, residue
-scanned after. Resolver-owned tables — `events`, `venues`, `review_items`,
-`observations`, `field_provenance` — are never written by an Admin test; a
-fixture population that would need one is reported as a gap, never inserted.
-Consequence recorded with it: staging holds exactly **one** `review_item`, so
-every decision-side live assertion in M1 compares 0 to 0 and is described as
-vacuous rather than counted as coverage.
+A page is an **offset into the first screen's own total order** — the same
+`.order()` chain ending in the primary key, plus `.range()` — served by the
+app's own route handler. The window size is the surface's and is decided on the
+**server**; the client sends only how many rows it already holds. A bound that
+is not a non-negative multiple of that window, or that exceeds
+`MAX_PAGE_OFFSET` (`src/lib/paging/bounds.ts`), is refused with the reason
+named, never clamped in silence; past the end is `ok` with zero rows and
+"exhausted", which is an answer and not a refusal. A keyset cursor was weighed
+and rejected: it survives concurrent inserts, but it hands a composable ordering
+key to the client, needs a second null-ordering arm for `/claims`' `observed_at
+nulls last`, and has no natural out-of-range to refuse. The honest position went
+into the contract instead — a page is a bounded read at the instant it was
+issued, and no concatenation is ever presented as a total. Three doors closed
+with it: the fetch exception is one named control on two named surfaces and
+never "components may fetch"; the first server-rendered screen stays
+byte-identical to M2, so a shared link never depends on how far somebody else
+paged; and paging buys no width — no third surface, no "load everything", no
+raised `ROW_CAP`, and no argument that it substitutes for search.
 
-*Silent at*: `admin-build.md` Ground rules (staging only) and tests 2, 3, 5,
-10, 11 — they require rendered numbers matched against real staging rows and
-say nothing about whether a test may create the rows it needs.
-*Decided by*: **Ben**, 2026-09-02, with QA's staging census beside it.
-*Recorded*: DECISIONS.md 2026-09-02; ARCHITECTURE §10;
-`admin-window/TASK-0022`.
+*Contradictory at*: `ARCHITECTURE.md` §4.3, which read *"Paging is not the
+answer to a cap and none is built: nothing in the spec asks for it"* — while the
+spec now asks for it (SPEC F14) — against §4 rule 1 (no component fetches) and
+§5 (the page function is a route's only `async` component).
+*Decided by*: **Ben**, 2026-09-10, overruling the roadmap's "there is no M3"
+(*"not being able to load all claims if I want to is a huge oversight"*); the
+mechanism by the **architect**, in the amendment that was deliberately made the
+milestone's first ticket, before any page diff.
+*Recorded*: DECISIONS.md 2026-09-10 (*M3 exists* and *Paging's boundary*);
+ARCHITECTURE §4.3 read kind 3, §4 rule 1, §5; `tracker/milestones/M3.md`.
 
-## 3. No dial-shaped work anywhere in this campaign
+## 3. A paged answer is full-or-exhausted, and the client refuses anything else rather than reinterpreting it
 
-The per-source stuck-pattern threshold line stays **absent**, with its reason
-on screen, through M1 *and* M2 — no threshold overlay, no dial display, no
-dial edit. Ben's principle behind it, an ecosystem design-queue item and not
-campaign work: a dial-able value does not live in a YAML file, dials belong in
-rows. So Admin never reads the scraper registry YAML; when the dial becomes a
-row, the gauge reads the row.
+`/api/admin/*/rows` answers exactly the window's rows with the set continuing,
+or at most the window's rows with `exhausted` true — `exhausted === rows.length
+< size`, derived from the read it just made. `requestPage` treats any other
+combination (short-and-continuing, or longer than the window) as what it is,
+foreign data on a wire: a refusal that appends no rows, leaves `held` unmoved
+and keeps the control for a retry. The cheaper fix — let the driver call a short
+page the end of the set — was rejected because it converts a truncated, proxied
+or stale-deploy answer into "you have seen everything", a false totality claim
+on the one surface whose entire reason to exist is Ben's complaint above. What
+the contract buys instead is an invariant every future consumer inherits:
+**after any press, either the next bound is one this app may serve, or the state
+is `exhausted`**.
 
-*Silent at*: `admin-observability.md` §5 — the pending-claims gauge is
-specified as *"per-source `awaiting_row` trend against its pattern
-threshold"*, while §10 forbids re-encoding scraper YAML; neither says what to
-render when the threshold is unreachable.
-*Decided by*: **Ben**, 2026-09-02, extended past M2 the same day.
-*Recorded*: DECISIONS.md 2026-09-02; `admin-window/TASK-0024`.
+*Silent at*: the 2026-09-10 paging amendment itself, one entry above — it fixed
+what a page REQUEST may be and said nothing about what an answer that honours
+neither arm means, which left `PageMore` drawing its "no further rows" line one
+line under an answer that said the set continues.
+*Decided by*: the **architect**, 2026-09-10, on QA's measurement
+(`admin-window/BUG-0168`, from `admin-window/TASK-0064`), which had accepted
+either ending.
+*Recorded*: DECISIONS.md 2026-09-10; ARCHITECTURE §4.3; `src/lib/paging/machine.ts`.
 
-## 4. A resolver-owned record page shows a read-only display list, from the same one map
-
-`events` → title, description, poster, starts_at, venue; `venues` → name,
-city, country, address — read-only, with per-field provenance beside each.
-The list is a field of the **existing** `{table → editable columns}` config;
-there is no second allowlist in this repo.
-
-*Silent at*: `admin-observability.md` §8 — it describes the resolver-owned
-edit surface only in its M2 form (override through the gate, provenance
-stamped `admin_locked`) and says nothing about what such a record *displays*
-in M1, when no override path exists. Found because Browse links every event
-row to a page rendering one line.
-*Decided by*: **Ben**, 2026-09-02, on a QA-filed ASK.
-*Recorded*: `admin-window/TASK-0029`, which carries the ruling and the
-criteria written from it. **The build has not landed at this close** — the
-ticket is open; the ruling is what is settled.
-
-## 5. The provenance slot on a pre-cutover table reads its absence, with the reason
-
-`groups` and `idols` edit directly and have no `field_provenance` rows, so
-their slot says so — "no provenance recorded (pre-cutover table)" — rather
-than rendering blank. Absence with its reason beats a blank, and every table's
-provenance slot is then filled with something true.
-
-*Silent at*: `admin-observability.md` §8 (*"per-field provenance shows at the
-edit surface"*) and LOOK_AND_FEEL quality bar 5, neither of which covers a
-table for which no provenance row exists or ever will before cutover.
-*Decided by*: **Ben**, 2026-09-02, confirming the landed rendering.
-*Recorded*: DECISIONS.md 2026-09-02; `admin-window/TASK-0025`; built by
-`admin-window/TASK-0018`.
-
-## 6. Cycles & runs shows nine of the `runs` table's 22 columns, and honours `?source=`
-
-`source`, `started_at`, `ended_at` (a null one reads as still running),
-`outcome`, `error_summary` inline and verbatim, `records_parsed`,
-`claims_emitted`, `records_unlinked`, `failure_class`. Nothing else of the 22
-in M1; a ticket wanting a tenth re-opens this decision rather than adding a
-column. The facet narrows the runs half only and matches **by name**, because
-`runs.source` is text with no foreign key.
-
-*Silent at*: `admin-observability.md` §4 puts *"the adapter framework's `runs`,
-newest first, with the counts as columns"* on the page, but `adapters.md` is
-not among the contract snapshots, so "the counts" names nothing of a
-22-column table.
-*Decided by*: **Ben**, 2026-09-02. *Recorded*: DECISIONS.md 2026-09-02;
-ARCHITECTURE §12; `admin-window/TASK-0023`; built by `admin-window/TASK-0016`.
-
-## 7. The window is desktop-only and keeps both themes
-
-No phone bar, no mobile breakpoint work, and neither theme may be dropped to
-make a screen easier.
-
-*Silent at*: `admin-observability.md` §4 — it fixes the six pages and what
-each shows, and never names a viewport or a breakpoint. LOOK_AND_FEEL bar 1
-checks at 1440×900 and bar 12 requires both themes, but neither says whether a
-phone layout is in scope or whether a theme may be dropped to simplify a
-screen; this ruling closes both.
-*Decided by*: **Ben**, 2026-09-02. *Recorded*: DECISIONS.md 2026-09-02
-(third of three taste rulings).
-
-## 8. Absence is a result code, never an exception, and an error line names the read it failed
-
-Every `lib/db` read returns `{kind: "ok" | "not_provisioned" | "error"}` and
-never throws; "not provisioned" is decided from the PostgREST/Postgres code
-(`PGRST205`, `PGRST204`, `42P01`, `42703`) in one helper. The error arm
-carries `reading` — the object the query asked for — because a page makes
-several reads, and its message is the client's whole account (`message`,
-`details`, `hint`, `cause`, `code`, in that order), scrubbed of credential
-shapes including a DSN password.
-
-*Silent at*: `admin-build.md` Ground rules and test 9 require that an absent
-ecosystem table *"renders an honest not-provisioned state, never a crash"*,
-and say nothing about how absence is detected or what the operator is told
-when a read fails for some other reason.
-*Decided by*: the **architect**, 2026-09-01, extended 2026-09-02 after a QA
-finding that Browse's error line read only "TypeError: fetch failed".
-*Recorded*: DECISIONS.md 2026-09-01 and 2026-09-02; ARCHITECTURE §4.1;
-`admin-window/BUG-0016`.
-
-## 9. A complete read returns the whole matching set or refuses; it never truncates
+## 4. A complete read returns the whole matching set or refuses — and where neither arm is available, the figure is dropped rather than approximated
 
 Reads split in two. A **complete read** asks for an exact count with a total
 order and an explicit range, and errors — naming the object, the count and the
-cap — whenever the count exceeds the rows returned. A **window read** is a
-named, bounded, ordered window whose card says which window it shows. A null
-count is a refusal, never a zero. The doors this closes: no paging is built in
-this app, and no figure is derived from a possibly-truncated set.
+cap (`ROW_CAP`, `src/lib/db/result.ts`) — whenever the count exceeds the rows
+returned; a **window read** is a named, bounded, ordered window whose card says
+which window it shows. A null count is a refusal, never a zero. M3 extended the
+rule rather than weakening it: where only an unbounded read could produce a
+figure, **the figure goes and the page says less** — `/claims`' distinct-sources
+column and its domain chip row were dropped for exactly this reason, while
+`?domain=` stayed a real server-side narrowing. Admin will not compute in
+TypeScript what the database can answer, and will not render a number from a
+population it could not bound.
 
-*Silent at*: `admin-observability.md` §5 — gauges are specified as read-only
-queries the Admin server runs, with no mention of PostgREST's `db-max-rows`
-cap (Supabase default 1000), which silently returns an arbitrary subset in
-unspecified order.
-*Decided by*: the **architect**, 2026-09-02, from a QA finding on
-`admin-window/TASK-0006` where an open count would have been wrong rather than
-refused. *Recorded*: DECISIONS.md 2026-09-02; ARCHITECTURE §4.3; `ROW_CAP` in
-`src/lib/db/result.ts`.
+*Silent at*: `admin-observability.md` §5, which specifies gauges as read-only
+queries the Admin server runs and never mentions PostgREST's `db-max-rows` cap
+(Supabase default 1000), which silently returns an arbitrary subset in
+unspecified order; and §4's *"buckets with counts, age"*, which names figures no
+bounded Admin read on this deployment can produce at all.
+*Decided by*: the **architect**, 2026-09-02, from a QA finding where an open
+count would have been wrong rather than refused; generalised by **Ben**,
+2026-09-10 (Answer A + A2 on `admin-window/BUG-0138`).
+*Recorded*: DECISIONS.md 2026-09-02 and 2026-09-10; ARCHITECTURE §4.3.
 
-## 10. Gauges aggregate in TypeScript — no RPC, no view, no Postgres driver
+## 5. A cost problem inside the database is the scraper's to fix; Admin opens no second transport and writes no workaround
 
-Each gauge fetches a bounded, time-windowed row set and aggregates in a pure
-function, with an explicit limit on every query. No percentile is computed by
-the database, and no second transport is added: what direct SQL would buy —
-`EXPLAIN ANALYZE`, aggregates PostgREST cannot express — lives on the far side
-of the scraper handoff, where the schema and the SQL prompt already are.
+Gauges fetch a bounded, time-windowed row set and aggregate in a pure function:
+no RPC, no database view, no Postgres driver — not even after Ben's env answer
+made a DSN available as a name. What direct SQL would buy lives on the far side
+of the scraper handoff, where the schema already is. The corollary was tested
+twice by real cost. `pending_claims` timed out on staging (`57014` on seven of
+eight measured read shapes); five Admin-side mitigations were measured, all five
+failed, and one scraper-side artifact took the page from 8.1 s to ~300 ms with
+no Admin code change. `/claims`' ordering then hit the same wall — PostgREST
+exposes no relationship between `pending_claims` and `observations` (PGRST200)
+and refuses aggregates on this deployment (PGRST123) — and the answer was again
+an artifact for Ben, not a cache, not a swallowed timeout, not a re-computed
+classification. Both are handoffs authored here as paste-ready SQL and installed
+by Ben, never edited into the sibling from this repo.
 
 *Silent at*: `admin-observability.md` §5 fixes *where* gauge SQL runs
 (server-side, not a database view) but not *how* an aggregate is computed when
-PostgREST offers nothing beyond `count`; `admin-build.md` Ground rules ban a
-SQL-executing route without ruling on a direct connection.
-*Decided by*: the **architect**, 2026-09-01; the no-driver half 2026-09-02
-after Ben's env answer made a DSN available as a name.
-*Recorded*: DECISIONS.md 2026-09-01 and 2026-09-02; ARCHITECTURE §8.
+PostgREST offers nothing beyond `count`; `admin-build.md`'s Ground rules ban a
+SQL-executing route without ruling on a direct connection; and §10 makes
+everything scraper-side a handoff while that repo runs its own campaign, without
+saying what a surface does meanwhile.
+*Decided by*: the **architect**, 2026-09-01 (aggregate in TypeScript),
+2026-09-02 (no driver) and 2026-09-03 (making "no Admin-side mitigation"
+permanent once the index had landed and the cost that motivated it was gone —
+the rule is deliberately decoupled from the cost); **Ben**, 2026-09-03
+licensing the first scraper migration in session, and 2026-09-10 ruling the
+`observed_at` handoff.
+*Recorded*: DECISIONS.md 2026-09-01, 2026-09-02, 2026-09-03, 2026-09-10;
+ARCHITECTURE §8 and §12; the three artifacts in
+`agenticflow/tracker/for-human/` (state reported below).
 
-## 11. Vitest is the runner, there is no browser dependency, and a page function is a route's only async component
+## 6. The app reads `SUPABASE_*`; only the live suite reads `STAGING_SUPABASE_*`
 
-Every component below the page function is synchronous and takes plain props,
-so a test renders a real page with `renderToStaticMarkup(await Page(props))` —
-Next's own docs say Vitest cannot render async server components, and a nested
-async component would have forced a browser dependency on the campaign. No
-jsdom, no Testing Library, no Playwright as a product dependency; screenshots
-stay the walk agent's kit-owned tooling.
+`src/lib/db/client.ts` reads the two names the deployed service already has, and
+no `STAGING_` name appears anywhere under `src/`. `tests/live/setup.ts` is the
+one file that reads the staging names, and it refuses loudly and without
+fallback when either credential name is unset — an unset name is never a
+fallback to the production-shaped name. Parity therefore stays two
+independently-written PostgREST paths. The walk recipe in STACK.md §5 is the
+same ruling made runnable: the staging values are mapped onto the app's names on
+the launching shell's command line, inside a subshell, so they exist for that
+process and nowhere else, and no value is ever printed to check.
 
-*Silent at*: `admin-build.md` "Tests that must pass" enumerates the tests and
-names no runner, and `admin-observability.md` §10 names no rendering shape.
-The repo had no test framework at all.
-*Decided by*: the **architect**, 2026-09-01, at intake.
-*Recorded*: DECISIONS.md 2026-09-01 (two paragraphs); STACK.md §4;
-ARCHITECTURE §5; the runner itself as `admin-window/DEP-0001`.
+*Contradictory at*: `admin-build.md` Ground rules — *"live work targets the
+staging project through `STAGING_SUPABASE_*` names … an unset name is a refusal,
+never a fallback"* against *"the deployed Railway service is never repointed …
+every push to `main` must leave the app deployable"*. The deployed service reads
+`SUPABASE_*`.
+*Decided by*: **Ben**, 2026-09-02 (and 2026-09-03, moving the production values
+out of `.env` entirely, into Railway's own environment).
+*Recorded*: DECISIONS.md 2026-09-02 and 2026-09-03; ARCHITECTURE §12;
+STACK.md §5; `agenticflow/docs/SERVICES.md`.
 
-## 12. A 404 this app means is routed, not thrown; and the auth gate is never handed a handler
+## 7. A live proof is graded against a population that cannot move under it: bound the window or hold it still, never a tolerance
 
-`/records/<unmapped-table>/<id>` answers through a `beforeFiles` rewrite in
-`next.config.ts` to a path no route matches. Measured on Next 16.2.2: a 404
-status and a server-rendered document are inseparable *in render* —
-`notFound()`'s status is set in the same `catch` that emits the client-only
-error shell — while a 404 the router decides renders the not-found tree
-through the root layout. The rewrite is `/records`-specific and is not
-inherited. From the same surface: the gate stays
-`export { auth as middleware }`, because passing a handler to `auth()` takes a
-branch that precedes the authorization branch, leaving every route open.
+Staging is written continuously by the scraper's own campaign, so two legs of
+one proof address two different populations — measured as 877 ids from the first
+read and 879 from the second, minutes apart. The ruling, for every live test in
+this repo: where the test writes every query, capture one instant at the top and
+give every leg the same explicit **upper** edge, ending strictly before now with
+a settle margin; where one leg is the app's own read and can take no upper edge,
+use `whileStill` (`tests/live/parity.ts`), which reads before and after and
+throws rather than passing when the database will not hold still; and **never a
+numeric tolerance** — "±2 claims" cannot tell an insert from a drop, and it is
+exactly the slack that would have hidden a gauge whose two legs diverged by one
+claim out of 877. The door this closes: flakiness in this tier is never bought
+with a retry loop, a `--retry` flag, a skip or a widened comparison. The
+corollary, ruled the same day when the first statement was found incomplete:
+what `whileStill` holds still is **one** read, and a snapshot never bounds a
+page render.
 
-*Silent at*: `admin-observability.md` §4 and §6 say nothing about a URL whose
-table segment names no table, and `admin-build.md`'s *"the build owns `src/`
-wholesale"* gives no home to a routing-config edit outside `src/`.
-*Decided by*: a **builder**, as a declared scope excursion; **QA** ruled it
-accepted after verifying independently that nothing in `src/app` could satisfy
-the criterion. *Recorded*: DECISIONS.md 2026-09-02; ARCHITECTURE §5;
-`admin-window/BUG-0017`.
+*Silent at*: `admin-build.md` tests 2, 3, 5, 10 and 11 require a rendered figure
+to match a direct read of staging, and say nothing about a table a sibling
+campaign writes between the two reads — nor about which rendered *state* counts
+as a pass, the 2026-09-02 half of this ruling (a live oracle names the page's
+state kind before it compares a number, and `error` is always a failure).
+*Decided by*: the **architect**, 2026-09-02 (the oracle) and 2026-09-10 (the
+population, plus its corollary), each from a QA measurement of a red that was
+not the product's fault.
+*Recorded*: DECISIONS.md 2026-09-02, 2026-09-10 (two paragraphs) and 2026-09-11
+(`admin-window/TASK-0077`: an oracle is sized by its assertion); ARCHITECTURE
+§10; `tests/live/parity.ts`.
 
-## 13. The four data-surface states are a typed contract, and a counted zero is always shown
+## 8. An account carries the DATABASE's words, and the app spells absence in exactly one place
 
-What the operator must be told is carried by a required prop, not by a caller
-remembering: `ErrorLine` and the gauge error arm require `reading`; the empty
-and not-provisioned cards carry their own eyebrow; a trend or distribution
-requires `empty: {holds, filledBy}` and renders it itself, so a headers-only
-table is unreachable rather than discouraged. And a counted zero is data: an
-empty queue still renders its open count. Only `not_provisioned` may render no
-number, because there a zero would be a lie about a table that is not there.
+What a failed read tells the operator is decided in ONE derivation
+(`errorMessage`, `src/lib/db/result.ts`) by three anchored questions and no
+fourth: did we serialise this part (provenance, no text inspected), does it
+begin `<`, does it carry V8 frame lines. The first two replace the part with a
+counted clause that quotes nothing; the third drops the frame lines only, never
+truncating the part, so the cause postgrest-js puts in `details` still crosses
+whole. Explicitly closed: no scanning of prose for a document fragment, no
+entity decoding, no tag stripping, no length cap, no matching on a runtime's
+vocabulary — that is the blocklist-chased-one-family-at-a-time class, and seven
+QA lanes on this one function is what it cost to learn it here. This reverses
+`admin-window/BUG-0016`'s pin that a transport failure's *"stack frame
+included"* must survive untrimmed. Beside it, from the same week: the app has
+one definition of **blank** (`hasVisibleContent`) and one of **absent**
+(`isAbsentText`), they are not the same question — a lone em dash is ink to the
+first and nothing to the second — and both now live in the pure leaf
+`src/lib/verdict/decision.ts`, with `lib/format.ts` re-exporting rather than
+re-spelling, so the character exists once in `src/` and a second hand-typed
+dash cannot arrive.
 
-*Silent at*: `admin-observability.md` §4 fixes what each page shows and not
-what it shows when a read is empty, absent or failed. The counted-zero half is
-a collision *inside* the vision docs: LOOK_AND_FEEL bar 1 and its
-repeat-use principle ("counts sit in fixed positions") against the emptiness rule
-that an empty bucket and an unprovisioned table never share a rendering.
-*Decided by*: the **architect**, 2026-09-02, both from QA findings.
-*Recorded*: DECISIONS.md 2026-09-02 (two paragraphs); built by
-`admin-window/TASK-0030`. The counted-zero fix is `admin-window/BUG-0027`,
-**open at this close**.
-
-## 14. A live oracle names the page's state kind before it compares a number, and the http suite may never acquire a database
-
-A live test derives the kind it expects from its own independent count,
-asserts the rendered kind structurally, compares numbers only in `ok`, treats
-`empty` as a pass with a stated 0, accepts `not_provisioned` only when its own
-read returns the absence code, and treats `error` as a **failure** naming the
-read. Two-way oracles are banned. Separately, the http suite sets sentinel
-credentials rather than deleting names, because `next start` reloads `.env`
-and restores them: measured, and material, since an http test that PATCHes a
-write route would otherwise have exercised the live project with RLS bypassed
-on any machine holding the service key.
-
-*Silent at*: `admin-build.md` tests 2, 3, 5, 10, 11 require that a rendered
-number match a direct read and say nothing about which rendered *state* counts
-as a pass; test 13's sweep rule says nothing about what the non-live suites
-may reach.
-*Decided by*: the **architect**, 2026-09-02, from a QA measurement of the
-first staging parity run — four of `/claims`' six assertions passed while the
-page was in its error state. *Recorded*: DECISIONS.md 2026-09-02 (two
-paragraphs); ARCHITECTURE §10; the http half landed, the oracle rewrite is
-`admin-window/TASK-0032`, **open at this close**.
-
-## 15. A structural guard over the source tree parses with TypeScript's own parser
-
-A guard whose question needs a syntactic boundary — where an argument ends,
-whether a backtick is a template or text — uses `ts.createSourceFile` and an
-AST walk; a guard that only asks whether a *name* appears may keep the cheap
-line-wise read. An absence assertion pins the call it forbids, never a word.
-A parse error is a report, not a skip: the permitted failure direction is
-over-reporting, never a miss.
-
-*Silent at*: `admin-build.md` Ground rules forbid DDL from Admin code, a
-SQL-executing route, and any direct write to a resolver-owned domain, but
-nothing in the contracts says how an absence is *proven*. The campaign's
-answer is a set of source-tree guards, and their trustworthiness is entirely
-this build's invention.
-*Decided by*: the **architect**, 2026-09-02, after three QA bounces on the
-bespoke tokenizer — the third fix read a backtick inside a regex literal as
-division and silently erased a real forbidden write, which is the failure
-direction the guard exists to exclude.
-*Recorded*: DECISIONS.md 2026-09-02; ARCHITECTURE §10 and its violation
-ledger, classes 4–5; `admin-window/BUG-0030`, `admin-window/BUG-0020`.
+*Silent at*: `admin-build.md` test 9 and the Ground rules require an absent
+ecosystem table to render *"an honest not-provisioned state, never a crash"*,
+and say nothing about what a read that failed some other way may put on an
+operator's card; `LOOK_AND_FEEL`'s data-table rule fixes the CHARACTER — *"a
+null renders as `—` in disabled-gray — never blank, never `null`, `N/A` or
+`none`"* — and says nothing about which question decides that a value is null,
+which is why a wire answering `{kind:"refused", reason:"—"}` reached the
+operator as a red alert reading `—`.
+*Decided by*: the **architect**, 2026-09-11 — `admin-window/BUG-0173` (widened
+from QA's BUG-0170 residuals), `admin-window/BUG-0187` (the rule takes a bar
+instead of anchors) and `admin-window/BUG-0184` (the em dash).
+*Recorded*: DECISIONS.md 2026-09-11 (three paragraphs); ARCHITECTURE §4.1.
+**Not closed at this close**: the last lane on this derivation —
+`DEBT-0020` → `BUG-0199` → `BUG-0196` (authorship is a fact the account carries,
+not a question a renderer asks) — is serial by the architect's ruling of
+2026-09-11, truth before cosmetics, and an M3 P2 therefore waits on a
+`patch`-milestone ticket deliberately.
 
 ---
 
 ### Questions routed rather than decided
 
-Open at this close, and deliberately absent from the entries above.
+Open at the M3 close, deliberately absent from the entries above, and all three
+Ben's rather than a role's.
 
-- **`pending_claims` cannot be read on staging.** Eight read shapes measured;
-  every one but an unordered `limit 1` hits the 8s statement timeout with
-  `57014`. The fix is a scraper-repo artifact (an index on `field_provenance`,
-  or a view rewrite) and therefore a **handoff**: `admin-window/TASK-0031`
-  carries the measurements, the candidate SQL, the target path and the apply
-  command, and is blocked on Ben. What *is* settled and recorded (DECISIONS.md
-  2026-09-02) is only the consequence: `/claims` and the Sources awaiting-row
-  gauge render their honest error state, and no Admin-side workaround —
-  not a cache, not a swallowed timeout, not a re-computed classification —
-  may be written. ARCHITECTURE §12 still carries the `OPEN-CLAIMS-COST`
-  marker; it is the campaign's only remaining open contract question.
-- **LOOK_AND_FEEL fails its own quality bar 12 in light theme.** Measured by
-  QA on `admin-window/TASK-0004`: healthy green-600 on white 3.22:1;
-  attention amber-600 on white 3.20:1 and on chrome 3.06:1 — attention being
-  the colour that means "needs a human"; broken red-600 on the page background
-  4.33:1; ink-secondary gray-500 4.39:1. Dark theme passes everywhere
-  (minimum 5.25:1). A palette change is a vision-doc change, so it is Ben's,
-  not a ticket. The one related value the build *did* decide is recorded on
-  that ticket: `--color-on-accent` is gray-950 in dark theme (7.21:1) rather
-  than the white the doc's prose names (2.79:1), because bar 12 is checkable
-  against the running app and the prose is not.
+- **A proposed Feel bar: "a control that extends a list is still on screen after
+  it acts."** No such bar exists, so nothing in M3 failed against it — but the
+  two paged surfaces now disagree, measured on the landed tree at 1440x900:
+  `/claims`' control travels viewport y=434 → **2,066** with `scrollY`
+  unchanged (**1,166px below a 900px fold**; 2,084 on presses 2 and 3), which is
+  17 presses and 17 scrolls, while `/browse`'s stays at **852**
+  because the browser's scroll anchoring happens to hold it. One interaction,
+  two outcomes, no rule saying which is right. Adopting the bar is a
+  `LOOK_AND_FEEL` amendment plus one ticket against `/claims`; declining it
+  leaves `/claims` not a defect. **The campaign will not invent the bar to
+  justify the fix.** (M3.md, architect, 2026-09-11.)
+- **`LOOK_AND_FEEL` bar 11 ("state lives in the URL") is stale against
+  ARCHITECTURE's dated 2026-09-10 paging amendment.** Paging changes no URL, a
+  reload returns to the first screen, and Back leaves the app — which is the
+  amendment as written, traced to SPEC F14 and to Ben's own choice of on-demand
+  client fetching. The app is right and the bar's text is not; the walk graded
+  it *"bar is stale, app is right — no ticket"*, which is a verdict and not a
+  licence to edit a human-owned vision doc. Until Ben rules, bar 11 is graded
+  against the amendment and every walk that touches it says so. (M3.md,
+  architect, 2026-09-11.)
+- **The two §9 handoff artifacts are filed and placed, and "reviewed" is Ben's
+  word to say.** `verdicts` and `settle_review_item` are physically in the
+  sibling repo and not installed; nothing here treats them as done, and no
+  Admin surface pretends they exist — the review item's close slot renders the
+  honest absence instead. This is what VISION's satisfaction sentence still
+  waits on, together with the deferred patch run for acceptance tests 6–8.
 
-### Cross-directory report — M1 close
+### Cross-directory report — M3 close
 
-- **Scraper-side commits made by this campaign during M1: zero.** Measured
-  2026-09-02 in `../kspace Scraper`: `git log --all --grep=admin-window`
-  returns 0 commits, and no commit message in that repo names this campaign or
-  this repo. The 260 commits it has taken since 2026-09-01 are its own
-  `resolver` campaign's, under its own ticket numbering. No declared handoff
-  and no noted minor edit was installed there by this campaign.
-- **No ticket's touch scope named a scraper path.** Measured across all 75
-  ticket files in `agenticflow/visions/admin-window/tracker/tickets/`: no
-  `touch_scope` entry contains `Scraper` or a `../` segment.
-- **Expected, and met.** `admin-observability.md` §10 makes *everything*
+The three handoffs' state, measured 2026-09-11. Install state is the verifier's
+measurement of that day against staging `ubfjjqlvnpnoborczbdb`
+(`agenticflow/tracker/for-human/M3-verifier.md`); the tracked/untracked and
+placement facts below were re-established here the same day, read-only, in
+`../kspace Scraper`.
+
+| artifact | filed | placed in the sibling | tracked there | installed |
+| --- | --- | --- | --- | --- |
+| `pending_claims.observed_at` (`M2-handoff-pending-claims-observed-at.md`) | yes | `20260910000001_a_pending_claim_carries_its_instant.sql` | **yes** (it was untracked at the M2 close) | **yes** — `select=observed_at` answers 200 |
+| `verdicts` (`M2-handoff-verdicts.md`) | yes | `20260908000001_the_verdict_becomes_a_row.sql`, written 2026-09-11 11:59 | **no** | **no** — 404 `PGRST205` |
+| `settle_review_item` (`M2-handoff-settle-review-item.md`) | yes | `20260908000002_the_verdict_settles_the_item.sql`, same timestamp | **no** | **no** — absent from the RPC list |
+
+- **Commits made by this campaign in the sibling: still zero.** `git log --all
+  --grep="admin-window/"` there returns 0 — a commit authored from here would
+  carry a campaign-qualified ticket id by rule. The one commit whose message
+  contains the campaign's name (`43505768`, 2026-09-10) is the sibling's own,
+  authored by Ben in its `resolver` campaign, naming Admin as a consumer of
+  `review_items`. That repo has taken 570 commits since 2026-09-01; none is
+  ours.
+- **No ticket's touch scope named a scraper path.** Measured across all **329**
+  ticket files in `agenticflow/tracker/tickets/` and `agenticflow/tracker/archive/`:
+  no `touch_scope` entry contains `Scraper` or a `../` segment.
+- **Expected, and met.** `admin-observability.md` §10 makes everything
   scraper-side a handoff while a campaign runs in that repo, and its tracker's
-  `RUNNING` marker is present today. One handoff is outstanding and unapplied:
-  `admin-window/TASK-0031`. The two §9 migrations (`verdicts`,
-  `settle_review_item`) are M2's and are not yet authored.
+  `RUNNING` marker is still present. Every change that repo needed from this one
+  travelled as a paste-ready artifact for Ben and as nothing else.
