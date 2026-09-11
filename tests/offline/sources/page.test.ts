@@ -4,6 +4,7 @@ import { isRecordId } from "@/lib/records/id";
 import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
 import {
+  codeLinesIn,
   codeText,
   implicitInterElementSpaces,
   implicitInterElementSpacesIn,
@@ -1731,6 +1732,191 @@ describe("the surface hooks the live parity oracle addresses", () => {
     expect($(SURFACE_HOOKS.registry).find("[data-trend-source], [data-window]").length).toBe(0);
     expect($(SURFACE_HOOKS.awaiting_row).find('[data-window="rejections"]').length).toBe(0);
     expect($(SURFACE_HOOKS.rejections).find('[data-window="awaiting_row"]').length).toBe(0);
+  });
+});
+
+/* ── the two scan-window lines' scope (admin-window/TASK-0073, SPEC F15) ─── */
+
+/**
+ * **Each of this page's two window lines names the narrowing ITS OWN READ
+ * carried** — the defect admin-window/BUG-0163 fixed on `/claims` one page
+ * over, here (campaign admin-window/TASK-0073, SPEC F15, M3 EC8).
+ *
+ * The rule is ARCHITECTURE.md §4.3's: a window line states the read that
+ * HAPPENED. So the scope is unconditional on what came back — a narrowed scan
+ * that returned nothing still names its narrowing — and it names what the READ
+ * carried, never what the URL spelled. The two reads under these two lines are
+ * not the same read, and that is the whole of why the two lines differ:
+ *
+ *  - the awaiting-row trend is `readAwaitingRowTrend({ filter })` — narrowed at
+ *    the query, so `?source_id=` really is that scan's population and its line
+ *    says so;
+ *  - the settled-values gauge is `readRejectionStampGauge()` — it takes no
+ *    filter at all, scans every source's adjudications in the window, and
+ *    `RejectionSection` narrows the ROWS it returned. Its line therefore names
+ *    no narrowing in either URL, and naming one would put that sentence's cap
+ *    and its truncation verdict ("a window of at most N rows") over a
+ *    population the scan never took — admin-window/BUG-0114's defect with its
+ *    halves swapped.
+ *
+ * Nothing here pins the app's words. The value a case asserts is the id THIS
+ * TEST put in the URL, and where a case needs the phrase itself it computes it
+ * by DIFFERENCE between the two renders rather than retyping the sentence.
+ */
+describe("what the two scan-window lines say they read", () => {
+  const TRENDS = "src/components/sources/trends.tsx";
+
+  /** The instant of a render, which differs between two renders by construction. */
+  const INSTANT = /\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/g;
+
+  /**
+   * One window line's words, with both instants masked.
+   *
+   * `until` is the moment the window was measured back from, so two renders
+   * never share it and a raw comparison of two lines is a comparison of two
+   * clocks. Masked, what is left is exactly what the page CHOSE to say.
+   */
+  function lineOf(markup: string, gauge: string): string {
+    const line = cheerio.load(markup)(`[data-window="${gauge}"]`);
+    expect(line.length, gauge).toBe(1);
+    return line.text().replace(/\s+/g, " ").trim().replace(INSTANT, "<instant>");
+  }
+
+  /**
+   * The words one line has that the other does not — the narrowing phrase,
+   * recovered by difference so no copy is retyped into this file.
+   *
+   * Both inputs are masked lines of the same gauge, so the only thing that can
+   * differ is what the page added for the narrowing.
+   */
+  function addedTo(bare: string, narrowed: string): string {
+    let head = 0;
+    while (head < bare.length && bare[head] === narrowed[head]) head += 1;
+    let tail = 0;
+    while (
+      tail < bare.length - head &&
+      bare[bare.length - 1 - tail] === narrowed[narrowed.length - 1 - tail]
+    ) {
+      tail += 1;
+    }
+    return narrowed.slice(head, narrowed.length - tail);
+  }
+
+  it("names the narrowing the awaiting-row scan carried, and names it in no line whose read did not", async () => {
+    const bare = await renderSources(healthyScript());
+    const narrowed = await renderSources(healthyScript(), {
+      source_id: SOURCE.ticketmaster,
+    });
+
+    // The read that CARRIED the narrowing says so, in both directions: the id
+    // the URL asked for is in the narrowed line and in no bare one.
+    expect(lineOf(narrowed, "awaiting_row")).toContain(SOURCE.ticketmaster);
+    expect(lineOf(bare, "awaiting_row")).not.toContain(SOURCE.ticketmaster);
+    // ...and the same scan really was narrowed at the query, so the sentence is
+    // about the read and not about the page.
+    expect(sourceIdsAskedFor()).toContain(SOURCE.ticketmaster);
+    // Two URLs, two different sentences — the defect was that they were
+    // byte-identical over two different reads.
+    expect(lineOf(narrowed, "awaiting_row")).not.toBe(lineOf(bare, "awaiting_row"));
+
+    // The read that carried NOTHING names nothing, in either URL, and the two
+    // lines really are the same sentence once the clock is masked.
+    expect(lineOf(narrowed, "rejections")).not.toContain(SOURCE.ticketmaster);
+    expect(lineOf(narrowed, "rejections")).toBe(lineOf(bare, "rejections"));
+
+    // Non-vacuous, and the reason that silence is not an oversight: the
+    // settled-values SECTION is narrowed — its figure moves — while the scan
+    // above it was the fleet's. Rows and read are two facts, and the line
+    // follows the read.
+    expect(rerejects(SOURCE.ticketmaster)).not.toBe(
+      SOURCES.reduce((total, source) => total + rerejects(source.source_id), 0),
+    );
+    expect(readNumber(narrowed, "Re-rejected claims in this window")).toBe(
+      rerejects(SOURCE.ticketmaster),
+    );
+    expect(readNumber(bare, "Re-rejected claims in this window")).toBe(
+      SOURCES.reduce((total, source) => total + rerejects(source.source_id), 0),
+    );
+  });
+
+  it("still names its narrowing when the narrowed scan came back with nothing", async () => {
+    // The line follows the READ, not the rows (ARCHITECTURE.md §4.3): a scan
+    // that carried `?source_id=` and matched no observation at all is still a
+    // scan of one source's claims, and a sentence that dropped the narrowing
+    // here would describe the whole table's emptiness.
+    const nothing = healthyScript({
+      [T.observations]: [{ data: [] }, { data: [...REJECTIONS] }],
+    });
+    const markup = await renderSources(nothing, { source_id: SOURCE.ticketmaster });
+
+    // The rows really are none — otherwise this case proves nothing.
+    expect(trendSources(markup, AWAITING_BY_SOURCE)).toEqual([]);
+    expect(readNumber(markup, "Awaiting-row claims in this window")).toBe(0);
+    expect(lineOf(markup, "awaiting_row")).toContain(SOURCE.ticketmaster);
+  });
+
+  it("names nothing for a parameter this page DROPPED", async () => {
+    // A facet that never reaches a filter narrowed no read, so it may appear in
+    // no scope: `?source_id=` carrying something that is not a uuid is dropped
+    // by the page (it can equal no row anywhere), and a parameter this route
+    // does not read at all was never a facet of it.
+    const bare = await renderSources(healthyScript());
+    const dropped: [string, Record<string, string>][] = [
+      ["a source_id that is not an id", { source_id: "nobody" }],
+      ["a parameter this route does not read", { bucket: "awaiting_row" }],
+    ];
+    for (const [name, params] of dropped) {
+      const markup = await renderSources(healthyScript(), params);
+      for (const gauge of ["awaiting_row", "rejections"]) {
+        expect(lineOf(markup, gauge), `${name}: ${gauge}`).toBe(lineOf(bare, gauge));
+        for (const value of Object.values(params)) {
+          expect(lineOf(markup, gauge), `${name}: ${gauge}`).not.toContain(value);
+        }
+      }
+    }
+    // Non-vacuous: on this same page a facet that DID reach a filter moves one
+    // of the two lines, so "unchanged" here is a fact about the parameter and
+    // not about a page that never says anything.
+    const real = await renderSources(healthyScript(), {
+      source_id: SOURCE.ticketmaster,
+    });
+    expect(lineOf(real, "awaiting_row")).not.toBe(lineOf(bare, "awaiting_row"));
+  });
+
+  it("writes the narrowing sentence nowhere in the components that render the lines", async () => {
+    // LESSONS 5: the phrase, its composition and its subtraction are imported
+    // (`lib/url/narrowing.ts`, `components/ui/window-line.tsx`) and this
+    // surface declares only its own facet TABLE, in `lib/sources/routes.ts`. A
+    // hand-written sentence beside the line fails this ticket even when it
+    // renders the right words.
+    const bare = lineOf(await renderSources(healthyScript()), "awaiting_row");
+    const narrowed = lineOf(
+      await renderSources(healthyScript(), { source_id: SOURCE.ticketmaster }),
+      "awaiting_row",
+    );
+    // The phrase as RENDERED, recovered by difference — never retyped here.
+    const phrase = addedTo(bare, narrowed);
+    expect(phrase).toContain(SOURCE.ticketmaster);
+    // It spells the parameter as the URL spells it, so an operator reading the
+    // line off the screen can write the narrowing back into the address bar.
+    expect(phrase).toContain("source_id");
+
+    // The words either side of the value — everything the app chose to say —
+    // appear in no component that renders these lines.
+    const words = phrase
+      .split(SOURCE.ticketmaster)
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+    expect(words.length).toBeGreaterThan(0);
+    for (const word of words) {
+      // The scanner on an input it MUST flag: a component that retyped this
+      // sentence would read exactly like this.
+      expect(codeLinesIn(`  measured={\`Claims observed ${word} \${id}\`}`).join("\n")).toContain(
+        word,
+      );
+      // ...and on the file itself, which does not.
+      expect(codeText(TRENDS), word).not.toContain(word);
+    }
   });
 });
 

@@ -451,6 +451,87 @@ describe("the per-source trends against staging", () => {
     }
   });
 
+  /**
+   * **Each window line names the narrowing ITS OWN read carried** — M3 EC8,
+   * against staging (campaign admin-window/TASK-0073, SPEC F15).
+   *
+   * The STATE KIND is decided first, as in every case in this file, and here it
+   * decides something structural before it decides anything about words: a
+   * window line follows the READ, so it is rendered on an `ok` result with rows
+   * OR WITH NONE — `empty` — and on no other kind (ARCHITECTURE.md §4.3,
+   * `src/components/ui/window-line.tsx`). That biconditional is asserted per
+   * surface per URL, and only then are the two sentences compared.
+   *
+   * The two reads are not the same read, which is the whole finding:
+   * `readAwaitingRowTrend({ filter })` carries `?source_id=` at the query, and
+   * `readRejectionStampGauge()` takes no filter at all — so the first line
+   * differs between a narrowed URL and a bare one and the second does not.
+   *
+   * **Measured on staging 2026-09-11** (`ubfjjqlvnpnoborczbdb`): bare, the
+   * awaiting surface is `ok` and its line names no narrowing; narrowed to the
+   * first registry source it is `empty` — that source has no awaiting-row
+   * claim in the window — and the line names the narrowing anyway, which is
+   * this ticket's "a narrowed scan that returned nothing still names its
+   * narrowing", observed rather than argued. The rejection surface is `empty`
+   * under both URLs and its line is byte-identical between them.
+   */
+  it("names the narrowing each scan carried, and nothing the scan did not", async () => {
+    const bare = await sourcesMarkup();
+    // A real registry id, so the narrowed URL narrows a read that exists. With
+    // no registry row to name there is nothing to narrow BY, and this case has
+    // no URL to grade.
+    const held = await stagingSources();
+    if (held.length === 0) return;
+    const sourceId = held[0].source_id;
+    const narrowed = await sourcesMarkup({ source_id: sourceId });
+
+    /** One line's words, with both instants masked — two renders, two clocks. */
+    const lineOf = (markup: string, gauge: string): string =>
+      cheerio
+        .load(markup)(`[data-window="${gauge}"]`)
+        .text()
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/g, "<instant>");
+
+    /**
+     * Is this surface's line there? Decided from `data-state` FIRST, and the
+     * answer is asserted against the rule rather than trusted: a read that
+     * answered states its window whether or not it came back with rows, and a
+     * read that did not answer states nothing at all.
+     */
+    const hasLine = (markup: string, surface: string, gauge: string): boolean => {
+      const kind = stateOf(markup, surface);
+      const drawn = cheerio.load(markup)(`[data-window="${gauge}"]`).length === 1;
+      expect(drawn, `${surface} is ${kind}, so its window line`).toBe(
+        kind === "ok" || kind === "empty",
+      );
+      return drawn;
+    };
+
+    // The scan that CARRIED the narrowing: its line names it, and the bare
+    // URL's does not — the two are not the same sentence over two reads. The
+    // narrowed scan may have come back with nothing; the line says the
+    // narrowing regardless, which is the rule this asserts.
+    const awaitingLines =
+      hasLine(bare, AWAITING_TREND, "awaiting_row") &&
+      hasLine(narrowed, AWAITING_TREND, "awaiting_row");
+    if (awaitingLines) {
+      expect(lineOf(narrowed, "awaiting_row")).toContain(sourceId);
+      expect(lineOf(bare, "awaiting_row")).not.toContain(sourceId);
+      expect(lineOf(narrowed, "awaiting_row")).not.toBe(lineOf(bare, "awaiting_row"));
+    }
+
+    // The scan that carried NONE names none, under both URLs: its window is
+    // the fleet's adjudications, and only the rows below it are narrowed.
+    const rejectionLines =
+      hasLine(bare, REJECTIONS, "rejections") && hasLine(narrowed, REJECTIONS, "rejections");
+    if (rejectionLines) {
+      expect(lineOf(narrowed, "rejections")).not.toContain(sourceId);
+      expect(lineOf(narrowed, "rejections")).toBe(lineOf(bare, "rejections"));
+    }
+  });
+
   it("draws no threshold line, because the dial is not readable from here", async () => {
     const markup = await sourcesMarkup();
     // Only an `ok` trend has columns to count; every other kind rendered a

@@ -1,10 +1,12 @@
 /**
- * The URLs `/sources` builds, and the facet it builds them from — campaign
- * admin-window/DEBT-0004.
+ * The URLs `/sources` builds, the facet it builds them from, and what that
+ * facet is CALLED in a sentence about the read it narrowed — campaign
+ * admin-window/DEBT-0004, admin-window/TASK-0073.
  *
  * A PURE DOMAIN LEAF (ARCHITECTURE.md §4 rule 7), the shape
  * `lib/records/routes.ts` already has for the record URL: it imports nothing,
- * reaches no database, and is the ONE place these three links are spelled.
+ * reaches no database, and is the ONE place these three links, and this
+ * surface's narrowing vocabulary, are spelled.
  * They live here rather than in `components/sources/**` because a URL is not
  * presentation — the page reads the facet off `searchParams` with the same
  * constant the chip row writes into a link, and a component may not own a
@@ -66,3 +68,57 @@ export function queueItemsHref(sourceId: string): string {
 export function runsHref(sourceName: string): string {
   return `/cycles?source=${encodeURIComponent(sourceName)}`;
 }
+
+/* ── what narrows a /sources read, and what to call it in a sentence ──────── */
+
+/**
+ * **THIS surface's facet table**: which facets of a `/sources` URL narrow a
+ * read, how to read each off the filter that read was given, and what the app
+ * calls it in a window line (campaign admin-window/TASK-0073, SPEC F15).
+ *
+ * The SHAPE is not this file's and is not retyped here: it is
+ * `UnchippedFacet<SourceNarrowing>` in `src/lib/url/narrowing.ts`, the leaf
+ * that owns URL meaning, together with the two functions over it
+ * (`unchippedNarrowings`, `unchippedPhrase`) and the composition
+ * (`narrowedTo`, `src/components/ui/window-line.tsx`). `/claims` says the same
+ * sentence from the same three (admin-window/BUG-0163, admin-window/TASK-0072),
+ * which is the whole reason this page's lines are wired and not written —
+ * a retyped spelling is the class that has taken five bugs on this family
+ * (LESSONS 5).
+ *
+ * **The shape is not IMPORTED either**, and that is this file's own rule
+ * rather than a gap: a pure domain leaf here imports nothing at all
+ * (ARCHITECTURE.md §4 rule 7; asserted by `tests/offline/sources/page.test.ts`,
+ * "keeps the URL leaf below lib/db"). The table is therefore checked against
+ * `UnchippedFacet<SourceNarrowing>` where it is USED — `scopeOf` in
+ * `src/app/sources/page.tsx` hands it to the generic `unchippedNarrowings`, so
+ * a facet added here with a missing word or a mistyped reader is a compile
+ * error at that call, not a narrowing the page applies in silence.
+ *
+ * **The words state what the READ CARRIED; they are not an attribution.** The
+ * phrase names the facet and the value, so it says what population the scan
+ * ran over ("Claims observed from source_id <id> …") — the non-attribution
+ * kind `lib/url/narrowing.ts` describes, unconditional on what came back. It
+ * is deliberately NOT `NARROWED_BY_FILTERS` ("matching these filters"), which
+ * points at the chip row this page renders above the registry and is therefore
+ * a claim about rows lost to that control — sayable only where that control's
+ * own EFFECT is established (architect ruling 2026-09-11,
+ * admin-window/BUG-0192).
+ *
+ * The facet is spelled as the parameter is spelled — one word for one thing,
+ * the same convention `CLAIMS_UNCHIPPED_FACETS` follows and the same word the
+ * chip row's own eyebrow carries — so an operator reading the line off the
+ * screen can write `?source_id=<value>` back into the address bar
+ * (LOOK_AND_FEEL bar 11). The value is the id VERBATIM as the query carried
+ * it, never the registry's name for it: the name is a second read that can
+ * refuse or come back blank, and the line would then name a narrowing its
+ * query did not make.
+ */
+export const SOURCES_NARROWING_FACETS = [
+  {
+    facet: SOURCE_FACET,
+    before: `from ${SOURCE_FACET} `,
+    after: "",
+    value: (filter: SourceNarrowing) => filter.source_id,
+  },
+];
