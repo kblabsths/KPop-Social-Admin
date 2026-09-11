@@ -11,10 +11,18 @@
  * disabled-gray — never blank, never `null`, `N/A` or `none`.
  */
 import { createElement, type ReactElement, type ReactNode } from "react";
-import { visibleContent } from "@/lib/verdict/decision";
+import { EM_DASH, isAbsentText } from "@/lib/verdict/decision";
 
-/** The one character that stands for "no value", everywhere in the app. */
-export const EM_DASH = "—";
+/**
+ * The app's ONE spelling of the em dash character, RE-EXPORTED from the pure
+ * leaf that declares it (`lib/verdict/decision.ts`, admin-window/BUG-0184).
+ *
+ * Declared there and not here because a leaf may not import this module (it
+ * imports React) and `lib/paging/machine.ts` needs the same character. Every
+ * `import { EM_DASH } from "@/lib/format"` call site keeps working: this is
+ * the same binding under the same name, not a second copy.
+ */
+export { EM_DASH };
 
 /** Anything a timestamp can arrive as from the database layer or a prop. */
 export type Timestamp = string | number | Date | null | undefined;
@@ -234,12 +242,20 @@ export function nullDash(): ReactElement {
  * `relativeAge(null).text` are strings, so they must be recognised here to be
  * coloured like a raw null.
  *
- * "Nothing visible" is `visibleContent` in `lib/verdict/decision.ts` — the
- * app's ONE definition of blank, shared with the two guards that decide
- * whether a note may be written at all (admin-window/BUG-0089). It removes the
- * ink-less characters ANYWHERE in the string rather than only at its ends,
- * which is what `trim()` did: a note of zero-width spaces used to reach this
- * branch as content and draw an empty cell with no dash — the rendering
+ * **The string arm is ONE CALL and holds no rule of its own**: it asks
+ * `isAbsentText` in `lib/verdict/decision.ts` (admin-window/BUG-0184), the
+ * leaf that owns the question "is this string one of the app's spellings of no
+ * value" — nothing visible in it, or nothing but the app's own dash. The rule
+ * used to be spelled out here, where `lib/paging/machine.ts` could not reach
+ * it and so asked only the first half of it; now there is one body, and the
+ * paging leaf and this helper cannot disagree.
+ *
+ * "Nothing visible" underneath it is `visibleContent` — the app's ONE
+ * definition of blank, shared with the two guards that decide whether a note
+ * may be written at all (admin-window/BUG-0089). It removes the ink-less
+ * characters ANYWHERE in the string rather than only at its ends, which is
+ * what `trim()` did: a note of zero-width spaces used to reach this branch as
+ * content and draw an empty cell with no dash — the rendering
  * admin-window/BUG-0085 was filed to remove. A string with any visible
  * character is untouched and renders as itself, dash included: `— —` is two
  * dashes, not an absence.
@@ -248,10 +264,7 @@ export function isAbsent(value: ReactNode): boolean {
   if (value === null || value === undefined) return true;
   if (typeof value === "boolean") return true;
   if (typeof value === "number") return !Number.isFinite(value);
-  if (typeof value === "string") {
-    const visible = visibleContent(value);
-    return visible === "" || visible === EM_DASH;
-  }
+  if (typeof value === "string") return isAbsentText(value);
   if (Array.isArray(value)) return value.length === 0;
   return false;
 }

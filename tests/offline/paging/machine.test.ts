@@ -1072,26 +1072,32 @@ describe("requestPage", () => {
 
     /**
      * THE APP'S OWN ABSENCE GLYPH IS NOT A REASON EITHER — admin-window/BUG-0176
-     * criterion 14(c), pinned by QA.
+     * criterion 14(c), filed as admin-window/BUG-0184 and fixed there.
      *
      * Criterion 14 names the app's ONE definition of blank by file and
      * function: `isAbsent` (`src/lib/format.ts`), under which a lone em dash IS
      * an absence — that is the whole reason the app has a dash primitive at all
-     * (LESSONS 7). `refuse()` asks `hasVisibleContent` instead, the leaf
-     * `isAbsent` delegates to and the only one a leaf may reach, so the dash
-     * counts as words and reaches the operator as the whole of an alert.
+     * (LESSONS 7). `refuse()` used to ask `hasVisibleContent`, the ink half of
+     * that definition and the only half a leaf could then reach, so the dash
+     * counted as words and reached the operator as the whole of an alert.
      *
      * MEASURED on a production build against staging (walk of 2026-09-11,
      * `{kind:"refused",reason:"\u2014"}` forced onto /claims' rows request):
      * the line read "\u2014 / Press it again to ask for the same rows." in
      * rgb(193,0,7), `role="alert"` — the exact shape criterion 14 exists to
      * kill, one input short.
+     *
+     * WHAT IT DOES NOW: `EM_DASH` and `isAbsentText` live in the pure leaf
+     * `src/lib/verdict/decision.ts` beside `visibleContent`, `isAbsent`'s
+     * string arm is one call to the same body, and `refuse()` asks
+     * `isAbsentText(reason)` — so the dash is substituted for the app's own
+     * clause exactly as `""` already was, and the two predicates cannot drift.
      */
-    // PINNED RED, admin-window/BUG-0184: `it.fails` is this runner's strict
-    // xfail — it passes only while the divergence stands, and the day
-    // `refuse()` words the dash it reddens as an XPASS and sends the reader
-    // here. The fix flips it back to `it` in the same diff.
-    it.fails("words a reason the app itself calls an absence [admin-window/BUG-0184]", async () => {
+    // Was `it.fails` while the divergence stood (admin-window/BUG-0184's pin,
+    // watched red against the landed code before the fix); it is an ordinary
+    // `it` now that the fix has landed, and it reddens if the dash is ever let
+    // through as words again.
+    it("words a reason the app itself calls an absence [admin-window/BUG-0184]", async () => {
       // Every spelling the APP's own predicate calls absent, asked of the app's
       // own predicate rather than retyped as a list of characters (LESSONS 4).
       for (const absentReason of ["", "   ", EM_DASH, ` ${EM_DASH} `]) {

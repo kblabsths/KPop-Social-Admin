@@ -41,7 +41,7 @@ import { isPageAnswer, isPageNotes, OFFSET_PARAM, type PageAnswer, type PageNote
 // took `trim()` out of `canonicalRecordId` for the same reason). A fresh
 // `trim()` here would be the fourth copy of a character class four M2 bugs are
 // already made of.
-import { hasVisibleContent } from "@/lib/verdict/decision";
+import { isAbsentText } from "@/lib/verdict/decision";
 
 /**
  * Why a press added no rows — FACTS, in two conditions that are not the same
@@ -300,8 +300,18 @@ const WORDLESS_REFUSAL = "this press was refused and nothing came back to say wh
  * reason-carrying arm passes through, so no arm has to remember it and the
  * component gains no branch. The author flips WITH the words: the clause is
  * this app's sentence, so a wordless `error` arm must not render it in the
- * machine's face. Blank is the app's ONE definition of blank, asked of
- * `hasVisibleContent` — never a fresh `trim()` and never a second predicate.
+ * machine's face.
+ *
+ * **"No words" is the app's ABSENCE question, asked of `isAbsentText`**
+ * (`lib/verdict/decision.ts`, admin-window/BUG-0184) — never a fresh `trim()`,
+ * never a retyped character and never a second predicate. It asks the WHOLE
+ * question rather than its first clause: a reason that puts no ink on the page
+ * is wordless, and so is a reason that is nothing but the app's own em dash,
+ * which is what `nullDash()` draws for a value nobody filled in. Asking
+ * `hasVisibleContent` here let a lone dash through as words, and the operator
+ * met a red alert that named no failure and still told them to press again.
+ * The predicate moved into the leaf so this module — which may import neither
+ * React nor `lib/format.ts` — can reach the same one body `isAbsent` uses.
  *
  * The not-provisioned condition does not come through here: after
  * admin-window/BUG-0176 it carries a fact and no reason at all, and its words
@@ -318,7 +328,7 @@ function refuse<Row>(
    */
   reasonFrom: ReasonAuthor,
 ): PageState<Row> {
-  const wordless = !hasVisibleContent(reason);
+  const wordless = isAbsentText(reason);
   return withRefusal(state, {
     condition: "broken",
     reason: wordless ? WORDLESS_REFUSAL : reason,

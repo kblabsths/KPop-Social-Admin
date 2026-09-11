@@ -52,8 +52,13 @@
  * will grow every time the ecosystem grows a refusal.
  */
 
-/** The em dash the fix sentences join their two clauses with. */
-const DASH = "—";
+/**
+ * The em dash the fix sentences join their two clauses with — IMPORTED, not
+ * retyped (admin-window/BUG-0184). This file held the app's second
+ * hand-spelling of the character; there is one now, in the pure leaf, and
+ * `tests/offline/verdict/decision.test.ts` keeps it at one.
+ */
+import { EM_DASH } from "@/lib/verdict/decision";
 
 /**
  * The refusal's own STRUCTURE — campaign admin-window/BUG-0103.
@@ -312,7 +317,7 @@ export const GENERAL_FIX = "Correct what the refusal names and save again.";
 /** The not-null arm's sentence, about the column the refusal named. */
 function cannotBeCleared(column: string | null): string {
   const subject = column === null ? "This column" : column;
-  return `${subject} cannot be cleared ${DASH} type a value into it.`;
+  return `${subject} cannot be cleared ${EM_DASH} type a value into it.`;
 }
 
 /** The coercion arm's sentence, about the form the named type is typed in. */
@@ -363,8 +368,8 @@ export function refusalFix(refusal: string): string {
   if (states(shape, SCHEMA_PROSE, [SCHEMA_CODE])) {
     const field = fieldOf(shape.named);
     return field === null
-      ? `The value did not match this field's registered pattern ${DASH} correct it to that form and save again.`
-      : `${field} did not match its registered pattern ${DASH} correct the value to that form and save again.`;
+      ? `The value did not match this field's registered pattern ${EM_DASH} correct it to that form and save again.`
+      : `${field} did not match its registered pattern ${EM_DASH} correct the value to that form and save again.`;
   }
 
   // LAST, and only for a message that opens with neither Postgres shape: a
@@ -376,7 +381,7 @@ export function refusalFix(refusal: string): string {
   // reached only by a refusal that is this app's own sentence and nothing
   // else — never by one merely carrying those words.
   if (NOT_PROVISIONED.test(shape.prose)) {
-    return `This edit needs a database object that has not arrived yet ${DASH} nothing you retype will land until it does.`;
+    return `This edit needs a database object that has not arrived yet ${EM_DASH} nothing you retype will land until it does.`;
   }
 
   return GENERAL_FIX;

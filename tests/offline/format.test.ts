@@ -19,6 +19,7 @@ import {
   relativeAge,
   UTC_ZONE,
 } from "@/lib/format";
+import { EM_DASH as LEAF_EM_DASH, isAbsentText } from "@/lib/verdict/decision";
 
 /**
  * The shared formatting helpers (campaign admin-window, TASK-0004).
@@ -288,6 +289,73 @@ describe("clamped", () => {
       expect(clamped(missing)).toEqual({ text: EM_DASH, title: "" });
       expect(isAbsent(clamped(missing).text)).toBe(true);
     }
+  });
+});
+
+/**
+ * The two absence predicates, over ONE table (admin-window/BUG-0184).
+ *
+ * `isAbsent` answers about a whole `ReactNode`; `isAbsentText` answers about a
+ * string, in the pure leaf `lib/verdict/decision.ts`, where a leaf that may not
+ * import React can reach it. They are the same rule and must stay so: the
+ * string arm of the first is one call to the second. Until this ticket the
+ * rule was written out twice — once here and once, as its first half only, in
+ * `refuse()` (`lib/paging/machine.ts`) — and a refusal whose reason was the
+ * app's own dash was announced to the operator as the whole of a red alert.
+ *
+ * Both directions are graded, because a predicate that swallowed everything
+ * would pass the absent half alone: the present row holds the machine's own
+ * words with a dash inside them, which must never be substituted away.
+ */
+describe("isAbsent and isAbsentText agree, string for string", () => {
+  const ABSENT = [
+    "",
+    "   ",
+    EM_DASH,
+    ` ${EM_DASH} `,
+    `\u200b${EM_DASH}\u200b`,
+    "\u00ad", // soft hyphen
+    "\u3164", // hangul filler
+  ];
+  const PRESENT = [
+    `${EM_DASH}\u200b${EM_DASH}`,
+    "\u2800", // braille pattern blank: an assigned printable character
+    "0",
+    "no value",
+    `column events.badcol ${EM_DASH} does not exist`,
+  ];
+
+  it("calls the same strings absent", () => {
+    for (const text of ABSENT) {
+      expect(isAbsentText(text), JSON.stringify(text)).toBe(true);
+      expect(isAbsent(text), JSON.stringify(text)).toBe(true);
+    }
+  });
+
+  it("calls the same strings present", () => {
+    for (const text of PRESENT) {
+      expect(isAbsentText(text), JSON.stringify(text)).toBe(false);
+      expect(isAbsent(text), JSON.stringify(text)).toBe(false);
+    }
+  });
+
+  it("is ONE body, so no input can part them", () => {
+    // The structural half: the table above is a sample, and the point of the
+    // fold is that there is nothing left to sample. Every fixture in the file
+    // goes through both, and the two are asserted equal rather than each
+    // against a hand-written expectation.
+    for (const text of [...ABSENT, ...PRESENT, "\ufeff", "\u00a0 \u2060", "false", "-", "  x  "]) {
+      expect(isAbsent(text), JSON.stringify(text)).toBe(isAbsentText(text));
+    }
+  });
+
+  it("re-exports the leaf's binding rather than declaring a second dash", () => {
+    // What keeps the fifteen `import { EM_DASH } from "@/lib/format"` call
+    // sites honest: it is the same value under the same name, declared once in
+    // the leaf (`tests/offline/verdict/decision.test.ts` holds the structural
+    // guard that there is only one spelling in src/).
+    expect(EM_DASH).toBe(LEAF_EM_DASH);
+    expect(EM_DASH).toBe(String.fromCodePoint(0x2014));
   });
 });
 
