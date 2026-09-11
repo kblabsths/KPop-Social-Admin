@@ -1,0 +1,42 @@
+{
+ "id": "BUG-0198",
+ "created": "2026-09-11T16:18:39Z",
+ "green": true,
+ "git_head": "cd8861c7a5472aeb461b6eeb6b19ad9fc3fe5236",
+ "scope": [
+  "src/components/ui/paging.tsx",
+  "src/components/claims/paged-claim-list.tsx",
+  "src/components/browse/paged-browse-table.tsx",
+  "tests/offline/ui/paging.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "4b681a45f5337e1352105fba0ee7c7b2264538bb6192d3a9563ec03d0ae1d359",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "riments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.1s\n  Running TypeScript ...\n  Finished TypeScript in 6.0s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 147ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/browse/rows\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-68682/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:68741) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "! grep -qF \"Narrow the view and page the smaller set.\" src/components/ui/paging.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/ui/paging.test.ts tests/offline/ui/primitives.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-68682\n\n \u2713 |offline| tests/offline/ui/primitives.test.ts (116 tests) 131ms\n \u2713 |offline| tests/offline/ui/paging.test.ts (72 tests) 115ms\n\n Test Files  2 passed (2)\n      Tests  188 passed (188)\n   Start at  09:18:32\n   Duration  676ms (transform 274ms, setup 0ms, collect 646ms, tests 246ms, environment 0ms, prepare 104ms)\n\n(node:68766) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/browse.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-68682\n\n \u2713 |live| tests/live/browse.live.test.ts (6 tests) 5665ms\n   \u2713 Browse's surface hook against staging > names the events surface once, whatever state it rendered in  1258ms\n   \u2713 Browse against staging > renders the window newest-first by arrival, exactly as the database orders it  703ms\n   \u2713 Browse against staging > shows no more than the window, and every row the database has when there are fewer  761ms\n   \u2713 Browse against staging > renders the first page of rows with the values the database holds  699ms\n   \u2713 Browse against staging > names the same sources behind the newest row as the provenance join does  620ms\n   \u2713 paging past the first window, against staging > reaches an event beyond the first window's last row, in the order the database holds  1624ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  09:18:33\n   Duration  6.25s (transform 174ms, setup 28ms, collect 320ms, tests 5.67s, environment 0ms, prepare 47ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/browse.live.test.ts\n(node:68810) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
