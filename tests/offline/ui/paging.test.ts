@@ -4,6 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as barrel from "@/components/ui";
 import { EM_DASH } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { Identifier } from "@/components/ui/identifier";
+import { NotProvisioned } from "@/components/ui/not-provisioned";
+import { ARRIVES_WITH } from "@/components/ui/state-of";
 import {
   ANSWERED_BY_SOMETHING_ELSE,
   PageMore,
@@ -22,7 +25,13 @@ import {
   pageBound,
   type PageAnswer,
 } from "@/lib/paging/bounds";
-import { initialPage, pageUrl, requestPage, type PageState } from "@/lib/paging/machine";
+import {
+  initialPage,
+  pageUrl,
+  requestPage,
+  type PageRefusal,
+  type PageState,
+} from "@/lib/paging/machine";
 
 import { codeLinesIn, sourceFiles, sourceText } from "../source-tree";
 import {
@@ -67,6 +76,19 @@ const more = (over: Partial<PageState<Row>> = {}, readsAgree = true): string =>
   render(
     h(PageMore, { state: state(over), holds: HOLDS, size: SIZE, readsAgree, onPress: () => {} }),
   );
+
+/**
+ * The BROKEN arm's facts, with the condition asserted on the way through: the
+ * cases that read `reason`, `reasonFrom` or `object` are about a press this
+ * app could not complete, and the absent arm carries none of those fields
+ * (admin-window/BUG-0176).
+ */
+type BrokenRefusal = Extract<PageRefusal, { condition: "broken" }>;
+function broken(refusal: PageRefusal | null | undefined): BrokenRefusal {
+  expect(refusal, "there is no refusal to read").toBeTruthy();
+  expect((refusal as PageRefusal).condition).toBe("broken");
+  return refusal as BrokenRefusal;
+}
 
 /** A page of rows, as a stub would serve it. A FULL window is `pageOf(SIZE)`. */
 const pageOf = (count: number): Row[] => Array.from({ length: count }, (_, i) => ({ id: `r${i}` }));
@@ -203,6 +225,7 @@ describe("PageMore draws its five states from props", () => {
   it("a refusal: the line names its object and the control STAYS, because a refusal is retryable", () => {
     const html = more({
       refusal: {
+        condition: "broken",
         reason: 'no relation "pending_claims" exists',
         object: "pending_claims",
         reasonFrom: "the machine",
@@ -224,6 +247,7 @@ describe("PageMore draws its five states from props", () => {
     // refused is the one this state already holds.
     const html = more({
       refusal: {
+        condition: "broken",
         reason: "that bound is not one this view serves",
         object: null,
         reasonFrom: "this app",
@@ -237,7 +261,7 @@ describe("PageMore draws its five states from props", () => {
   it("a refusal on an exhausted set draws the line, and still no control", () => {
     const html = more({
       status: "exhausted",
-      refusal: { reason: "the read failed", object: "pending_claims", reasonFrom: "the machine" },
+      refusal: { condition: "broken" as const, reason: "the read failed", object: "pending_claims", reasonFrom: "the machine" },
     });
     expect(html).toContain("data-paging-refusal");
     expect(controls(html)).toBe(0);
@@ -251,7 +275,7 @@ describe("PageMore draws its five states from props", () => {
     // instruction to press nothing.
     const html = more({
       held: MAX_PAGE_OFFSET + SIZE,
-      refusal: { reason: "the read failed", object: "pending_claims", reasonFrom: "the machine" },
+      refusal: { condition: "broken" as const, reason: "the read failed", object: "pending_claims", reasonFrom: "the machine" },
     });
     expect(html).toContain("data-paging-refusal");
     expect(html).toContain('data-paging="limit"');
@@ -289,6 +313,7 @@ describe("PageMore draws its five states from props", () => {
     for (const over of [
       {
         refusal: {
+          condition: "broken" as const,
           reason: "the read failed",
           object: "pending_claims",
           reasonFrom: "the machine" as const,
@@ -303,6 +328,151 @@ describe("PageMore draws its five states from props", () => {
   });
 });
 
+/**
+ * A PAGE ANSWER FOR AN OBJECT THIS DATABASE DOES NOT HAVE — admin-window/
+ * BUG-0176.
+ *
+ * MEASURED defect, on a production build against staging: forcing the route to
+ * answer `{kind:"not_provisioned", missing:"pending_claims"}` drew, in the
+ * broken red, `pending_claims — pending_claims is not provisioned    Press it
+ * again to ask for the same rows.` Four rules on one line: red for something
+ * unavailable rather than broken, the object said twice, no statement of what
+ * fills it, and a fix that cannot work — pressing a button does not provision
+ * a table. Ten pixels away on the same page, the paged LEG note for the same
+ * condition already drew the app's own gray clause.
+ *
+ * The arm this fires on is rare, deliberate and BUILT: the backing object
+ * disappears between the first screen and a press (the first screen would have
+ * rendered `NotProvisioned` and drawn no control at all).
+ */
+describe("a page answer for an object this database does not have", () => {
+  const MISSING = "pending_claims";
+  const absent = (over: Partial<PageState<Row>> = {}): string =>
+    more({ refusal: { condition: "not provisioned", missing: MISSING }, ...over });
+
+  /** The card the app draws for the SAME condition where a card can stand. */
+  const card = (missing = MISSING): string =>
+    render(h(NotProvisioned, { missing, arrivesWith: ARRIVES_WITH }));
+
+  /** The refusal line itself, and what it reads as. */
+  const line = (html: string): cheerio.Cheerio<never> => {
+    const found = cheerio.load(html)("[data-paging-refusal]");
+    expect(found).toHaveLength(1);
+    return found as unknown as cheerio.Cheerio<never>;
+  };
+
+  it("a missing object is not painted as breakage, and offers no fix a press cannot take", () => {
+    const html = absent();
+    // GRAY, FROM THE CARD'S OWN TOKENS — derived by rendering the card rather
+    // than pinned as literals, so re-inking state 3 moves both together
+    // (LESSONS 5). "Red means broken, never unavailable."
+    for (const token of classesOf(card()).filter((c) => c.startsWith("text-ink"))) {
+      expect(classesOf(html), token).toContain(token);
+    }
+    expect(classesOf(html)).not.toContain("text-broken");
+
+    // NO WISHFUL FIX: a press does not provision a table and neither does a
+    // reload, so this arm draws neither instruction. The half of copy bar 3
+    // that says what to do is the clause naming what creates it.
+    expect(html).not.toMatch(/[Pp]ress it again/);
+    expect(html).not.toMatch(/[Rr]eload/);
+
+    // …while the arms a retry CAN clear keep their red and keep their fix, so
+    // neither half of this passes by painting everything one way (LESSONS 8).
+    const brokenArm = more({
+      refusal: {
+        condition: "broken",
+        reason: "canceling statement due to statement timeout",
+        object: "pending_claims",
+        reasonFrom: "the machine",
+      },
+    });
+    expect(classesOf(brokenArm)).toContain("text-broken");
+    expect(brokenArm).toMatch(/[Pp]ress it again/);
+  });
+
+  it("says what fills it, in the app's ONE spelling of that fact", () => {
+    // The clause is not retyped here either: what the CARD renders for this
+    // object is what the line must read, to the character (copy bar 4,
+    // LESSONS 5, admin-window/DEBT-0003's ARRIVES_WITH ×8). Both sides are
+    // read AS THE OPERATOR READS THEM — cheerio decodes the entities React
+    // writes, so an apostrophe does not hide a difference.
+    expect(line(absent()).text()).toBe(cheerio.load(card())("p").text());
+    expect(line(absent()).text()).toContain(ARRIVES_WITH);
+  });
+
+  it("the missing object stands in its own isolated box and in no sentence", () => {
+    // `missing` is text this app did not author — for a column-absent code it
+    // is mined out of the database's own message — so it reaches the line
+    // through the app's one identifier spelling and nowhere else
+    // (ARCHITECTURE §7, common violations row 15). A helper returning a
+    // formatted string could not carry the box, which is why the shared clause
+    // returns nodes.
+    for (const missing of [
+      MISSING,
+      "review_items.example for reference 8f3c1",
+      "review_items.<!DOCTYPE html><html>x</html>",
+      "review_items.\u202ecolumn",
+    ]) {
+      const html = more({ refusal: { condition: "not provisioned", missing } });
+      const drawn = line(html);
+      // EXACTLY ONE isolated box, holding the object verbatim and nothing else.
+      const boxes = drawn.find("[dir='ltr']");
+      expect(boxes, missing).toHaveLength(1);
+      expect(boxes.text(), missing).toBe(missing);
+      // …and it is the app's own `<Identifier>`, derived from the primitive so
+      // a hand-rolled span with the same face cannot pass.
+      expect(html, missing).toContain(render(h(Identifier, null, missing)));
+      // ONCE on the line: the object appears in the box and in no sentence.
+      expect(drawn.text().split(missing), missing).toHaveLength(2);
+      // The app's own words are not isolated — they are not foreign.
+      expect(drawn.text(), missing).toContain(ARRIVES_WITH);
+    }
+  });
+
+  it("changes nothing else about the line or the control", () => {
+    const html = absent();
+    // Same marker, same role, still above the control — and the control is
+    // still there, because a refusal removes none (M3 EC5).
+    expect(html).toContain("data-paging-refusal");
+    expect(html).toContain('role="alert"');
+    expect(html.indexOf("data-paging-refusal")).toBeLessThan(html.indexOf("<button"));
+    expect(controls(html)).toBe(1);
+    expect(html).toContain('data-paging="more"');
+    // It is not the card: a refusal about ONE further window is not a surface
+    // whose read failed, and a live oracle grades those two by their hooks
+    // (admin-window/TASK-0032).
+    expect(html).not.toContain('data-state="not_provisioned"');
+    // And no zero that reads like data.
+    expect(html).not.toContain(">0<");
+  });
+
+  it("an alert that names no failure never reaches the operator", async () => {
+    // admin-window/BUG-0176 criterion 14, at the surface: `{kind:"refused",
+    // reason:""}` used to render an empty `type-body` span followed by "Press
+    // it again to ask for the same rows." — copy bar 3 inverted, inside a
+    // `role="alert"` that announces it.
+    const next = await requestPage<Row>(
+      { rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
+      {
+        route: PAGE_ROUTES.claims,
+        params: "",
+        size: SIZE,
+        fetchJson: async () => ({ kind: "refused", reason: "", bound: "75" }),
+      },
+    );
+    const html = render(
+      h(PageMore, { state: next, holds: HOLDS, size: SIZE, readsAgree: true, onPress: () => {} }),
+    );
+    const drawn = line(html);
+    const words = drawn.text().trim().split(/\s+/);
+    expect(words.length).toBeGreaterThan(8);
+    // What failed comes BEFORE what to do about it (copy bar 3).
+    expect(drawn.text().indexOf("Press it again")).toBeGreaterThan(0);
+    expect(drawn.text()).toMatch(/refus/i);
+  });
+});
+
 describe("the affordance's look", () => {
   const SAMPLES: { name: string; html: string }[] = [
     { name: "idle", html: more() },
@@ -313,6 +483,7 @@ describe("the affordance's look", () => {
       name: "refused",
       html: more({
         refusal: {
+          condition: "broken",
           reason: "no relation exists",
           object: "pending_claims",
           reasonFrom: "the machine",
@@ -323,7 +494,7 @@ describe("the affordance's look", () => {
       name: "refused/exhausted",
       html: more({
         status: "exhausted",
-        refusal: { reason: "no relation exists", object: null, reasonFrom: "the machine" },
+        refusal: { condition: "broken" as const, reason: "no relation exists", object: null, reasonFrom: "the machine" },
       }),
     },
     {
@@ -332,6 +503,7 @@ describe("the affordance's look", () => {
       name: "refused/app-authored",
       html: more({
         refusal: {
+          condition: "broken",
           reason: ANSWERED_BY_SOMETHING_ELSE,
           object: PAGE_ROUTES.claims,
           reasonFrom: "this app",
@@ -339,9 +511,16 @@ describe("the affordance's look", () => {
       }),
     },
     {
+      // The one arm that is not breakage: its ink, its words and its lack of
+      // an instruction are scanned by the same guards (admin-window/BUG-0176).
+      name: "not provisioned",
+      html: more({ refusal: { condition: "not provisioned", missing: "pending_claims" } }),
+    },
+    {
       name: "refused/app-authored, nothing to name",
       html: more({
         refusal: {
+          condition: "broken",
           reason: "a bound of 61 is not a multiple of the 50-row window",
           object: null,
           reasonFrom: "this app",
@@ -464,7 +643,7 @@ describe("fetchJson — the one request, and what it may reject with", () => {
       { rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
       { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
     );
-    expect(next.refusal?.reason).toBe(answer.reason);
+    expect(broken(next.refusal).reason).toBe(answer.reason);
     expect(next.rows.map((row) => row.id)).toEqual(["a"]);
   });
 
@@ -499,7 +678,7 @@ describe("fetchJson — the one request, and what it may reject with", () => {
         { rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
         { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
       );
-      expect(next.refusal?.reason, name).toBe(said);
+      expect(broken(next.refusal).reason, name).toBe(said);
     }
   });
 
@@ -599,8 +778,8 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
         { rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
         { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
       );
-      expect(next.refusal?.reason, name).toBe(ANSWERED_BY_SOMETHING_ELSE);
-      expect(next.refusal?.object, name).toBe(PAGE_ROUTES.claims);
+      expect(broken(next.refusal).reason, name).toBe(ANSWERED_BY_SOMETHING_ELSE);
+      expect(broken(next.refusal).object, name).toBe(PAGE_ROUTES.claims);
       // A refusal never half-fills the list, whatever it was refused for.
       expect(next.rows.map((row) => row.id), name).toEqual(["a"]);
       expect(next.held, name).toBe(SIZE);
@@ -654,8 +833,8 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
       { rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
       { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
     );
-    expect(next.refusal?.reason).toBe(UNREADABLE_ANSWER);
-    expect(next.refusal?.object).toBe(PAGE_ROUTES.claims);
+    expect(broken(next.refusal).reason).toBe(UNREADABLE_ANSWER);
+    expect(broken(next.refusal).object).toBe(PAGE_ROUTES.claims);
     expect(next.rows.map((row) => row.id)).toEqual(["a"]);
   });
 
@@ -857,8 +1036,26 @@ describe("usePageRows binds the driver to a press", () => {
     // used to grow by one, which is the very step that walked `held` off the
     // grid `pageBound` enforces. What this case grades is unchanged — the
     // second press asks for a bound the first press produced, never the same
-    // one twice — and the answer's own `offset` still never reaches the state.
-    const urls = answering({ kind: "ok", rows: pageOf(SIZE), offset: 999, exhausted: false });
+    // one twice.
+    //
+    // The stub ECHOES the bound it was asked for, as both of this app's routes
+    // do (`pageBound`'s own answer): since admin-window/BUG-0176 the driver
+    // grades an answer's declared `offset` against the bound the press
+    // carried, so a fixture declaring a constant `999` would be measuring the
+    // refusal rather than the second press. What the answer's `offset` still
+    // never does is reach the state — `held` grows by the rows that arrived.
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      urls.push(url);
+      return Promise.resolve(
+        Response.json({
+          kind: "ok",
+          rows: pageOf(SIZE),
+          offset: Number(boundOf(url)),
+          exhausted: false,
+        }),
+      );
+    });
     const { press } = probe(initialPage<Row>(SIZE, true));
     press();
     await settle();
@@ -1061,6 +1258,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
         {
           ...initialPage<Row>(SIZE, true),
           refusal: {
+            condition: "broken",
             reason: "the view is not provisioned",
             object: "pending_claims",
             reasonFrom: "this app",
@@ -1648,6 +1846,7 @@ describe("the refusal line says who wrote the words", () => {
     const asMachine = faces(
       more({
         refusal: {
+          condition: "broken",
           reason: ANSWERED_BY_SOMETHING_ELSE,
           object: "pending_claims",
           reasonFrom: "the machine",
@@ -1660,6 +1859,7 @@ describe("the refusal line says who wrote the words", () => {
     const asApp = faces(
       more({
         refusal: {
+          condition: "broken",
           reason: "canceling statement due to statement timeout",
           object: "pending_claims",
           reasonFrom: "this app",
@@ -1691,7 +1891,7 @@ describe("the refusal line says who wrote the words", () => {
     // Nothing to say: fetch rejects carrying a value with no message at all.
     vi.stubGlobal("fetch", () => Promise.reject(undefined));
     const wordless = await requestPage<Row>(BEFORE, DEPS);
-    expect(wordless.refusal?.reason).toBe(LAST_RESORT);
+    expect(broken(wordless.refusal).reason).toBe(LAST_RESORT);
     const ours = faces(
       render(h(PageMore, {
         state: wordless,
@@ -1711,14 +1911,14 @@ describe("the refusal line says who wrote the words", () => {
     // words are the app's either way, so the face is too.
     vi.stubGlobal("fetch", () => Promise.reject({ code: "ECONNRESET" }));
     const objectThrown = await requestPage<Row>(BEFORE, DEPS);
-    expect(objectThrown.refusal?.reason).toBe(LAST_RESORT);
-    expect(objectThrown.refusal?.reasonFrom).toBe("this app");
+    expect(broken(objectThrown.refusal).reason).toBe(LAST_RESORT);
+    expect(broken(objectThrown.refusal).reasonFrom).toBe("this app");
 
     // The discriminator: the transport's OWN words, which this app did not
     // write, still read as the machine on the very same line.
     vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
     const transport = await requestPage<Row>(BEFORE, DEPS);
-    expect(transport.refusal?.reason).toBe("Failed to fetch");
+    expect(broken(transport.refusal).reason).toBe("Failed to fetch");
     const theirs = faces(
       render(h(PageMore, {
         state: transport,

@@ -27,50 +27,88 @@
  * already loading issues no request at all.
  */
 
-// ONE line, deliberately: the leaf-closure guard in
+// ONE LINE EACH, deliberately: the leaf-closure guard in
 // `tests/offline/db/layering.test.ts` reads imports LINE BY LINE, so a
 // multi-line import's opening brace reads as an import naming no module at all
 // and the leaf is reported as reaching outside itself.
 import { isPageAnswer, isPageNotes, OFFSET_PARAM, type PageAnswer, type PageNote, type PageNotes } from "./bounds";
+// The app's ONE definition of blank, ASKED rather than retyped (common
+// violations row 15, admin-window/BUG-0176). `isAbsent` (`src/lib/format.ts`)
+// is the same question one layer up and cannot be reached from a leaf —
+// `format.ts` imports React, so importing it here would fail rule 7's closure
+// (`tests/offline/db/layering.test.ts`) — and this is the very predicate
+// `isAbsent` asks of a string, in the leaf that owns it (admin-window/BUG-0146
+// took `trim()` out of `canonicalRecordId` for the same reason). A fresh
+// `trim()` here would be the fourth copy of a character class four M2 bugs are
+// already made of.
+import { hasVisibleContent } from "@/lib/verdict/decision";
 
 /**
- * Why a press added no rows, and WHICH object it was about.
+ * Why a press added no rows — FACTS, in two conditions that are not the same
+ * kind of thing (admin-window/BUG-0176).
  *
- * `object` is the name the answer itself named — `missing` for a
- * not-provisioned read, `reading` for a failed one, and the ROUTE when the
- * request or the body never got as far as an answer. It is `null` for a bound
- * refusal alone: the bound the server refused is the one this state sent
- * (`held`), so there is no third object to name, and the raw bound is never
- * pasted into a sentence this app wrote (common violations rows 15 and 20).
+ * **`"broken"`** is a press THIS APP could not complete: the four red arms and
+ * the route's own bound refusal. It carries the words, who wrote them, and
+ * WHICH object they were about — `reading` for a failed read, the ROUTE when
+ * the request or the body never got as far as an answer. `object` is `null`
+ * for a bound refusal alone: the bound the server refused is the one this
+ * state sent (`held`), so there is no third object to name, and the raw bound
+ * is never pasted into a sentence this app wrote (common violations rows 15
+ * and 20).
+ *
+ * **`"not provisioned"`** is the backing object being absent from this
+ * database — an absence, never a breakage (LOOK_AND_FEEL, Palette: red means
+ * broken, never unavailable). It carries the missing NAME and no prose at all:
+ * this is a lib module and may not import a component (§4, one-way
+ * dependency), so it cannot author the app's state-3 sentence, and a component
+ * that owns that sentence is the only one that should. Composing a reason here
+ * is also how the object came to be said twice — `pending_claims —
+ * pending_claims …` — so a reason that does not name the object cannot repeat
+ * it (admin-window/BUG-0176 criterion 2, structurally).
  */
-export interface PageRefusal {
-  reason: string;
-  object: string | null;
-  /**
-   * Who wrote `reason` — the one question the FACE answers
-   * (admin-window/BUG-0175).
-   *
-   *  `"this app"`    → prose this app composed; renders in the `body` sans
-   *                    step, the face this app uses for its own words.
-   *  `"the machine"` → words this app did not write — the answer's own
-   *                    `message`, or whatever a failed fetch threw; renders in
-   *                    the `data` mono step, where the operator reads it as the
-   *                    machine talking.
-   *
-   * MEASURED defect: all five arms rendered in `type-data`, so
-   * `canceling statement due to statement timeout` (Postgres said it) and
-   * `the page request answered something this app cannot read` (we said it)
-   * were the same 11px mono red run, and the operator lost the one signal the
-   * type split exists to give.
-   *
-   * It is SET HERE, at `refuse()` — the single construction point every arm
-   * passes through — and the component only reads it. It is never recovered by
-   * comparing `reason` to one of this module's constants: that is a rule
-   * retyped as data (LESSONS 4 and 5), and it would silently flip a face the
-   * day one of those sentences is reworded.
-   */
-  reasonFrom: ReasonAuthor;
-}
+export type PageRefusal =
+  | {
+      /** A press this app could not complete — the four red arms. */
+      condition: "broken";
+      reason: string;
+      /**
+       * Who wrote `reason` — the one question the FACE answers
+       * (admin-window/BUG-0175).
+       *
+       *  `"this app"`    → prose this app composed; renders in the `body` sans
+       *                    step, the face this app uses for its own words.
+       *  `"the machine"` → words this app did not write — the answer's own
+       *                    `message`, or whatever a failed fetch threw; renders
+       *                    in the `data` mono step, where the operator reads it
+       *                    as the machine talking.
+       *
+       * MEASURED defect: all five arms rendered in `type-data`, so
+       * `canceling statement due to statement timeout` (Postgres said it) and
+       * `the page request answered something this app cannot read` (we said it)
+       * were the same 11px mono red run, and the operator lost the one signal
+       * the type split exists to give.
+       *
+       * It is SET at `refuse()` — the single construction point every arm of
+       * this condition passes through — and the component only reads it. It is
+       * never recovered by comparing `reason` to one of this module's
+       * constants: that is a rule retyped as data (LESSONS 4 and 5), and it
+       * would silently flip a face the day one of those sentences is reworded.
+       */
+      reasonFrom: ReasonAuthor;
+      object: string | null;
+    }
+  | {
+      /** The backing object is not in this database — absence, not breakage. */
+      condition: "not provisioned";
+      /**
+       * The object the ANSWER named, carried verbatim and rendered as an
+       * isolated identifier by the component (admin-window/BUG-0176 criterion
+       * 13). It is not always the name `tables.ts` gave the query — a
+       * column-absent code mines the column out of the DATABASE's own message —
+       * so nothing here or on the line may inline it into prose.
+       */
+      missing: string;
+    };
 
 /** The two answers to "who wrote this refusal's reason". */
 export type ReasonAuthor = "this app" | "the machine";
@@ -199,9 +237,10 @@ export interface PageDeps {
  * `URLSearchParams`, not by concatenation, because appending is not overriding
  * (admin-window/BUG-0166): `?offset=99&offset=4` is a legal query whose FIRST
  * occurrence is what a handler reading `searchParams.get()` gets — the stale
- * 99 — so the server would serve a window this press never asked for, which
- * `requestPage` cannot notice because it deliberately never reads the answer's
- * own `offset` back into state.
+ * 99 — so the server would serve a window this press never asked for. Since
+ * admin-window/BUG-0176 `requestPage` refuses such an answer out loud rather
+ * than appending it (rule 7), which is a louder failure and not a fix: a
+ * surface whose every press is refused still never advances.
  *
  * `delete` then `append`, rather than `set`, so the bound is still written
  * LAST: `set` keeps a stale parameter's original position. The surface's own
@@ -224,6 +263,50 @@ export function pageUrl(deps: PageDeps, offset: number): string {
  * account of columns that are STILL unfilled on screen, and a press that added
  * nothing cannot have filled them.
  */
+function withRefusal<Row>(state: PageState<Row>, refusal: PageRefusal): PageState<Row> {
+  return {
+    rows: state.rows,
+    held: state.held,
+    status: "idle",
+    refusal,
+    notes: state.notes,
+  };
+}
+
+/**
+ * What the line says when the refusal that reached it carried NO WORDS —
+ * admin-window/BUG-0176, criterion 14.
+ *
+ * MEASURED: `{kind:"refused", reason:""}` reached the operator as an empty
+ * `type-body` span followed by "Press it again to ask for the same rows." —
+ * copy bar 3 inverted, what-to-do with nothing that failed, inside a
+ * `role="alert"` that announces it.
+ *
+ * It is the PAGING layer's own clause, about a PRESS. `lib/db/result.ts` has a
+ * twin for a READ; it is module-private there, it is about a different event,
+ * and one identifier meaning two things is common violations row 18 — so
+ * neither that constant nor its sentence appears here. Like it, this says only
+ * what the app knows: nothing is attributed to the database, no number is
+ * invented, and no HTTP status is named (nothing in this module can see one).
+ */
+const WORDLESS_REFUSAL = "this press was refused and nothing came back to say why";
+
+/**
+ * A refusal that adds no rows, for the BROKEN condition — the words, their
+ * author, and the object they were about.
+ *
+ * **A refusal with no words is worded by this app** (admin-window/BUG-0176).
+ * The substitution is here, at the single construction point every
+ * reason-carrying arm passes through, so no arm has to remember it and the
+ * component gains no branch. The author flips WITH the words: the clause is
+ * this app's sentence, so a wordless `error` arm must not render it in the
+ * machine's face. Blank is the app's ONE definition of blank, asked of
+ * `hasVisibleContent` — never a fresh `trim()` and never a second predicate.
+ *
+ * The not-provisioned condition does not come through here: after
+ * admin-window/BUG-0176 it carries a fact and no reason at all, and its words
+ * are the component's.
+ */
 function refuse<Row>(
   state: PageState<Row>,
   reason: string,
@@ -235,13 +318,26 @@ function refuse<Row>(
    */
   reasonFrom: ReasonAuthor,
 ): PageState<Row> {
-  return {
-    rows: state.rows,
-    held: state.held,
-    status: "idle",
-    refusal: { reason, object, reasonFrom },
-    notes: state.notes,
-  };
+  const wordless = !hasVisibleContent(reason);
+  return withRefusal(state, {
+    condition: "broken",
+    reason: wordless ? WORDLESS_REFUSAL : reason,
+    reasonFrom: wordless ? "this app" : reasonFrom,
+    object,
+  });
+}
+
+/**
+ * The absent-object refusal: the NAME the answer gave, and nothing else.
+ *
+ * No sentence is composed around it — see `PageRefusal` above. The component
+ * renders the app's one spelling of state 3 (`NotProvisionedClause`,
+ * `src/components/ui/not-provisioned.tsx`), in gray, with the object in its own
+ * isolated identifier box and no instruction to press anything: a press does
+ * not provision a table (admin-window/BUG-0176).
+ */
+function refuseAbsent<Row>(state: PageState<Row>, missing: string): PageState<Row> {
+  return withRefusal(state, { condition: "not provisioned", missing });
 }
 
 /**
@@ -288,6 +384,17 @@ const OVERLONG_PAGE =
   "the page arrived with more rows than this view's window, so it is not the page this view asked for";
 const WINDOWLESS =
   "this view has no window size to read a page by, so no page can be honoured";
+/**
+ * The page answered a DIFFERENT point in the set from the one this press asked
+ * for — admin-window/BUG-0176, criterion 11 (QA's residual off BUG-0174).
+ *
+ * Same class as its two neighbours and carrying no figure for the same reason:
+ * not the bound this press sent, and decisively not the one the answer
+ * declared (common violations row 15 — a figure this app did not compute is
+ * not quoted back as ours).
+ */
+const UNASKED_PAGE =
+  "the page arrived for a different point in the set than this press asked for, so it is not the page this view asked for";
 
 /**
  * A page whose legs reported in a vocabulary this app does not know — campaign
@@ -359,14 +466,19 @@ function refusalFor(thrown: unknown): { reason: string; reasonFrom: ReasonAuthor
  *     were. A page whose provenance leg refused must not reach the operator as
  *     rows with a silently empty column, and no surface can render what the
  *     state does not carry.
+ *  7. **A page this press did not ask for is refused** (admin-window/BUG-0176).
+ *     Every `ok` answer declares the bound it was served for; one that is not
+ *     the bound this press carried is refused on rule 4's terms, before the
+ *     rows, the exhaustion arm and the notes are read at all.
  *
- * The answer's own `offset` is not read into the state: `held` grows by the
- * rows that actually arrived, so a server echoing some other bound can never
- * make this surface claim rows it does not hold. Under rule 2 those rows are
- * exactly one window on every continuing page, which is what keeps the
- * invariant true: after any press, either `pageBound(String(held), deps.size)`
- * is `ok` or the status is `exhausted` — `held` leaves the bound grid only on
- * the final page.
+ * The answer's own `offset` is read as a GRADE and never as a value (rule 7):
+ * it decides whether this is the page this press asked for, and `held` still
+ * grows by the rows that actually arrived, so a server echoing some other
+ * bound can never make this surface claim rows it does not hold. Under rule 2
+ * those rows are exactly one window on every continuing page, which is what
+ * keeps the invariant true: after any press, either
+ * `pageBound(String(held), deps.size)` is `ok` or the status is `exhausted` —
+ * `held` leaves the bound grid only on the final page.
  */
 export async function requestPage<Row>(
   state: PageState<Row>,
@@ -403,6 +515,26 @@ export async function requestPage<Row>(
       // nobody can check.
       if (!Number.isInteger(deps.size) || deps.size <= 0) {
         return refuse(state, WINDOWLESS, deps.route, "this app");
+      }
+
+      // THE PAGE THIS PRESS ASKED FOR, OR NO PAGE AT ALL — admin-window/BUG-0176.
+      //
+      // `requestPage` asks for `state.held` and every `ok` answer DECLARES the
+      // bound it was served for (`isPageAnswer` requires the field), so the two
+      // are compared. Read HERE — before the empty-page arm and before the
+      // notes — so a page this press did not ask for reaches the state by no
+      // path at all: not as rows, not as exhaustion, not as a leg's note. A
+      // full window of offset-0 rows answered to a press carrying 50 used to be
+      // appended in silence, so the list held one window twice, while an
+      // OVER-LONG page from that same answer was refused out loud.
+      //
+      // Refused on exactly OVERLONG_PAGE's terms, and reachable only if a route
+      // misanswers: both of this app's own routes echo `pageBound`'s own
+      // `offset` (`src/app/api/admin/claims/rows/route.ts`,
+      // `src/app/api/admin/browse/rows/route.ts`), so nothing this app serves
+      // is refused by this line.
+      if (answer.offset !== state.held) {
+        return refuse(state, UNASKED_PAGE, deps.route, "this app");
       }
 
       // An empty page is the end of the set, and is the ONE row count this
@@ -459,11 +591,11 @@ export async function requestPage<Row>(
       };
     }
     case "not_provisioned":
-      // This app composes that sentence around the name the answer gave; the
-      // NAME is the machine's and stays mono as the identifier on the line.
-      // Its ink, its wording and its fix are admin-window/BUG-0176's and are
-      // untouched here.
-      return refuse(state, `${answer.missing} is not provisioned`, answer.missing, "this app");
+      // The FACT alone: the name the answer gave, and no prose composed around
+      // it (admin-window/BUG-0176). The words, the gray ink and the absence of
+      // any press-again instruction belong to the component, which renders the
+      // app's one spelling of this sentence.
+      return refuseAbsent(state, answer.missing);
     case "error":
       // The only arm whose reason is not ours: the database's own string,
       // carried across the wire byte-identical (§4.1).

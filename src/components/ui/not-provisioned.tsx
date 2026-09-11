@@ -1,5 +1,48 @@
+import type { ReactNode } from "react";
+
 import { Identifier } from "./identifier";
 import { Eyebrow, type MicroLabel } from "./micro-label";
+
+/**
+ * THE APP'S ONE SPELLING of data-surface state 3's sentence — the words, and
+ * the object inside its own isolated identifier box (admin-window/BUG-0176).
+ *
+ * It stood only inside the CARD until a second surface needed it: the paged
+ * refusal line of `/claims` and `/browse`, where a card cannot stand. A
+ * refusal saying a table is missing is state 3 said in another place, so it
+ * says it in the app's words or it is a hand-rolled fifth spelling
+ * (ARCHITECTURE §7; LESSONS 5 — a shared spelling gets imported, never
+ * retyped; `ARRIVES_WITH` ×8, admin-window/DEBT-0003).
+ *
+ * **It returns NODES, not a string, and that is the contract.** `missing` is
+ * text this app did not author — for a column-absent code it is mined out of
+ * the database's own message, so it has been measured carrying a whole HTML
+ * document and an unterminated RTL override — and text this app did not write
+ * never sits inside a sentence it did write (ARCHITECTURE §7, common
+ * violations row 15). `<Identifier>` is the one box that isolates it
+ * (`dir="ltr"`, verbatim, mono), so a helper returning a formatted `string`
+ * could not carry it and is the shape to refuse.
+ *
+ * The caller owns the paragraph and the ink: the card renders it in
+ * `type-body text-ink-secondary`, and so does the paging line — gray, never
+ * red, because a missing backing table is unavailable and not broken.
+ */
+export function NotProvisionedClause({
+  missing,
+  arrivesWith,
+}: {
+  /** The table/view name the query used, spelled exactly as the query spelled it. */
+  missing: string;
+  /** What creates it: `ARRIVES_WITH` (`./state-of`), never retyped. */
+  arrivesWith: string;
+}): ReactNode {
+  return (
+    <>
+      <Identifier>{missing}</Identifier>{" "}
+      isn&rsquo;t in this database yet — it arrives with {arrivesWith}.
+    </>
+  );
+}
 
 /**
  * Data-surface state 3 of 4: the backing table is not in this database yet.
@@ -36,8 +79,7 @@ export function NotProvisioned({
         <Eyebrow label={eyebrow} className="block" />
       )}
       <p className="type-body text-ink-secondary">
-        <Identifier>{missing}</Identifier>{" "}
-        isn&rsquo;t in this database yet — it arrives with {arrivesWith}.
+        <NotProvisionedClause missing={missing} arrivesWith={arrivesWith} />
       </p>
     </div>
   );

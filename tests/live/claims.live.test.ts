@@ -15,6 +15,7 @@ import {
   exactCount,
   gradeSurface,
   independentClient,
+  refusalText,
   renderPage,
   snapshotAsOf,
   surfaceHooks,
@@ -1638,7 +1639,7 @@ describe("paging past the first window, against staging", () => {
       if (state.refusal !== null) {
         throw new Error(
           `the walk was refused at bound ${bounds[bounds.length - 1]}: ` +
-            `${state.refusal.object ?? "(no object)"} — ${state.refusal.reason}`,
+            refusalText(state.refusal),
         );
       }
     }
@@ -1657,8 +1658,7 @@ describe("paging past the first window, against staging", () => {
     });
     if (state.refusal !== null) {
       throw new Error(
-        `the press was refused: ${state.refusal.object ?? "(no object)"} — ` +
-          `${state.refusal.reason}`,
+        `the press was refused: ${refusalText(state.refusal)}`,
       );
     }
     return state;

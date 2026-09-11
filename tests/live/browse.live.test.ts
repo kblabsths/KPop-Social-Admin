@@ -14,6 +14,7 @@ import {
   gradeSurface,
   independentClient,
   oneEach,
+  refusalText,
   renderPage,
   surfaceHooks,
   whileStill,
@@ -399,7 +400,7 @@ describe("paging past the first window, against staging", () => {
       if (state.refusal !== null) {
         throw new Error(
           `the walk was refused at bound ${bounds[bounds.length - 1]}: ` +
-            `${state.refusal.object ?? "(no object)"} — ${state.refusal.reason}`,
+            refusalText(state.refusal),
         );
       }
     }
