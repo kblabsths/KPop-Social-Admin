@@ -30117,3 +30117,22 @@
 2026-09-11T14:47:52Z	qa-adversary	BUG-0192	41078	1068	167823
 # STRANDED	2026-09-11T14:48:11Z	agent	8 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/receipts/BUG-0192.json, agenticflow/visions/admin-window/tracker/receipts/BUG-0193.json, agenticflow/visions/admin-window/tracker/tickets/BUG-0192.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0193.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0194.md
 2026-09-11T14:48:11Z	agent	-	-	-	-
+2026-09-11T14:48:38Z	architect	BUG-0195	spawned
+# STRANDED	2026-09-11T14:48:42Z	agent	1 uncommitted in primary checkout: .env.example
+2026-09-11T14:48:42Z	agent	-	-	-	-
+# STRANDED	2026-09-11T14:49:10Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0195.md
+2026-09-11T14:49:10Z	agent	-	-	-	-
+# STRANDED	2026-09-11T14:49:14Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0195.md
+2026-09-11T14:49:14Z	agent	-	-	-	-
+# STRANDED	2026-09-11T14:49:41Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0195.md
+2026-09-11T14:49:41Z	agent	-	-	-	-
+# STRANDED	2026-09-11T14:49:45Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0195.md
+2026-09-11T14:49:45Z	agent	-	-	-	-
+# STRANDED	2026-09-11T14:50:12Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0195.md
+2026-09-11T14:50:12Z	agent	-	-	-	-
+# STRANDED	2026-09-11T14:50:16Z	agent	2 uncommitted in primary checkout: .env.example, agenticflow/visions/admin-window/tracker/tickets/BUG-0195.md
+2026-09-11T14:50:16Z	agent	-	-	-	-
+# STRANDED	2026-09-11T14:50:43Z	architect	4 uncommitted in primary checkout: .env.example, agenticflow/docs/LESSONS.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0194.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0195.md
+2026-09-11T14:50:43Z	architect	BUG-0194	6593	124	33931
+# STRANDED	2026-09-11T14:50:43Z	builder	4 uncommitted in primary checkout: .env.example, agenticflow/docs/LESSONS.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0194.md, agenticflow/visions/admin-window/tracker/tickets/BUG-0195.md
+2026-09-11T14:50:43Z	builder	BUG-0194	24802	716	144256
