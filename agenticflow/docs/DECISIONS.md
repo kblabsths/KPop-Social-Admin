@@ -1534,3 +1534,37 @@ over a non-empty window (a distribution with no rows beside figures that count
 rows). Under this ruling the surface stays `ok` at a counted zero and the
 parity assertions RUN there, which is strictly more grading in the state that
 reddened.
+
+## 2026-09-10 — A page's leg notes reach the state or the press is refused; the client's own fetch refuses in the app's words
+
+Two rulings in the paging plumbing, both decided below every surface so no
+surface re-decides them. **First, the legs.** Browse is read by four queries —
+one window for the rows, two legs that fill columns over that window's ids —
+and its paging route already carries each leg's own report on the `ok` arm of
+the answer. The driver did not: `PageState` had four fields and none of them
+held a note, so the legs were dropped at the wire and `/browse`'s next ticket
+was told to render something no state carried. `PageState` gains a `notes`
+record; `isPageNotes` asks of that field exactly what `isPageAnswer` asks of
+the body, and a `notes` this app cannot read **refuses the press naming the
+route** rather than reaching a renderer; readable notes MERGE per leg across
+presses. The alternatives, and why not: *appending the rows and dropping the
+notes* is the silently-empty-column defect itself; *rendering whatever
+arrived* puts foreign text inside a sentence this app wrote (common violations
+row 15); *replacing rather than merging* loses the note while the half-filled
+rows it explains are still on screen. The door this closes: a paged surface
+never invents its own leg-report channel, never narrows or rewords a note, and
+never shows a column emptied by a read that refused without saying which read
+it was. **Second, the fetch.** `fetchJson` asked `response.json()` of whatever
+answered, so an expired session — whose redirect is FOLLOWED to an HTML login
+page at **status 200** — reached the operator as the JSON parser's own
+`SyntaxError` vocabulary in the app's refusal slot. The discriminator is the
+**declared content type**, not `response.ok`: the route answers a refused page
+as JSON with a 400 to match and that body is the operator's own refusal, which
+a status check would throw away, and the measured defect carries a 200 a status
+check cannot see. A response that does not declare JSON, and a declared-JSON
+body that does not parse, each reject with one app-authored sentence that
+quotes nothing — not the type, not the status, not a byte of the body — and
+`requestPage` names this app's own route as the object. The door this closes:
+the client never derives a second account out of foreign text, and the one
+place a reduction of a foreign document happens stays `errorMessage` in
+`lib/db/result.ts` (BUG-0170) — a path this fetch never touches.

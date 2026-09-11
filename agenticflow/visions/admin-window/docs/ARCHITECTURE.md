@@ -499,6 +499,30 @@ may do:
   is harmless only because the query carries the same `neq`. A helper leg that
   fills columns may never shorten a page either (common violations row 14).
 
+- **The legs that FILL columns travel WITH the page, and an unreadable note is
+  a refusal** (amended 2026-09-10, architect, from QA's TASK-0068 measurement).
+  A surface read by several queries — Browse is four: the events window decides
+  the rows, the venue and provenance legs fill columns over that window's ids —
+  puts each leg's own report on the `ok` arm of its page answer
+  (`NotedPageAnswer`, `lib/paging/bounds.ts`) and the surface renders it beside
+  the rows it arrived with, through the same `StateOf` the first screen uses. A
+  page whose provenance leg refused may not reach the operator as rows with a
+  silently empty column. The notes ride the `ok` arm only: the other three arms
+  have no rows, so no column of theirs went unfilled. Three rules make it hold
+  end to end. (1) **The driver carries them** — `PageState` has a `notes` field
+  and the route's answer reaches it unchanged; a state that cannot hold a note
+  is a note dropped, which is how the first implementation lost them silently.
+  (2) **Foreign notes are refused, not rendered** — `isPageNotes` asks of the
+  field what `isPageAnswer` asks of the body, and an unreadable `notes` refuses
+  the press naming the route, appending nothing; a note is the DATABASE's own
+  `missing` / `reading` and message or it is not shown at all (§4.1, common
+  violations row 15). (3) **Notes MERGE across presses, per leg** — the rows a
+  refused leg left unfilled are still on screen after the next press, so a note
+  that vanished when a later page's legs answered would be the same silent
+  emptiness one press later. A leg the FIRST SCREEN already reported is not
+  reported a second time below the rows: the identity is the OBJECT named, not
+  the leg key.
+
 - **A concatenation is still not a total.** No sentence on either surface may
   claim that what the operator has paged through is the whole set. The only
   totality claim on these pages remains what it is today: their own exact
@@ -1737,6 +1761,24 @@ this table from here.)*
   `__proto__` key — is a ticket, not a contract line: it is one leaf's
   `Object.create(null)`, folded into TASK-0068, which is what gives the adapter
   its second caller.
+
+- **2026-09-10, M3 ruling pass 2 — the paged legs reach the state, and the one
+  fetch refuses in the app's own words (architect).** **§4.3 kind 3** gains
+  *the legs that fill columns travel with the page*: QA measured on TASK-0068
+  that `GET /api/admin/browse/rows` carries `notes` on its `ok` arm while
+  `requestPage` returns a `PageState` with no such field, so both legs were
+  dropped at the driver and no surface could render what no state carried. The
+  contract now names all three halves — the driver carries them, `isPageNotes`
+  refuses foreign ones instead of rendering them, and they merge per leg across
+  presses. Filed as TASK-0076 (the leaf: `lib/paging/**` plus the widget's
+  fetch), with TASK-0069 and DEBT-0017 chained behind it — DEBT-0017 because it
+  writes the same two files, and consolidation-shaped work is serial at its
+  destination. TASK-0069's contract also lost its `total` prop, which
+  contradicted its own criteria: Browse's window read has no count beside it,
+  so a `more` derived from a total is always false and the affordance would
+  have been unreachable. **The door this closes:** notes are never narrowed,
+  reworded or reduced on the way to a surface, and a surface never invents a
+  second reduction of its own — the same rule §4.1 holds for an account.
 
 - **2026-09-10, M3 ruling pass — the paging contract gets its client half, and
   two leaf directories join the list (architect).** **§4.3 kind 3** gains
