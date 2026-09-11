@@ -1,0 +1,55 @@
+{
+ "id": "BUG-0178",
+ "created": "2026-09-11T13:42:33Z",
+ "green": true,
+ "git_head": "80941516ae8da8d72764462f13e31dcea3a267a0",
+ "scope": [
+  "src/components/ui/paging.tsx",
+  "tests/offline/ui/paging.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "d65720b3ea07319f9992489f5c540b82649548fd58abccf20138503abb065bb7",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/ui/paging.test.ts tests/offline/paging tests/offline/ui/copy.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-21016\n\n \u2713 |offline| tests/offline/paging/bounds.test.ts (11 tests) 6ms\n \u2713 |offline| tests/offline/paging/answer.test.ts (7 tests) 4ms\n \u2713 |offline| tests/offline/paging/browse-route.test.ts (39 tests) 28ms\n \u2713 |offline| tests/offline/ui/copy.test.ts (12 tests) 115ms\n \u2713 |offline| tests/offline/paging/machine.test.ts (63 tests) 41ms\n \u2713 |offline| tests/offline/ui/paging.test.ts (66 tests) 113ms\n \u2713 |offline| tests/offline/paging/claims-route.test.ts (39 tests) 144ms\n\n Test Files  7 passed (7)\n      Tests  237 passed (237)\n   Start at  06:42:11\n   Duration  926ms (transform 861ms, setup 0ms, collect 2.16s, tests 451ms, environment 1ms, prepare 484ms)\n\n(node:21023) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -q \"the bound ceiling does not claim the data ran out\" tests/offline/ui/paging.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"it(\\\"does not restate the window line\" tests/offline/ui/paging.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q \"This view shows no further rows\" src/components/ui/paging.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"data-paging=\\\"limit\\\"\" src/components/ui/paging.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"in this view are shown\" src/components/ui/paging.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "ments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 1962ms\n  Running TypeScript ...\n  Finished TypeScript in 6.1s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 160ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/browse/rows\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-21016/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:21125) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
