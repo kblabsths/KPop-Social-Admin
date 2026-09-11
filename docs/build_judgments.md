@@ -16,10 +16,13 @@ every one arrived through a blocked ticket or a human ruling, which is the
 ground rule this file exists beside — *"a gap in the contracts is a blocked
 ticket, never a judgment call silently made"* (`admin-build.md`, Ground rules).
 
-Nothing still open appears below as settled; the open questions, including the
-two the M3 endgame leaves to Ben, have their own section at the end. The two
-trailing sections use `###` deliberately, so that a count of `^## ` lines is
-exactly the entry count.
+Nothing still open appears below as settled, and nothing settled appears as
+still open: every status claim here is a claim about the state **at this
+close**, with the instant named wherever a reader could otherwise take a
+four-hour-old sentence for a current one (admin-window/BUG-0214). The open
+questions, including the two the M3 endgame leaves to Ben, have their own
+section at the end. The two trailing sections use `###` deliberately, so that
+a count of `^## ` lines is exactly the entry count.
 
 ---
 
@@ -218,7 +221,8 @@ not the product's fault.
 ## 8. An account carries the DATABASE's words, and the app spells absence in exactly one place
 
 What a failed read tells the operator is decided in ONE derivation
-(`errorMessage`, `src/lib/db/result.ts`) by three anchored questions and no
+(`errorAccount`, `src/lib/db/result.ts` — named `errorMessage` when it was
+ruled, renamed by the lane below) by three anchored questions and no
 fourth: did we serialise this part (provenance, no text inspected), does it
 begin `<`, does it carry V8 frame lines. The first two replace the part with a
 counted clause that quotes nothing; the third drops the frame lines only, never
@@ -248,11 +252,18 @@ operator as a red alert reading `—`.
 from QA's BUG-0170 residuals), `admin-window/BUG-0187` (the rule takes a bar
 instead of anchors) and `admin-window/BUG-0184` (the em dash).
 *Recorded*: DECISIONS.md 2026-09-11 (three paragraphs); ARCHITECTURE §4.1.
-**Not closed at this close**: the last lane on this derivation —
-`DEBT-0020` → `BUG-0199` → `BUG-0196` (authorship is a fact the account carries,
-not a question a renderer asks) — is serial by the architect's ruling of
-2026-09-11, truth before cosmetics, and an M3 P2 therefore waits on a
-`patch`-milestone ticket deliberately.
+**The lane that finished it, and how it ran**: `DEBT-0020` → `BUG-0199` →
+`BUG-0196` (authorship is a fact the account carries, not a question a renderer
+asks) was made **serial** by the architect at 2026-09-11T15:43Z — truth before
+cosmetics, the correctness defect in the derivation ahead of the face its parts
+render in — which deliberately parked an M3 P2 behind a `patch`-milestone
+ticket. M3.md accepted that wait on the grounds that it would be short, and it
+was: all three closed the same day (16:28Z, 16:28Z, 17:14Z), and `BUG-0200`,
+filed off `BUG-0196` by its own QA, closed at 17:41Z. That lane is why this
+entry writes `errorAccount` where DECISIONS.md's 2026-09-11 paragraphs write
+`errorMessage`, and the derivation kept earning patch-lane work to the last day
+of the milestone — `BUG-0210` landed on `src/lib/db/result.ts` that evening
+(`811ead32`: a `head: true` count read could not classify an absent table).
 
 ---
 
@@ -307,11 +318,17 @@ placement facts below were re-established here the same day, read-only, in
   carry a campaign-qualified ticket id by rule. The one commit whose message
   contains the campaign's name (`43505768`, 2026-09-10) is the sibling's own,
   authored by Ben in its `resolver` campaign, naming Admin as a consumer of
-  `review_items`. That repo has taken 570 commits since 2026-09-01; none is
-  ours.
-- **No ticket's touch scope named a scraper path.** Measured across all **329**
-  ticket files in `agenticflow/tracker/tickets/` and `agenticflow/tracker/archive/`:
-  no `touch_scope` entry contains `Scraper` or a `../` segment.
+  `review_items`. That repo is committing continuously in the same window and
+  the count is not a fixed fact: `git log --all --since=2026-09-01 --oneline |
+  wc -l` there returned **570** at ~21:05Z on 2026-09-11, QA's
+  `git rev-list --all --count --since=2026-09-01` returned **569** minutes
+  later, and both forms returned **567** at 21:30:42Z, as that campaign's landed
+  lane branches are pruned. The durable measurement is the zero above; the
+  hundreds are context, and none of them is ours.
+- **No ticket's touch scope named a scraper path.** Measured across every
+  ticket file in `agenticflow/tracker/tickets/` and `agenticflow/tracker/archive/`
+  — **330** of them at 2026-09-11T21:31Z, a number that grows as tickets are
+  filed: no `touch_scope` entry contains `Scraper` or a `../` segment.
 - **Expected, and met.** `admin-observability.md` §10 makes everything
   scraper-side a handoff while a campaign runs in that repo, and its tracker's
   `RUNNING` marker is still present. Every change that repo needed from this one
