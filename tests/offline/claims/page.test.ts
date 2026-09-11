@@ -859,11 +859,14 @@ describe("the claim list's window", () => {
   it("states the rows that are BELOW it, never its cap, when the row read came back short [admin-window/BUG-0183]", async () => {
     // THE OTHER HALF OF admin-window/BUG-0174, on the arm that has no `drawn`.
     // `/claims` counts its matching set and draws its rows in TWO reads, and
-    // the line's "the N longest-waiting are below" clause is drawn whenever the
-    // COUNT says more exist — never only over a read that filled its cap. On
-    // the UNPAGED arm (`drawn` absent, which is every state the bound grid
-    // refuses a control in) `onScreen` falls back to the CAP, so the clause
-    // states 50 over a screen holding 37.
+    // the line's clause naming what is below it is drawn whenever the COUNT
+    // says more exist and the window DREW rows — never only over a read that
+    // filled its cap, and, since admin-window/BUG-0197, never over a read that
+    // drew none (a window with nothing on screen has nothing to rank and
+    // nothing to hold back, so its line states the count and stops; both
+    // screens below drew rows). On the UNPAGED arm (`drawn` absent, which is
+    // every state the bound grid refuses a control in) `onScreen` falls back
+    // to the CAP, so the clause states 50 over a screen holding 37.
     //
     // No word of the line is pinned: two screens holding DIFFERENT numbers of
     // claims under the SAME count are rendered and compared against each

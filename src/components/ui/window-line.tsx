@@ -909,10 +909,22 @@ export function WindowLine(
     // there is no number here a read established, so the clause that would
     // name one is not rendered and nothing else about the line moves.
     const below = onScreen(info);
+    // A window that drew NO ROWS names none either, and holds nothing back
+    // (admin-window/BUG-0197). Over an empty card the clause was two sentences
+    // arguing: the line ranked a set with nothing in it ("the 0 longest-waiting
+    // are below") and then apologised for withholding a rest, directly above
+    // the card whose whole job is to say the read came back empty. A window
+    // that drew none has nothing to rank and nothing to hold back, so the line
+    // states what the COUNT read found and stops — that clause is a fact its
+    // own read established, and an operator who sees it over an empty card
+    // learns the real thing, which is that the two reads disagree. The verdict
+    // is `below` itself: no new read, no new prop, no new `DrawnWindow` field.
     const holdsBack =
       below === null
         ? ""
-        : ` ${counted}; the ${count(below)} longest-waiting are below — ${THE_REST_IS_NOT_SHOWN}`;
+        : below === 0
+          ? ` ${counted}.`
+          : ` ${counted}; the ${count(below)} longest-waiting are below — ${THE_REST_IS_NOT_SHOWN}`;
 
     // What the line says where `didNotFill` may not speak: EACH READ AS ITS
     // OWN FACT (admin-window/BUG-0186), and then the rows against their cap.
