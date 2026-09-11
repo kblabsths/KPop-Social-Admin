@@ -2568,6 +2568,32 @@ describe("a parameter this page did not apply", () => {
     expect(droppedLine(bare).lines).toBe(0);
     expect(withoutDroppedLine(bare)).toBe(masked(cheerio.load(bare).html()));
   });
+  it("reads the repeated facet the same way the filter did", async () => {
+    // Two `firstValue`s answer one question - the page's own
+    // (`src/app/sources/page.tsx`) decides what the READS carried, and
+    // `lib/url/dropped-params.ts`' decides what the SENTENCE judges - so a
+    // URL repeating the facet is the seam where they could come to disagree,
+    // and a disagreement is the finding itself twice over: a page that
+    // narrowed by a value while reporting it dropped, or one that swallowed a
+    // usable id in silence. Pinned at the surface, in both directions
+    // (admin-window/BUG-0201, QA; the filter's own half is "takes the first
+    // value when the URL repeats the facet" above).
+    const unusableFirst = await renderSources(healthyScript(), {
+      source_id: ["deadbeef", SOURCE.ticketmaster],
+    });
+    // The first value narrowed nothing, so the whole registry answered AND
+    // the line says so.
+    expect(sourceIds(unusableFirst)).toEqual(SOURCES.map((source) => source.source_id));
+    expect(droppedLine(unusableFirst).names).toEqual(["source_id"]);
+
+    const usableFirst = await renderSources(healthyScript(), {
+      source_id: [SOURCE.ticketmaster, "deadbeef"],
+    });
+    // The first value narrowed, so the table is that one source's AND the
+    // page claims no dropped parameter it did in fact apply.
+    expect(sourceIds(usableFirst)).toEqual([SOURCE.ticketmaster]);
+    expect(droppedLine(usableFirst).lines).toBe(0);
+  });
 });
 
 /* ── where this page's presentation lives (admin-window/DEBT-0004) ───────── */
