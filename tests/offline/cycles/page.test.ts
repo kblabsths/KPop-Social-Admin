@@ -3486,19 +3486,37 @@ const GAUGE_SURFACES = [
 ] as const;
 
 describe("the state a gauge surface is in, at the grain the oracle reads it", () => {
-  it("is OK at a counted zero, and draws no card of its own there", async () => {
+  /**
+   * The rule is unchanged and the two gauges now answer it differently, which
+   * is the point of reading the state at this grain.
+   *
+   * A surface's state is the state of the read behind its FIGURES, and a card
+   * a BLOCK draws carries the marker and is excluded from it. Latency still
+   * states four figures over an empty window, so the only cards inside it are
+   * its blocks', it is excluded down to nothing, and it grades `ok`.
+   * Cycle health no longer renders a figure there at all
+   * (admin-window/BUG-0203): the card standing where its figures stood is the
+   * SURFACE's own, carries no marker, and is what the surface is graded on.
+   */
+  it("grades each gauge on the read behind its own figures, block cards excluded", async () => {
     const markup = await renderCycles(emptyWindows());
+    const $ = cheerio.load(markup);
+
+    // Cycle health: no figures over an empty window, so the emptiness is the
+    // surface's and the oracle reads it as the surface's.
+    expect(stateOf(markup, SURFACE_HOOKS.cycle_health, GAUGE_BLOCKS)).toBe("empty");
+    expect(ownCards(markup, SURFACE_HOOKS.cycle_health)).toEqual(["empty"]);
+
+    // Latency: figures over the same empty window, so nothing it draws itself
+    // is a state card and the exclusion is what keeps it graded on them.
+    expect(stateOf(markup, SURFACE_HOOKS.resolution_latency, GAUGE_BLOCKS)).toBe("ok");
+    expect(ownCards(markup, SURFACE_HOOKS.resolution_latency)).toEqual([]);
+    // Not vacuous: drop the marker and its blocks' cards decide its state.
+    expect(stateOf(markup, SURFACE_HOOKS.resolution_latency)).toBe("empty");
 
     for (const hook of GAUGE_SURFACES) {
-      // What the live oracle asks, asked here: the surface read its window and
-      // got nothing, and nothing is a state it states rather than one it
-      // refuses in.
-      expect(stateOf(markup, hook, GAUGE_BLOCKS), hook).toBe("ok");
-      expect(ownCards(markup, hook), hook).toEqual([]);
-      // Not vacuous: the blocks really did put their cards up. Remove the
-      // marker and these are the cards that make the surface say `empty`.
-      const blocks = cheerio.load(markup)(`${hook} ${GAUGE_BLOCKS} [data-state]`);
-      expect(blocks.length, hook).toBeGreaterThanOrEqual(2);
+      // Both gauges really did put their blocks' cards up.
+      expect($(`${hook} ${GAUGE_BLOCKS} [data-state]`).length, hook).toBeGreaterThanOrEqual(2);
     }
 
     // …and neither gauge got there by refusing a read: an emptiness is not an
@@ -3510,7 +3528,7 @@ describe("the state a gauge surface is in, at the grain the oracle reads it", ()
   it("states every labelled count as a real 0, and the wait it cannot measure as an absence", async () => {
     const markup = await renderCycles(emptyWindows());
 
-    for (const label of [...HEALTH_COUNTS, ...LATENCY_COUNTS]) {
+    for (const label of LATENCY_COUNTS) {
       expect(readNumber(markup, label), label).toBe(0);
       // Read a second way, structurally: the label really does stand beside a
       // figure, so none of these is a 0 that only a sentence holds.
@@ -3524,6 +3542,94 @@ describe("the state a gauge surface is in, at the grain the oracle reads it", ()
     expect(figureLabels(markup)).not.toContain(MEDIAN_WAIT);
     expect(() => readNumber(markup, MEDIAN_WAIT)).toThrow();
     expect(cardSubLine(markup, MEDIAN_WAIT)).not.toBe("");
+  });
+
+  /**
+   * LESSONS 7 on the health panel, at the grain it still states figures: a
+   * window that HOLDS a cycle. The counters of that cycle are all zero, and
+   * every one of them renders as a real `0` beside its label rather than as an
+   * absence or a blank. What a window holding NO cycle renders is the case
+   * below, and only that case changed (admin-window/BUG-0203).
+   */
+  it("states cycle health's counts as real 0s over a window that holds a cycle", async () => {
+    const markup = await renderCycles(
+      healthyScript({ [T.resolutionRuns]: [{ data: [SKIPPED] }, { data: [SKIPPED] }] }),
+    );
+    const expected: Record<string, number> = {
+      "Cycles in this window": 1,
+      "Facts examined": 0,
+      Writes: 0,
+      Errors: 0,
+    };
+    for (const label of HEALTH_COUNTS) {
+      expect(readNumber(markup, label), label).toBe(expected[label]);
+      expect(figureLabels(markup), label).toContain(label);
+    }
+  });
+
+  /**
+   * admin-window/BUG-0203, filed from both M3 user-sim walks: four figures
+   * derived from a set with no members — `0` cycles, `0` facts examined, `0`
+   * writes, `0` errors, each with its own sub-line counting to zero — stood
+   * two inches above the words that already said the window held nothing, and
+   * a few inches under a table of cycles the window drops. One emptiness,
+   * answered twice on one screen, the second answer reading as good news.
+   *
+   * Behaviour, not copy: the four figures are absent and the panel's own empty
+   * state is present with its two lines; which words those lines use is the
+   * designer's and is not pinned here.
+   */
+  it("renders no health figure where the window holds no cycles", async () => {
+    const markup = await renderCycles(emptyWindows());
+    const $ = cheerio.load(markup);
+    const health = $(SURFACE_HOOKS.cycle_health);
+
+    for (const label of HEALTH_COUNTS) {
+      // Neither the figure nor the sub-line derived from it is on the page.
+      expect(figureLabels(markup), label).not.toContain(label);
+      expect(() => readNumber(markup, label), label).toThrow();
+      expect(health.text(), label).not.toContain(label);
+    }
+
+    // In their place, ONE card of the surface's own: what it holds, and the
+    // one thing that fills it — two distinct, non-empty lines.
+    const own = health
+      .find('[data-state="empty"]')
+      .toArray()
+      .filter((element) => $(element).closest(GAUGE_BLOCKS).length === 0);
+    expect(own).toHaveLength(1);
+    const lines = $(own[0])
+      .find("p")
+      .toArray()
+      .map((line) => $(line).text().replace(/\s+/g, " ").trim());
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).not.toBe("");
+    expect(lines[1]).not.toBe("");
+    expect(lines[0]).not.toBe(lines[1]);
+
+    // The window line is untouched and still the first thing under the
+    // heading: it names the interval this read carried, and the card stands
+    // after it.
+    const line = health.find('[data-window="cycle_health"]');
+    expect(line).toHaveLength(1);
+    expect(line.attr("data-window-since")).toBeDefined();
+    const order = health
+      .find('[data-window="cycle_health"], [data-state]')
+      .toArray();
+    expect(order[0]).toBe(line[0]);
+
+    // Nothing about the emptiness is a verdict: no tone, no severity word, no
+    // second reading of the same fact.
+    expect(health.find("[data-outcome-tone]")).toHaveLength(0);
+
+    // …and a window that holds cycles renders all four figures with all four
+    // sub-lines, exactly as before, and no card of the surface's own.
+    const filled = await renderCycles(healthyScript());
+    for (const label of HEALTH_COUNTS) {
+      expect(figureLabels(filled), label).toContain(label);
+      expect(cardSubLine(filled, label), label).not.toBe("");
+    }
+    expect(ownCards(filled, SURFACE_HOOKS.cycle_health)).toEqual([]);
   });
 
   it("explains every card it excludes from two facts, not one", async () => {
