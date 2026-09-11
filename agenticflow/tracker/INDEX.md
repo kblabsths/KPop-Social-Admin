@@ -1,8 +1,9 @@
-# Tracker index (regenerated 2026-09-11T07:18:14Z — do not edit)
+# Tracker index (regenerated 2026-09-11T07:27:03Z — do not edit)
 
 ## open
 - BUG-0175 [P2][bug][M3] A paging refusal renders the app's own 22-word sentence in mono, the face this app reserves for the machine's words — /browse and /claims  (deps:BUG-0174(unmet:1) scope:src/lib/paging/machine.ts,src/components/ui/paging.tsx,tests/offline/paging/machine.test.ts,tests/offline/ui/paging.test.ts from:BUG-0172)
 - BUG-0176 [P2][bug][M3] A paged not-provisioned answer renders red, stutters its object and tells the operator to press again for a table that does not exist — /claims and /browse  (deps:BUG-0175(unmet:1) scope:src/lib/paging/machine.ts,src/components/ui/paging.tsx,src/components/ui/not-provisioned.tsx,tests/offline/paging/machine.test.ts,tests/offline/ui/paging.test.ts,tests/offline/ui/primitives.test.ts from:BUG-0172)
+- BUG-0179 [P2][bug][-] The account's one derivation skips the code arm: a foreign envelope's code trails verbatim after the clause that counted its body  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts from:BUG-0173)
 - DEBT-0017 [P2][debt][M3] Three paging-leaf truths: a ceiling-false invariant, a stale test title, and a closure guard that stops at a barrel  (deps:TASK-0076 scope:src/lib/paging/machine.ts,tests/offline/paging/machine.test.ts,tests/offline/claims/read.test.ts from:BUG-0168)
 - DEBT-0018 [P2][debt][M3] Two vitest runs in one checkout redden the layering suite: its self-guards write a FIXED probe path and remove the shared parent  (scope:tests/offline/db/layering.test.ts,tests/isolated/probe-race.isolated.test.ts from:BUG-0170)
 - FEAT-0016 [P2][feat][M3] F15 — every windowed figure is true about the read that produced it  (scope:src/app/claims/page.tsx,src/app/sources/page.tsx,src/lib/db/claims.ts,src/lib/db/sources.ts,src/lib/gauges,src/components/claims,src/components/sources,src/components/ui/window-line.tsx,tests/offline/claims/read.test.ts,tests/offline/claims/page.test.ts,tests/offline/sources/page.test.ts,tests/offline/sources/read.test.ts,tests/offline/gauges,tests/live/claims.live.test.ts,tests/live/sources.live.test.ts)
@@ -19,7 +20,4 @@
 ## claimed
 - BUG-0174 [P1][bug][M3] A continued window still calls itself a 50-row window and denies being the whole set, under 877 rows and "All claims in this view are shown" — /claims and /browse  (scope:src/components/ui/window-line.tsx,src/components/ui/paging.tsx,src/app/claims/page.tsx,src/app/browse/page.tsx,tests/offline/ui/primitives.test.ts,tests/offline/ui/paging.test.ts,tests/offline/browse/page.test.ts,tests/offline/claims/page.test.ts,tests/offline/absence/pages.test.ts @builder-266 from:BUG-0172)
 
-## qa
-- BUG-0173 [P2][bug][M3] The account's one derivation widens from 'a document' to 'not the database's own words': a runtime's stack frames and a body we had to serialise  (scope:src/lib/db/result.ts,tests/offline/db/result.test.ts,tests/offline/dashboard/page.test.ts,tests/offline/queues/page.test.ts @builder-265 from:BUG-0170)
-
-Totals — claimed:1, done:24, open:14, qa:1. Archived: 252.
+Totals — claimed:1, done:25, open:15. Archived: 252.
