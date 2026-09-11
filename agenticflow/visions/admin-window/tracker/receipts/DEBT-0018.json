@@ -1,0 +1,45 @@
+{
+ "id": "DEBT-0018",
+ "created": "2026-09-11T11:17:27Z",
+ "green": true,
+ "git_head": "8b514d1eea2a16e7414bfe245d6aa7b773a7ba9f",
+ "scope": [
+  "tests/offline/db/layering.test.ts",
+  "tests/isolated/probe-race.isolated.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "e06e531d0233dec565916b8f858732c0e4459b14b9e83e712d1941c995cc8960",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db/layering.test.ts >/dev/null 2>&1 & p1=$!; ./node_modules/.bin/vitest run --project=offline tests/offline/db/layering.test.ts >/dev/null 2>&1 & p2=$!; wait $p1; r1=$?; wait $p2; r2=$?; test $r1 -eq 0 -a $r2 -eq 0",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db/layering.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-63867\n\n \u2713 |offline| tests/offline/db/layering.test.ts (34 tests) 849ms\n\n Test Files  1 passed (1)\n      Tests  34 passed (34)\n   Start at  04:16:42\n   Duration  1.12s (transform 45ms, setup 0ms, collect 46ms, tests 849ms, environment 0ms, prepare 51ms)\n\n(node:63921) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "! grep -qF '\"src/.probes/__' tests/offline/db/layering.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -o \"process.pid\" tests/offline/db/layering.test.ts | wc -l)\" -ge 2",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm test",
+   "exit": 0,
+   "output_tail": "ct 21.64s, tests 56.33s, environment 15ms, prepare 5.47s)\n\n\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-63867\n\n \u2713 |isolated| tests/isolated/probe-race.isolated.test.ts (6 tests) 20612ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is readable  1524ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is listed but cannot be opened  1575ms\n   \u2713 walking src/ while the layering probe comes and goes > survives the probe directory appearing and vanishing under the walk  6012ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no OTHER offline file that walks the tree either  11499ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  04:16:56\n   Duration  20.90s (transform 32ms, setup 0ms, collect 31ms, tests 20.61s, environment 0ms, prepare 57ms)\n\nnpm notice run kpop-social-space@0.1.0 test\nnpm notice run vitest run --project=offline && vitest run --project=isolated\n(node:63970) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:64207) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:64232) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:64258) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:64302) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
