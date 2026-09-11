@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, type ReactNode, useContext, useRef, useState } from "react";
-import { EM_DASH, count, isAbsent } from "@/lib/format";
+import { count } from "@/lib/format";
 import { MAX_PAGE_OFFSET, pageBound } from "@/lib/paging/bounds";
 import {
   AppAuthoredError,
@@ -12,6 +12,12 @@ import {
   requestPage,
 } from "@/lib/paging/machine";
 import { Button } from "./button";
+// The ONE drawing of a failed read's account — the object, then each run in
+// its author's face (admin-window/BUG-0196). It is shared with `ErrorLine`,
+// which is data-surface state 4 on every page, rather than walked a second
+// time here: two copies of one rule drift, and this rule has already been
+// fixed once in this family (LESSONS 5).
+import { AuthoredAccount } from "./error-line";
 // The app's ONE spelling of state 3's sentence, and the ONE spelling of what
 // creates the objects this window reads — imported, never retyped (LESSONS 5,
 // admin-window/DEBT-0003). By RELATIVE path, like `./button` and
@@ -691,10 +697,18 @@ export function PageMore({
  * page it could not read claimed an authorship it does not have and sat in the
  * same 11px mono red run as a Postgres timeout string.
  *
- * `reasonFrom` is the whole derivation, and it is DECIDED ELSEWHERE — at
- * `refuse()` in `src/lib/paging/machine.ts`, where the refusal is built. This
- * component compares no string to anything: reword any of the app's sentences
- * and no face moves.
+ * The refusal's `account` is the whole derivation, and it is DECIDED ELSEWHERE
+ * — at `refuse()` in `src/lib/paging/machine.ts` for the arms this app writes,
+ * and one seam further back in `src/lib/db/result.ts` for a failed read's,
+ * where each clause is authored. This component compares no string to
+ * anything: reword any of those sentences and no face moves.
+ *
+ * **Since admin-window/BUG-0196 the split is drawn by `AuthoredAccount`**
+ * (`./error-line`), the same component `ErrorLine` draws it with, off the same
+ * one run-splitting derivation — because a failed READ's account can carry
+ * BOTH authors in one line: the database's words beside this app's counted
+ * clause about a part it refused to quote. One arm with two faces is not a
+ * second rule; it is the same rule over a list.
  *
  * What does NOT change with the face: the object is a machine identifier and
  * stays in the `data` mono step in every arm, the em dash still separates it
@@ -704,10 +718,9 @@ export function PageMore({
  * reason alone rather than a dangling em dash, asked of the app's one
  * definition of absence (`isAbsent`, `lib/format`).
  *
- * `dir="ltr"` isolates the run this app did NOT author (ARCHITECTURE.md §7),
- * and after this ticket it isolates exactly that run: the identifier always,
- * plus the reason only when the reason is the machine's. A sentence this app
- * wrote needs no isolation from itself.
+ * `dir="ltr"` isolates the runs this app did NOT author (ARCHITECTURE.md §7),
+ * and it isolates exactly those: the identifier always, plus each run the
+ * machine wrote. A sentence this app wrote needs no isolation from itself.
  */
 function Refusal({
   refusal,
@@ -728,9 +741,6 @@ function Refusal({
     );
   }
 
-  const { reason, reasonFrom, object } = refusal;
-  const named = object !== null && !isAbsent(object);
-  const machineWrote = reasonFrom === "the machine";
   const fix = retryable
     ? "Press it again to ask for the same rows."
     : "Reload this view to read it again.";
@@ -740,21 +750,7 @@ function Refusal({
       role="alert"
       className="flex flex-wrap items-baseline gap-2 text-broken"
     >
-      {machineWrote ? (
-        // One foreign run: the identifier and the words the answer carried.
-        <span className="type-data" dir="ltr">
-          {named ? `${object} ${EM_DASH} ${reason}` : reason}
-        </span>
-      ) : (
-        <>
-          {named ? (
-            <span className="type-data" dir="ltr">
-              {object}
-            </span>
-          ) : null}
-          <span className="type-body">{named ? `${EM_DASH} ${reason}` : reason}</span>
-        </>
-      )}
+      <AuthoredAccount object={refusal.object} account={refusal.account} />
       <span className="type-body">{fix}</span>
     </p>
   );

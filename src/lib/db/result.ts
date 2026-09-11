@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { accountText, type AccountSegment } from "../account/authored";
 import { getDbClient } from "./client";
 
 /**
@@ -11,7 +12,30 @@ import { getDbClient } from "./client";
 export type DbResult<T> =
   | { kind: "ok"; data: T }
   | { kind: "not_provisioned"; missing: string }
-  | { kind: "error"; reading: string; message: string };
+  | {
+      kind: "error";
+      reading: string;
+      /**
+       * The account as ONE string — and, where the arm carries one, the JOIN
+       * of `authored` (`accountText`, `src/lib/account/authored.ts`).
+       */
+      message: string;
+      /**
+       * The account as its RUNS: the words of each part and WHO WROTE THEM
+       * (campaign admin-window/BUG-0196).
+       *
+       * OPTIONAL, and its ABSENCE means what this app rendered before the
+       * fact existed: the whole account is the machine's, drawn wholly in the
+       * mono `data` step. Every arm `classify` builds carries it; the arms
+       * this app composes about a read it could not grade — a count that did
+       * not come back, a row cap — carry none, and read exactly as they read
+       * before.
+       *
+       * `message` is derived FROM this list and never beside it, so the two
+       * cannot disagree: there is no second code path composing the account.
+       */
+      authored?: readonly AccountSegment[];
+    };
 
 /**
  * A read that produced no rows — the two non-`ok` arms.
@@ -549,10 +573,10 @@ function saidOnce(lines: readonly string[]): string[] {
  * which is what a check constraint's DETAIL wrapped onto a continuation line
  * needs (ARCHITECTURE.md §4.1).
  */
-function askedLineByLine(part: string): string {
+function askedLineByLine(part: string): AccountSegment[] {
   const lines = part.split(/\r?\n/);
   const dropped = lines.filter((line) => isRuntimeFrame(line)).length;
-  if (dropped === 0) return part;
+  if (dropped === 0) return [{ words: part, author: "the machine" }];
 
   const said = saidOnce(
     lines
@@ -560,8 +584,12 @@ function askedLineByLine(part: string): string {
       .map((line) => line.trim())
       .filter((line) => line.length > 0),
   ).join(" ");
-  const counted = framesInstead(dropped);
-  return said.length > 0 ? `${said} ${counted}` : counted;
+  // TWO segments, because two authors wrote them: the lines that survived are
+  // the DATABASE's, and the count of what went is THIS APP's own clause about
+  // them (admin-window/BUG-0196). They still join, in this order, to the one
+  // string this part crossed as before.
+  const counted: AccountSegment = { words: framesInstead(dropped), author: "this app" };
+  return said.length > 0 ? [{ words: said, author: "the machine" }, counted] : [counted];
 }
 
 /**
@@ -582,11 +610,15 @@ function askedLineByLine(part: string): string {
  *
  * `null` means the part was blank and carries nothing to say.
  */
-function partOfAccount({ raw, serialised }: AccountPart): string | null {
+function partOfAccount({ raw, serialised }: AccountPart): AccountSegment[] | null {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return null;
-  if (serialised) return serialisedInstead(raw);
-  if (carriesDocument(trimmed)) return documentInstead(raw);
+  // The two counted clauses are THIS APP's own words about a part it refused
+  // to quote — which is exactly the fact that has to reach the face, decided
+  // here where the clause is written and never recovered from the sentence
+  // downstream (admin-window/BUG-0196 criterion 5a).
+  if (serialised) return [{ words: serialisedInstead(raw), author: "this app" }];
+  if (carriesDocument(trimmed)) return [{ words: documentInstead(raw), author: "this app" }];
   return askedLineByLine(trimmed);
 }
 
@@ -618,11 +650,29 @@ function partOfAccount({ raw, serialised }: AccountPart): string | null {
  * arrives beside a real database message it is exactly as bounded as a
  * 300-character `details`, and the answer then is a rule for every part.
  */
-function codeOfAccount(error: unknown): string | null {
+function codeOfAccount(error: unknown): AccountSegment[] | null {
   if (serialisedWhole(error)) return null;
   const code = errorCode(error);
   if (code === null) return null;
   return partOfAccount({ raw: code, serialised: false });
+}
+
+/**
+ * The code's segments, PARENTHESISED — the app's own punctuation carried by
+ * the runs it wraps, so nothing composes the account a second way.
+ *
+ * The brackets ride the first and last segment's words rather than becoming
+ * segments of their own: a real PostgREST refusal is one machine-authored run
+ * and stays one — `… violates not-null constraint (23502)`, wholly in the
+ * database's face, code included (admin-window/BUG-0196 criterion 3). A code
+ * that answered one of the account's questions is this app's clause, and its
+ * brackets read in this app's face with it.
+ */
+function parenthesised(code: readonly AccountSegment[]): AccountSegment[] {
+  return code.map((segment, index) => ({
+    words: `${index === 0 ? "(" : ""}${segment.words}${index === code.length - 1 ? ")" : ""}`,
+    author: segment.author,
+  }));
 }
 
 /**
@@ -673,29 +723,48 @@ const REFUSED_WITHOUT_WORDS = "the read was refused with no words to explain it"
  * clause rather than the empty string a screen cannot read
  * (`REFUSED_WITHOUT_WORDS`).
  */
-function errorMessage(error: unknown): string {
-  const kept: string[] = [];
+function errorAccount(error: unknown): AccountSegment[] {
+  // Until admin-window/BUG-0196 this function was `errorMessage` and returned
+  // the flat string. It returns the RUNS now, and the flat `message` of the
+  // error arm is `accountText` of them — the join, and no second composition
+  // of the same account. Everything else about the account is unchanged: the
+  // same parts, in the same order, deduped by the same question.
+  const kept: { readonly text: string; readonly runs: AccountSegment[] }[] = [];
   for (const raw of accountParts(error, 0)) {
     // The ONE place the app decides what an account may carry, for every read
     // in `lib/db/**`. Every surface — the claims card, the paging routes'
     // error arms — inherits it with no line of its own
     // (admin-window/BUG-0170, admin-window/BUG-0173).
-    const part = partOfAccount(raw);
-    if (part === null) continue;
-    if (kept.some((held) => held.includes(part))) continue;
+    const runs = partOfAccount(raw);
+    if (runs === null) continue;
+    // The dedup reads the part's TEXT, exactly as it always has: whether one
+    // part contains another is a question about the words, not about who
+    // wrote them. What it drops or keeps is the whole part, segments and all.
+    const text = accountText(runs);
+    if (kept.some((held) => held.text.includes(text))) continue;
     for (let index = kept.length - 1; index >= 0; index -= 1) {
-      if (part.includes(kept[index])) kept.splice(index, 1);
+      if (text.includes(kept[index].text)) kept.splice(index, 1);
     }
-    kept.push(part);
+    kept.push({ text, runs });
   }
 
-  let account = kept.join(" ");
+  const account = kept.flatMap((part) => part.runs);
   const code = codeOfAccount(error);
-  if (code !== null && !account.includes(code)) {
-    account = account.length > 0 ? `${account} (${code})` : `(${code})`;
+  if (code !== null && !accountText(account).includes(accountText(code))) {
+    account.push(...parenthesised(code));
   }
-  return withoutSecrets(account.length > 0 ? account : REFUSED_WITHOUT_WORDS);
+  const said =
+    accountText(account).length > 0
+      ? account
+      : [{ words: REFUSED_WITHOUT_WORDS, author: "this app" as const }];
+  // `withoutSecrets` STILL RUNS LAST over everything that crosses — per
+  // segment, which is the same string as over the join: every value shape it
+  // redacts excludes whitespace, and the only seam between two segments is
+  // one space (`SEGMENT_GAP`), so no credential can straddle one.
+  return said.map((segment) => ({ words: withoutSecrets(segment.words), author: segment.author }));
 }
+
+
 
 /**
  * What this app is willing to call a column — the object grammar `missing`
@@ -835,11 +904,13 @@ export function classify(
   asked: AskedObject = "table",
 ): DbResult<never> {
   const code = errorCode(error);
-  const refuse = (): DbResult<never> => ({
-    kind: "error",
-    reading: missing,
-    message: errorMessage(error),
-  });
+  const refuse = (): DbResult<never> => {
+    // ONE derivation, read once: the flat account and its runs are the same
+    // list, so a renderer choosing a face and a reader pinning a byte can
+    // never be looking at two different accounts.
+    const authored = errorAccount(error);
+    return { kind: "error", reading: missing, message: accountText(authored), authored };
+  };
   if (code === null) return refuse();
 
   // The one string CLASSIFICATION may read: what the DATABASE said, or `null`

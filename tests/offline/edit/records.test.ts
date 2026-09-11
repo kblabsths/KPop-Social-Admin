@@ -451,6 +451,12 @@ describe("updateRecordField surfaces what the database said", () => {
       kind: "error",
       reading: "walk_sandbox",
       message: expect.stringContaining(denied.message),
+      // The account's runs, as `lib/db/result.ts` decided them: every run of
+      // this one is the DATABASE's, its own code included (admin-window/BUG-0196).
+      authored: [
+        { words: denied.message, author: "the machine" },
+        { words: `(${denied.code})`, author: "the machine" },
+      ],
     });
   });
 

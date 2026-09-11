@@ -21,6 +21,8 @@ import {
   type ReasonAuthor,
 } from "@/lib/paging/machine";
 
+import { accountText, type AccountSegment } from "@/lib/account/authored";
+
 import { h, render } from "../ui/markup";
 
 /**
@@ -77,6 +79,29 @@ function broken(refusal: PageRefusal | null): BrokenRefusal {
   expect(refusal, "there is no refusal to read").not.toBeNull();
   expect((refusal as PageRefusal).condition).toBe("broken");
   return refusal as BrokenRefusal;
+}
+
+/**
+ * WHO WROTE a refusal whose account is ONE sentence — the fact `reasonFrom`
+ * carried until admin-window/BUG-0196 split the account into runs.
+ *
+ * It asserts the single run on the way through, which is the point: every arm
+ * the driver writes is one sentence with one author, and an arm that quietly
+ * grew a second run would be read here rather than silently answering for its
+ * first. A failed READ's account is the one that may carry more, and the cases
+ * that drive it read `account` itself.
+ */
+function authorOf(refusal: BrokenRefusal): ReasonAuthor {
+  expect(refusal.account, "the account is not one run").toHaveLength(1);
+  // The flat reason is the JOIN of the runs and is derived at one point, so
+  // asserting it here makes every `reason` pin below a pin on the runs too.
+  expect(accountText(refusal.account)).toBe(refusal.reason);
+  return refusal.account[0].author;
+}
+
+/** One sentence, by one author — a refusal as every arm but the read's carries it. */
+function said(words: string, author: ReasonAuthor): AccountSegment[] {
+  return [{ words, author }];
 }
 
 /** A surface that has rendered a first screen of `held` rows and paged in two. */
@@ -323,8 +348,8 @@ describe("requestPage", () => {
           refusal: {
             condition: "broken",
             reason: "the read failed",
+            account: said("the read failed", "the machine"),
             object: "pending_claims",
-            reasonFrom: "the machine",
           },
         },
         deps,
@@ -830,7 +855,7 @@ describe("requestPage", () => {
       expect(next.status).toBe("idle");
       expect(next.notes).toBe(standing);
       expect(broken(next.refusal).object).toBe(PAGE_ROUTES.claims);
-      expect(broken(next.refusal).reasonFrom).toBe("this app");
+      expect(authorOf(broken(next.refusal))).toBe("this app");
       // No figure of the answer's is quoted back as ours — not the bound it
       // declared, not the one this press sent.
       expect(broken(next.refusal).reason).not.toMatch(/\d/);
@@ -963,8 +988,10 @@ describe("requestPage", () => {
         reason: "connection refused",
         object: "pending_claims",
         // Postgres wrote those words; the line renders them in mono
-        // (admin-window/BUG-0175).
-        reasonFrom: "the machine",
+        // (admin-window/BUG-0175). The answer carried NO authorship at all,
+        // which is the wire's documented default and not a guess about the
+        // words: the whole account is the machine's (admin-window/BUG-0196).
+        account: said("connection refused", "the machine"),
       });
     });
 
@@ -1042,7 +1069,7 @@ describe("requestPage", () => {
         expect(said.reason.toLowerCase(), JSON.stringify(blank)).not.toContain("sorry");
         // The author flips WITH the words: the clause is this app's sentence,
         // so it never reads in the machine's face.
-        expect(said.reasonFrom, JSON.stringify(blank)).toBe("this app");
+        expect(authorOf(said), JSON.stringify(blank)).toBe("this app");
       }
 
       // The MACHINE face of the same emptiness: a wordless `error` arm gets
@@ -1050,7 +1077,7 @@ describe("requestPage", () => {
       // named is untouched.
       const errored = answering({ kind: "error", reading: "pending_claims", message: "" });
       const machine = broken((await requestPage(held, errored.deps)).refusal);
-      expect(machine.reasonFrom).toBe("this app");
+      expect(authorOf(machine)).toBe("this app");
       expect(machine.object).toBe("pending_claims");
       expect(machine.reason).toMatch(/refus/i);
 
@@ -1062,10 +1089,10 @@ describe("requestPage", () => {
       );
       const theirs = broken((await requestPage(held, kept.deps)).refusal);
       expect(theirs.reason).toBe("canceling statement due to statement timeout");
-      expect(theirs.reasonFrom).toBe("the machine");
+      expect(authorOf(theirs)).toBe("the machine");
       const ours = broken((await requestPage(held, kept.deps)).refusal);
       expect(ours.reason).toBe("a bound of 61 is not a multiple of the 50-row window");
-      expect(ours.reasonFrom).toBe("this app");
+      expect(authorOf(ours)).toBe("this app");
 
       // And the not-provisioned arm is OUTSIDE this rule: it carries a fact,
       // never a reason, so nothing was substituted into it.
@@ -1111,7 +1138,7 @@ describe("requestPage", () => {
         const { deps } = answering({ kind: "refused", reason: absentReason, bound: "75" });
         const said = broken((await requestPage(held, deps)).refusal);
         expect(said.reason, JSON.stringify(absentReason)).toMatch(/refus/i);
-        expect(said.reasonFrom, JSON.stringify(absentReason)).toBe("this app");
+        expect(authorOf(said), JSON.stringify(absentReason)).toBe("this app");
       }
 
       // MUST-NOT-FLAG twin (LESSONS 8): a dash the answer wrote INSIDE words of
@@ -1123,7 +1150,7 @@ describe("requestPage", () => {
       });
       const theirs = broken((await requestPage(held, kept.deps)).refusal);
       expect(theirs.reason).toBe(`column events.badcol ${EM_DASH} does not exist`);
-      expect(theirs.reasonFrom).toBe("the machine");
+      expect(authorOf(theirs)).toBe("the machine");
 
       // The OTHER wire-fed arm, which no case above reaches: `refuse()` is
       // asked the absence question by the `error` arm too, so a machine
@@ -1136,7 +1163,7 @@ describe("requestPage", () => {
         const wordless = answering({ kind: "error", reading: "pending_claims", message: dashOnly });
         const said = broken((await requestPage(held, wordless.deps)).refusal);
         expect(said.reason, JSON.stringify(dashOnly)).toMatch(/refus/i);
-        expect(said.reasonFrom, JSON.stringify(dashOnly)).toBe("this app");
+        expect(authorOf(said), JSON.stringify(dashOnly)).toBe("this app");
         expect(said.object, JSON.stringify(dashOnly)).toBe("pending_claims");
       }
     });
@@ -1232,8 +1259,8 @@ describe("pressing", () => {
       refusal: {
         condition: "broken",
         reason: "the read failed",
+        account: said("the read failed", "the machine"),
         object: "pending_claims",
-        reasonFrom: "the machine",
       },
       notes: null,
     };
@@ -1431,8 +1458,8 @@ describe("every refusal says who wrote its reason", () => {
       // Non-vacuity: this really is a refusal, with words on it.
       expect(next.refusal, name).not.toBeNull();
       expect(broken(next.refusal).reason.length, name).toBeGreaterThan(0);
-      expect(broken(next.refusal).reasonFrom, name).toBe(author);
-      seen.add(broken(next.refusal).reasonFrom);
+      expect(authorOf(broken(next.refusal)), name).toBe(author);
+      seen.add(authorOf(broken(next.refusal)));
     }
     // Both halves are really exercised (LESSONS 8): a table that only ever
     // said "this app" would pass against a constant.
@@ -1450,8 +1477,8 @@ describe("every refusal says who wrote its reason", () => {
     const theirs = await threw(new Error(sentence));
     expect(broken(ours.refusal).reason).toBe(sentence);
     expect(broken(theirs.refusal).reason).toBe(broken(ours.refusal).reason);
-    expect(broken(ours.refusal).reasonFrom).toBe("this app");
-    expect(broken(theirs.refusal).reasonFrom).toBe("the machine");
+    expect(authorOf(broken(ours.refusal))).toBe("this app");
+    expect(authorOf(broken(theirs.refusal))).toBe("the machine");
   });
 
   it("and never with the words: a sentence no constant in this app spells is still this app's", async () => {
@@ -1460,7 +1487,7 @@ describe("every refusal says who wrote its reason", () => {
     const invented = "a sentence this app has not written yet, in the app's own voice";
     const next = await threw(new AppAuthoredError(invented));
     expect(broken(next.refusal).reason).toBe(invented);
-    expect(broken(next.refusal).reasonFrom).toBe("this app");
+    expect(authorOf(broken(next.refusal))).toBe("this app");
   });
 
   it("a press that succeeds still leaves no refusal to ask the question of", async () => {

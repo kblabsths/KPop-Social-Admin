@@ -32,6 +32,13 @@
 // multi-line import's opening brace reads as an import naming no module at all
 // and the leaf is reported as reaching outside itself.
 import { isPageAnswer, isPageNotes, OFFSET_PARAM, type PageAnswer, type PageNote, type PageNotes } from "./bounds";
+// The app's ONE spelling of "who wrote these words", and the join that makes a
+// flat account the join of its runs (admin-window/BUG-0196). `ReasonAuthor`
+// was declared HERE until that ticket; it moved down so `lib/db/result.ts` —
+// which decides the fact where each clause is authored — can reach the same
+// type, and it is re-exported below so this module's name for it still
+// resolves.
+import { accountText, type AccountSegment, type ReasonAuthor } from "@/lib/account/authored";
 // The app's ONE definition of blank, ASKED rather than retyped (common
 // violations row 15, admin-window/BUG-0176). `isAbsent` (`src/lib/format.ts`)
 // is the same question one layer up and cannot be reached from a leaf —
@@ -70,10 +77,18 @@ export type PageRefusal =
   | {
       /** A press this app could not complete — the four red arms. */
       condition: "broken";
+      /**
+       * The whole account as ONE string — the JOIN of `account`, derived at
+       * `refuse()`, the single construction point, and never authored beside
+       * it (`accountText`, admin-window/BUG-0196). It is what the "no words"
+       * question is asked of, because a refusal that puts no ink on the page
+       * is wordless whatever its runs.
+       */
       reason: string;
       /**
-       * Who wrote `reason` — the one question the FACE answers
-       * (admin-window/BUG-0175).
+       * The account as its RUNS — the words of each part and WHO WROTE THEM,
+       * in order. The one question the FACE answers (admin-window/BUG-0175,
+       * widened to a list by admin-window/BUG-0196).
        *
        *  `"this app"`    → prose this app composed; renders in the `body` sans
        *                    step, the face this app uses for its own words.
@@ -86,15 +101,21 @@ export type PageRefusal =
        * `canceling statement due to statement timeout` (Postgres said it) and
        * `the page request answered something this app cannot read` (we said it)
        * were the same 11px mono red run, and the operator lost the one signal
-       * the type split exists to give.
+       * the type split exists to give. MEASURED again one milestone later: a
+       * failed READ's account carries BOTH authors in one sentence — the
+       * database's words and this app's counted clause about the part it
+       * refused to quote — which is why one author per refusal was not enough
+       * and this is a list.
        *
-       * It is SET at `refuse()` — the single construction point every arm of
-       * this condition passes through — and the component only reads it. It is
-       * never recovered by comparing `reason` to one of this module's
-       * constants: that is a rule retyped as data (LESSONS 4 and 5), and it
-       * would silently flip a face the day one of those sentences is reworded.
+       * Every arm but the failed read's has exactly ONE run: it is one
+       * sentence with one author. It is SET at `refuse()` — the single
+       * construction point every arm of this condition passes through — and
+       * the component only reads it. It is never recovered by comparing
+       * `reason` to one of this module's constants: that is a rule retyped as
+       * data (LESSONS 4 and 5), and it would silently flip a face the day one
+       * of those sentences is reworded.
        */
-      reasonFrom: ReasonAuthor;
+      account: readonly AccountSegment[];
       object: string | null;
     }
   | {
@@ -110,8 +131,18 @@ export type PageRefusal =
       missing: string;
     };
 
-/** The two answers to "who wrote this refusal's reason". */
-export type ReasonAuthor = "this app" | "the machine";
+/**
+ * The two answers to "who wrote this refusal's reason", RE-EXPORTED from the
+ * leaf that now owns them (`src/lib/account/authored.ts`).
+ *
+ * One vocabulary for this fact in this app: the type is declared once, below
+ * both sides, so `lib/db/result.ts` — which decides the fact where each clause
+ * is written — and this module name the SAME two spellings. A second
+ * two-valued type would be the defect, not a style choice
+ * (admin-window/BUG-0196 criterion 5a). The name stays reachable here because
+ * this is where every caller already asks for it.
+ */
+export type { ReasonAuthor };
 
 /**
  * An `Error` whose message THIS APP composed — admin-window/BUG-0175.
@@ -328,11 +359,41 @@ function refuse<Row>(
    */
   reasonFrom: ReasonAuthor,
 ): PageState<Row> {
+  return refuseAccount(state, [{ words: reason, author: reasonFrom }], object);
+}
+
+/**
+ * The same refusal, for an account that is more than one sentence — campaign
+ * admin-window/BUG-0196.
+ *
+ * THE construction point: `refuse` above is this function with a list of one,
+ * which is what every arm but the failed read's carries. The wordless
+ * substitution and the flat `reason` are therefore written ONCE, and a new arm
+ * inherits both by construction.
+ *
+ * `reason` is DERIVED here — `accountText(account)` — and never passed in
+ * beside the runs, so the string an operator reads as one sentence and the
+ * runs that decide its faces cannot disagree. It is the same relationship
+ * `message` has to the same runs one seam earlier (§4.1,
+ * `src/lib/db/result.ts`).
+ *
+ * The account is carried VERBATIM otherwise: nothing here re-reads it, merges
+ * it, trims it or re-authors it. The run-splitting a renderer needs is one
+ * derivation in the leaf (`accountRuns`), asked at the point of drawing.
+ */
+function refuseAccount<Row>(
+  state: PageState<Row>,
+  account: readonly AccountSegment[],
+  object: string | null,
+): PageState<Row> {
+  const reason = accountText(account);
   const wordless = isAbsentText(reason);
   return withRefusal(state, {
     condition: "broken",
     reason: wordless ? WORDLESS_REFUSAL : reason,
-    reasonFrom: wordless ? "this app" : reasonFrom,
+    // The author flips WITH the words: a wordless account is replaced by this
+    // app's own clause, so its one run is this app's.
+    account: wordless ? [{ words: WORDLESS_REFUSAL, author: "this app" }] : account,
     object,
   });
 }
@@ -434,11 +495,11 @@ function reasonOf(thrown: unknown): string {
  * runtime's own words, and only the thrown VALUE says which. `instanceof` is
  * the whole derivation — no message is compared to anything.
  */
-function refusalFor(thrown: unknown): { reason: string; reasonFrom: ReasonAuthor } {
+function refusalFor(thrown: unknown): AccountSegment[] {
   if (thrown instanceof AppAuthoredError && thrown.message.length > 0) {
-    return { reason: thrown.message, reasonFrom: "this app" };
+    return [{ words: thrown.message, author: "this app" }];
   }
-  return { reason: reasonOf(thrown), reasonFrom: "the machine" };
+  return [{ words: reasonOf(thrown), author: "the machine" }];
 }
 
 /**
@@ -523,8 +584,7 @@ export async function requestPage<Row>(
   try {
     body = await deps.fetchJson(pageUrl(deps, state.held));
   } catch (thrown) {
-    const { reason, reasonFrom } = refusalFor(thrown);
-    return refuse(state, reason, deps.route, reasonFrom);
+    return refuseAccount(state, refusalFor(thrown), deps.route);
   }
 
   if (!isPageAnswer(body)) {
@@ -632,9 +692,22 @@ export async function requestPage<Row>(
       // app's one spelling of this sentence.
       return refuseAbsent(state, answer.missing);
     case "error":
-      // The only arm whose reason is not ours: the database's own string,
-      // carried across the wire byte-identical (§4.1).
-      return refuse(state, answer.message, answer.reading, "the machine");
+      // The only arm whose reason is not ours — and the only one that can
+      // carry BOTH authors, because a failed read's account may hold the
+      // database's words beside this app's counted clause about a part it
+      // refused to quote (admin-window/BUG-0196).
+      //
+      // The runs are the ones `lib/db/result.ts` decided where the clauses are
+      // written, carried across the wire and READ, never re-derived here. An
+      // answer that carries NO authorship means what this app rendered before
+      // the fact existed — the whole account is the machine's — which is the
+      // wire's documented default (`src/lib/paging/bounds.ts`) and not a guess
+      // about its words.
+      return refuseAccount(
+        state,
+        answer.authored ?? [{ words: answer.message, author: "the machine" }],
+        answer.reading,
+      );
     case "refused":
       // The route's own bound refusal, written by `src/lib/paging/bounds.ts` —
       // which is this app, on the other side of a fetch.

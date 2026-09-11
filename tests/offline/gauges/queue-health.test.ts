@@ -127,6 +127,12 @@ describe("fetchQueueHealth", () => {
       // client's own account reaches the caller intact (BUG-0016).
       reading: T.reviewItems,
       message: expect.stringContaining(`permission denied for table ${T.reviewItems}`),
+      // The account's runs, as `lib/db/result.ts` decided them: every run of
+      // this one is the DATABASE's, its own code included (admin-window/BUG-0196).
+      authored: [
+        { words: `permission denied for table ${T.reviewItems}`, author: "the machine" },
+        { words: "(42501)", author: "the machine" },
+      ],
     });
   });
 });
