@@ -1,0 +1,95 @@
+{
+ "id": "TASK-0069",
+ "created": "2026-09-11T05:37:46Z",
+ "green": true,
+ "git_head": "565cd51543118e96c8c6eebc92ccef6ff6688b6e",
+ "scope": [
+  "src/app/browse/page.tsx",
+  "src/components/browse/paged-browse-table.tsx",
+  "src/lib/browse/views.ts",
+  "tests/offline/browse/page.test.ts",
+  "tests/offline/browse/views.test.ts",
+  "tests/offline/absence/pages.test.ts",
+  "tests/live/browse.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "8cf6402b3b8e319988798c18aba5d3a4a55b615dd27383b81c5397cf8a24c308",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/browse tests/offline/absence/pages.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-23684\n\n \u2713 |offline| tests/offline/browse/views.test.ts (59 tests) 43ms\n \u2713 |offline| tests/offline/browse/browse-read.test.ts (35 tests) 15ms\n \u2713 |offline| tests/offline/browse/page.test.ts (55 tests) 615ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (286 tests) 2324ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  396ms\n   \u2713 a surface offers a control only where the read behind it answered > puts no control inside a card that says a read did not happen, and gains none  903ms\n\n Test Files  4 passed (4)\n      Tests  435 passed (435)\n   Start at  22:37:08\n   Duration  3.21s (transform 1.39s, setup 0ms, collect 1.48s, tests 3.00s, environment 0ms, prepare 285ms)\n\n(node:23694) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/shell tests/offline/ui/copy.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-23684\n\n \u2713 |offline| tests/offline/ui/copy.test.ts (12 tests) 104ms\n \u2713 |offline| tests/offline/shell/client-boundary.test.ts (20 tests) 498ms\n   \u2713 the client boundary under src/ > really resolves server imports of client components  311ms\n \u2713 |offline| tests/offline/shell/shell.test.ts (32 tests) 65ms\n\n Test Files  3 passed (3)\n      Tests  64 passed (64)\n   Start at  22:37:11\n   Duration  1.13s (transform 539ms, setup 0ms, collect 1.07s, tests 667ms, environment 0ms, prepare 186ms)\n\n(node:23738) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -qF \"const { state, press, size } = usePageRows\" src/components/browse/paged-browse-table.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"size={size}\" src/components/browse/paged-browse-table.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -qE \"BROWSE_VIEWS|view\\.window\" src/components/browse/paged-browse-table.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"data-surface={surface}\" src/components/browse/paged-browse-table.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"StateOf\" src/components/browse/paged-browse-table.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"state.notes\" src/components/browse/paged-browse-table.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q \"@/lib/db\" src/components/browse/paged-browse-table.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"data-paging\" tests/offline/browse/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"data-not-provisioned\" tests/offline/browse/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(find src/app -name \"page.tsx\" | wc -l)\" -eq 9",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "riments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.3s\n  Running TypeScript ...\n  Finished TypeScript in 5.9s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 157ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/browse/rows\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-23684/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:23881) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/browse.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-23684\n\n \u2713 |live| tests/live/browse.live.test.ts (6 tests) 11740ms\n   \u2713 Browse's surface hook against staging > names the events surface once, whatever state it rendered in  2589ms\n   \u2713 Browse against staging > renders the window newest-first by arrival, exactly as the database orders it  1310ms\n   \u2713 Browse against staging > shows no more than the window, and every row the database has when there are fewer  2098ms\n   \u2713 Browse against staging > renders the first page of rows with the values the database holds  1281ms\n   \u2713 Browse against staging > names the same sources behind the newest row as the provenance join does  1454ms\n   \u2713 paging past the first window, against staging > reaches an event beyond the first window's last row, in the order the database holds  3007ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  22:37:33\n   Duration  12.42s (transform 187ms, setup 31ms, collect 401ms, tests 11.74s, environment 0ms, prepare 64ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/browse.live.test.ts\n(node:23952) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
