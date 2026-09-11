@@ -10,6 +10,7 @@ import {
   exactCount,
   gradeSurface,
   independentClient,
+  objectIsAbsent,
   readNumber,
   renderPage,
   whileStill,
@@ -446,7 +447,28 @@ describe("the queue-health gauge against staging", () => {
           `${WINDOW_DAYS} days end to end`,
       ).toBe(WINDOW_DAYS * MS_PER_DAY);
     }
-    const counted = window.present ? await windowCounts(window) : "absent";
+    // The gauge's count comes from a READ, never from a fact of the MARKUP
+    // (admin-window/BUG-0189). Where the page published its window line, the
+    // read is over the interval that line states. Where it published NO line
+    // there is no interval to count over, so the only honest question left is
+    // put to the DATABASE: is `review_items` there at all? `"absent"` comes
+    // back only when this test's own read gets the absence code, and a number
+    // otherwise — so a page rendering the gauge not-provisioned over an
+    // existing table fails at `gradeSurface`'s rule 5 instead of passing on
+    // the render's own word (ARCHITECTURE.md §10, live-state rule 3). The
+    // shape is the sibling's, `tests/live/cycles.live.test.ts`'s cycle-health
+    // gauge.
+    //
+    // It is spelled as the THUNK form of `counted` that `gradeSurface` already
+    // accepts, which is run only once the surface is known not to be in its
+    // ERROR state; the counts it takes are kept, because the per-slice parity
+    // assertions below grade that same read rather than issuing a second one.
+    // (A box rather than a bare `let`: TypeScript's flow analysis does not see
+    // the assignment made inside the thunk, and would narrow a `let` to its
+    // initializer for every read below.)
+    const gauge: { counted: WindowCounts | "absent" | "no window line" } = {
+      counted: "no window line",
+    };
 
     // The gauge is its own read of the same table, so it is its own surface
     // with its own state — graded before a figure is read off it, and graded
@@ -462,11 +484,20 @@ describe("the queue-health gauge against staging", () => {
       markup,
       within: HEALTH,
       object: T.reviewItems,
-      counted: counted === "absent" ? "absent" : counted.rows,
+      counted: async () => {
+        if (!window.present) {
+          return (await objectIsAbsent(T.reviewItems)) ? "absent" : 0;
+        }
+        gauge.counted = await windowCounts(window);
+        return gauge.counted === "absent" ? "absent" : gauge.counted.rows;
+      },
       excluding: GAUGE_SLICES,
       emptyAtZero: false,
     });
-    if (state !== "ok" || counted === "absent") return;
+    const counted = gauge.counted;
+    if (state !== "ok" || counted === "absent" || counted === "no window line") {
+      return;
+    }
 
     // Each slice's open figure against this test's own count of that queue's
     // open items INSIDE the window — the two-paths-to-one-number comparison
