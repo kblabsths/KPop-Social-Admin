@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-12T01:02:35Z — do not edit)
+# Tracker index (regenerated 2026-09-12T01:11:16Z — do not edit)
 
 ## open
 - BUG-0221 [P2][bug][patch] A paged press asks for a POSITION, so a claim settled ahead of the bound between the screen and the press is silently skipped  (scope:src/lib/paging/machine.ts,src/lib/paging/bounds.ts,src/lib/db/claims.ts,src/lib/db/paging.ts,src/app/api/admin/claims/rows/route.ts,src/app/api/admin/browse/rows/route.ts,src/components/ui/paging.tsx,src/app/claims/page.tsx,src/app/browse/page.tsx,tests/offline/paging/machine.test.ts,tests/live/claims.live.test.ts from:BUG-0216)
@@ -9,7 +9,4 @@
 ## claimed
 - BUG-0220 [P2][bug][-] The registry reader takes a narrower declaration grammar than the sibling's own parser, so a typing pass next door reddens npm test and a single-quoted claim passes  (scope:tests/offline/handoff/settle-review-item.test.ts @builder-320 from:BUG-0213)
 
-## qa
-- BUG-0219 [P2][bug][M3] edit.live's two venue-provenance cases grade a population read minutes earlier, so a row a concurrent writer removes mid-run turns the live tier red  (scope:tests/live/edit.live.test.ts @builder-319 from:BUG-0215)
-
-Totals — claimed:1, done:82, open:4, qa:1. Archived: 252.
+Totals — claimed:1, done:83, open:4. Archived: 252.
