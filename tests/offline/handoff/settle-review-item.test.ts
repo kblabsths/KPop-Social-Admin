@@ -316,23 +316,205 @@ function installedHandoffNotes(): { note: string; target: string; text: string }
 }
 
 /**
- * The `NAME = "KSnnn"` declarations of `text`, as code → the names it is held
- * for.
+ * The declarations of `text`, as code → the names it is held for, read in the
+ * grammar the SIBLING'S OWN PARSER defines — admin-window/BUG-0220.
  *
  * One reader for both sides, deliberately: the sibling's registry and §1a's
  * paste are the same grammar, so "the same meaning" is an equality of what each
  * side SAYS rather than a resemblance between two pieces of text. A code
  * mentioned any other way — raised, pinned in a list, quoted in prose — is not
  * a declaration and does not appear here at all.
+ *
+ * The registry is the sibling's FILE, so what counts as a declaration in it is
+ * the sibling's definition, and that definition is code next door rather than
+ * prose: `_declared_by` / `code_declarations` in
+ * `tests/live_safety/test_codes_named_once.py` blank the comments and take, off
+ * the `ast`, an `Assign` OR an `AnnAssign` whose single target is a Name and
+ * whose value is a string Constant. Every spelling of THAT declares here,
+ * because every one of them declares there — this reader asking for a narrower
+ * spelling (one line, bare `=`, double quotes, nothing after the closing quote)
+ * is what turned `npm test` red for every builder over a typing pass next door
+ * that changed no meaning, and what let a claim in the other quote through
+ * silently. So: either quote and either triple quote, an `r`/`u` prefix, an
+ * annotation, any indentation, a parenthesised or line-wrapped or
+ * implicitly-concatenated value, a name in any case (an `ast.Name` has no case
+ * rule), a trailing comment, a trailing semicolon or a second statement after
+ * one.
+ *
+ * And what declares NOTHING there declares nothing here: a declaration parked
+ * inside a comment or inside a string ("a declaration parked inside a comment
+ * is invisible, one WEARING a comment is not", `code_declarations`' docstring),
+ * a `==` comparison, a chained, tuple, attribute or subscript target, an
+ * augmented assignment, an annotation with no value, a `b"…"` bytes literal or
+ * an f-string — neither is a `str` Constant — and a code standing in a list, a
+ * dict, a call, an expression or a name.
+ *
+ * Every form above, and every form below it in the grammar test, was put
+ * through the sibling's own `code_declarations` before it was written down
+ * (2026-09-11: 45 fixtures, 0 disagreements), and so was the registry as it
+ * stands — 32 codes, same names, same reader.
+ *
+ * Two narrowings this reader keeps, both stated rather than hidden, because
+ * neither can hide a claim on any code the comparison asks about:
+ *
+ *  - only a `KSnnn` value is collected, where the sibling's `names_a_code` also
+ *    admits any five-character SQLSTATE. Every code `codeClaims` looks up is a
+ *    `KSnnn`, so a wider value set would add no answer — and asking it of a
+ *    markdown note would invent declarations out of prose;
+ *  - an escape sequence is not decoded, so `"KS\x30\x32\x39"` declares nothing
+ *    here and `KS029` there. The registry's 32 entries are plain literals, and
+ *    a five-character code has nothing to escape.
+ *
+ * It reads markdown as readily as python, because §1a's paste is markdown until
+ * Ben pastes it: the blanking below is the sibling's `blank_comments` done as a
+ * scan rather than as a tokenizer, so it is the text's own quotes — not a
+ * python tokenizer — that decide where a `#` stops being a comment. A markdown
+ * note is not a module, so a bracket left open in prose joins the lines after it
+ * rather than failing the whole text the way `ast.parse` would; the join is
+ * dropped at a blank line, which keeps that local to its own paragraph. A join
+ * can only take a declaration away, never invent one, because a declaration is
+ * read from the START of what it stands on.
  */
-const CODE_DECLARATION = /^[ \t]*([A-Z][A-Z0-9_]*)[ \t]*=[ \t]*"(KS\d{3})"[ \t]*$/gm;
+function pythonCode(text: string): string {
+  const blanked: string[] = [];
+  let index = 0;
+  // The delimiter of the triple-quoted string being skipped, if any: its body
+  // is data, so a declaration written inside it declares nothing.
+  let triple: string | null = null;
+  // The quote of the one-line string literal being kept verbatim, if any. A
+  // python string literal cannot cross a line break, so the line ends it.
+  let quote: string | null = null;
+  // Open brackets, so a value wrapped across lines is read as the one logical
+  // line it is next door.
+  let depth = 0;
+  let blankLine = true;
+  while (index < text.length) {
+    const character = text[index];
+    if (triple !== null) {
+      if (text.startsWith(triple, index)) {
+        blanked.push("   ");
+        triple = null;
+        index += 3;
+        continue;
+      }
+      // Blank, never delete: the body's own line breaks stay (blank_comments'
+      // reason), so what follows a docstring still stands at a line's start.
+      blanked.push(character === "\n" ? "\n" : " ");
+      index += 1;
+      continue;
+    }
+    if (quote !== null) {
+      if (character === "\\" && index + 1 < text.length) {
+        blanked.push(text.slice(index, index + 2));
+        index += 2;
+        continue;
+      }
+      if (character === quote || character === "\n") quote = null;
+      blanked.push(character);
+      index += 1;
+      continue;
+    }
+    if (character === "\n") {
+      // A line break inside brackets, or one a backslash continues, is not a
+      // statement boundary; a blank line ends any bracket a prose paragraph
+      // left open, since this text may be a markdown note and not a module.
+      const joins = depth > 0 || blanked[blanked.length - 1] === "\\";
+      if (blanked[blanked.length - 1] === "\\") blanked.pop();
+      if (blankLine) depth = 0;
+      blanked.push(joins && !blankLine ? " " : "\n");
+      blankLine = true;
+      index += 1;
+      continue;
+    }
+    if (character !== " " && character !== "\t" && character !== "\r") blankLine = false;
+    if (text.startsWith('"""', index) || text.startsWith("'''", index)) {
+      const delimiter = text.slice(index, index + 3);
+      const closes = text.indexOf(delimiter, index + 3);
+      const ends = text.indexOf("\n", index);
+      // A triple-quoted literal opened and closed on one line is a value a
+      // declaration can carry, so it is kept; one that runs on is a body.
+      if (closes !== -1 && (ends === -1 || closes < ends)) {
+        blanked.push(text.slice(index, closes + 3));
+        index = closes + 3;
+        continue;
+      }
+      triple = delimiter;
+      blanked.push("   ");
+      index += 3;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      blanked.push(character);
+      index += 1;
+      continue;
+    }
+    if (character === "#") {
+      const ends = text.indexOf("\n", index);
+      const stops = ends === -1 ? text.length : ends;
+      blanked.push(" ".repeat(stops - index));
+      index = stops;
+      continue;
+    }
+    if ("([{".includes(character)) depth += 1;
+    if (")]}".includes(character)) depth = Math.max(0, depth - 1);
+    blanked.push(character);
+    index += 1;
+  }
+  return blanked.join("");
+}
+
+/** One python string literal at the head of `value`: the prefix, and its text. */
+const STRING_LITERAL =
+  /^[rRuU]?(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"([^"]*)"|'([^']*)')/;
+
+/**
+ * The `str` Constant a value expression is, or null when it is not one.
+ *
+ * Parentheses come off and adjacent literals join, because both are a single
+ * `ast.Constant` next door; a `b"…"` prefix, an f-string, a name, a call and an
+ * operator all leave something this cannot read, which is the same answer the
+ * `isinstance(value, ast.Constant)` test gives them.
+ */
+function stringConstant(value: string): string | null {
+  let rest = value.trim();
+  while (rest.startsWith("(") && rest.endsWith(")")) {
+    const inner = rest.slice(1, -1).trim();
+    if (inner.length === 0) return null;
+    rest = inner;
+  }
+  if (rest.length === 0) return null;
+  let joined = "";
+  while (rest.length > 0) {
+    const literal = STRING_LITERAL.exec(rest);
+    if (literal === null) return null;
+    joined += literal[1] ?? literal[2] ?? literal[3] ?? literal[4] ?? "";
+    rest = rest.slice(literal[0].length).trim();
+  }
+  return joined;
+}
+
+/**
+ * One assignment statement: a single Name target, an optional annotation that
+ * carries something (so a bare `NAME := …` walrus, which is no assignment
+ * statement at all, is not read as one), and a value.
+ */
+const CODE_DECLARATION = /^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*(?::[ \t]*[^\s=][^=]*)?=(?!=)(.+)$/;
+
+/** A refusal code of this campaign's own shape, the only value read here. */
+const CODE_VALUE = /^KS\d{3}$/;
 
 function declaredCodeNames(text: string): Map<string, string[]> {
   const declared = new Map<string, string[]>();
-  for (const match of text.matchAll(CODE_DECLARATION)) {
-    const names = declared.get(match[2]) ?? [];
-    if (!names.includes(match[1])) names.push(match[1]);
-    declared.set(match[2], names);
+  // A statement ends at a line break or a semicolon, as it does next door.
+  for (const statement of pythonCode(text).split(/[\n;]/)) {
+    const assignment = CODE_DECLARATION.exec(statement);
+    if (assignment === null) continue;
+    const code = stringConstant(assignment[2]);
+    if (code === null || !CODE_VALUE.test(code)) continue;
+    const names = declared.get(code) ?? [];
+    if (!names.includes(assignment[1])) names.push(assignment[1]);
+    declared.set(code, names);
   }
   return declared;
 }
@@ -1368,7 +1550,7 @@ describe("the settle_review_item migration", () => {
    * `it()` on this branch: `expected [ …(4) ] to deeply equal []`, the four
    * findings above. The fixer flips it back to `it()`.
    */
-  it.fails("reads a registry declaration in every form the sibling's own parser declares one", () => {
+  it("reads a registry declaration in every form the sibling's own parser declares one", () => {
     const allocated = allocatedCodes();
     expect(allocated.length).toBeGreaterThan(0);
     const claim = allocated[0];
@@ -1411,6 +1593,113 @@ describe("the settle_review_item migration", () => {
     expect(found).toHaveLength(1);
     expect(found[0]).toContain("LEASE_NOT_RENEWED");
   });
+
+  /**
+   * The grammar itself, stated as the property rather than as the three
+   * spellings that were missing — admin-window/BUG-0220 (LESSONS 13).
+   *
+   * The property: a registry entry declares here exactly when it declares next
+   * door, where "declares" is `_declared_by`'s definition and nothing else —
+   * an `Assign` or an `AnnAssign`, one Name target, a `str` Constant value,
+   * comments off first. Every row below is a form of that definition or a form
+   * outside it, so the next spelling someone types next door is already
+   * answered instead of being the next bug.
+   *
+   * Both fixtures, as every reader needs (LESSONS 8): the forms that MUST
+   * declare, and the forms that must NOT — including the two the sibling's
+   * docstring calls out itself, a declaration parked inside a comment and a
+   * code standing in a list, and the one this reader would otherwise invent
+   * out of a file's own prose, a declaration written inside a string.
+   *
+   * In memory: nothing here reads or writes next door, and it answers the same
+   * on a machine where the sibling is not checked out at all. Every row was
+   * put through the sibling's OWN `code_declarations` before it was written
+   * down (2026-09-11, admin-window/BUG-0220: 45 fixtures, 0 disagreements), so
+   * the table below is that parser's answers and not this repo's opinion of
+   * them — a snippet has to be a module it can parse, which is why the
+   * indented row carries the body it is indented in.
+   */
+  it("reads a declaration in every form its owner's parser calls one, and in no other", () => {
+    const code = "KS029";
+    const declares = (source: string): string[] => declaredCodeNames(source).get(code) ?? [];
+
+    // An `Assign` or an `AnnAssign`, one Name target, a `str` Constant — the
+    // quote style, the annotation, the indentation and any trailing comment
+    // never reach the sibling's tree, so none of them may decide this.
+    const declaring: ReadonlyArray<readonly [string, string, string[]]> = [
+      ["bare, double quotes", `UNREADABLE_VERDICT = "${code}"`, ["UNREADABLE_VERDICT"]],
+      ["bare, single quotes", `UNREADABLE_VERDICT = '${code}'`, ["UNREADABLE_VERDICT"]],
+      ["annotated", `UNREADABLE_VERDICT: Final[str] = "${code}"`, ["UNREADABLE_VERDICT"]],
+      ["annotated, single quotes", `UNREADABLE_VERDICT: str = '${code}'`, ["UNREADABLE_VERDICT"]],
+      ["wearing a comment", `UNREADABLE_VERDICT = "${code}"  # the admin handoff`, ["UNREADABLE_VERDICT"]],
+      ["annotated, wearing a comment", `UNREADABLE_VERDICT: Final[str] = '${code}'  # ours`, ["UNREADABLE_VERDICT"]],
+      ["indented, inside a body", `class Codes:\n    UNREADABLE_VERDICT = "${code}"`, ["UNREADABLE_VERDICT"]],
+      ["a lower-case name, which an ast.Name also is", `unreadable_verdict = "${code}"`, ["unreadable_verdict"]],
+      ["parenthesised", `UNREADABLE_VERDICT = ("${code}")`, ["UNREADABLE_VERDICT"]],
+      ["triple-quoted", `UNREADABLE_VERDICT = """${code}"""`, ["UNREADABLE_VERDICT"]],
+      ["a raw literal, still a str Constant", `UNREADABLE_VERDICT = r"${code}"`, ["UNREADABLE_VERDICT"]],
+      ["triple-quoted, single", `UNREADABLE_VERDICT = \'\'\'${code}\'\'\'`, ["UNREADABLE_VERDICT"]],
+      ["an upper-case raw prefix", `UNREADABLE_VERDICT = R"${code}"`, ["UNREADABLE_VERDICT"]],
+      ["a u prefix, a str either way", `UNREADABLE_VERDICT = U'${code}'`, ["UNREADABLE_VERDICT"]],
+      ["annotated without a subscript", `UNREADABLE_VERDICT: Final = "${code}"`, ["UNREADABLE_VERDICT"]],
+      ["a trailing semicolon", `UNREADABLE_VERDICT = "${code}";`, ["UNREADABLE_VERDICT"]],
+      ["a second statement after it", `OTHER = "KS030"; UNREADABLE_VERDICT = "${code}"`, ["UNREADABLE_VERDICT"]],
+      ["a value wrapped across lines", `UNREADABLE_VERDICT = (\n    "${code}"\n)`, ["UNREADABLE_VERDICT"]],
+      ["a backslash continuation", `UNREADABLE_VERDICT = \\\n    "${code}"`, ["UNREADABLE_VERDICT"]],
+      ["adjacent literals, one Constant next door", `UNREADABLE_VERDICT = "KS" "029"`, ["UNREADABLE_VERDICT"]],
+      [
+        "two names for it, both read",
+        `UNREADABLE_VERDICT = "${code}"\nLEASE_NOT_RENEWED: Final[str] = '${code}'  # a stranger`,
+        ["UNREADABLE_VERDICT", "LEASE_NOT_RENEWED"],
+      ],
+    ];
+    for (const [form, source, names] of declaring) expect(declares(source), form).toEqual(names);
+
+    // And what declares nothing there declares nothing here.
+    const declaringNothing: ReadonlyArray<readonly [string, string]> = [
+      ["parked inside a comment", `# UNREADABLE_VERDICT = "${code}"`],
+      ["parked inside a comment after code", `TIMEOUT = 30  # UNREADABLE_VERDICT = "${code}"`],
+      ["inside a docstring", `"""\nUNREADABLE_VERDICT = "${code}"\n"""`],
+      ["inside a string constant", `EXAMPLE = """\nUNREADABLE_VERDICT = "${code}"\n"""`],
+      ["a comparison", `if UNREADABLE_VERDICT == "${code}":`],
+      ["a chained assignment, which is two targets", `UNREADABLE_VERDICT = ALSO = "${code}"`],
+      ["a tuple target", `UNREADABLE_VERDICT, OTHER = "${code}", "KS030"`],
+      ["an attribute target", `codes.UNREADABLE_VERDICT = "${code}"`],
+      ["a subscript target", `CODES["verdict"] = "${code}"`],
+      ["an augmented assignment", `TAIL += "${code}"`],
+      ["an annotation carrying no value", `UNREADABLE_VERDICT: Final[str]`],
+      ["a bytes literal, which is not a str", `UNREADABLE_VERDICT = b"${code}"`],
+      ["an f-string, which is not a Constant", `UNREADABLE_VERDICT = f"${code}"`],
+      ["standing in a list", `PINNED = ["${code}", "KS030"]`],
+      ["standing in a dict", `CODES = {"verdict": "${code}"}`],
+      ["standing in a call", `raise Refusal("${code}")`],
+      ["a rebuilt string", `UNREADABLE_VERDICT = "KS" + "029"`],
+      ["a bytes literal with a raw prefix", `UNREADABLE_VERDICT = rb"${code}"`],
+      ["a walrus, which is no assignment statement", `if (UNREADABLE_VERDICT := "${code}"):\n    pass`],
+      ["a bare walrus, which no module parses", `UNREADABLE_VERDICT := "${code}"`],
+      ["a second name for a constant", `UNREADABLE_VERDICT = ${code}`],
+      ["a conditional value", `UNREADABLE_VERDICT = "${code}" if flag else "KS030"`],
+      ["raised in SQL", `      using errcode = '${code}',`],
+      ["quoted in prose", `the registry names ${code} for the verdict it cannot read`],
+    ];
+    for (const [form, source] of declaringNothing) expect(declares(source), form).toEqual([]);
+
+    // The registry is read as a whole file, not a line at a time: a docstring
+    // above the entries does not swallow them, and the comment over each entry
+    // is not the entry.
+    const registry = [
+      '"""The campaign\'s own refusal codes, each named once.',
+      "",
+      'A shape like UNKNOWN_DOMAIN = "KS001" written here is prose about code.',
+      '"""',
+      "",
+      "# KS029: a verdict this function cannot read as a decision.",
+      `UNREADABLE_VERDICT: Final[str] = '${code}'  # the admin handoff`,
+    ].join("\n");
+    expect([...declaredCodeNames(registry).keys()]).toEqual([code]);
+    expect(declares(registry)).toEqual(["UNREADABLE_VERDICT"]);
+  });
+
 
   /**
    * admin-window/BUG-0082, on the function side. On this project a newly
