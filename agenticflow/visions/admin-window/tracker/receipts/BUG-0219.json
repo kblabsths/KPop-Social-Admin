@@ -1,0 +1,19 @@
+{
+ "id": "BUG-0219",
+ "created": "2026-09-12T01:09:59Z",
+ "green": true,
+ "git_head": "ca627e928ca3748e8dc27763eac2180b881b7943",
+ "scope": [
+  "tests/live/edit.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "ed6c161b48edd4ecaffed0a6d63689a3b617eac9b8c3268ffbce119acbed53c8",
+ "commands": [
+  {
+   "cmd": "npm run test:live -- tests/live/edit.live.test.ts",
+   "exit": 0,
+   "output_tail": "n event that has one  754ms\n   \u2713 a resolver-owned record page > shows the venue source on EVERY event the log holds a venue decision for, and moves no scalar's line  27657ms\n   \u2713 the walk sandbox > edits a mapped column through the surface, and a reset restores the fixture  1073ms\n   \u2713 the walk sandbox > writes label, and the database keeps it as label's own type  512ms\n   \u2713 the walk sandbox > writes tally, and the database keeps it as tally's own type  539ms\n   \u2713 the walk sandbox > writes is_flagged, and the database keeps it as is_flagged's own type  563ms\n   \u2713 the walk sandbox > writes note, and the database keeps it as note's own type  566ms\n   \u2713 the walk sandbox > writes observed_on, and the database keeps it as observed_on's own type  503ms\n   \u2713 the walk sandbox > clears note to the app's own absence, then fills it in again  762ms\n   \u2713 the walk sandbox > clears observed_on to the app's own absence, then fills it in again  738ms\n   \u2713 the walk sandbox > reports the database's refusal when label is cleared, and label still stands  582ms\n   \u2713 the walk sandbox > reports the database's refusal when tally is cleared, and tally still stands  592ms\n   \u2713 the walk sandbox > reports the database's refusal when is_flagged is cleared, and is_flagged still stands  599ms\n   \u2713 the walk sandbox > meets a real type refusal with the database's words AND a fix in the app's voice  718ms\n   \u2713 the walk sandbox > clears a nullable column and meets the database's refusal on a required one  3791ms\n\n Test Files  1 passed (1)\n      Tests  26 passed (26)\n   Start at  18:09:13\n   Duration  45.77s (transform 271ms, setup 32ms, collect 465ms, tests 45.00s, environment 0ms, prepare 62ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/edit.live.test.ts\n(node:64116) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}
