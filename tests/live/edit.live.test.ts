@@ -759,6 +759,28 @@ describe("a resolver-owned record page", () => {
       await recordVerdict(config, VANISHED_ID, gone),
       `${config.table} ${VANISHED_ID}`,
     ).toBe("vanished");
+
+    // The THIRD outcome, which is the whole safety property of the device and
+    // which no ordinary run reaches: a page that drew no field line for a row
+    // staging DOES hold is the page's own defect, and may never be excused as
+    // somebody else's delete. Pinned here because the two branches above are
+    // the only ones a green run exercises, so a refactor that turned this
+    // throw into an exclusion would restore admin-window/BUG-0219's original
+    // failure silently (QA, 2026-09-11). Same markup, present id — only the
+    // keyed read moves.
+    await expect(
+      recordVerdict(config, id, gone),
+      `${config.table} ${id}: no field line, but staging holds the row`,
+    ).rejects.toThrow(/still holds that row/);
+
+    // And the early return is a claim about the PAGE, not about the id: a page
+    // that drew field lines made those claims and is graded on them, whatever
+    // the log's id turns out to be. Pins that the exclusion can only ever
+    // reach a page with nothing on it.
+    expect(
+      await recordVerdict(config, VANISHED_ID, drawn),
+      `a drawn page is graded whoever it was asked about`,
+    ).toBe("drawn");
   });
 
   /**
