@@ -85,6 +85,20 @@ not beside it — silently, with no error, reading the wrong thing or nothing.
   to refactor working code for nothing.)*
 - The `contracts/` directory is **in this repo and tracked in git**, so it is
   present in every worktree: cite it as `contracts/<file>.md`.
+- **A ticket's stored `## Checks` obey this rule too, and two spellings of it
+  are VACUOUS rather than wrong** (amended 2026-09-12, architect, promoted at
+  count 2 from admin-window/BUG-0209's QA residual and admin-window/BUG-0218).
+  `receipt.py` runs every check in a DETACHED WORKTREE at HEAD under
+  `agenticflow/.worktrees/`, so: (1) `git -C "../kspace Scraper" …` finds no
+  such directory, `git` fails, the pipeline prints nothing and
+  `test "$(… | wc -l)" -eq 0` exits 0 **whatever the sibling holds** — a check
+  that can never be red; and (2) `git status --porcelain -- src tests` as a
+  "nothing else changed" proxy is always empty there, for the same reason. The
+  sibling is reached by its ABSOLUTE path (`tests/offline/handoff/*` already
+  does, and admin-window/TASK-0080 keeps it that way); a diff is asserted as
+  `git diff --name-only <merge-base>..HEAD -- src tests`, which names the
+  ticket's own commits. Dry-run every check on the tree it will run on and read
+  the number it returns.
 
 ## 2. What survives the rebuild, and what dies
 
@@ -1634,6 +1648,23 @@ already ships.
      minted cookie, recorded as text in the ticket's History. A criterion may
      REQUIRE that measurement; it may never be written as a stored check — a
      builder lane can neither read `.env` nor mint a cookie.
+- **A guard whose RED can be produced by a repo this one does not own does
+  not sit in the suite every builder must clear** (added 2026-09-12,
+  architect, from admin-window/BUG-0213's fourth trigger in one file;
+  installed by admin-window/TASK-0080). The cut is by INPUT OWNERSHIP, not by
+  subject: the cases grading OUR handoff artifact — block balance, quoting,
+  `ALTER TABLE` targets, forbidden constructs, ACL math, the code→meaning
+  declarations this campaign allocates — stay in `tests/offline/**`, because
+  every input is in this repo and an authoring slip must redden before Ben
+  pastes. The cases that READ `kspace Scraper` move to `tests/handoff/**`, a
+  fifth vitest project (`npm run test:handoff`) that `npm test` does not
+  collect and `ci_command` therefore does not run; the verifier runs it at a
+  close, and whoever prepares or re-checks a handoff runs it then (LESSONS 9).
+  Why: four times in one campaign a legitimate event next door — twice the
+  campaign's own handoff LANDING — made `npm test` red for every builder here
+  while nothing in this repo was wrong. `SIBLING_ROOT` stays an absolute path
+  (§1.2) and the `runIf(SIBLING_PRESENT)` skip stays, so a machine without the
+  checkout skips loudly instead of greening.
 - **Shared fixture builders live in `tests/fixtures/`** — one place that builds
   a review item in each of its three shapes, a pending claim in each bucket, a
   cycle row, a run row, a source row, an event with provenance. A test that
@@ -2030,6 +2061,8 @@ decomposition brief of every ticket touching that surface.
 
 | 26 | **A repeated URL key read two ways in one request — one consumer joins the values, another judges the first** | 2 (both `/claims`, QA residuals) | BUG-0201: `?source_id=&source_id=deadbeef` — the page reads the whole registry (first value empty = "asked nothing", BUG-0127's arm) and no line explains it. BUG-0202: `?cols=&cols=banana` — the page JOINS repeated keys (`namedColumns`) while `droppedParams` judges the blank first value, so no dropped-params line is drawn for a column name that is not a column | **Promoted to a rule 2026-09-11 (architect)** — §8, "a repeated URL key has ONE reading, decided once": canonicalise in the module that owns the facet, every consumer reads the canonical value. Recorded and NOT ticketed: today the only visible effect is a missing explanatory line on a hand-built URL. Trigger for a ticket: the two readings producing different ROWS, or a third instance |
 
+| 27 | **A stored check that cannot be RED — a proxy measured in a place where its subject does not exist** | 2 (both authored 2026-09-11, both found by QA) | admin-window/BUG-0209 check 3: `test "$(git -C "../kspace Scraper" log --all --format=%s \| grep -c '^admin-window/')" -eq 0` — in the receipt worktree that path is `agenticflow/.worktrees/_receipt-<pid>/../kspace Scraper`, which does not exist, so `git` fails, the count is empty and the check exits 0 however many commits the sibling holds (QA demonstrated it from a directory with no sibling). admin-window/BUG-0218: `git status --porcelain -- src tests` as a "nothing else changed" proxy — always empty in a detached worktree at HEAD | **PROMOTED at 2, 2026-09-12 (architect, M3 queue pass).** Rule written into §1.2: a check reaches the sibling by ABSOLUTE path and asserts a diff as `git diff --name-only <merge-base>..HEAD -- <paths>`; and the general form, which is the one to cite in a decomposition brief — **a check is authored by RUNNING it on the tree it will run on and reading the number, and a check that is green before the work is done is a defect whatever it asserts** (LESSONS 12). Nothing is re-opened on the two closed tickets: rewriting a bar a ticket was already graded against is the edit this factory must not make (the BUG-0209 EC1 ruling, same week) |
+
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
 findings on TASK-0001/0003/0006; rows 4–5 at the second pass the same day,
 from measurement of the open tickets' own checks; row 6 at the third pass, from
@@ -2037,6 +2070,24 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-12, M3 queue ruling pass (architect).** Three amendments, all from
+  the M3 close queue, none a new feature. **§1.2 gains the stored-check
+  clause** and **Common violations gains row 27** (promoted at 2): a check run
+  in a receipt worktree cannot see `../kspace Scraper` and cannot see a working
+  tree, so two common proxies are vacuous rather than wrong. **§10 gains the
+  foreign-input rule**: a guard whose red can be produced by a repo this one
+  does not own leaves the every-builder suite for a fifth, opt-in vitest
+  project (admin-window/TASK-0080) — the cut is by input ownership, so every
+  guard over OUR own handoff artifact stays where every builder runs it. Not
+  amended, deliberately: **§4.3 kind 3's bound stays the OFFSET.** BUG-0221
+  measured a real skip at the seam and its honest fix (keyset) is the same
+  layer Ben is deciding in `tracker/for-human/M3-paging-shape-for-ben.md` —
+  page windows are positional by construction, so ruling keyset now would close
+  the door on his open option. The half of BUG-0221 that needs no ruling (one
+  id drawn twice, which "no snapshot across presses" never licensed) is split
+  out as admin-window/BUG-0222 and fixed in the client driver, where it
+  survives either shape.
 
 - **2026-09-11, M3 endgame ruling pass (architect).** Four amendments, all from
   the endgame's own findings, none of them a new feature. **§4.3 gains the

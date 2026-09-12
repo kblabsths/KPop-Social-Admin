@@ -2056,3 +2056,29 @@ repaired from inside a run**, and no ticket is written to work around a
 machinery defect — the incident is recorded, the proposal is filed, and the
 authoring rule that avoids it goes in LESSONS (single-line checks; a check must
 be answerable in a detached worktree at HEAD).
+
+## 2026-09-12 — The paged bound on the wire stays the OFFSET, and the keyset question is Ben's, not the architect's
+
+BUG-0221 (QA, measured, with an `it.fails` pin in
+`tests/offline/paging/machine.test.ts`) showed a real seam: a press carries only
+a position, so a claim settled ahead of the bound between the screen read and
+the press is drawn on no screen, and a row inserted ahead of it draws the
+bound's row twice. The honest fix for the skip is keyset paging — put the bound
+on the wire as the last row's id and continue from it. I am **not** ruling that,
+and the reason is a door, not a preference: ARCHITECTURE §4.3 kind 3 says the
+bound "is the OFFSET... not a page number, not a cursor the client may
+compose", and the alternative Ben is weighing right now
+(`tracker/for-human/M3-paging-shape-for-ben.md`: page windows, sizes 20/50/100,
+"rows 51–100 of 877", page and size in the URL) is **positional by
+construction** — "jump to page 5" cannot be served from a cursor. Keyset and
+page windows are two mutually exclusive answers at the same layer. Ruling keyset
+this week would close the door on the human's own open option and would be
+thrown away if he takes it. So BUG-0221 is `blocked` on his answer and says so,
+and §4.3 kind 3 is deliberately **not** amended. What does not wait: the half of
+that defect no contract ever licensed — one drawn list holding one id twice —
+is split out as BUG-0222 and fixed in the client driver (append only ids the
+state does not hold; advance the wire bound by the ROUTE's row count; state the
+overlap once, in client-land). That fix survives either shape Ben picks, which
+is the test I applied to decide what could move now. The door this closes: the
+campaign does not change the paging CONTRACT by patch, and no ticket may
+introduce a second bound spelling on the wire before the shape is ruled.

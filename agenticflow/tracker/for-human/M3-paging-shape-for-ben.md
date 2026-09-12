@@ -80,3 +80,39 @@ from a six-line note is the exact failure my instructions name. So: **your call.
   satisfied by the verdict UI plus the two reviewed handoffs, not by paging
   shape. Adopting page windows is new scope you are choosing, not scope the
   vision is owed.
+
+---
+
+## Added 2026-09-12 (architect) — one filed defect now waits on this answer
+
+QA attacked the paging seam after BUG-0216 landed and measured a second thing
+your dev log did not show: a press carries only a POSITION (`?offset=<rows you
+hold>`), so if a claim is settled by the resolver or the scraper **between the
+screen you read and the press you make**, everything below it moves up one and
+the claim that stood at the bound is drawn on no screen. No duplicate, no
+refusal, nothing in the console — the list just steps over it. Pinned offline
+(`tests/offline/paging/machine.test.ts`, deliberately marked `it.fails` so the
+branch stays green) and filed as **BUG-0221**.
+
+**I have not fixed it, on purpose, and it is blocked on the answer above.** The
+honest fix is to put the bound on the wire as a row id instead of a count
+("continue after claim X" rather than "skip 50"). That is the same layer as
+your page-windows question and it points the opposite way: page windows are
+positional by construction — "rows 51–100 of 877", "jump to page 5" — and a
+cursor cannot serve them. Choosing one forecloses the other, so the choice is
+yours and not mine. Concretely:
+
+- **If you adopt page windows**, BUG-0221 is folded into that milestone: the
+  window's bound gets designed once, there, and this ticket closes obsolete.
+- **If you decline them**, BUG-0221 becomes a contract amendment (§4.3 kind 3's
+  bound stops being the offset) plus one builder session per surface, and I
+  write the amendment first.
+
+**What did not wait**, because no contract ever licensed it: the other half of
+the same measurement — a row INSERTED ahead of the bound makes the page repeat a
+row the screen above already showed, which is the duplicate React key in your
+log. That is filed as **BUG-0222**, P2, in the patch lane, fixed in the client
+(draw no id twice, keep the wire bound moving, and say once that the list moved
+under you). It survives whichever shape you pick, so it is being built now.
+
+No other work is waiting on your paging answer.
