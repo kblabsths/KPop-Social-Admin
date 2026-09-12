@@ -14,7 +14,12 @@ import { T } from "@/lib/db/tables";
 import { resolveBounds } from "@/lib/gauges/gauge";
 import { fetchPendingClaims, PENDING_CLAIMS_DEFAULTS } from "@/lib/gauges/pending-claims";
 import { OFFSET_PARAM, PAGE_ROUTES } from "@/lib/paging/bounds";
-import { initialPage, requestPage, type PageState } from "@/lib/paging/machine";
+import {
+  boundOf,
+  initialPage,
+  requestPage,
+  type PageState,
+} from "@/lib/paging/machine";
 import {
   countRows,
   exactCount,
@@ -1835,7 +1840,7 @@ describe("paging past the first window, against staging", () => {
       return viaHandler(url);
     };
 
-    let state: PageState<ClaimLine> = initialPage<ClaimLine>(CLAIM_WINDOW, true);
+    let state: PageState<ClaimLine> = initialPage<ClaimLine>(CLAIM_WINDOW, true, "");
     let presses = 0;
     while (state.status === "idle" && presses < CAP_PAGES) {
       state = await requestPage<ClaimLine>(state, { ...deps, fetchJson: asked });
@@ -1854,7 +1859,7 @@ describe("paging past the first window, against staging", () => {
 
   /** ONE press, from the same state — the app's driver, asked exactly once. */
   async function onePress(params: string): Promise<PageState<ClaimLine>> {
-    const state = await requestPage<ClaimLine>(initialPage<ClaimLine>(CLAIM_WINDOW, true), {
+    const state = await requestPage<ClaimLine>(initialPage<ClaimLine>(CLAIM_WINDOW, true, ""), {
       route: PAGE_ROUTES.claims,
       params,
       size: CLAIM_WINDOW,
@@ -2165,4 +2170,179 @@ describe("paging past the first window, against staging", () => {
     expect(made.line, "the list stated no head figure").not.toBeNull();
     expect(Number(made.line)).toBe(held.whole);
   });
+});
+
+/* ── one order, walked three times, against staging ──────────────────────── */
+
+/**
+ * THE PAGED READS ARE ONE TOTAL ORDER, AND A REPEATED WALK PROVES IT —
+ * campaign admin-window/BUG-0216.
+ *
+ * The walk above grades ONE walk of a narrowing against an oracle, which
+ * cannot see an order that is merely UNSTABLE: a set of ids can be complete on
+ * every run and still be a different order on each of them, and a bound that
+ * means a different row on two requests is exactly how a paged surface repeats
+ * one claim and drops another.
+ *
+ * So this walks the same head of the same order THREE times, independently,
+ * through the app's own route handler, and asks three things of the result:
+ * no claim twice inside a walk, no claim missing from it, and the same claim at
+ * the same POSITION on all three. It walks the first `HEAD` rows because that
+ * is where the order is hardest — staging holds 818 claims on ONE
+ * `observed_at` instant (measured 2026-09-11), so every row of this range is
+ * inside that tie and is ordered by the `observation_id` tiebreaker alone.
+ *
+ * It is deliberately not a distinct-count assertion. A single run's distinct
+ * count says nothing about the bound between two requests, which is what the
+ * operator's press actually is.
+ */
+describe("the same paged order, walked three times, against staging", () => {
+  /** Four windows of the page's own order — all inside staging's largest tie. */
+  const HEAD = CLAIM_WINDOW * 4;
+  const WALKS = 3;
+
+  /** One paging request, through the app's own route handler. */
+  async function viaHandler(url: string): Promise<unknown> {
+    const response = await GET(new Request(`http://localhost${url}`));
+    return response.json();
+  }
+
+  /**
+   * The first `HEAD` claims as the OPERATOR reaches them: press after press
+   * through `requestPage`, starting from a first screen of nothing, so every
+   * one of the four windows — the first included — is a request this app's
+   * route answered at an explicit bound.
+   */
+  async function walkHead(): Promise<string[]> {
+    // The first window is the SERVER's screen, not a request: `pageBound`
+    // refuses `offset=0` on purpose, because the first 50 rows are the screen
+    // the page already rendered. So a walk of the head starts where the
+    // operator starts — at the rendered page — and presses from there.
+    const first = claimIds(await claimsMarkup());
+    let state: PageState<ClaimLine> = initialPage<ClaimLine>(
+      first.length,
+      true,
+      boundOf(first, (id) => id),
+    );
+    while (state.status === "idle" && state.held < HEAD) {
+      state = await requestPage<ClaimLine>(state, {
+        route: PAGE_ROUTES.claims,
+        params: "",
+        size: CLAIM_WINDOW,
+        fetchJson: viaHandler,
+      });
+      if (state.refusal !== null) {
+        throw new Error(`the walk was refused: ${refusalText(state.refusal)}`);
+      }
+    }
+    return [...first, ...state.rows.map((row) => row.observationId)];
+  }
+
+  /**
+   * THE ORACLE: the same head of the same order, in ONE unpaged read this file
+   * writes — its own client, its own columns, no `.range()` step at all, so a
+   * bound that drifts between requests cannot drift here too.
+   */
+  async function headOfOrder(): Promise<string[]> {
+    const db = independentClient();
+    const { data, error } = await db
+      .from(T.pendingClaims)
+      .select("observation_id")
+      .neq("bucket", PARKED_BUCKET)
+      .order("observed_at", { ascending: true, nullsFirst: false })
+      .order("observation_id", { ascending: true })
+      .range(0, HEAD - 1);
+    if (error) {
+      throw new Error(`this test's own head read failed: ${JSON.stringify(error)}`);
+    }
+    return ((data ?? []) as { observation_id: string }[]).map((row) => row.observation_id);
+  }
+
+  it(
+    "reaches the same claims, in the same places, on every walk — none twice, none skipped",
+    async () => {
+      // Everything compared is made inside ONE still window: the scraper files
+      // claims into staging while this runs, and a set that DRAINED between two
+      // walks would look exactly like the defect this case exists to catch.
+      const { made, held } = await whileStill(headOfOrder, async () => {
+        const walks: string[][] = [];
+        for (let walk = 0; walk < WALKS; walk += 1) walks.push(await walkHead());
+        return walks;
+      });
+
+      if (held.length < HEAD) {
+        // Staging holds fewer claims than this case walks. It is still graded —
+        // the walks must reach exactly what the head read holds — but the
+        // 818-row tie it was written for is not what it is walking, and it says
+        // so rather than passing quietly.
+        expect(
+          made.every((walk) => walk.length === held.length),
+          `staging holds ${held.length} claims, fewer than the ${HEAD} this walks`,
+        ).toBe(true);
+      }
+
+      made.forEach((walk, index) => {
+        const what = `walk ${index + 1} of ${WALKS}`;
+        // (a) no claim reached twice.
+        expect(new Set(walk).size, `${what}: a claim was reached twice`).toBe(walk.length);
+        // (b) no claim skipped: the union IS the unpaged read's own set.
+        expect([...walk].sort(), `${what}: the walked set is not the order's head`).toEqual(
+          [...held].sort(),
+        );
+      });
+
+      // (c) the same claim in the same PLACE on every walk — the property a
+      // single walk cannot show, and the one a press depends on.
+      for (let index = 1; index < WALKS; index += 1) {
+        expect(
+          made[index],
+          `walk ${index + 1} put different claims at the same bounds as walk 1`,
+        ).toEqual(made[0]);
+      }
+      // …and that order is the order the page states, position by position.
+      expect(made[0], "the walked order is not the page's own order").toEqual(held);
+    },
+    120_000,
+  );
+
+  it("pending_claims holds exactly one row per observation_id", async () => {
+    // admin-window/BUG-0216 criterion 3. A view that fanned out would make the
+    // `(observed_at, observation_id)` order NOT total — two rows could tie on
+    // both columns and fall either side of a window bound — and it would make
+    // the page's key and its head figure two different counts of two different
+    // things. Asked of the whole renderable view, in bounded steps.
+    const db = independentClient();
+    const STEP = 500;
+    const ids: string[] = [];
+    for (let from = 0; from < ROW_CEILING; from += STEP) {
+      const { data, error } = await db
+        .from(T.pendingClaims)
+        .select("observation_id")
+        .neq("bucket", PARKED_BUCKET)
+        .order("observed_at", { ascending: true, nullsFirst: false })
+        .order("observation_id", { ascending: true })
+        .range(from, from + STEP - 1);
+      if (error) {
+        throw new Error(`this test's own scan of the view failed: ${JSON.stringify(error)}`);
+      }
+      const rows = (data ?? []) as { observation_id: string }[];
+      ids.push(...rows.map((row) => row.observation_id));
+      if (rows.length < STEP) break;
+    }
+    if (ids.length >= ROW_CEILING) {
+      throw new Error(
+        `the renderable view reached ${ROW_CEILING} rows without ending, so this ` +
+          `case cannot say what it holds one row per`,
+      );
+    }
+    const seen = new Map<string, number>();
+    for (const id of ids) seen.set(id, (seen.get(id) ?? 0) + 1);
+    const repeated = [...seen].filter(([, times]) => times > 1).map(([id]) => id);
+    expect(repeated, "pending_claims holds more than one row for an observation_id").toEqual(
+      [],
+    );
+    expect(seen.size, "the view's rows and its observation_ids are not the same count").toBe(
+      ids.length,
+    );
+  }, 60_000);
 });

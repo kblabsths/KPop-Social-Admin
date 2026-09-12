@@ -21,7 +21,7 @@ import { PagedWindowLine, PagingProvider } from "@/components/ui/paging";
 import type { BrowseRow } from "@/lib/browse/rows";
 import { EVENTS_OBJECT, readRecentEvents, type DbUnavailable } from "@/lib/db/browse";
 import { PAGE_ROUTES, pageBound } from "@/lib/paging/bounds";
-import { initialPage } from "@/lib/paging/machine";
+import { boundOf, initialPage } from "@/lib/paging/machine";
 import {
   COLUMNS_PARAM,
   RECENT_EVENTS,
@@ -345,7 +345,16 @@ export default async function BrowsePage({
           // `drawn` is — both need the events read to have answered `ok` — and
           // the condition says so rather than asserting it.
           <PagingProvider
-            initial={initialPage<BrowseRow>(drawn.length, pageable)}
+            // THE BOUND THIS FIRST SCREEN ENDS AT — the same field
+            // `BrowseTable` keys its rows by — so a first screen re-rendered
+            // under a client that kept its paged rows starts the surface
+            // again instead of being concatenated with them
+            // (admin-window/BUG-0216).
+            initial={initialPage<BrowseRow>(
+              drawn.length,
+              pageable,
+              boundOf(drawn, (row) => row.event_id),
+            )}
             window={eventsWindow}
             deps={{
               route: PAGE_ROUTES.browse,

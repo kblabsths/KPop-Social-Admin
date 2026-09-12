@@ -5,7 +5,12 @@ import { recordHref } from "@/lib/records/routes";
 import { COLUMNS_PARAM, RECENT_EVENTS } from "@/lib/browse/views";
 import type { BrowseRow } from "@/lib/browse/rows";
 import { OFFSET_PARAM, PAGE_ROUTES } from "@/lib/paging/bounds";
-import { initialPage, requestPage, type PageState } from "@/lib/paging/machine";
+import {
+  boundOf,
+  initialPage,
+  requestPage,
+  type PageState,
+} from "@/lib/paging/machine";
 import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
 import {
@@ -361,6 +366,26 @@ function pagingArms(markup: string): string[] {
     .map((element) => $(element).attr("data-paging") ?? "");
 }
 
+/**
+ * THE ORACLE: the newest `limit` events by ARRIVAL, enumerated by a range
+ * query this file writes — its own columns, its own total order, ONE round
+ * trip, so the shape held still by `whileStill` stays small (TASK-0075).
+ *
+ * It is not the app's read. A page that stopped short, repeated a row or
+ * skipped one would still be "a list of ids"; only a second enumeration made
+ * independently catches it.
+ */
+async function newestByArrival(limit: number): Promise<string[]> {
+  const { data, error } = await independentClient()
+    .from(T.events)
+    .select("event_id, created_at")
+    .order("created_at", { ascending: false })
+    .order("event_id", { ascending: false })
+    .range(0, limit - 1);
+  if (error) throw new Error(`the oracle's window query failed: ${error.message}`);
+  return ((data ?? []) as { event_id: string }[]).map((row) => row.event_id);
+}
+
 describe("paging past the first window, against staging", () => {
   /** One paging request, through the app's own route handler. */
   async function viaHandler(url: string): Promise<unknown> {
@@ -387,7 +412,7 @@ describe("paging past the first window, against staging", () => {
       return viaHandler(url);
     };
 
-    let state: PageState<BrowseRow> = initialPage<BrowseRow>(held, true);
+    let state: PageState<BrowseRow> = initialPage<BrowseRow>(held, true, "");
     let made = 0;
     while (state.status === "idle" && made < presses) {
       state = await requestPage<BrowseRow>(state, {
@@ -405,26 +430,6 @@ describe("paging past the first window, against staging", () => {
       }
     }
     return { rows: [...state.rows], bounds, notes: state.notes };
-  }
-
-  /**
-   * THE ORACLE: the newest `limit` events by ARRIVAL, enumerated by a range
-   * query this file writes — its own columns, its own total order, ONE round
-   * trip, so the shape held still by `whileStill` stays small (TASK-0075).
-   *
-   * It is not the app's read. A page that stopped short, repeated a row or
-   * skipped one would still be "a list of ids"; only a second enumeration made
-   * independently catches it.
-   */
-  async function newestByArrival(limit: number): Promise<string[]> {
-    const { data, error } = await independentClient()
-      .from(T.events)
-      .select("event_id, created_at")
-      .order("created_at", { ascending: false })
-      .order("event_id", { ascending: false })
-      .range(0, limit - 1);
-    if (error) throw new Error(`the oracle's window query failed: ${error.message}`);
-    return ((data ?? []) as { event_id: string }[]).map((row) => row.event_id);
   }
 
   it("reaches an event beyond the first window's last row, in the order the database holds", async () => {
@@ -490,4 +495,96 @@ describe("paging past the first window, against staging", () => {
     // reached the state rather than leaving a silently empty column.
     expect(made.notes === null || typeof made.notes === "object").toBe(true);
   });
+});
+
+/* ── one order, walked three times, against staging ──────────────────────── */
+
+/**
+ * THE PAGED READS ARE ONE TOTAL ORDER HERE TOO — campaign
+ * admin-window/BUG-0216, criterion 7.
+ *
+ * `/browse` pages through the SAME driver, the same `PageState` and the same
+ * `usePageRows` as `/claims`, so the defect that repeated a claim id on
+ * `/claims` reaches this surface by construction and is fixed here by the same
+ * change: the state declares the bound its pages were taken after, and stops
+ * being drawn under a first screen that no longer ends there.
+ *
+ * The walk above grades ONE walk against an oracle, which cannot see an order
+ * that is merely UNSTABLE — a bound that means a different row on two requests
+ * is how a paged surface repeats one row and drops another. So this walks the
+ * same head three times and asks for the same three properties `/claims`'
+ * repeated walk does, at this surface's scale: 120 events, three windows, so
+ * the walk is the whole of what this surface can page.
+ */
+describe("the same paged order, walked three times, against staging", () => {
+  const WALKS = 3;
+
+  /** One paging request, through the app's own route handler. */
+  async function viaHandler(url: string): Promise<unknown> {
+    const response = await GET(new Request(`http://localhost${url}`));
+    return response.json();
+  }
+
+  /**
+   * The head of the order as the OPERATOR reaches it: the server's first
+   * screen, then `WALK_PAGES` presses through the app's own driver.
+   */
+  async function walkHead(): Promise<string[]> {
+    const first = renderedEventIds(await browseMarkup());
+    if (first.length < view.window) return first;
+    let state: PageState<BrowseRow> = initialPage<BrowseRow>(
+      first.length,
+      true,
+      boundOf(first, (id) => id),
+    );
+    let made = 0;
+    while (state.status === "idle" && made < WALK_PAGES) {
+      state = await requestPage<BrowseRow>(state, {
+        route: PAGE_ROUTES.browse,
+        params: "",
+        size: view.window,
+        fetchJson: viaHandler,
+      });
+      made += 1;
+      if (state.refusal !== null) {
+        throw new Error(`the walk was refused: ${refusalText(state.refusal)}`);
+      }
+    }
+    return [...first, ...state.rows.map((row) => row.event_id)];
+  }
+
+  it("reaches the same events, in the same places, on every walk — none twice, none skipped", async () => {
+    const reach = view.window * (WALK_PAGES + 1);
+    const { made, held } = await whileStill(
+      () => newestByArrival(reach),
+      async () => {
+        const walks: string[][] = [];
+        for (let walk = 0; walk < WALKS; walk += 1) walks.push(await walkHead());
+        return walks;
+      },
+    );
+
+    if (held.length <= view.window) {
+      // A catalog inside one window is not a walk: every walk is the first
+      // screen, and this says so rather than inventing a press.
+      expect(made.every((walk) => walk.length === held.length)).toBe(true);
+      return;
+    }
+
+    made.forEach((walk, index) => {
+      const what = `walk ${index + 1} of ${WALKS}`;
+      expect(new Set(walk).size, `${what}: an event was reached twice`).toBe(walk.length);
+      // No event skipped: the walk IS the head of the order the oracle wrote.
+      expect(walk, `${what}: the walked set is not the order's head`).toEqual(
+        held.slice(0, walk.length),
+      );
+    });
+
+    for (let index = 1; index < WALKS; index += 1) {
+      expect(
+        made[index],
+        `walk ${index + 1} put different events at the same bounds as walk 1`,
+      ).toEqual(made[0]);
+    }
+  }, 120_000);
 });

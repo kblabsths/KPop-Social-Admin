@@ -1554,7 +1554,7 @@ describe("the affordance that continues the recent-events view", () => {
         h(
           PagingProvider,
           {
-            initial: initialPage<BrowseRow>(windowSize, true),
+            initial: initialPage<BrowseRow>(windowSize, true, ""),
             window: thisWindow(windowSize, windowSize),
             deps: { route: PAGE_ROUTES.browse, params: "", size: windowSize },
             children: null,
@@ -1603,7 +1603,7 @@ describe("the affordance that continues the recent-events view", () => {
       h(
         PagingProvider,
         {
-          initial: initialPage<BrowseRow>(short, more),
+          initial: initialPage<BrowseRow>(short, more, ""),
           window: thisWindow(short, view.window),
           deps: { route: PAGE_ROUTES.browse, params: "", size: view.window },
           children: null,
@@ -1782,7 +1782,7 @@ describe("the affordance that continues the recent-events view", () => {
       pagingHtml(
         render(
           h(PageMore, {
-            state: { rows: [], held, status: "exhausted", refusal: null, notes: null },
+            state: { rows: [], held, status: "exhausted", refusal: null, notes: null, after: "" },
             holds: "events",
             size: view.window,
             readsAgree,
@@ -1830,7 +1830,7 @@ describe("the affordance that continues the recent-events view", () => {
       reading: T.events,
       message: "refused",
     });
-    const atCeiling = initialPage<BrowseRow>(MAX_PAGE_OFFSET + view.window, true);
+    const atCeiling = initialPage<BrowseRow>(MAX_PAGE_OFFSET + view.window, true, "");
     const ceilingRefusal = await answering(atCeiling, {
       kind: "refused",
       reason: "the `offset` must be at most 100000",
@@ -1939,7 +1939,7 @@ describe("the affordance that continues the recent-events view", () => {
     const script = windowScript(view.window);
     await renderBrowse(script);
     const deps = paging.calls[0].deps as { route: string; params: string; size: number };
-    const atCeiling = initialPage<BrowseRow>(MAX_PAGE_OFFSET + view.window, true);
+    const atCeiling = initialPage<BrowseRow>(MAX_PAGE_OFFSET + view.window, true, "");
 
     // The two renders below go around `renderBrowse`, and only these two do:
     // its sweep grades that no FIRST screen of this file draws the limit arm,
