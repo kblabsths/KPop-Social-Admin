@@ -1,0 +1,26 @@
+{
+ "id": "BUG-0218",
+ "created": "2026-09-12T00:03:42Z",
+ "green": false,
+ "git_head": "0eb45dfa265e1b4da8bb7782b611e99335661f45",
+ "scope": [
+  "agenticflow/tracker/for-human/M3-paging-shape-for-ben.md",
+  "agenticflow/tracker/for-human/M3-endgame-walk.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "0877d16acc958ca024d80d8f37fc7726aef3d890332bc7619576087ceb62906f",
+ "commands": [
+  {
+   "cmd": "awk '/^## What I need from you/,0' agenticflow/tracker/for-human/M3-paging-shape-for-ben.md | grep -q '/browse'",
+   "exit": 1,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test -z \"$(git status --porcelain -- src tests)\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ],
+ "failure_sig": "754df2da0da7"
+}
