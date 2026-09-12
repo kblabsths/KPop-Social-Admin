@@ -20,7 +20,9 @@ import {
   functionsOnStaging,
   independentClient,
   objectIsAbsent,
+  pageStates,
   renderPage,
+  STAGING_MOVED,
   StateMismatchError,
   stateOf,
 } from "./parity";
@@ -473,6 +475,84 @@ function provenanceOf(markup: string, field: string): string | null {
   return row ? $(row).find("td").eq(2).text().trim() : null;
 }
 
+/**
+ * An `events` id that staging holds no row for — the NEGATIVE fixture of the
+ * device below (LESSONS 8), and the shape that really occurs.
+ *
+ * QA measured this exact id on 2026-09-11: it came out of `field_provenance`
+ * while the suite ran and was in neither `field_provenance` nor `events`
+ * minutes later, uuidv4-shaped where every catalog row of that population is
+ * uuidv7-shaped. Its absence is asserted before it is used, so the fixture can
+ * never quietly become a present row.
+ */
+const VANISHED_ID = "6527b112-3de7-459f-b081-17aee6d7a002";
+
+/** Does staging still hold this row? This file's own read, without `lib/db`. */
+async function holdsRow(config: Keyed, id: string): Promise<boolean> {
+  const { data, error } = await independentClient()
+    .from(config.table)
+    .select(config.pk)
+    .eq(config.pk, id)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`reading ${config.table} ${id} failed: ${error.message}`);
+  }
+  return data !== null;
+}
+
+/** What a record page did with the id it was asked for. */
+type RecordVerdict = "drawn" | "vanished";
+
+/**
+ * Did this page DRAW the record, or answer that there is no such record on an
+ * entity staging really no longer holds? — campaign admin-window/BUG-0219.
+ *
+ * Staging is shared with the entity-linking campaign, which creates and
+ * removes rows while this suite runs, so an `entity_id` read out of
+ * `field_provenance` need not still have an `events` row by the time its page
+ * renders. The page is right in both worlds — a row that is not there draws
+ * the app's empty state, and a page with no record on it has no field line to
+ * carry a provenance cell — so the oracle, not the page, is what has to tell
+ * the two apart. It could not: on 2026-09-11 a removed `6527b112-…` was
+ * reported as a null `event_id` provenance line and reddened the live tier.
+ *
+ * The classification is STRUCTURAL and CONFIRMED, never a tolerance:
+ *
+ *  - `drawn` — the field table is on screen, so every cell of it is this
+ *    page's own claim and is graded exactly as before;
+ *  - `vanished` — the page drew no field line, its state cards say `empty` and
+ *    nothing worse, AND this file's own read finds no such row on staging.
+ *    The caller NAMES it and excludes it from its coverage claim; an exclusion
+ *    nobody can see would be a silent skip.
+ *
+ * Every other way of drawing no field line THROWS, naming what it found: a
+ * page that drew none for a row staging still holds is the page's defect, and
+ * an `error` or `not_provisioned` card is a refused read. Neither is excusable
+ * as somebody else's delete, and neither may be quietly skipped.
+ */
+async function recordVerdict(
+  config: Keyed,
+  id: string,
+  markup: string,
+): Promise<RecordVerdict> {
+  if (drawnFields(markup).length > 0) return "drawn";
+  const states = pageStates(markup);
+  const emptyOnly =
+    states.includes("empty") &&
+    !states.includes("error") &&
+    !states.includes("not_provisioned");
+  const held = await holdsRow(config, id);
+  if (emptyOnly && !held) return "vanished";
+  throw new Error(
+    `${config.table} ${id}: the record page drew no field line at all, and ` +
+      `this is not an entity that vanished — staging ` +
+      `${held ? "still holds that row" : "holds no such row"} and the page's ` +
+      `state cards say [${states.join(", ") || "none"}]. A page that draws no ` +
+      `record for a row that IS there is the page's defect; an error or ` +
+      `not-provisioned card is a refused read. Neither is an exclusion.`,
+  );
+}
+
 describe("a resolver-owned record page", () => {
   /**
    * The surface in the state its OWN settlement read is in — the two worlds
@@ -638,6 +718,50 @@ describe("a resolver-owned record page", () => {
   });
 
   /**
+   * The device the two cases below rest on, proved on BOTH fixtures
+   * (LESSONS 8) — campaign admin-window/BUG-0219.
+   *
+   * `recordVerdict` is what keeps a stranger's delete from reading as a
+   * missing provenance line, so it is worth nothing until it has been shown to
+   * separate the two ids that occur: one whose row staging holds (graded like
+   * any other) and one whose row it does not (named, never asserted against).
+   * Both are reads; neither writes anything anywhere.
+   */
+  it("tells a record that is there from one a concurrent writer removed", async () => {
+    const config = EDIT_CONFIG.events;
+
+    // Present: a real row, read by this file and rendered at once.
+    const { id } = await subject(config);
+    const drawn = await renderPage(RecordPage, {
+      params: Promise.resolve({ table: config.table, id }),
+    });
+    expect(drawnFields(drawn).length, `field lines on ${id}`).toBeGreaterThan(0);
+    expect(await recordVerdict(config, id, drawn), `${config.table} ${id}`).toBe(
+      "drawn",
+    );
+
+    // Absent: the id QA watched leave `field_provenance` mid-run on
+    // 2026-09-11, which is in neither table now. Its absence is this file's
+    // own read, so the fixture states what it is instead of assuming it.
+    expect(
+      await holdsRow(config, VANISHED_ID),
+      `${config.table} ${VANISHED_ID} is the absent fixture of this guard`,
+    ).toBe(false);
+    const gone = await renderPage(RecordPage, {
+      params: Promise.resolve({ table: config.table, id: VANISHED_ID }),
+    });
+    // The page answers honestly, which is the whole premise: no field line to
+    // read a provenance cell off, and the app's empty state saying why.
+    expect(drawnFields(gone), `field lines on ${VANISHED_ID}`).toEqual([]);
+    expect(provenanceOf(gone, config.pk), `${VANISHED_ID}.${config.pk}`).toBeNull();
+    expect(pageStates(gone), VANISHED_ID).toContain("empty");
+    expect(
+      await recordVerdict(config, VANISHED_ID, gone),
+      `${config.table} ${VANISHED_ID}`,
+    ).toBe("vanished");
+  });
+
+  /**
    * admin-window/BUG-0090, against the real log: the venue reference column
    * shows the source behind it.
    *
@@ -671,19 +795,30 @@ describe("a resolver-owned record page", () => {
     expect(byColumnName.count, `field_provenance rows spelling ${reference.field}`)
       .toBe(0);
 
-    // An event whose venue fact the resolver HAS applied.
+    // Events whose venue fact the resolver HAS applied, most recent first —
+    // several, because the first is only a CANDIDATE (admin-window/BUG-0219).
+    // A single event has no exclusion available to it, so the answer to a
+    // candidate that is gone is the NEXT one, and running out of candidates is
+    // a statement about staging (`STAGING_MOVED`), never a verdict on the page.
+    const CANDIDATES = 5;
     const recent = await client
       .from("field_provenance")
       .select("entity_id")
       .eq("entity_type", config.table)
       .eq("field", reference.registryField)
       .order("applied_at", { ascending: false })
-      .limit(1);
+      .limit(CANDIDATES);
     if (recent.error) {
       throw new Error(`reading field_provenance failed: ${recent.error.message}`);
     }
-    const entityId = (recent.data ?? [])[0]?.entity_id as string | undefined;
-    if (entityId === undefined) {
+    const candidates = [
+      ...new Set(
+        ((recent.data ?? []) as Record<string, unknown>[]).map((row) =>
+          String(row.entity_id),
+        ),
+      ),
+    ];
+    if (candidates.length === 0) {
       throw new Error(
         `staging holds no applied ${config.table}.${reference.registryField} ` +
           `decision, so the fact this page must show a source for does not ` +
@@ -691,32 +826,60 @@ describe("a resolver-owned record page", () => {
       );
     }
 
-    // That fact's CURRENT decision, by this test's own reckoning.
-    const history = await client
-      .from("field_provenance")
-      .select("source_id, applied_at, admin_locked, provenance_id")
-      .eq("entity_type", config.table)
-      .eq("entity_id", entityId)
-      .eq("field", reference.registryField)
-      .order("applied_at", { ascending: true })
-      .order("provenance_id", { ascending: true });
-    if (history.error) {
-      throw new Error(`reading field_provenance failed: ${history.error.message}`);
-    }
-    const rows = (history.data ?? []) as Record<string, unknown>[];
-    const current = rows[rows.length - 1];
-    expect(current, `the venue decision on ${entityId}`).toBeDefined();
+    // Every attempt makes the SAME comparison; only the id moves. A candidate
+    // is taken only where its page really drew the record AND its decision is
+    // still in the log — the two facts the assertions below are about.
+    const vanished: string[] = [];
+    let subjectOf:
+      | { id: string; markup: string; current: Record<string, unknown> }
+      | null = null;
+    for (const candidate of candidates) {
+      const rendered = await renderPage(RecordPage, {
+        params: Promise.resolve({ table: config.table, id: candidate }),
+      });
+      if ((await recordVerdict(config, candidate, rendered)) === "vanished") {
+        vanished.push(`${candidate} (no ${config.table} row on staging)`);
+        continue;
+      }
 
-    const markup = await renderPage(RecordPage, {
-      params: Promise.resolve({ table: config.table, id: entityId }),
-    });
+      // That fact's CURRENT decision, by this test's own reckoning.
+      const history = await client
+        .from("field_provenance")
+        .select("source_id, applied_at, admin_locked, provenance_id")
+        .eq("entity_type", config.table)
+        .eq("entity_id", candidate)
+        .eq("field", reference.registryField)
+        .order("applied_at", { ascending: true })
+        .order("provenance_id", { ascending: true });
+      if (history.error) {
+        throw new Error(`reading field_provenance failed: ${history.error.message}`);
+      }
+      const rows = (history.data ?? []) as Record<string, unknown>[];
+      const current = rows[rows.length - 1];
+      if (current === undefined) {
+        vanished.push(`${candidate} (its venue decision left the log)`);
+        continue;
+      }
+      subjectOf = { id: candidate, markup: rendered, current };
+      break;
+    }
+    if (subjectOf === null) {
+      throw new Error(
+        `${STAGING_MOVED} all ${candidates.length} of the most recently ` +
+          `decided ${config.table} went out from under this comparison ` +
+          `between the read and the render — ${vanished.join("; ")} — so the ` +
+          `page was never shown an entity to name a source for. This is a ` +
+          `statement about staging, not a verdict on the page.`,
+      );
+    }
+    const { id: entityId, markup, current } = subjectOf;
     const line = provenanceOf(markup, reference.field);
 
     // The line exists, and it is NOT the app's absence marker: the page said
     // "no source behind this value" for a fact the database holds a decision
     // on, which is the defect in one assertion.
-    expect(line, reference.field).not.toBeNull();
-    expect(line, reference.field).not.toBe(EM_DASH);
+    expect(line, `${entityId}.${reference.field}`).not.toBeNull();
+    expect(line, `${entityId}.${reference.field}`).not.toBe(EM_DASH);
 
     if (current.admin_locked !== true && typeof current.source_id === "string") {
       const named = await client
@@ -726,7 +889,7 @@ describe("a resolver-owned record page", () => {
         .maybeSingle();
       if (named.error) throw new Error(`reading sources failed: ${named.error.message}`);
       const sourceName = (named.data as Record<string, unknown> | null)?.source;
-      expect(line, reference.field).toContain(
+      expect(line, `${entityId}.${reference.field}`).toContain(
         typeof sourceName === "string" ? sourceName : current.source_id,
       );
     }
@@ -744,6 +907,16 @@ describe("a resolver-owned record page", () => {
    * the OTHER half at the same time — that the re-key moved the reference's
    * line and nothing else's, per event, against each fact's own current
    * decision read independently of `lib/db`.
+   *
+   * "EVERY" is a claim about the population READ MINUTES EARLIER, and staging
+   * is shared: an entity can be removed between that read and the ~30 s of
+   * renders below (admin-window/BUG-0219). Such an id is not a page that drew
+   * no provenance line — it is a page with no record on it at all — so it is
+   * classified (`recordVerdict`), confirmed absent by this file's own read,
+   * NAMED in the line this case prints, and excluded from the claim. What is
+   * never allowed is an exclusion nobody can see, or a claim with nothing left
+   * in it: the count printed is the count graded, and it must be more than
+   * zero.
    */
   it("shows the venue source on EVERY event the log holds a venue decision for, and moves no scalar's line", async () => {
     const config = EDIT_CONFIG.events;
@@ -826,8 +999,18 @@ describe("a resolver-owned record page", () => {
     const RENDER_FANOUT = 2;
 
     const dashed: string[] = [];
-    /** Ids actually rendered and graded — the population, or "every" is a lie. */
+    /** Ids whose page was rendered — the population, or "every" is a lie. */
+    const visited: string[] = [];
+    /** Ids whose page drew the record, and whose lines were therefore graded. */
     const graded: string[] = [];
+    /**
+     * Ids that were GONE by the time their page rendered — read out of
+     * `field_provenance` above, with no row in `events` when their page was
+     * built (admin-window/BUG-0219). Each one is confirmed by a read of this
+     * file's own, named in the line this case prints, and excluded from the
+     * claim rather than graded as a missing provenance line.
+     */
+    const vanished: string[] = [];
     // Batches, and each batch is awaited whole and then graded IN ID ORDER:
     // WHAT is asserted, and which id's failure surfaces first, are the serial
     // loop's answers however the requests interleave (the same guarantee, for
@@ -848,6 +1031,17 @@ describe("a resolver-owned record page", () => {
         // lost to an unhandled rejection on the way out.
         if (outcome.status === "rejected") throw outcome.reason;
         const markup = outcome.value;
+        visited.push(id);
+        // Is this a record page, or the honest "no such record" of an entity
+        // a concurrent writer removed since the population read above?
+        // Classified and confirmed before anything is graded — a page with no
+        // record on it has no line to carry a provenance cell, and reading its
+        // absence as a missing source is what reddened this tier
+        // (admin-window/BUG-0219).
+        if ((await recordVerdict(config, id, markup)) === "vanished") {
+          vanished.push(id);
+          continue;
+        }
         graded.push(id);
         for (const column of mappedColumns(config)) {
           const line = provenanceOf(markup, column);
@@ -878,7 +1072,29 @@ describe("a resolver-owned record page", () => {
     // every decided id was rendered, in order, exactly once. A batch walk that
     // skipped an id would otherwise pass this case by not looking
     // (admin-window/BUG-0208).
-    expect(graded, "record pages rendered and graded").toEqual(ids);
+    expect(visited, "record pages rendered").toEqual(ids);
+
+    // And the claim is narrowed OUT LOUD by the entities that were gone by the
+    // time their page rendered: an exclusion nobody can see is a silent skip
+    // (admin-window/BUG-0219). Every id here is one this file read for itself
+    // and did not find, so the sentence below is what this run actually
+    // graded — never a tolerance, and never the whole population when it was
+    // not.
+    console.log(
+      `venue provenance graded on ${graded.length} of ${ids.length} decided ` +
+        `${config.table}` +
+        (vanished.length === 0
+          ? " (none vanished mid-run)"
+          : `; ${vanished.length} excluded, removed from staging before their ` +
+            `page rendered: ${vanished.join(", ")}`),
+    );
+    // A population every one of whose entities vanished proves nothing at all,
+    // so the exclusion can never empty the claim it narrows.
+    expect(
+      graded.length,
+      `${config.table} record pages that drew a record, of ${ids.length} ` +
+        `carrying a venue decision`,
+    ).toBeGreaterThan(0);
 
     // The defect in one assertion, over the whole population: not one decided
     // fact on any of these events renders "no source behind this value".
