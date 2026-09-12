@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-12T00:08:09Z — do not edit)
+# Tracker index (regenerated 2026-09-12T00:08:24Z — do not edit)
 
 ## open
 - BUG-0213 [P2][bug][-] The attribution corpus carries a 2-line paste block, so the sibling allocating ITS next code reddens the offline suite  (scope:tests/offline/handoff/settle-review-item.test.ts from:BUG-0207)
