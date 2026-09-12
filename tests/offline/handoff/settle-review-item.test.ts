@@ -1329,6 +1329,88 @@ describe("the settle_review_item migration", () => {
       }),
     ).toEqual([]);
   });
+  /**
+   * A declaration is read in the grammar the sibling's OWN parser declares one
+   * in — QA on admin-window/BUG-0213.
+   *
+   * The registry is the sibling's file, so what counts as a declaration in it
+   * is the sibling's definition, and that definition is written down next door
+   * as code: `_declared_by` in `tests/live_safety/test_codes_named_once.py`
+   * parses the file with `ast` and takes an `Assign` OR an `AnnAssign` whose
+   * single target is a name and whose value is a string constant, comments
+   * stripped first ("a declaration parked inside a comment is invisible, one
+   * WEARING a comment is not", `code_declarations`' docstring). Quote style
+   * reaches the tree not at all.
+   *
+   * This reader takes a narrower grammar — one line, bare `=`, double quotes,
+   * nothing after the closing quote — and the gap runs in both directions,
+   * measured on a scratch replica of the sibling (never a write next door):
+   *
+   *  - annotate our own pasted entry the way `tests/helpers/` types its other
+   *    constants (`SYNTHETIC_NAME_PREFIX: Final[str] = "ENTITY_LINK_TEST_"`,
+   *    `catalog_rows.py:58`), or hang a comment off its end, and the meaning
+   *    next door is unchanged but this reader sees none — and because our own
+   *    installed migration RAISES the four, the finding fires: `KS029: raised
+   *    next door in supabase/migrations/20260908000002_…sql, and
+   *    tests/helpers/ks_codes.py declares no meaning for it`. Red for every
+   *    builder here over a typing pass next door, which is BUG-0213's failure
+   *    mode with a new trigger;
+   *  - and a stranger's claim written `LEASE_NOT_RENEWED = 'KS029'` is a
+   *    declaration by the sibling's parser and invisible to this one, so the
+   *    collision this guard exists for passes silently — BUG-0212's direction.
+   *
+   * In memory, both arms, on the declarations alone: no corpus, no similarity,
+   * nothing of the sibling's text recognised — the grammar of the declaration
+   * is simply the one its owner defines.
+   */
+  /*
+   * Landed by QA as `it.fails` (strict xfail) — watched RED first as a plain
+   * `it()` on this branch: `expected [ …(4) ] to deeply equal []`, the four
+   * findings above. The fixer flips it back to `it()`.
+   */
+  it.fails("reads a registry declaration in every form the sibling's own parser declares one", () => {
+    const allocated = allocatedCodes();
+    expect(allocated.length).toBeGreaterThan(0);
+    const claim = allocated[0];
+    const ourName = (OUR_DECLARATIONS.get(claim) ?? [])[0] as string;
+    expect(ourName, claim).toBeDefined();
+
+    // Our own installed migration raises all four next door, so a declaration
+    // this reader cannot see is never a quiet absence: it is a finding.
+    const raisedIn = new Map(allocated.map((code) => [code, [TARGET_PATH]]));
+    const entries = (spell: (name: string, code: string) => string): string =>
+      allocated.map((code) => spell((OUR_DECLARATIONS.get(code) ?? [])[0], code)).join("\n");
+
+    // Ben's paste, typed the way tests/helpers types its constants.
+    const annotated = entries((name, code) => `${name}: Final[str] = "${code}"`);
+    expect(
+      codeClaims({
+        allocated,
+        ours: OUR_DECLARATIONS,
+        theirs: declaredCodeNames(annotated),
+        raisedIn,
+      }),
+    ).toEqual([]);
+
+    // The same entries wearing a comment, which the sibling's parser reads
+    // straight through.
+    const commented = entries((name, code) => `${name} = "${code}"  # the admin handoff`);
+    expect(
+      codeClaims({
+        allocated,
+        ours: OUR_DECLARATIONS,
+        theirs: declaredCodeNames(commented),
+        raisedIn,
+      }),
+    ).toEqual([]);
+
+    // And the collision arm: a stranger's claim on one of the four, spelled in
+    // the other quote, is still a claim.
+    const single = `${ourName} = "${claim}"\nLEASE_NOT_RENEWED = '${claim}'`;
+    const found = codeClaims({ allocated, ours: OUR_DECLARATIONS, theirs: declaredCodeNames(single) });
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain("LEASE_NOT_RENEWED");
+  });
 
   /**
    * admin-window/BUG-0082, on the function side. On this project a newly
