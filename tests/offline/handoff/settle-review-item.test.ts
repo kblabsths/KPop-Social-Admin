@@ -178,24 +178,34 @@ const SIBLING_PRESENT = fs.existsSync(SIBLING_ROOT);
 const UNSCANNED_NEXT_DOOR = new Set(["node_modules", "agenticflow", "__pycache__"]);
 
 /**
- * Every `KSnnn` spelled anywhere under `root`, read as text, WITH the files
- * that spell it.
+ * The `KSnnn` codes a piece of SQL RAISES, in the one grammar every KS code
+ * next door is raised in: `using errcode = 'KSnnn'`.
  *
- * Deliberately broader than "raised": a code the sibling merely NAMES in
- * `tests/helpers/ks_codes.py`, pins in a witness or writes into a receipt is
- * still a code with a meaning, and allocating it here would give it a second
- * one. A path that vanishes or refuses to read is skipped rather than thrown
- * on — which would make an empty result a silent pass, so the caller asserts a
- * code it MUST find before it trusts an absence.
- *
- * The files come back too (admin-window/BUG-0207): "is this code spelled next
- * door" stopped being the whole question on the day Ben installed THIS
- * campaign's own handoff next door, because our artifact spells the four codes
- * it allocates. WHICH file spells a code is what tells our own installed
- * artifact from a stranger's claim on the same number.
+ * A raise is a USE of a code, not a declaration of what it means — which is why
+ * it is read as a grammar and compared to nothing. What it answers is narrower
+ * and it is the only thing it answers: which codes this tree puts in service.
  */
-function ksCodeSpellingsUnder(root: string): Map<string, string[]> {
-  const found = new Map<string, string[]>();
+const RAISED_CODE = /errcode\s*=\s*'(KS\d{3})'/g;
+
+function raisedCodes(sql: string): string[] {
+  return [...new Set([...sql.matchAll(RAISED_CODE)].map((match) => match[1]))].sort();
+}
+
+/**
+ * Every `KSnnn` RAISED under `root`, with the files (relative to it) raising it.
+ *
+ * Only `.sql` is read, because a SQLSTATE is raised in SQL: a number quoted in
+ * a receipt, listed in a python test's pinned tuple or mentioned in a docstring
+ * is not a code in service, and reading those was the whole of
+ * admin-window/BUG-0213 — the line the sibling's next allocation lands on is a
+ * pinned LIST, and a list of numbers says nothing about what any of them mean.
+ *
+ * A path that vanishes or refuses to read is skipped rather than thrown on —
+ * which would make an empty result a silent pass, so the caller asserts the
+ * raises it MUST find before it trusts an absence.
+ */
+function ksRaisesUnder(root: string): Map<string, string[]> {
+  const raised = new Map<string, string[]>();
   const pending = [root];
   while (pending.length > 0) {
     const dir = pending.pop() as string;
@@ -212,59 +222,76 @@ function ksCodeSpellingsUnder(root: string): Map<string, string[]> {
         pending.push(full);
         continue;
       }
+      if (!entry.name.endsWith(".sql")) continue;
       let text: string;
       try {
         text = fs.readFileSync(full, "utf8");
       } catch {
         continue;
       }
-      for (const code of new Set([...text.matchAll(/KS\d{3}/g)].map((match) => match[0]))) {
-        const spellers = found.get(code) ?? [];
-        spellers.push(full);
-        found.set(code, spellers);
+      for (const code of raisedCodes(text)) {
+        const files = raised.get(code) ?? [];
+        files.push(path.relative(root, full));
+        raised.set(code, files);
       }
     }
   }
-  return found;
+  return raised;
 }
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- * Telling our own installed handoff from a stranger's claim — admin-window/BUG-0207.
+ * Whose meaning is `KS029` next door — asked of a DECLARATION on each side
+ * (admin-window/BUG-0213, the architect's ruling of 2026-09-11; ARCHITECTURE.md
+ * §10, DECISIONS.md).
  *
- * The scan above asks the sibling what codes its tree holds. Until 2026-09-11
- * that answer was entirely about the sibling: anything it spelled, it meant.
- * Then Ben installed this campaign's two handoff artifacts into that tree —
- * `20260908000002_the_verdict_settles_the_item.sql` and §1a's four entries in
- * `tests/helpers/ks_codes.py` / `tests/live_safety/test_codes_named_once.py` —
- * and the guard reported `KS029`–`KS032` "already taken next door" against the
- * file that allocates them. The campaign's satisfaction condition being met is
- * what turned the suite red; that is the bug.
+ * The question this guard exists to answer is narrow: does a number this
+ * campaign allocates already MEAN something else in the tree Ben installs it
+ * into. Three earlier answers compared the sibling's text against a corpus of
+ * our own — first per line (admin-window/BUG-0207), then per whole paste block
+ * (admin-window/BUG-0212) — and both failed, in opposite directions, because a
+ * similarity oracle answers "does this look like something we wrote" instead:
  *
- * What the guard must still stop is unchanged: allocating a number the sibling
- * already means something else by. So a spelling next door is ours when it sits
- * INSIDE a verbatim copy of one of this campaign's paste BLOCKS — a fenced
- * block of a qualifying note, matched as a contiguous run of lines. Both
- * installed halves pass that test for the honest reason: the migration IS the
- * note's one fenced sql block (its file on disk is that block plus a trailing
- * newline, measured 2026-09-11), and the registry entries ARE §1a's two python
- * blocks, pasted.
+ *  - the LINE corpus carried our artifact's own raise idiom, `using errcode =
+ *    'KS029',` — the grammar all 32 of the sibling's codes use — so a stranger
+ *    raising one of the four for a meaning of its own wrote a line we already
+ *    held, and passed SILENTLY;
+ *  - the BLOCK corpus contained a TWO-LINE block, §1a's pinned-list paste, and
+ *    the sibling's next allocation lands on its second line (that list is
+ *    written six, six, six, five, five, four entries to a line), so the block
+ *    stopped matching and a next-door edit claiming none of our meanings turned
+ *    `npm test` RED for every builder in this repo.
  *
- * **Why the block and not the line** (admin-window/BUG-0212, QA on this
- * ticket). The first fix attributed any line the notes carried verbatim, and
- * next door a SQLSTATE is raised on a line of its own — `using errcode =
- * 'KSnnn',`, the grammar of every KS raise in that repo (QA counted 22 for
- * `KS024`, 20 for our own `KS029`, over `supabase/migrations` and
- * `tools/staging`). Our note carries that line for each code it allocates, so a
- * LATER sibling migration raising one of the four for a meaning of its own
- * wrote a line the corpus already held and passed SILENTLY. A one-line idiom is
- * not an identity; 776 lines of it in order are. The same narrowing makes the
- * re-point case honest: a rewrite of our own installed file that re-points a
- * code no longer matches the block it came from, and is flagged.
+ * So no text of the sibling's is recognised here. Both sides spell the same
+ * declaration in the same grammar — `NAME = "KSnnn"`, a code beside the meaning
+ * it is held for. Next door that is `tests/helpers/ks_codes.py`, the registry
+ * the sibling's own admission rule keeps complete ("Every `KSnnn` the
+ * migrations raise is named here", its docstring;
+ * `tests/live_safety/test_codes_named_once.py` enforces it). On our side it is
+ * §1a of the handoff note: the entries Ben pastes INTO that registry. Per
+ * allocated code the answer is one of three, and nothing else is consulted:
  *
- * Path-based attribution was the other obvious alternative and is weaker
- * still: it would clear whatever came to sit at the target path.
+ *  - the registry declares no meaning for it — not installed yet, no claim;
+ *  - it declares the meaning our note declares — our own artifact, which is the
+ *    campaign's satisfaction condition and must be GREEN;
+ *  - it declares a different meaning — a real collision: RED, naming the code,
+ *    our meaning, theirs, and the file the answer was read from.
+ *
+ * One thing the registry cannot answer is answered too: a code RAISED next door
+ * (`ksRaisesUnder`) that the registry declares nothing for. There the sibling's
+ * own admission rule is broken and this guard has no declaration to read, so
+ * silence would be BUG-0212's miss again — it is a finding of its own.
+ *
+ * The boundary of the design, stated rather than hidden: once the registry
+ * declares one of the four with OUR meaning, a later file next door that raises
+ * that code for something else WITHOUT touching the registry reads as ours.
+ * Telling those two apart needs text similarity, which is the instrument that
+ * failed three times in one day; next door the admission rule is what catches
+ * it, in the repo where the fix would have to land anyway.
  */
+
+/** The sibling's own code registry, relative to its root — the declaration read. */
+const SIBLING_REGISTRY = "tests/helpers/ks_codes.py";
 
 /** The `target file` row of a for-human note, when it names a sibling migration. */
 const INSTALLED_TARGET_ROW = /\|\s*target file\s*\|\s*`[^`]*?(supabase\/migrations\/[^`]+)`/;
@@ -289,57 +316,94 @@ function installedHandoffNotes(): { note: string; target: string; text: string }
 }
 
 /**
- * The blocks this campaign asks Ben to paste next door, as trimmed lines: every
- * fenced block of a qualifying note that spells one of `codes`. A block that
- * spells none of them attributes nothing and is left out.
+ * The `NAME = "KSnnn"` declarations of `text`, as code → the names it is held
+ * for.
+ *
+ * One reader for both sides, deliberately: the sibling's registry and §1a's
+ * paste are the same grammar, so "the same meaning" is an equality of what each
+ * side SAYS rather than a resemblance between two pieces of text. A code
+ * mentioned any other way — raised, pinned in a list, quoted in prose — is not
+ * a declaration and does not appear here at all.
  */
-function handoffBlocks(codes: readonly string[]): string[][] {
-  if (codes.length === 0) return [];
-  const spelled = new RegExp(codes.join("|"));
-  return installedHandoffNotes()
-    .flatMap((handoff) => fencedBlocks(handoff.text))
-    .map((block) => block.text.split("\n").map((line) => line.trim()))
-    .filter((lines) => lines.some((line) => spelled.test(line)));
-}
+const CODE_DECLARATION = /^[ \t]*([A-Z][A-Z0-9_]*)[ \t]*=[ \t]*"(KS\d{3})"[ \t]*$/gm;
 
-/** The paste blocks that spell one of this artifact's own four codes. */
-const HANDOFF_BLOCKS: readonly string[][] = handoffBlocks(allocatedCodes());
-
-/** The indices of `lines` covered by a verbatim, contiguous occurrence of `block`. */
-function coveredBy(lines: readonly string[], block: readonly string[]): Set<number> {
-  const covered = new Set<number>();
-  if (block.length === 0 || block.length > lines.length) return covered;
-  for (let start = 0; start + block.length <= lines.length; start += 1) {
-    let hit = true;
-    for (let offset = 0; offset < block.length && hit; offset += 1) {
-      hit = lines[start + offset] === block[offset];
-    }
-    if (!hit) continue;
-    for (let offset = 0; offset < block.length; offset += 1) covered.add(start + offset);
+function declaredCodeNames(text: string): Map<string, string[]> {
+  const declared = new Map<string, string[]>();
+  for (const match of text.matchAll(CODE_DECLARATION)) {
+    const names = declared.get(match[2]) ?? [];
+    if (!names.includes(match[1])) names.push(match[1]);
+    declared.set(match[2], names);
   }
-  return covered;
+  return declared;
 }
+
+/** One side's declarations: code → the meanings that side holds it for. */
+type CodeDeclarations = ReadonlyMap<string, readonly string[]>;
 
 /**
- * The lines of `text` that spell one of `codes` from OUTSIDE every paste block
- * of this campaign — the spellings next door that are not ours.
- *
- * Empty means every spelling in that file arrived inside a verbatim copy of
- * something one of our notes tells Ben to paste. A non-empty answer is the
- * collision the guard exists to catch, and it comes back as the offending lines
- * rather than as a bare `false`, so the failure names what to look at.
+ * What THIS CAMPAIGN declares its codes to mean — read off the notes that
+ * install a file next door, so the answer moves with the notes and no list here
+ * can go stale.
  */
-function unattributedSpellings(
-  text: string,
-  codes: readonly string[],
-  blocks: readonly string[][] = HANDOFF_BLOCKS,
-): string[] {
-  if (codes.length === 0) return [];
-  const spelled = new RegExp(codes.join("|"));
-  const lines = text.split("\n").map((line) => line.trim());
-  const covered = new Set<number>();
-  for (const block of blocks) for (const index of coveredBy(lines, block)) covered.add(index);
-  return lines.filter((line, index) => spelled.test(line) && !covered.has(index));
+function declaredByThisCampaign(): Map<string, string[]> {
+  const declared = new Map<string, string[]>();
+  for (const handoff of installedHandoffNotes()) {
+    for (const [code, names] of declaredCodeNames(handoff.text)) {
+      const held = declared.get(code) ?? [];
+      for (const name of names) if (!held.includes(name)) held.push(name);
+      declared.set(code, held);
+    }
+  }
+  return declared;
+}
+
+const OUR_DECLARATIONS: CodeDeclarations = declaredByThisCampaign();
+
+/**
+ * Every claim on one of `allocated` that the OTHER side's declarations carry —
+ * EMPTY when nothing next door holds one of our numbers for anything but the
+ * meaning our own notes declare for it.
+ *
+ * Findings are sentences rather than a bare `false`, and each one names the
+ * declaration it was read from, because "KS029 is taken" without both meanings
+ * beside it is not something a reader can act on.
+ */
+function codeClaims(args: {
+  readonly allocated: readonly string[];
+  readonly ours: CodeDeclarations;
+  readonly theirs: CodeDeclarations;
+  /** Code → the sibling files that RAISE it, when the tree was read. */
+  readonly raisedIn?: ReadonlyMap<string, readonly string[]>;
+  /** The registry the `theirs` declarations were read from, for the message. */
+  readonly registry?: string;
+}): string[] {
+  const registry = args.registry ?? SIBLING_REGISTRY;
+  const findings: string[] = [];
+  for (const code of [...args.allocated].sort()) {
+    const ours = args.ours.get(code) ?? [];
+    // Our own half is never assumed: a code this campaign allocates and names
+    // nowhere would otherwise make every comparison vacuously clean.
+    if (ours.length === 0) {
+      findings.push(`${code}: no handoff note of this campaign declares a meaning for it`);
+      continue;
+    }
+    const theirs = args.theirs.get(code) ?? [];
+    if (theirs.length === 0) {
+      const raised = [...(args.raisedIn?.get(code) ?? [])].sort();
+      if (raised.length > 0) {
+        findings.push(
+          `${code}: raised next door in ${raised.join(", ")}, and ${registry} declares no meaning ` +
+            `for it (we declare ${ours.join(", ")})`,
+        );
+      }
+      continue;
+    }
+    if ([...theirs].sort().join(",") === [...ours].sort().join(",")) continue;
+    findings.push(
+      `${code}: we declare ${ours.join(", ")}, ${registry} declares ${theirs.join(", ")}`,
+    );
+  }
+  return findings;
 }
 
 /* ── reading the artifact ─────────────────────────────────────────────────── */
@@ -952,74 +1016,78 @@ describe("the settle_review_item migration", () => {
   });
 
   /**
-   * The same question asked of the sibling AS IT STANDS — admin-window/BUG-0093.
+   * The same question asked of the sibling AS IT STANDS — admin-window/BUG-0093,
+   * answered from declarations since admin-window/BUG-0213.
    *
    * `TAKEN_NEXT_DOOR` is a snapshot, and a snapshot is exactly what failed the
    * first time: it was assembled from one of the sibling's two SQL worlds and
-   * cleared two codes that were already taken in the other. A snapshot cannot
-   * go stale loudly, so this check reads the sibling's actual tree — every
-   * `KSnnn` it raises, names, pins or writes into a receipt — and asserts that
-   * no code this artifact ALLOCATES appears in it.
+   * cleared two codes that were already taken in the other. A snapshot cannot go
+   * stale loudly, so this check reads the sibling's own tree.
    *
-   * **Two fixtures, as every scanning guard needs** (LESSONS 3). The scan must
-   * FIND `KS027` and `KS028` — the harness-door lease codes, which live outside
-   * `supabase/migrations/` and are precisely what the first grep missed — before
-   * its silence about anything else is worth trusting; a walk that read nothing
-   * would otherwise pass this by returning an empty set. Then it must NOT find
-   * any code the note allocates.
+   * **The two checks are still two checks** (admin-window/BUG-0207). The
+   * snapshot stays a literal `KS001`–`KS028` and is never re-derived from what
+   * is read here; what is read here is never narrowed to the snapshot. They
+   * disagree today — the tree holds four codes the snapshot does not name — and
+   * the disagreement is answered out loud, by asking what the sibling DECLARES
+   * each of those four to mean, rather than by editing either side into
+   * agreement.
+   *
+   * What it reads, and nothing else (admin-window/BUG-0213): the sibling's
+   * registry, `tests/helpers/ks_codes.py`, which names every code that tree
+   * holds; and, from its `.sql` files, which codes are raised. Since Ben pasted
+   * this campaign's handoff next door the registry names our four with our own
+   * meanings — that is the campaign's satisfaction condition, and it is GREEN
+   * here. A stranger holding one of them for a meaning of its own is RED, and
+   * so is one raised next door that the registry names nowhere.
+   *
+   * **Two fixtures, as every reader of a tree needs** (LESSONS 8). The registry
+   * must be found to declare `KS027`/`KS028` — the harness-door lease codes —
+   * and the raise reader must find them raised in `tools/staging/`, which is
+   * outside `supabase/migrations/` and is precisely what the first grep missed
+   * (admin-window/BUG-0093); a read that found nothing would otherwise pass by
+   * returning empty.
    *
    * It runs only where the sibling is present. On a machine without that
    * checkout there is nothing to read and nothing this check could honestly
    * say, so the dated snapshot above — which always runs — is the floor.
-   *
-   * **The two checks are still two checks** (admin-window/BUG-0207). The
-   * snapshot stays a literal `KS001`–`KS028` and is never re-derived from the
-   * scan; the scan stays a read of the real tree and is never narrowed to the
-   * snapshot. They disagree today — the tree holds four codes the snapshot does
-   * not name — and the disagreement is answered here, out loud, by saying WHO
-   * spelled each one rather than by editing either side into agreement.
-   *
-   * What changed on 2026-09-11: this campaign's own handoff now lives next
-   * door, so "the sibling's tree holds `KS029`" became true BECAUSE the
-   * artifact this file grades was installed there. Attribution (see
-   * `unattributedSpellings`) asks whether the spelling sits inside a verbatim
-   * copy of one of our paste blocks, so the collision arm is intact — a
-   * stranger's raise of one of these four fails exactly as before, in the
-   * python spelling and in the sibling's own `using errcode` idiom alike
-   * (both pinned on fixtures below) — while our own pasted artifact no longer
-   * counts against us.
    */
   it.runIf(SIBLING_PRESENT)("allocates no code the sibling's tree holds today", () => {
-    const spellings = ksCodeSpellingsUnder(SIBLING_ROOT);
-    expect(spellings.has("KS027"), `${SIBLING_ROOT} read`).toBe(true);
-    expect(spellings.has("KS028"), `${SIBLING_ROOT} read`).toBe(true);
+    const registryPath = path.join(SIBLING_ROOT, SIBLING_REGISTRY);
+    // Read, not scanned for: an unreadable registry throws here rather than
+    // becoming an empty map that agrees with everything.
+    const theirs = declaredCodeNames(fs.readFileSync(registryPath, "utf8"));
+    expect(theirs.get("KS027"), registryPath).toEqual(["LEASE_HELD_BY_ANOTHER"]);
+    expect(theirs.get("KS028"), registryPath).toEqual(["LEASE_NOT_LIVE"]);
+
+    const raised = ksRaisesUnder(SIBLING_ROOT);
+    for (const code of ["KS027", "KS028"]) {
+      expect(
+        (raised.get(code) ?? []).some((file) => file.startsWith("tools/staging/")),
+        `${code} raised outside supabase/migrations/`,
+      ).toBe(true);
+    }
+
     const allocated = allocatedCodes();
     expect(allocated.length).toBeGreaterThan(0);
 
-    // Every file next door that spells one of the four, and every line of it
-    // that this campaign's handoff notes do not carry. Empty is the only
-    // acceptable answer: an allocated code is either absent next door (before
-    // the paste) or present only through our own artifact (after it).
-    const spellers = new Set(allocated.flatMap((code) => spellings.get(code) ?? []));
-    const foreign = [...spellers].sort().flatMap((file) =>
-      unattributedSpellings(fs.readFileSync(file, "utf8"), allocated).map(
-        (line) => `${path.relative(SIBLING_ROOT, file)}: ${line}`,
-      ),
-    );
-    // Distinct lines: one offending spelling repeated twenty times is one
-    // thing to go and look at, and the failure should read like it.
-    expect([...new Set(foreign)]).toEqual([]);
+    expect(
+      codeClaims({ allocated, ours: OUR_DECLARATIONS, theirs, raisedIn: raised }),
+    ).toEqual([]);
   });
 
   /**
-   * Where the attribution corpus comes from — the non-vacuity half of the pair
-   * below. A corpus assembled from nothing would attribute nothing, and the
-   * collision arm would then fail on our own artifact again; a corpus
-   * assembled from every note in the directory would attribute a line any
-   * walk report happened to quote. It is exactly the notes that INSTALL a file
-   * in the sibling, read off their own `target file` row.
+   * Our half of the pair — the non-vacuity check on this campaign's own
+   * declarations (LESSONS 8).
+   *
+   * A comparison against declarations we never read answers "no claim" for
+   * everything, which is the corpus-shaped failure arriving as a silent pass.
+   * So: the notes that install a file next door really do declare a meaning for
+   * each allocated code; that declaration is the text §1a asks Ben to paste into
+   * the sibling's registry, in the registry's own grammar; and the OTHER thing
+   * §1a asks him to paste — the pinned list of numbers — declares nothing, which
+   * is the whole of admin-window/BUG-0213.
    */
-  it("attributes a spelling against the paste blocks of the notes that install a file next door", () => {
+  it("declares a meaning for every code it allocates, in the sibling's registry grammar", () => {
     const notes = installedHandoffNotes();
     expect(notes.map((handoff) => handoff.note)).toContain(NOTE);
     expect(notes.find((handoff) => handoff.note === NOTE)?.target).toBe(TARGET_PATH);
@@ -1027,85 +1095,94 @@ describe("the settle_review_item migration", () => {
     // so the derivation is a rule and not a one-file special case.
     expect(notes.length).toBeGreaterThan(1);
 
-    // The corpus is the notes' paste BLOCKS and not their lines
-    // (admin-window/BUG-0212). The migration block — what Ben pastes into
-    // TARGET_PATH — is one of them, whole.
-    const shippedLines = shipped.text.split("\n").map((line) => line.trim());
-    expect(
-      HANDOFF_BLOCKS.some(
-        (block) =>
-          block.length === shippedLines.length &&
-          block.every((line, index) => line === shippedLines[index]),
-      ),
-    ).toBe(true);
-    // Every code this artifact allocates is spelled inside one of them, so no
-    // code is attributed by an empty or mis-read corpus.
+    const pythonBlocks = fencedBlocks(noteText)
+      .filter((block) => block.info.toLowerCase() === "python")
+      .map((block) => block.text);
+    const entries = pythonBlocks.filter((text) => declaredCodeNames(text).size > 0);
+    expect(entries).toHaveLength(1);
+
     for (const code of allocatedCodes()) {
-      expect(
-        HANDOFF_BLOCKS.some((block) => block.some((line) => line.includes(code))),
-        code,
-      ).toBe(true);
+      const names = OUR_DECLARATIONS.get(code) ?? [];
+      // One code, one meaning, and it is the entry Ben pastes into the registry.
+      expect(names, code).toHaveLength(1);
+      expect(entries[0], code).toContain(`${names[0]} = "${code}"`);
     }
-    // And a block is a contiguous run, not a bag of lines: the artifact's own
-    // idiom line, standing alone, is NOT attributed — that is BUG-0212's leak,
-    // closed here rather than only at the fixture below.
-    const idiom = shippedLines.find(
-      (line) => line.includes(allocatedCodes()[0]) && /errcode/i.test(line),
-    );
-    expect(idiom).toBeDefined();
-    expect(unattributedSpellings(idiom as string, allocatedCodes())).toEqual([idiom]);
+
+    // The other python block of §1a: the registry's pinned list, which spells
+    // all four codes and declares a meaning for none of them.
+    const pinned = pythonBlocks.filter((text) => declaredCodeNames(text).size === 0);
+    expect(pinned).toHaveLength(1);
+    for (const code of allocatedCodes()) expect(pinned[0], code).toContain(code);
   });
 
   /**
    * The collision arm, proved on fixtures rather than on whatever the sibling
    * happens to hold today (LESSONS 8; and admin-window/BUG-0207 asks for this
    * arm to be pinned, so that making the suite green did not quietly delete the
-   * protection). Three fixtures:
-   *
-   *  - what the handoff itself puts next door — the pasted migration (this
-   *    block, verbatim) and §1a's registry entries — must NOT be flagged; that
-   *    is the text that turned the suite red on 2026-09-11;
-   *  - a stranger claiming one of the same four codes, in the sibling's own
-   *    grammar, MUST be flagged, line by line;
-   *  - a stranger claiming a code this artifact does NOT allocate is none of
-   *    this guard's business and is not flagged.
-   *
-   * All in memory: they answer the same on a machine where the sibling is not
-   * checked out at all, and nothing here writes or reads next door.
+   * protection). All in memory: they answer the same on a machine where the
+   * sibling is not checked out at all, and nothing here reads or writes next
+   * door.
    */
-  it("tells this handoff's own spellings from a stranger's claim on the same codes", () => {
+  it("tells this handoff's own registry entries from a stranger's claim on the same codes", () => {
     const allocated = allocatedCodes();
     expect(allocated.length).toBeGreaterThan(0);
-
-    // Half one of what Ben installs: the migration file's whole content.
-    expect(unattributedSpellings(shipped.text, allocated)).toEqual([]);
-
-    // Half two: §1a's companion edit to the sibling's code registry.
-    const companionEdit = fencedBlocks(noteText)
-      .filter((block) => block.info.toLowerCase() === "python")
-      .map((block) => block.text)
-      .join("\n");
-    for (const code of allocated) expect(companionEdit, code).toContain(code);
-    expect(unattributedSpellings(companionEdit, allocated)).toEqual([]);
-
-    // A stranger's claim on the first allocated code: same file, same grammar,
-    // a meaning of its own, and lines no note of ours carries.
     const claim = allocated[0];
-    const stranger = [
-      `# ${claim}: a staging lease the repair door could not renew.`,
-      `LEASE_NOT_RENEWED = "${claim}"`,
-    ];
-    expect(unattributedSpellings(stranger.join("\n"), allocated)).toEqual(stranger);
+    const ourName = (OUR_DECLARATIONS.get(claim) ?? [])[0];
+    expect(ourName, claim).toBeDefined();
 
-    // And a code this artifact does not allocate stays the sibling's own
-    // business: the guard speaks about these four and nothing else.
-    expect(unattributedSpellings('LEASE_HELD_BY_ANOTHER = "KS027"', allocated)).toEqual([]);
+    // What Ben pastes IS our declaration: the registry after the paste holds
+    // each of the four for exactly the meaning §1a declares, and claims nothing.
+    const pasted = allocated
+      .map((code) => `# ${code}: what this campaign holds it for.\n${(OUR_DECLARATIONS.get(code) ?? [])[0]} = "${code}"`)
+      .join("\n\n");
+    expect(
+      codeClaims({ allocated, ours: OUR_DECLARATIONS, theirs: declaredCodeNames(pasted) }),
+    ).toEqual([]);
 
-    // Carrying our block does not buy a file amnesty for what sits OUTSIDE it:
-    // coverage is positional, so an extra raise appended to a verbatim copy of
-    // the artifact is still flagged, and only that line is.
-    const extra = `raise exception 'lease lost' using errcode = '${claim}';`;
-    expect(unattributedSpellings(`${shipped.text}\n${extra}`, allocated)).toEqual([extra]);
+    // A registry that has not been pasted into — before the install, or on a
+    // machine where that half was never applied.
+    expect(codeClaims({ allocated, ours: OUR_DECLARATIONS, theirs: new Map() })).toEqual([]);
+
+    // A stranger holding one of the four for a meaning of its own.
+    const stranger = `# ${claim}: a staging lease the repair door could not renew.\nLEASE_NOT_RENEWED = "${claim}"`;
+    const found = codeClaims({
+      allocated,
+      ours: OUR_DECLARATIONS,
+      theirs: declaredCodeNames(stranger),
+    });
+    expect(found).toHaveLength(1);
+    // The failure names the code, our meaning, theirs, and which declaration it
+    // read them from.
+    expect(found[0]).toContain(claim);
+    expect(found[0]).toContain(ourName as string);
+    expect(found[0]).toContain("LEASE_NOT_RENEWED");
+    expect(found[0]).toContain(SIBLING_REGISTRY);
+
+    // A second meaning ALONGSIDE ours is still a second meaning.
+    const both = `${ourName} = "${claim}"\nLEASE_NOT_RENEWED = "${claim}"`;
+    expect(
+      codeClaims({ allocated, ours: OUR_DECLARATIONS, theirs: declaredCodeNames(both) }),
+    ).toHaveLength(1);
+
+    // A code this artifact does not allocate stays the sibling's own business:
+    // the guard speaks about these four and nothing else.
+    expect(
+      codeClaims({
+        allocated,
+        ours: OUR_DECLARATIONS,
+        theirs: declaredCodeNames('LEASE_HELD_BY_ANOTHER = "KS027"'),
+      }),
+    ).toEqual([]);
+
+    // And a code this campaign allocates but declares no meaning for is a
+    // finding, never a silent pass.
+    const undeclared = codeClaims({
+      allocated: ["KS900"],
+      ours: OUR_DECLARATIONS,
+      theirs: new Map(),
+    });
+    expect(undeclared).toHaveLength(1);
+    expect(undeclared[0]).toContain("KS900");
   });
 
   /**
@@ -1113,22 +1190,26 @@ describe("the settle_review_item migration", () => {
    * (admin-window/BUG-0212; QA on admin-window/BUG-0207).
    *
    * Attribution WAS per LINE against this campaign's handoff notes, and next
-   * door a SQLSTATE is raised on a line of its own:
-   * `using errcode = 'KSnnn',` — 100+ such lines across the sibling's
-   * migrations and `tools/staging` (measured 2026-09-11; `KS024` alone has
-   * 22, our own installed `KS029` has 20). Our note carries that same line
-   * verbatim for each of the four codes it allocates, so a LATER sibling
-   * migration that raises one of them for a meaning of its own writes a line
-   * that corpus already held, was attributed to us, and passed.
+   * door a SQLSTATE is raised on a line of its own: `using errcode = 'KSnnn',`,
+   * the grammar of every KS raise in that repo (measured 2026-09-11; `KS024`
+   * alone has 22 such lines, our own installed `KS029` has 20). Our note carries
+   * that same line for each code it allocates, so a LATER sibling migration
+   * raising one of them for a meaning of its own wrote a line that corpus
+   * already held, was attributed to us, and passed.
    *
-   * The fixture above proves the arm in PYTHON (`X = "KSnnn"`), a spelling
-   * the note happens not to carry per code; this one uses the sibling's own
-   * SQL idiom, taken from the shipped block so it cannot drift from it.
+   * Nothing is attributed by text now, so the stranger is caught by what it
+   * DECLARES, and this pins both states its file can be in — the sibling's own
+   * admission rule ("every `KSnnn` the migrations raise is named once in
+   * `tests/helpers/ks_codes.py`", §1a) says it must write the first:
+   *
+   *  - it names the code in the registry for its own meaning — the claim, with
+   *    both meanings in the finding;
+   *  - it raises the code and names it nowhere — the admission rule broken, no
+   *    declaration to read, and silence there would be this bug again.
+   *
    * Landed by QA as `it.fails` (strict xfail) reporting `expected [] to deeply
-   * equal [ "using errcode = 'KS029'," ]`; flipped back to a plain `it` by the
-   * fix, which stopped attributing a LINE the notes carry and started
-   * attributing a verbatim copy of a whole paste BLOCK. Watched red once more
-   * against the line-corpus version before the flip.
+   * equal [ "using errcode = 'KS029'," ]`; a plain `it` since the block corpus,
+   * and re-proved here against the declaration reader.
    */
   it("flags a stranger's raise of an allocated code in the sibling's own SQL idiom", () => {
     const allocated = allocatedCodes();
@@ -1143,64 +1224,110 @@ describe("the settle_review_item migration", () => {
       .find((line) => line.includes(claim) && /errcode/i.test(line));
     expect(idiom, `${claim} raised in the shipped block`).toBeDefined();
 
-    // A stranger's function next door, raising that code for its own reason.
-    // Nothing else in it spells a KS code at all — which is how a real
-    // migration reads: the code is named once, on the raise.
-    const stranger = [
+    // A stranger's migration next door, raising that code for its own reason.
+    const strangerFile = "supabase/migrations/20260915000001_the_door_renews_a_lease.sql";
+    const strangerSql = [
       "raise exception 'staging lease % could not be renewed', p_lease_id",
       idiom as string,
       "detail  = format('lease_id=%s', p_lease_id),",
       "hint    = 'take a fresh lease';",
     ].join("\n");
+    expect(raisedCodes(strangerSql)).toEqual([claim]);
+    const raisedIn = new Map([[claim, [strangerFile]]]);
 
-    expect(unattributedSpellings(stranger, allocated)).toEqual([idiom]);
+    // Its registry entry, which its own witness forces it to write.
+    const named = codeClaims({
+      allocated,
+      ours: OUR_DECLARATIONS,
+      theirs: declaredCodeNames(`LEASE_NOT_RENEWED = "${claim}"`),
+      raisedIn,
+    });
+    expect(named).toHaveLength(1);
+    expect(named[0]).toContain(claim);
+    expect(named[0]).toContain((OUR_DECLARATIONS.get(claim) ?? [])[0] as string);
+    expect(named[0]).toContain("LEASE_NOT_RENEWED");
+
+    // The same raise with the registry silent about the code.
+    const unnamed = codeClaims({
+      allocated,
+      ours: OUR_DECLARATIONS,
+      theirs: new Map(),
+      raisedIn,
+    });
+    expect(unnamed).toHaveLength(1);
+    expect(unnamed[0]).toContain(strangerFile);
+    expect(unnamed[0]).toContain(SIBLING_REGISTRY);
   });
 
   /**
    * The sibling allocating ITS OWN next code is not a claim on ours
-   * (QA on admin-window/BUG-0207).
+   * (admin-window/BUG-0213; QA on admin-window/BUG-0207).
    *
-   * Attribution is positional over whole paste blocks, and one of this note's
-   * code-bearing blocks is TWO lines long: §1a's registry paste, the wrapped
-   * tail of the sibling's `tests/live_safety/test_codes_named_once.py` list of
-   * every code `ks_codes.py` names. That list is written six, six, six, five,
-   * five, four entries to a line, so the sibling's next allocation lands on the
-   * line that has room — our block's last line — and the block stops matching.
-   * The four codes that line spells are then reported as FOREIGN spellings of
-   * codes this artifact allocates, and `npm test` is red for every builder
-   * over a next-door edit that claims none of our meanings. That is the
-   * failure BUG-0207 exists to stop, one trigger later.
+   * Attribution used to be positional over whole paste blocks, and one of this
+   * note's code-bearing blocks is TWO lines long: §1a's registry paste, the
+   * wrapped tail of the sibling's `tests/live_safety/test_codes_named_once.py`
+   * list of every code `ks_codes.py` names. That list is written six, six, six,
+   * five, five, four entries to a line, so the sibling's next allocation lands
+   * on the line that has room — our block's last line — and the block stopped
+   * matching. The four codes that line spells were then reported as FOREIGN
+   * spellings of codes this artifact allocates, and `npm test` was red for every
+   * builder over a next-door edit that claims none of our meanings.
    *
-   * Landed by QA as `it.fails` (strict xfail) for admin-window/BUG-0213,
-   * watched red first as a plain `it()`: `expected [ "\"KS029\", \"KS030\",
-   * \"KS031\", \"KS032\", \"KS033\"," ] to deeply equal []`. The fix flips
-   * it back to a plain `it`.
+   * A pinned list of numbers declares no meaning, so nothing about that line
+   * reaches the guard at all now; what it reads is the registry entry the
+   * sibling writes beside it, for a code that is not one of ours.
+   *
+   * Landed by QA as `it.fails` (strict xfail), watched red first as a plain
+   * `it()`: `expected [ "\"KS029\", \"KS030\", \"KS031\", \"KS032\",
+   * \"KS033\"," ] to deeply equal []`. Re-watched red as a plain `it()` on
+   * this branch before the fix, with that same message.
    */
-  it.fails("does not call the sibling's own next code a claim on ours", () => {
+  it("does not call the sibling's own next code a claim on ours", () => {
     const allocated = allocatedCodes();
     expect(allocated.length).toBeGreaterThan(0);
-    expect(HANDOFF_BLOCKS.length).toBeGreaterThan(0);
-
-    // The smallest block of the corpus — the registry paste, read off the note
-    // rather than typed here, so it cannot drift from what Ben pasted.
-    const registry = HANDOFF_BLOCKS.reduce((smallest, block) =>
-      block.length < smallest.length ? block : smallest,
-    );
-    expect(registry.length).toBeLessThan(5);
 
     // The next free number, which is the sibling's to allocate and not ours.
     const next = `KS${String(TAKEN_NEXT_DOOR.length + allocated.length + 1).padStart(3, "0")}`;
     expect(allocated).not.toContain(next);
     expect(TAKEN_NEXT_DOOR).not.toContain(next);
 
-    // It allocates it the way that list is already written: one more entry on
-    // the line that has room. Nothing about OUR four codes changed.
-    const grown = registry
-      .map((line, index) => (index === registry.length - 1 ? `${line} "${next}",` : line))
+    // Its registry after our paste and after it takes that number for a meaning
+    // of its own: our four entries untouched, one more below them.
+    const registry = [
+      ...allocated.map((code) => `${(OUR_DECLARATIONS.get(code) ?? [])[0]} = "${code}"`),
+      `LEASE_NOT_RENEWED = "${next}"`,
+    ].join("\n\n");
+    const theirs = declaredCodeNames(registry);
+    expect(theirs.get(next)).toEqual(["LEASE_NOT_RENEWED"]);
+    for (const code of allocated) {
+      expect(theirs.get(code), code).toEqual(OUR_DECLARATIONS.get(code));
+    }
+
+    // And the line that allocation lands on: §1a's pinned list — read off the
+    // note rather than typed here, so it cannot drift from what Ben pasted —
+    // grown the way that file is written, one more entry on the line with room.
+    const pinnedBlocks = fencedBlocks(noteText)
+      .filter((block) => block.info.toLowerCase() === "python")
+      .map((block) => block.text)
+      .filter((text) => declaredCodeNames(text).size === 0);
+    expect(pinnedBlocks).toHaveLength(1);
+    const pinned = pinnedBlocks[0].split("\n");
+    expect(pinned.length).toBeLessThan(5);
+    const grown = pinned
+      .map((line, index) => (index === pinned.length - 1 ? `${line} "${next}",` : line))
       .join("\n");
     for (const code of allocated) expect(grown, code).toContain(code);
+    expect(grown).toContain(next);
+    // Nothing about OUR four codes changed, and a list declares no meaning.
+    expect([...declaredCodeNames(grown).keys()]).toEqual([]);
 
-    expect(unattributedSpellings(grown, allocated)).toEqual([]);
+    expect(
+      codeClaims({
+        allocated,
+        ours: OUR_DECLARATIONS,
+        theirs: declaredCodeNames(`${registry}\n${grown}`),
+      }),
+    ).toEqual([]);
   });
 
   /**
