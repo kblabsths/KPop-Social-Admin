@@ -11,6 +11,8 @@ import { PageMore } from "@/components/ui/paging";
 import { NARROW_THE_VIEW } from "@/components/claims/paged-claim-list";
 import {
   AppAuthoredError,
+  boundOf,
+  continuing,
   initialPage,
   pageUrl,
   pressing,
@@ -106,14 +108,14 @@ function said(words: string, author: ReasonAuthor): AccountSegment[] {
 
 /** A surface that has rendered a first screen of `held` rows and paged in two. */
 function paged(held: number, ...ids: string[]): PageState<Row> {
-  return { rows: rows(...ids), held, status: "idle", refusal: null, notes: null };
+  return { after: "", rows: rows(...ids), held, status: "idle", refusal: null, notes: null };
 }
 
 describe("initialPage", () => {
   it("starts idle when the first screen says there is more, exhausted when it does not", () => {
     // A control that cannot be honoured is never offered (SPEC F10): a first
     // screen holding the whole set starts exhausted, so no press is drawn.
-    expect(initialPage<Row>(50, true)).toEqual({
+    expect(initialPage<Row>(50, true, "the-50th-row")).toEqual({
       rows: [],
       held: 50,
       status: "idle",
@@ -121,19 +123,120 @@ describe("initialPage", () => {
       // A surface's FIRST screen renders its own legs server-side; this state
       // holds only what presses brought (admin-window/TASK-0076).
       notes: null,
+      // …and it declares the bound it continues: the last row of the first
+      // screen it was seeded from (admin-window/BUG-0216).
+      after: "the-50th-row",
     });
-    expect(initialPage<Row>(7, false)).toEqual({
+    expect(initialPage<Row>(7, false, "the-7th-row")).toEqual({
       rows: [],
       held: 7,
       status: "exhausted",
       refusal: null,
       notes: null,
+      after: "the-7th-row",
     });
   });
 
   it("holds none of the first screen's own rows", () => {
     // `rows` is what was PAGED IN; the first screen belongs to the server.
-    expect(initialPage<Row>(50, true).rows).toEqual([]);
+    expect(initialPage<Row>(50, true, "").rows).toEqual([]);
+  });
+});
+
+/**
+ * THE FIRST SCREEN CAN CHANGE UNDER A PAGED SURFACE — campaign
+ * admin-window/BUG-0216.
+ *
+ * What the operator sees on a paged surface is `[...firstScreen,
+ * ...state.rows]`, and the first screen is the SERVER's: it is rendered again,
+ * from a fresh read, whenever the router refreshes the route under a client
+ * that kept its state. `next dev` does exactly that — it fires a Fast Refresh
+ * the moment it has compiled `/api/admin/claims/rows` on demand, which is the
+ * 8.2 s line in the log Ben filed — so the two halves of the list came from
+ * two reads taken seconds apart.
+ *
+ * Measured on staging 2026-09-11, `/claims` on a production build, one press
+ * then one re-render with a single claim settled ahead of the bound: 100 rows
+ * on screen, 99 distinct, `01a058f1-02c7-7e11-9191-adfa6207a0f0` drawn twice
+ * and the claim that took its place drawn not at all — React's duplicate-key
+ * warning, verbatim, in the console.
+ *
+ * The fixtures below are that shape at the size this suite works in: a first
+ * screen of `SIZE` rows, one page taken in after it, and then the same view
+ * one row shorter.
+ */
+describe("a claim is never drawn twice when the first screen changes underneath", () => {
+  /** The first screen a surface renders, and the state that continues it. */
+  const screen = (...ids: string[]): { rows: Row[]; state: PageState<Row> } => ({
+    rows: rows(...ids),
+    state: initialPage<Row>(ids.length, true, boundOf(rows(...ids), (row) => row.id)),
+  });
+
+  /** What the surface actually puts on screen: the first screen, then the pages. */
+  const drawn = (first: Row[], state: PageState<Row>): string[] =>
+    [...first, ...state.rows].map((row) => row.id);
+
+  it("drops the pages taken after a bound the first screen no longer ends at", async () => {
+    // The operator's first screen is claims a,b; a press takes in c,d.
+    const before = screen("a", "b");
+    const { deps } = recorder(() => ({
+      kind: "ok",
+      rows: rows("c", "d"),
+      offset: SIZE,
+      exhausted: false,
+    }));
+    const held = await requestPage<Row>(before.state, deps);
+    expect(drawn(before.rows, held)).toEqual(["a", "b", "c", "d"]);
+
+    // Claim `a` is settled and the server renders the first screen again: it
+    // now ends at `c`, the very claim the press had taken in. Before this
+    // ticket the surface drew `b, c` on top of `c, d` — `c` twice, `e` never.
+    const after = screen("b", "c");
+    expect(drawn(after.rows, continuing(held, after.state))).toEqual(["b", "c"]);
+  });
+
+  it("keeps the pages taken in when the first screen still ends where they started", async () => {
+    // The guard has to pass for the shape that OCCURS as well as flag the one
+    // that must not (LESSONS 8): a re-render that read the same rows changes
+    // nothing, and a surface that dropped its pages on every refresh would
+    // undo the operator's paging for no reason.
+    const before = screen("a", "b");
+    const { deps } = recorder(() => ({
+      kind: "ok",
+      rows: rows("c", "d"),
+      offset: SIZE,
+      exhausted: false,
+    }));
+    const held = await requestPage<Row>(before.state, deps);
+    const again = screen("a", "b");
+    expect(continuing(held, again.state)).toBe(held);
+    expect(drawn(again.rows, continuing(held, again.state))).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("drops a page that was still in flight when the first screen changed", async () => {
+    // The press that answers AFTER the screen moved carries the bound it was
+    // made under, so the same one comparison catches it — there is no second
+    // guard and no cancellation to forget.
+    const before = screen("a", "b");
+    const { deps } = recorder(() => ({
+      kind: "ok",
+      rows: rows("c", "d"),
+      offset: SIZE,
+      exhausted: false,
+    }));
+    // The hook publishes `pressing(before)` and hands `requestPage` the
+    // PRE-press state, so this is the answer that lands while the surface is
+    // already drawing a different first screen.
+    const inFlight = await requestPage<Row>(before.state, deps);
+    expect(inFlight.rows.map((row) => row.id)).toEqual(["c", "d"]);
+    const after = screen("b", "c");
+    expect(continuing(inFlight, after.state).rows).toEqual([]);
+    expect(continuing(inFlight, after.state).held).toBe(SIZE);
+  });
+
+  it("says the bound is the last row of the first screen, and nothing for an empty one", () => {
+    expect(boundOf(rows("a", "b", "c"), (row) => row.id)).toBe("c");
+    expect(boundOf([], (row: Row) => row.id)).toBe("");
   });
 });
 
@@ -244,8 +347,8 @@ describe("requestPage", () => {
     // comparing identity can see that nothing happened.
     const { urls, deps } = answering({ kind: "ok", rows: rows("x"), offset: 4, exhausted: false });
     const states: PageState<Row>[] = [
-      { rows: rows("a"), held: 4, status: "loading", refusal: null, notes: null },
-      { rows: rows("a"), held: 4, status: "exhausted", refusal: null, notes: null },
+      { after: "", rows: rows("a"), held: 4, status: "loading", refusal: null, notes: null },
+      { after: "", rows: rows("a"), held: 4, status: "exhausted", refusal: null, notes: null },
     ];
     return Promise.all(
       states.map(async (state) => {
@@ -784,6 +887,7 @@ describe("requestPage", () => {
         status: "idle",
         refusal: null,
         notes: standing,
+        after: "",
       };
       expect(pressing(idle).notes).toBe(standing);
       expect(pressing(idle).status).toBe("loading");
@@ -1238,6 +1342,7 @@ describe("pressing", () => {
       status: "idle",
       refusal: null,
       notes: null,
+      after: "",
     };
     const started = pressing(idle);
     expect(started.status).toBe("loading");
@@ -1263,6 +1368,7 @@ describe("pressing", () => {
         object: "pending_claims",
       },
       notes: null,
+      after: "",
     };
     expect(pressing(refused).refusal).toBe(refused.refusal);
     expect(pressing(refused).status).toBe("loading");
@@ -1278,6 +1384,7 @@ describe("pressing", () => {
         status,
         refusal: null,
         notes: null,
+        after: "",
       };
       expect(pressing(state)).toBe(state);
     }
@@ -1290,6 +1397,7 @@ describe("pressing", () => {
       status: "idle",
       refusal: null,
       notes: null,
+      after: "",
     };
     const once = pressing(idle);
     expect(pressing(once)).toBe(once);

@@ -81,7 +81,7 @@ const NEXT_STEP = NARROW_THE_VIEW;
 
 /** A state a surface would really be in: a first screen, and nothing paged in yet. */
 function state(over: Partial<PageState<Row>> = {}): PageState<Row> {
-  return { rows: [], held: SIZE, status: "idle", refusal: null, notes: null, ...over };
+  return { after: "", rows: [], held: SIZE, status: "idle", refusal: null, notes: null, ...over };
 }
 
 /**
@@ -475,7 +475,7 @@ describe("a page answer for an object this database does not have", () => {
     // it again to ask for the same rows." — copy bar 3 inverted, inside a
     // `role="alert"` that announces it.
     const next = await requestPage<Row>(
-      { rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
+      { after: "", rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
       {
         route: PAGE_ROUTES.claims,
         params: "",
@@ -750,7 +750,7 @@ describe("fetchJson — the one request, and what it may reject with", () => {
     // with the row list untouched.
     stub(() => Response.json(answer, { status: 400 }));
     const next = await requestPage<Row>(
-      { rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
+      { after: "", rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
       { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
     );
     expect(broken(next.refusal).reason).toBe(answer.reason);
@@ -785,7 +785,7 @@ describe("fetchJson — the one request, and what it may reject with", () => {
       expect(said, name).not.toBe("null");
       // The driver renders whatever this rejects with; it must be readable.
       const next = await requestPage<Row>(
-        { rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
+        { after: "", rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
         { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
       );
       expect(broken(next.refusal).reason, name).toBe(said);
@@ -885,7 +885,7 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
     for (const [name, body, init] of NOT_THIS_APP) {
       answeredWith(body, init);
       const next = await requestPage<Row>(
-        { rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
+        { after: "", rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
         { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
       );
       expect(broken(next.refusal).reason, name).toBe(ANSWERED_BY_SOMETHING_ELSE);
@@ -904,7 +904,7 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
     const [, body, init] = NOT_THIS_APP[0];
     answeredWith(body, init);
     const next = await requestPage<Row>(
-      { rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
+      { after: "", rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
       { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
     );
     const shown = readable(
@@ -941,7 +941,7 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
       headers: { "content-type": "application/json" },
     });
     const next = await requestPage<Row>(
-      { rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
+      { after: "", rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
       { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
     );
     expect(broken(next.refusal).reason).toBe(UNREADABLE_ANSWER);
@@ -1094,7 +1094,7 @@ describe("usePageRows binds the driver to a press", () => {
 
   it("renders the first screen's own affordance before any press", () => {
     const urls = answering({ kind: "ok", rows: [], offset: SIZE, exhausted: true });
-    const { html } = probe(initialPage<Row>(SIZE, true));
+    const { html } = probe(initialPage<Row>(SIZE, true, ""));
     expect(html).toContain('data-paging="more"');
     // No press, no request.
     expect(urls).toEqual([]);
@@ -1102,14 +1102,14 @@ describe("usePageRows binds the driver to a press", () => {
 
   it("draws no control at all when the first screen said there is no more", () => {
     answering({ kind: "ok", rows: [], offset: SIZE, exhausted: true });
-    const { html } = probe(initialPage<Row>(SIZE, false));
+    const { html } = probe(initialPage<Row>(SIZE, false, ""));
     expect(html).toContain('data-paging="exhausted"');
     expect(controls(html)).toBe(0);
   });
 
   it("one press, one request, at the bound the PRE-press state held", async () => {
     const urls = answering({ kind: "ok", rows: [{ id: "c" }], offset: SIZE, exhausted: false });
-    const { press } = probe(initialPage<Row>(SIZE, true), "tab=standing");
+    const { press } = probe(initialPage<Row>(SIZE, true, ""), "tab=standing");
     press();
     await settle();
     expect(urls).toHaveLength(1);
@@ -1130,7 +1130,7 @@ describe("usePageRows binds the driver to a press", () => {
       return answer.promise;
     });
 
-    const { press } = probe(initialPage<Row>(SIZE, true));
+    const { press } = probe(initialPage<Row>(SIZE, true, ""));
     press();
     press();
     press();
@@ -1168,7 +1168,7 @@ describe("usePageRows binds the driver to a press", () => {
         }),
       );
     });
-    const { press } = probe(initialPage<Row>(SIZE, true));
+    const { press } = probe(initialPage<Row>(SIZE, true, ""));
     press();
     await settle();
     press();
@@ -1178,7 +1178,7 @@ describe("usePageRows binds the driver to a press", () => {
 
   it("presses no further once the answer says the set is exhausted", async () => {
     const urls = answering({ kind: "ok", rows: [], offset: SIZE, exhausted: true });
-    const { press } = probe(initialPage<Row>(SIZE, true));
+    const { press } = probe(initialPage<Row>(SIZE, true, ""));
     press();
     await settle();
     press();
@@ -1189,7 +1189,7 @@ describe("usePageRows binds the driver to a press", () => {
 
   it("never throws out of the press, and a refusal leaves the press repeatable", async () => {
     const urls = answering(() => Promise.reject(new TypeError("Failed to fetch")));
-    const { press } = probe(initialPage<Row>(SIZE, true));
+    const { press } = probe(initialPage<Row>(SIZE, true, ""));
     expect(() => press()).not.toThrow();
     await settle();
     expect(urls).toHaveLength(1);
@@ -1228,7 +1228,7 @@ describe("usePageRows binds the driver to a press", () => {
       const html = render(
         h(function Surface() {
           // The ONE spelling of this surface's window.
-          const bound = usePageRows<Row>(initialPage<Row>(windowSize, true), {
+          const bound = usePageRows<Row>(initialPage<Row>(windowSize, true, ""), {
             route: PAGE_ROUTES.claims,
             params: "",
             size: windowSize,
@@ -1278,6 +1278,19 @@ describe("usePageRows binds the driver to a press", () => {
     expect(source).toContain("useRef");
     expect(source.match(/setState\(/g) ?? []).toHaveLength(1);
     expect(source).not.toMatch(/setState\(\s*(?:\(|function|async)/);
+  });
+
+  it("reads its state through the first screen it is now drawing, at both points", () => {
+    // admin-window/BUG-0216, the structural half. `useState` seeds ONCE, so a
+    // first screen re-rendered underneath a kept state is invisible to the
+    // hook unless every read of that state is reconciled against the `initial`
+    // of the CURRENT render — the one the press works from, and the one the
+    // surface draws. Neither can be reproduced by a single static render,
+    // which is why this is graded as the composition and not as a re-render:
+    // the rule itself is driven in tests/offline/paging/machine.test.ts.
+    const source = sourceText("src/components/ui/paging.tsx");
+    expect(source).toMatch(/continuing\(latest\.current, initial\)/);
+    expect(source).toMatch(/state: continuing\(state, initial\)/);
   });
 });
 
@@ -1370,6 +1383,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     status: "exhausted",
     refusal: null,
     notes: null,
+    after: "",
   });
   const counted = (total: number): DrawnWindow => ({
     ...WINDOW,
@@ -1393,6 +1407,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     status: "idle",
     refusal: null,
     notes: null,
+    after: "",
   });
 
   /** What one element of a rendered surface SAYS — its text, whitespace collapsed. */
@@ -1435,7 +1450,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
       h(
         PagingProvider,
         {
-          initial: initialPage<Row>(SIZE, true),
+          initial: initialPage<Row>(SIZE, true, ""),
           window: WINDOW,
           deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE },
           children: null,
@@ -1451,7 +1466,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     // once and hands the same object to either component, so the paged arm and
     // the unpaged one are the same element with the same hooks and the same
     // words until a press changes what the operator holds.
-    expect(paged(initialPage<Row>(SIZE, true))).toBe(
+    expect(paged(initialPage<Row>(SIZE, true, ""))).toBe(
       render(h(WindowLine, { gauge: "events", window: WINDOW, shows: CATALOG })),
     );
   });
@@ -1460,12 +1475,12 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     // Offered, in flight and refused all still hold rows back; only the read's
     // own answer that the set has ended says otherwise (LESSONS 11).
     const states: [string, PageState<Row>][] = [
-      ["idle", initialPage<Row>(SIZE, true)],
-      ["loading", { ...initialPage<Row>(SIZE, true), status: "loading" }],
+      ["idle", initialPage<Row>(SIZE, true, "")],
+      ["loading", { ...initialPage<Row>(SIZE, true, ""), status: "loading" }],
       [
         "refused",
         {
-          ...initialPage<Row>(SIZE, true),
+          ...initialPage<Row>(SIZE, true, ""),
           refusal: brokenArm("the view is not provisioned", "this app", "pending_claims"),
         },
       ],
@@ -1473,7 +1488,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     for (const [name, state] of states) {
       expect(hooks(paged(state)).truncated, name).toBe("true");
     }
-    expect(hooks(paged(initialPage<Row>(SIZE, false))).truncated).toBe("false");
+    expect(hooks(paged(initialPage<Row>(SIZE, false, ""))).truncated).toBe("false");
   });
 
   it("whose number held is, is a fact the window states, never a size it compares", () => {
@@ -1494,6 +1509,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
       status: "idle",
       refusal: null,
       notes: null,
+      after: "",
     };
 
     // Stated "this window": it grows with the rows, whatever its number is —
@@ -1544,9 +1560,9 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
 
   it("is ONE element in every state a press can end in", () => {
     for (const state of [
-      initialPage<Row>(SIZE, true),
-      { ...initialPage<Row>(SIZE, true), status: "loading" as const },
-      initialPage<Row>(SIZE, false),
+      initialPage<Row>(SIZE, true, ""),
+      { ...initialPage<Row>(SIZE, true, ""), status: "loading" as const },
+      initialPage<Row>(SIZE, false, ""),
     ]) {
       expect(hooks(paged(state)).lines).toBe(1);
     }
@@ -1696,7 +1712,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
       ["exhausted, the two reads diverge", "exhausted", ended(130), counted(877)],
       // Still offering: the control is the button, and what it says is what a
       // press would do.
-      ["still offering", "more", initialPage<Row>(SIZE, true), counted(877)],
+      ["still offering", "more", initialPage<Row>(SIZE, true, ""), counted(877)],
       // This ticket's own arm, in both verdicts the window can carry there.
       ["the bound ceiling", "limit", pastTheCeiling(), counted(MAX_PAGE_OFFSET * 2)],
       ["the bound ceiling, the two reads diverge", "limit", pastTheCeiling(), counted(877)],
@@ -1747,7 +1763,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
         h(
           PagingProvider,
           {
-            initial: initialPage<Row>(CEILING, true),
+            initial: initialPage<Row>(CEILING, true, ""),
             window,
             deps: { route, params: "", size: SIZE },
             children: null,
@@ -1799,7 +1815,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     const widget = (holds: string, nextStep: string | null): string =>
       render(
         h(PageMore, {
-          state: { rows: [], held: CEILING, status: "idle", refusal: null, notes: null },
+          state: { rows: [], held: CEILING, status: "idle", refusal: null, notes: null, after: "" },
           holds,
           size: SIZE,
           readsAgree: true,
@@ -2040,7 +2056,7 @@ describe("a page that arrives short of the window", () => {
       exhausted,
     };
     const next = await requestPage<Row>(
-      { rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
+      { after: "", rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
       {
         route: PAGE_ROUTES.claims,
         params: "",
@@ -2127,6 +2143,7 @@ describe("the refusal line says who wrote the words", () => {
     status: "idle",
     refusal: null,
     notes: null,
+    after: "",
   };
 
   /** One press against a stubbed wire, rendered. */

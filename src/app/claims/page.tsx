@@ -87,7 +87,7 @@ import {
 } from "@/lib/url/narrowing";
 import { claimLines, type ClaimLine } from "@/lib/claims/lines";
 import { PAGE_ROUTES, pageBound } from "@/lib/paging/bounds";
-import { initialPage } from "@/lib/paging/machine";
+import { boundOf, initialPage } from "@/lib/paging/machine";
 import { resolveBounds } from "@/lib/gauges/gauge";
 import {
   PENDING_CLAIMS_DEFAULTS,
@@ -1819,7 +1819,16 @@ export default async function ClaimsPage({
           // reads — and the condition says so out loud rather than asserting
           // it.
           <PagingProvider
-            initial={initialPage<ClaimLine>(listed.length, truncated)}
+            // THE BOUND THIS FIRST SCREEN ENDS AT, so the driver can tell
+            // that a re-rendered first screen is a different one and start
+            // again from it rather than concatenating one order's rows under
+            // another's (admin-window/BUG-0216). It is the same field
+            // `ClaimList` keys its rows by.
+            initial={initialPage<ClaimLine>(
+              listed.length,
+              truncated,
+              boundOf(listed, (claim) => claim.observationId),
+            )}
             window={listWindow}
             deps={{
               route: PAGE_ROUTES.claims,

@@ -6597,7 +6597,7 @@ describe("the affordance that continues the claim list", () => {
         h(
           PagingProvider,
           {
-            initial: initialPage<ClaimLine>(windowSize, true),
+            initial: initialPage<ClaimLine>(windowSize, true, ""),
             window: countedWindow(windowSize * 3, windowSize),
             deps: { route: PAGE_ROUTES.claims, params: "", size: windowSize },
             children: null,
@@ -6937,7 +6937,7 @@ describe("the affordance that continues the claim list", () => {
       kind: "not_provisioned",
       missing: T.pendingClaims,
     });
-    const atCeiling = initialPage<ClaimLine>(MAX_PAGE_OFFSET + CLAIM_WINDOW, true);
+    const atCeiling = initialPage<ClaimLine>(MAX_PAGE_OFFSET + CLAIM_WINDOW, true, "");
     const ceilingRefusal = await answering(atCeiling, {
       kind: "refused",
       reason: "the `offset` must be at most 100000",
@@ -7053,7 +7053,7 @@ describe("the affordance that continues the claim list", () => {
     // the refusal this app's route answers a bound past the ceiling with.
     const script = pagedScript(130);
     await renderClaims(script);
-    const atCeiling = initialPage<ClaimLine>(MAX_PAGE_OFFSET + CLAIM_WINDOW, true);
+    const atCeiling = initialPage<ClaimLine>(MAX_PAGE_OFFSET + CLAIM_WINDOW, true, "");
 
     // These two renders go around `renderClaims`, and only these two do: its
     // sweep grades that no FIRST screen of this file draws the limit arm, and
@@ -7099,7 +7099,7 @@ describe("the affordance that continues the claim list", () => {
         {
           // A COUNT of 900 over 37 rendered rows: the state a page would build
           // where its two reads disagree — which `/claims` never hands over.
-          initial: initialPage<ClaimLine>(37, true),
+          initial: initialPage<ClaimLine>(37, true, ""),
           window: countedWindow(900, CLAIM_WINDOW),
           deps: { route: PAGE_ROUTES.claims, params: "", size: CLAIM_WINDOW },
           children: null,

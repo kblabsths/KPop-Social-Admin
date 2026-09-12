@@ -8,6 +8,7 @@ import {
   type PageDeps,
   type PageRefusal,
   type PageState,
+  continuing,
   pressing,
   requestPage,
 } from "@/lib/paging/machine";
@@ -212,6 +213,18 @@ function asError(thrown: unknown): Error {
  * at the two points that publish and nowhere else, so it is never mutated
  * during a render.
  *
+ * **THE FIRST SCREEN CAN BE RE-RENDERED UNDER IT, AND THEN THIS STATE IS NOT A
+ * CONTINUATION OF IT** (admin-window/BUG-0216). `useState` seeds ONCE and
+ * ignores every later `initial`, while the surface renders the LIVE first
+ * screen concatenated with these rows — so a router refresh (`next dev` fires
+ * one as `[Fast Refresh]` the moment it has compiled a route handler on
+ * demand) left rows paged off one order sitting under a first screen drawn
+ * from another. Every read of the state goes through `continuing()`, which
+ * hands back `initial` the moment the two no longer name the same bound: the
+ * one the press works from, and the one the surface renders. Nothing is
+ * merged and nothing is de-duplicated — the rows dropped are a window of an
+ * order that is no longer on screen.
+ *
  * Nothing here throws: `requestPage` turns a rejection into a refusal on the
  * next state and answers instead of raising.
  *
@@ -235,7 +248,10 @@ export function usePageRows<Row>(
   };
 
   const press = (): void => {
-    const before = latest.current;
+    // The state a press works from is the one the SURFACE is drawing: a press
+    // made against a first screen this state no longer continues would ask for
+    // the old screen's next bound (admin-window/BUG-0216).
+    const before = continuing(latest.current, initial);
     const started = pressing(before);
     // `pressing` hands back the SAME object for `loading` and `exhausted`, so
     // identity is the guard: no publication, no request, no re-render.
@@ -244,7 +260,11 @@ export function usePageRows<Row>(
     void requestPage<Row>(before, { ...deps, fetchJson }).then(publish);
   };
 
-  return { state, press, size: deps.size };
+  // Derived during render rather than written back into the state: a first
+  // screen that changes is a fact of the PROPS, and the one place it is
+  // answered is this expression, which both the press above and every consumer
+  // below read.
+  return { state: continuing(state, initial), press, size: deps.size };
 }
 
 /**

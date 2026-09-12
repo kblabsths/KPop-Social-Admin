@@ -185,6 +185,35 @@ export interface PageState<Row> {
    * field.
    */
   readonly notes: PageNotes | null;
+  /**
+   * THE ROW EVERY PAGE THIS STATE TOOK IN COMES AFTER — the last row of the
+   * FIRST SCREEN this state continues (admin-window/BUG-0216).
+   *
+   * A paged surface renders the first screen's rows CONCATENATED with the rows
+   * this state holds, and that concatenation is one contiguous run of one
+   * order only while the first screen still ends where this state started
+   * counting from. The first screen is the SERVER's, and the server can render
+   * it again under a client that kept its state — `router.refresh()`, and in
+   * `next dev` the `[Fast Refresh]` that follows compiling a route handler on
+   * demand. When a claim settles ahead of the bound between those two renders,
+   * every later row moves up one: the row this state took in as the first of
+   * its second page is now the LAST row of the new first screen, and the
+   * surface renders it twice while the row that moved into its place is never
+   * rendered at all.
+   *
+   * So the state DECLARES what it continues, and `continuing()` below is the
+   * one comparison that decides whether it still may. It is an id and not a
+   * row count: a first screen the same size whose last row changed is a
+   * different bound, and one whose rows churned ABOVE an unchanged last row is
+   * the same bound — which is exactly what contiguity at the boundary turns
+   * on.
+   *
+   * The empty string is a state that continues no particular first screen —
+   * what a driver walked from a synthetic start holds. It only ever compares
+   * equal to another empty string, so a surface that spells a bound is never
+   * silently matched against one that does not.
+   */
+  readonly after: string;
 }
 
 /**
@@ -223,6 +252,9 @@ export function pressing<Row>(state: PageState<Row>): PageState<Row> {
     // Carried through untouched: a press in flight has not changed what the
     // pages already taken in reported about their legs.
     notes: state.notes,
+    // Nor which first screen it continues — the bound a press asks from is the
+    // one this state was seeded with (admin-window/BUG-0216).
+    after: state.after,
   };
 }
 
@@ -233,10 +265,82 @@ export function pressing<Row>(state: PageState<Row>): PageState<Row> {
  * at all. `more: false` starts exhausted, because a control that cannot be
  * honoured is never offered (SPEC F10's rule).
  */
-export function initialPage<Row>(held: number, more: boolean): PageState<Row> {
+export function initialPage<Row>(
+  held: number,
+  more: boolean,
+  /**
+   * The id of the first screen's LAST row — the bound every page this state
+   * takes in will come after (admin-window/BUG-0216). It is a REQUIRED
+   * argument rather than one with a default because a surface that does not
+   * say what it continues cannot be told that the thing it continues changed,
+   * and that silence is the defect (LESSONS 8). `""` is the honest value for a
+   * driver started from a synthetic first screen.
+   */
+  after: string,
+): PageState<Row> {
   // `notes: null` — a surface's FIRST screen renders its own legs
   // server-side; this state holds only what PRESSES brought.
-  return { rows: [], held, status: more ? "idle" : "exhausted", refusal: null, notes: null };
+  return {
+    rows: [],
+    held,
+    status: more ? "idle" : "exhausted",
+    refusal: null,
+    notes: null,
+    after,
+  };
+}
+
+/**
+ * THE BOUND A FIRST SCREEN ENDS AT — the `after` every paged surface hands
+ * `initialPage` (admin-window/BUG-0216).
+ *
+ * One exported spelling rather than `rows[rows.length - 1]?.id ?? ""` retyped
+ * on each surface (LESSONS 5), and the `id` it is given must be the SAME one
+ * the list draws its React keys from: the bound is what the surface renders
+ * its rows under, so a bound derived from a different field would compare two
+ * screens by something the operator is not looking at.
+ *
+ * A first screen with no rows ends at no bound and answers `""`. No paged
+ * surface draws a control over an empty first screen, so this is the state
+ * that never presses rather than a bound anything continues from.
+ */
+export function boundOf<Row>(rows: readonly Row[], id: (row: Row) => string): string {
+  const last = rows[rows.length - 1];
+  return last === undefined ? "" : id(last);
+}
+
+/**
+ * THE STATE A SURFACE MAY STILL DRAW — campaign admin-window/BUG-0216.
+ *
+ * A paged surface renders `[...firstScreen, ...state.rows]`, and the FIRST
+ * SCREEN is the server's: it is re-rendered, with fresh rows, whenever the
+ * router refreshes the route under a client that kept its state. `usePageRows`
+ * seeds its `useState` from the first screen ONCE, at mount, so before this
+ * function the rows a press had appended survived a first screen they no
+ * longer continued — and one claim settled ahead of the bound put the same
+ * claim on screen twice and left the claim that replaced it off the surface
+ * altogether (measured on staging 2026-09-11: `01a058f1-02c7-…`, 100 rows, 99
+ * distinct, React's duplicate-key warning in the console).
+ *
+ * The rule, stated as the property rather than as the defect: **what a paged
+ * surface renders is always ONE contiguous run of ONE order — the first screen
+ * it now holds, plus the pages taken from the bound THAT screen ends at.** So
+ * a state whose `after` is not the current first screen's `after` does not
+ * continue it, and the surface starts again from the screen it actually has.
+ * Nothing is merged, de-duplicated or repaired: a continuation that is not one
+ * is dropped whole, because the rows it holds are a window of an order the
+ * operator is no longer looking at.
+ *
+ * It also decides the press that was IN FLIGHT when the screen changed: that
+ * press's answer is published carrying the OLD `after` (every transition
+ * carries it through), so the next render hands it here and it is dropped by
+ * the same one comparison — no second guard, no cancellation token.
+ */
+export function continuing<Row>(
+  state: PageState<Row>,
+  initial: PageState<Row>,
+): PageState<Row> {
+  return state.after === initial.after ? state : initial;
 }
 
 /** What one press needs: where to ask, what to carry, and how to ask. */
@@ -301,6 +405,7 @@ function withRefusal<Row>(state: PageState<Row>, refusal: PageRefusal): PageStat
     status: "idle",
     refusal,
     notes: state.notes,
+    after: state.after,
   };
 }
 
@@ -643,6 +748,7 @@ export async function requestPage<Row>(
           status: "exhausted",
           refusal: null,
           notes: state.notes,
+          after: state.after,
         };
       }
 
@@ -683,6 +789,10 @@ export async function requestPage<Row>(
         status: answer.exhausted ? "exhausted" : "idle",
         refusal: null,
         notes,
+        // The bound this state continues is the one it was seeded with: a page
+        // taken in does not move the first screen it was taken after
+        // (admin-window/BUG-0216).
+        after: state.after,
       };
     }
     case "not_provisioned":
