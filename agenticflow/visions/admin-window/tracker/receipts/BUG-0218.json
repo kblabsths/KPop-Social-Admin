@@ -1,19 +1,19 @@
 {
  "id": "BUG-0218",
- "created": "2026-09-12T00:03:42Z",
- "green": false,
- "git_head": "0eb45dfa265e1b4da8bb7782b611e99335661f45",
+ "created": "2026-09-12T00:11:23Z",
+ "green": true,
+ "git_head": "8aeb5bb8be4cc91a1f22a638c059f7cb0fcfdb52",
  "scope": [
   "agenticflow/tracker/for-human/M3-paging-shape-for-ben.md",
   "agenticflow/tracker/for-human/M3-endgame-walk.md"
  ],
  "isolation": "worktree",
- "foreign_files": 5,
- "tree_hash": "0877d16acc958ca024d80d8f37fc7726aef3d890332bc7619576087ceb62906f",
+ "foreign_files": 3,
+ "tree_hash": "a67297a751cf2b7a6b551554add5b779f34f43e28972aeb1fa071a95de17fc33",
  "commands": [
   {
    "cmd": "awk '/^## What I need from you/,0' agenticflow/tracker/for-human/M3-paging-shape-for-ben.md | grep -q '/browse'",
-   "exit": 1,
+   "exit": 0,
    "output_tail": ""
   },
   {
@@ -21,6 +21,5 @@
    "exit": 0,
    "output_tail": ""
   }
- ],
- "failure_sig": "754df2da0da7"
+ ]
 }
