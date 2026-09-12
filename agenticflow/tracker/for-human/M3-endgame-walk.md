@@ -248,8 +248,11 @@ a stronger one: *"There should not be elements at the bottom of a list this long
 We should put them at the top or on a different page, depending on the
 importance…"* That is **Feel bar 14** now: the control's position after the press
 was never the point, its position at all is. The measurements in the table above
-are recorded in bar 14's own trace. The `/claims` fix is deliberately **not**
-filed — it depends on Ben's still-open paging-shape decision
+are recorded in bar 14's own trace. **Both paged surfaces fail bar 14** (corrected
+2026-09-11, admin-window/BUG-0217: this pass graded `/browse` by the superseded
+wording, under which its scroll-anchored control passed), so the fix waiting on
+Ben is **two** moves, one for `/claims` and one for `/browse`. Neither is
+deliberately filed — both depend on Ben's still-open paging-shape decision
 (`M3-paging-shape-for-ben.md`).
 
 ### 2. ~~Bar 11's wording no longer matches what shipped, and it is my file to fix~~ — GRANTED by Ben's 2026-09-11 ruling; the clause is written

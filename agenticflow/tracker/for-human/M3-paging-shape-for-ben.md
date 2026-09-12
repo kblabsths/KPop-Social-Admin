@@ -58,16 +58,24 @@ from a six-line note is the exact failure my instructions name. So: **your call.
 - **Filed TASK-0079 (P2, patch lane, designer)** — your ruling 2 becomes a Feel
   bar ("no control the operator must find sits at the bottom of a long list"),
   and your ruling 3 becomes the one clause on bar 11. The bar is written now
-  because it is true regardless of shape; the FIX it implies for `/claims` is
-  deliberately not filed, because the right fix is whatever you decide here.
+  because it is true regardless of shape; the FIXES it implies — one for
+  `/claims` and one for `/browse`, which render the same control in the same
+  place after the same 50-row list — are deliberately not filed, because the
+  right fix is whatever you decide here.
 - **Planned no milestone and wrote no SPEC change.**
 
 ## What I need from you, in one word each
 
 - **Adopt page windows?** If yes, it is an M4 and I will plan it at the M3 close
   (sizes 20/50/100, both surfaces, and I would put page + size in the URL).
-- **If no**, say so and `/claims` keeps append-on-press; TASK-0079's new bar then
-  produces one ticket to move the control above the list, which is cheap.
+- **If no**, say so and both paged surfaces keep append-on-press; TASK-0079's new
+  bar (Feel bar 14) then produces **two** tickets, one per surface — `/claims` and
+  `/browse` each render the same `PageMore` control as the last child after the
+  last row, on a 50-row window that runs past the fold
+  (`src/components/claims/paged-claim-list.tsx:107-115`,
+  `src/components/browse/paged-browse-table.tsx:156-177`), so both fail the bar
+  and each needs its control moved above its list. Two small moves, still cheap
+  next to the "yes" branch — but it is two, not one.
 - **Either way**, the campaign's stop condition is untouched by this: VISION is
   satisfied by the verdict UI plus the two reviewed handoffs, not by paging
   shape. Adopting page windows is new scope you are choosing, not scope the
