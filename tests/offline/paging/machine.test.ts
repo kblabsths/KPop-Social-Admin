@@ -240,6 +240,61 @@ describe("a claim is never drawn twice when the first screen changes underneath"
   });
 });
 
+/**
+ * A CLAIM IS NEVER SKIPPED BECAUSE ANOTHER ONE SETTLED WHILE THE OPERATOR READ.
+ *
+ * A press asks for a POSITION — `?offset=<rows held>` — and the route re-reads
+ * `pending_claims` at that position when the press arrives, seconds or minutes
+ * after the screen above it was read. The two reads are over the same view at
+ * two different times, and nothing ties the second to the first: the bound the
+ * first screen ends at (`PageState.after`) is never put on the wire.
+ *
+ * So one claim settled AHEAD of the bound between the two reads moves every
+ * later claim up one position, and the claim that stood at the bound is never
+ * drawn at all — no duplicate, no refusal, nothing in the console: the
+ * operator's list simply skips it. A claim settled BEHIND the bound draws the
+ * bound's own row twice instead. Settling claims ahead of a bound is not an
+ * edge: it is what the queues do all day.
+ *
+ * The property, positively: WHAT A PAGED SURFACE DRAWS IS ONE CONTIGUOUS RUN
+ * OF THE ORDER ITS LAST READ HELD — from the first screen's bound to the last
+ * row a press brought, with nothing of that order missing in between.
+ */
+describe("a claim is never skipped when another settles between the screen and the press", () => {
+  // PINNED RED, deliberately: this is the divergence admin-window/BUG-0221 was
+  // filed for, and `it.fails` is this runner's strict xfail — the day the press
+  // continues from a bound instead of a position, this case XPASSes, the suite
+  // turns red, and the reader is sent to that ticket rather than to a silently
+  // passing test nobody reads. Remove the marker to watch it fail against the
+  // code as it stands.
+  it.fails("draws a contiguous run of the order the press read, with nothing missing", async () => {
+    // The screen was read at T0, when the order was a,b,c,d,e: the first screen
+    // (`SIZE` rows) is a,b and its bound is `b`.
+    const screen = rows("a", "b");
+    const state = initialPage<Row>(screen.length, true, boundOf(screen, (row) => row.id));
+
+    // Before the operator presses, `a` is settled: the order the press reads is
+    // b,c,d,e, and its positions 2 and 3 are d,e. The route answers the press
+    // at the position it asked for, which is what the route does.
+    const orderAtPress = ["b", "c", "d", "e"];
+    const { deps } = recorder(() => ({
+      kind: "ok",
+      rows: rows(...orderAtPress.slice(SIZE, SIZE * 2)),
+      offset: SIZE,
+      exhausted: false,
+    }));
+    const held = await requestPage<Row>(state, deps);
+    const drawn = [...screen, ...held.rows].map((row) => row.id);
+
+    // Everything the order holds from the screen's bound to the last row drawn
+    // is on screen. `c` is not: the operator's list goes b, d — and says
+    // nothing about the claim it stepped over.
+    const bound = orderAtPress.indexOf(drawn[1]);
+    const covered = orderAtPress.slice(bound, orderAtPress.indexOf(drawn[drawn.length - 1]) + 1);
+    expect(drawn.filter((id) => covered.includes(id))).toEqual(covered);
+  });
+});
+
 describe("pageUrl", () => {
   it("carries the surface's facets and appends the bound under the one param name", () => {
     const { deps } = recorder(() => undefined);

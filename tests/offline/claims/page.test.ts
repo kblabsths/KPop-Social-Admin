@@ -6461,6 +6461,28 @@ describe("the affordance that continues the claim list", () => {
     expect(deps.size).toBe(CLAIM_WINDOW);
   });
 
+  it("names the claim its first screen ENDS at, so pages cannot outlive the screen they continue", async () => {
+    // admin-window/BUG-0216. The surface draws `[...firstScreen, ...pagedRows]`
+    // and the first screen is the SERVER's — it can be rendered again, from a
+    // fresh read, under a client that kept its pages. Those two halves are one
+    // contiguous run of one order only while the screen still ENDS where the
+    // pages started, so the state this page seeds declares that bound: the last
+    // claim it rendered, on the same field `ClaimList` keys its rows by. A page
+    // that declared nothing could never be told that the screen moved, and the
+    // claim at the old bound would be drawn twice while the claim that replaced
+    // it was drawn not at all.
+    const markup = await renderClaims(pagedScript(130));
+    const drawn = claimIds(markup);
+    const initial = paging.calls[0].initial as unknown as PageState<ClaimLine>;
+
+    expect(drawn).toHaveLength(CLAIM_WINDOW);
+    expect(initial.after).toBe(drawn[drawn.length - 1]);
+    // …and it is a real claim, never the empty bound a synthetic start holds:
+    // `""` compares equal to `""`, so a screen that named nothing would be
+    // "continued" by pages taken off any other screen at all.
+    expect(initial.after).not.toBe("");
+  });
+
   it("one press issues one request at an explicit bound; no press issues none", async () => {
     const urls = recordingFetch({
       kind: "ok",

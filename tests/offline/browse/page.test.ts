@@ -1257,6 +1257,23 @@ describe("the affordance that continues the recent-events view", () => {
     expect(deps.size).toBe(view.window);
   });
 
+  it("names the event its first screen ENDS at, so pages cannot outlive the screen they continue", async () => {
+    // admin-window/BUG-0216, the same property `/claims` carries: this surface
+    // draws `[...firstScreen, ...pagedRows]` and the first screen is re-rendered
+    // by any refresh under a client that kept its pages. The state the page
+    // seeds therefore declares the bound the screen ends at — the last event it
+    // rendered, on the same field `BrowseTable` keys its rows by — so pages
+    // taken after a screen that has moved are dropped instead of concatenated
+    // under it.
+    const markup = await renderBrowse(windowScript(view.window));
+    const drawn = eventIds(markup);
+    const initial = paging.calls[0].initial as unknown as PageState<BrowseRow>;
+
+    expect(drawn).toHaveLength(view.window);
+    expect(initial.after).toBe(drawn[drawn.length - 1]);
+    expect(initial.after).not.toBe("");
+  });
+
   it("carries the COLUMN STATE the page rendered, and writes no offset into any URL", async () => {
     const shownNow: BrowseColumnKey[] = ["title", "venue"];
     const urls = recordingFetch(pageAnswer(view.window, { venues: null, provenance: null }));
