@@ -19,10 +19,15 @@ ticket, never a judgment call silently made"* (`admin-build.md`, Ground rules).
 Nothing still open appears below as settled, and nothing settled appears as
 still open: every status claim here is a claim about the state **at this
 close**, with the instant named wherever a reader could otherwise take a
-four-hour-old sentence for a current one (admin-window/BUG-0214). The open
-questions, including the two the M3 endgame leaves to Ben, have their own
-section at the end. The two trailing sections use `###` deliberately, so that
-a count of `^## ` lines is exactly the entry count.
+four-hour-old sentence for a current one (admin-window/BUG-0214). A claim that
+stopped being true after the close is **corrected in place and dated**, never
+quietly rewritten: a sentence marked *corrected `<date>`* names what this
+edition first said, what was measured instead, and when — every correction
+dated 2026-09-12 is `admin-window/TASK-0081`'s, and every unmarked sentence is
+as written at the close. The open questions, including the two the M3 endgame
+leaves to Ben, have their own section at the end. The two trailing sections
+use `###` deliberately, so that a count of `^## ` lines is exactly the entry
+count.
 
 ---
 
@@ -261,9 +266,14 @@ ticket. M3.md accepted that wait on the grounds that it would be short, and it
 was: all three closed the same day (16:28Z, 16:28Z, 17:14Z), and `BUG-0200`,
 filed off `BUG-0196` by its own QA, closed at 17:41Z. That lane is why this
 entry writes `errorAccount` where DECISIONS.md's 2026-09-11 paragraphs write
-`errorMessage`, and the derivation kept earning patch-lane work to the last day
-of the milestone — `BUG-0210` landed on `src/lib/db/result.ts` that evening
+`errorMessage`, and the derivation kept earning work to the last day of the
+milestone — `BUG-0210` landed on `src/lib/db/result.ts` that evening
 (`811ead32`: a `head: true` count read could not classify an absent table).
+**Lane label corrected 2026-09-12** (`admin-window/TASK-0081`): this edition
+first called that last day's work *patch-lane*; `BUG-0210` is an **M3** ticket
+by its own frontmatter and M3.md grades it under the endgame. The point stands
+unchanged — the derivation was still earning tickets on the milestone's last
+day — and it is the milestone's own lane it was earning them in.
 
 ---
 
@@ -292,26 +302,44 @@ Ben's rather than a role's.
   licence to edit a human-owned vision doc. Until Ben rules, bar 11 is graded
   against the amendment and every walk that touches it says so. (M3.md,
   architect, 2026-09-11.)
-- **The two §9 handoff artifacts are filed and placed, and "reviewed" is Ben's
-  word to say.** `verdicts` and `settle_review_item` are physically in the
-  sibling repo and not installed; nothing here treats them as done, and no
-  Admin surface pretends they exist — the review item's close slot renders the
-  honest absence instead. This is what VISION's satisfaction sentence still
-  waits on, together with the deferred patch run for acceptance tests 6–8.
+- **The two §9 handoff artifacts are INSTALLED on staging, and "reviewed" is
+  still Ben's word to say.** **Corrected 2026-09-12**
+  (`admin-window/TASK-0081`): this edition first wrote that `verdicts` and
+  `settle_review_item` were physically in the sibling repo *and not installed*,
+  which was true when it was written and stopped being true the same night.
+  Both landed on staging `ubfjjqlvnpnoborczbdb` during the endgame of
+  **2026-09-11** — the table readable at **23:22Z** and the function listed by
+  **23:26Z** — measured read-only that night in the `admin-window/BUG-0209`
+  lane: `GET /rest/v1/verdicts?select=*&limit=0` answers **200** where an
+  absent name answers 404 `PGRST205`, and `settle_review_item` is named in
+  PostgREST's schema description as INSTALLED. **INSTALLED is not REVIEWED**:
+  nothing here treats them as done, *reviewed* is Ben's word to say, and this
+  is still what VISION's satisfaction sentence waits on, together with the
+  deferred patch run for acceptance tests 6–8. What the install changed is on
+  the app side, not the question's: the live tier now READS which settlement
+  world it is in rather than assuming absence (`admin-window/BUG-0215`) — the
+  same conjunction of both objects that `readSettlementReadiness`
+  (`src/lib/db/verdict.ts`) asks at read time since `admin-window/BUG-0223`, so
+  no Admin surface has to be told by a document which world it woke up in.
 
 ### Cross-directory report — M3 close
 
-The three handoffs' state, measured 2026-09-11. Install state is the verifier's
-measurement of that day against staging `ubfjjqlvnpnoborczbdb`
-(`agenticflow/tracker/for-human/M3-verifier.md`); the tracked/untracked and
-placement facts below were re-established here the same day, read-only, in
-`../kspace Scraper`.
+The three handoffs' state, measured 2026-09-11. Install state was the
+verifier's daytime measurement against staging `ubfjjqlvnpnoborczbdb`
+(`agenticflow/tracker/for-human/M3-verifier.md`), **and the last two rows'
+install column was corrected 2026-09-12** (`admin-window/TASK-0081`) against a
+later read-only probe of the same host, taken that night in the
+`admin-window/BUG-0209` lane: both objects went in after the verifier looked
+and before the day ended, so each install cell below names the instant it
+speaks for. The tracked/untracked and placement facts were re-established here
+on 2026-09-11, read-only, in `../kspace Scraper`, and are claims about that
+day.
 
 | artifact | filed | placed in the sibling | tracked there | installed |
 | --- | --- | --- | --- | --- |
 | `pending_claims.observed_at` (`M2-handoff-pending-claims-observed-at.md`) | yes | `20260910000001_a_pending_claim_carries_its_instant.sql` | **yes** (it was untracked at the M2 close) | **yes** — `select=observed_at` answers 200 |
-| `verdicts` (`M2-handoff-verdicts.md`) | yes | `20260908000001_the_verdict_becomes_a_row.sql`, written 2026-09-11 11:59 | **no** | **no** — 404 `PGRST205` |
-| `settle_review_item` (`M2-handoff-settle-review-item.md`) | yes | `20260908000002_the_verdict_settles_the_item.sql`, same timestamp | **no** | **no** — absent from the RPC list |
+| `verdicts` (`M2-handoff-verdicts.md`) | yes | `20260908000001_the_verdict_becomes_a_row.sql`, written 2026-09-11 11:59 | **no** | **yes, from 23:22Z** — `select=*&limit=0` answers 200 (it was 404 `PGRST205` at the verifier's daytime read) |
+| `settle_review_item` (`M2-handoff-settle-review-item.md`) | yes | `20260908000002_the_verdict_settles_the_item.sql`, same timestamp | **no** | **yes, by 23:26Z** — named INSTALLED in PostgREST's schema description (it was absent from that list at the verifier's daytime read) |
 
 - **Commits made by this campaign in the sibling: still zero.** `git log --all
   --grep="admin-window/"` there returns 0 — a commit authored from here would
