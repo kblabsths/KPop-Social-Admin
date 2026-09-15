@@ -685,10 +685,10 @@ const GAUGE_POPULATION_EYEBROW = "Window population";
  * saying which is which. Staging held 877 claims on 2026-09-11, so this is
  * live within months rather than theoretical.
  *
- * **The ruling is LABEL, not equalise.** Capping the head counts to the
- * window would make the page's totals wrong rather than windowed, and
- * scanning the whole view to fill the gauge is the ~14-round-trip, 2.9-3.8 s
- * read admin-window/BUG-0138 removed. So each set of figures says, in text a
+ * **The ruling is LABEL, not equalise.** Capping the bucket table's
+ * `countRead` counts to the window would make the page's totals wrong rather
+ * than windowed, and scanning the whole view to fill the gauge is the
+ * ~14-round-trip, 2.9-3.8 s read admin-window/BUG-0138 removed. So each set of figures says, in text a
  * reader sees, what kind of fact it is — and no sentence anywhere on the page
  * relates the two, because no single read established a relationship between
  * them (LESSONS 2).
@@ -1061,7 +1061,10 @@ function StandingGauge({
 }) {
   // The names map this gauge labels its splits by is the gauge's OWN: each
   // split was built by joining the `sources` rows the gauge itself read, and
-  // `source: null` there means that read returned no row for it. So a named
+  // `source: null` there means that read NAMED NOTHING for the id — it
+  // returned no row for it, or it returned one whose name has no ink in it
+  // (campaign admin-window/DEBT-0022; the field's own JSDoc in
+  // `lib/gauges/standing-disagreements.ts` owns this reading). So a named
   // split becomes an entry and an unnamed one contributes nothing, which is
   // exactly the input `sourceLabel` answers with the id (BUG-0158). It is
   // deliberately not the page's registry map: the figures and the labels in
@@ -1097,10 +1100,12 @@ function StandingGauge({
         floor={gauge.window.truncated}
         sub={`from ${counted(gauge.bySource.length, "source")}`}
       />
-      {/* The standing tab draws no bucket table, so nothing here collides
-          with a head count — but the rule is the page's and not the pending
-          tab's, so this section's figures say what kind they are on both
-          tabs (admin-window/TASK-0071). */}
+      {/* The standing tab draws no bucket table, so none of that table's
+          `countRead` counts — `{ count: "exact" }` over `limit 0` of the whole
+          narrowing — stands beside these window figures to be confused with
+          them. But the rule is the page's and not the pending tab's, so this
+          section's figures say what kind they are on both tabs
+          (admin-window/TASK-0071). */}
       <FiguresOf kind="window" label={WINDOW_FIGURES_EYEBROW}>
         <TrendTable<StandingDisagreements["bySource"][number]>
           label="Standing disagreements by source"
