@@ -1,6 +1,7 @@
 import { defineConfig } from "vitest/config";
 import tsconfigPaths from "vite-tsconfig-paths";
 import {
+  HANDOFF_INCLUDE,
   HTTP_INCLUDE,
   ISOLATED_INCLUDE,
   LIVE_INCLUDE,
@@ -8,8 +9,8 @@ import {
 } from "./tests/suite-globs";
 
 /**
- * Four projects, one per suite (admin-window/TASK-0001, `isolated` added by
- * admin-window/BUG-0032).
+ * Five projects, one per suite (admin-window/TASK-0001, `isolated` added by
+ * admin-window/BUG-0032, `handoff` by admin-window/TASK-0080).
  *
  * Each project's include glob is rooted at its own directory, so the offline
  * project is structurally unable to collect a live or http test — see
@@ -102,6 +103,32 @@ export default defineConfig({
           // drives a filesystem churn loop against them.
           testTimeout: 180_000,
           hookTimeout: 180_000,
+        },
+      },
+      {
+        plugins: [tsconfigPaths()],
+        test: {
+          name: "handoff",
+          include: HANDOFF_INCLUDE,
+          environment: "node",
+          // OPT-IN, and that is the whole point of it existing
+          // (admin-window/TASK-0080, ARCHITECTURE.md §10's rule of
+          // 2026-09-12). Every case in here READS the sibling checkout
+          // `kspace Scraper`, which this repo does not own, so its red can be
+          // produced by a legitimate edit next door — four times in one
+          // campaign it was, twice by this campaign's own handoff LANDING.
+          // `npm test` therefore does not name this project and neither does
+          // `ci_command`; `npm run test:handoff` is how the verifier and a
+          // handoff preparer run it, and `tests/offline/toolchain.test.ts`
+          // asserts both halves of that.
+          //
+          // Its one walk reads every `.sql` file of a repo-sized tree from
+          // disk, which is slower and colder than anything the offline
+          // project does, so it gets the offline project's hang bound rather
+          // than vitest's 5000ms default (admin-window/BUG-0029's reason,
+          // same arithmetic).
+          testTimeout: 20_000,
+          hookTimeout: 60_000,
         },
       },
     ],
