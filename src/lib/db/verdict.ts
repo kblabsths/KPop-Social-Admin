@@ -12,6 +12,7 @@ import {
   type DbResult,
   type DbUnavailable,
 } from "./result";
+import { readFunctionInstalled } from "./schema";
 import { FN, T, objectKindOf, type ObjectKind } from "./tables";
 import type { DbClient } from "./gauges";
 import { decisionRefusals, type VerdictDecision } from "../verdict/decision";
@@ -24,7 +25,10 @@ import { newestFirst } from "../order/newest-first";
  * Two exports, and between them they answer the whole of M2's write question:
  *
  *  - `readSettlementReadiness` — may a surface offer a settlement or an
- *    override at all?
+ *    override at all? Since campaign admin-window/BUG-0223 that is the
+ *    CONJUNCTION of both objects the call below needs: the `verdicts` table
+ *    and the `settle_review_item` function, the second read out of the
+ *    database's schema description (`./schema.ts`) and never called.
  *  - `settleReviewItem` — the one call to `settle_review_item`.
  *
  * The reads of the log itself live in the same module for the same reason it
@@ -216,24 +220,38 @@ export async function settleReviewItem(
 /**
  * May a surface offer a settlement or an override at all?
  *
- * `ok` — yes. `not_provisioned` naming `verdicts` — no: the surface renders
- * the card and offers no control. `error` — the database refused the question
- * and the surface says so rather than guessing an answer.
+ * **READINESS IS THE CONJUNCTION OF EVERY OBJECT THE SAVE CALLS, and the
+ * refusal names the one that is missing** (campaign admin-window/BUG-0223).
+ * The save this authorises is one call to `settle_review_item`, and that call
+ * needs two objects in this database: the FUNCTION it invokes and the
+ * `verdicts` TABLE the function writes. Either absent and the surface is NOT
+ * ready — one derivation, with one owner, asked once per render.
  *
- * **It reads the `verdicts` TABLE, and never calls the function** (ruled
- * 2026-09-08, DECISIONS; ARCHITECTURE.md §9.2). PostgREST cannot introspect a
- * function without calling it, and calling `settle_review_item` to find out
- * whether it exists is a write attempt dressed as a probe. Reading the table
- * instead is honest because the two migrations install together and the
- * function's own artifact writes the table it depends on, so "table present,
- * function absent" is a state the handoff cannot produce — and if it arrives
- * anyway, `settleReviewItem` answers `not_provisioned` naming the function and
- * the same card is drawn after the click.
+ * `ok` — yes. `not_provisioned` naming the object that is missing — no: the
+ * surface renders the card and offers no control. `error` — the question
+ * itself could not be answered, and the surface says so rather than guessing.
  *
- * **Why a GET-shaped read and not the `head: true` count the ruling sketched.**
- * Measured read-only on the declared staging target
- * (`ubfjjqlvnpnoborczbdb.supabase.co`) 2026-09-08, against `verdicts`, which is
- * genuinely absent there:
+ * **Both halves are READS, and neither is a call** (ruled 2026-09-08,
+ * DECISIONS; ARCHITECTURE.md §9.2). Calling `settle_review_item` to find out
+ * whether it exists is a write attempt dressed as a probe — measured, not
+ * theoretical: a live case that did exactly that applied a real admin override
+ * the day the function landed (admin-window/BUG-0215). The function's presence
+ * is read out of PostgREST's own schema description instead
+ * (`readFunctionInstalled`, `lib/db/schema.ts`), which is a GET.
+ *
+ * **Why the table is asked FIRST, and why that is not an ordering detail.**
+ * The table read is one bounded round trip; the schema description is 387 KB
+ * (measured 2026-09-14). Asking the table first means the world that has
+ * neither object — every database that has not had the handoff, which is
+ * production today — pays exactly what it paid before this ticket: one read,
+ * one card, naming `verdicts`. The description is read only where the table is
+ * already there, which is the half-installed window and the installed world;
+ * in the installed world it is read once per process (`exposedAt`).
+ *
+ * **Why the table read is GET-shaped and not the `head: true` count the ruling
+ * sketched.** Measured read-only on the declared staging target
+ * (`ubfjjqlvnpnoborczbdb.supabase.co`) 2026-09-08, against `verdicts`, which
+ * was genuinely absent there:
  *
  *   - `.select("*", { head: true, count: "exact" })` answers **`error === null`,
  *     `count === null`, status 204** — supabase-js parses its error out of the
@@ -248,15 +266,15 @@ export async function settleReviewItem(
  *     `classify` turns into `not_provisioned` naming `verdicts` — and, against
  *     a table that IS there, **200 with zero rows** (`groups`, same probe).
  *
- * So the read is GET-shaped and bounded to zero rows: exactly one round trip,
- * no verdict data crosses the wire, and the absence classifies. It asks for no
- * count and publishes no figure, so it is not a §4.3 complete read and nothing
- * may present its result as one.
+ * So the table read is GET-shaped and bounded to zero rows: one round trip, no
+ * verdict data crosses the wire, and the absence classifies. Neither leg asks
+ * for a count or publishes a figure, so this is not a §4.3 complete read and
+ * nothing may present its result as one.
  */
 export async function readSettlementReadiness(
   client?: DbClient,
 ): Promise<DbResult<"ready">> {
-  const result = await readRows<unknown>(
+  const log = await readRows<unknown>(
     T.verdicts,
     // It selects `*` and reads no column at all — only whether the read
     // succeeded — so there is no list to hold the answer against
@@ -265,7 +283,15 @@ export async function readSettlementReadiness(
     (db) => db.from(T.verdicts).select("*").limit(READINESS_ROWS),
     client,
   );
-  if (result.kind !== "ok") return result;
+  if (log.kind !== "ok") return log;
+
+  // The second object the save needs, established the only way it may be:
+  // read, never called. A refusal here is returned as it stands, so the card
+  // names `settle_review_item` — the object that is actually missing — rather
+  // than the table that is right there (criterion 2).
+  const seam = await readFunctionInstalled(FN.settleReviewItem, client);
+  if (seam.kind !== "ok") return seam;
+
   return { kind: "ok", data: "ready" };
 }
 

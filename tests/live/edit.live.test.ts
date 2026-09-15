@@ -195,12 +195,16 @@ async function subject(config: Keyed): Promise<{ id: string; row: Row }> {
  * Two facts, because the two halves answer different questions and they can
  * arrive apart (on 2026-09-11 they did, four minutes apart):
  *
- *  - `logPresent` — the `verdicts` TABLE, which is what the record page's
- *    readiness seam reads (`readSettlementReadiness`, `src/lib/db/verdict.ts`)
- *    and therefore what decides whether the page offers a control at all.
+ *  - `logPresent` — the `verdicts` TABLE, which the function writes.
  *  - `seamPresent` — the `settle_review_item` FUNCTION, which is what the
  *    route's override arm CALLS, and therefore what decides whether a
  *    value-carrying edit of a resolver-owned column would be APPLIED.
+ *
+ * Since admin-window/BUG-0223 the page's readiness seam
+ * (`readSettlementReadiness`, `src/lib/db/verdict.ts`) is the CONJUNCTION of
+ * exactly these two, so what decides whether a control is offered at all is
+ * `logPresent && seamPresent` — never the table alone, which is what drew an
+ * override widget over a save that could only 503.
  *
  * Both are reads. The function is read out of the database's own schema
  * description and never invoked: an override this suite applied would write a
@@ -563,8 +567,11 @@ describe("a resolver-owned record page", () => {
    * unconditionally, "with nothing on staging to record an override". That
    * premise stopped being true on 2026-09-11 and the case went red over a page
    * that was behaving exactly as designed. So the world is READ — this file's
-   * own read of `verdicts`, which is the object the page's readiness seam
-   * reads — and each world is graded on its own terms, both halves together,
+   * own reads of BOTH objects the save calls, conjoined exactly as the page's
+   * readiness seam conjoins them since admin-window/BUG-0223 (the `verdicts`
+   * table AND the `settle_review_item` function, the second read out of the
+   * schema description and never called) — and each world is graded on its own
+   * terms, both halves together,
    * because either half alone is passable: a page with no control and no
    * reason is one regression, and a page that describes an override it does
    * not offer is the other (admin-window/BUG-0205).
@@ -585,13 +592,29 @@ describe("a resolver-owned record page", () => {
       // Said once, in both worlds, and never twice.
       expect($('[data-note="regime"]').length, table).toBe(1);
 
-      if (!settlement.logPresent) {
+      // WHICH object is missing, if any — the page's readiness is the
+      // CONJUNCTION of both objects the save calls, so this test's own two
+      // reads have to be conjoined the same way or it grades the page against
+      // a world it is not in (campaign admin-window/BUG-0223). The table is
+      // named first for the same reason the app asks it first: it is the leg
+      // that really failed.
+      const missing = !settlement.logPresent
+        ? T.verdicts
+        : !settlement.seamPresent
+          ? FN.settleReviewItem
+          : null;
+
+      if (missing !== null) {
         // CLOSED: the page degrades to the read-only surface M1 shipped — no
         // control at all — and says so once, above the table, naming the
         // object that is missing.
         expect(markup, table).not.toMatch(/<(button|input|textarea|select)[\s>]/);
         expect($('[data-note="override-unavailable"]').length, table).toBe(1);
         expect($('[data-state="not_provisioned"]').length, table).toBeGreaterThan(0);
+        // ...and it names the one this test read as absent, in that object's
+        // own spelling — a half-installed database must not be told to install
+        // the half it already has.
+        expect($(`[data-not-provisioned="${missing}"]`).length, table).toBe(1);
         continue;
       }
 

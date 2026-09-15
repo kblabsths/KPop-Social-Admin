@@ -1572,17 +1572,32 @@ here is a re-read, not a guess):
    confirmed match** — which is exactly what spec §8 says, and it is authorable
    against what is installed.
 
-**How a surface knows the path is open.** PostgREST cannot introspect a
-function without calling it, so nothing may probe `settle_review_item` by
-calling it. **Ruled: a surface reads the presence of the `verdicts` TABLE**
-(`readSettlementReadiness` in `lib/db/verdict.ts`, one owner, one helper — never
-hand-copied per page, common violation 9). Absent, it renders
-`data-state="not_provisioned"` naming `verdicts` and offers no control. The two
-migrations install together and the function's own artifact writes the table it
-depends on, so "table present, function absent" is a state the handoff cannot
-produce — and if it arrives anyway, the attempted call returns
-`not_provisioned` naming `settle_review_item` and the same card is drawn after
-the click instead of before it. Both paths are graded; neither throws.
+**How a surface knows the path is open.** Nothing may probe
+`settle_review_item` by CALLING it — a call placed to discover whether the
+procedure exists is a write attempt dressed as a question, and one applied a
+real admin override on 2026-09-11 (admin-window/BUG-0215). **Ruled: readiness
+is the CONJUNCTION of every object the save calls** (`readSettlementReadiness`
+in `lib/db/verdict.ts`, one owner, one helper — never hand-copied per page,
+common violation 9; amended by admin-window/BUG-0223, which supersedes the
+2026-09-08 ruling that a surface read the `verdicts` TABLE alone). Two objects,
+two reads, one derivation:
+
+- the `verdicts` TABLE, GET-shaped and bounded to zero rows, asked first
+  because it is the cheap half;
+- the `settle_review_item` FUNCTION, read out of PostgREST's own schema
+  description (`GET /rest/v1/`, the OpenAPI document — `lib/db/schema.ts`; the
+  live suite reads the same source through `functionsOnStaging`,
+  `tests/live/parity.ts`). That document is how a function is introspected
+  without being called, and it is a READ.
+
+Either absent and the surface is not ready: it renders
+`data-state="not_provisioned"` naming **the object that is missing** and offers
+no control. The half-installed world is not hypothetical — staging was in it
+for four minutes during the install of 2026-09-11 — and in it the page used to
+draw an override widget whose save could only 503. The function's presence is
+cached per process only AFFIRMATIVELY (`lib/db/schema.ts`): the description is
+387 KB, and an absence must never be remembered across the install that ends
+it. Both paths are graded; neither throws.
 
 **`not_provisioned` learns the absent FUNCTION** (§4.1's classifier): PostgREST
 answers a missing function with `PGRST202`, and Postgres with `42883`. Both

@@ -156,18 +156,30 @@ describe("a function this database does not have", () => {
    * service role cannot delete, so no suite that must sweep what it wrote may
    * make that call (acceptance test 13).
    */
-  it("agrees with the app's readiness seam about the settlement log", async () => {
+  it("agrees with the app's readiness seam about the settlement path", async () => {
+    // Since admin-window/BUG-0223 readiness is the CONJUNCTION of both objects
+    // the save calls, so this test conjoins its own two reads the same way: a
+    // world with the table and no function is NOT ready, and the refusal names
+    // the object that is missing rather than the one that is there.
     const logAbsent = await objectIsAbsent(T.verdicts);
+    const functions = await functionsOnStaging();
+    const missing = logAbsent
+      ? T.verdicts
+      : functions.has(SETTLE_FUNCTION)
+        ? null
+        : SETTLE_FUNCTION;
+
     const readiness = await readSettlementReadiness();
-    expect(readiness.kind, `this test read ${T.verdicts} as ` +
-      `${logAbsent ? "absent" : "present"}`).toBe(
-      logAbsent ? "not_provisioned" : "ok",
-    );
+    expect(
+      readiness.kind,
+      `this test read ${T.verdicts} as ${logAbsent ? "absent" : "present"} ` +
+        `and ${SETTLE_FUNCTION} as ` +
+        `${functions.has(SETTLE_FUNCTION) ? "installed" : "absent"}`,
+    ).toBe(missing === null ? "ok" : "not_provisioned");
     if (readiness.kind === "not_provisioned") {
-      expect(readiness.missing).toBe(T.verdicts);
+      expect(readiness.missing).toBe(missing);
     }
 
-    const functions = await functionsOnStaging();
     console.log(
       `${stagingHost}: ${T.verdicts} is ${logAbsent ? "absent" : "present"}, ` +
         `${SETTLE_FUNCTION} is ` +

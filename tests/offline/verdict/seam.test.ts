@@ -8,6 +8,7 @@ import {
   type VerdictReceipt,
 } from "@/lib/db/verdict";
 import type { DbResult } from "@/lib/db/result";
+import { SCHEMA_DESCRIPTION_MEDIA_TYPE } from "@/lib/db/schema";
 import { FN, T } from "@/lib/db/tables";
 import { decisionRefusals } from "@/lib/verdict/decision";
 import type { VerdictDecision } from "@/lib/verdict/decision";
@@ -23,6 +24,7 @@ import {
   undefinedFunction,
   undefinedTable,
   type StubClient,
+  type StubDatabase,
 } from "../../fixtures/stub-client";
 
 /**
@@ -47,9 +49,19 @@ function callWith(script: Parameters<typeof stubClient>[0]) {
   return { stub, run: () => settleReviewItem(stub.asSupabaseClient(), KEEP_CURRENT) };
 }
 
-/** A readiness read against a client that answers `script` for `verdicts`. */
-function readinessWith(script: Parameters<typeof stubClient>[0]) {
-  const stub = stubClient(script);
+/**
+ * A readiness read against a client that answers `script` for `verdicts` and
+ * exposes `database.functions` in its schema description.
+ *
+ * The second argument defaults to the INSTALLED world (`stubClient`), so every
+ * case written before readiness was a conjunction still reads a database that
+ * has the function — which is what those cases always meant.
+ */
+function readinessWith(
+  script: Parameters<typeof stubClient>[0],
+  database?: StubDatabase,
+) {
+  const stub = stubClient(script, database);
   return { stub, run: () => readSettlementReadiness(stub.asSupabaseClient()) };
 }
 
@@ -436,6 +448,116 @@ describe("the readiness read, against a database that has the table", () => {
       const { run } = readinessWith({ [T.verdicts]: { data } });
       await expect(run()).resolves.toEqual({ kind: "ok", data: "ready" });
     }
+  });
+});
+
+/* ── readiness is a CONJUNCTION (admin-window/BUG-0223) ──────────────────── */
+
+/**
+ * The four worlds the §9 handoff can leave a database in, graded at the seam.
+ *
+ * The handoff installs TWO objects with two statements, and staging was
+ * observed in the mixed world during the install of 2026-09-11: at 23:22Z the
+ * `verdicts` table answered 200 while `settle_review_item` was still absent,
+ * and by 23:26Z both were there (admin-window/BUG-0215). Readiness authorises
+ * a save that calls the FUNCTION, so a readiness that asked only about the
+ * table said yes in that window and the save 503'd.
+ *
+ * So the property, stated positively: readiness is the conjunction of every
+ * object the save calls, and the refusal names the one that is missing.
+ */
+const NEITHER = {
+  [T.verdicts]: { error: tableNotInSchemaCache(T.verdicts) },
+} as const;
+const TABLE_THERE = { [T.verdicts]: { data: [] } } as const;
+
+describe("the four worlds the handoff can leave a database in", () => {
+  const WORLDS: ReadonlyArray<{
+    readonly world: string;
+    readonly script: Parameters<typeof stubClient>[0];
+    readonly functions: readonly string[];
+    readonly expected: DbResult<"ready">;
+  }> = [
+    {
+      world: "neither installed",
+      script: NEITHER,
+      functions: [],
+      // The table is asked first and is genuinely missing, so that is what the
+      // refusal names: it is the object this read actually failed on.
+      expected: { kind: "not_provisioned", missing: T.verdicts },
+    },
+    {
+      world: "the table only — the install window of 2026-09-11",
+      script: TABLE_THERE,
+      functions: [],
+      expected: { kind: "not_provisioned", missing: FN.settleReviewItem },
+    },
+    {
+      world: "the function only",
+      script: NEITHER,
+      functions: [FN.settleReviewItem],
+      expected: { kind: "not_provisioned", missing: T.verdicts },
+    },
+    {
+      world: "both installed — staging today",
+      script: TABLE_THERE,
+      functions: [FN.settleReviewItem],
+      expected: { kind: "ok", data: "ready" },
+    },
+  ];
+
+  it.each(WORLDS)("$world", async ({ script, functions, expected }) => {
+    const { run } = readinessWith(script, { functions });
+    await expect(run()).resolves.toEqual(expected);
+  });
+
+  it("probes the function by READING the schema description, never by calling", async () => {
+    // Criterion 4, and the reason this ticket exists in the form it does: a
+    // call placed to find out whether the procedure is there is a write
+    // attempt dressed as a question, and on 2026-09-11 one applied a real
+    // admin override (admin-window/BUG-0215). The recording stub proves the
+    // negative — not one `.rpc()` on any of the four worlds — and the positive:
+    // a GET asking for PostgREST's own description of itself.
+    for (const { script, functions } of WORLDS) {
+      const { stub, run } = readinessWith(script, { functions });
+      await run();
+      expect(stub.functionsCalled()).toEqual([]);
+      expect(stub.tablesRead()).toEqual([T.verdicts]);
+      for (const read of stub.schemaReads) {
+        expect(read.accept).toBe(SCHEMA_DESCRIPTION_MEDIA_TYPE);
+      }
+    }
+  });
+
+  it("asks the description only where the table is there at all", async () => {
+    // The description is 387 KB (measured on the declared staging target
+    // 2026-09-14). A database with no `verdicts` — production today — pays
+    // exactly the one read it paid before this ticket, because the conjunction
+    // short-circuits on the cheap half.
+    const absent = readinessWith(NEITHER, { functions: [] });
+    await absent.run();
+    expect(absent.stub.schemaReads).toEqual([]);
+
+    const present = readinessWith(TABLE_THERE, { functions: [] });
+    await present.run();
+    expect(present.stub.schemaReads).toHaveLength(1);
+  });
+
+  it("refuses, naming the function, when the description itself cannot be read", async () => {
+    // A reader that saw nothing and a database missing the object are
+    // different facts. Only one of them is about the object, so an unreadable
+    // description is an ERROR naming what was asked about — never the
+    // not-provisioned card, which would tell an operator to install something
+    // that may be right there (`functionsOnStaging`, tests/live/parity.ts,
+    // says the same of the same read).
+    const { run } = readinessWith(TABLE_THERE, { functions: "unreadable" });
+    const result = await run();
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.reading).toBe(FN.settleReviewItem);
+    expect(result.message).toContain(FN.settleReviewItem);
+    // The words are this app's own: no database wrote a syllable of them.
+    expect(result.authored?.every((segment) => segment.author === "this app")).toBe(true);
   });
 });
 
