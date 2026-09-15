@@ -2122,3 +2122,65 @@ absence must never survive the install that ends it; and there is deliberately
 no in-flight dedupe of the 387 KB read, which is bounded by the first
 affirmative answer and reachable only in the install window. Cost accepted: a
 cold half-installed process can fetch that document more than once.
+
+## 2026-09-15 — Three user-sim asks are CUT at the M3 close, each with its price on the record (strategist)
+
+The M3 close plans no milestone, so anything not already built has to earn a
+patch lane against a frozen vision that is otherwise satisfied. Three product
+asks from the M3 strangers, routed to me by the designer's judgment
+(`tracker/for-human/M3-usersim-judgment.md`), do not. Each is cut rather than
+parked, because a parked ask is a cost with no owner; each is reversible by one
+word from Ben, and the price is written here so that word is informed.
+
+1. **Naming a well-formed facet value that no row owns is CUT.**
+   `/claims?source_id=<a uuid nothing holds>` narrows honestly and renders a
+   calm, correct, empty view, and Tomas could not tell "you are filtering on
+   something that does not exist" from "this source has nothing waiting". Both
+   are true facts about his pipeline. The cut is not about cost — the page
+   already reads the registry — it is about CLASS: the sentence would be a facet
+   value graded against a second read's vocabulary, which is a cross-read claim
+   of exactly the kind M3 EC7 was written to forbid, and it would owe the same
+   sentence to `/queues` and `/sources`. A new claim class on the way out of a
+   campaign is the wrong trade. Reversible: if Ben wants it, it is one ticket per
+   surface and it needs EC7's rule restated first.
+2. **A total on `/browse` before you page is CUT.** `/claims` states 877 before
+   the first press; `/browse` only reveals 120 by exhausting the list. Cost is
+   genuinely one count read of the exact shape `/claims` already issues, and no
+   bar requires it — bar 13 asks what the WINDOW is, not how big the object is.
+   Cut because it is a discretionary nicety on a shipped surface at a close where
+   the recommendation is to stop, and adding one is how a satisfied vision turns
+   into perpetual motion. Reversible: one patch ticket, one read, one line.
+3. **A count of unprovenanced canonical values on Browse stays CUT**, re-ruled
+   rather than re-litigated. DECISIONS 2026-09-04 (1) cut it for want of a vision
+   trace; Tomas is the second campaign-wide stranger to compute it by hand
+   (108 ticketmaster / 12 `—` across 120 rows) and to call it "the number I most
+   wanted on the front page". The vision trace still does not exist: VISION's
+   Dashboard is "did anything happen last night, what needs me, who keeps being
+   wrong", and a catalog-trust figure is a seventh question nobody in the
+   contracts asked for. **This one is a genuine vision ADDITION and belongs with
+   search** — if Ben runs `/ship revise`, it is the second-best candidate on the
+   board, and it is recorded here so it is not lost.
+
+Not cut and not mine to cut, restated so the boundary is clear: the domain chip
+row (Ben's own A2 ruling on BUG-0138 — the measured price is now four minutes and
+seventeen clicks for a stranger to learn the second domain is `venues`, a word
+the page already knew, and only he revisits his own ruling); search (his
+2026-09-10 ruling, a vision addition needing `/ship revise`, now named
+unprompted by four independent strangers across three milestones); and page
+windows (stopped for him, milestone-sized, `tracker/for-human/M3-paging-shape-for-ben.md`).
+
+## 2026-09-15 — Two standing human asks leave this campaign's ledger (strategist)
+
+**`public.walk_sandbox` is withdrawn, conditionally.** It has been an open human
+precondition since the M2 plan, it narrowed every walk in M2 and M3 to an
+interim note-restore-sweep exception, and it was never pasted. The M3 close plans
+no milestone, so there is no walk left for it to serve: withdrawing it is
+strictly cheaper than carrying it. It returns to Ben's list the day he opens M4,
+and `tracker/for-human/TASK-0034.md` stays where it is so the paste is one copy
+away if he does.
+
+**`runs` retention and the `runs` row-cap horizon leave this campaign's ledger.**
+Scraper-side in origin and in fix, carried on this campaign's for-human list
+since the M2 retro for want of anywhere better. A closing campaign is not a
+backlog; it belongs in the root `backlog/` with the other cross-campaign debt.
+Nothing is lost and nothing is decided — only the owner changes.

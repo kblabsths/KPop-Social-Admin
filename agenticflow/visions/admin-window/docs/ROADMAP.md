@@ -15,20 +15,105 @@ the resolver campaign closes there.
 | --- | --- | --- | --- | --- |
 | **M1** | read surfaces + the pre-cutover edit surface | **zero** | 1, 2, 3, 4, 5, 7 (pre-cutover half), 9, 10, 11, 12, 13 | **SHIPPED** 2026-09-04, tag `m1` at 26cec8d |
 | **M2** | the verdict slice: UI built, both migrations authored as handoffs | **zero installed** | (M1's, still green) + both handoffs complete and reviewed | **SHIPPED** 2026-09-10, tag `m2` at f194991 |
-| **M3** | completeness of the read slice: paging past the window, and every windowed figure honest | **zero** (one handoff already installed by Ben) | (M1's and M2's, still green) + M3's own | **PLANNED 2026-09-10** — Ben's ruling, below |
-| **patch run** (deferred) | live proof of the §7 actions, after Ben installs the handoffs | the two §9 items, installed by Ben | 6, 8, 7 (override half) | after Ben installs |
+| **M3** | completeness of the read slice: paging past the window, and every windowed figure honest | **zero** (one handoff already installed by Ben) | (M1's and M2's, still green) + M3's own | **SHIPPED** 2026-09-15, tag `m3` at 672c6536 |
+| **patch run** (deferred) | live proof of the §7 actions, after Ben installs the handoffs | the two §9 items, **installed by Ben 2026-09-11** | 6, 8, 7 (override half) | **DUE** — filed 2026-09-15 as TASK-0084/0085/0086, held for one answer from Ben |
+| **M4** | — | — | — | **NOT PLANNED.** Conditional on Ben's paging-shape answer only; see below |
 
-## Is the vision satisfied? Not yet — and M3 exists because Ben said so
+## Is the vision satisfied? YES in build — and what is left is not the team's
 
-**Stated plainly, at the M2 close (2026-09-10).** VISION's satisfaction sentence
-is *"the verdict UI is built and both handoffs are complete and reviewed."* The
-verifier walked the first half green and the second half is **half met**: both
-artifacts are authored complete, with target paths, apply commands, seven
-columns, RLS on with zero policies and the `wont_fix` refusal inside the
-function — but "reviewed" is Ben's word and he has not said it. Two acceptance
-tests (6, 8) and half of a third (7) remain deliberately deferred to the patch
-run after he installs them. **So the campaign is not satisfied, and the reason
-is not a hole in the build.**
+**Restated at the M3 close, 2026-09-15.** This section replaces the M2-close
+reading below it, which is kept from "Through M2's close this roadmap said" down
+as the record of how M3 came to exist.
+
+VISION's satisfaction sentence is *"the campaign is satisfied when the verdict UI
+is built and both handoffs are complete and reviewed."* Measured today:
+
+- **The verdict UI is built.** Every spec §7 action is one typed decision landing
+  as one call to `settle_review_item`, the override half of the edit surface
+  writes only as an `admin_locked` observation, the reference field is a picker,
+  and the verdict log renders as a tab rather than a seventh page (M2, verified).
+- **Both handoffs are complete** — and more than complete. Authored against the
+  sibling's actually-installed schema in M2, **installed by Ben on staging
+  2026-09-11** (`verdicts` 23:22Z, `settle_review_item` 23:26Z), and **tracked in
+  the repo that owns the schema since `d1c1b3ba`, 2026-09-13**, committed by him.
+  The M2 close's one open finding — the installed migration untracked next door —
+  is closed.
+- **"Reviewed" is Ben's word, and he has not said it.** Installing is strong
+  evidence of review and it is not the word. This is the only clause of the
+  satisfaction sentence still open, and no ticket in this campaign can close it.
+
+Everything else VISION asks for is shipped and walked: six pages against real
+staging rows whose numbers match the database (877 claims, 120 events, 108+769,
+747+22, all hand-verified by a stranger); six threshold gauges; an investigation
+that never leaves the app; honest not-provisioned states on every surface against
+a database answering `PGRST205`; the edit surface driven by one hand-written map,
+with the direct-edit half struck by Ben's own 2026-09-09 amendment; the old app
+gone, the gate and the deploy carried over, every push deployable.
+
+**One acceptance item remains, and VISION itself named it.** "Acceptance is the
+thirteen tests in `contracts/admin-build.md`, all green" — tests 6, 8 and test
+7's override half are still ungraded, deferred by VISION to "a patch run after
+Ben installs them." **He installed them on 2026-09-11, so that patch run is now
+due**, and it is filed: TASK-0084, TASK-0085, TASK-0086, all `patch`, all held
+for one answer. They are held rather than running because a live §7 proof is not
+sweepable by this app — a settlement consumes a real `review_items` row and
+appends a `verdicts` row the service role cannot delete, and 71 of staging's 72
+review items are the sibling `entity-linking` campaign's live work. Ben says
+which rows are spendable; then the run finishes.
+
+**Recommendation: END THE RUN. Do not open M4.** The order is: drain the five
+open patch tickets; take Ben's answers (the paging shape, the staging restore,
+the spendable rows, the word "reviewed"); run the deferred acceptance patch run;
+stop. Shipping done software is the win condition. `max_milestones` is 6 and we
+are at 3 — the budget is not what stops this; the vision being satisfied is.
+
+## M4 — NOT PLANNED, and conditional on exactly one answer from Ben
+
+`tracker/for-human/M3-paging-shape-for-ben.md` is stopped for his yes/no on page
+windows (20/50/100, both surfaces) replacing append-on-press. **Nothing here is
+a plan and no FEAT is filed** — only the human converts a note into a milestone.
+Both branches are costed so his one word is enough to start either.
+
+**If YES — that is M4, and it is a real milestone.** It rewrites SPEC F14 rather
+than extending it (the window MOVES and the rows are replaced, instead of
+growing), so SPEC is amended, not appended, and the amendment must say what
+becomes of the M3 criteria that graded the old answer — EC4's byte-identical
+first screen breaks by design at a size of 20, and EC5 and EC7 are both written
+around append semantics. It adds the first new operator-facing control since M1
+(the size selector) on two surfaces, plus page navigation and "which page am I
+on" state. It probably puts `?page=` and `?size=` in the URL, which is a real
+improvement — LOOK_AND_FEEL bar 11 becomes TRUE again instead of excepted, and
+the dated paging clause TASK-0079 installed retires itself as it was written to.
+It needs a different state machine: `src/lib/paging/machine.ts` merges pages and
+grows a `held` that never shrinks; page windows replace a row set and must answer
+a size change mid-walk, a question no contract we hold answers. It also folds in
+**BUG-0221** — the paged seam — which closes obsolete, because a page window is
+positional by construction and cannot take the keyset bound that is the seam's
+honest fix. And it delivers Ben's own Feel bar 14 by construction. **Six to ten
+tickets, both surfaces, live proofs on both — and this time the live proof is
+repeated and compared across runs, not certified from one walk (M3 retro).**
+`public.walk_sandbox` returns to the precondition list the moment this opens.
+
+**If NO — it is a cheap two-ticket path, plus one unblocking.** Both paged
+surfaces keep append-on-press, and Feel bar 14 ("nothing the operator must find
+sits below a long list") then produces exactly two patch tickets, one per
+surface: `/claims` and `/browse` each render the same `PageMore` control as the
+last child after the last row (`src/components/claims/paged-claim-list.tsx:107-115`,
+`src/components/browse/paged-browse-table.tsx:156-177`), both fail the bar, and
+each needs its control moved above its list. Measured: `/claims`' control lands
+1,166px below a 900px fold after a press; `/browse`'s stays at 852 only because
+scroll anchoring happens to hold it. **Separately, BUG-0221 unblocks** into an
+ARCHITECTURE §4.3 amendment (the wire bound stops being the offset and becomes a
+row id) plus one builder session per surface — the architect writes the amendment
+first, as it did for paging itself.
+
+**Either way the stop condition is untouched.** VISION is satisfied by the
+verdict UI plus the two reviewed handoffs, not by paging shape. Adopting page
+windows is new scope Ben is choosing, not scope the vision is owed.
+
+---
+
+## The M2-close reading, kept as the record of how M3 came to exist
 
 Through M2's close this roadmap said "There is no M3," and the verifier's EC14
 paragraph repeats it. **Ben overruled that on 2026-09-10**, and his word is the
@@ -47,13 +132,7 @@ already requires six pages "showing real staging rows **whose numbers match what
 the database says**" and an investigation that "never leaves the app." A surface
 that caps at 1,000 rows with no way past it, and a gauge whose bucket figures
 silently diverge from the head counts printed above them on the same page, both
-fail that sentence today. M3 pays exactly those and nothing else.
-
-**Its size is deliberately three features.** M3 opens no new front, adds no
-page, adds no schema, and returns the app to a verified shippable state quickly.
-When it closes, the campaign's satisfaction still rests where it rests now — on
-Ben's review of the two handoffs and the deferred patch run — and the run stops
-there unless he says otherwise.
+failed that sentence. M3 paid exactly those and nothing else, in three features.
 
 ---
 
@@ -172,7 +251,7 @@ Exit criteria: `agenticflow/tracker/milestones/M2.md`.
 
 ---
 
-## M3 — completeness of the read slice — PLANNED 2026-09-10
+## M3 — completeness of the read slice — SHIPPED 2026-09-15, tag `m3` at 672c6536
 
 **Precisely: the operator can reach every row the window shows him a slice of,
 and every figure on every page is true about the read that produced it.** Zero
@@ -215,11 +294,26 @@ in this repo or the sibling; installing either §9 migration; any dial or
 threshold control; phone and responsive work; every parked section. Paging is
 added to **Claims and Browse only**.
 
-**Preconditions:** M2's, unchanged, plus nothing new. `public.walk_sandbox`
-remains the standing ask that narrows every walk until it exists.
+**Preconditions:** M2's, unchanged, plus nothing new. ~~`public.walk_sandbox`
+remains the standing ask that narrows every walk until it exists.~~ — **WITHDRAWN
+at the M3 close, 2026-09-15**: never pasted, and with no milestone planned there
+is no walk left for it to serve. It returns the day M4 opens.
 
-Exit criteria: `agenticflow/tracker/milestones/M3.md`. Behavior:
+Exit criteria and the retro: `agenticflow/tracker/milestones/M3.md`. Behavior:
 `agenticflow/docs/vision/SPEC.md` F14–F16.
+
+**Closed 2026-09-15**: all three features landed, thirteen exit criteria walked —
+eleven PASS at the verifier's walk, EC1 and EC12 FAIL then and both closed by
+tickets and fix-scoped re-checks. 100 tickets opened in five days (72 bugs, every
+one filed by a team role — QA 41, architect 38, designer 13, verifier 6,
+strategist 2 — save the two the strategist routed from Ben's own walk note), 87
+of 91 graded tickets
+closing on the first attempt, zero schema in either repo, zero `admin-window/`
+commits in the sibling, six nav links, no new page route, no search control.
+`/claims` warm came down from 2.9–3.8 s to a median 1.235 s. **One red stands and
+no ticket here can clear it**: EC1's live arm fails on `residue.live.test.ts`
+alone, because staging event `01a03c9b-…` still wears a probe title only Ben can
+restore (`tracker/for-human/BUG-0215-staging-residue.md`).
 
 ## Search — a vision ADDITION, held for Ben, with the evidence
 
@@ -228,11 +322,23 @@ unless he runs `/ship revise`.** It is therefore not planned, not ticketed and
 not designed, and M3 does not build it. The evidence is recorded here so the
 decision stays his and stays informed:
 
-- **Two independent user-sim strangers, unprompted, named a search box as their
-  first condition for returning.** Priya: *"if my event hadn't been in the newest
-  50 I would have gone straight to `psql` and never come back."* Devin's §5 is
-  the same finding from a different table. Both are in
-  `tracker/for-human/M2-usersim-judgment.md`.
+- **FOUR independent user-sim strangers across three milestones, unprompted,
+  have now named a search box as their first condition for returning.** Priya:
+  *"if my event hadn't been in the newest 50 I would have gone straight to `psql`
+  and never come back."* Devin's §5 is the same finding from a different table
+  (`tracker/for-human/M2-usersim-judgment.md`). Tomas, at the M3 endgame with
+  paging already shipped: *"120 events and the only way to find one is to read …
+  I wanted to find 'the BTS Melbourne one' and had no way to ask."*
+  (`tracker/for-human/M3-usersim-judgment.md`). Marisa, on the same tree, spent
+  **four minutes and seventeen clicks** paging 877 rows to learn a word the page
+  already knew.
+- **Paging shipping did NOT make it go away, which is the new evidence.** The
+  M2-close argument was a prediction; M3 tested it. Both M3 strangers had the
+  full 877 rows reachable and both still named finding a known row as the thing
+  the app cannot do.
+- **If Ben runs `/ship revise`, the second candidate to go with it** is the count
+  of unprovenanced canonical values on Browse (DECISIONS 2026-09-04 and
+  2026-09-15) — two campaign-wide strangers have now computed it by hand.
 - M1's stranger walk ended in a SQL client after fifteen minutes for the same
   reason.
 - F14's paging removes one of the two routes out of the app (the cap); search
@@ -240,7 +346,12 @@ decision stays his and stays informed:
   substitutes — paging does not make search unnecessary, and the strategist is
   not arguing that it does.
 
-## Two findings carried to Ben from the M2 close
+## Two findings carried to Ben from the M2 close — BOTH CLOSED 2026-09-15
+
+**1 is closed:** all three handoff artifacts are now tracked in the sibling, each
+committed by Ben himself (`125a9bfe` 2026-09-10, `d1c1b3ba` 2026-09-13).
+**2 is closed:** `README.md` was rewritten by TASK-0061 in the M3 patch lane.
+The original text follows.
 
 1. **The installed migration is untracked in the repo that owns the schema.**
    `kspace Scraper` carries
@@ -253,10 +364,19 @@ decision stays his and stays informed:
    is reachable; the accurate instructions are in `agenticflow/docs/STACK.md` §5.
    Filed as a patch-lane task at this close.
 
-## The deferred patch run — live proof of the §7 actions
+## The deferred patch run — live proof of the §7 actions — **DUE, FILED, HELD**
 
-Named here so nobody mistakes it for a hole. **After** Ben installs the two §9
-migrations, a patch run proves on staging: every §7 action end to end, one
+**Its precondition cleared on 2026-09-11**: Ben installed both §9 objects on
+staging. Filed at the M3 close as **TASK-0084** (test 6), **TASK-0085** (test 7's
+override half) and **TASK-0086** (test 8), all `patch`, chained into one lane so
+at most one can ever be offered, and all **held for one answer from Ben** — a
+live §7 proof consumes a real `review_items` row and appends a `verdicts` row the
+service role cannot delete, and 71 of staging's 72 review items are the sibling
+`entity-linking` campaign's live work. He says which rows are spendable and who
+restores the after-state; then this runs and the thirteenth acceptance test goes
+green. `tracker/for-human/M3-retro-for-ben.md` carries the question.
+
+What it proves on staging: every §7 action end to end, one
 transaction per settlement with its apply and rejection stamps sharing a
 timestamp, a killed call leaving no partial write, `wont_fix` without a note
 refused, grant introspection showing `verdicts` written and
@@ -270,6 +390,34 @@ The resolver campaign in the sibling repo **closed 2026-09-03**
 (`fe58bfda`), so the schema M2 authors against is settled. That retires the
 "everything is major while a campaign runs there" blanket; it changes nothing
 else, because a migration is major by size in every case.
+
+## Withdrawn at the M3 close, so the human's list gets shorter (strategist, 2026-09-15)
+
+- **`public.walk_sandbox` is no longer a precondition.** Open since the M2 plan,
+  it narrowed every walk in M2 and M3 to the interim note-restore-sweep exception
+  and was never pasted. With no milestone planned there is no walk left for it to
+  serve. `tracker/for-human/TASK-0034.md` stays put; the ask returns the day M4
+  opens.
+- **`runs` retention and the `runs` row-cap horizon leave this ledger.**
+  Scraper-side in origin and in fix; they belong in the root `backlog/`, not on a
+  closing campaign's for-human list. Nothing decided, only the owner changed.
+- **Three user-sim asks are CUT** — naming a well-formed facet value that no row
+  owns; a total on `/browse` before you page; a count of unprovenanced canonical
+  values on Browse. Reasons and prices: `agenticflow/docs/DECISIONS.md`,
+  2026-09-15. Each is one word from Ben away from being reversed.
+
+## One finding for the human about how two campaigns shared one database
+
+Not a rule violation by anyone. The sibling repo ran its own `entity-linking`
+campaign through 2026-09-13 **against the same staging project this campaign
+grades itself on**, and its work changed our graded data mid-walk three times:
+`43505768` added `review_items.external_ref` and 71 rows that appeared between
+the designer's judgment and the verifier's EC11 pass; the `d1c1b3ba` install
+turned one of our live tests into an unswept writer (BUG-0215); and a concurrent
+writer reddened our venue-provenance live cases (BUG-0219). No protocol said
+either campaign had to declare any of it. Whether the next pair of concurrent
+campaigns gets separate staging projects or a declaration step is the human's
+call, and it is the structural finding of M3's cross-directory ledger.
 
 ## Two questions for Ben — BOTH ANSWERED 2026-09-08
 
