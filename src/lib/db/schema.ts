@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { accountText, type AccountSegment } from "../account/authored";
 import { getDbClient } from "./client";
-import { classify, type DbResult } from "./result";
+import { classify, isJsonObject, type DbResult } from "./result";
 import type { FunctionName } from "./tables";
 
 /**
@@ -79,16 +79,29 @@ export function restEndpointOf(client: SupabaseClient): RestEndpoint | null {
  * Every FUNCTION named in a schema description, or `null` when the document is
  * not one.
  *
- * PostgREST's `paths` object keys every exposed procedure under the rpc
- * prefix; a body without a `paths` object is not this read's answer at all —
- * the same question `unreadableAnswer` asks of a row set (`result.ts`) — and
- * the caller is told the read failed rather than handed an empty set that
- * would read as "nothing is installed".
+ * **The leg, positively** (ARCHITECTURE.md §4.1 — the schema description is
+ * the leg a read that asks the host about ITSELF names, and it is admitted by
+ * the same rule as every other leg): PostgREST is specified to answer this
+ * read with an OpenAPI document whose `paths` is a JSON OBJECT keying every
+ * route it exposes, each exposed procedure under the rpc prefix. A body that
+ * is not that document did not answer this read at all — the same question
+ * `unreadableAnswer` asks of a row set (`result.ts`) — and the caller is told
+ * the read FAILED rather than handed an empty set, which would read as a
+ * database exposing no functions.
+ *
+ * The object question is `isJsonObject` (`result.ts`), asked of the body and
+ * of `paths` alike, because `typeof x === "object"` is also true of an ARRAY
+ * and `Object.keys` of an array is its indices: a host whose body carried
+ * `paths: [...]` yielded an empty function set, so `readFunctionInstalled`
+ * answered `not_provisioned` — a FALSE absence about the database, derived
+ * from a document this app could not read (admin-window/BUG-0234). A shape
+ * this read cannot grade has one answer here and it is
+ * `unreadableDescription`.
  */
 function functionsIn(body: unknown): Set<string> | null {
-  if (typeof body !== "object" || body === null) return null;
-  const paths = (body as { paths?: unknown }).paths;
-  if (typeof paths !== "object" || paths === null) return null;
+  if (!isJsonObject(body)) return null;
+  const paths = body.paths;
+  if (!isJsonObject(paths)) return null;
   return new Set(
     Object.keys(paths)
       .filter((route) => route.startsWith(RPC_PATH))

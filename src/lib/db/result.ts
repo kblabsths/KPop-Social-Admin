@@ -68,8 +68,19 @@ export type DbUnavailable = Extract<
   { kind: "not_provisioned" | "error" }
 >;
 
-/** The shape every PostgREST response has, narrowed to what a read needs. */
-export type DbResponse<T> = { data: T | null; error: unknown };
+/**
+ * The shape every PostgREST response has, narrowed to what a read needs.
+ *
+ * `status` is the HTTP status the client stamped on the answer. It is here
+ * because ONE leg of the admission rule cannot be asked without it: a read
+ * that may legitimately be told "no row" has to tell an emptiness the HOST
+ * sent from a response that carried nothing at all, and `data` is `null` in
+ * both (ARCHITECTURE.md §4.1 clause 3; `carriedContent` below). Every response
+ * supabase-js builds carries one; it is optional in this type because the
+ * other reads ask `data` and `error` alone, and nothing here reads it for any
+ * other purpose.
+ */
+export type DbResponse<T> = { data: T | null; error: unknown; status?: number };
 
 /**
  * The response shape a COMPLETE read needs: the rows AND the exact count.
@@ -707,10 +718,12 @@ function parenthesised(code: readonly AccountSegment[]): AccountSegment[] {
  *
  * It is the app's own words about a read that was refused, and it says only
  * what the app knows: no number is invented, nothing is attributed to the
- * database, and the HTTP status is deliberately NOT named — `DbResponse`
- * carries `data` and `error` alone, the error object carries no status, and
- * reaching for one would mean widening the data-layer contract and every
- * reader in `lib/db/**`. It renders in this state ONLY: `{code: "42883",
+ * database, and the HTTP status is deliberately NOT named. That last one is
+ * about what an ACCOUNT may carry, and it did not change when `DbResponse`
+ * grew a `status` for the admission rule's emptiness leg
+ * (admin-window/BUG-0234): a status is a fact about the transport, an account
+ * carries the words the DATABASE said, and a number this app read off a
+ * response is neither. It renders in this state ONLY: `{code: "42883",
  * message: ""}` still says "(42883)" and nothing else.
  */
 const REFUSED_WITHOUT_WORDS = "the read was refused with no words to explain it";
@@ -1016,26 +1029,31 @@ export function classify(
  * `.map` throwing inside the render, which is an HTTP 500 rather than the
  * refusal this rule exists to give.
  *
- * **Why this and not a status test.** The question asked here is about the
- * ANSWER a read needed, not about the number the client happened to stamp on
- * it: a library that renumbered its rewrite would walk straight through a
- * `status === 204` test, while "the rows never arrived" stays true however the
- * response is labelled (LESSONS 4 — canonicalise the question, never enumerate
- * the spellings).
+ * **Why the ROW question is not a status test.** What is asked of a payload is
+ * asked OF THE PAYLOAD: "the rows never arrived" stays true however the
+ * response is labelled, while a test for the rewrite's number would walk past
+ * a library that renumbered it (LESSONS 4 — canonicalise the question, never
+ * enumerate the spellings). The one leg that cannot be derived from a payload
+ * is a single-row read's EMPTINESS, because there is no payload to derive it
+ * from: `data: null` is what a real empty match and the rewrite both deliver,
+ * and the status line is the only place they differ. That leg asks it, once,
+ * and positively (`carriedContent`, §4.1 clause 3, admin-window/BUG-0234).
  *
  * **Which reads it applies to, and which it must NOT.** Row-set reads
  * (`readRows`), count reads (`readCount`) and complete reads (`readComplete`,
  * both legs) — for those three, PostgREST always sends the payload: an array
  * of this read's rows, a `Content-Range` total for a count. Anything else
- * there is not an answer it could have given. `readOne` asks the COLUMN half
- * alone (admin-window/BUG-0228): a `.maybeSingle()` over no rows really does
- * hand back `data: null`, so the row-SET question cannot be asked of it — but
- * a row that DID arrive is this read's row only if it carries what the read
- * named, and a foreign object standing there reaches a render typed `Row`
- * exactly as a foreign array reached one typed `Row[]`. `callFunction` stays
- * wholly outside: a procedure returning void really does answer with no body,
- * and it declared no columns to hold an answer against. Widening this to it
- * needs a different question, not this one.
+ * there is not an answer it could have given. `readOne` cannot be asked the
+ * row-SET question (admin-window/BUG-0228) — a `.maybeSingle()` over no rows
+ * really does hand back `data: null` — so it names the two legs it does have:
+ * the COLUMN half of a row that DID arrive, because a foreign object standing
+ * there reaches a render typed `Row` exactly as a foreign array reached one
+ * typed `Row[]`, and the EMPTINESS of one that did not, which is an answer
+ * only from a response that carried content (§4.1 clause 3,
+ * admin-window/BUG-0234). `callFunction` stays wholly outside all of it: a
+ * procedure returning void really does answer with no body, and it declared no
+ * columns to hold an answer against. Widening this to it needs a different
+ * question, not this one.
  *
  * The words are THIS APP's — one `"this app"` segment, like every other
  * account this app writes about a read it could not grade
@@ -1106,8 +1124,25 @@ export const ANY_COLUMNS: RowColumns = [];
  * real, and `lib/format.ts` renders their absence); a MISSING name is not.
  */
 function isRowOf(row: unknown, columns: RowColumns): boolean {
-  if (typeof row !== "object" || row === null || Array.isArray(row)) return false;
+  if (!isJsonObject(row)) return false;
   return columns.every((column) => Object.hasOwn(row, column));
+}
+
+/**
+ * Is this value a JSON OBJECT — the thing PostgREST sends wherever its
+ * specification says a keyed structure?
+ *
+ * One derivation, because two legs of the one admission rule ask it: a ROW is
+ * an object carrying this read's columns (`isRowOf` above), and the `paths` of
+ * a schema description is an object keying every exposed route
+ * (`src/lib/db/schema.ts`). `typeof x === "object"` is true of `null` and of
+ * an ARRAY as well, and both of those have reached a leg that meant this
+ * question — an array `paths` yielded an empty function set, which read as a
+ * database exposing nothing (admin-window/BUG-0234). Asked once here, the two
+ * legs cannot answer it differently (LESSONS 5, LESSONS 11).
+ */
+export function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -1194,6 +1229,54 @@ function isCount(count: unknown): count is number {
 }
 
 /**
+ * Did this response CARRY an answer — is its `data` something the host sent?
+ *
+ * **The bar, positively** (ARCHITECTURE.md §4.1 clause 3, admin-window/BUG-0234):
+ * PostgREST answers a read with a representation — the row it found, or `[]`
+ * for the rows it did not — and HTTP's own success family says which of its
+ * statuses carry one. Every 2xx does except the two the specification defines
+ * as bodyless, `204 No Content` and `205 Reset Content` (RFC 9110 §15.3.5 and
+ * §15.3.6). So a `data` standing under a content-carrying success status is
+ * the host's answer, whatever it holds; a `data` standing under anything else,
+ * beside a null error, is the client's placeholder for a response that told us
+ * it carried nothing — and nothing is not an emptiness.
+ *
+ * **Why a leg has to ask this at all, and only this leg.** The row-SET legs
+ * derive their question from the payload (`isRowSet`): "the rows never
+ * arrived" stays true however the response is labelled, which is why they ask
+ * no status. A SINGLE-row read has no such derivation available: a
+ * `.maybeSingle()` over an empty match really does hand back `data: null`, and
+ * supabase-js rewrites a bodyless 404 to `status 204, error: null, data: null`
+ * (`node_modules/@supabase/postgrest-js/dist/index.mjs`, the
+ * `res.status === 404 && body === ""` arm), so the two are the same object
+ * except for the status — which is how a blank-404 host put "No row with that
+ * id" on `/queues/<uuid>` over a read that never happened. The status line is
+ * the only place the difference is recorded, so that is where it is asked.
+ *
+ * Asked POSITIVELY, which is what keeps it from being a list of the rewrites
+ * we have met: a library that renumbered its rewrite would have to renumber it
+ * to a status that DECLARES content before this admitted it again, and a
+ * client claiming content arrived is a different fact from the one this guard
+ * is about.
+ */
+function carriedContent(status: unknown): boolean {
+  if (typeof status !== "number") return false;
+  if (status < 200 || status >= 300) return false;
+  return status !== 204 && status !== 205;
+}
+
+/**
+ * What one query came back with: the classified result, and the HTTP status
+ * the client stamped on the answer.
+ *
+ * The status travels no further than the read kind that needs it — only the
+ * single-row read's emptiness leg asks it (`carriedContent`, §4.1 clause 3) —
+ * and it is absent when the call threw, which never reaches that leg because a
+ * throw is classified as an error.
+ */
+type QueryAnswer<T> = { result: DbResult<T | null>; status?: number };
+
+/**
  * Run one PostgREST query and classify whatever comes back.
  *
  * The client is resolved INSIDE the try, so an unset credential name — which
@@ -1206,14 +1289,16 @@ async function runQuery<T>(
   run: (db: SupabaseClient) => PromiseLike<DbResponse<T>>,
   db?: SupabaseClient,
   asked: AskedObject = "table",
-): Promise<DbResult<T | null>> {
+): Promise<QueryAnswer<T>> {
   try {
     const client = db ?? getDbClient();
-    const { data, error } = await run(client);
-    if (error !== null && error !== undefined) return classify(error, missing, asked);
-    return { kind: "ok", data: data ?? null };
+    const { data, error, status } = await run(client);
+    if (error !== null && error !== undefined) {
+      return { result: classify(error, missing, asked), status };
+    }
+    return { result: { kind: "ok", data: data ?? null }, status };
   } catch (thrown) {
-    return classify(thrown, missing, asked);
+    return { result: classify(thrown, missing, asked) };
   }
 }
 
@@ -1247,7 +1332,7 @@ export async function readRows<Row>(
   run: (db: SupabaseClient) => PromiseLike<DbResponse<Row[]>>,
   db?: SupabaseClient,
 ): Promise<DbResult<Row[]>> {
-  const result = await runQuery<Row[]>(missing, run, db);
+  const { result } = await runQuery<Row[]>(missing, run, db);
   if (result.kind !== "ok") return result;
   if (!isRowSet(result.data, columns)) return unreadableAnswer(missing);
   return { kind: "ok", data: result.data };
@@ -1270,9 +1355,15 @@ export async function readRows<Row>(
  *    app's own voice naming the object — `unreadableAnswer`, the one rule for
  *    an answer this app cannot grade (BUG-0007's rule on the user-visible
  *    path, narrowed to that rule by admin-window/BUG-0224);
- *  - `count > rows.length` means SOMETHING truncated the set — our cap, or the
- *    server's `db-max-rows`, which our cap alone cannot detect — so the read
- *    refuses with the real number rather than returning a partial array;
+ *  - a count that is not a total OF THIS SET refuses, in EITHER direction,
+ *    because two legs that contradict each other are one refusal
+ *    (ARCHITECTURE.md §4.1 clause 2): `count > rows.length` means SOMETHING
+ *    truncated the set — our cap, or the server's `db-max-rows`, which our cap
+ *    alone cannot detect — so it refuses with the real number rather than
+ *    returning a partial array, while `count < rows.length` is a total that
+ *    cannot be of the rows it arrived with and refuses through the one rule
+ *    (`unreadableAnswer`), since the cap sentence would be a false account of
+ *    what came back;
  *  - otherwise `ok` with every row.
  *
  * **Every figure, count, oldest-age and exactness claim in this app rests on
@@ -1307,7 +1398,18 @@ export async function readComplete<Row>(
       return unreadableAnswer(missing);
     }
     const rows = data;
-    if (count > rows.length) {
+    // A complete read names two legs about ONE set, so the count is a total OF
+    // THIS SET or it is not this read's count at all: disagreement in either
+    // direction is one refusal, and the direction decides only which account
+    // is TRUE about what arrived (§4.1 clause 2, admin-window/BUG-0234). A
+    // total SMALLER than the rows it came with was admitted here until then,
+    // and reached a surface as an ok read whose head figure contradicted its
+    // own list.
+    if (count !== rows.length) {
+      // Nothing was truncated, so nothing may be said about a cap: this is an
+      // answer this app cannot grade, and it refuses in the words every other
+      // ungradeable answer refuses in.
+      if (count < rows.length) return unreadableAnswer(missing);
       // One `"this app"` segment for the same reason: `count`, `ROW_CAP` and
       // `rows.length` are figures this app interpolated into a sentence it
       // wrote (admin-window/BUG-0200 criterion 4).
@@ -1339,6 +1441,19 @@ export async function readComplete<Row>(
  * answering `200 {"message":"no upstream"}` refuses through the one rule here
  * too rather than reaching a render typed `Row` (admin-window/BUG-0228 — the
  * home page's last-applied-cycle leg and the record pages read this way).
+ *
+ * So this read names two legs, and the EMPTINESS is the second of them
+ * (ARCHITECTURE.md §4.1 clause 3, admin-window/BUG-0234): "no row" is an
+ * answer only from a response that CARRIED one, which is what `carriedContent`
+ * asks of the status the client stamped on it. PostgREST sends an empty match
+ * as a 200 carrying `[]`, which supabase-js hands over as `data: null`; it
+ * also rewrites a bodyless 404 to a 204 whose `data` is `null` for a reason
+ * that has nothing to do with rows, and that one is not an absence and not a
+ * row but an answer this app cannot grade — `/queues/<uuid>` against a
+ * blank-404 host said "No row with that id" over a read that never happened.
+ * `callFunction` deliberately stays outside this too: a procedure returning
+ * void really does answer with no body, so a bodyless answer is information
+ * there rather than a missing leg.
  */
 export async function readOne<Row>(
   missing: string,
@@ -1346,8 +1461,11 @@ export async function readOne<Row>(
   run: (db: SupabaseClient) => PromiseLike<DbResponse<Row>>,
   db?: SupabaseClient,
 ): Promise<DbResult<Row | null>> {
-  const result = await runQuery<Row>(missing, run, db);
-  if (result.kind !== "ok" || result.data === null) return result;
+  const { result, status } = await runQuery<Row>(missing, run, db);
+  if (result.kind !== "ok") return result;
+  if (result.data === null) {
+    return carriedContent(status) ? result : unreadableAnswer(missing);
+  }
   if (!isRowOf(result.data, columns)) return unreadableAnswer(missing);
   return result;
 }
@@ -1378,7 +1496,7 @@ export async function callFunction<T>(
   run: (db: SupabaseClient) => PromiseLike<DbResponse<T>>,
   db?: SupabaseClient,
 ): Promise<DbResult<T | null>> {
-  return runQuery<T>(fn, run, db, "function");
+  return (await runQuery<T>(fn, run, db, "function")).result;
 }
 
 /**
