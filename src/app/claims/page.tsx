@@ -345,6 +345,20 @@ const BUCKET_CAPTION = {
  */
 const LIST_HOLDS = "claims";
 
+/**
+ * WHAT ONE CLAIM LINE IS CALLED — the field this surface draws its rows under,
+ * spelled ONCE for the three things that must agree about it
+ * (admin-window/BUG-0222, LESSONS 5).
+ *
+ * The bound this first screen ends at (`boundOf`), the ids it has already
+ * drawn (`initialPage`) and the id a paged row is recognised by (`deps.id`)
+ * are three readings of one fact, and they must be the same field the list
+ * keys its rows by (`ClaimList`) — a set keyed on one field beside React keys
+ * drawn from another would compare two screens by something the operator is
+ * not looking at.
+ */
+const observationId = (claim: ClaimLine): string => claim.observationId;
+
 /** The h2 above the claim list, per tab. */
 const LIST_TITLE: Record<ClaimsTab, string> = {
   buckets: "All claims",
@@ -1827,13 +1841,21 @@ export default async function ClaimsPage({
             initial={initialPage<ClaimLine>(
               listed.length,
               truncated,
-              boundOf(listed, (claim) => claim.observationId),
+              boundOf(listed, observationId),
+              // AND THE IDS THIS SCREEN HAS ALREADY DRAWN, so a page the route
+              // serves at a position claims have moved under cannot put one
+              // claim on screen twice (admin-window/BUG-0222). Same spelling
+              // as the bound above and as `deps.id` below — one derivation of
+              // "what this row is called", which is also the field `ClaimList`
+              // keys by.
+              listed.map(observationId),
             )}
             window={listWindow}
             deps={{
               route: PAGE_ROUTES.claims,
               params: claimsQuery(filter, tab),
               size: CLAIM_WINDOW,
+              id: observationId,
             }}
           >
             {listBody}

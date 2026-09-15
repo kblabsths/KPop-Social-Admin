@@ -23,6 +23,7 @@ import {
   initialPage,
   pressing,
   requestPage,
+  type PageDeps,
   type PageState,
 } from "@/lib/paging/machine";
 import { recordHref } from "@/lib/records/routes";
@@ -177,6 +178,12 @@ function thisWindow(held: number, limit: number): DrawnWindow {
     heldFrom: "this window",
   };
 }
+
+/**
+ * WHAT ONE BROWSE ROW IS CALLED, for a fixture that builds the surface's deps
+ * by hand — the same field the page spells (admin-window/BUG-0222).
+ */
+const eventId = (row: BrowseRow): string => row.event_id;
 
 const EVENT_NEW = "01920000-0000-7000-8000-000000000b02";
 const EVENT_OLD = "01920000-0000-7000-8000-000000000b01";
@@ -1168,7 +1175,7 @@ async function pressedWith(...answers: unknown[]): Promise<PageState<BrowseRow>>
   let state = call.initial as unknown as PageState<BrowseRow>;
   for (const answer of answers) {
     state = await requestPage<BrowseRow>(state, {
-      ...(call.deps as { route: string; params: string; size: number }),
+      ...(call.deps as Omit<PageDeps<BrowseRow>, "fetchJson">),
       fetchJson: () => Promise.resolve(answer),
     });
   }
@@ -1371,6 +1378,54 @@ describe("the affordance that continues the recent-events view", () => {
     expect(eventIds(afterPage).slice(0, view.window)).toEqual(first);
   });
 
+  it("draws no event twice when the list moved under the press, and says so once", async () => {
+    // admin-window/BUG-0222, carried to this surface through the same driver
+    // and the same primitive. An event INSERTED ahead of the bound between the
+    // screen read and the press moves every later event down one, so the
+    // route's page at offset `window` BEGINS with the last event of the first
+    // screen; concatenated, that is one list holding one id twice.
+    //
+    // The ordinary page — every row appended — is the test above's fixture B
+    // (LESSONS 8).
+    const script = windowScript(view.window);
+    const firstScreen = await renderBrowse(script);
+    const first = eventIds(firstScreen);
+    expect(first).toHaveLength(view.window);
+    // Criterion 4 on this surface: nothing of this ticket is in the first
+    // SERVER render, because the fact it states belongs to a press.
+    expect(cheerio.load(firstScreen)("[data-paging-overlap]")).toHaveLength(0);
+
+    // The page the ROUTE really serves once an event has been inserted ahead
+    // of the bound: a full window, starting one event earlier in the order.
+    const overlapping = await pressedWith({
+      kind: "ok",
+      rows: pageRows(view.window, view.window - 1),
+      offset: view.window,
+      exhausted: false,
+      notes: { venues: null, provenance: null },
+    });
+    paging.override = overlapping;
+    const afterPage = await renderBrowse(script);
+
+    const ids = eventIds(afterPage);
+    // THE PROPERTY: every id drawn once, and the run agrees with its own count.
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual([
+      ...first,
+      ...pageRows(view.window - 1, view.window).map((row) => row.event_id),
+    ]);
+    expect(ids.slice(0, view.window)).toEqual(first);
+    // Stated once, in client-land, with the control retained: the bound moved
+    // by the rows the ROUTE served, so there is more to ask for.
+    expect(cheerio.load(afterPage)("[data-paging-overlap]")).toHaveLength(1);
+    expect(pagingArms(afterPage)).toContain("more");
+    expect(cheerio.load(afterPage)("[data-paging-refusal]")).toHaveLength(0);
+    expect(overlapping.held).toBe(view.window * 2);
+    // The notice is a sibling of the table, never inside the element the live
+    // oracle grades as the events read.
+    expect(cheerio.load(afterPage)(EVENTS_HOOK).find("[data-paging-overlap]")).toHaveLength(0);
+  });
+
   it("renders a PAGED leg's report below the table, in the same hook and words the first screen uses", async () => {
     // The account the PAGE's own card carries for the same object, on a
     // first-screen fixture where the same table is absent. The paged note must
@@ -1569,11 +1624,11 @@ describe("the affordance that continues the recent-events view", () => {
       });
       const markup = render(
         h(
-          PagingProvider,
+          PagingProvider<BrowseRow>,
           {
             initial: initialPage<BrowseRow>(windowSize, true, ""),
             window: thisWindow(windowSize, windowSize),
-            deps: { route: PAGE_ROUTES.browse, params: "", size: windowSize },
+            deps: { route: PAGE_ROUTES.browse, params: "", size: windowSize, id: eventId },
             children: null,
           },
           h(PagedBrowseTable, {
@@ -1618,11 +1673,11 @@ describe("the affordance that continues the recent-events view", () => {
     expect(more, "a short window is not a bound this surface can page from").toBe(false);
     const markup = render(
       h(
-        PagingProvider,
+        PagingProvider<BrowseRow>,
         {
           initial: initialPage<BrowseRow>(short, more, ""),
           window: thisWindow(short, view.window),
-          deps: { route: PAGE_ROUTES.browse, params: "", size: view.window },
+          deps: { route: PAGE_ROUTES.browse, params: "", size: view.window, id: eventId },
           children: null,
         },
         h(PagedBrowseTable, {
@@ -1799,7 +1854,16 @@ describe("the affordance that continues the recent-events view", () => {
       pagingHtml(
         render(
           h(PageMore, {
-            state: { rows: [], held, status: "exhausted", refusal: null, notes: null, after: "" },
+            state: {
+              rows: [],
+              held,
+              status: "exhausted",
+              refusal: null,
+              notes: null,
+              after: "",
+              drawnIds: new Set<string>(),
+              overlapped: false,
+            },
             holds: "events",
             size: view.window,
             readsAgree,
@@ -1832,7 +1896,7 @@ describe("the affordance that continues the recent-events view", () => {
     // sentence under the table about whether rows are held back (LESSONS 11).
     const script = windowScript(view.window);
     await renderBrowse(script);
-    const deps = paging.calls[0].deps as { route: string; params: string; size: number };
+    const deps = paging.calls[0].deps as Omit<PageDeps<BrowseRow>, "fetchJson">;
     const initial = paging.calls[0].initial as unknown as PageState<BrowseRow>;
     const answering = (state: PageState<BrowseRow>, answer: unknown) =>
       requestPage<BrowseRow>(state, { ...deps, fetchJson: () => Promise.resolve(answer) });
@@ -1932,7 +1996,7 @@ describe("the affordance that continues the recent-events view", () => {
     // The same state, then one press the server refuses: no row is appended
     // and no bound moves, so the line may not move either.
     paging.override = await requestPage<BrowseRow>(landed, {
-      ...(paging.calls[0].deps as { route: string; params: string; size: number }),
+      ...(paging.calls[0].deps as Omit<PageDeps<BrowseRow>, "fetchJson">),
       fetchJson: () => Promise.resolve({ kind: "error", reading: T.events, message: "refused" }),
     });
     const after = await renderBrowse(script);
@@ -1955,7 +2019,7 @@ describe("the affordance that continues the recent-events view", () => {
     // the refusal this app's route answers a bound past the ceiling with.
     const script = windowScript(view.window);
     await renderBrowse(script);
-    const deps = paging.calls[0].deps as { route: string; params: string; size: number };
+    const deps = paging.calls[0].deps as Omit<PageDeps<BrowseRow>, "fetchJson">;
     const atCeiling = initialPage<BrowseRow>(MAX_PAGE_OFFSET + view.window, true, "");
 
     // The two renders below go around `renderBrowse`, and only these two do:

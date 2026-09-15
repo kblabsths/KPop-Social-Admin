@@ -1832,6 +1832,9 @@ describe("paging past the first window, against staging", () => {
       route: PAGE_ROUTES.claims,
       params,
       size: CLAIM_WINDOW,
+      // What a row is CALLED — the app's own spelling, so this walk drives the
+      // driver's dedupe exactly as `/claims` does (admin-window/BUG-0222).
+      id: (claim: ClaimLine) => claim.observationId,
       fetchJson: viaHandler,
     };
     const bounds: (string | null)[] = [];
@@ -1863,6 +1866,9 @@ describe("paging past the first window, against staging", () => {
       route: PAGE_ROUTES.claims,
       params,
       size: CLAIM_WINDOW,
+      // What a row is CALLED — the app's own spelling, so this walk drives the
+      // driver's dedupe exactly as `/claims` does (admin-window/BUG-0222).
+      id: (claim: ClaimLine) => claim.observationId,
       fetchJson: viaHandler,
     });
     if (state.refusal !== null) {
@@ -2223,12 +2229,16 @@ describe("the same paged order, walked three times, against staging", () => {
       first.length,
       true,
       boundOf(first, (id) => id),
+      // The ids the rendered screen already drew, as the page hands them
+      // (admin-window/BUG-0222).
+      first,
     );
     while (state.status === "idle" && state.held < HEAD) {
       state = await requestPage<ClaimLine>(state, {
         route: PAGE_ROUTES.claims,
         params: "",
         size: CLAIM_WINDOW,
+        id: (claim: ClaimLine) => claim.observationId,
         fetchJson: viaHandler,
       });
       if (state.refusal !== null) {
