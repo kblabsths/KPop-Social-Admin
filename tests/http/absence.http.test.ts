@@ -521,7 +521,7 @@ describe("a database that answers but holds none of the ecosystem tables", () =>
     stub.setCountTotal(DEFAULT_COUNT_TOTAL);
   });
 
-  it.fails("publishes no minus-signed figure for a host total of \"-0\"", async () => {
+  it("publishes no minus-signed figure for a host total of \"-0\"", async () => {
     // QA (admin-window/BUG-0230, attack on admin-window/BUG-0229's landed
     // count guard): the guard asks `Number.isSafeInteger(count) && count >= 0`,
     // and BOTH are true of IEEE negative zero — `parseInt` returns `-0` for a
@@ -535,6 +535,14 @@ describe("a database that answers but holds none of the ecosystem tables", () =>
     // The bar, positively: a figure this app publishes over a count reads as
     // the count of rows it is — a non-negative integer with no sign on it —
     // whatever the host wrote after the slash.
+    //
+    // WATCHED both ways by the fixing builder, 2026-09-14, over real HTTP
+    // against a production build: with the one-line normalisation taken back
+    // out this reported the Total counts table as
+    // "standing_disagreement-0…awaiting_link-0…agreeing-0", and with it in
+    // place the same wire draws the honest zeros. The fix is `count`
+    // (`src/lib/format.ts`) settling the sign of zero where a count becomes a
+    // published figure, so `Intl` never gets to keep the minus.
     stub.setCountTotal("-0");
     stub.setMode("miscounted");
     const markup = await pageOf(`${TOTAL_FIGURES_ROUTE}?probe=minuszero&pass=0`, cookie);
