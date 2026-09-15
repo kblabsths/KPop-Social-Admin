@@ -1168,6 +1168,15 @@ function isRowSet<Row>(
  * `Number.MAX_SAFE_INTEGER`, where a total can no longer be told from its
  * neighbours. A real count is untouched — `0`, `1` and
  * `Number.MAX_SAFE_INTEGER` are all counts of rows and all pass.
+ *
+ * IEEE negative zero passes all three clauses, and SHOULD: `-0` is a count of
+ * no rows, and this guard's question is how many rows there are, not how the
+ * number was spelled on the wire. How a count of no rows is then PUBLISHED is
+ * the publishing seam's question, settled once in `count` (`src/lib/format.ts`,
+ * admin-window/BUG-0230) — `Intl` renders negative zero as `"-0"`, so that
+ * helper normalises the sign of zero for every figure this app prints. Nothing
+ * here re-asks it: a second rule about zeros in this file would be the same
+ * fact derived twice (LESSONS 11).
  */
 function isCount(count: unknown): count is number {
   return typeof count === "number" && Number.isSafeInteger(count) && count >= 0;

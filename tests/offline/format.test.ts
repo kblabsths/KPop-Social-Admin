@@ -144,9 +144,13 @@ describe("count", () => {
   it("keeps a small number and a zero as themselves", () => {
     expect(count(0)).toBe("0");
     expect(count(42)).toBe("42");
+    expect(count(1)).toBe("1");
+    // The largest count `isCount` (`src/lib/db/result.ts`) admits still reads
+    // as itself: normalising the sign of zero touches no other number.
+    expect(count(Number.MAX_SAFE_INTEGER)).toBe("9,007,199,254,740,991");
   });
 
-  it.fails("renders a zero as a zero, whatever sign the number carries", () => {
+  it("renders a zero as a zero, whatever sign the number carries", () => {
     // QA (admin-window/BUG-0230): `Intl` renders IEEE negative zero as "-0",
     // and a count reaches this helper straight off the wire — `parseInt` over
     // the total in `Content-Range` returns `-0` for a total spelled `-0` or
@@ -154,6 +158,13 @@ describe("count", () => {
     // A count of no rows reads "0"; nothing this app publishes over a count
     // carries a minus sign.
     expect(count(-0)).toBe("0");
+    // `counted` composes `count`, so the noun-bearing figure answers the same
+    // way rather than needing a rule of its own — and a quantity of nothing
+    // still takes the plural.
+    expect(counted(-0, "source")).toBe("0 sources");
+    // A count this repo computes reaches the same helper the same way:
+    // `Math.round` of a small negative is negative zero too.
+    expect(count(Math.round(-0.2))).toBe("0");
   });
 
   it("renders absence as the dash, never as zero", () => {

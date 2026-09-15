@@ -150,10 +150,32 @@ export function duration(seconds: number | null | undefined): string {
  * Thousand-separated, in a fixed locale so the same row reads the same on
  * every machine. A count that is rendered NEXT TO its noun goes through
  * `counted` below rather than being concatenated here.
+ *
+ * **The bar, positively** (admin-window/BUG-0230, LESSONS 13): a figure this
+ * app publishes over a count reads as the number of THINGS it is — so a
+ * quantity of nothing reads `0`, with no sign on it, whatever sign the number
+ * that reached here happened to carry. This is the one place the sign of zero
+ * is settled, because this is the one place a count becomes a published
+ * figure: `counted` below composes this, every surface imports one of the two,
+ * and nothing enumerates the ways a zero can arrive wearing a minus.
+ *
+ * Why the arithmetic below is needed at all: IEEE-754 has a NEGATIVE zero, it
+ * is `=== 0` and `>= 0` and a safe integer, so it passes every question a
+ * count guard can honestly ask (`isCount`, `src/lib/db/result.ts` — and it is
+ * right to pass: negative zero IS a count of no rows). `String(-0)` is `"0"`,
+ * but ECMA-402 keeps the sign, so `toLocaleString` alone published `"-0"` in
+ * every bucket row of /claims for a host whose `Content-Range` total was
+ * spelled `-0` — supabase-js reads that total with `parseInt`, which returns
+ * `-0` for `"-0"` and for any negative fraction (measured over real HTTP by
+ * QA, 2026-09-15). A count computed in this repo reaches it the same way:
+ * `Math.round(-0.2)` is `-0` too.
+ *
+ * `n === 0 ? 0 : n` is true of both zeros and yields the positive one; the
+ * literal `0` is `+0`, so nothing else about the number changes.
  */
 export function count(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return EM_DASH;
-  return n.toLocaleString("en-US");
+  return (n === 0 ? 0 : n).toLocaleString("en-US");
 }
 
 const PLURAL_RULES = new Intl.PluralRules("en-US");
