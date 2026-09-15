@@ -1138,20 +1138,39 @@ function isRowSet<Row>(
 /**
  * Is `count` a number a surface may publish?
  *
- * A count rides `Content-Range` as `<range>/<total>`, and supabase-js reaches
- * it with `parseInt` over whatever follows the slash — so a host that answers
- * 206 with a header it made up (`bytes 0-1/unknown`) hands back `count: NaN`
- * beside `error: null`. `NaN` is neither `null` nor `undefined`, so the older
- * spelling of this test passed it straight through to a page, which published
- * `data-window-held="NaN"` (QA, measured on the admin-window/BUG-0227 tree).
+ * **The bar, positively** (admin-window/BUG-0229, LESSONS 13): a count is a
+ * number of ROWS — a non-negative integer the machine can represent exactly —
+ * or it did not arrive, and an answer that did not arrive refuses through the
+ * one rule (`unreadableAnswer`) naming the object. That is the whole question,
+ * derived from what a count IS rather than from a list of header spellings, so
+ * there is no next unpublishable figure to enumerate afterwards: the three
+ * clauses below say "it is a number", "every row of it is countable one by
+ * one" and "there are no rows below zero", and nothing a host can put after
+ * the slash satisfies all three without being a count of rows.
  *
- * A count is a whole number of rows or it did not arrive: that is the positive
- * question, and `Number.isInteger` is the whole of it — it is false for `NaN`,
- * for both infinities, for a fraction, and for every non-number including
- * `null` and `undefined`.
+ * Why it has to be asked at all: a count rides `Content-Range` as
+ * `<range>/<total>`, and supabase-js reaches it with `parseInt` over whatever
+ * follows the slash, beside `error: null` — so a host answering a header it
+ * made up hands back whatever `parseInt` makes of it. The test has been
+ * narrowed twice for exactly that reason and this is the second half of the
+ * same narrowing: `count === null || count === undefined` published the `NaN`
+ * of `bytes 0-1/unknown` as `data-window-held="NaN"`; `Number.isInteger`
+ * closed `NaN`, both infinities and a fraction, but is TRUE for a negative
+ * whole number and for an integer-valued double past exact representation, so
+ * a header whose total was `-5` published `-5` in every bucket of /claims and
+ * one whose total was `1e20` published
+ * `100,000,000,000,000,000,000` (QA, measured over real HTTP on the
+ * admin-window/BUG-0227 and admin-window/BUG-0228 trees).
+ *
+ * `Number.isSafeInteger` is the exactness half: it is false for `NaN`, for
+ * both infinities, for a fraction, for every non-number including `null` and
+ * `undefined`, and for every integer-valued double beyond
+ * `Number.MAX_SAFE_INTEGER`, where a total can no longer be told from its
+ * neighbours. A real count is untouched — `0`, `1` and
+ * `Number.MAX_SAFE_INTEGER` are all counts of rows and all pass.
  */
 function isCount(count: unknown): count is number {
-  return Number.isInteger(count);
+  return typeof count === "number" && Number.isSafeInteger(count) && count >= 0;
 }
 
 /**
@@ -1428,9 +1447,12 @@ export async function readCount(
     // count beside a missing error is an answer this app cannot grade: it
     // refuses through the one rule, in the same words `readComplete` and
     // `readRows` refuse in (admin-window/BUG-0224).
-    // A whole number of rows, or it did not arrive: `isCount` also refuses the
-    // `NaN` a 206 with an unparseable `Content-Range` produces, which the
-    // null test let through to a page as a published figure.
+    // A number of ROWS — a non-negative integer the machine represents
+    // exactly — or it did not arrive: `isCount` carries that whole question,
+    // including the `NaN` of an unparseable `Content-Range` and the negative
+    // or unrepresentable total of a made-up one, each of which the narrower
+    // tests before it let through to a page as a published figure
+    // (admin-window/BUG-0229).
     if (!isCount(count)) return unreadableAnswer(missing);
     return { kind: "ok", data: count };
   } catch (thrown) {

@@ -97,7 +97,25 @@ export type StubMode =
    * The bar is the same one `foreign` is held to: whatever a host answers,
    * every surface ANSWERS — a refusal naming the object, never a 500.
    */
-  | "alien";
+  | "alien"
+  /**
+   * The table is THERE, it answers `200 []` — and the total after the slash in
+   * `Content-Range` is **not a number of rows** (QA, admin-window/BUG-0229
+   * attack): a negative one, or one past what the machine represents exactly.
+   *
+   * supabase-js reaches the count with `parseInt` over whatever follows the
+   * slash, so a host answering a header it made up hands back `count: -5` (or
+   * `1e20`) beside `error: null`. Measured over real HTTP against a production
+   * build 2026-09-15: with a total of `-5` the Total counts table on /claims
+   * published `-5` in every bucket beside state cards reading `empty`, and
+   * with `99999999999999999999` it published
+   * `100,000,000,000,000,000,000`.
+   *
+   * The body is a REAL row set (`[]`), which is the point: the rows arrived
+   * and only the count did not, so nothing but the count guard can refuse it.
+   * Set the total with `setCountTotal`.
+   */
+  | "miscounted";
 
 export interface PostgrestStub {
   /** `http://127.0.0.1:<port>` — what `SUPABASE_URL` is set to. */
@@ -115,6 +133,16 @@ export interface PostgrestStub {
    * rather than six modes.
    */
   setAlienBody(body: string): void;
+  /**
+   * The total the `miscounted` mode puts after the slash in `Content-Range`,
+   * verbatim — it is a HEADER, so it is a string and may be anything a host
+   * can write there (`-5`, `99999999999999999999`).
+   *
+   * One knob rather than a mode per spelling, for the reason `setAlienBody` is
+   * one: they are one host answer — "the total is not a number of rows" — held
+   * to one bar.
+   */
+  setCountTotal(total: string): void;
   /** Every request the app made, as `METHOD /path?query`. */
   readonly requests: string[];
   close(): Promise<void>;
@@ -136,11 +164,21 @@ function tableOf(pathname: string): string {
  */
 export const DEFAULT_ALIEN_BODY = JSON.stringify([{ message: "no upstream" }]);
 
+/** The `miscounted` mode's total unless a test sets another one. */
+export const DEFAULT_COUNT_TOTAL = "-5";
+
 function bodyFor(
   mode: StubMode,
   table: string,
   alienBody: string,
+  countTotal: string,
 ): { status: number; body: string; headers?: Record<string, string> } {
+  if (mode === "miscounted") {
+    // A real, empty row set — and a total no count of rows could be. Only the
+    // count guard (`isCount`, `src/lib/db/result.ts`) stands between this
+    // header and a published figure.
+    return { status: 200, body: "[]", headers: { "content-range": `*/${countTotal}` } };
+  }
   if (mode === "alien") {
     // An array, so `Array.isArray` passed it — of things that are not rows of
     // this table, so the render threw on the first column it read.
@@ -202,12 +240,18 @@ export async function startPostgrestStub(
 ): Promise<PostgrestStub> {
   let mode: StubMode = initialMode;
   let alienBody = DEFAULT_ALIEN_BODY;
+  let countTotal = DEFAULT_COUNT_TOTAL;
   const requests: string[] = [];
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     requests.push(`${req.method} ${req.url}`);
-    const { status, body, headers } = bodyFor(mode, tableOf(url.pathname), alienBody);
+    const { status, body, headers } = bodyFor(
+      mode,
+      tableOf(url.pathname),
+      alienBody,
+      countTotal,
+    );
     // `content-length` counts the document either way; a HEAD sends none of
     // it. That asymmetry IS the bug's mechanism — do not "simplify" it.
     res.writeHead(status, {
@@ -228,6 +272,9 @@ export async function startPostgrestStub(
     },
     setAlienBody(next: string) {
       alienBody = next;
+    },
+    setCountTotal(next: string) {
+      countTotal = next;
     },
     requests,
     close: () =>
