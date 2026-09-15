@@ -27,6 +27,7 @@ import {
 } from "@/lib/paging/machine";
 import { ROW_CAP } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
+import { functionPaths } from "../../fixtures/client-props";
 import {
   implicitInterElementSpaces,
   implicitInterElementSpacesIn,
@@ -6466,6 +6467,32 @@ describe("the affordance that continues the claim list", () => {
     expect(initial.status).toBe("idle");
     expect(deps.route).toBe(PAGE_ROUTES.claims);
     expect(deps.size).toBe(CLAIM_WINDOW);
+  });
+
+  // PINNED RED, deliberately — admin-window/BUG-0226, QA off admin-window/BUG-0222.
+  //
+  // `PagingProvider` is a `"use client"` component and this page is a SERVER
+  // one, so every prop it writes here is serialized into the flight payload by
+  // the real server. A FUNCTION is the one shape that cannot be: Next answers
+  // the whole page 500 — "Functions cannot be passed directly to Client
+  // Components" — and the operator gets no page at all. MEASURED on a
+  // production build of this tree, 2026-09-14: GET /claims -> 500, GET /browse
+  // -> 500, the server log naming `{route: ..., params: "", size: 50, id:
+  // function Z}`.
+  //
+  // Nothing else in this repo can see it: `renderToStaticMarkup` has no client
+  // boundary, `tsc` sees a well-typed function, lint sees a property and
+  // `npm run build` compiles it. So the grade is on the VALUE the page handed
+  // across, which this file already records.
+  //
+  // `it.fails` is this runner's strict xfail: the day the surface hands the
+  // driver its id by data instead of by a function, this case XPASSes, the
+  // suite turns red, and whoever reads it is sent to the ticket — flip the
+  // marker to `it` with the fix.
+  it.fails("hands the client provider DATA only, so the server can serialize it", async () => {
+    await renderClaims(pagedScript(130));
+    const { initial, deps } = paging.calls[0];
+    expect(functionPaths({ initial, deps })).toEqual([]);
   });
 
   it("names the claim its first screen ENDS at, so pages cannot outlive the screen they continue", async () => {

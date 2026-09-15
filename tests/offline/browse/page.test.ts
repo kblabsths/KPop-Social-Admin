@@ -31,6 +31,7 @@ import { BrowseTable } from "@/components/browse/browse-table";
 import { PagedBrowseTable } from "@/components/browse/paged-browse-table";
 import { PageMore, PagingProvider } from "@/components/ui/paging";
 import type { DrawnWindow } from "@/components/ui/window-line";
+import { functionPaths } from "../../fixtures/client-props";
 import { codeLinesIn, sourceText } from "../source-tree";
 import { h, render, textOf } from "../ui/markup";
 import {
@@ -1262,6 +1263,20 @@ describe("the affordance that continues the recent-events view", () => {
     expect(initial.notes).toBeNull();
     expect(deps.route).toBe(PAGE_ROUTES.browse);
     expect(deps.size).toBe(view.window);
+  });
+
+  // PINNED RED, deliberately — admin-window/BUG-0226, QA off admin-window/BUG-0222.
+  // The same 500 `/claims` answers, on this surface's own props: `PagingProvider`
+  // is a `"use client"` component, this page is a SERVER one, and a function
+  // prop cannot be serialized into the flight payload — Next answers the whole
+  // page 500 and the operator gets no page at all. MEASURED on a production
+  // build of this tree, 2026-09-14: GET /browse -> 500, GET /claims -> 500.
+  // Flip the marker to `it` with the fix; see the twin in
+  // `tests/offline/claims/page.test.ts` for why no other tier sees it.
+  it.fails("hands the client provider DATA only, so the server can serialize it", async () => {
+    await renderBrowse(windowScript(view.window));
+    const { initial, deps } = paging.calls[0];
+    expect(functionPaths({ initial, deps })).toEqual([]);
   });
 
   it("names the event its first screen ENDS at, so pages cannot outlive the screen they continue", async () => {
