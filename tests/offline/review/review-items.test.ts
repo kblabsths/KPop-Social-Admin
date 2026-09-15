@@ -226,7 +226,11 @@ describe("listReviewItems", () => {
   });
 
   it("returns an empty ok for an empty table, never a null", async () => {
-    const stub = stubClient({ [T.reviewItems]: { data: null, count: 0 } });
+    // `[]` and a count of 0 is what PostgREST answers a complete read of an
+    // empty table with. A response carrying NO array is a different fact and
+    // is refused, not emptied (admin-window/BUG-0224, pinned in
+    // `tests/offline/db/result.test.ts`).
+    const stub = stubClient({ [T.reviewItems]: { data: [], count: 0 } });
     expect(await listReviewItems({}, stub.asSupabaseClient())).toEqual({
       kind: "ok",
       data: [],

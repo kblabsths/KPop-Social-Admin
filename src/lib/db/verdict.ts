@@ -236,10 +236,12 @@ export async function settleReviewItem(
  *   - `.select("*", { head: true, count: "exact" })` answers **`error === null`,
  *     `count === null`, status 204** — supabase-js parses its error out of the
  *     response BODY and a HEAD response has none (the raw request is a 404 with
- *     zero bytes). Through `readCount` that is `kind: "error"` ("the query
- *     returned no count"), so the graded-first normal case would render the
- *     WRONG card, and no offline stub could show it (LESSONS 4; the same
- *     body-less-HEAD fact is admin-window/TASK-0032 and ARCHITECTURE.md §10).
+ *     zero bytes). Through `readCount` that is `kind: "error"` — an answer the
+ *     app cannot grade, which since admin-window/BUG-0224 refuses in the app's
+ *     own voice naming the object rather than in a sentence about our own call
+ *     arguments — so the graded-first normal case would render the WRONG card,
+ *     and no offline stub could show it (LESSONS 4; the same body-less-HEAD
+ *     fact is admin-window/TASK-0032 and ARCHITECTURE.md §10).
  *   - `.select("*").limit(0)` answers **`PGRST205`** with the full body — which
  *     `classify` turns into `not_provisioned` naming `verdicts` — and, against
  *     a table that IS there, **200 with zero rows** (`groups`, same probe).

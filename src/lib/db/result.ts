@@ -950,6 +950,73 @@ export function classify(
 }
 
 /**
+ * THE ONE RULE for an answer this app cannot grade — campaign
+ * admin-window/BUG-0224, and the only place any read spells it.
+ *
+ * **The property, stated positively:** a read whose answer this app cannot
+ * classify is a REFUSAL naming the object it asked about. Never a zero, never
+ * an empty card, and never a sentence about this app's own call arguments. An
+ * empty card is a positive claim about the population — "there is nothing
+ * here" — and a read that never happened has no standing to make it.
+ *
+ * **When an answer cannot be graded.** The client reported NO failure, and the
+ * response carried NONE of what the read asked for: no rows for a row-set
+ * read, no count for a count read. PostgREST cannot answer either of those
+ * that way — a row-set read is answered with a JSON array, empty when the set
+ * is, and a `{ count: "exact" }` read carries its total in `Content-Range`. So
+ * a missing payload beside a missing error is not a database fact at all; it
+ * is an answer from something that is not this database.
+ *
+ * **The shape that produces it, measured** (QA, admin-window/BUG-0210 residual,
+ * 2026-09-11; reproduced over HTTP by `tests/http/postgrest-stub.ts`'s `blank`
+ * mode): a host answering **404 with zero bytes** — a wrong `SUPABASE_URL`, or
+ * a proxy/gateway answering in front of the service. supabase-js parses its
+ * error out of the BODY, finds none, and rewrites the whole response to
+ * `status 204, error: null, data: null, count: null`
+ * (`node_modules/@supabase/postgrest-js/dist/index.mjs`, the
+ * `res.status === 404 && body === ""` arm). Nothing reaches `classify`: no
+ * code, no message, no rows, no count. It is the same blindness the HEAD count
+ * had (BUG-0210), arriving from the HOST rather than from the request shape —
+ * which is why no request shape could have fixed it.
+ *
+ * **Why this and not a status test.** The question asked here is about the
+ * ANSWER a read needed, not about the number the client happened to stamp on
+ * it: a library that renumbered its rewrite would walk straight through a
+ * `status === 204` test, while "the rows never arrived" stays true however the
+ * response is labelled (LESSONS 4 — canonicalise the question, never enumerate
+ * the spellings).
+ *
+ * **Which reads it applies to, and which it must NOT.** Row-set reads
+ * (`readRows`), count reads (`readCount`) and complete reads (`readComplete`,
+ * both legs) — for those three, `null` is not an answer PostgREST can give.
+ * `readOne` and `callFunction` are deliberately outside it: a `.maybeSingle()`
+ * over no rows really does hand back `data: null`, and a procedure returning
+ * void really does answer with no body, so the same test there would turn two
+ * true answers into refusals. Widening this to them needs a different
+ * question, not this one.
+ *
+ * The words are THIS APP's — one `"this app"` segment, like every other
+ * account this app writes about a read it could not grade
+ * (admin-window/BUG-0200 criterion 4) — and they describe what arrived and
+ * what an operator can do about it. They name no argument of any call site in
+ * this repo: the diagnostic value of the old no-count sentence lived in this
+ * doc comment all along, which is where a developer reads it, and the markup
+ * is not that place (BUG-0224 criterion 2).
+ */
+function unreadableAnswer(missing: string): DbResult<never> {
+  const authored: AccountSegment[] = [
+    {
+      words:
+        `the read came back carrying neither an answer nor a failure, so ` +
+        `nothing it asked for is known; the address this deployment reads may ` +
+        `be answering for something other than this database.`,
+      author: "this app",
+    },
+  ];
+  return { kind: "error", reading: missing, message: accountText(authored), authored };
+}
+
+/**
  * Run one PostgREST query and classify whatever comes back.
  *
  * The client is resolved INSIDE the try, so an unset credential name — which
@@ -973,7 +1040,17 @@ async function runQuery<T>(
   }
 }
 
-/** A row-set read. `ok` always carries an array — an empty one when there are no rows. */
+/**
+ * A row-set read. `ok` always carries an array — an empty one when there are
+ * no rows, which is a real answer and renders the surface's empty card.
+ *
+ * NO ARRAY AT ALL is not that answer: PostgREST sends `[]` for a matching set
+ * of zero, so a null row set beside a null error is an answer this app cannot
+ * grade and refuses through the one rule (`unreadableAnswer`,
+ * admin-window/BUG-0224). This used to substitute `[]` for it, which is how a
+ * host answering 404 with zero bytes put "No claims waiting" on `/claims` over
+ * a read that failed.
+ */
 export async function readRows<Row>(
   missing: string,
   run: (db: SupabaseClient) => PromiseLike<DbResponse<Row[]>>,
@@ -981,7 +1058,8 @@ export async function readRows<Row>(
 ): Promise<DbResult<Row[]>> {
   const result = await runQuery<Row[]>(missing, run, db);
   if (result.kind !== "ok") return result;
-  return { kind: "ok", data: result.data ?? [] };
+  if (result.data === null) return unreadableAnswer(missing);
+  return { kind: "ok", data: result.data };
 }
 
 /**
@@ -997,9 +1075,10 @@ export async function readRows<Row>(
  * In order:
  *  - a database error classifies exactly as `readRows` does, so an absent
  *    table still reads as `not_provisioned`;
- *  - `count === null` with no error is a refusal, never a number of our own:
- *    the query was written without `{ count: "exact" }` and we cannot know how
- *    many rows matched (BUG-0007's rule on the user-visible path);
+ *  - a missing row set or a missing count, with no error, is a refusal in the
+ *    app's own voice naming the object — `unreadableAnswer`, the one rule for
+ *    an answer this app cannot grade (BUG-0007's rule on the user-visible
+ *    path, narrowed to that rule by admin-window/BUG-0224);
  *  - `count > rows.length` means SOMETHING truncated the set — our cap, or the
  *    server's `db-max-rows`, which our cap alone cannot detect — so the read
  *    refuses with the real number rather than returning a partial array;
@@ -1019,25 +1098,16 @@ export async function readComplete<Row>(
     const { data, error, count } = await run(client, ROW_CAP);
     if (error !== null && error !== undefined) return classify(error, missing);
 
-    const rows = data ?? [];
-    if (count === null || count === undefined) {
-      // Every word of this account is this app's own prose about a read it
-      // could not grade, so it is ONE `"this app"` segment — the interpolated
-      // figure included (admin-window/BUG-0200 criterion 4: a value this app
-      // puts inside its own sentence does not split the run, because the
-      // vocabulary answers who wrote the WORDS and a run boundary that turned
-      // on a value's shape would move a face when a number changed).
-      const authored: AccountSegment[] = [
-        {
-          words:
-            `the read returned no count, so whether these ${rows.length} rows ` +
-            `are all of them is unknown; a complete read requires ` +
-            `{ count: "exact" }.`,
-          author: "this app",
-        },
-      ];
-      return { kind: "error", reading: missing, message: accountText(authored), authored };
+    // BOTH legs of a complete read are payloads PostgREST cannot withhold: the
+    // rows arrive as a JSON array (empty when the set is) and the exact count
+    // arrives in `Content-Range`. Either one missing beside a missing error is
+    // an answer this app cannot grade, and it refuses through the one rule
+    // (admin-window/BUG-0224). This arm used to be a sentence about this app's
+    // own call arguments, rendered at an operator.
+    if (data === null || count === null || count === undefined) {
+      return unreadableAnswer(missing);
     }
+    const rows = data;
     if (count > rows.length) {
       // One `"this app"` segment for the same reason: `count`, `ROW_CAP` and
       // `rows.length` are figures this app interpolated into a sentence it
@@ -1153,19 +1223,22 @@ export function countRead(db: SupabaseClient, object: string) {
  * refusal, never a zero.
  *
  * This used to substitute a zero for an absent count (BUG-0007's user-visible
- * twin), so a response with `error: null` and `count: null` — exactly what a
- * select written WITHOUT `{ count: "exact" }` returns — rendered a
- * confident `0` for a table holding 47 rows. A real zero still comes back as `ok` 0; only the
- * absent count refuses (ARCHITECTURE.md §4.3, campaign
+ * twin), so a response with `error: null` and `count: null` rendered a
+ * confident `0` for a table holding 47 rows. A real zero still comes back as
+ * `ok` 0; only the absent count refuses (ARCHITECTURE.md §4.3, campaign
  * admin-window/TASK-0026). It still never throws (§4.1).
  *
- * **The no-count arm below is this app talking to its own developer, so no
- * read this app SHIPS may reach it** (admin-window/BUG-0210). It is reachable
- * only by a count query written without `{ count: "exact" }` — which
- * `countRead` makes unspellable — and it is kept, rather than softened into an
- * absence, because a count nobody asked for is a defect in this repo and not a
- * fact about the database. What used to reach it was the HEAD-shaped count's
- * invisible 404; that now classifies as the absence it is.
+ * **What the no-count arm is, and what it is NOT** (admin-window/BUG-0224).
+ * It used to be this app's note to its own developer — "a count read requires
+ * `{ count: "exact" }`" — on the premise that a query written without the
+ * option was the only way to reach it, which `countRead` makes unspellable.
+ * The premise was false: a HOST answering 404 with zero bytes reaches it too,
+ * because supabase-js rewrites that answer to `error: null, count: null`, and
+ * the sentence an operator then read described a call site in this repo. The
+ * arm is now the one rule for an answer this app cannot grade
+ * (`unreadableAnswer`), which is what both of the other two kinds of read
+ * refuse with. It is still not softened into an absence: nothing here
+ * classifies as `not_provisioned` without an absence code from the database.
  */
 export async function readCount(
   missing: string,
@@ -1176,19 +1249,11 @@ export async function readCount(
     const client = db ?? getDbClient();
     const { count, error } = await run(client);
     if (error !== null && error !== undefined) return classify(error, missing);
-    if (count === null || count === undefined) {
-      // This app's own prose about a count that did not come back: one
-      // `"this app"` segment (admin-window/BUG-0200 criterion 4).
-      const authored: AccountSegment[] = [
-        {
-          words:
-            `the query returned no count, so the number of rows is unknown; a ` +
-            `count read requires { count: "exact" }.`,
-          author: "this app",
-        },
-      ];
-      return { kind: "error", reading: missing, message: accountText(authored), authored };
-    }
+    // A `{ count: "exact" }` read's total rides `Content-Range`, so a missing
+    // count beside a missing error is an answer this app cannot grade: it
+    // refuses through the one rule, in the same words `readComplete` and
+    // `readRows` refuse in (admin-window/BUG-0224).
+    if (count === null || count === undefined) return unreadableAnswer(missing);
     return { kind: "ok", data: count };
   } catch (thrown) {
     return classify(thrown, missing);
