@@ -33,6 +33,8 @@ import {
   initialPage,
   pageUrl,
   requestPage,
+  type PageDeps,
+  type RowIdKey,
   type PageRefusal,
   type PageState,
   type ReasonAuthor,
@@ -66,11 +68,12 @@ type Row = { id: string };
 /**
  * WHAT A ROW IS CALLED, for the driver's dedupe — admin-window/BUG-0222.
  *
- * Every surface hands its own (`deps.id`); these fixtures key their rows by
- * `id`, so this is theirs, spelled once rather than retyped into each deps
- * literal below.
+ * Every surface hands its own (`deps.idKey`, a NAME rather than a reader since
+ * admin-window/BUG-0226 — a function prop cannot cross the client boundary);
+ * these fixtures key their rows by `id`, so this is theirs, spelled once
+ * rather than retyped into each deps literal below.
  */
-const rowId = (row: Row): string => row.id;
+const ROW_ID: RowIdKey<Row> = "id";
 
 const HOLDS = "claims";
 const SIZE = 50;
@@ -611,7 +614,7 @@ describe("a page answer for an object this database does not have", () => {
         route: PAGE_ROUTES.claims,
         params: "",
         size: SIZE,
-        id: rowId,
+        idKey: ROW_ID,
         fetchJson: async () => ({ kind: "refused", reason: "", bound: "75" }),
       },
     );
@@ -836,7 +839,7 @@ describe("the affordance's look", () => {
 
 describe("fetchJson — the one request, and what it may reject with", () => {
   const URL_ASKED = pageUrl(
-    { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson },
+    { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
     SIZE,
   );
 
@@ -883,7 +886,7 @@ describe("fetchJson — the one request, and what it may reject with", () => {
     stub(() => Response.json(answer, { status: 400 }));
     const next = await requestPage<Row>(
       state({ rows: [{ id: "a" }], drawnIds: new Set(["a"]) }),
-      { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson },
+      { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
     );
     expect(broken(next.refusal).reason).toBe(answer.reason);
     expect(next.rows.map((row) => row.id)).toEqual(["a"]);
@@ -918,7 +921,7 @@ describe("fetchJson — the one request, and what it may reject with", () => {
       // The driver renders whatever this rejects with; it must be readable.
       const next = await requestPage<Row>(
         state(),
-        { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson },
+        { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
       );
       expect(broken(next.refusal).reason, name).toBe(said);
     }
@@ -948,7 +951,7 @@ describe("fetchJson — the one request, and what it may reject with", () => {
  */
 describe("fetchJson asks what ANSWERED before it reads the body", () => {
   const URL_ASKED = pageUrl(
-    { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson },
+    { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
     SIZE,
   );
 
@@ -1018,7 +1021,7 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
       answeredWith(body, init);
       const next = await requestPage<Row>(
         state({ rows: [{ id: "a" }], drawnIds: new Set(["a"]) }),
-        { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson },
+        { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
       );
       expect(broken(next.refusal).reason, name).toBe(ANSWERED_BY_SOMETHING_ELSE);
       expect(broken(next.refusal).object, name).toBe(PAGE_ROUTES.claims);
@@ -1037,7 +1040,7 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
     answeredWith(body, init);
     const next = await requestPage<Row>(
       state(),
-      { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson },
+      { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
     );
     const shown = readable(
       render(h(PageMore, {
@@ -1074,7 +1077,7 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
     });
     const next = await requestPage<Row>(
       state({ rows: [{ id: "a" }], drawnIds: new Set(["a"]) }),
-      { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson },
+      { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
     );
     expect(broken(next.refusal).reason).toBe(UNREADABLE_ANSWER);
     expect(broken(next.refusal).object).toBe(PAGE_ROUTES.claims);
@@ -1190,7 +1193,7 @@ describe("usePageRows binds the driver to a press", () => {
           route: PAGE_ROUTES.claims,
           params,
           size: SIZE,
-          id: rowId,
+          idKey: ROW_ID,
         });
         captured.press = bound.press;
         return h(PageMore, {
@@ -1365,7 +1368,7 @@ describe("usePageRows binds the driver to a press", () => {
             route: PAGE_ROUTES.claims,
             params: "",
             size: windowSize,
-            id: rowId,
+            idKey: ROW_ID,
           });
           captured.press = bound.press;
           // …and the widget is fed from the hook, never retyped beside it.
@@ -1464,7 +1467,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
         {
           initial: state,
           window,
-          deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE, id: rowId },
+          deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE, idKey: ROW_ID },
           children: null,
         },
         h(PagedWindowLine, { gauge: "events", shows: CATALOG }),
@@ -1490,7 +1493,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
         {
           initial: state,
           window,
-          deps: { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId },
+          deps: { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID },
           children: null,
         },
         h(function Body() {
@@ -1590,7 +1593,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
         {
           initial: initialPage<Row>(SIZE, true, ""),
           window: WINDOW,
-          deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE, id: rowId },
+          deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE, idKey: ROW_ID },
           children: null,
         },
         child,
@@ -1905,7 +1908,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
           {
             initial: initialPage<Row>(CEILING, true, ""),
             window,
-            deps: { route, params: "", size: SIZE, id: rowId },
+            deps: { route, params: "", size: SIZE, idKey: ROW_ID },
             children: null,
           },
           body,
@@ -2210,7 +2213,7 @@ describe("a page that arrives short of the window", () => {
         route: PAGE_ROUTES.claims,
         params: "",
         size: SIZE,
-        id: rowId,
+        idKey: ROW_ID,
         fetchJson: async () => answer,
       },
     );
@@ -2286,7 +2289,13 @@ describe("the refusal line says who wrote the words", () => {
   });
 
   const AS_JSON = { status: 200, headers: { "content-type": "application/json" } };
-  const DEPS = { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson };
+  const DEPS: PageDeps<Row> = {
+    route: PAGE_ROUTES.claims,
+    params: "",
+    size: SIZE,
+    idKey: ROW_ID,
+    fetchJson,
+  };
   const BEFORE: PageState<Row> = {
     rows: [{ id: "a" }],
     held: SIZE,

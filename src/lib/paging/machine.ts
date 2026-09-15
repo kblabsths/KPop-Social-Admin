@@ -234,8 +234,8 @@ export interface PageState<Row> {
    * disagree with its own count. So the state carries what it has drawn, and
    * `requestPage` appends only what it does not already hold.
    *
-   * It is the ids the SURFACE draws its rows under — `deps.id`, the same field
-   * the list keys by — so the set and the React keys can never be two
+   * It is the ids the SURFACE draws its rows under — `deps.idKey`, the same
+   * field the list keys by — so the set and the React keys can never be two
    * different facts (LESSONS 11). It is NOT the bound: `held` is the ROUTE's
    * own row count and moves by it, whatever this set drops (rule 2 of the
    * ticket's contract, §4.3 kind 3 rule 4 — two facts, each stated by whoever
@@ -374,6 +374,69 @@ export function initialPage<Row>(
 }
 
 /**
+ * WHICH FIELDS OF A ROW MAY NAME IT — every key of `Row` whose value is a
+ * `string`, and no other (admin-window/BUG-0226).
+ *
+ * The id a surface draws its rows under crosses a CLIENT BOUNDARY, so it is
+ * carried as this — a NAME — and never as a function: a server page writes
+ * `deps` as props on a `"use client"` element, React serializes every one of
+ * them into the flight payload, and a function is the one shape that is not
+ * data. It answered HTTP 500 on both paged surfaces, with no markup at all
+ * (measured on a production build 2026-09-14; `tests/fixtures/client-props.ts`
+ * is the offline tier's reading of the same fact).
+ *
+ * Typed rather than a bare `string` so `tsc` still grades the choice: a key
+ * this surface's row does not hold, or holds as something other than a string,
+ * is a compile error at the page — which is the check the function shape used
+ * to give and nothing else here would.
+ */
+export type RowIdKey<Row> = {
+  [K in keyof Row]-?: Row[K] extends string ? K : never;
+}[keyof Row] &
+  string;
+
+/**
+ * WHAT ONE ROW IS CALLED, read from a row that may be ANYTHING — the total
+ * reading of `RowIdKey` (admin-window/BUG-0226).
+ *
+ * A `Row` is a promise about what this app's own route serves, not about what
+ * arrived: the rows `requestPage` appends came off a wire, and `isPageAnswer`
+ * grades the ENVELOPE rather than each row in it. So this reads defensively
+ * and **never throws** — a null row, a row that is not an object at all, a
+ * missing field and a field holding a number all answer `""`, the same answer
+ * a blank id gives.
+ *
+ * That matters beyond tidiness: the append arm below used to call a caller's
+ * accessor directly, so `rows: [null]` raised a `TypeError` out of
+ * `requestPage` — breaking this module's own "nothing here throws" promise —
+ * and `usePageRows` (`src/components/ui/paging.tsx`), which awaits it with no
+ * catch, left the surface `loading` for ever: the control inert, no refusal
+ * line, nothing to press again. An id this app cannot read identifies no row;
+ * it is not a reason to take the surface down.
+ */
+export function readId(row: unknown, key: string): string {
+  if (row === null || typeof row !== "object") return "";
+  const named = (row as Record<string, unknown>)[key];
+  return typeof named === "string" ? named : "";
+}
+
+/**
+ * THE SERVER-SIDE READER OF THAT NAME — `readId` bound to one key, for the
+ * places a page needs a function over its OWN rows (admin-window/BUG-0226).
+ *
+ * `boundOf` and `initialPage`'s seed are computed by the page, on the server,
+ * out of rows it just read: their results (a string, a list of strings) are
+ * data and cross the boundary happily. What must not cross is the reader
+ * itself — so a surface spells its id field ONCE, as a `RowIdKey`, hands THAT
+ * to `deps`, and derives this from the same constant. One fact, one
+ * derivation (LESSONS 11): the bound, the seeded ids, the dedupe and the
+ * list's React keys cannot drift onto two different fields.
+ */
+export function idAt<Row>(key: RowIdKey<Row>): (row: Row) => string {
+  return (row: Row): string => readId(row, key);
+}
+
+/**
  * THE BOUND A FIRST SCREEN ENDS AT — the `after` every paged surface hands
  * `initialPage` (admin-window/BUG-0216).
  *
@@ -447,9 +510,10 @@ export interface PageDeps<Row> {
    */
   readonly size: number;
   /**
-   * THE ID A ROW IS DRAWN UNDER — the same field the surface keys its list by
-   * and the same one it derived `after` and `initialPage`'s seed from
-   * (admin-window/BUG-0222).
+   * THE NAME OF THE FIELD A ROW IS DRAWN UNDER — the same field the surface
+   * keys its list by and the same one it derived `after` and `initialPage`'s
+   * seed from (admin-window/BUG-0222), carried as a NAME rather than as a
+   * reader (admin-window/BUG-0226).
    *
    * One spelling per surface, handed in rather than guessed: this module knows
    * nothing about a `Row` and must not invent a key for it. Reading a
@@ -457,11 +521,21 @@ export interface PageDeps<Row> {
    * screens by something the operator is not looking at — the very trap
    * `boundOf`'s docstring names for the bound.
    *
+   * **It is a `RowIdKey` and not a `(row) => string` because these deps CROSS
+   * A CLIENT BOUNDARY.** Every field of this interface except `fetchJson` —
+   * which the client hook supplies and no page ever writes — is a prop a
+   * server page hands `PagingProvider`, a `"use client"` component, and React
+   * serializes each of them into the flight payload. A function cannot be
+   * serialized: both paged pages answered HTTP 500 with no markup at all until
+   * this became a name (measured on a production build 2026-09-14). A page
+   * that needs a reader over its own rows builds one with `idAt` from this
+   * very constant, server-side, where a function is free.
+   *
    * Required, with no default: a surface that has not said what its rows are
    * called cannot be told it drew one twice, and that silence is the defect
    * (LESSONS 8).
    */
-  readonly id: (row: Row) => string;
+  readonly idKey: RowIdKey<Row>;
   /** One request, already parsed. It may reject; a refusal is the answer. */
   readonly fetchJson: (url: string) => Promise<unknown>;
 }
@@ -916,15 +990,21 @@ export async function requestPage<Row>(
       // holds. Each appended row joins the set as it goes, so a page carrying
       // the same id twice is caught by the same one rule.
       //
-      // A row whose id is ABSENT is appended and recorded nowhere: an absent
-      // id identifies no row, and collapsing every blank-keyed row into one
-      // would drop rows that are genuinely distinct — dropping data to satisfy
-      // a guard is the worse defect. The question is the app's one definition
-      // of blank (`isAbsentText`), never a fresh `trim()` (LESSONS 4).
+      // A row whose id is ABSENT — blank, or a field this app cannot read as
+      // a string at all — is appended and recorded nowhere: an unnamed row
+      // identifies no row, and collapsing every blank-keyed row into one would
+      // drop rows that are genuinely distinct — dropping data to satisfy a
+      // guard is the worse defect. The question is the app's one definition of
+      // blank (`isAbsentText`), never a fresh `trim()` (LESSONS 4).
       const drawnIds = new Set(state.drawnIds);
       const fresh: Row[] = [];
       for (const row of answer.rows) {
-        const id = deps.id(row);
+        // Through `readId`, which is TOTAL: these rows came off a wire and
+        // `isPageAnswer` graded the envelope, not each row in it, so a null
+        // row or a row holding no such field must answer "this app cannot name
+        // it" rather than raise out of a module whose header promises nothing
+        // here throws (admin-window/BUG-0226).
+        const id = readId(row, deps.idKey);
         if (isAbsentText(id)) {
           fresh.push(row);
           continue;

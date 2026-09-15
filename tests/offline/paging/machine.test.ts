@@ -56,7 +56,7 @@ function recorder(reply: (url: string) => unknown): {
     // What a row is CALLED, so a page carrying a row the state already drew is
     // recognised as one (admin-window/BUG-0222). It is the field these
     // fixtures key their rows by, like a surface's own.
-    id: (row: Row) => row.id,
+    idKey: "id",
     fetchJson: async (url: string) => {
       urls.push(url);
       return reply(url);
@@ -409,6 +409,59 @@ describe("one drawn list never holds one id twice", () => {
     const { deps } = answering(page(SIZE, false, "", " "));
     const held = await requestPage<Row>(before.state, deps);
     expect(held.rows.map((row) => row.id)).toEqual(["", " "]);
+    expect(held.overlapped).toBe(false);
+  });
+
+  it("never throws on a row it cannot NAME, and appends it rather than dropping it", async () => {
+    // admin-window/BUG-0226 (QA's second finding off admin-window/BUG-0222).
+    // `Row` is a promise about what this app's own route serves, not about
+    // what ARRIVED: `isPageAnswer` grades the envelope, not each row inside
+    // it. While the id was read by calling a caller's accessor, every shape
+    // below raised a `TypeError` out of `requestPage` — against this module's
+    // own "nothing here throws" header — and `usePageRows` awaits it with no
+    // catch, so the surface stayed `loading` for ever: control inert, no
+    // refusal line, nothing left to press.
+    //
+    // The answer is the one the blank-id case above already gives: a row this
+    // app cannot name identifies no row, so it is appended and recorded
+    // nowhere. Dropping it would lose data to a guard; refusing the page would
+    // hide rows the route really served.
+    const unnameable: unknown[] = [null, undefined, 42, "a bare string", {}, { id: null }, { id: 7 }];
+    for (const row of unnameable) {
+      const before = screen("a", "b");
+      const { deps } = answering({
+        kind: "ok",
+        rows: [row, { id: "c" }],
+        offset: SIZE,
+        exhausted: false,
+      });
+      const held = await requestPage<Row>(before.state, deps);
+      expect(held.refusal, JSON.stringify(row ?? null)).toBeNull();
+      expect(held.status).toBe("idle");
+      // Both rows landed — the one it could name and the one it could not.
+      expect(held.rows).toHaveLength(2);
+      expect(held.rows[1].id).toBe("c");
+      // The bound still moved by the ROUTE's count, and an unnameable row is
+      // no evidence that the list moved under the operator.
+      expect(held.held).toBe(SIZE * 2);
+      expect(held.overlapped).toBe(false);
+    }
+  });
+
+  it("names a row by the FIELD the surface declared, and only that field", async () => {
+    // admin-window/BUG-0226: what crosses the client boundary is the NAME of
+    // the id field, so the dedupe is a read of that field and nothing else. A
+    // page whose rows repeat the drawn ids in ANOTHER field is appended whole
+    // — the state has drawn none of them.
+    const before = screen("a", "b");
+    const { deps } = answering({
+      kind: "ok",
+      rows: [{ id: "c", other: "a" }, { id: "d", other: "b" }],
+      offset: SIZE,
+      exhausted: false,
+    });
+    const held = await requestPage<Row>(before.state, deps);
+    expect(drawn(before.rows, held)).toEqual(["a", "b", "c", "d"]);
     expect(held.overlapped).toBe(false);
   });
 

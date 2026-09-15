@@ -346,7 +346,23 @@ export function PagingProvider<Row>({
 }: {
   /** The first screen's own state, composed by the page (`initialPage`). */
   initial: PageState<Row>;
-  /** Where a press asks, what it carries, and the window it is graded against. */
+  /**
+   * Where a press asks, what it carries, the window it is graded against, and
+   * the NAME of the field its rows are drawn under.
+   *
+   * **EVERY PROP WRITTEN ON THIS COMPONENT IS DATA** — admin-window/BUG-0226.
+   * This module is `"use client"` and both callers are server pages, so React
+   * serializes each of these into the flight payload on the way over; a
+   * function is the one shape that cannot go. It is not a warning either: the
+   * page throws before any markup is produced and answers HTTP 500, which no
+   * offline render can see (`renderToStaticMarkup` has no client boundary) and
+   * no `tsc` or lint run can either. `deps.id` was such a function for one
+   * landed commit and took `/claims` and `/browse` off the air entirely;
+   * `deps.idKey` is the name that replaced it, read by the driver with
+   * `readId` and by the page itself with `idAt`. The offline tier grades the
+   * value this component is handed (`tests/fixtures/client-props.ts`) —
+   * anything callable in `initial` or `deps` is the same 500 again.
+   */
   deps: Omit<PageDeps<Row>, "fetchJson">;
   /**
    * THE FIRST SCREEN'S WINDOW, as the page composed it — ONE object for the
