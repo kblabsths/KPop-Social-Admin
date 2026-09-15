@@ -6624,8 +6624,25 @@ describe("the affordance that continues the claim list", () => {
     expect(refusal.text()).toContain(T.pendingClaims);
     // Beside the rows, never inside the table that holds them.
     expect($("table").find("[data-paging-refusal]")).toHaveLength(0);
-    // …and the control is still there, because the same bound is retryable.
-    expect(pagingArms(afterRefusal)).toContain("more");
+    // …and the control is GONE, because no press provisions a view
+    // (admin-window/BUG-0211): the clause names what is missing and what
+    // creates it, and nothing under it offers a press that cannot be honoured.
+    expect(pagingArms(afterRefusal)).toEqual([]);
+    expect($("button[data-paging]")).toHaveLength(0);
+
+    // A′. THE MUST-NOT-FLAG TWIN (LESSONS 8): a READ that failed is refused
+    // at a bound this surface can still serve, so its control and its
+    // press-again sentence stand. The withdrawal above is about the absent
+    // object alone.
+    paging.override = await answeredBy({
+      kind: "error",
+      reading: T.pendingClaims,
+      message: "canceling statement due to statement timeout",
+    });
+    const afterReadFailure = await renderClaims(script);
+    expect(claimIds(afterReadFailure)).toEqual(firstScreenOf(claims));
+    expect(cheerio.load(afterReadFailure)("[data-paging-refusal]")).toHaveLength(1);
+    expect(pagingArms(afterReadFailure)).toContain("more");
 
     // B. the page that must NOT refuse — a full window, appended in order.
     const landed = await answeredBy({
@@ -7059,6 +7076,15 @@ describe("the affordance that continues the claim list", () => {
       kind: "not_provisioned",
       missing: T.pendingClaims,
     });
+    // The refusal that is RETRYABLE at the same bound, beside the one that is
+    // not: since admin-window/BUG-0211 the not-provisioned arm withdraws the
+    // control, so both conditions are driven here rather than one standing for
+    // the other (LESSONS 8).
+    const readFailed = await answering(landed, {
+      kind: "error",
+      reading: T.pendingClaims,
+      message: "canceling statement due to statement timeout",
+    });
     const atCeiling = initialPage<ClaimLine>(MAX_PAGE_OFFSET + CLAIM_WINDOW, true, "");
     const ceilingRefusal = await answering(atCeiling, {
       kind: "refused",
@@ -7074,10 +7100,16 @@ describe("the affordance that continues the claim list", () => {
       return render(await ClaimsPage({ searchParams: Promise.resolve({}) }));
     };
 
-    const states: [string, string, PageState<ClaimLine> | null, boolean][] = [
+    // `null` is an arm this element deliberately does not draw: the
+    // not-provisioned press leaves the clause and NOTHING under it — no
+    // control, and no sentence claiming the set ended or the ceiling stopped
+    // it (admin-window/BUG-0211). The window line above it is graded exactly
+    // as it is in every other state.
+    const states: [string, string | null, PageState<ClaimLine> | null, boolean][] = [
       ["offered", "more", null, false],
       ["loading", "loading", pressing(initial), false],
-      ["refused", "more", refused, false],
+      ["refused, retryable", "more", readFailed, false],
+      ["refused, not provisioned", null, refused, false],
       ["refused at the bound ceiling", "limit", ceilingRefusal, true],
       ["exhausted", "exhausted", ended, false],
     ];
@@ -7088,7 +7120,8 @@ describe("the affordance that continues the claim list", () => {
       const figures = windowFigures(markup);
       // One window line, and it is the one the paging state below it answers
       // for: truncated exactly where the read has not said the set has ended.
-      expect(pagingArms(markup), name).toContain(arm);
+      if (arm === null) expect(pagingArms(markup), name).toEqual([]);
+      else expect(pagingArms(markup), name).toContain(arm);
       expect(figures.lines, name).toBe(1);
       expect(figures.truncated, name).toBe(arm !== "exhausted");
       // `held` is the matching count its own count read established, after
@@ -7158,8 +7191,27 @@ describe("the affordance that continues the claim list", () => {
     const after = await renderClaims(script);
 
     expect(cheerio.load(after)("[data-paging-refusal]")).toHaveLength(1);
-    expect(pagingArms(after)).toContain("more");
+    // The line is what it was, to the byte — the press settled nothing — and
+    // the control is withdrawn, because the view the surface pages is not in
+    // this database and no press puts it there (admin-window/BUG-0211).
     expect(lineHtml(after)).toBe(lineHtml(before));
+    expect(pagingArms(after)).toEqual([]);
+
+    // MUST-NOT-FLAG (LESSONS 8): the same press answered with a FAILED READ
+    // settles nothing either, and that arm keeps its control — the line is
+    // byte-identical in both, which is what this case is about.
+    paging.override = await requestPage<ClaimLine>(landed, {
+      ...depsOf(),
+      fetchJson: () =>
+        Promise.resolve({
+          kind: "error",
+          reading: T.pendingClaims,
+          message: "canceling statement due to statement timeout",
+        }),
+    });
+    const afterReadFailure = await renderClaims(script);
+    expect(lineHtml(afterReadFailure)).toBe(lineHtml(before));
+    expect(pagingArms(afterReadFailure)).toContain("more");
   });
 
   it("at the bound ceiling it still says claims are not shown", async () => {
