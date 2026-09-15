@@ -1190,9 +1190,16 @@ describe("the count a live test issues", () => {
   it("leaves no head-shaped count on any query a live TEST issues", () => {
     // The rule, stated where it can be checked: a count the test writes —
     // anything built from `independentClient()` — is never head-shaped, because
-    // a HEAD response carries no body and its failures arrive blank. The app's
-    // own read path is not covered: `lib/db` counts with `head: true`, and
-    // `harness.live.test.ts` exercises it deliberately, in the app's shape.
+    // a HEAD response carries no body and its failures arrive blank.
+    //
+    // That is the guard's whole SCOPE: the count queries LIVE TESTS write. The
+    // app's own count path is not scanned here, and does not need to be — its
+    // count legs are `countRead`s, `{ count: "exact" }` over `limit 0`
+    // (src/lib/db/result.ts), and no query `lib/db` writes is head-shaped at
+    // all: the three `readCount` call sites build through `countRead`, and
+    // every other counted read there is a COMPLETE row read. What
+    // `harness.live.test.ts` exercises is a head-shaped query it writes itself
+    // and hands to `readCount`, to see what that shape does to a live answer.
     //
     // Statement-level and over CODE lines only, so a comment explaining why the
     // head-shaped count is gone does not redden it (ARCHITECTURE §10, common

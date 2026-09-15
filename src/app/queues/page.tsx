@@ -702,9 +702,10 @@ export default async function QueuesPage({
   }
 
   // One complete read for both queues — plus, when the URL carries a facet, one
-  // HEAD count per shape OF EACH KIND THE URL NARROWS, so each block that has a
-  // zero to explain knows its own population and an empty queue's zero is never
-  // dressed as a filtered one (admin-window/BUG-0133, admin-window/DEBT-0012).
+  // `countRead` count — `{ count: "exact" }` over `limit 0` — per shape OF EACH
+  // KIND THE URL NARROWS, so each block that has a zero to explain knows its own
+  // population and an empty queue's zero is never dressed as a filtered one
+  // (admin-window/BUG-0133, admin-window/DEBT-0012).
   // Those counts return no rows, so no row cap can refuse them and a faceted
   // URL always renders the rows its own read returned (admin-window/BUG-0135).
   // And the gauge's own bounded window.

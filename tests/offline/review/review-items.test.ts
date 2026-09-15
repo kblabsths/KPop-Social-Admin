@@ -84,7 +84,8 @@ function withRows(rows: ReviewItemRow[]) {
  * A stub whose `review_items` reads answer PER LEG (admin-window/BUG-0135).
  *
  * `readReviewQueues` on a faceted URL makes the URL's own row read, then one
- * HEAD count per counted shape, in `SHAPES` order. The stub answers every read
+ * `countRead` count — `{ count: "exact" }` over `limit 0` — per counted shape,
+ * in `SHAPES` order. The stub answers every read
  * of a table from one script entry unless the entry is a queue
  * (`tests/fixtures/stub-client.ts`), so a single `withRows` hands the same
  * count to every leg and no population assertion can distinguish them.
@@ -108,8 +109,10 @@ function withLegs(
     [T.reviewItems]: [
       { data: legOne, count: legOne.length },
       ...counted.map((shape) => ({
-        // A `countRead` — `{ count: "exact" }` over `limit 0` — returns no
-        // rows at all, only the count.
+        // A `countRead` — `{ count: "exact" }` over `limit 0` — brings back
+        // no rows; on the wire that is an empty array, with the count on
+        // `Content-Range`. `readCount` reads only `count` and `error`, so
+        // `data: null` stands in for that empty answer here.
         data: null,
         count: table.filter((row) => shapeOf(row) === shape).length,
       })),

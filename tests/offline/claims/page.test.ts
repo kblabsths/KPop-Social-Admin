@@ -2971,7 +2971,7 @@ describe("a narrowing with no chip row", () => {
       .replace(/\s+/g, " ")
       .trim();
 
-  /** Every head:true count of the view a render issued, as its facets. */
+  /** Every `countRead` count of the view a render issued, as its facets. */
   const countFacets = (stub: StubClient): Record<string, string>[] =>
     stub.calls
       .filter((call: RecordedCall) => call.table === T.pendingClaims)
@@ -3733,7 +3733,7 @@ describe("a narrowing with no chip row", () => {
    *  - the expectation is `rows(applied) !== rows(applied minus the chip
    *    facets THIS URL contributed)` — on the standing tab the tab's own
    *    bucket is not one of them, which is the whole of BUG-0193;
-   *  - and on that tab every `head:true` count the render issued must carry
+   *  - and on that tab every `countRead` count the render issued must carry
    *    the tab's own bucket, so no attribution is ever decided off the other
    *    tab's population.
    *
