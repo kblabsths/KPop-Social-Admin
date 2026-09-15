@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { FUNCTION_NAMES } from "@/lib/db/tables";
 
 /**
  * A stub Supabase client that returns a SCRIPTED PostgREST response
@@ -76,6 +77,38 @@ export interface StubClient {
   tablesRead(): string[];
   /** The function names CALLED, in order — `.rpc(name)`, never a `.from`. */
   functionsCalled(): string[];
+  /**
+   * Every read of this database's SCHEMA DESCRIPTION, in order — the GET
+   * `src/lib/db/schema.ts` makes to establish whether a function is installed
+   * (campaign admin-window/BUG-0223).
+   *
+   * A read, never a call: a test asserting that a readiness question probed by
+   * READING asserts this list grew and `functionsCalled()` did not.
+   */
+  readonly schemaReads: SchemaRead[];
+}
+
+/** One read of the schema description, as the app asked for it. */
+export interface SchemaRead {
+  /** The address the app built off the client's own REST root. */
+  url: string;
+  /** The `Accept` header it asked with. */
+  accept: string | null;
+}
+
+/** What a stub database exposes and how its schema description answers. */
+export interface StubDatabase {
+  /**
+   * The FUNCTIONS this database exposes, as its schema description lists them
+   * — or `"unreadable"` for a description that refuses (HTTP 500), which is a
+   * failed read and never an absence.
+   *
+   * Defaults to every name in `FN` (`src/lib/db/tables.ts`): the installed
+   * world is what every suite written before functions were probed for
+   * assumed, so an existing script keeps meaning exactly what it meant. A test
+   * about a half-installed world says so here.
+   */
+  functions?: readonly string[] | "unreadable";
 }
 
 /**
@@ -116,7 +149,18 @@ function settled(response: ScriptedResponse) {
   };
 }
 
-export function stubClient(script: Script): StubClient {
+/**
+ * How many stub databases have been made — the counter behind each one's own
+ * REST address.
+ *
+ * `src/lib/db/schema.ts` remembers, per ENDPOINT, which functions it has seen
+ * a database expose, so two stubs must not look like one database: a unique
+ * address per stub is what keeps one case's installed world out of the next
+ * case's half-installed one.
+ */
+let stubs = 0;
+
+export function stubClient(script: Script, database?: StubDatabase): StubClient {
   const calls: RecordedCall[] = [];
   const queues: Record<string, ScriptedResponse[]> = {};
   const answerers: Record<string, (call: RecordedCall) => ScriptedResponse> = {};
@@ -178,10 +222,47 @@ export function stubClient(script: Script): StubClient {
     return proxy;
   }
 
+  // This database's own address, unique to this stub — see `stubs` above.
+  stubs += 1;
+  const endpoint = `https://stub-${stubs}.invalid/rest/v1`;
+  const exposed = database?.functions ?? FUNCTION_NAMES;
+  const schemaReads: SchemaRead[] = [];
+
+  /**
+   * PostgREST's schema description, as this database answers it: the OpenAPI
+   * document whose `paths` key every exposed procedure under `/rpc/`.
+   *
+   * It is the client's OWN fetch in the real thing (`fetchWithAuth`), which is
+   * why it hangs off `rest` here rather than off the global: a read that went
+   * around the client would be a read no test could script.
+   */
+  const schemaFetch = async (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    const headers = new Headers(init?.headers);
+    schemaReads.push({ url: String(input), accept: headers.get("Accept") });
+    if (exposed === "unreadable") {
+      return new Response("the schema description is not available", {
+        status: 500,
+        statusText: "Internal Server Error",
+      });
+    }
+    const paths: Record<string, unknown> = { "/": {} };
+    for (const fn of exposed) paths[`/rpc/${fn}`] = {};
+    return new Response(JSON.stringify({ swagger: "2.0", paths }), {
+      status: 200,
+      headers: { "content-type": "application/openapi+json; charset=utf-8" },
+    });
+  };
+
   const client = {
     from(table: string) {
       return query(table);
     },
+    // What supabase-js carries its REST root and authenticated fetch on
+    // (`SupabaseClient.rest`, protected in the types, present at runtime).
+    rest: { url: endpoint, fetch: schemaFetch, headers: new Headers() },
     /**
      * A PostgREST function call (campaign admin-window/TASK-0047).
      *
@@ -207,6 +288,7 @@ export function stubClient(script: Script): StubClient {
       calls.filter((call) => call.kind !== "function").map((call) => call.table),
     functionsCalled: () =>
       calls.filter((call) => call.kind === "function").map((call) => call.table),
+    schemaReads,
   };
 }
 

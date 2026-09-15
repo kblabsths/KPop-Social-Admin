@@ -44,9 +44,10 @@
  * nothing.
  *
  * **Absence is not this file's business.** Whether `settle_review_item` is
- * installed is answered by `readSettlementReadiness` reading the `verdicts`
- * table (§9.2), and by the data layer's `not_provisioned` classification — not
- * by a flag here. This module is pure and says nothing about provisioning.
+ * installed is answered by `readSettlementReadiness` — the conjunction of the
+ * `verdicts` table and the function itself, the latter read out of the
+ * database's schema description (§9.2, admin-window/BUG-0223) — and by the
+ * data layer's `not_provisioned` classification, not by a flag here. This module is pure and says nothing about provisioning.
  */
 
 /* ── blank, defined once for the whole app ───────────────────────────────── */

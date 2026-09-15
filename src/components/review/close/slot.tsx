@@ -18,9 +18,11 @@ import { dispositionActions } from "./signal-actions";
  * is the route's only async boundary, so it reads and shapes, and this
  * renders. What it renders is decided by ONE question — may this surface offer
  * a settlement at all? — answered by `readSettlementReadiness`
- * (`src/lib/db/verdict.ts`), which reads the presence of the table the verdict
- * log lives in and never calls the function to find out (ARCHITECTURE.md §9.2,
- * DECISIONS 2026-09-08).
+ * (`src/lib/db/verdict.ts`), which is the conjunction of every object the
+ * settlement calls: the table the verdict log lives in AND the function
+ * itself, the latter read out of PostgREST's schema description and never
+ * called to find out (ARCHITECTURE.md §9.2, DECISIONS 2026-09-08 as amended by
+ * admin-window/BUG-0223).
  *
  * **The absent answer is the NORMAL one and is graded first.** Neither that
  * table nor `settle_review_item` exists on staging or in production, and

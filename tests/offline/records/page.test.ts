@@ -7,7 +7,7 @@ import {
   mappedColumns,
   writePathFor,
 } from "@/lib/edit/config";
-import { T } from "@/lib/db/tables";
+import { FN, T } from "@/lib/db/tables";
 import { EM_DASH, counted, isAbsent } from "@/lib/format";
 import { canonicalRecordId, isRecordId } from "@/lib/records/id";
 import {
@@ -17,6 +17,7 @@ import {
   tableNotInSchemaCache,
   type Script,
   type StubClient,
+  type StubDatabase,
 } from "../../fixtures/stub-client";
 import {
   anchorClasses,
@@ -235,13 +236,23 @@ async function renderRecord(
   table: string,
   script?: Script,
   id = IDS[table],
+  /**
+   * What this database EXPOSES, when a case is about that (campaign
+   * admin-window/BUG-0223). Omitted means the installed world: `verdicts`
+   * answering and `settle_review_item` exposed, which is what every case
+   * written before readiness was a conjunction meant by "the path is open".
+   */
+  database?: StubDatabase,
 ): Promise<string> {
   const { renderToStaticMarkup } = await import("react-dom/server");
-  const stub = stubClient({
-    ...OVERRIDE_READY,
-    ...VENUE_CHOICES,
-    ...(script ?? defaultScript(table)),
-  });
+  const stub = stubClient(
+    {
+      ...OVERRIDE_READY,
+      ...VENUE_CHOICES,
+      ...(script ?? defaultScript(table)),
+    },
+    database,
+  );
   lastStub = stub;
   readWith.client = stub.asSupabaseClient();
   return renderToStaticMarkup(
@@ -2511,6 +2522,136 @@ describe("the scope of the field table", () => {
       expect(
         cheerio.load(markup)('[data-state="error"], [data-state="not_provisioned"]').length,
       ).toBeGreaterThan(0);
+    }
+  });
+});
+
+/* ── the four worlds of the §9 handoff, rendered (BUG-0223) ──────────────── */
+
+/**
+ * The record surface in each of the four worlds the handoff can leave a
+ * database in — campaign admin-window/BUG-0223.
+ *
+ * The handoff installs TWO objects with two statements, and staging was
+ * measured in the mixed world during the install of 2026-09-11: the `verdicts`
+ * table answered 200 at 23:22Z while `settle_review_item` was still absent at
+ * 23:26Z (admin-window/BUG-0215). The save this page authorises calls the
+ * FUNCTION, so in that window the page drew editable widgets over a save that
+ * could only 503 — a control that cannot be honoured, which SPEC F10 forbids.
+ *
+ * The bar, positively: a world missing ANY object the save calls draws no
+ * override control and names the object that is missing; the fully installed
+ * world behaves exactly as this page behaves everywhere else in this file.
+ * Every world is graded on BOTH halves (LESSONS 8), because either half alone
+ * passes something broken: a page with no control and no reason is one
+ * regression, and a page describing an override it does not offer is the other
+ * (admin-window/BUG-0205).
+ */
+describe("the four worlds the settlement handoff can leave a database in", () => {
+  const RESOLVER_OWNED = ["events", "venues"];
+
+  const WORLDS: ReadonlyArray<{
+    readonly world: string;
+    readonly log: Script;
+    readonly functions: readonly string[];
+    /** The object the page must name, or `null` where the path is open. */
+    readonly missing: string | null;
+  }> = [
+    {
+      world: "neither installed — production today",
+      log: OVERRIDE_ABSENT,
+      functions: [],
+      missing: T.verdicts,
+    },
+    {
+      world: "the table only — the install window of 2026-09-11",
+      log: OVERRIDE_READY,
+      functions: [],
+      missing: FN.settleReviewItem,
+    },
+    {
+      world: "the function only",
+      log: OVERRIDE_ABSENT,
+      functions: [FN.settleReviewItem],
+      missing: T.verdicts,
+    },
+    {
+      world: "both installed — staging today",
+      log: OVERRIDE_READY,
+      functions: [FN.settleReviewItem],
+      missing: null,
+    },
+  ];
+
+  it.each(WORLDS)("$world", async ({ log, functions, missing }) => {
+    for (const table of RESOLVER_OWNED) {
+      const markup = await renderRecord(
+        table,
+        { ...defaultScript(table), ...log },
+        IDS[table],
+        { functions },
+      );
+      const $ = cheerio.load(markup);
+      const where = `${table}: ${functions.length === 0 ? "no" : "the"} function`;
+
+      if (missing === null) {
+        // Exactly what this page does today, asserted against the map rather
+        // than against a number: a control on every mapped editable column,
+        // and not one word about a path that is not withdrawn.
+        for (const column of EDIT_CONFIG[table].editable) {
+          expect(lineFor(markup, column).editable, `${where}.${column}`).toBe(true);
+        }
+        expect($('[data-note="override-unavailable"]').length, where).toBe(0);
+        expect($('[data-state="not_provisioned"]').length, where).toBe(0);
+        continue;
+      }
+
+      // No override control anywhere on the surface — not on a mapped column,
+      // not in the row, not anywhere in the document.
+      expect(lines(markup).some((line) => line.editable), where).toBe(false);
+      expect(controlCount(markup), where).toBe(0);
+      // ...and the page says so once, in its own voice, with the card beside
+      // it naming the object that is actually missing, in that object's own
+      // spelling — which is the whole difference between the two closed
+      // worlds an operator can be in.
+      expect($('[data-note="override-unavailable"]').length, where).toBe(1);
+      expect($(`[data-not-provisioned="${missing}"]`).length, where).toBe(1);
+      expect($("[data-not-provisioned]").length, where).toBe(1);
+    }
+  });
+
+  it("draws the same field lines in every world: only the WRITE path closes", async () => {
+    // What the page can write and what it draws are two answers
+    // (admin-window/BUG-0126). A closed override must not cost a value.
+    const table = "events";
+    const rendered = await Promise.all(
+      WORLDS.map(({ log, functions }) =>
+        renderRecord(table, { ...defaultScript(table), ...log }, IDS[table], {
+          functions,
+        }),
+      ),
+    );
+    const drawn = rendered.map((markup) => lines(markup).map((line) => line.name));
+    expect(drawn[0].length).toBeGreaterThan(0);
+    for (const fields of drawn) expect(fields).toEqual(drawn[0]);
+    // …and the values themselves are the read's, in every world.
+    for (const markup of rendered) {
+      expect(lineFor(markup, "title").value).toContain("stored title");
+    }
+  });
+
+  it("never calls the settlement function to find out whether it is there", async () => {
+    // Criterion 4, at the surface: rendering any of the four worlds places no
+    // `.rpc()` at all. A call made to discover whether the procedure exists
+    // applied a real admin override on 2026-09-11 (admin-window/BUG-0215).
+    for (const { log, functions } of WORLDS) {
+      await renderRecord(
+        "events",
+        { ...defaultScript("events"), ...log },
+        IDS.events,
+        { functions },
+      );
+      expect(lastStub?.functionsCalled()).toEqual([]);
     }
   });
 });

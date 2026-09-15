@@ -1,9 +1,10 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it } from "vitest";
 import ReviewItemPage from "@/app/queues/[reviewItemId]/page";
-import { T } from "@/lib/db/tables";
+import { FN, T } from "@/lib/db/tables";
 import {
   assertState,
+  functionsOnStaging,
   gradeSurface,
   independentClient,
   objectIsAbsent,
@@ -45,6 +46,37 @@ import {
  * the same container and differ only in their words, so `data-state` is what
  * separates them. An `error` fails.
  */
+
+/**
+ * WHICH object of the settlement path this database is MISSING — `null` when
+ * it is missing none (campaign admin-window/BUG-0223).
+ *
+ * The close is offered only where `readSettlementReadiness` says ready, and
+ * since BUG-0223 that is the CONJUNCTION of both objects the settlement calls:
+ * the `verdicts` table AND the `settle_review_item` function. So this file
+ * conjoins its own two reads the same way, or it grades the page against a
+ * world it is not in — the half-installed world staging really was in for four
+ * minutes on 2026-09-11 (admin-window/BUG-0215).
+ *
+ * The function is READ, out of the database's own schema description, and
+ * never called: a call placed to establish presence is a write attempt dressed
+ * as a probe, and this file sweeps nothing because it writes nothing.
+ *
+ * Read once per file run — the state of a staging project does not change
+ * under one suite.
+ */
+let settlementRead: string | null | undefined;
+
+async function settlementMissing(): Promise<string | null> {
+  if (settlementRead !== undefined) return settlementRead;
+  if (await objectIsAbsent(T.verdicts)) {
+    settlementRead = T.verdicts;
+    return settlementRead;
+  }
+  const functions = await functionsOnStaging();
+  settlementRead = functions.has(FN.settleReviewItem) ? null : FN.settleReviewItem;
+  return settlementRead;
+}
 
 type Item = {
   review_item_id: string;
@@ -495,7 +527,7 @@ describe("a real review item, rendered", () => {
     // offers none at all, which is exactly what M1 shipped. Read from the
     // database rather than assumed, so installing the log does not turn a
     // correct page red (campaign admin-window/TASK-0049).
-    if (await objectIsAbsent(T.verdicts)) {
+    if ((await settlementMissing()) !== null) {
       for (const control of ["button", "form", "input", "select", "textarea"]) {
         expect($(control), control).toHaveLength(0);
       }
@@ -533,11 +565,14 @@ describe("the close against staging", () => {
       nested: [],
     });
 
-    if (await objectIsAbsent(T.verdicts)) {
+    const missingObject = await settlementMissing();
+    if (missingObject !== null) {
       assertState(markup, CLOSE, "not_provisioned");
       // Named in the spelling the query used, and said as an absence: gray,
-      // never the red line (rule 5).
-      expect($(CLOSE).text()).toContain(T.verdicts);
+      // never the red line (rule 5). WHICH object is named follows this test's
+      // own reads, so a half-installed database is not told to install the
+      // half it already has.
+      expect($(CLOSE).text()).toContain(missingObject);
       expect($(CLOSE).find('[role="alert"]')).toHaveLength(0);
       for (const control of ["button", "form", "input", "select", "textarea"]) {
         expect($(CLOSE).find(control), control).toHaveLength(0);
@@ -576,9 +611,10 @@ describe("the close against staging", () => {
     // `error` is a failure either way.
     await gradeEvidence(markup, item);
 
-    if (await objectIsAbsent(T.verdicts)) {
+    const missingObject = await settlementMissing();
+    if (missingObject !== null) {
       assertState(markup, CLOSE, "not_provisioned");
-      expect($(CLOSE).text()).toContain(T.verdicts);
+      expect($(CLOSE).text()).toContain(missingObject);
       // Neither disposition is offered, because the object that records one
       // is not in this database (spec §10: no control calls a missing
       // function, and nothing queues the write).
@@ -717,7 +753,7 @@ describe("a settled item's verdict, against staging", () => {
     assertState(
       markup,
       CLOSE,
-      (await objectIsAbsent(T.verdicts)) ? "not_provisioned" : "ok",
+      (await settlementMissing()) !== null ? "not_provisioned" : "ok",
     );
   });
 
@@ -729,11 +765,13 @@ describe("a settled item's verdict, against staging", () => {
     const markup = await itemMarkup(item.review_item_id);
     const $ = cheerio.load(markup);
 
-    if (await objectIsAbsent(T.verdicts)) {
-      // The log is not in this database: the close draws the one card naming
-      // that object, and no verdict block is rendered beside it.
+    const missingObject = await settlementMissing();
+    if (missingObject !== null) {
+      // The settlement path is incomplete in this database: the close draws
+      // the one card naming the object that is missing, and no verdict block
+      // is rendered beside it.
       assertState(markup, CLOSE, "not_provisioned");
-      expect($(CLOSE).text()).toContain(T.verdicts);
+      expect($(CLOSE).text()).toContain(missingObject);
       expect($(ITEM_VERDICT)).toHaveLength(0);
       return;
     }
