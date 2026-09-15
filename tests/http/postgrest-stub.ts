@@ -104,6 +104,17 @@ export interface PostgrestStub {
   readonly url: string;
   /** Set what the NEXT request is answered with. */
   setMode(mode: StubMode): void;
+  /**
+   * The body the `alien` mode answers with — any JSON ARRAY (as a string).
+   *
+   * The mode is "an array whose elements are not this table's rows", and the
+   * element shapes QA measured 500s on are several
+   * (admin-window/BUG-0228 criterion 2): `[{"message":"no upstream"}]`,
+   * `[[{"claim_id":"c1"}]]`, `["a","b"]`, `[null,null]`, `[{}]`,
+   * `[{"foo":1}]`. They are one mode with one bar, so they are one knob
+   * rather than six modes.
+   */
+  setAlienBody(body: string): void;
   /** Every request the app made, as `METHOD /path?query`. */
   readonly requests: string[];
   close(): Promise<void>;
@@ -123,14 +134,23 @@ function tableOf(pathname: string): string {
  * that is the point of asserting against them: what reaches the page in the
  * error case must be the DATABASE's words.
  */
+export const DEFAULT_ALIEN_BODY = JSON.stringify([{ message: "no upstream" }]);
+
 function bodyFor(
   mode: StubMode,
   table: string,
+  alienBody: string,
 ): { status: number; body: string; headers?: Record<string, string> } {
   if (mode === "alien") {
-    // An array, so the row-set guard passes it — of things that are not rows
-    // of this table, so the render throws on the first column it reads.
-    return { status: 200, body: JSON.stringify([{ message: "no upstream" }]) };
+    // An array, so `Array.isArray` passed it — of things that are not rows of
+    // this table, so the render threw on the first column it read.
+    //
+    // NO `content-range`, exactly as QA measured it: this host sends no count,
+    // so a count read still refuses for the reason it did in `foreign` mode
+    // and no figure is published. Giving it one would be a different host —
+    // one whose counts are answers — and the surface would then publish them,
+    // which is right and is not this ticket's question.
+    return { status: 200, body: alienBody };
   }
   if (mode === "foreign") {
     // Not a row set, not an error document: something else's JSON, answered
@@ -181,12 +201,13 @@ export async function startPostgrestStub(
   initialMode: StubMode = "absent",
 ): Promise<PostgrestStub> {
   let mode: StubMode = initialMode;
+  let alienBody = DEFAULT_ALIEN_BODY;
   const requests: string[] = [];
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     requests.push(`${req.method} ${req.url}`);
-    const { status, body, headers } = bodyFor(mode, tableOf(url.pathname));
+    const { status, body, headers } = bodyFor(mode, tableOf(url.pathname), alienBody);
     // `content-length` counts the document either way; a HEAD sends none of
     // it. That asymmetry IS the bug's mechanism — do not "simplify" it.
     res.writeHead(status, {
@@ -204,6 +225,9 @@ export async function startPostgrestStub(
     url: `http://127.0.0.1:${port}`,
     setMode(next: StubMode) {
       mode = next;
+    },
+    setAlienBody(next: string) {
+      alienBody = next;
     },
     requests,
     close: () =>

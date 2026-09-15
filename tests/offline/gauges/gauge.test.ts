@@ -20,7 +20,7 @@ import {
   windowOf,
 } from "@/lib/gauges/gauge";
 import { chunk, readRowsByIds } from "@/lib/db/gauges";
-import { ROW_CAP } from "@/lib/db/result";
+import { ROW_CAP, selectList } from "@/lib/db/result";
 import type { DbResponse } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
 import {
@@ -44,11 +44,14 @@ interface Named {
   source_id: string;
 }
 
+/** The one column that read names — the declaration its seam checks against. */
+const NAMED_COLUMNS = ["source_id"] as const;
+
 /** A minimal `.in(...)` read through the stub, typed as the data layer sees it. */
 function sourcesByIds(db: SupabaseClient, ids: string[]) {
   return db
     .from(T.sources)
-    .select("source_id")
+    .select(selectList(NAMED_COLUMNS))
     .in("source_id", ids)
     .limit(ids.length) as unknown as PromiseLike<DbResponse<Named[]>>;
 }
@@ -349,6 +352,7 @@ describe("readRowsByIds", () => {
     const stub = stubClient({});
     const result = await readRowsByIds<Named>(
       T.sources,
+      NAMED_COLUMNS,
       [],
       sourcesByIds,
       stub.asSupabaseClient(),
@@ -362,6 +366,7 @@ describe("readRowsByIds", () => {
     const stub = stubClient({ [T.sources]: { data: [{ source_id: "s" }] } });
     const result = await readRowsByIds<Named>(
       T.sources,
+      NAMED_COLUMNS,
       ids,
       sourcesByIds,
       stub.asSupabaseClient(),
@@ -381,6 +386,7 @@ describe("readRowsByIds", () => {
     });
     const result = await readRowsByIds<Named>(
       T.sources,
+      NAMED_COLUMNS,
       ["a"],
       sourcesByIds,
       stub.asSupabaseClient(),
@@ -392,6 +398,7 @@ describe("readRowsByIds", () => {
     const stub = stubClient({ [T.sources]: { error: permissionDenied(T.sources) } });
     const result = await readRowsByIds<Named>(
       T.sources,
+      NAMED_COLUMNS,
       ["a"],
       sourcesByIds,
       stub.asSupabaseClient(),

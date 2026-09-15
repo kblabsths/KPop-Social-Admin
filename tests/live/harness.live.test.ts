@@ -184,7 +184,7 @@ describe("a function this database does not have", () => {
     // makes Postgres look for a `to_tsvector` overload that does not exist,
     // and `groups` is provisioned and holds rows, so an absence claim here
     // would tell an operator to install a table that is right there.
-    const readable = await readRows(T.groups, (db) =>
+    const readable = await readRows(T.groups, ["id"], (db) =>
       db.from(T.groups).select("id").limit(1),
     );
     expect(readable.kind, `${stagingHost} could not read ${T.groups}`).toBe("ok");
@@ -200,7 +200,7 @@ describe("a function this database does not have", () => {
         `${codeOf(error)}, not the 42883 this case is about`,
     ).toBe("42883");
 
-    const refused = await readRows(T.groups, (db) =>
+    const refused = await readRows(T.groups, ["id"], (db) =>
       db.from(T.groups).select("id").filter("created_at", "fts", "x").limit(1),
     );
     expect(refused.kind).toBe("error");

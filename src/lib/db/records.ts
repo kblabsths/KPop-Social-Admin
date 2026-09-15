@@ -1,10 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { accountText, type AccountSegment } from "../account/authored";
 import {
+  ANY_COLUMNS,
   ROW_CAP,
   readComplete,
   readOne,
   readRows,
+  selectList,
   type DbCountedResponse,
   type DbResponse,
   type DbResult,
@@ -88,7 +90,7 @@ export type CanonicalRecord = Record<string, unknown>;
  * `decideEdit`, which does not read `display` at all.
  */
 export function recordColumns(config: TableEditConfig): string {
-  return mappedColumns(config).join(", ");
+  return selectList(mappedColumns(config));
 }
 
 function selectRecord(
@@ -117,6 +119,14 @@ export async function readRecord(
 ): Promise<DbResult<CanonicalRecord | null>> {
   return readOne<CanonicalRecord>(
     config.table,
+    // ANY_COLUMNS, and not `mappedColumns(config)`: this surface's contract is
+    // that a mapped column the read returned nothing for DRAWS AS THE ABSENCE
+    // — "absence is a state, not a reason to drop the line"
+    // (`tests/offline/records/page.test.ts`) — so a row short of one is a row
+    // this page renders, not an answer it cannot grade. Nothing here reads a
+    // column without asking what it got first, which is why the element test
+    // alone is the whole of what this read needs (admin-window/BUG-0228).
+    ANY_COLUMNS,
     (client) => selectRecord(client, config, id),
     db,
   );
@@ -200,6 +210,8 @@ export async function updateRecordField(
 
   return readOne<CanonicalRecord>(
     config.table,
+    // The same reading as `readRecord` above, on the row the write returned.
+    ANY_COLUMNS,
     (client) => updateField(client, decision.edit.config, id, field, value),
     db,
   );
@@ -260,7 +272,7 @@ function referenceNameFor(
 ): PromiseLike<DbResponse<ReferenceNameRow>> {
   return db
     .from(relation)
-    .select(`${key}, ${column}`)
+    .select(selectList([key, column]))
     .eq(key, id)
     .maybeSingle() as unknown as PromiseLike<DbResponse<ReferenceNameRow>>;
 }
@@ -298,6 +310,9 @@ export async function readRecordReference(
 
   const row = await readOne<ReferenceNameRow>(
     source.relation,
+    // The name is read through a `typeof` test below, so a relation row short
+    // of it is a row with no name — the answer this leg already renders.
+    ANY_COLUMNS,
     (client) =>
       referenceNameFor(client, source.relation, config.pk, source.column, id),
     db,
@@ -406,7 +421,7 @@ function choicesFor(
 ): PromiseLike<DbResponse<ChoiceRow[]>> {
   return db
     .from(source.relation)
-    .select(`${source.key}, ${source.name}`)
+    .select(selectList([source.key, source.name]))
     .order(source.name, { ascending: true })
     .order(source.key, { ascending: true })
     .limit(cap) as unknown as PromiseLike<DbResponse<ChoiceRow[]>>;
@@ -443,6 +458,10 @@ export async function readReferenceChoices(
 
   const rows = await readRows<ChoiceRow>(
     source.relation,
+    // Each option's key and name are read through `typeof` tests below — a row
+    // with no key is not an option and a row with no name wears the dash — so
+    // the element test is the whole of what this read needs.
+    ANY_COLUMNS,
     (client) => choicesFor(client, source, ROW_CAP),
     db,
   );
@@ -531,9 +550,15 @@ const NO_PROVENANCE: RecordProvenance = { fields: new Map(), note: null };
  * structural guard in `tests/offline/edit/config.test.ts` is what keeps that
  * true (admin-window/BUG-0028 narrowed it to writes so this select is legal).
  */
-const PROVENANCE_COLUMNS =
-  "provenance_id, entity_id, field, source_id, applied_at, admin_locked";
-const SOURCE_COLUMNS = "source_id, source";
+const PROVENANCE_COLUMNS = [
+  "provenance_id",
+  "entity_id",
+  "field",
+  "source_id",
+  "applied_at",
+  "admin_locked",
+] as const;
+const SOURCE_COLUMNS = ["source_id", "source"] as const;
 
 /**
  * The decision log behind ONE record's displayed fields — every decision on
@@ -576,7 +601,7 @@ function provenanceFor(
 ): PromiseLike<DbCountedResponse<FieldDecisionRow[]>> {
   return db
     .from(T.fieldProvenance)
-    .select(PROVENANCE_COLUMNS, { count: "exact" })
+    .select(selectList(PROVENANCE_COLUMNS), { count: "exact" })
     .eq("entity_type", config.table)
     .eq("entity_id", id)
     .in("field", [...mappedRegistryFields(config)])
@@ -596,7 +621,7 @@ function sourcesFor(
 ): PromiseLike<DbCountedResponse<SourceNameRow[]>> {
   return db
     .from(T.sources)
-    .select(SOURCE_COLUMNS, { count: "exact" })
+    .select(selectList(SOURCE_COLUMNS), { count: "exact" })
     .in("source_id", ids)
     .order("source_id", { ascending: true })
     .range(0, cap - 1) as unknown as PromiseLike<
@@ -634,6 +659,7 @@ export async function readRecordProvenance(
 
   const log = await readComplete<FieldDecisionRow>(
     T.fieldProvenance,
+    PROVENANCE_COLUMNS,
     (client, cap) => provenanceFor(client, config, id, cap),
     db,
   );
@@ -662,6 +688,7 @@ export async function readRecordProvenance(
   if (sourceIds.length > 0) {
     sources = await readComplete<SourceNameRow>(
       T.sources,
+      SOURCE_COLUMNS,
       (client, cap) => sourcesFor(client, sourceIds, cap),
       db,
     );

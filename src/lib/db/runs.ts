@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { NEWEST_RUN_FIRST } from "./cycles";
 import { newestFirst } from "../order/newest-first";
 import type { DashboardRunRow } from "./dashboard";
-import { ROW_CAP, readRows, type DbResponse, type DbResult } from "./result";
+import { ROW_CAP, readRows, selectList, type DbResponse, type DbResult } from "./result";
 import { objectKindOf, T, type ObjectKind } from "./tables";
 import { canonicalUrlText } from "@/lib/url/text";
 
@@ -132,7 +132,7 @@ export interface RunRow extends DashboardRunRow {
 }
 
 /** What the query asks for: the key, then the nine the page renders. */
-const SELECT = ["run_id", ...RUN_COLUMNS].join(", ");
+const SELECT = ["run_id", ...RUN_COLUMNS] as const;
 
 /**
  * How many runs the page's table shows.
@@ -240,8 +240,9 @@ export async function readRuns(
 
   const result = await readRows<RunRow>(
     T.runs,
+    SELECT,
     (client) => {
-      const selected = client.from(T.runs).select(SELECT);
+      const selected = client.from(T.runs).select(selectList(SELECT));
       // By NAME. There is no key to match on and none is invented.
       const narrowed = source === null ? selected : selected.eq("source", source);
       return narrowed

@@ -969,16 +969,19 @@ export function classify(
  * this database.
  *
  * **"Did not arrive" is wider than "was null", and the question is the same
- * one** (admin-window/BUG-0227). A row-set read that came back with a JSON
- * OBJECT did not come back with a row set any more than one that came back
- * with nothing: both fail the only test that matters — *is this the payload
- * this read asked for?* So the predicate is `Array.isArray`, not `!== null`,
- * and it is the same rule refusing, not a second one (LESSONS 13: the bar is
- * the property, not the instance).
+ * one** (admin-window/BUG-0227, widened to its final form by
+ * admin-window/BUG-0228). A row-set read that came back with a JSON OBJECT, or
+ * with a JSON ARRAY of something else's things, did not come back with a row
+ * set any more than one that came back with nothing: all of them fail the only
+ * test that matters — *is this the payload this read asked for?* So the
+ * predicate is `isRowSet` against the read's own declared columns, not
+ * `Array.isArray` and not `!== null`, and it is the same rule refusing, not a
+ * second one (LESSONS 13: the bar is the property, not the instance).
  *
- * **The shapes that produce it, measured.** Both are a host that is not this
- * database answering for it, and both are reproduced over HTTP by
- * `tests/http/postgrest-stub.ts` — as its `blank` and `foreign` modes.
+ * **The shapes that produce it, measured.** All of them are a host that is not
+ * this database answering for it, and all are reproduced over HTTP by
+ * `tests/http/postgrest-stub.ts` — as its `blank`, `foreign` and `alien`
+ * modes.
  *
  * *One* (QA, admin-window/BUG-0210 residual, 2026-09-11): a host answering
  * **404 with zero bytes** — a wrong `SUPABASE_URL`, or a proxy/gateway
@@ -1012,13 +1015,16 @@ export function classify(
  * **Which reads it applies to, and which it must NOT.** Row-set reads
  * (`readRows`), count reads (`readCount`) and complete reads (`readComplete`,
  * both legs) — for those three, PostgREST always sends the payload: an array
- * for a row set, a `Content-Range` total for a count. Anything else there is
- * not an answer it could have given. `readOne` and `callFunction` are
- * deliberately outside it: a `.maybeSingle()` over no rows really does hand
- * back `data: null`, and a procedure returning void really does answer with no
- * body — and neither of them asked for an array, so the row-set test says
- * nothing about their answers either. Widening this to them needs a different
- * question, not this one.
+ * of this read's rows, a `Content-Range` total for a count. Anything else
+ * there is not an answer it could have given. `readOne` asks the COLUMN half
+ * alone (admin-window/BUG-0228): a `.maybeSingle()` over no rows really does
+ * hand back `data: null`, so the row-SET question cannot be asked of it — but
+ * a row that DID arrive is this read's row only if it carries what the read
+ * named, and a foreign object standing there reaches a render typed `Row`
+ * exactly as a foreign array reached one typed `Row[]`. `callFunction` stays
+ * wholly outside: a procedure returning void really does answer with no body,
+ * and it declared no columns to hold an answer against. Widening this to it
+ * needs a different question, not this one.
  *
  * The words are THIS APP's — one `"this app"` segment, like every other
  * account this app writes about a read it could not grade
@@ -1042,23 +1048,110 @@ function unreadableAnswer(missing: string): DbResult<never> {
 }
 
 /**
- * Did a ROW SET arrive? The one test both row-set legs ask
- * (admin-window/BUG-0227), so neither can drift into asking a narrower one.
+ * The columns a read ASKED FOR — the one declaration a `lib/db` module makes
+ * about the rows it is going to hand its callers.
  *
- * PostgREST answers every row-set read with a JSON array — `[]` for a matching
- * set of zero — so an array is the only answer it can give, and the answer is
- * either an array or it did not arrive. `null` (a host answering 404 with zero
- * bytes, rewritten by supabase-js) and an object (a proxy answering 200 with
- * its own JSON) are two spellings of the same absent row set, which is why
- * this asks the positive question once rather than listing the shapes that
- * are not a row set (LESSONS 4).
+ * Every read here already names its columns explicitly rather than selecting
+ * `*` (ARCHITECTURE.md §4.2, admin-window/BUG-0024), so the list exists in the
+ * module already; `selectList` below turns it into the `.select()` string, and
+ * the same array is handed to the read seam. ONE declaration, two derived
+ * uses — never a select string beside a hand-retyped list of the same names
+ * (LESSONS 5, LESSONS 11).
+ */
+export type RowColumns = readonly string[];
+
+/**
+ * The `.select()` string for a declared column list — the ONLY way a read in
+ * this repo spells its select, so the string and the guard cannot disagree.
+ */
+export function selectList(columns: RowColumns): string {
+  return columns.join(", ");
+}
+
+/**
+ * The declaration of a read that names NO column of its own: it selects `*`,
+ * or it reads no column at all and only needs to know the read succeeded.
+ *
+ * Such a read gets the weaker half of the guard below — every element is still
+ * a plain object, which is the only element a PostgREST row set has — because
+ * there is no list to hold the elements against. It is spelled as a NAME, so a
+ * read that opts out of the column question says so out loud at its own call
+ * site, with the reason beside it, and a reviewer can count them: today the
+ * `verdicts` readiness probe (`db/verdict.ts`, which selects `*` and reads no
+ * column) and the four generic RECORD reads (`db/records.ts`, whose surface's
+ * contract is that a mapped column the read returned nothing for draws as the
+ * absence).
+ */
+export const ANY_COLUMNS: RowColumns = [];
+
+/**
+ * Is this one ROW of the read that asked for `columns`?
+ *
+ * A row PostgREST sends is a JSON object carrying every column the select
+ * named — that is the whole of what the protocol guarantees and the whole of
+ * what a render relies on. So the question is asked in exactly those terms:
+ * a plain object (not `null`, not an array), carrying every asked-for name as
+ * its own property. A present `null` VALUE is a row (nullable columns are
+ * real, and `lib/format.ts` renders their absence); a MISSING name is not.
+ */
+function isRowOf(row: unknown, columns: RowColumns): boolean {
+  if (typeof row !== "object" || row === null || Array.isArray(row)) return false;
+  return columns.every((column) => Object.hasOwn(row, column));
+}
+
+/**
+ * Did THIS READ's rows arrive? The one test every row-carrying leg asks, so
+ * none of them can drift into asking a narrower one.
+ *
+ * **The bar, positively** (admin-window/BUG-0228, LESSONS 13): a row set is an
+ * answer that is an array whose every element carries every column this read
+ * NAMED. Anything else is not this read's rows, whatever else it may be — and
+ * because the question is derived from the read's own declaration rather than
+ * from a list of bodies somebody thought of, there is no next shape of "not
+ * our rows" to enumerate afterwards. An answer whose elements do carry every
+ * asked-for column is, by every fact available at this seam, this table's
+ * rows.
+ *
+ * It replaces, in one predicate, the three narrower questions this derivation
+ * has been asked in turn: `data !== null` (admin-window/BUG-0224 — a 404 with
+ * zero bytes), `Array.isArray(data)` (admin-window/BUG-0227 — a proxy's JSON
+ * OBJECT), and neither of them (admin-window/BUG-0228 — a proxy's JSON ARRAY:
+ * `[{"message":"no upstream"}]`, `[[{"claim_id":"c1"}]]`, `["a","b"]`,
+ * `[null,null]`, `[{}]`, `[{"foo":1}]` all passed `Array.isArray` into a
+ * render typed `Row[]`, and the first column it read threw — an HTTP 500 on
+ * `/`, `/claims`, `/browse` and `/cycles`).
+ *
+ * `[]` passes, vacuously and on purpose: a matching set of zero is a real
+ * answer and draws the surface's empty card.
  *
  * It is a type guard because the seam's job is to make `ok` mean what it says:
- * `data` is typed `Row[]` for every caller, so nothing but a real array may
- * pass through as one.
+ * `data` is typed `Row[]` for every caller, so nothing but this read's own
+ * rows may pass through as one.
  */
-function isRowSet<Row>(data: Row[] | null | undefined): data is Row[] {
-  return Array.isArray(data);
+function isRowSet<Row>(
+  data: Row[] | null | undefined,
+  columns: RowColumns,
+): data is Row[] {
+  return Array.isArray(data) && data.every((row) => isRowOf(row, columns));
+}
+
+/**
+ * Is `count` a number a surface may publish?
+ *
+ * A count rides `Content-Range` as `<range>/<total>`, and supabase-js reaches
+ * it with `parseInt` over whatever follows the slash — so a host that answers
+ * 206 with a header it made up (`bytes 0-1/unknown`) hands back `count: NaN`
+ * beside `error: null`. `NaN` is neither `null` nor `undefined`, so the older
+ * spelling of this test passed it straight through to a page, which published
+ * `data-window-held="NaN"` (QA, measured on the admin-window/BUG-0227 tree).
+ *
+ * A count is a whole number of rows or it did not arrive: that is the positive
+ * question, and `Number.isInteger` is the whole of it — it is false for `NaN`,
+ * for both infinities, for a fraction, and for every non-number including
+ * `null` and `undefined`.
+ */
+function isCount(count: unknown): count is number {
+  return Number.isInteger(count);
 }
 
 /**
@@ -1089,25 +1182,35 @@ async function runQuery<T>(
  * A row-set read. `ok` always carries an array — an empty one when there are
  * no rows, which is a real answer and renders the surface's empty card.
  *
- * NO ARRAY AT ALL is not that answer: PostgREST sends `[]` for a matching set
- * of zero, so anything that is not an array, beside a null error, is an answer
+ * NOT THIS READ'S ROWS is not that answer: PostgREST sends `[]` for a matching
+ * set of zero and an array of objects carrying every selected column for
+ * anything else, so an answer that is not that, beside a null error, is one
  * this app cannot grade and refuses through the one rule (`unreadableAnswer`,
  * admin-window/BUG-0224, widened to the whole question by
- * admin-window/BUG-0227). This used to substitute `[]` for it, which is how a
- * host answering 404 with zero bytes put "No claims waiting" on `/claims` over
- * a read that failed; it then asked only whether the answer was `null`, which
- * is how a host answering 200 with `{"message":"no upstream"}` reached the
- * render as a `Row[]` that was not an array and threw `.map is not a function`
- * — an HTTP 500 on every surface, in place of the refusal above.
+ * admin-window/BUG-0227 and admin-window/BUG-0228). This used to substitute
+ * `[]` for it, which is how a host answering 404 with zero bytes put "No
+ * claims waiting" on `/claims` over a read that failed; it then asked only
+ * whether the answer was `null`, which is how a host answering 200 with
+ * `{"message":"no upstream"}` reached the render as a `Row[]` that was not an
+ * array and threw `.map is not a function`; it then asked only whether the
+ * answer was an ARRAY, which is how the same host answering
+ * `[{"message":"no upstream"}]` reached it as a `Row[]` whose element had no
+ * column the render reads — an HTTP 500 on every surface, in place of the
+ * refusal above.
+ *
+ * `columns` is the read's own declaration, the same array `selectList` built
+ * its `.select()` string from, so the guard asks what the query asked for and
+ * the two cannot drift apart.
  */
 export async function readRows<Row>(
   missing: string,
+  columns: RowColumns,
   run: (db: SupabaseClient) => PromiseLike<DbResponse<Row[]>>,
   db?: SupabaseClient,
 ): Promise<DbResult<Row[]>> {
   const result = await runQuery<Row[]>(missing, run, db);
   if (result.kind !== "ok") return result;
-  if (!isRowSet(result.data)) return unreadableAnswer(missing);
+  if (!isRowSet(result.data, columns)) return unreadableAnswer(missing);
   return { kind: "ok", data: result.data };
 }
 
@@ -1139,6 +1242,7 @@ export async function readRows<Row>(
  */
 export async function readComplete<Row>(
   missing: string,
+  columns: RowColumns,
   run: (db: SupabaseClient, cap: number) => PromiseLike<DbCountedResponse<Row[]>>,
   db?: SupabaseClient,
 ): Promise<DbResult<Row[]>> {
@@ -1154,11 +1258,13 @@ export async function readComplete<Row>(
     // (admin-window/BUG-0224). This arm used to be a sentence about this app's
     // own call arguments, rendered at an operator.
     //
-    // The row leg asks `isRowSet`, the same question `readRows` asks
-    // (admin-window/BUG-0227): a non-array standing where the rows belong is
-    // reachable here the day a host sends both an object and a Content-Range,
-    // and "the rows did not arrive" is one question with one answer.
-    if (!isRowSet(data) || count === null || count === undefined) {
+    // The row leg asks `isRowSet` against this read's own declared columns,
+    // the same question `readRows` asks (admin-window/BUG-0227,
+    // admin-window/BUG-0228): anything but this read's rows standing where
+    // they belong is reachable here the day a host sends both a body of its
+    // own and a Content-Range, and "the rows did not arrive" is one question
+    // with one answer.
+    if (!isRowSet(data, columns) || !isCount(count)) {
       return unreadableAnswer(missing);
     }
     const rows = data;
@@ -1183,13 +1289,28 @@ export async function readComplete<Row>(
   }
 }
 
-/** A single-row read (`.maybeSingle()`). `ok` carries `null` when there is no row. */
+/**
+ * A single-row read (`.maybeSingle()`). `ok` carries `null` when there is no
+ * row.
+ *
+ * The row-SET question cannot be asked here — a `.maybeSingle()` over no rows
+ * really does hand back `data: null`, and that is an answer, not an absence of
+ * one. The COLUMN question still can, and is: a row that arrives at all is
+ * this read's row only if it carries every column the read named, so a host
+ * answering `200 {"message":"no upstream"}` refuses through the one rule here
+ * too rather than reaching a render typed `Row` (admin-window/BUG-0228 — the
+ * home page's last-applied-cycle leg and the record pages read this way).
+ */
 export async function readOne<Row>(
   missing: string,
+  columns: RowColumns,
   run: (db: SupabaseClient) => PromiseLike<DbResponse<Row>>,
   db?: SupabaseClient,
 ): Promise<DbResult<Row | null>> {
-  return runQuery<Row>(missing, run, db);
+  const result = await runQuery<Row>(missing, run, db);
+  if (result.kind !== "ok" || result.data === null) return result;
+  if (!isRowOf(result.data, columns)) return unreadableAnswer(missing);
+  return result;
 }
 
 /**
@@ -1307,7 +1428,10 @@ export async function readCount(
     // count beside a missing error is an answer this app cannot grade: it
     // refuses through the one rule, in the same words `readComplete` and
     // `readRows` refuse in (admin-window/BUG-0224).
-    if (count === null || count === undefined) return unreadableAnswer(missing);
+    // A whole number of rows, or it did not arrive: `isCount` also refuses the
+    // `NaN` a 206 with an unparseable `Content-Range` produces, which the
+    // null test let through to a page as a published figure.
+    if (!isCount(count)) return unreadableAnswer(missing);
     return { kind: "ok", data: count };
   } catch (thrown) {
     return classify(thrown, missing);
@@ -1382,6 +1506,7 @@ export function chunk<T2>(items: readonly T2[], size = ID_CHUNK): T2[][] {
  */
 export async function readRowsByIds<Row>(
   missing: string,
+  columns: RowColumns,
   ids: readonly string[],
   run: (db: SupabaseClient, chunkIds: string[]) => PromiseLike<DbResponse<Row[]>>,
   db?: SupabaseClient,
@@ -1397,7 +1522,7 @@ export async function readRowsByIds<Row>(
       chunks
         .slice(start, start + CHUNK_FANOUT)
         .map((chunkIds) =>
-          readRows<Row>(missing, (client) => run(client, chunkIds), db),
+          readRows<Row>(missing, columns, (client) => run(client, chunkIds), db),
         ),
     );
     // Scanned in chunk-index order, so both the row order and WHICH refusal

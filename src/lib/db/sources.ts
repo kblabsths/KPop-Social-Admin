@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   readComplete,
   readRowsByIds,
+  selectList,
   type DbCountedResponse,
   type DbResponse,
   type DbResult,
@@ -128,14 +129,14 @@ const SOURCE_COLUMNS = [
   "note",
   "created_at",
   "updated_at",
-].join(", ");
+] as const;
 
 /**
  * The two columns a LABEL needs. `readSourceNames` answers "what is this
  * source called", so it selects the name and the key it is asked by, and
  * nothing else (§4.2).
  */
-const SOURCE_NAME_COLUMNS = ["source_id", "source"].join(", ");
+const SOURCE_NAME_COLUMNS = ["source_id", "source"] as const;
 
 const LAST_RUN_COLUMNS = [
   "run_id",
@@ -146,7 +147,7 @@ const LAST_RUN_COLUMNS = [
   "failure_class",
   "checkpoint_after",
   "error_summary",
-].join(", ");
+] as const;
 
 /**
  * The registry's state rows, whole.
@@ -166,10 +167,11 @@ const LAST_RUN_COLUMNS = [
 export function readSources(db?: SupabaseClient): Promise<DbResult<SourceRow[]>> {
   return readComplete<SourceRow>(
     T.sources,
+    SOURCE_COLUMNS,
     (client, cap) =>
       client
         .from(T.sources)
-        .select(SOURCE_COLUMNS, { count: "exact" })
+        .select(selectList(SOURCE_COLUMNS), { count: "exact" })
         .order("source", { ascending: true })
         .order("source_id", { ascending: true })
         .range(0, cap - 1) as unknown as PromiseLike<DbCountedResponse<SourceRow[]>>,
@@ -202,11 +204,12 @@ export function readSourceNames(
 ): Promise<DbResult<SourceNameRow[]>> {
   return readRowsByIds<SourceNameRow>(
     T.sources,
+    SOURCE_NAME_COLUMNS,
     ids,
     (client, chunkIds) =>
       client
         .from(T.sources)
-        .select(SOURCE_NAME_COLUMNS)
+        .select(selectList(SOURCE_NAME_COLUMNS))
         .in("source_id", chunkIds)
         // At most one row per id — `source_id` is the table's key — so the leg
         // can never ask for more rows than the ids it filtered on.
@@ -251,10 +254,11 @@ export function readSourceNames(
 export function readLastRuns(db?: SupabaseClient): Promise<DbResult<LastRunRow[]>> {
   return readComplete<LastRunRow>(
     T.runs,
+    LAST_RUN_COLUMNS,
     (client, cap) =>
       client
         .from(T.runs)
-        .select(LAST_RUN_COLUMNS, { count: "exact" })
+        .select(selectList(LAST_RUN_COLUMNS), { count: "exact" })
         .order("source", { ascending: true })
         .order("started_at", { ascending: false })
         // `run_id` is a uuid v7, so it breaks a tie on `started_at` in the

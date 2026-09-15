@@ -3,6 +3,7 @@ import {
   countRead,
   readComplete,
   readCount,
+  selectList,
   type DbCountedResponse,
   type DbResult,
   type DbUnavailable,
@@ -62,7 +63,7 @@ export const REVIEW_ITEM_COLUMNS = [
   "folded_count",
   "opened_at",
   "last_evidence_at",
-].join(", ");
+] as const;
 
 /**
  * Build the query, narrowed by the filter's plain COLUMN constraints only.
@@ -92,7 +93,7 @@ export const REVIEW_ITEM_COLUMNS = [
 function query(db: SupabaseClient, filter: ReviewItemFilter, cap: number) {
   let builder = db
     .from(T.reviewItems)
-    .select(REVIEW_ITEM_COLUMNS, { count: "exact" });
+    .select(selectList(REVIEW_ITEM_COLUMNS), { count: "exact" });
   if (filter.queue !== undefined) builder = builder.eq("queue", filter.queue);
   if (filter.status !== undefined) builder = builder.eq("status", filter.status);
   // `source_id` is a real column too (admin-window/BUG-0141), so a
@@ -131,6 +132,7 @@ export async function listReviewItems(
 ): Promise<DbResult<ReviewItemRow[]>> {
   const result = await readComplete<ReviewItemRow>(
     T.reviewItems,
+    REVIEW_ITEM_COLUMNS,
     (client, cap) => query(client, filter, cap),
     db,
   );

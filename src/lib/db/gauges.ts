@@ -1,5 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { readRows, readRowsByIds, type DbResponse, type DbResult } from "./result";
+import {
+  readRows,
+  readRowsByIds,
+  selectList,
+  type DbResponse,
+  type DbResult,
+} from "./result";
 import { T } from "./tables";
 import type { PendingClaimsFilter } from "./claims";
 import type { ReviewItemRow } from "../review/shapes";
@@ -228,7 +234,7 @@ const RESOLUTION_RUN_COLUMNS = [
   "claims_rerejected",
   "errors",
   "error_summary",
-].join(", ");
+] as const;
 
 const PROVENANCE_COLUMNS = [
   "provenance_id",
@@ -237,9 +243,9 @@ const PROVENANCE_COLUMNS = [
   "source_id",
   "observation_id",
   "applied_at",
-].join(", ");
+] as const;
 
-const OBSERVED_AT_COLUMNS = ["observation_id", "observed_at", "domain"].join(", ");
+const OBSERVED_AT_COLUMNS = ["observation_id", "observed_at", "domain"] as const;
 
 const PENDING_OBSERVATION_COLUMNS = [
   "observation_id",
@@ -247,7 +253,7 @@ const PENDING_OBSERVATION_COLUMNS = [
   "domain",
   "field",
   "observed_at",
-].join(", ");
+] as const;
 
 const REVIEW_ITEM_COLUMNS = [
   "review_item_id",
@@ -263,7 +269,7 @@ const REVIEW_ITEM_COLUMNS = [
   "folded_count",
   "opened_at",
   "last_evidence_at",
-].join(", ");
+] as const;
 
 const REJECTION_COLUMNS = [
   "observation_id",
@@ -272,9 +278,9 @@ const REJECTION_COLUMNS = [
   "field",
   "rejected_at",
   "rejected_by",
-].join(", ");
+] as const;
 
-const SOURCE_COLUMNS = ["source_id", "source", "kind", "lifecycle", "tier"].join(", ");
+const SOURCE_COLUMNS = ["source_id", "source", "kind", "lifecycle", "tier"] as const;
 
 /**
  * Recent cycles. Newest first, so a truncated read keeps the recent ones —
@@ -286,10 +292,11 @@ export function readResolutionRuns(
 ): Promise<DbResult<ResolutionRunRow[]>> {
   return readRows<ResolutionRunRow>(
     T.resolutionRuns,
+    RESOLUTION_RUN_COLUMNS,
     (client) =>
       client
         .from(T.resolutionRuns)
-        .select(RESOLUTION_RUN_COLUMNS)
+        .select(selectList(RESOLUTION_RUN_COLUMNS))
         .gte("started_at", bounds.since)
         .lt("started_at", bounds.until)
         .order("started_at", { ascending: false })
@@ -318,10 +325,11 @@ export function readProvenanceApplies(
 ): Promise<DbResult<ProvenanceApplyRow[]>> {
   return readRows<ProvenanceApplyRow>(
     T.fieldProvenance,
+    PROVENANCE_COLUMNS,
     (client) =>
       client
         .from(T.fieldProvenance)
-        .select(PROVENANCE_COLUMNS)
+        .select(selectList(PROVENANCE_COLUMNS))
         .gte("applied_at", bounds.since)
         .lt("applied_at", bounds.until)
         .order("applied_at", { ascending: false })
@@ -337,11 +345,12 @@ export function readObservedAt(
 ): Promise<DbResult<ObservedAtRow[]>> {
   return readRowsByIds<ObservedAtRow>(
     T.observations,
+    OBSERVED_AT_COLUMNS,
     ids,
     (client, chunkIds) =>
       client
         .from(T.observations)
-        .select(OBSERVED_AT_COLUMNS)
+        .select(selectList(OBSERVED_AT_COLUMNS))
         .in("observation_id", chunkIds)
         .limit(chunkIds.length) as unknown as PromiseLike<DbResponse<ObservedAtRow[]>>,
     db,
@@ -371,10 +380,11 @@ export function readPendingObservations(
 ): Promise<DbResult<PendingObservationRow[]>> {
   return readRows<PendingObservationRow>(
     T.observations,
+    PENDING_OBSERVATION_COLUMNS,
     (client) => {
       let builder = client
         .from(T.observations)
-        .select(PENDING_OBSERVATION_COLUMNS)
+        .select(selectList(PENDING_OBSERVATION_COLUMNS))
         .eq("status", "pending");
       if (filter.source_id !== undefined) builder = builder.eq("source_id", filter.source_id);
       if (filter.domain !== undefined) builder = builder.eq("domain", filter.domain);
@@ -403,10 +413,11 @@ export function readReviewItemsOpenedSince(
 ): Promise<DbResult<ReviewItemRow[]>> {
   return readRows<ReviewItemRow>(
     T.reviewItems,
+    REVIEW_ITEM_COLUMNS,
     (client) =>
       client
         .from(T.reviewItems)
-        .select(REVIEW_ITEM_COLUMNS)
+        .select(selectList(REVIEW_ITEM_COLUMNS))
         .gte("opened_at", bounds.since)
         .lt("opened_at", bounds.until)
         .order("opened_at", { ascending: true })
@@ -441,8 +452,9 @@ export function readRejectionStamps(
 ): Promise<DbResult<RejectionRow[]>> {
   return readRows<RejectionRow>(
     T.observations,
+    REJECTION_COLUMNS,
     (client) => {
-      let builder = client.from(T.observations).select(REJECTION_COLUMNS);
+      let builder = client.from(T.observations).select(selectList(REJECTION_COLUMNS));
       if (filter.source_id !== undefined) builder = builder.eq("source_id", filter.source_id);
       if (filter.domain !== undefined) builder = builder.eq("domain", filter.domain);
       return builder
@@ -468,11 +480,12 @@ export function readSourceStates(
 ): Promise<DbResult<SourceStateRow[]>> {
   return readRowsByIds<SourceStateRow>(
     T.sources,
+    SOURCE_COLUMNS,
     ids,
     (client, chunkIds) =>
       client
         .from(T.sources)
-        .select(SOURCE_COLUMNS)
+        .select(selectList(SOURCE_COLUMNS))
         .in("source_id", chunkIds)
         .limit(chunkIds.length) as unknown as PromiseLike<DbResponse<SourceStateRow[]>>,
     db,

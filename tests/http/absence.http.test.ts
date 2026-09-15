@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mintSessionCookie } from "../walk/session-cookie.mjs";
 import { AUTH_SECRET, base, startServer, stopServer } from "./server-harness";
 import {
+  DEFAULT_ALIEN_BODY,
   deniedMessage,
   startPostgrestStub,
   type PostgrestStub,
@@ -72,7 +73,33 @@ const GRADED_SURFACES = [
 ] as const;
 
 /** Every mode the stub can answer in — the sweep's domain, read off the type. */
-const EVERY_MODE: readonly StubMode[] = ["absent", "denied", "blank", "empty", "foreign"];
+const EVERY_MODE: readonly StubMode[] = [
+  "absent",
+  "denied",
+  "blank",
+  "empty",
+  "foreign",
+  "alien",
+];
+
+/**
+ * The element shapes QA measured a 500 on in `alien` mode
+ * (admin-window/BUG-0228 criterion 2), each a JSON ARRAY that is not this
+ * table's rows.
+ *
+ * They are not six modes and not six predicates: they are six bodies held to
+ * the ONE bar — whatever a host answers, the surface ANSWERS — so the read
+ * seam's single question (does every element carry the columns this read
+ * named?) is asked of all of them by the same test.
+ */
+const ALIEN_BODIES: readonly string[] = [
+  JSON.stringify([{ message: "no upstream" }]),
+  JSON.stringify([[{ claim_id: "c1" }]]),
+  JSON.stringify(["a", "b"]),
+  JSON.stringify([null, null]),
+  JSON.stringify([{}]),
+  JSON.stringify([{ foo: 1 }]),
+];
 
 /**
  * The surfaces whose reads include a COUNT leg, and the object each count
@@ -320,7 +347,7 @@ describe("a database that answers but holds none of the ecosystem tables", () =>
     }
   });
 
-  it.fails("refuses every panel against a host answering 200 with an ARRAY that is not this table's rows", async () => {
+  it("refuses every panel against a host answering 200 with an ARRAY that is not this table's rows", async () => {
     // THE SAME BAR ONE SHAPE FURTHER (QA attack on admin-window/BUG-0227):
     // "Whatever a host answers ... the operator reads the app's refusal naming
     // pending_claims (or review_items, or sources)". BUG-0227 made a row-set
@@ -335,37 +362,62 @@ describe("a database that answers but holds none of the ecosystem tables", () =>
     // server logging `TypeError: Cannot read properties of undefined (reading
     // 'trim')`; `[null,null]` took all six routes down.
     //
-    // PIN (QA, admin-window ticket BUG-0228): marked an EXPECTED FAILURE
-    // because it is RED on the landed tree. THE FIX FLIPS THIS MARKER back to
-    // `it`, and then `"alien"` joins EVERY_MODE above so the call-site sweep
-    // covers it like every other mode.
+    // PIN (QA, admin-window ticket BUG-0228): it was marked an EXPECTED
+    // FAILURE because it was RED on the landed tree, and the fix flipped the
+    // marker back to `it`. `"alien"` is in EVERY_MODE above too, so the
+    // call-site sweep covers it like every other mode.
+    //
+    // WATCHED, 2026-09-14, over real HTTP against a production build of the
+    // fix: with the marker still `it.fails` the suite reported "Expect test to
+    // fail" (1 failed | 34 passed) — the pin had gone green.
+    //
+    // The fix is the read seam asking its question against the READ'S OWN
+    // DECLARED COLUMNS (`isRowSet`/`selectList`, `src/lib/db/result.ts`):
+    // a row set is an array whose every element carries every column the query
+    // named, so none of the bodies below is one, and the same one rule
+    // (`unreadableAnswer`) refuses naming the object.
     stub.setMode("alien");
 
-    for (const route of ["/", "/browse", "/cycles"]) {
-      await pageOf(`${route}?probe=alien`, cookie);
-    }
+    for (const body of ALIEN_BODIES) {
+      stub.setAlienBody(body);
 
-    for (const { route, names } of GRADED_SURFACES) {
-      const markup = await pageOf(`${route}?probe=alien`, cookie);
-      const $ = cheerio.load(markup);
-      const states = statesOf(markup);
+      // The home page reads row sets too, and it is the first thing an
+      // operator lands on: it must answer, not throw. (`pageOf` grades the
+      // status and the error shell, which is the whole assertion for these.)
+      // /browse and /cycles are here on the same measurement — QA read 500s
+      // off /, /browse, /cycles and the three graded surfaces alike.
+      for (const route of ["/", "/browse", "/cycles"]) {
+        await pageOf(`${route}?probe=alien&body=${encodeURIComponent(body)}`, cookie);
+      }
 
-      expect(states.length, `${route} rendered no state at all`).toBeGreaterThan(0);
-      expect(
-        [...new Set(states.map((card) => card.state))].sort(),
-        `${route} rendered a state other than a refusal`,
-      ).toEqual(["error"]);
-      expect(
-        states.some((card) => card.text.includes(names)),
-        `${route} named no "${names}"`,
-      ).toBe(true);
-      for (const block of $("[data-figures]").toArray()) {
+      for (const { route, names } of GRADED_SURFACES) {
+        const markup = await pageOf(
+          `${route}?probe=alien&body=${encodeURIComponent(body)}`,
+          cookie,
+        );
+        const $ = cheerio.load(markup);
+        const states = statesOf(markup);
+
+        expect(states.length, `${route} rendered no state at all on ${body}`)
+          .toBeGreaterThan(0);
         expect(
-          $(block).text(),
-          `${route} published a figure over a read that failed`,
-        ).not.toMatch(/\d/);
+          [...new Set(states.map((card) => card.state))].sort(),
+          `${route} rendered a state other than a refusal on ${body}`,
+        ).toEqual(["error"]);
+        expect(
+          states.some((card) => card.text.includes(names)),
+          `${route} named no "${names}" on ${body}`,
+        ).toBe(true);
+        for (const block of $("[data-figures]").toArray()) {
+          expect(
+            $(block).text(),
+            `${route} published a figure over a read that failed on ${body}`,
+          ).not.toMatch(/\d/);
+        }
       }
     }
+
+    stub.setAlienBody(DEFAULT_ALIEN_BODY);
   });
 
   it("still draws the empty card for a table that is really there and really empty", async () => {

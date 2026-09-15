@@ -4,6 +4,7 @@ import {
   readCount,
   readRows,
   readRowsByIds,
+  selectList,
   type DbResponse,
   type DbResult,
 } from "./result";
@@ -131,13 +132,13 @@ const PENDING_CLAIM_COLUMNS = [
   "source_id",
   "bucket",
   "unmet_requirement",
-].join(", ");
+] as const;
 
 /** What the LIST selects: the classification, and the age beside it. */
-const CLAIM_COLUMNS = [PENDING_CLAIM_COLUMNS, "observed_at"].join(", ");
+const CLAIM_COLUMNS = [...PENDING_CLAIM_COLUMNS, "observed_at"] as const;
 
 /** What one bucket's oldest-claim seek selects: the age, and what it belongs to. */
-const BUCKET_INSTANT_COLUMNS = ["bucket", "observed_at"].join(", ");
+const BUCKET_INSTANT_COLUMNS = ["bucket", "observed_at"] as const;
 
 /**
  * The live pending claims of a WINDOW, read from the view's own instant — the
@@ -181,8 +182,9 @@ export function readPendingClaimsInWindow(
 ): Promise<DbResult<PendingClaimRow[]>> {
   return readRows<PendingClaimRow>(
     T.pendingClaims,
+    PENDING_CLAIM_COLUMNS,
     (client) =>
-      narrowed(client.from(T.pendingClaims).select(PENDING_CLAIM_COLUMNS), filter)
+      narrowed(client.from(T.pendingClaims).select(selectList(PENDING_CLAIM_COLUMNS)), filter)
         .gte("observed_at", bounds.since)
         .lt("observed_at", bounds.until)
         .order("observed_at", { ascending: true })
@@ -212,11 +214,12 @@ export function readPendingClaimRows(
 ): Promise<DbResult<PendingClaimRow[]>> {
   return readRowsByIds<PendingClaimRow>(
     T.pendingClaims,
+    PENDING_CLAIM_COLUMNS,
     ids,
     (client, chunkIds) =>
       client
         .from(T.pendingClaims)
-        .select(PENDING_CLAIM_COLUMNS)
+        .select(selectList(PENDING_CLAIM_COLUMNS))
         .in("observation_id", chunkIds)
         .neq("bucket", UNRENDERABLE_BUCKET)
         .limit(chunkIds.length) as unknown as PromiseLike<DbResponse<PendingClaimRow[]>>,
@@ -323,8 +326,9 @@ export function readClaimWindow(
   const offset = options.offset ?? 0;
   return readRows<ClaimRow>(
     T.pendingClaims,
+    CLAIM_COLUMNS,
     (client) =>
-      narrowed(client.from(T.pendingClaims).select(CLAIM_COLUMNS), options.filter)
+      narrowed(client.from(T.pendingClaims).select(selectList(CLAIM_COLUMNS)), options.filter)
         .order("observed_at", { ascending: true, nullsFirst: false })
         .order("observation_id", { ascending: true })
         .range(offset, offset + options.limit - 1) as unknown as PromiseLike<
@@ -445,8 +449,9 @@ export function readBucketOldest(
 ): Promise<DbResult<string | null>> {
   return readRows<{ bucket: string; observed_at: string | null }>(
     T.pendingClaims,
+    BUCKET_INSTANT_COLUMNS,
     (client) =>
-      narrowed(client.from(T.pendingClaims).select(BUCKET_INSTANT_COLUMNS), {
+      narrowed(client.from(T.pendingClaims).select(selectList(BUCKET_INSTANT_COLUMNS)), {
         ...filter,
         bucket,
       })
