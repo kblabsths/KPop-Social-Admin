@@ -59,6 +59,11 @@ describe("pageAnswerOf", () => {
     );
     expect(
       pageAnswerOf<Row>(
+        // @ts-expect-error admin-window/DEBT-0021 made `authored` REQUIRED on the
+        // union's error arm, so this app can no longer BUILD an account that does
+        // not say who wrote it (the pin is in `tests/offline/db/result.test.ts`).
+        // The mapping's behaviour for one is still graded here: what crosses is
+        // copied, never invented.
         { kind: "error", reading: "event_listings", message: "connection refused" },
         50,
         SIZE,
@@ -149,6 +154,9 @@ describe("pageAnswerOf", () => {
       { kind: "ok", data: rows("a") },
       { kind: "ok", data: [] },
       { kind: "not_provisioned", missing: "pending_claims" },
+      // @ts-expect-error unwritable since admin-window/DEBT-0021 (see above);
+      // kept so the accepted-by-the-client property is still graded for an arm
+      // whose account carries no runs.
       { kind: "error", reading: "pending_claims", message: "boom" },
     ];
     for (const result of results) {

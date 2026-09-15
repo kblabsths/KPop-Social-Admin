@@ -24,23 +24,34 @@ export type DbResult<T> =
        * The account as its RUNS: the words of each part and WHO WROTE THEM
        * (campaign admin-window/BUG-0196).
        *
-       * OPTIONAL ON THE WIRE, and its ABSENCE there means what this app
-       * rendered before the fact existed: the whole account is the machine's,
-       * drawn wholly in the mono `data` step (`src/lib/paging/bounds.ts`
-       * keeps accepting an answer without it).
+       * **REQUIRED — the property is that an error arm this app composes
+       * always says who wrote each word of its account, in every spelling**
+       * (admin-window/BUG-0200 ruled the class; admin-window/DEBT-0021 made
+       * the compiler the standing runner). Every account `classify` builds
+       * out of what the client said carries it, and so does every account
+       * this app writes itself about a read it could not grade — a count that
+       * did not come back, a row cap, a refused edit, a refused settlement.
+       * With no `?`, a new arm that omits it is a `tsc --noEmit` error at its
+       * construction site, however it is spelled: an object literal, a spread
+       * of a base, or a helper returning the union member. Nothing here
+       * depends on a regex over one spelling living in a closed ticket.
        *
-       * **No arm this app composes under `src/lib/db/**` omits it**
-       * (admin-window/BUG-0200 ruled the class): every account `classify`
-       * builds out of what the client said carries it, and so does every
-       * account this app writes itself about a read it could not grade — a
-       * count that did not come back, a row cap, a refused edit, a refused
-       * settlement. An arm added later without it turns that ticket's source
-       * sweep RED.
+       * The field stays OPTIONAL **on the wire** — a `{kind, reading,
+       * message}` answer from a client older than BUG-0196 is still readable,
+       * and its absence there means the whole account is the machine's, drawn
+       * wholly in the mono `data` step. That wire tolerance is declared where
+       * the wire is parsed (`src/lib/paging/bounds.ts`), not here: this type
+       * governs what this app CONSTRUCTS, which is why it can be strict
+       * without narrowing what the app will ACCEPT.
        *
-       * `message` is derived FROM this list and never beside it, so the two
-       * cannot disagree: there is no second code path composing the account.
+       * An arm with no segments to offer is a finding, never a cast: `as` and
+       * `!` put an unauthored account back on the surface with the compiler
+       * silenced. Compose the segments the arm really has (`accountText` then
+       * derives `message` from them) — `message` is derived FROM this list and
+       * never beside it, so the two cannot disagree: there is no second code
+       * path composing the account.
        */
-      authored?: readonly AccountSegment[];
+      authored: readonly AccountSegment[];
     };
 
 /**
