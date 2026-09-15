@@ -146,6 +146,16 @@ describe("count", () => {
     expect(count(42)).toBe("42");
   });
 
+  it.fails("renders a zero as a zero, whatever sign the number carries", () => {
+    // QA (admin-window/BUG-0230): `Intl` renders IEEE negative zero as "-0",
+    // and a count reaches this helper straight off the wire — `parseInt` over
+    // the total in `Content-Range` returns `-0` for a total spelled `-0` or
+    // any negative fraction — so /claims published "-0" in every bucket.
+    // A count of no rows reads "0"; nothing this app publishes over a count
+    // carries a minus sign.
+    expect(count(-0)).toBe("0");
+  });
+
   it("renders absence as the dash, never as zero", () => {
     expect(count(null)).toBe(EM_DASH);
     expect(count(undefined)).toBe(EM_DASH);

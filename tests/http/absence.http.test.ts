@@ -521,6 +521,33 @@ describe("a database that answers but holds none of the ecosystem tables", () =>
     stub.setCountTotal(DEFAULT_COUNT_TOTAL);
   });
 
+  it.fails("publishes no minus-signed figure for a host total of \"-0\"", async () => {
+    // QA (admin-window/BUG-0230, attack on admin-window/BUG-0229's landed
+    // count guard): the guard asks `Number.isSafeInteger(count) && count >= 0`,
+    // and BOTH are true of IEEE negative zero — `parseInt` returns `-0` for a
+    // total spelled `-0` (and for any negative fraction, `-0.5`) — so the count
+    // is published, and `Intl`/`toLocaleString` renders negative zero as the
+    // string "-0" (`src/lib/format.ts` `count`). Measured over real HTTP
+    // against a production build 2026-09-15: a host answering `200 []` with
+    // `content-range: */-0` put "-0" in EVERY bucket row of /claims' Total
+    // counts table, with ZERO refusals on the page.
+    //
+    // The bar, positively: a figure this app publishes over a count reads as
+    // the count of rows it is — a non-negative integer with no sign on it —
+    // whatever the host wrote after the slash.
+    stub.setCountTotal("-0");
+    stub.setMode("miscounted");
+    const markup = await pageOf(`${TOTAL_FIGURES_ROUTE}?probe=minuszero&pass=0`, cookie);
+    const $ = cheerio.load(markup);
+    for (const block of $("[data-figures]").toArray()) {
+      expect(
+        $(block).text(),
+        `${TOTAL_FIGURES_ROUTE} published a minus-signed figure on a total of "-0"`,
+      ).not.toMatch(/-\s*\d/);
+    }
+    stub.setCountTotal(DEFAULT_COUNT_TOTAL);
+  });
+
   it("still draws the empty card for a table that is really there and really empty", async () => {
     // The control arm (criterion 3), and the one that proves the fix did not
     // turn "no rows" into "refused": the same wire, a real 200 carrying `[]`
