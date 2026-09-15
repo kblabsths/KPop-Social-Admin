@@ -6,7 +6,7 @@ import { isRecordId } from "@/lib/records/id";
 import { SHAPES, shapeOf } from "@/lib/review/shapes";
 import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
 import { EM_DASH, counted } from "@/lib/format";
-import { T } from "@/lib/db/tables";
+import { FN, T } from "@/lib/db/tables";
 import { h, render, uppercasedIdentifiers } from "../ui/markup";
 import {
   ID,
@@ -3958,3 +3958,87 @@ describe("a table name in a queues empty state card", () => {
 });
 
 
+/* ── the half-installed world, on the SECOND surface that asks (QA/BUG-0223) ─ */
+
+/**
+ * `readSettlementReadiness` has two page callers — the record page and this
+ * one — and the ticket that made readiness a conjunction graded the four
+ * worlds on the record page only. This is the same question asked of the
+ * surface that actually draws the settlement controls: with the verdict log
+ * installed and `settle_review_item` still absent (the install window measured
+ * on staging 2026-09-11, admin-window/BUG-0215), does the close offer a
+ * control whose save can only 503?
+ *
+ * Both halves are graded (LESSONS 8): the world that must withdraw the
+ * controls, and the world that must keep them.
+ */
+describe("the close, in the world where the log is installed and the function is not", () => {
+  /** `renderItem`, against a database whose description exposes `functions`. */
+  async function renderItemIn(
+    script: Script,
+    id: string,
+    functions: readonly string[],
+  ): Promise<string> {
+    readWith.client = stubClient(script, { functions }).asSupabaseClient();
+    return render(
+      await ReviewItemPage({ params: Promise.resolve({ reviewItemId: id }) }),
+    );
+  }
+
+  it("offers no control at all, on any shape", async () => {
+    for (const [name, script, id] of SHAPED) {
+      const $ = cheerio.load(await renderItemIn(withSettlement(script()), id, []));
+      for (const control of ["button", "form", "input", "select", "textarea"]) {
+        expect($(control), `${name}: ${control}`).toHaveLength(0);
+      }
+      expect($("[data-close-action]"), name).toHaveLength(0);
+      expect($("[data-close-note]"), name).toHaveLength(0);
+    }
+  });
+
+  it("names the FUNCTION, not the table that is right there", async () => {
+    for (const [name, script, id] of SHAPED) {
+      const $ = cheerio.load(await renderItemIn(withSettlement(script()), id, []));
+      const close = $(`[data-surface="${CLOSE_HOOK}"]`);
+      expect(close, name).toHaveLength(1);
+      expect(close.find('[data-state="not_provisioned"]'), name).toHaveLength(1);
+      expect(
+        close.find(`[data-not-provisioned="${FN.settleReviewItem}"]`),
+        name,
+      ).toHaveLength(1);
+      // The log is installed in this world, so nothing may say it is missing.
+      expect($(`[data-not-provisioned="${T.verdicts}"]`), name).toHaveLength(0);
+      expect(close.find('[role="alert"]'), name).toHaveLength(0);
+    }
+  });
+
+  it("keeps the controls where BOTH objects are installed", async () => {
+    // The fixture that must NOT flag, beside the two above that must: the
+    // conjunction closes this surface on an absence and on nothing else.
+    for (const [name, script, id] of SHAPED) {
+      const $ = cheerio.load(
+        await renderItemIn(withSettlement(script()), id, [FN.settleReviewItem]),
+      );
+      const close = $(`[data-surface="${CLOSE_HOOK}"]`);
+      expect(close.find("[data-close-note]"), name).toHaveLength(1);
+      expect(close.find("[data-close-action]").length, name).toBeGreaterThan(0);
+      expect(close.find("[data-state]"), name).toHaveLength(0);
+    }
+  });
+
+  it("makes no rpc call to find out, on either world", async () => {
+    for (const functions of [[], [FN.settleReviewItem]]) {
+      const stub = stubClient(withSettlement(conflictScript()), { functions });
+      readWith.client = stub.asSupabaseClient();
+      await render(
+        await ReviewItemPage({
+          params: Promise.resolve({
+            reviewItemId: reviewItemDataConflict().review_item_id,
+          }),
+        }),
+      );
+      expect(stub.functionsCalled(), String(functions.length)).toEqual([]);
+      expect(stub.schemaReads.length, String(functions.length)).toBeGreaterThan(0);
+    }
+  });
+});

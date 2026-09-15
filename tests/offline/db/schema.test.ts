@@ -216,3 +216,95 @@ describe("reading whether a function is installed", () => {
     }
   });
 });
+
+describe("the install window itself (QA/BUG-0223)", () => {
+  /** One endpoint whose description changes under a running process. */
+  function databaseInstallingMidProcess(at: string) {
+    let functions: readonly string[] = [];
+    let status = 200;
+    const { client, asked } = clientAnswering(at, () =>
+      status === 200
+        ? new Response(description(functions), {
+            status: 200,
+            headers: { "content-type": "application/openapi+json" },
+          })
+        : new Response("no", { status }),
+    );
+    return {
+      client,
+      asked,
+      install: () => {
+        functions = [FN.settleReviewItem];
+      },
+      refuse: () => {
+        status = 500;
+      },
+      serve: () => {
+        status = 200;
+      },
+    };
+  }
+
+  it("sees the install on the very next read, with no restart", async () => {
+    // THE property this ticket exists for, asked of ONE endpoint rather than
+    // two: the window measured on staging 2026-09-11 was four minutes long
+    // (23:22Z table only, 23:26Z both), and the process that rendered the
+    // refusal is the same process that must render the control afterwards.
+    // Two clients at two addresses cannot show that — a cache keyed by
+    // endpoint answers them independently whether or not an absence is cached.
+    const staging = databaseInstallingMidProcess("https://install-window.invalid");
+
+    await expect(
+      readFunctionInstalled(FN.settleReviewItem, staging.client),
+    ).resolves.toEqual({ kind: "not_provisioned", missing: FN.settleReviewItem });
+
+    staging.install();
+
+    await expect(
+      readFunctionInstalled(FN.settleReviewItem, staging.client),
+    ).resolves.toEqual({ kind: "ok", data: "installed" });
+    expect(staging.asked).toHaveLength(2);
+  });
+
+  it("never lets a failed read stand in for an answer, before or after", async () => {
+    // A read that could not be made is not an absence and not an affirmative:
+    // neither may be remembered from it. So an endpoint that refuses, then
+    // answers, still answers for itself — and the refusal in between costs the
+    // control for exactly as long as it lasts.
+    const flaky = databaseInstallingMidProcess("https://flaky-description.invalid");
+    flaky.install();
+    flaky.refuse();
+
+    const refused = await readFunctionInstalled(FN.settleReviewItem, flaky.client);
+    expect(refused.kind).toBe("error");
+
+    flaky.serve();
+    await expect(
+      readFunctionInstalled(FN.settleReviewItem, flaky.client),
+    ).resolves.toEqual({ kind: "ok", data: "installed" });
+    expect(flaky.asked).toHaveLength(2);
+  });
+
+  it("carries no part of the description, and no credential, into its answer", async () => {
+    // The document is 387 KB of this database's whole shape and the read rides
+    // the client's authenticated fetch. What comes back out is three words
+    // about one object: an answer that leaked either would be a 387 KB page
+    // and a burned key.
+    const { client } = clientAnswering(
+      "https://leak-check.invalid",
+      () =>
+        new Response(
+          JSON.stringify({
+            swagger: "2.0",
+            info: { title: "stub-key-should-never-appear" },
+            paths: { "/secret_table": {}, "/rpc/apply_resolution": {} },
+          }),
+          { status: 200, headers: { "content-type": "application/openapi+json" } },
+        ),
+    );
+    const result = await readFunctionInstalled(FN.settleReviewItem, client);
+    expect(result).toEqual({ kind: "not_provisioned", missing: FN.settleReviewItem });
+    expect(JSON.stringify(result)).not.toContain("secret_table");
+    expect(JSON.stringify(result)).not.toContain("stub-key");
+  });
+});
