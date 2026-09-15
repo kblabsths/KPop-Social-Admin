@@ -214,6 +214,62 @@ export interface PageState<Row> {
    * silently matched against one that does not.
    */
   readonly after: string;
+  /**
+   * EVERY ID THIS SURFACE HAS DRAWN — the first screen's, as the surface
+   * seeded them, plus every row a press appended (admin-window/BUG-0222).
+   *
+   * The bound on the wire is a POSITION (`?offset=<rows held>`), and the route
+   * re-reads at that position when the press arrives — seconds after the
+   * screen above it was read. A row INSERTED ahead of the bound in between
+   * moves every later row down one, so the page served at position N begins
+   * with a row the operator is already looking at. Concatenated, that is one
+   * list holding one id twice: measured on a dev instance 2026-09-11
+   * (admin-window/BUG-0221 repro B — 100 rows drawn, 99 distinct,
+   * `01a058f1-02c7-7e11-9191-adfa6207a0f0` twice, React's duplicate-key error
+   * in the console).
+   *
+   * The property, stated positively: **one drawn list never holds one id
+   * twice.** §4.3 kind 3's "a concatenation is still not a total" permits the
+   * population to move under a bounded read; it does not permit the list to
+   * disagree with its own count. So the state carries what it has drawn, and
+   * `requestPage` appends only what it does not already hold.
+   *
+   * It is the ids the SURFACE draws its rows under — `deps.id`, the same field
+   * the list keys by — so the set and the React keys can never be two
+   * different facts (LESSONS 11). It is NOT the bound: `held` is the ROUTE's
+   * own row count and moves by it, whatever this set drops (rule 2 of the
+   * ticket's contract, §4.3 kind 3 rule 4 — two facts, each stated by whoever
+   * owns it).
+   *
+   * An EMPTY set is a state seeded from a first screen whose ids it cannot
+   * name — a driver walked from a synthetic start — exactly as `after: ""` is
+   * a state that continues no particular screen. Such a state still never
+   * appends a row it appended itself.
+   */
+  readonly drawnIds: ReadonlySet<string>;
+  /**
+   * DID THE LIST MOVE UNDER THIS STATE — has any press answered with at least
+   * one row this state already held (admin-window/BUG-0222)?
+   *
+   * The drop itself is silent to the machine but must not be silent to the
+   * OPERATOR: a surface that quietly swallowed the overlap would hide the one
+   * fact that matters — the rows the operator is reading are not the rows the
+   * route is paging. So the fact is published here and stated once, in
+   * client-land, by the paging area's own copy (`PageMore`,
+   * `src/components/ui/paging.tsx`). This module composes no sentence about it:
+   * it is a leaf and may not import a component, and the words belong where
+   * every other word of this surface lives.
+   *
+   * **It STICKS for the life of the state**, and that is a choice worth naming:
+   * a list that moved under the operator has moved, and a later clean press
+   * does not unmove it. The fact dies with the state it describes — a first
+   * screen the state no longer continues is replaced whole by `continuing()`,
+   * and the fresh state starts `false`.
+   *
+   * `false` on every state `initialPage` builds, so a first server render can
+   * never carry it (M3 EC4).
+   */
+  readonly overlapped: boolean;
 }
 
 /**
@@ -255,6 +311,10 @@ export function pressing<Row>(state: PageState<Row>): PageState<Row> {
     // Nor which first screen it continues — the bound a press asks from is the
     // one this state was seeded with (admin-window/BUG-0216).
     after: state.after,
+    // Nor what it has drawn, nor whether the list has already moved under it:
+    // a press in flight has drawn nothing yet (admin-window/BUG-0222).
+    drawnIds: state.drawnIds,
+    overlapped: state.overlapped,
   };
 }
 
@@ -277,6 +337,23 @@ export function initialPage<Row>(
    * driver started from a synthetic first screen.
    */
   after: string,
+  /**
+   * THE IDS THE FIRST SCREEN ALREADY DREW, in the order it drew them —
+   * `state.drawnIds`' seed (admin-window/BUG-0222).
+   *
+   * The overlap a press brings back is with the rows on SCREEN, and the first
+   * screen is the server's: a state that named only what it appended itself
+   * would still draw the boundary row twice, which is exactly the measured
+   * defect (the duplicate sits at the seam between the first screen and the
+   * first page). So the surface hands its screen's ids in, derived with the
+   * same `id` it hands `deps` and the same field its list keys by.
+   *
+   * It defaults to NONE for the same reason `after` may be `""`: a driver
+   * started from a synthetic first screen has no ids to name, and saying so is
+   * honest. Such a state is still never allowed to append a row twice — the
+   * set grows with every page it takes in.
+   */
+  drawnIds: readonly string[] = [],
 ): PageState<Row> {
   // `notes: null` — a surface's FIRST screen renders its own legs
   // server-side; this state holds only what PRESSES brought.
@@ -287,6 +364,12 @@ export function initialPage<Row>(
     refusal: null,
     notes: null,
     after,
+    // The screen's own ids, as a set: membership is the only question asked of
+    // them. Blanks are dropped on the way in for the reason the append arm
+    // drops them — an absent id identifies no row (admin-window/BUG-0222).
+    drawnIds: new Set(drawnIds.filter((id) => !isAbsentText(id))),
+    // A state that has taken in no page has had nothing move under it.
+    overlapped: false,
   };
 }
 
@@ -343,8 +426,12 @@ export function continuing<Row>(
   return state.after === initial.after ? state : initial;
 }
 
-/** What one press needs: where to ask, what to carry, and how to ask. */
-export interface PageDeps {
+/**
+ * What one press needs: where to ask, what to carry, how to ask — and what a
+ * row is CALLED, which is how a page's rows are told from the rows already on
+ * screen (admin-window/BUG-0222).
+ */
+export interface PageDeps<Row> {
   /** `PAGE_ROUTES[...]` — this app's own route, by a relative path. */
   readonly route: string;
   /** The surface's own facets, already serialized (`a=1&b=2`, or empty). */
@@ -359,6 +446,22 @@ export interface PageDeps {
    * leave the grid in the first place (admin-window/BUG-0168).
    */
   readonly size: number;
+  /**
+   * THE ID A ROW IS DRAWN UNDER — the same field the surface keys its list by
+   * and the same one it derived `after` and `initialPage`'s seed from
+   * (admin-window/BUG-0222).
+   *
+   * One spelling per surface, handed in rather than guessed: this module knows
+   * nothing about a `Row` and must not invent a key for it. Reading a
+   * different field here from the one the list keys by would compare two
+   * screens by something the operator is not looking at — the very trap
+   * `boundOf`'s docstring names for the bound.
+   *
+   * Required, with no default: a surface that has not said what its rows are
+   * called cannot be told it drew one twice, and that silence is the defect
+   * (LESSONS 8).
+   */
+  readonly id: (row: Row) => string;
   /** One request, already parsed. It may reject; a refusal is the answer. */
   readonly fetchJson: (url: string) => Promise<unknown>;
 }
@@ -383,7 +486,7 @@ export interface PageDeps {
  * on `params` is tolerated because a caller composing a query string has every
  * reason to include one.
  */
-export function pageUrl(deps: PageDeps, offset: number): string {
+export function pageUrl<Row>(deps: PageDeps<Row>, offset: number): string {
   const facets = new URLSearchParams(deps.params.replace(/^[?&]+/, "").replace(/&+$/, ""));
   facets.delete(OFFSET_PARAM);
   facets.append(OFFSET_PARAM, String(offset));
@@ -406,6 +509,11 @@ function withRefusal<Row>(state: PageState<Row>, refusal: PageRefusal): PageStat
     refusal,
     notes: state.notes,
     after: state.after,
+    // A press that appended no row drew no id, so the set stands — and an
+    // overlap an earlier press met is still the account of a list that moved
+    // under this operator (admin-window/BUG-0222).
+    drawnIds: state.drawnIds,
+    overlapped: state.overlapped,
   };
 }
 
@@ -646,6 +754,18 @@ function refusalFor(thrown: unknown): AccountSegment[] {
  *     Every `ok` answer declares the bound it was served for; one that is not
  *     the bound this press carried is refused on rule 4's terms, before the
  *     rows, the exhaustion arm and the notes are read at all.
+ *  8. **One drawn list never holds one id twice** (admin-window/BUG-0222). The
+ *     state holds the ids it has drawn — the first screen's, as the surface
+ *     seeded them, plus every row a press appended — and appends only rows
+ *     whose id it does not already hold. Three things the drop does NOT touch:
+ *     the WIRE BOUND, which advances by the ROUTE's row count so the next
+ *     press asks the next unanswered positions; EXHAUSTION, which stays the
+ *     route's (`exhausted === rows.length < size`), so a page deduped to zero
+ *     appended rows is not the end of the set and the control stays; and the
+ *     SKIP, which this rule does not fix and does not claim to
+ *     (admin-window/BUG-0221 — deduping a row the operator already holds says
+ *     nothing about a row the operator never saw). That a press met rows the
+ *     state already held is published as `overlapped` for the surface to state.
  *
  * The answer's own `offset` is read as a GRADE and never as a value (rule 7):
  * it decides whether this is the page this press asked for, and `held` still
@@ -681,7 +801,7 @@ function refusalFor(thrown: unknown): AccountSegment[] {
  */
 export async function requestPage<Row>(
   state: PageState<Row>,
-  deps: PageDeps,
+  deps: PageDeps<Row>,
 ): Promise<PageState<Row>> {
   if (state.status !== "idle") return state;
 
@@ -749,6 +869,10 @@ export async function requestPage<Row>(
           refusal: null,
           notes: state.notes,
           after: state.after,
+          // Nothing arrived, so nothing was drawn and nothing overlapped
+          // (admin-window/BUG-0222).
+          drawnIds: state.drawnIds,
+          overlapped: state.overlapped,
         };
       }
 
@@ -778,8 +902,49 @@ export async function requestPage<Row>(
         notes = mergedNotes(state.notes, reported);
       }
 
+      // ONE DRAWN LIST NEVER HOLDS ONE ID TWICE — admin-window/BUG-0222.
+      //
+      // The bound on the wire is a POSITION, and a row inserted ahead of it
+      // between the screen read and the press moves every later row down one:
+      // the page served at that position then BEGINS with a row the operator
+      // is already looking at. Appending it drew one claim twice (measured
+      // 2026-09-11: 100 rows, 99 distinct, React's duplicate key).
+      //
+      // The drop happens HERE, on the APPEND, and never on the wire: the
+      // request asked for a position, the route answered that position
+      // honestly, and what this state may not do is DRAW a row it already
+      // holds. Each appended row joins the set as it goes, so a page carrying
+      // the same id twice is caught by the same one rule.
+      //
+      // A row whose id is ABSENT is appended and recorded nowhere: an absent
+      // id identifies no row, and collapsing every blank-keyed row into one
+      // would drop rows that are genuinely distinct — dropping data to satisfy
+      // a guard is the worse defect. The question is the app's one definition
+      // of blank (`isAbsentText`), never a fresh `trim()` (LESSONS 4).
+      const drawnIds = new Set(state.drawnIds);
+      const fresh: Row[] = [];
+      for (const row of answer.rows) {
+        const id = deps.id(row);
+        if (isAbsentText(id)) {
+          fresh.push(row);
+          continue;
+        }
+        if (drawnIds.has(id)) continue;
+        drawnIds.add(id);
+        fresh.push(row);
+      }
+
       return {
-        rows: [...state.rows, ...answer.rows],
+        rows: [...state.rows, ...fresh],
+        // BY THE ROUTE'S OWN ROW COUNT, NEVER BY THE NUMBER APPENDED
+        // (admin-window/BUG-0222). The wire bound is a position in the order
+        // the ROUTE just read: it advances by the rows that route served, so
+        // the next press asks the next unanswered positions. Advancing by the
+        // appended count would re-ask positions already answered and repeat
+        // the same overlap for ever. The bound and the drawn row count are
+        // therefore TWO facts, each stated by whoever owns it and neither
+        // inferred from the other's size (§4.3 kind 3 rule 4).
+        //
         // By the WINDOW on every continuing page, so the next bound is on the
         // grid `pageBound` enforces BY CONSTRUCTION — except at the two places
         // the header names: a final page, which ends `exhausted`, and the
@@ -793,6 +958,11 @@ export async function requestPage<Row>(
         // taken in does not move the first screen it was taken after
         // (admin-window/BUG-0216).
         after: state.after,
+        drawnIds,
+        // THE OVERLAP IS A FACT, NOT A SILENCE (admin-window/BUG-0222). It is
+        // published for the surface to state once, in its own words; a page
+        // that dropped nothing leaves whatever an earlier press established.
+        overlapped: state.overlapped || fresh.length < served,
       };
     }
     case "not_provisioned":

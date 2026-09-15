@@ -46,13 +46,17 @@ const rows = (...ids: string[]): Row[] => ids.map((id) => ({ id }));
 /** A `fetchJson` that records every URL it was called with. */
 function recorder(reply: (url: string) => unknown): {
   urls: string[];
-  deps: PageDeps;
+  deps: PageDeps<Row>;
 } {
   const urls: string[] = [];
-  const deps: PageDeps = {
+  const deps: PageDeps<Row> = {
     route: PAGE_ROUTES.claims,
     params: "tab=standing&source_id=abc",
     size: SIZE,
+    // What a row is CALLED, so a page carrying a row the state already drew is
+    // recognised as one (admin-window/BUG-0222). It is the field these
+    // fixtures key their rows by, like a surface's own.
+    id: (row: Row) => row.id,
     fetchJson: async (url: string) => {
       urls.push(url);
       return reply(url);
@@ -62,7 +66,7 @@ function recorder(reply: (url: string) => unknown): {
 }
 
 /** A stub that answers each press with the next scripted answer. */
-function answering(...answers: unknown[]): { urls: string[]; deps: PageDeps } {
+function answering(...answers: unknown[]): { urls: string[]; deps: PageDeps<Row> } {
   let index = 0;
   return recorder(() => answers[index++]);
 }
@@ -108,7 +112,18 @@ function said(words: string, author: ReasonAuthor): AccountSegment[] {
 
 /** A surface that has rendered a first screen of `held` rows and paged in two. */
 function paged(held: number, ...ids: string[]): PageState<Row> {
-  return { after: "", rows: rows(...ids), held, status: "idle", refusal: null, notes: null };
+  return {
+    after: "",
+    rows: rows(...ids),
+    held,
+    status: "idle",
+    refusal: null,
+    notes: null,
+    // A surface driven from a synthetic first screen names no id of its own;
+    // what it paged in is what it holds (admin-window/BUG-0222).
+    drawnIds: new Set<string>(ids),
+    overlapped: false,
+  };
 }
 
 describe("initialPage", () => {
@@ -126,6 +141,8 @@ describe("initialPage", () => {
       // …and it declares the bound it continues: the last row of the first
       // screen it was seeded from (admin-window/BUG-0216).
       after: "the-50th-row",
+      drawnIds: new Set<string>(),
+      overlapped: false,
     });
     expect(initialPage<Row>(7, false, "the-7th-row")).toEqual({
       rows: [],
@@ -134,6 +151,8 @@ describe("initialPage", () => {
       refusal: null,
       notes: null,
       after: "the-7th-row",
+      drawnIds: new Set<string>(),
+      overlapped: false,
     });
   });
 
@@ -237,6 +256,197 @@ describe("a claim is never drawn twice when the first screen changes underneath"
   it("says the bound is the last row of the first screen, and nothing for an empty one", () => {
     expect(boundOf(rows("a", "b", "c"), (row) => row.id)).toBe("c");
     expect(boundOf([], (row: Row) => row.id)).toBe("");
+  });
+});
+
+/**
+ * ONE DRAWN LIST NEVER HOLDS ONE ID TWICE — campaign admin-window/BUG-0222.
+ *
+ * The other half of the seam above. A press asks for a POSITION, and a row
+ * INSERTED ahead of that position between the screen read and the press moves
+ * every later row down one — so the page served at position N begins with a
+ * row the operator is already looking at, and the surface concatenated it.
+ * Measured on a dev instance 2026-09-11 (admin-window/BUG-0221 repro B): 100
+ * rows drawn, 99 distinct, `01a058f1-02c7-7e11-9191-adfa6207a0f0` twice, and
+ * React's duplicate-key error in Ben's log.
+ *
+ * The property, positively: **every id the surface draws is distinct, and the
+ * run's length equals its distinct count** — whatever the route answers. It is
+ * a rule about the APPEND, not about the wire: the bound still advances by the
+ * rows the ROUTE returned, so progress is preserved and a walk still reaches
+ * the end (the cases below drive both halves).
+ *
+ * What it does NOT do, stated so no reader infers it: it does not fix the SKIP
+ * (admin-window/BUG-0221, whose pin stands red below). Dropping a row the
+ * operator already holds says nothing about a row the operator never saw.
+ */
+describe("one drawn list never holds one id twice", () => {
+  /** The first screen a surface renders, and the state that continues it. */
+  const screen = (...ids: string[]): { rows: Row[]; state: PageState<Row> } => ({
+    rows: rows(...ids),
+    state: initialPage<Row>(
+      ids.length,
+      true,
+      boundOf(rows(...ids), (row) => row.id),
+      ids,
+    ),
+  });
+
+  /** What the surface actually puts on screen: the first screen, then the pages. */
+  const drawn = (first: Row[], state: PageState<Row>): string[] =>
+    [...first, ...state.rows].map((row) => row.id);
+
+  /** An `ok` page, as this app's own route answers one. */
+  const page = (offset: number, exhausted: boolean, ...ids: string[]): unknown => ({
+    kind: "ok",
+    rows: rows(...ids),
+    offset,
+    exhausted,
+  });
+
+  it("appends every row of an ordinary page — the fixture the guard must NOT flag", async () => {
+    // LESSONS 8: the passing shape is shipped beside the failing one, because
+    // a dedupe that dropped rows nobody had drawn would be a far worse defect
+    // than the one it was built for.
+    const before = screen("a", "b");
+    const { deps } = answering(page(SIZE, false, "c", "d"));
+    const held = await requestPage<Row>(before.state, deps);
+    expect(drawn(before.rows, held)).toEqual(["a", "b", "c", "d"]);
+    expect(held.held).toBe(SIZE * 2);
+    expect(held.overlapped).toBe(false);
+  });
+
+  it("drops a row the screen above already holds, and draws every id once", async () => {
+    // A claim was INSERTED ahead of the bound, so position 2 of the order the
+    // route read is `b` — the last row of the first screen — and position 3 is
+    // `c`. Before this ticket the surface drew a, b, b, c.
+    const before = screen("a", "b");
+    const { deps } = answering(page(SIZE, false, "b", "c"));
+    const held = await requestPage<Row>(before.state, deps);
+
+    const ids = drawn(before.rows, held);
+    expect(ids).toEqual(["a", "b", "c"]);
+    // The property itself, asserted as the property: the run agrees with its
+    // own count.
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("advances the bound by the ROUTE's row count, never by the number appended", async () => {
+    // The wire bound is a position in the order the ROUTE just read. Advancing
+    // by the appended count would re-ask positions already answered, and the
+    // same overlap would repeat for ever — so the two facts are separate, and
+    // the second press asks the next unanswered positions.
+    const before = screen("a", "b");
+    const { urls, deps } = answering(page(SIZE, false, "b", "c"), page(SIZE * 2, true, "d"));
+    const once = await requestPage<Row>(before.state, deps);
+    expect(once.held).toBe(SIZE * 2);
+    expect(once.rows).toHaveLength(1);
+
+    const twice = await requestPage<Row>(once, deps);
+    expect(urls.map((url) => new URLSearchParams(url.split("?")[1]).get(OFFSET_PARAM))).toEqual([
+      String(SIZE),
+      String(SIZE * 2),
+    ]);
+    expect(drawn(before.rows, twice)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("walks a population that moves once mid-walk to the end, with nothing drawn twice", async () => {
+    // Criterion 2 end to end: the walk terminates, appends no duplicate and
+    // ends EXHAUSTED. The order is a,b,c,d,e; the first screen is a,b; one row
+    // is inserted ahead of the bound before the second press, so that page
+    // repeats `d`.
+    const before = screen("a", "b");
+    const { deps } = answering(
+      page(SIZE, false, "c", "d"),
+      page(SIZE * 2, false, "d", "e"),
+      page(SIZE * 3, true),
+    );
+    let state = before.state;
+    let presses = 0;
+    while (state.status === "idle" && presses < 10) {
+      state = await requestPage<Row>(state, deps);
+      presses += 1;
+      expect(state.refusal, "the walk was refused").toBeNull();
+    }
+    expect(state.status).toBe("exhausted");
+    const ids = drawn(before.rows, state);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  it("a page deduped to ZERO appended rows is not exhaustion, and the bound still moves", async () => {
+    // The route answered a full window and the state already held every row of
+    // it. That is a list that moved under the operator, not the end of a set:
+    // the status stays `idle` (so the surface keeps its control) and the bound
+    // advances by the rows the route served.
+    const before = screen("a", "b");
+    const { deps } = answering(page(SIZE, false, "a", "b"));
+    const held = await requestPage<Row>(before.state, deps);
+    expect(held.status).toBe("idle");
+    expect(held.rows).toEqual([]);
+    expect(held.held).toBe(SIZE * 2);
+    expect(held.refusal).toBeNull();
+    expect(held.overlapped).toBe(true);
+  });
+
+  it("drops a row a PAGE carries twice, whatever the route answers", async () => {
+    // The rule is over the ids this state has drawn, and each appended row
+    // joins that set as it goes — so one answer carrying the same id twice is
+    // caught by the same one rule.
+    const before = screen("a", "b");
+    const { deps } = answering(page(SIZE, false, "c", "c"));
+    const held = await requestPage<Row>(before.state, deps);
+    expect(drawn(before.rows, held)).toEqual(["a", "b", "c"]);
+    expect(held.held).toBe(SIZE * 2);
+  });
+
+  it("appends rows whose id is ABSENT rather than collapsing them into one", async () => {
+    // An absent id identifies no row, so it is no evidence that the row was
+    // drawn: dropping such rows would be data lost to a guard. Two blanks, two
+    // rows — and the app's one definition of blank decides it, which is why a
+    // whitespace-only id is the second fixture.
+    const before = screen("a", "b");
+    const { deps } = answering(page(SIZE, false, "", " "));
+    const held = await requestPage<Row>(before.state, deps);
+    expect(held.rows.map((row) => row.id)).toEqual(["", " "]);
+    expect(held.overlapped).toBe(false);
+  });
+
+  it("states the overlap once it has happened, and not before", async () => {
+    // The FACT the surface says out loud (criterion 3's half in the driver).
+    // It starts false on every state `initialPage` builds — which is what
+    // keeps it off a first server render — and sticks once a press has met an
+    // overlap: a list that moved under the operator has moved.
+    const before = screen("a", "b");
+    expect(before.state.overlapped).toBe(false);
+    const { deps } = answering(page(SIZE, false, "b", "c"), page(SIZE * 2, false, "d", "e"));
+    const once = await requestPage<Row>(before.state, deps);
+    expect(once.overlapped).toBe(true);
+    const twice = await requestPage<Row>(once, deps);
+    expect(twice.overlapped).toBe(true);
+  });
+
+  it("keeps the ids and the overlap across a refused press, and appends nothing", async () => {
+    const before = screen("a", "b");
+    const { deps } = answering(page(SIZE, false, "b", "c"), { kind: "error", reading: "pending_claims", message: "the read failed" });
+    const once = await requestPage<Row>(before.state, deps);
+    const refused = await requestPage<Row>(once, deps);
+    expect(refused.rows).toEqual(once.rows);
+    expect(refused.held).toBe(once.held);
+    expect(refused.status).toBe("idle");
+    expect(refused.overlapped).toBe(true);
+    expect([...refused.drawnIds]).toEqual([...once.drawnIds]);
+  });
+
+  it("holds the first screen's ids from the start, so the seam row is the one caught", async () => {
+    // The duplicate MEASURED sat at the seam between the first screen and the
+    // first page, so a state that named only what it appended itself would
+    // still have drawn it twice. The seed is the surface's, and it is the same
+    // spelling the list keys by.
+    expect([...screen("a", "b").state.drawnIds]).toEqual(["a", "b"]);
+    // A driver started from a synthetic screen names none — honest, and still
+    // never appends a row it appended itself.
+    expect([...initialPage<Row>(SIZE, true, "").drawnIds]).toEqual([]);
   });
 });
 
@@ -402,8 +612,26 @@ describe("requestPage", () => {
     // comparing identity can see that nothing happened.
     const { urls, deps } = answering({ kind: "ok", rows: rows("x"), offset: 4, exhausted: false });
     const states: PageState<Row>[] = [
-      { after: "", rows: rows("a"), held: 4, status: "loading", refusal: null, notes: null },
-      { after: "", rows: rows("a"), held: 4, status: "exhausted", refusal: null, notes: null },
+      {
+        after: "",
+        rows: rows("a"),
+        held: 4,
+        status: "loading",
+        refusal: null,
+        notes: null,
+        drawnIds: new Set<string>(["a"]),
+        overlapped: false,
+      },
+      {
+        after: "",
+        rows: rows("a"),
+        held: 4,
+        status: "exhausted",
+        refusal: null,
+        notes: null,
+        drawnIds: new Set<string>(["a"]),
+        overlapped: false,
+      },
     ];
     return Promise.all(
       states.map(async (state) => {
@@ -943,6 +1171,8 @@ describe("requestPage", () => {
         refusal: null,
         notes: standing,
         after: "",
+        drawnIds: new Set<string>(),
+        overlapped: false,
       };
       expect(pressing(idle).notes).toBe(standing);
       expect(pressing(idle).status).toBe("loading");
@@ -1398,6 +1628,8 @@ describe("pressing", () => {
       refusal: null,
       notes: null,
       after: "",
+      drawnIds: new Set<string>(),
+      overlapped: false,
     };
     const started = pressing(idle);
     expect(started.status).toBe("loading");
@@ -1424,6 +1656,8 @@ describe("pressing", () => {
       },
       notes: null,
       after: "",
+      drawnIds: new Set<string>(),
+      overlapped: false,
     };
     expect(pressing(refused).refusal).toBe(refused.refusal);
     expect(pressing(refused).status).toBe("loading");
@@ -1440,6 +1674,8 @@ describe("pressing", () => {
         refusal: null,
         notes: null,
         after: "",
+        drawnIds: new Set<string>(),
+        overlapped: false,
       };
       expect(pressing(state)).toBe(state);
     }
@@ -1453,6 +1689,8 @@ describe("pressing", () => {
       refusal: null,
       notes: null,
       after: "",
+      drawnIds: new Set<string>(),
+      overlapped: false,
     };
     const once = pressing(idle);
     expect(pressing(once)).toBe(once);
@@ -1527,7 +1765,7 @@ describe("every refusal says who wrote its reason", () => {
     );
 
   /** A press the stub answers with this body. */
-  const answered = (body: unknown, over: Partial<PageDeps> = {}): Promise<PageState<Row>> => {
+  const answered = (body: unknown, over: Partial<PageDeps<Row>> = {}): Promise<PageState<Row>> => {
     const { deps } = answering(body);
     return requestPage(held, { ...deps, ...over });
   };

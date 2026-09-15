@@ -63,6 +63,15 @@ import {
 
 type Row = { id: string };
 
+/**
+ * WHAT A ROW IS CALLED, for the driver's dedupe — admin-window/BUG-0222.
+ *
+ * Every surface hands its own (`deps.id`); these fixtures key their rows by
+ * `id`, so this is theirs, spelled once rather than retyped into each deps
+ * literal below.
+ */
+const rowId = (row: Row): string => row.id;
+
 const HOLDS = "claims";
 const SIZE = 50;
 
@@ -81,7 +90,20 @@ const NEXT_STEP = NARROW_THE_VIEW;
 
 /** A state a surface would really be in: a first screen, and nothing paged in yet. */
 function state(over: Partial<PageState<Row>> = {}): PageState<Row> {
-  return { after: "", rows: [], held: SIZE, status: "idle", refusal: null, notes: null, ...over };
+  return {
+    after: "",
+    rows: [],
+    held: SIZE,
+    status: "idle",
+    refusal: null,
+    notes: null,
+    // The ids a surface has drawn, and whether the list has moved under it
+    // (admin-window/BUG-0222). A first screen these fixtures do not enumerate
+    // names no id, and nothing has moved until a press says so.
+    drawnIds: new Set<string>(),
+    overlapped: false,
+    ...over,
+  };
 }
 
 /**
@@ -372,6 +394,115 @@ describe("PageMore draws its five states from props", () => {
  * disappears between the first screen and a press (the first screen would have
  * rendered `NotProvisioned` and drawn no control at all).
  */
+/**
+ * THE LIST MOVED UNDER THE OPERATOR, AND THE SURFACE SAYS SO — campaign
+ * admin-window/BUG-0222.
+ *
+ * The driver refuses to draw one id twice; a SILENT drop would hide the fact
+ * that produced it — that the rows on screen are not the rows the route is
+ * paging. So the fact travels on the state and this element states it once.
+ *
+ * Every case here grades the HOOK and the behaviour, never the wording: the
+ * words are the designer's and are graded at the walk (the ticket's criterion
+ * 3, and this file's standing rule for the terminal sentences).
+ */
+describe("the paging area states an overlap once, in client-land", () => {
+  /** The overlap line the surface drew, if it drew one. */
+  const overlap = (html: string): cheerio.Cheerio<never> =>
+    cheerio.load(html)("[data-paging-overlap]") as unknown as cheerio.Cheerio<never>;
+
+  it("says nothing at all on a state no press has changed", () => {
+    // Criterion 4's half in this file: the fact is false on every state
+    // `initialPage` builds, so a first SERVER render carries no such element —
+    // which is what keeps the first screen byte-identical.
+    expect(overlap(more())).toHaveLength(0);
+    expect(overlap(more({ status: "exhausted" }))).toHaveLength(0);
+    expect(overlap(more({ status: "loading" }))).toHaveLength(0);
+  });
+
+  it("says it ONCE when a press met rows the state already held", () => {
+    const html = more({ overlapped: true });
+    expect(overlap(html)).toHaveLength(1);
+    // It is a sentence, not a control: nothing new to press appears with it.
+    expect(controls(html)).toBe(1);
+    expect(overlap(html).find("button")).toHaveLength(0);
+  });
+
+  it("keeps the control and the rows: an overlap is not a refusal and not an end", () => {
+    // The press that met an overlap still moved the bound, so the next press
+    // is live. The refusal line belongs to a different fact and is not drawn
+    // by this one.
+    const html = more({ overlapped: true });
+    expect(html).toContain('data-paging="more"');
+    expect(html).not.toContain("data-paging-refusal");
+    expect(html).not.toContain('data-paging="exhausted"');
+  });
+
+  it("stands beside every other arm, because a list that moved has moved", () => {
+    for (const over of [
+      { overlapped: true, status: "exhausted" as const },
+      { overlapped: true, status: "loading" as const },
+      {
+        overlapped: true,
+        refusal: brokenArm("the read failed", "the machine", "pending_claims"),
+      },
+    ]) {
+      expect(overlap(more(over))).toHaveLength(1);
+    }
+  });
+
+  it("is announced politely and reads as a notice, never as breakage", () => {
+    // LOOK_AND_FEEL, Palette: red means broken. Nothing failed here — the
+    // route answered and the app drew what it could honour — so this line
+    // takes the same secondary ink as the other terminal sentences and is
+    // announced as a status rather than an alert.
+    const line = overlap(more({ overlapped: true }));
+    expect(line.attr("role")).toBe("status");
+    expect(line.attr("class")).not.toContain("broken");
+    expect(line.attr("class")).toBe(
+      cheerio.load(more({ status: "exhausted" }))("[data-paging]").attr("class"),
+    );
+  });
+
+  it("names what the surface holds, in the surface's own noun", () => {
+    // The noun is the SURFACE's, like every other sentence this element says,
+    // so a second surface is not given `/claims`' word (LESSONS 6). The
+    // WORDING is not pinned — only that the surface's noun reaches it.
+    const events = render(
+      h(PageMore, {
+        state: state({ overlapped: true }),
+        holds: "events",
+        size: SIZE,
+        readsAgree: true,
+        nextStep: null,
+        onPress: () => {},
+      }),
+    );
+    expect(overlap(events).text()).toContain("events");
+    expect(overlap(more({ overlapped: true })).text()).toContain(HOLDS);
+  });
+
+  it("claims nothing about the run: no completeness, no contiguity", () => {
+    // The skip is admin-window/BUG-0221's and is NOT fixed here, so no
+    // sentence this ticket added may imply the drawn run is whole. Graded
+    // structurally: the overlap line is not the exhausted arm, carries no
+    // `data-paging` verdict of its own, and does not appear where the app
+    // states completeness.
+    const html = more({ overlapped: true });
+    expect(overlap(html).attr("data-paging")).toBeUndefined();
+    expect(cheerio.load(html)("[data-paging]")).toHaveLength(1);
+    expect(cheerio.load(html)("[data-paging]").attr("data-paging")).toBe("more");
+  });
+
+  it("introduces no window attribute — the first screen's hooks are untouched", () => {
+    // §4.3 kind 3, rule 3 of the window-line amendment: an added
+    // `data-window-*` attribute IS a first-screen change.
+    const html = more({ overlapped: true });
+    expect(cheerio.load(html)("[data-window]")).toHaveLength(0);
+    expect(html).not.toContain("data-window");
+  });
+});
+
 describe("a page answer for an object this database does not have", () => {
   const MISSING = "pending_claims";
   const absent = (over: Partial<PageState<Row>> = {}): string =>
@@ -475,11 +606,12 @@ describe("a page answer for an object this database does not have", () => {
     // it again to ask for the same rows." — copy bar 3 inverted, inside a
     // `role="alert"` that announces it.
     const next = await requestPage<Row>(
-      { after: "", rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
+      state(),
       {
         route: PAGE_ROUTES.claims,
         params: "",
         size: SIZE,
+        id: rowId,
         fetchJson: async () => ({ kind: "refused", reason: "", bound: "75" }),
       },
     );
@@ -704,7 +836,7 @@ describe("the affordance's look", () => {
 
 describe("fetchJson — the one request, and what it may reject with", () => {
   const URL_ASKED = pageUrl(
-    { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
+    { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson },
     SIZE,
   );
 
@@ -750,8 +882,8 @@ describe("fetchJson — the one request, and what it may reject with", () => {
     // with the row list untouched.
     stub(() => Response.json(answer, { status: 400 }));
     const next = await requestPage<Row>(
-      { after: "", rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
-      { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
+      state({ rows: [{ id: "a" }], drawnIds: new Set(["a"]) }),
+      { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson },
     );
     expect(broken(next.refusal).reason).toBe(answer.reason);
     expect(next.rows.map((row) => row.id)).toEqual(["a"]);
@@ -785,8 +917,8 @@ describe("fetchJson — the one request, and what it may reject with", () => {
       expect(said, name).not.toBe("null");
       // The driver renders whatever this rejects with; it must be readable.
       const next = await requestPage<Row>(
-        { after: "", rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
-        { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
+        state(),
+        { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson },
       );
       expect(broken(next.refusal).reason, name).toBe(said);
     }
@@ -816,7 +948,7 @@ describe("fetchJson — the one request, and what it may reject with", () => {
  */
 describe("fetchJson asks what ANSWERED before it reads the body", () => {
   const URL_ASKED = pageUrl(
-    { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
+    { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson },
     SIZE,
   );
 
@@ -885,8 +1017,8 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
     for (const [name, body, init] of NOT_THIS_APP) {
       answeredWith(body, init);
       const next = await requestPage<Row>(
-        { after: "", rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
-        { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
+        state({ rows: [{ id: "a" }], drawnIds: new Set(["a"]) }),
+        { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson },
       );
       expect(broken(next.refusal).reason, name).toBe(ANSWERED_BY_SOMETHING_ELSE);
       expect(broken(next.refusal).object, name).toBe(PAGE_ROUTES.claims);
@@ -904,8 +1036,8 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
     const [, body, init] = NOT_THIS_APP[0];
     answeredWith(body, init);
     const next = await requestPage<Row>(
-      { after: "", rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
-      { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
+      state(),
+      { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson },
     );
     const shown = readable(
       render(h(PageMore, {
@@ -941,8 +1073,8 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
       headers: { "content-type": "application/json" },
     });
     const next = await requestPage<Row>(
-      { after: "", rows: [{ id: "a" }], held: SIZE, status: "idle", refusal: null, notes: null },
-      { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson },
+      state({ rows: [{ id: "a" }], drawnIds: new Set(["a"]) }),
+      { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson },
     );
     expect(broken(next.refusal).reason).toBe(UNREADABLE_ANSWER);
     expect(broken(next.refusal).object).toBe(PAGE_ROUTES.claims);
@@ -1058,6 +1190,7 @@ describe("usePageRows binds the driver to a press", () => {
           route: PAGE_ROUTES.claims,
           params,
           size: SIZE,
+          id: rowId,
         });
         captured.press = bound.press;
         return h(PageMore, {
@@ -1232,6 +1365,7 @@ describe("usePageRows binds the driver to a press", () => {
             route: PAGE_ROUTES.claims,
             params: "",
             size: windowSize,
+            id: rowId,
           });
           captured.press = bound.press;
           // …and the widget is fed from the hook, never retyped beside it.
@@ -1326,11 +1460,11 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
   const paged = (state: PageState<Row>, window: DrawnWindow = WINDOW): string =>
     render(
       h(
-        PagingProvider,
+        PagingProvider<Row>,
         {
           initial: state,
           window,
-          deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE },
+          deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE, id: rowId },
           children: null,
         },
         h(PagedWindowLine, { gauge: "events", shows: CATALOG }),
@@ -1352,11 +1486,11 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
   const surface = (state: PageState<Row>, window: DrawnWindow): string =>
     render(
       h(
-        PagingProvider,
+        PagingProvider<Row>,
         {
           initial: state,
           window,
-          deps: { route: PAGE_ROUTES.claims, params: "", size: SIZE },
+          deps: { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId },
           children: null,
         },
         h(function Body() {
@@ -1384,6 +1518,8 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     refusal: null,
     notes: null,
     after: "",
+    drawnIds: new Set<string>(),
+    overlapped: false,
   });
   const counted = (total: number): DrawnWindow => ({
     ...WINDOW,
@@ -1406,6 +1542,8 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     held: MAX_PAGE_OFFSET + SIZE,
     status: "idle",
     refusal: null,
+    drawnIds: new Set<string>(),
+    overlapped: false,
     notes: null,
     after: "",
   });
@@ -1448,11 +1586,11 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     const child = h("span", { "data-probe": "" }, "rows");
     const wrapped = render(
       h(
-        PagingProvider,
+        PagingProvider<Row>,
         {
           initial: initialPage<Row>(SIZE, true, ""),
           window: WINDOW,
-          deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE },
+          deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE, id: rowId },
           children: null,
         },
         child,
@@ -1509,6 +1647,8 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
       status: "idle",
       refusal: null,
       notes: null,
+      drawnIds: new Set<string>(),
+      overlapped: false,
       after: "",
     };
 
@@ -1758,14 +1898,14 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     const CEILING = MAX_PAGE_OFFSET + SIZE;
 
     /** One whole surface at the ceiling: this provider, and the page's own body. */
-    const drawn = <Row,>(route: string, window: DrawnWindow, body: ReactNode): string =>
+    const drawn = (route: string, window: DrawnWindow, body: ReactNode): string =>
       render(
         h(
-          PagingProvider,
+          PagingProvider<Row>,
           {
             initial: initialPage<Row>(CEILING, true, ""),
             window,
-            deps: { route, params: "", size: SIZE },
+            deps: { route, params: "", size: SIZE, id: rowId },
             children: null,
           },
           body,
@@ -1774,7 +1914,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
 
     /** `/browse`'s own reading: its window line and its own table wrapper. */
     const browse = (): string =>
-      drawn<Row>(
+      drawn(
         PAGE_ROUTES.browse,
         { ...WINDOW, held: CEILING, heldFrom: "this window" },
         h(
@@ -1793,7 +1933,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
 
     /** `/claims`' own reading, of the same arm, on the same state. */
     const claims = (): string =>
-      drawn<Row>(
+      drawn(
         PAGE_ROUTES.claims,
         counted(MAX_PAGE_OFFSET * 2),
         h(
@@ -1815,7 +1955,16 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     const widget = (holds: string, nextStep: string | null): string =>
       render(
         h(PageMore, {
-          state: { rows: [], held: CEILING, status: "idle", refusal: null, notes: null, after: "" },
+          state: {
+            rows: [],
+            held: CEILING,
+            status: "idle",
+            refusal: null,
+            notes: null,
+            after: "",
+            drawnIds: new Set<string>(),
+            overlapped: false,
+          },
           holds,
           size: SIZE,
           readsAgree: true,
@@ -2056,11 +2205,12 @@ describe("a page that arrives short of the window", () => {
       exhausted,
     };
     const next = await requestPage<Row>(
-      { after: "", rows: [], held: SIZE, status: "idle", refusal: null, notes: null },
+      state(),
       {
         route: PAGE_ROUTES.claims,
         params: "",
         size: SIZE,
+        id: rowId,
         fetchJson: async () => answer,
       },
     );
@@ -2136,7 +2286,7 @@ describe("the refusal line says who wrote the words", () => {
   });
 
   const AS_JSON = { status: 200, headers: { "content-type": "application/json" } };
-  const DEPS = { route: PAGE_ROUTES.claims, params: "", size: SIZE, fetchJson };
+  const DEPS = { route: PAGE_ROUTES.claims, params: "", size: SIZE, id: rowId, fetchJson };
   const BEFORE: PageState<Row> = {
     rows: [{ id: "a" }],
     held: SIZE,
@@ -2144,6 +2294,8 @@ describe("the refusal line says who wrote the words", () => {
     refusal: null,
     notes: null,
     after: "",
+    drawnIds: new Set<string>(["a"]),
+    overlapped: false,
   };
 
   /** One press against a stubbed wire, rendered. */

@@ -110,6 +110,20 @@ const EVENTS_SURFACE = "events";
  */
 const EVENTS_WINDOW = "events";
 
+/**
+ * WHAT ONE BROWSE ROW IS CALLED — the field this surface draws its rows under,
+ * spelled ONCE for the three things that must agree about it
+ * (admin-window/BUG-0222, LESSONS 5).
+ *
+ * The bound this first screen ends at (`boundOf`), the ids it has already
+ * drawn (`initialPage`) and the id a paged row is recognised by (`deps.id`)
+ * are three readings of one fact, and they must be the same field the table
+ * keys its rows by (`BrowseTable`) — a set keyed on one field beside React
+ * keys drawn from another would compare two screens by something the operator
+ * is not looking at.
+ */
+const eventId = (row: BrowseRow): string => row.event_id;
+
 export default async function BrowsePage({
   searchParams,
 }: {
@@ -353,13 +367,21 @@ export default async function BrowsePage({
             initial={initialPage<BrowseRow>(
               drawn.length,
               pageable,
-              boundOf(drawn, (row) => row.event_id),
+              boundOf(drawn, eventId),
+              // AND THE IDS THIS SCREEN HAS ALREADY DRAWN, so a page the
+              // route serves at a position rows have moved under cannot put
+              // an event on screen twice (admin-window/BUG-0222). Same
+              // spelling as the bound above and as `deps.id` below — one
+              // derivation of "what this row is called", which is also the
+              // field `BrowseTable` keys by.
+              drawn.map(eventId),
             )}
             window={eventsWindow}
             deps={{
               route: PAGE_ROUTES.browse,
               params: browseQuery(view, shown),
               size: view.window,
+              id: eventId,
             }}
           >
             {sectionBody}

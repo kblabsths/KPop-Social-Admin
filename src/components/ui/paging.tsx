@@ -237,7 +237,7 @@ function asError(thrown: unknown): Error {
  */
 export function usePageRows<Row>(
   initial: PageState<Row>,
-  deps: Omit<PageDeps, "fetchJson">,
+  deps: Omit<PageDeps<Row>, "fetchJson">,
 ): { state: PageState<Row>; press: () => void; size: number } {
   const [state, setState] = useState<PageState<Row>>(initial);
   const latest = useRef<PageState<Row>>(initial);
@@ -347,7 +347,7 @@ export function PagingProvider<Row>({
   /** The first screen's own state, composed by the page (`initialPage`). */
   initial: PageState<Row>;
   /** Where a press asks, what it carries, and the window it is graded against. */
-  deps: Omit<PageDeps, "fetchJson">;
+  deps: Omit<PageDeps<Row>, "fetchJson">;
   /**
    * THE FIRST SCREEN'S WINDOW, as the page composed it — ONE object for the
    * whole surface (admin-window/BUG-0172, admin-window/BUG-0180).
@@ -516,6 +516,48 @@ function askFor(size: number, holds: string): string {
  * answers one question twice (LESSONS 11, the stutter
  * `./window-line`'s `THE_READ_FOUND_NO_MORE` names).
  */
+/**
+ * THE LIST MOVED UNDER THE OPERATOR, SAID ONCE, IN CLIENT-LAND — campaign
+ * admin-window/BUG-0222.
+ *
+ * A press asks for a POSITION in an order the route re-reads when the press
+ * arrives. A row inserted ahead of that position in between moves every later
+ * row down one, so the page comes back beginning with rows the operator is
+ * already looking at. The driver refuses to draw one id twice
+ * (`src/lib/paging/machine.ts`, rule 8) — and a silent drop would hide the one
+ * fact that matters, which is not that this app dropped a row but that the
+ * rows on screen are not the rows the route is paging.
+ *
+ * So the driver publishes the FACT (`state.overlapped`) and this file says it,
+ * because this is where every other word of the paging area lives (LESSONS 5).
+ * Three properties it is written to keep:
+ *
+ *  - **It is about the PRESS, so it renders only after one.** `initialPage`
+ *    publishes `overlapped: false`, so the first server render of both paged
+ *    surfaces is byte-identical to the one before this ticket (M3 EC4), and
+ *    the hook below is absent from it.
+ *  - **It claims nothing about the run.** It does not say the list is
+ *    complete, does not say it is contiguous, and says nothing about the rows
+ *    a moving order may have carried PAST the bound — that is the skip, which
+ *    is admin-window/BUG-0221's and is not fixed here. It reports what this
+ *    press met and what the operator can do.
+ *  - **It is a notice, not a breakage.** Nothing failed: the route answered,
+ *    the app drew what it could honour. So it takes the secondary ink every
+ *    other terminal sentence here takes, never the broken red, and it is
+ *    announced politely (`role="status"`) rather than as an alert
+ *    (LOOK_AND_FEEL, Palette — red means broken).
+ *
+ * The noun is the SURFACE's own word, like every other sentence in this
+ * element; the wording is the designer's to grade at the walk.
+ */
+function movedUnderYou(holds: string): string {
+  return (
+    `The ${holds} in this view moved while it was open, so this press answered with ` +
+    `${holds} already on screen and they were not drawn again. ` +
+    `Reload this view to read it as it now stands.`
+  );
+}
+
 function stoppedAtTheCeiling(holds: string, nextStep: string | null): string {
   const stopped =
     `This app serves no bound past ${count(MAX_PAGE_OFFSET)} ${holds}, so paging stops ` +
@@ -632,6 +674,16 @@ export function PageMore({
         // nothing (LESSONS 1, CONTENT — the fix is never wishful).
         <Refusal refusal={state.refusal} retryable={drawsControl} />
       )}
+      {state.overlapped ? (
+        // ONE element, whatever the surface and however many presses met an
+        // overlap: the fact is the state's and the state holds it once
+        // (admin-window/BUG-0222). It renders beside every arm below, exactly
+        // as a refusal does — a list that moved under the operator moved
+        // whether the next press is offered, refused or exhausted.
+        <p data-paging-overlap="" role="status" className="type-body text-ink-secondary">
+          {movedUnderYou(holds)}
+        </p>
+      ) : null}
       {exhausted ? (
         agree ? (
           // One read established that every row the surface counted is on

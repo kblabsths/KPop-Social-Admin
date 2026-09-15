@@ -22,6 +22,7 @@ import {
   initialPage,
   pressing,
   requestPage,
+  type PageDeps,
   type PageState,
 } from "@/lib/paging/machine";
 import { ROW_CAP } from "@/lib/db/result";
@@ -261,6 +262,12 @@ function countedWindow(counted: number, limit: number): DrawnWindow {
  * markup — cannot be the thing that puts it there, and so the page's own
  * absence check stays honest about the product rather than about its tests.
  */
+/**
+ * WHAT ONE CLAIM LINE IS CALLED, for a fixture that builds the surface's deps
+ * by hand — the same field the page spells (admin-window/BUG-0222).
+ */
+const observationId = (claim: ClaimLine): string => claim.observationId;
+
 const PARKED = "in_" + "window";
 
 /** The five buckets a page may show, spelled from the migration, in its order. */
@@ -6557,7 +6564,7 @@ describe("the affordance that continues the claim list", () => {
     expect(claimIds(firstScreen)).toEqual(firstScreenOf(claims));
     const { initial, deps } = paging.calls[0] as unknown as {
       initial: PageState<ClaimLine>;
-      deps: { route: string; params: string; size: number };
+      deps: Omit<PageDeps<ClaimLine>, "fetchJson">;
     };
 
     const answeredBy = (answer: PageAnswer<ClaimLine>) =>
@@ -6597,6 +6604,59 @@ describe("the affordance that continues the claim list", () => {
     expect(claimIds(afterPage).slice(0, CLAIM_WINDOW)).toEqual(firstScreenOf(claims));
   });
 
+  it("draws no claim twice when the list moved under the press, and says so once", async () => {
+    // admin-window/BUG-0222, on the surface the defect was measured on. A
+    // claim INSERTED ahead of the bound between the screen read and the press
+    // moves every later claim down one, so the route's page at offset 50
+    // BEGINS with the last claim of the first screen. Before this ticket the
+    // surface concatenated it: 100 rows, 99 distinct, React's duplicate key.
+    //
+    // Both fixtures ship (LESSONS 8): the overlapping page here, and the
+    // ordinary page the test above appends in full.
+    const claims = longPopulation(130);
+    const script = pagedScript(130);
+    const firstScreen = await renderClaims(script);
+    expect(claimIds(firstScreen)).toEqual(firstScreenOf(claims));
+    // Criterion 4, on this surface: the first SERVER render carries no such
+    // element at all — the fact is a press's and there has been no press.
+    expect(cheerio.load(firstScreen)("[data-paging-overlap]")).toHaveLength(0);
+
+    const { initial, deps } = paging.calls[0] as unknown as {
+      initial: PageState<ClaimLine>;
+      deps: Omit<PageDeps<ClaimLine>, "fetchJson">;
+    };
+    // The page the ROUTE really serves once a claim has been inserted ahead of
+    // the bound: a full window, starting one claim earlier in the order.
+    const shifted = claims.slice(CLAIM_WINDOW - 1, CLAIM_WINDOW * 2 - 1);
+    const overlapping = await requestPage<ClaimLine>(initial, {
+      ...deps,
+      fetchJson: () =>
+        Promise.resolve({
+          kind: "ok" as const,
+          rows: claimLines(shifted, new Map()),
+          offset: CLAIM_WINDOW,
+          exhausted: false,
+        }),
+    });
+    paging.override = overlapping;
+    const afterPage = await renderClaims(script);
+
+    const ids = claimIds(afterPage);
+    // THE PROPERTY: every id drawn once, and the run agrees with its own count.
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual(claims.slice(0, CLAIM_WINDOW * 2 - 1).map((claim) => claim.observation_id));
+    // The first screen is untouched and the new claims are BELOW it.
+    expect(ids.slice(0, CLAIM_WINDOW)).toEqual(firstScreenOf(claims));
+    // The overlap is stated ONCE, in client-land, and the control stays: the
+    // bound moved by the rows the route served, so there is more to ask for.
+    expect(cheerio.load(afterPage)("[data-paging-overlap]")).toHaveLength(1);
+    expect(pagingArms(afterPage)).toEqual(["more"]);
+    expect(cheerio.load(afterPage)("[data-paging-refusal]")).toHaveLength(0);
+    // …and the bound the next press would carry is the ROUTE's count, not the
+    // number appended.
+    expect(overlapping.held).toBe(CLAIM_WINDOW * 2);
+  });
+
   it("spells the window ONCE: the control names the number the driver grades against", async () => {
     // QA residual 4 off admin-window/TASK-0064, one layer up. The window is
     // the PROVIDER's dep here, so the surface is driven at one that is NOT 50 and the
@@ -6617,11 +6677,11 @@ describe("the affordance that continues the claim list", () => {
       });
       const markup = render(
         h(
-          PagingProvider,
+          PagingProvider<ClaimLine>,
           {
             initial: initialPage<ClaimLine>(windowSize, true, ""),
             window: countedWindow(windowSize * 3, windowSize),
-            deps: { route: PAGE_ROUTES.claims, params: "", size: windowSize },
+            deps: { route: PAGE_ROUTES.claims, params: "", size: windowSize, id: observationId },
             children: null,
           },
           h(PagedClaimList, { label: "All claims", initial: rows.slice(0, windowSize) }),
@@ -6675,7 +6735,7 @@ describe("the affordance that continues the claim list", () => {
 
   /** The page's own deps, as it handed them to the driver. */
   const depsOf = () =>
-    paging.calls[0].deps as { route: string; params: string; size: number };
+    paging.calls[0].deps as Omit<PageDeps<ClaimLine>, "fetchJson">;
 
   it("does not claim rows are withheld once the walk has reached the end of the set", async () => {
     // The sibling of QA's `/browse` pin, pressed to exhaustion through the
@@ -7117,13 +7177,13 @@ describe("the affordance that continues the claim list", () => {
     recordingFetch({ kind: "ok", rows: [], offset: 50, exhausted: true });
     const markup = render(
       h(
-        PagingProvider,
+        PagingProvider<ClaimLine>,
         {
           // A COUNT of 900 over 37 rendered rows: the state a page would build
           // where its two reads disagree — which `/claims` never hands over.
           initial: initialPage<ClaimLine>(37, true, ""),
           window: countedWindow(900, CLAIM_WINDOW),
-          deps: { route: PAGE_ROUTES.claims, params: "", size: CLAIM_WINDOW },
+          deps: { route: PAGE_ROUTES.claims, params: "", size: CLAIM_WINDOW, id: observationId },
           children: null,
         },
         h(PagedClaimList, {

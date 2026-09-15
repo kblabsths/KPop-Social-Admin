@@ -419,6 +419,9 @@ describe("paging past the first window, against staging", () => {
         route: PAGE_ROUTES.browse,
         params: "",
         size: view.window,
+        // What a row is CALLED — the app's own spelling, so this walk drives
+        // the driver's dedupe exactly as `/browse` does (admin-window/BUG-0222).
+        id: (row: BrowseRow) => row.event_id,
         fetchJson: asked,
       });
       made += 1;
@@ -536,6 +539,9 @@ describe("the same paged order, walked three times, against staging", () => {
       first.length,
       true,
       boundOf(first, (id) => id),
+      // The ids the rendered screen already drew, as the page hands them
+      // (admin-window/BUG-0222).
+      first,
     );
     let made = 0;
     while (state.status === "idle" && made < WALK_PAGES) {
@@ -543,6 +549,7 @@ describe("the same paged order, walked three times, against staging", () => {
         route: PAGE_ROUTES.browse,
         params: "",
         size: view.window,
+        id: (row: BrowseRow) => row.event_id,
         fetchJson: viaHandler,
       });
       made += 1;
