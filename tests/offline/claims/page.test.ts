@@ -2706,7 +2706,7 @@ describe("which emptiness this is", () => {
         call.steps.some(
           (step) => step.method === "gte" && step.args[0] === "observed_at",
         )
-          ? { data: null, count: 0 }
+          ? { data: [], count: 0 }
           : claimView(CLAIMS)(call),
       [T.observations]: { data: [] },
       [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },

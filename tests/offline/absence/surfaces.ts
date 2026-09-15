@@ -41,7 +41,12 @@ import {
   SOURCES,
   runsResponse,
 } from "../sources/population";
-import type { Script, ScriptedResponse, StubClient } from "../../fixtures/stub-client";
+import type {
+  RecordedCall,
+  Script,
+  ScriptedResponse,
+  StubClient,
+} from "../../fixtures/stub-client";
 
 export const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 const appDir = path.join(repoRoot, "src", "app");
@@ -206,18 +211,30 @@ export async function renderSurface(
 /* ── the databases these proofs render against ───────────────────────────── */
 
 /**
- * A database that holds every object and no rows.
+ * How an EMPTY object answers ONE query — read off the query's own shape,
+ * because PostgREST's answer to "no rows" depends on it.
  *
- * `count: 0` as well as no data, because a complete read refuses a response
- * with no count and would render an error line rather than the empty state
- * (`readComplete` / `readCount`, `lib/db/result.ts`). `data: null` rather than
- * `[]` so a single-row read (`.maybeSingle()`) reads as "no such row" instead
- * of handing an array to a page that asked for one row; `readRows` turns the
- * null into `[]` itself.
+ * A set read is answered with an EMPTY ARRAY: `[]` is what PostgREST sends for
+ * a matching set of zero, and since admin-window/BUG-0224 a row-set read that
+ * comes back with no array at all is a refusal rather than an emptiness — an
+ * answer carrying neither rows nor an error is one no database gives, and the
+ * app stopped reading it as "there is nothing here". A `.maybeSingle()` read
+ * still answers `data: null`, which is exactly what supabase-js hands back for
+ * a single-row read that matched nothing.
+ *
+ * `count: 0` on both, because a complete read refuses a response with no count
+ * and would render an error line rather than the empty state (`readComplete` /
+ * `readCount`, `lib/db/result.ts`).
  */
+function emptyAnswer(call: RecordedCall): ScriptedResponse {
+  const single = call.steps.some((step) => step.method === "maybeSingle");
+  return { data: single ? null : [], count: 0 };
+}
+
+/** A database that holds every object and no rows. */
 export function emptyScript(): Script {
   const script: Script = {};
-  for (const name of TABLE_NAMES) script[name] = { data: null, count: 0 };
+  for (const name of TABLE_NAMES) script[name] = emptyAnswer;
   return script;
 }
 

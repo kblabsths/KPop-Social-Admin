@@ -7,6 +7,7 @@ import {
   ROW_CAP,
   callFunction,
   classify,
+  countRead,
   readComplete,
   readCount,
   readOne,
@@ -53,6 +54,23 @@ import {
  * classified by code, everything else surfaces the database's own words, and
  * no exported read throws for any of it.
  */
+
+/**
+ * Fragments of this app's note to its OWN DEVELOPER, which no refusal an
+ * operator can reach may carry (campaign admin-window/BUG-0224 criterion 2).
+ *
+ * They describe the arguments of a call site in this repo, so they answer
+ * nothing an operator can act on — and two of them really did reach /claims
+ * and /queues, beside an empty card, the day a host answered 404 with zero
+ * bytes. The same absence is asserted over the rendered HTML by
+ * `tests/http/absence.http.test.ts`; this is its unit-level twin, at the seam
+ * that used to compose them.
+ */
+const CALL_SITE_PROSE = [
+  "count read requires",
+  "complete read requires",
+  'count: "exact"',
+] as const;
 
 /**
  * The function M2 settles a review item through (campaign
@@ -2688,13 +2706,42 @@ describe("reads against a scripted PostgREST response", () => {
   });
 
   it("returns ok with an empty array when there are no rows", async () => {
-    const stub = stubClient({ [T.pendingClaims]: { data: null } });
+    // `[]` is what PostgREST answers a set read of an empty table with, and a
+    // counted zero is information: this arm still empties (BUG-0224's
+    // criterion 3 — the fix must not turn "no rows" into "refused").
+    const stub = stubClient({ [T.pendingClaims]: { data: [] } });
     const result = await readRows(
       T.pendingClaims,
       (db) => db.from(T.pendingClaims).select("*"),
       stub.asSupabaseClient(),
     );
     expect(result).toEqual({ kind: "ok", data: [] });
+  });
+
+  it("refuses a row set that came back with no array at all, and empties nothing", async () => {
+    // NO ARRAY beside NO ERROR is not an emptiness — PostgREST cannot answer
+    // a set read that way, so whatever produced it was not this database.
+    // Substituting `[]` here is how a host answering 404 with zero bytes put
+    // "No claims waiting" on /claims over a read that failed
+    // (admin-window/BUG-0224).
+    const stub = stubClient({ [T.pendingClaims]: { data: null } });
+    const result = await readRows(
+      T.pendingClaims,
+      (db) => db.from(T.pendingClaims).select("*"),
+      stub.asSupabaseClient(),
+    );
+
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    // It names the object it asked about, in the spelling the query used.
+    expect(result.reading).toBe(T.pendingClaims);
+    // Never rows, never a zero: no `data` at all on a refusal.
+    expect(result).not.toHaveProperty("data");
+    // Every word of it is this app's own, so the renderer draws it in the
+    // app's face rather than the machine's (admin-window/BUG-0196).
+    expect(result.authored).toEqual([
+      { words: result.message, author: "this app" },
+    ]);
   });
 
   it("returns not_provisioned when the table is not in the schema cache", async () => {
@@ -2796,9 +2843,18 @@ describe("reads against a scripted PostgREST response", () => {
     // The object is carried by the result rather than spelled into the prose:
     // every error arm names its read (admin-window/BUG-0016).
     expect(refused.reading).toBe(T.reviewItems);
-    expect(refused.message).toContain('count: "exact"');
     // Never a number the database did not give.
     expect(refused).not.toHaveProperty("data");
+    // And not one word of it describes a call site in this repo. The arm used
+    // to read "a count read requires { count: \"exact\" }" — a note to this
+    // app's own developer, which an operator read on /claims the day a host
+    // answered 404 with zero bytes (admin-window/BUG-0224).
+    expect(refused.authored).toEqual([
+      { words: refused.message, author: "this app" },
+    ]);
+    for (const callSite of CALL_SITE_PROSE) {
+      expect(refused.message).not.toContain(callSite);
+    }
   });
 
   it("classifies an absent table on a count read too", async () => {
@@ -3070,8 +3126,10 @@ describe("readComplete", () => {
   });
 
   it("returns an empty ok when the database counted nothing", async () => {
-    // A counted zero is information; only an ABSENT count is a refusal.
-    const stub = stubClient({ [T.pendingClaims]: { data: null, count: 0 } });
+    // A counted zero is information; only an answer this app cannot grade is a
+    // refusal — and `[]` with a count of 0 is exactly what PostgREST answers a
+    // complete read of an empty table with (BUG-0224's criterion 3).
+    const stub = stubClient({ [T.pendingClaims]: { data: [], count: 0 } });
     const result = await readComplete(
       T.pendingClaims,
       completeQuery(T.pendingClaims),
@@ -3134,8 +3192,15 @@ describe("readComplete", () => {
     expect(result.kind).toBe("error");
     if (result.kind !== "error") return;
     expect(result.reading).toBe(T.reviewItems);
-    expect(result.message).toContain('count: "exact"');
     expect(result).not.toHaveProperty("data");
+    expect(result.authored).toEqual([
+      { words: result.message, author: "this app" },
+    ]);
+    // The twin of the count leg's arm above, and it says nothing about this
+    // app's own call arguments either (admin-window/BUG-0224).
+    for (const callSite of CALL_SITE_PROSE) {
+      expect(result.message).not.toContain(callSite);
+    }
   });
 
   it("refuses a truncated set, naming the object, the count and the cap", async () => {
@@ -3240,8 +3305,61 @@ describe("readComplete at the cap boundary", () => {
     );
     expect(result.kind).toBe("error");
     if (result.kind !== "error") return;
-    expect(result.message).toContain("12");
     expect(result).not.toHaveProperty("data");
+    // It refuses as an answer this app CANNOT GRADE and not as a truncation:
+    // no cap was reached, and a sentence about the cap would be a false
+    // account of what arrived (admin-window/BUG-0224). Compared to the twin
+    // refusal rather than to a pinned sentence, so the two cannot drift.
+    const rowsOnly = await readRows(
+      T.reviewItems,
+      (db) => db.from(T.reviewItems).select("*"),
+      stubClient({ [T.reviewItems]: { data: null } }).asSupabaseClient(),
+    );
+    expect(rowsOnly.kind).toBe("error");
+    if (rowsOnly.kind !== "error") return;
+    expect(result.message).toBe(rowsOnly.message);
+  });
+
+  it("refuses an ungradeable answer in ONE derivation, whichever read met it", async () => {
+    // BUG-0224 criterion 4. Three kinds of read meet the same answer — a
+    // response carrying neither what it asked for nor a failure — and one
+    // sentence in `lib/db/result.ts` answers for all three. A second arm
+    // spelling its own version of "unclassifiable" reddens here, which is the
+    // check that keeps the rule from being retyped (LESSONS 11).
+    const nothing = () => stubClient({ [T.reviewItems]: {} }).asSupabaseClient();
+    const rows = await readRows(
+      T.reviewItems,
+      (db) => db.from(T.reviewItems).select("*"),
+      nothing(),
+    );
+    const counted = await readCount(
+      T.reviewItems,
+      (db) => countRead(db, T.reviewItems),
+      nothing(),
+    );
+    const complete = await readComplete(
+      T.reviewItems,
+      completeQuery(T.reviewItems),
+      nothing(),
+    );
+
+    for (const result of [rows, counted, complete]) {
+      expect(result.kind).toBe("error");
+      if (result.kind !== "error") continue;
+      expect(result.reading).toBe(T.reviewItems);
+      expect(result).not.toHaveProperty("data");
+      expect(result.authored).toEqual([
+        { words: result.message, author: "this app" },
+      ]);
+      for (const callSite of CALL_SITE_PROSE) {
+        expect(result.message).not.toContain(callSite);
+      }
+    }
+    if (rows.kind !== "error" || counted.kind !== "error" || complete.kind !== "error") {
+      return;
+    }
+    expect(counted.message).toBe(rows.message);
+    expect(complete.message).toBe(rows.message);
   });
 
   it("leaves window reads alone: readRows over a counted response still returns its window", async () => {

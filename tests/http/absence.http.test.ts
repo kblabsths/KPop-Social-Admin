@@ -8,6 +8,7 @@ import {
   deniedMessage,
   startPostgrestStub,
   type PostgrestStub,
+  type StubMode,
 } from "./postgrest-stub";
 import type { ChildProcess } from "node:child_process";
 
@@ -40,10 +41,38 @@ const ERROR_SHELL = 'id="__next_error__"';
 
 /**
  * The fragments of this app's own note to its developer, verbatim from the
- * ticket. None of them may reach an operator's screen in ANY state — they
+ * tickets. None of them may reach an operator's screen in ANY state — they
  * describe a call site in this repo, not anything the operator can act on.
+ *
+ * `complete read requires` is `readComplete`'s twin of the count leg's
+ * sentence, and it was the UNTOUCHED half after admin-window/BUG-0210: it
+ * reached /queues and /sources the moment a host answered 404 with zero bytes
+ * (admin-window/BUG-0224), which is why the sweep below runs over every mode
+ * of the stub rather than over the absence one alone.
  */
-const DEVELOPER_PROSE = ['count read requires', 'head: true', 'count: "exact"'];
+const DEVELOPER_PROSE = [
+  'count read requires',
+  'complete read requires',
+  'head: true',
+  'count: "exact"',
+];
+
+/**
+ * Every surface BUG-0224 grades, and the object each one's own reads name.
+ *
+ * A superset of `COUNTING_SURFACES` below: /sources makes no count read at
+ * all, and it still rendered `readComplete`'s developer sentence beside two
+ * empty gauge cards, because the defect is a property of the ANSWER and not of
+ * the request shape.
+ */
+const GRADED_SURFACES = [
+  { route: "/claims", names: "pending_claims" },
+  { route: "/queues", names: "review_items" },
+  { route: "/sources", names: "sources" },
+] as const;
+
+/** Every mode the stub can answer in — the sweep's domain, read off the type. */
+const EVERY_MODE: readonly StubMode[] = ["absent", "denied", "blank", "empty"];
 
 /**
  * The surfaces whose reads include a COUNT leg, and the object each count
@@ -177,6 +206,96 @@ describe("a database that answers but holds none of the ecosystem tables", () =>
         errors.some((card) => card.text.includes(deniedMessage(counted))),
         `${route} did not carry the database's own sentence`,
       ).toBe(true);
+    }
+  });
+
+  it("refuses every panel against a host that 404s with zero bytes, and empties none", async () => {
+    // THE BAR, stated positively (admin-window/BUG-0224): a read this app
+    // cannot classify is a REFUSAL NAMING THE OBJECT IT ASKED ABOUT. Never a
+    // zero, never an empty card, and never a sentence about this app's own
+    // call arguments.
+    //
+    // What this mode is: a deploy pointed at a host that is not this database
+    // — a wrong SUPABASE_URL, or a proxy answering in front of the service.
+    // supabase-js rewrites a bodyless 404 into `204, error: null, data: null,
+    // count: null`, so NOTHING reaches `classify`. Measured on the landed
+    // BUG-0210 fix (QA, 2026-09-11) and reproduced here: /claims printed the
+    // developer sentence AND "No claims waiting" over a read that failed.
+    stub.setMode("blank");
+    for (const { route, names } of GRADED_SURFACES) {
+      const markup = await pageOf(`${route}?probe=blank`, cookie);
+      const $ = cheerio.load(markup);
+      const states = statesOf(markup);
+
+      // 1. Every panel that renders a state at all REFUSED. Not an empty card
+      //    — an empty card is a positive claim about the population, made on
+      //    the strength of a read that never happened — and not a
+      //    not-provisioned card either: nothing here said the object is
+      //    absent, so this app may not say it was.
+      expect(states.length, `${route} rendered no state at all`).toBeGreaterThan(0);
+      expect(
+        [...new Set(states.map((card) => card.state))].sort(),
+        `${route} rendered a state other than a refusal`,
+      ).toEqual(["error"]);
+
+      // 2. The refusal NAMES the object, in the spelling the query used.
+      expect(
+        states.some((card) => card.text.includes(names)),
+        `${route} named no "${names}"`,
+      ).toBe(true);
+
+      // 3. No FIGURE is published either: a count nobody could read is not a
+      //    zero, so the figures block carries the refusal and no number.
+      for (const block of $("[data-figures]").toArray()) {
+        expect(
+          $(block).text(),
+          `${route} published a figure over a read that failed`,
+        ).not.toMatch(/\d/);
+      }
+    }
+  });
+
+  it("still draws the empty card for a table that is really there and really empty", async () => {
+    // The control arm (criterion 3), and the one that proves the fix did not
+    // turn "no rows" into "refused": the same wire, a real 200 carrying `[]`
+    // and a counted total of zero. An operator whose queue is clear must still
+    // read that it is clear.
+    stub.setMode("empty");
+    for (const { route } of GRADED_SURFACES) {
+      const markup = await pageOf(`${route}?probe=empty`, cookie);
+      const states = statesOf(markup);
+
+      expect(
+        states.filter((card) => card.state === "empty").length,
+        `${route} drew no empty card over an empty database`,
+      ).toBeGreaterThan(0);
+      expect(
+        states.filter((card) => card.state === "error").map((card) => card.text),
+        `${route} called an empty table a failure`,
+      ).toEqual([]);
+      expect(
+        states.filter((card) => card.state === "not_provisioned").map((card) => card.text),
+        `${route} called an empty table absent`,
+      ).toEqual([]);
+    }
+  });
+
+  it("says nothing about its own call site in ANY mode, on any graded surface", async () => {
+    // Criterion 2, swept rather than spot-checked: the fragments below name
+    // the arguments of a call site in THIS repo. Whatever a host answers, the
+    // operator reads about the object — never about our query. The absence
+    // mode is included on purpose, because that is the mode this assertion
+    // already passed in and it must keep passing there.
+    for (const mode of EVERY_MODE) {
+      stub.setMode(mode);
+      for (const { route } of GRADED_SURFACES) {
+        const text = cheerio.load(await pageOf(`${route}?probe=${mode}`, cookie)).text();
+        for (const fragment of DEVELOPER_PROSE) {
+          expect(text, `${route} leaked "${fragment}" in ${mode} mode`).not.toContain(
+            fragment,
+          );
+        }
+      }
     }
   });
 

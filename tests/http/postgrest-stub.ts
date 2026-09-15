@@ -31,7 +31,35 @@ export type StubMode =
   /** Every table is absent: 404 + `PGRST205`, the un-migrated project. */
   | "absent"
   /** Every read is refused for a reason that is NOT absence: 403 + `42501`. */
-  | "denied";
+  | "denied"
+  /**
+   * The host answers 404 with ZERO BYTES — a deploy pointed at something that
+   * is not this database at all: a wrong `SUPABASE_URL`, or a proxy/gateway in
+   * front of the service answering for it (admin-window/BUG-0224).
+   *
+   * **Why an empty body is its own mode rather than a variant of `absent`.**
+   * supabase-js parses its error out of the body; a 404 with none is the one
+   * answer it rewrites into a SUCCESS — `status 204, error: null, data: null,
+   * count: null` (`node_modules/@supabase/postgrest-js/dist/index.mjs`, the
+   * `res.status === 404 && body === ""` arm). So nothing reaches `classify`:
+   * no code, no message, no rows and no count. It is the same blindness the
+   * HEAD count had, arriving now from the HOST rather than from the request
+   * shape — which is why the fix for it could not be another request shape.
+   */
+  | "blank"
+  /**
+   * Every table is THERE and holds NO ROWS: 200, a body of `[]`, and a
+   * `Content-Range` whose total is 0.
+   *
+   * The control arm (admin-window/BUG-0224 criterion 3). A refusal that also
+   * fired for a genuinely empty table would be a worse bug than the one it
+   * replaced — an operator told a read failed when the queue is simply clear —
+   * so the empty card has to be provably still reachable over the same wire
+   * the refusal arrives on. A total of zero after the slash is what PostgREST
+   * puts on a matching set of zero, and supabase-js reads its count out of
+   * that half of the header.
+   */
+  | "empty";
 
 export interface PostgrestStub {
   /** `http://127.0.0.1:<port>` — what `SUPABASE_URL` is set to. */
@@ -57,7 +85,21 @@ function tableOf(pathname: string): string {
  * that is the point of asserting against them: what reaches the page in the
  * error case must be the DATABASE's words.
  */
-function bodyFor(mode: StubMode, table: string): { status: number; body: string } {
+function bodyFor(
+  mode: StubMode,
+  table: string,
+): { status: number; body: string; headers?: Record<string, string> } {
+  if (mode === "empty") {
+    // The answer a real, empty table gives: the array PostgREST always sends
+    // for a set read, and a total of zero for anything that asked to count.
+    return { status: 200, body: "[]", headers: { "content-range": "*/0" } };
+  }
+  if (mode === "blank") {
+    // 404 and not one byte. `content-length: 0` is what a host answering for
+    // something it does not have sends, and it is the whole mode: the table
+    // name is not even read, because nothing here is about this database.
+    return { status: 404, body: "" };
+  }
   if (mode === "absent") {
     return {
       status: 404,
@@ -95,12 +137,13 @@ export async function startPostgrestStub(
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     requests.push(`${req.method} ${req.url}`);
-    const { status, body } = bodyFor(mode, tableOf(url.pathname));
+    const { status, body, headers } = bodyFor(mode, tableOf(url.pathname));
     // `content-length` counts the document either way; a HEAD sends none of
     // it. That asymmetry IS the bug's mechanism — do not "simplify" it.
     res.writeHead(status, {
       "content-type": "application/json; charset=utf-8",
       "content-length": String(Buffer.byteLength(body)),
+      ...headers,
     });
     res.end(req.method === "HEAD" ? undefined : body);
   });
