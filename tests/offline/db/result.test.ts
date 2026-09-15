@@ -3135,6 +3135,61 @@ describe("reads against a scripted PostgREST response", () => {
     ).toEqual({ kind: "ok", data: 0 });
   });
 
+  // PIN (QA, admin-window/BUG-0229), watched RED on this tree 2026-09-15
+  // before it was marked: `-1: expected 'ok' to be 'error'`. It is an EXPECTED
+  // FAILURE until the guard is narrowed; THE FIX FLIPS THIS MARKER back to a
+  // plain `it` (the ticket's check 2 refuses the close while it stands), and
+  // the day it passes with the marker still here the suite goes red saying
+  // "Expect test to fail", which sends the reader to the ticket.
+  it.fails("refuses a count that is a whole number but not a number of ROWS", async () => {
+    // QA (admin-window/BUG-0229, attack on BUG-0228's folded-in count guard): the same
+    // `parseInt` over whatever follows the slash in `Content-Range` also
+    // returns a NEGATIVE integer and an integer too large to be exact, and
+    // `Number.isInteger` is TRUE for both — so they reach a page as published
+    // figures. Measured over real HTTP against a production build of the
+    // landed fix, a host answering `200 []` with `content-range: */-5` put
+    // "-5" in every bucket of /claims' total-counts table, and `*/1e20`
+    // published "100,000,000,000,000,000,000".
+    //
+    // The bar, positively: a count is a number of ROWS — a non-negative
+    // integer the machine can represent exactly — or it did not arrive, and
+    // an answer that did not arrive refuses through the one rule.
+    for (const count of [-1, -5, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 2, 1e20]) {
+      const counted = await readCount(
+        T.pendingClaims,
+        (db) => countRead(db, T.pendingClaims),
+        stubClient({ [T.pendingClaims]: { data: [], count } }).asSupabaseClient(),
+      );
+      expect(counted.kind, String(count)).toBe("error");
+
+      const complete = await readComplete(
+        T.pendingClaims,
+        CLAIM_COLUMNS,
+        (db, cap) =>
+          db
+            .from(T.pendingClaims)
+            .select("observation_id, bucket", { count: "exact" })
+            .order("observation_id", { ascending: true })
+            .range(0, cap - 1),
+        stubClient({ [T.pendingClaims]: { data: [], count } }).asSupabaseClient(),
+      );
+      expect(complete.kind, String(count)).toBe("error");
+    }
+
+    // The controls this guard may not eat: a real zero, and a real count at
+    // the top of what the machine represents exactly.
+    for (const count of [0, 1, Number.MAX_SAFE_INTEGER]) {
+      expect(
+        await readCount(
+          T.pendingClaims,
+          (db) => countRead(db, T.pendingClaims),
+          stubClient({ [T.pendingClaims]: { data: [], count } }).asSupabaseClient(),
+        ),
+        String(count),
+      ).toEqual({ kind: "ok", data: count });
+    }
+  });
+
   it("returns not_provisioned when the table is not in the schema cache", async () => {
     const stub = stubClient({
       [T.verdicts]: { error: tableNotInSchemaCache(T.verdicts) },
