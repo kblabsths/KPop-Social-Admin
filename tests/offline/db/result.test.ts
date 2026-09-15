@@ -3141,7 +3141,7 @@ describe("reads against a scripted PostgREST response", () => {
   // plain `it` (the ticket's check 2 refuses the close while it stands), and
   // the day it passes with the marker still here the suite goes red saying
   // "Expect test to fail", which sends the reader to the ticket.
-  it.fails("refuses a count that is a whole number but not a number of ROWS", async () => {
+  it("refuses a count that is a whole number but not a number of ROWS", async () => {
     // QA (admin-window/BUG-0229, attack on BUG-0228's folded-in count guard): the same
     // `parseInt` over whatever follows the slash in `Content-Range` also
     // returns a NEGATIVE integer and an integer too large to be exact, and

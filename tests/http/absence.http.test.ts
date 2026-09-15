@@ -6,6 +6,7 @@ import { mintSessionCookie } from "../walk/session-cookie.mjs";
 import { AUTH_SECRET, base, startServer, stopServer } from "./server-harness";
 import {
   DEFAULT_ALIEN_BODY,
+  DEFAULT_COUNT_TOTAL,
   deniedMessage,
   startPostgrestStub,
   type PostgrestStub,
@@ -80,6 +81,7 @@ const EVERY_MODE: readonly StubMode[] = [
   "empty",
   "foreign",
   "alien",
+  "miscounted",
 ];
 
 /**
@@ -107,6 +109,14 @@ const ALIEN_BODIES: readonly string[] = [
  * and `countingModules()` below re-derives that set on every run so a THIRD
  * counting module cannot be added without this list being made to grow.
  */
+/**
+ * The surface whose figures are fed BY a count, and the one QA read the
+ * negative one off (admin-window/BUG-0229): /claims' "Total counts" table,
+ * published as `data-figures="total"`. /queues renders no such region, which
+ * is why its presence is asserted here and not on every counted surface.
+ */
+const TOTAL_FIGURES_ROUTE = "/claims";
+
 const COUNTING_SURFACES = [
   { route: "/claims", counted: "pending_claims" },
   { route: "/queues", counted: "review_items" },
@@ -418,6 +428,97 @@ describe("a database that answers but holds none of the ecosystem tables", () =>
     }
 
     stub.setAlienBody(DEFAULT_ALIEN_BODY);
+  });
+
+  it("refuses every counted panel against a host whose total is not a number of ROWS", async () => {
+    // THE SAME BAR, on the other leg of the answer (QA attack on
+    // admin-window/BUG-0228, filed as admin-window/BUG-0229): a count is a
+    // number of ROWS — a non-negative integer the machine can represent
+    // exactly — or it did not arrive, and an answer that did not arrive
+    // refuses through the one rule naming the object.
+    //
+    // Measured over real HTTP against a production build 2026-09-15, before
+    // the fix: `content-range: */-5` put "-5" in EVERY bucket row of /claims'
+    // Total counts table beside state cards reading "empty", and
+    // `*/99999999999999999999` published "100,000,000,000,000,000,000".
+    // `Number.isInteger` is true for both, which is why the guard had to say
+    // what a count IS rather than which headers it has met.
+    //
+    // The two totals below are one host answer, not two: a negative one and
+    // one past exact representation. Neither is a spelling to enumerate — they
+    // are the two ways a whole number fails to be a count of rows, and the
+    // predicate closes both by construction.
+    const TOTALS = ["-5", "99999999999999999999"];
+    for (const [pass, total] of TOTALS.entries()) {
+      stub.setCountTotal(total);
+      stub.setMode("miscounted");
+
+      for (const { route, counted } of COUNTING_SURFACES) {
+        // The probe carries a PASS NUMBER and never the total itself: the page
+        // echoes the query it did not apply ("The URL carries probe and total
+        // …"), so a total in the URL would put the very digits check 3 looks
+        // for on the page by this test's own hand.
+        const markup = await pageOf(`${route}?probe=miscounted&pass=${pass}`, cookie);
+        const $ = cheerio.load(markup);
+        const text = $.text();
+        const states = statesOf(markup);
+
+        // 1. The count that did not arrive refuses, naming the object its
+        //    query asked about — the same words every other ungradeable
+        //    answer refuses with.
+        const errors = states.filter((card) => card.state === "error");
+        expect(errors.length, `${route} reported no refusal on total ${total}`)
+          .toBeGreaterThan(0);
+        expect(
+          errors.some((card) => card.text.includes(counted)),
+          `${route} named no "${counted}" on total ${total}`,
+        ).toBe(true);
+
+        // 2. No FIGURE is published over the count. The TOTAL figures are the
+        //    ones the count feeds, and a count nobody could read is not a
+        //    number, so that region carries the refusal and no digit.
+        //
+        //    The WINDOW figures are deliberately not asked to be digit-free:
+        //    the row set really did arrive (`[]`, a matching set of zero), so
+        //    a window of zero is a fact this read established and the page is
+        //    right to publish it. Emptiness answered per element (LESSONS 3) —
+        //    what the count failed to say does not blank what the rows said.
+        const totals = $('[data-figures="total"]').toArray();
+        if (route === TOTAL_FIGURES_ROUTE) {
+          // The region QA read "-5" out of, on the surface it read it on: if
+          // it stops being rendered there this test stops proving anything,
+          // so its presence is asserted rather than assumed.
+          expect(totals.length, `${route} rendered no total-figures region`)
+            .toBeGreaterThan(0);
+        }
+        for (const block of totals) {
+          expect(
+            $(block).text(),
+            `${route} published a figure over a count that did not arrive (total ${total})`,
+          ).not.toMatch(/\d/);
+        }
+
+        // ... and no figures region anywhere on the page carries a NEGATIVE
+        // number, which is the shape of the finding itself.
+        for (const block of $("[data-figures]").toArray()) {
+          expect(
+            $(block).text(),
+            `${route} published a negative figure (total ${total})`,
+          ).not.toMatch(/-\s*\d/);
+        }
+
+        // 3. And the host's own figure reaches no part of the page, however
+        //    it is grouped — "-5" and "100,000,000,000,000,000,000" are the
+        //    strings QA read on the landed tree, so the comparison is against
+        //    the total with its grouping commas taken back out.
+        expect(
+          text.replace(/,/g, ""),
+          `${route} published the host's total (${total}) somewhere on the page`,
+        ).not.toContain(total);
+      }
+    }
+
+    stub.setCountTotal(DEFAULT_COUNT_TOTAL);
   });
 
   it("still draws the empty card for a table that is really there and really empty", async () => {
