@@ -255,6 +255,64 @@ describe("a database that answers but holds none of the ecosystem tables", () =>
     }
   });
 
+  it.fails("refuses every panel against a host answering 200 with something that is not a row set", async () => {
+    // THE SAME BAR, the third host answer it names (QA attack on
+    // admin-window/BUG-0224): "Whatever a host answers — a bodyless 404, a
+    // 204, an HTML error page from a proxy, A 200 WITH A BODY THAT IS NOT A
+    // POSTGREST ANSWER — the operator reads the app's refusal naming
+    // pending_claims (or review_items, or sources)".
+    //
+    // Measured with the real client against a loopback host answering
+    // `200 {"message":"no upstream"}`: every read shape comes back
+    // `error: null, data: {"message":"no upstream"}, count: null`. The count
+    // legs refuse through the one rule because the count is missing; a row-set
+    // read does not, because the rule asks only whether `data` is null and a
+    // foreign object is not null.
+    //
+    // PIN (QA, admin-window ticket BUG-0227): marked an EXPECTED FAILURE
+    // because this is RED on the
+    // landed tree — every one of these surfaces answers HTTP 500 with Next's
+    // error shell, the render having called `.map` on that object. THE FIX
+    // FLIPS THIS MARKER back to `it`, and then `"foreign"` joins EVERY_MODE
+    // below so the call-site sweep covers it like every other mode.
+    stub.setMode("foreign");
+
+    // The home page reads row sets too, and it is the first thing an operator
+    // lands on: it must answer, not throw. (`pageOf` grades the status and the
+    // error shell, which is the whole assertion for this one.)
+    await pageOf("/?probe=foreign", cookie);
+
+    for (const { route, names } of GRADED_SURFACES) {
+      const markup = await pageOf(`${route}?probe=foreign`, cookie);
+      const $ = cheerio.load(markup);
+      const states = statesOf(markup);
+
+      expect(states.length, `${route} rendered no state at all`).toBeGreaterThan(0);
+      expect(
+        [...new Set(states.map((card) => card.state))].sort(),
+        `${route} rendered a state other than a refusal`,
+      ).toEqual(["error"]);
+      expect(
+        states.some((card) => card.text.includes(names)),
+        `${route} named no "${names}"`,
+      ).toBe(true);
+      for (const block of $("[data-figures]").toArray()) {
+        expect(
+          $(block).text(),
+          `${route} published a figure over a read that failed`,
+        ).not.toMatch(/\d/);
+      }
+
+      // Criterion 2 in this mode, until "foreign" can join EVERY_MODE.
+      for (const fragment of DEVELOPER_PROSE) {
+        expect(
+          cheerio.load(markup).text(),
+          `${route} leaked "${fragment}" in foreign mode`,
+        ).not.toContain(fragment);
+      }
+    }
+  });
+
   it("still draws the empty card for a table that is really there and really empty", async () => {
     // The control arm (criterion 3), and the one that proves the fix did not
     // turn "no rows" into "refused": the same wire, a real 200 carrying `[]`

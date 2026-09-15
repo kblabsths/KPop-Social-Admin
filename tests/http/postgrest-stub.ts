@@ -59,7 +59,26 @@ export type StubMode =
    * puts on a matching set of zero, and supabase-js reads its count out of
    * that half of the header.
    */
-  | "empty";
+  | "empty"
+  /**
+   * The host answers **200 with a JSON OBJECT** — a body that is not a
+   * PostgREST answer at all (QA, admin-window/BUG-0224 attack): a gateway or
+   * proxy in front of the service saying its own thing, or a `SUPABASE_URL`
+   * whose path lands somewhere that answers JSON.
+   *
+   * Measured with the real client against a loopback host answering
+   * `200 {"message":"no upstream"}`: supabase-js hands back
+   * `error: null, data: {"message":"no upstream"}, count: null` for EVERY read
+   * shape — set read, count read and complete read alike. `data` is not null,
+   * so it is not the `blank` mode's shape; it is a non-array standing where a
+   * row set belongs.
+   *
+   * This is the third of the four host answers BUG-0224's bar names ("a
+   * bodyless 404, a 204, an HTML error page from a proxy, a 200 with a body
+   * that is not a PostgREST answer"), and the bar is the same for it: a
+   * refusal naming the object, never a zero, never an empty card.
+   */
+  | "foreign";
 
 export interface PostgrestStub {
   /** `http://127.0.0.1:<port>` — what `SUPABASE_URL` is set to. */
@@ -89,6 +108,12 @@ function bodyFor(
   mode: StubMode,
   table: string,
 ): { status: number; body: string; headers?: Record<string, string> } {
+  if (mode === "foreign") {
+    // Not a row set, not an error document: something else's JSON, answered
+    // with a success status. The table name is not read — nothing here is
+    // about this database.
+    return { status: 200, body: JSON.stringify({ message: "no upstream" }) };
+  }
   if (mode === "empty") {
     // The answer a real, empty table gives: the array PostgREST always sends
     // for a set read, and a total of zero for anything that asked to count.
