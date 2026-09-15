@@ -163,6 +163,8 @@ src/
       records.ts       one canonical record for the edit surface, + the direct update
       gauges.ts        the six gauges' bounded windows (one file, one per read)
       verdict.ts       the settle path's reads and the verdict log
+      paging.ts        the server side of a paged read: the bound, the window, the refusal (M3)
+      schema.ts        PostgREST's own schema description — is this FUNCTION installed (§9.2, M3)
     review/            LEAF: shapes.ts (shape -> kind, ordering, predicates), queue-filters.ts
     browse/            LEAF: rows.ts (row shaping), views.ts (the column sets)
     claims/            LEAF: filters.ts (bucket + source narrowing)
@@ -188,6 +190,10 @@ src/
                        ONE definition of visible content, and `ADMIN_SOURCE`.
                        Imports nothing; `lib/format.ts`, `lib/claims/filters.ts`
                        and `lib/db/verdict.ts` all consume it (§4 rule 7)
+    paging/            LEAF: bounds.ts (what a press may ask for), machine.ts
+                       (the client driver: what is held, what to ask next) — M3
+    account/           LEAF: authored.ts — who wrote each half of a rendered account
+    order/             LEAF: newest-first.ts — the one arrival order
     gauges/
       gauge.ts         the window/figure shapes every gauge returns
       cycle-health.ts  resolution-latency.ts  pending-claims.ts
@@ -236,9 +242,16 @@ src/
     login/  api/auth/  api/health/        UNCHANGED
 tests/
   offline/**/*.test.ts        the default suite; no network, ever
+  isolated/**/*.test.ts       the second offline project (`npm test` runs both)
   live/**/*.live.test.ts      staging; refuses when the STAGING names are unset
   http/**/*.http.test.ts      builds + starts the app; auth redirects, bundle scan
-  fixtures/                   captured PostgREST response shapes (offline stubs)
+  handoff/**/*.test.ts        OPT-IN fifth project (`npm run test:handoff`): the guards
+                              that READ `../kspace Scraper`. Outside `npm test` and
+                              outside `ci_command` (§10, M3/TASK-0080)
+  walk/                       NOT a test project — the walk agents' two node tools (§10)
+  fixtures/                   captured PostgREST response shapes (offline stubs), plus
+                              the shared builders every test imports (client-props.ts:
+                              the props a client boundary may carry — BUG-0226)
 ```
 
 ## 4. Dependency direction — one way, no exceptions
@@ -417,6 +430,46 @@ export type DbResult<T> =
   `includes("<")`, is refused by the database's own `operator does not exist:
   text <-> integer`. Evidence of a real body in that last shape re-opens THIS
   BAR as a ruling; it never adds a fourth question.
+- **What a PostgREST ANSWER is — the admission rule, asked ONCE per read**
+  (ruled 2026-09-15 from admin-window/BUG-0224 → BUG-0227 → BUG-0228 →
+  BUG-0229 → BUG-0230: five tickets, one property each, one QA lane each).
+  A response is this app's answer only when **every leg the read named arrived
+  in the shape PostgREST is specified to send it**. Anything else refuses as a
+  WHOLE through the one rule (`unreadableAnswer`, naming the object) before any
+  surface derives a row, a figure or an emptiness from it. The legs:
+  **error** (`classify`; only its codes make an absence), **rows** (a JSON
+  array whose elements each carry every column THIS read declared —
+  `isRowSet`/`isRowOf`, asked against the same array `selectList` built the
+  `.select()` from), **count** (`isCount`: a safe, non-negative integer,
+  because a count rides `Content-Range` through supabase-js's `parseInt` and a
+  host writes that header), and — for a read that asks the host about ITSELF —
+  the **schema description** document (§9.2, `lib/db/schema.ts`), admitted by
+  this same rule and never by reaching into a shape it happens to have.
+  Four things this rule DECIDES, so nobody re-asks them one at a time:
+  1. **Values are not types.** The row leg asks which columns are PRESENT,
+     never what they hold. A row carrying every declared column with
+     wrong-typed values is ADMITTED; a render that then throws is caught by
+     the route error boundary (§5), not by a fifth predicate here — `[{}]`
+     defeats an element-type guard and the next shape defeats its successor
+     (LESSONS 13).
+  2. **Two legs that contradict each other are one refusal.** A complete read
+     whose count and rows disagree in EITHER direction refuses:
+     `count > rows.length` is truncation (and says so, naming `ROW_CAP`),
+     `count < rows.length` is a total that cannot be of this set. No surface
+     ever publishes a total beside rows it does not cover.
+  3. **"No row" is an answer only from a response that carried one.**
+     supabase-js rewrites a bodyless 404 to `status 204, error: null,
+     data: null` — indistinguishable from an empty `.maybeSingle()` if only
+     `data` is asked, which is how a blank host put "No row with that id" on
+     `/queues/<uuid>` over a read that never happened. The status is on the
+     object the client returns; ask it.
+  4. **What the rule cannot reach is NAMED, not patched.** `parseInt` leniency
+     publishes `*/5-` as 5, `*/0x10` as 16 and `*/1e20` as 1e20, each
+     indistinguishable from a real total at this layer. That is a transport
+     fact; it re-opens this bar only with a measured body, never with a
+     vocabulary guess about the digits.
+  Clauses 2, 3 and the document leg are open on the tree as this is written —
+  admin-window/BUG-0234, patch lane.
 - `missing` carries the name from `tables.ts`, so the rendered
   not-provisioned card can say which table is absent and what creates it
   (LOOK_AND_FEEL state 3, Voice bar 4).
@@ -1599,6 +1652,30 @@ cached per process only AFFIRMATIVELY (`lib/db/schema.ts`): the description is
 387 KB, and an absence must never be remembered across the install that ends
 it. Both paths are graded; neither throws.
 
+**RATIFIED, with its limits named (architect, 2026-09-15).** The paragraphs
+above were rewritten by the BUG-0223 builder lane, which superseded this
+subsection's 2026-09-08 premise that "PostgREST cannot introspect a function
+without calling it". The new premise is the correct one and it stands:
+PostgREST publishes an OpenAPI description at `GET /rest/v1/` that keys every
+exposed procedure under `/rpc/<name>`, so existence is a READ, and a readiness
+that CALLS the function is a write attempt dressed as a question — which is
+exactly what wrote a real override on 2026-09-11 (BUG-0215). Nothing is
+reverted. Three limits of that read are ruled here rather than left to the next
+lane to find one at a time:
+(a) the description is an ANSWER FROM THE SAME HOST and is admitted by §4.1's
+admission rule — a body whose `paths` is not a plain object (an array is not)
+is a document this app could not read, never a database exposing nothing
+(BUG-0234, leg 3);
+(b) **the affirmative-only cache is deliberate and stays** — an absence must
+never survive the install that ends it, and a failed read is not an answer to
+cache;
+(c) **no in-flight dedupe, on purpose.** Two concurrent renders on a cold
+process can each fetch 387 KB. Recorded, not ticketed: it is bounded by the
+first affirmative answer, it is reachable only in the half-installed window,
+and a promise-sharing cache is a second caching rule to get wrong. Trigger that
+files it: a measured render-time cost on a page that reads readiness, or a
+second consumer of the description.
+
 **`not_provisioned` learns the absent FUNCTION** (§4.1's classifier): PostgREST
 answers a missing function with `PGRST202`, and Postgres with `42883`. Both
 join `PGRST205` / `PGRST204` / `42P01` / `42703` in the one helper, and `missing`
@@ -1680,6 +1757,15 @@ already ships.
   while nothing in this repo was wrong. `SIBLING_ROOT` stays an absolute path
   (§1.2) and the `runIf(SIBLING_PRESENT)` skip stays, so a machine without the
   checkout skips loudly instead of greening.
+  **And it is named where it is RUN, not only where it is ruled** (added
+  2026-09-15): the milestone CLOSE CHECKLIST, `agenticflow/docs/STACK.md` §5's
+  incantation table and the README's script table each carry
+  `npm run test:handoff`. QA measured the omission on 2026-09-15 — the tier
+  existed in this contract, in `tests/suite-globs.ts` and in `package.json`,
+  and nowhere a builder or a verifier reads — and the README's front-door
+  guard is ONE-DIRECTIONAL (it resolves the scripts the README names; it
+  cannot see one the README omits), so the omission could not redden.
+  admin-window/TASK-0083 writes the README half.
 - **Shared fixture builders live in `tests/fixtures/`** — one place that builds
   a review item in each of its three shapes, a pending claim in each bucket, a
   cycle row, a run row, a source row, an event with provenance. A test that
@@ -1873,6 +1959,24 @@ already ships.
   after it lands a new hand-spelling is a defect. A rule spelled as two
   Tailwind classes at every call site also has nowhere to hold the bidi
   isolation the row-15 ruling requires of foreign text.
+- **A count read is `countRead`, and prose calls it a count read** (ruled
+  2026-09-15, after four lanes on one class: DEBT-0022 → BUG-0231 → BUG-0232 →
+  BUG-0233). There is exactly one count SHAPE in this app — `countRead`, a GET
+  with `{ count: "exact" }` and `limit 0` (§4.3) — and exactly one NAME for it
+  in prose. `head: true` appears in this repo only where the subject is the
+  shape the app does NOT issue and why; a comment that offers it as a
+  description of a leg this app has is wrong the moment it is written.
+- **A comment naming a MECHANISM names the symbol the code calls; a comment
+  naming a WORLD names no install state at all** (same ruling; the two halves
+  cost four lanes and 19 stale sites). Mechanism: say `countRead`,
+  `readComplete`, `unreadableAnswer` — the thing a reader can grep — never a
+  paraphrase of an option set, which drifts silently because nothing grades a
+  comment. World: what is installed on staging or in production is stated in
+  ONE place, §9.2, and every other file points there. Fourteen files spent
+  2026-09-11 to 2026-09-15 asserting that the two §9 objects were absent from
+  staging, four days after Ben installed them (admin-window/BUG-0235). This is
+  LESSONS 11 — one fact, one derivation — applied to prose: a comment is a
+  COPY of a fact, and a copy nothing grades is a copy that rots.
 - **The kind is derived, never stored** (spec §6): `lib/review/shapes.ts` is
   the one place that maps a shape to `decision` or `signal`. The three shapes
   today: `data_conflict` fact item → decision; `entity_link` fact item
@@ -2078,6 +2182,10 @@ decomposition brief of every ticket touching that surface.
 
 | 27 | **A stored check that cannot be RED — a proxy measured in a place where its subject does not exist** | 2 (both authored 2026-09-11, both found by QA) | admin-window/BUG-0209 check 3: `test "$(git -C "../kspace Scraper" log --all --format=%s \| grep -c '^admin-window/')" -eq 0` — in the receipt worktree that path is `agenticflow/.worktrees/_receipt-<pid>/../kspace Scraper`, which does not exist, so `git` fails, the count is empty and the check exits 0 however many commits the sibling holds (QA demonstrated it from a directory with no sibling). admin-window/BUG-0218: `git status --porcelain -- src tests` as a "nothing else changed" proxy — always empty in a detached worktree at HEAD | **PROMOTED at 2, 2026-09-12 (architect, M3 queue pass).** Rule written into §1.2: a check reaches the sibling by ABSOLUTE path and asserts a diff as `git diff --name-only <merge-base>..HEAD -- <paths>`; and the general form, which is the one to cite in a decomposition brief — **a check is authored by RUNNING it on the tree it will run on and reading the number, and a check that is green before the work is done is a defect whatever it asserts** (LESSONS 12). Nothing is re-opened on the two closed tickets: rewriting a bar a ticket was already graded against is the edit this factory must not make (the BUG-0209 EC1 ruling, same week) |
 
+| 28 | **A transport answer admitted LEG BY LEG — one predicate added per QA lane, five lanes, one host** | 5 | admin-window/BUG-0224 (a bodyless 404 substituted `[]`, so `/claims` said "No claims waiting" over a failed read), BUG-0227 (`200 {"message":"no upstream"}` — `readRows` asked only `data === null`, so `.map is not a function` 500'd every surface), BUG-0228 (`[{"message":"no upstream"}]` — the array question passed, the element had no declared column, four surfaces 500), BUG-0229 (`count = NaN`, then `-5`, then `1e20` published as figures), BUG-0230 (`-0` published as "-0") | **Promoted to a rule 2026-09-15** — §4.1, "What a PostgREST ANSWER is": every leg the read named, in the shape PostgREST is specified to send it, or one refusal for the whole answer. Its four decided clauses (values are not types; contradicting legs are one refusal; "no row" needs a response that carried one; `parseInt` leniency is a named limit) exist so the next lane rules instead of adding a sixth predicate. Cited in the brief of every ticket on `lib/db/result.ts` or `lib/db/schema.ts`. |
+
+| 29 | **A comment asserting a fact nothing grades — a mechanism the code no longer has, or an install state of the world** | 4 lanes, 19 sites | Mechanism: DEBT-0022 → BUG-0231 → BUG-0232 → BUG-0233, four lanes fixing "head count" paraphrases one file at a time, with three more sites (tests/live/harness.live.test.ts:49, tests/live/claims.live.test.ts:1459, tests/offline/db/result.test.ts:3299) sitting on BUG-0233's own must-survive list, graded true. World: 16 files still saying the two §9 objects do not exist on staging, four days after they were installed. | **Promoted to a rule 2026-09-15** — §11's two vocabulary clauses, and one sweep ticket for the whole class (admin-window/BUG-0235) instead of a fifth per-file lane. The ledger's own lesson: the FIRST time a comment class is found, it is swept by class; per-file tickets on prose buy four receipts and leave the class open. |
+
 *(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
 findings on TASK-0001/0003/0006; rows 4–5 at the second pass the same day,
 from measurement of the open tickets' own checks; row 6 at the third pass, from
@@ -2085,6 +2193,26 @@ the first live parity run against staging. The milestone structure walk owns
 this table from here.)*
 
 ## History
+
+- **2026-09-15, M3 close ruling pass (architect).** Four amendments and one
+  ratification, all from the close queue. **§4.1 gains the admission rule**
+  ("What a PostgREST ANSWER is") and **Common violations row 28**: the
+  five-ticket alien-host chain is stated once as a positive bar with its four
+  decided clauses, and the three legs that bar does not yet hold on are one
+  ticket (BUG-0234), not three. **§11 gains two vocabulary clauses** and
+  **row 29**: a count read is `countRead` and prose says so; a comment names
+  the symbol the code calls, and names no install state at all — the class is
+  swept whole in BUG-0235 rather than one file per lane. **§9.2's BUG-0223
+  rewrite is RATIFIED** — PostgREST's OpenAPI description answers whether a
+  function exists without calling it, which is the premise the 2026-09-08
+  subsection got wrong — with three limits named in place (the document is
+  admitted by §4.1; the cache stays affirmative-only; no in-flight dedupe, with
+  the trigger that would file one). **§10 gains the naming clause**: the
+  handoff tier is named in the close checklist, STACK §5 and the README, since
+  the README guard is one-directional and cannot see a tier it omits.
+  Deliberately NOT amended: §4.1's row leg still asks presence, never types —
+  the net for a render that throws on an admitted row is a route error boundary
+  (TASK-0082), not a fifth predicate in `lib/db`.
 
 - **2026-09-12, M3 queue ruling pass (architect).** Three amendments, all from
   the M3 close queue, none a new feature. **§1.2 gains the stored-check

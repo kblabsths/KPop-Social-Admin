@@ -2082,3 +2082,43 @@ overlap once, in client-land). That fix survives either shape Ben picks, which
 is the test I applied to decide what could move now. The door this closes: the
 campaign does not change the paging CONTRACT by patch, and no ticket may
 introduce a second bound spelling on the wire before the shape is ruled.
+
+## 2026-09-15 — A host answer is admitted whole, by leg, or refused whole; values are never typed in `lib/db`
+
+Five tickets in three days (BUG-0224 → BUG-0227 → BUG-0228 → BUG-0229 →
+BUG-0230) each added one predicate to the read layer after one QA lane found
+one more shape a hostile or misconfigured host could send: a bodyless 404
+substituted `[]`, a JSON object passed the `data === null` question, an array
+of non-rows passed the array question, an invented `Content-Range` published
+`NaN`, then `-5`, then `1e20`, then `-0`. The decision is to stop extending the
+predicate list and state the bar: **a response is this app's answer only when
+every leg the read named arrived in the shape PostgREST is specified to send
+it; anything else refuses as a whole, through one rule, naming the object**
+(ARCHITECTURE §4.1). Two doors close with it. First, `lib/db` does **not** type
+values: the row leg asks which columns are present, never what they hold, so a
+row of every declared column with wrong-typed values is admitted on purpose —
+the net for a render that then throws is a route-level error boundary
+(TASK-0082), because an element-type guard is defeated by `[{}]` and its
+successor by the next shape. Second, a transport leniency this layer cannot
+see — supabase-js's `parseInt` over `Content-Range`, which makes `*/0x10` a
+16 — is a NAMED LIMIT of the bar, re-opened only by a measured body, never by a
+vocabulary guess about the digits. Cost accepted: a host can still lie to us in
+a way we will believe, and we have written down exactly which way.
+
+## 2026-09-15 — Function existence is READ from PostgREST's schema description, never discovered by calling
+
+Ratifying the BUG-0223 builder lane's rewrite of §9.2 rather than reverting it.
+The 2026-09-08 subsection was written on a premise that is false: PostgREST
+publishes an OpenAPI description at `GET /rest/v1/` keying every exposed
+procedure under `/rpc/<name>`, so whether `settle_review_item` exists is a READ,
+and readiness is the conjunction of every object the save calls. The door this
+closes: **no surface may discover a procedure by calling it** — a probe call is
+a write attempt dressed as a question, and one wrote a real admin override onto
+staging on 2026-09-11 (BUG-0215). Three limits are ruled in place with it: the
+description is an answer from the same host and is admitted by the admission
+rule above (a `paths` that is not an object is an unreadable document, not an
+empty database); the per-process cache stays AFFIRMATIVE-ONLY, because an
+absence must never survive the install that ends it; and there is deliberately
+no in-flight dedupe of the 387 KB read, which is bounded by the first
+affirmative answer and reachable only in the install window. Cost accepted: a
+cold half-installed process can fetch that document more than once.
