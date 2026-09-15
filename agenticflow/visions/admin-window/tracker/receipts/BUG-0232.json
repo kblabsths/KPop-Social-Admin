@@ -1,0 +1,46 @@
+{
+ "id": "BUG-0232",
+ "created": "2026-09-15T07:09:41Z",
+ "green": true,
+ "git_head": "13e188f844e2445ebbe639c2a5ba97211bd9c67a",
+ "scope": [
+  "src/components/claims/claim-list.tsx",
+  "src/lib/url/narrowing.ts",
+  "src/components/claims/bucket-table.tsx"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "805cb08cea22da09218e6010c367264ec83c8b296674b306e7b10f99008cdb54",
+ "commands": [
+  {
+   "cmd": "! grep -q 'head: true' src/components/claims/claim-list.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q 'head: true' src/lib/url/narrowing.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q 'head: true' src/components/claims/bucket-table.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q 'countRead' src/components/claims/claim-list.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}
