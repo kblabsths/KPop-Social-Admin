@@ -285,3 +285,5 @@
 2026-09-15T06:00:24Z	artifact_gate	blocked sibling write: /Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper/-name (the sibling is running its own campaign — everything is major while it does)
 2026-09-15T06:03:40Z	evidence_budget	qa_evidence_overbudget: BUG-0225 4042/4000 chars
 2026-09-15T06:07:16Z	artifact_gate	blocked write outside repo: /-s*d/.test
+2026-09-15T06:34:18Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-15T06:34:49Z	artifact_gate	blocked write outside repo: /tmp_out.txt
