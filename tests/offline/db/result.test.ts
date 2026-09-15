@@ -2744,6 +2744,96 @@ describe("reads against a scripted PostgREST response", () => {
     ]);
   });
 
+  it("refuses a row set that came back as a JSON OBJECT, on both row-set legs, in one derivation", async () => {
+    // A row set that did not come back as an ARRAY did not come back
+    // (admin-window/BUG-0227). Measured with the real client against a
+    // loopback host answering `200 {"message":"no upstream"}`: every read
+    // shape sees `error: null, data: {"message":"no upstream"}, count: null`,
+    // so the count legs refused on the missing count while the row-set legs
+    // handed a non-array through as `Row[]` — and the first `.map` in the
+    // render turned all five graded surfaces into an HTTP 500.
+    //
+    // The fixture the guard must NOT flag is asserted in the same test below:
+    // a real array still reads as rows, which is what keeps this a widening of
+    // the question rather than a refusal of answers PostgREST does give.
+    const foreign = { message: "no upstream" };
+    const rows = await readRows(
+      T.pendingClaims,
+      (db) => db.from(T.pendingClaims).select("*"),
+      stubClient({ [T.pendingClaims]: { data: foreign } }).asSupabaseClient(),
+    );
+    // `readComplete`'s row leg asked the identical question, so it is graded
+    // on the answer that reaches it the day a host sends an object AND a
+    // Content-Range — the count leg cannot catch that one.
+    const complete = await readComplete(
+      T.pendingClaims,
+      (db, cap) =>
+        db
+          .from(T.pendingClaims)
+          .select("*", { count: "exact" })
+          .order("claim_id", { ascending: true })
+          .range(0, cap - 1),
+      stubClient({ [T.pendingClaims]: { data: foreign, count: 3 } }).asSupabaseClient(),
+    );
+
+    for (const [leg, result] of [
+      ["readRows", rows],
+      ["readComplete", complete],
+    ] as ReadonlyArray<readonly [string, DbResult<unknown[]>]>) {
+      expect(result.kind, leg).toBe("error");
+      if (result.kind !== "error") continue;
+      // Not an absence either: nothing said the object is not there.
+      expect(result.reading, leg).toBe(T.pendingClaims);
+      // Never handed on as rows — a non-array typed `Row[]` is the crash.
+      expect(result, leg).not.toHaveProperty("data");
+      expect(result.authored, leg).toEqual([
+        { words: result.message, author: "this app" },
+      ]);
+      for (const callSite of CALL_SITE_PROSE) {
+        expect(result.message, leg).not.toContain(callSite);
+      }
+    }
+
+    // ONE derivation (admin-window/BUG-0224 criterion 4): the widened
+    // predicate refuses in the SAME words a missing row set refuses in, rather
+    // than adding a second sentence for a second shape. Compared against the
+    // null case rather than a pinned sentence, so the two cannot drift.
+    const nulled = await readRows(
+      T.pendingClaims,
+      (db) => db.from(T.pendingClaims).select("*"),
+      stubClient({ [T.pendingClaims]: { data: null } }).asSupabaseClient(),
+    );
+    expect(nulled.kind).toBe("error");
+    if (rows.kind !== "error" || complete.kind !== "error" || nulled.kind !== "error") {
+      return;
+    }
+    expect(rows.message).toBe(nulled.message);
+    expect(complete.message).toBe(nulled.message);
+
+    // The passing fixture, on the same two legs: a real row set is still a row
+    // set, and a counted complete read still returns every row.
+    const claims = [{ claim_id: "claim-1" }, { claim_id: "claim-2" }];
+    const stillRows = await readRows(
+      T.pendingClaims,
+      (db) => db.from(T.pendingClaims).select("*"),
+      stubClient({ [T.pendingClaims]: { data: claims } }).asSupabaseClient(),
+    );
+    expect(stillRows).toEqual({ kind: "ok", data: claims });
+    const stillComplete = await readComplete(
+      T.pendingClaims,
+      (db, cap) =>
+        db
+          .from(T.pendingClaims)
+          .select("*", { count: "exact" })
+          .order("claim_id", { ascending: true })
+          .range(0, cap - 1),
+      stubClient({
+        [T.pendingClaims]: { data: claims, count: claims.length },
+      }).asSupabaseClient(),
+    );
+    expect(stillComplete).toEqual({ kind: "ok", data: claims });
+  });
+
   it("returns not_provisioned when the table is not in the schema cache", async () => {
     const stub = stubClient({
       [T.verdicts]: { error: tableNotInSchemaCache(T.verdicts) },

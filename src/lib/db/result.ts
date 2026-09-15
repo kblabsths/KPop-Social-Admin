@@ -959,18 +959,30 @@ export function classify(
  * empty card is a positive claim about the population — "there is nothing
  * here" — and a read that never happened has no standing to make it.
  *
- * **When an answer cannot be graded.** The client reported NO failure, and the
- * response carried NONE of what the read asked for: no rows for a row-set
- * read, no count for a count read. PostgREST cannot answer either of those
+ * **When an answer cannot be graded.** The client reported NO failure, and
+ * what the read asked for DID NOT ARRIVE: for a row-set read, no array of
+ * rows; for a count read, no count. PostgREST cannot answer either of those
  * that way — a row-set read is answered with a JSON array, empty when the set
  * is, and a `{ count: "exact" }` read carries its total in `Content-Range`. So
- * a missing payload beside a missing error is not a database fact at all; it
- * is an answer from something that is not this database.
+ * an answer that is not the shape the read asked for, beside a missing error,
+ * is not a database fact at all; it is an answer from something that is not
+ * this database.
  *
- * **The shape that produces it, measured** (QA, admin-window/BUG-0210 residual,
- * 2026-09-11; reproduced over HTTP by `tests/http/postgrest-stub.ts`'s `blank`
- * mode): a host answering **404 with zero bytes** — a wrong `SUPABASE_URL`, or
- * a proxy/gateway answering in front of the service. supabase-js parses its
+ * **"Did not arrive" is wider than "was null", and the question is the same
+ * one** (admin-window/BUG-0227). A row-set read that came back with a JSON
+ * OBJECT did not come back with a row set any more than one that came back
+ * with nothing: both fail the only test that matters — *is this the payload
+ * this read asked for?* So the predicate is `Array.isArray`, not `!== null`,
+ * and it is the same rule refusing, not a second one (LESSONS 13: the bar is
+ * the property, not the instance).
+ *
+ * **The shapes that produce it, measured.** Both are a host that is not this
+ * database answering for it, and both are reproduced over HTTP by
+ * `tests/http/postgrest-stub.ts` — as its `blank` and `foreign` modes.
+ *
+ * *One* (QA, admin-window/BUG-0210 residual, 2026-09-11): a host answering
+ * **404 with zero bytes** — a wrong `SUPABASE_URL`, or a proxy/gateway
+ * answering in front of the service. supabase-js parses its
  * error out of the BODY, finds none, and rewrites the whole response to
  * `status 204, error: null, data: null, count: null`
  * (`node_modules/@supabase/postgrest-js/dist/index.mjs`, the
@@ -978,6 +990,17 @@ export function classify(
  * code, no message, no rows, no count. It is the same blindness the HEAD count
  * had (BUG-0210), arriving from the HOST rather than from the request shape —
  * which is why no request shape could have fixed it.
+ *
+ * *Two* (QA, admin-window/BUG-0227, 2026-09-15, measured with the real client
+ * against a loopback host answering `200 {"message":"no upstream"}`): a
+ * gateway or proxy answering **200 with a JSON object**. supabase-js hands
+ * that body straight back, so EVERY read shape sees
+ * `error: null, data: {"message":"no upstream"}, count: null` — set read,
+ * count read and complete read alike. The count legs already refused, because
+ * the count was missing; the row-set legs did not, because the object is not
+ * `null` — and `{kind:"ok", data}` typed as `Row[]` over a non-array is a
+ * `.map` throwing inside the render, which is an HTTP 500 rather than the
+ * refusal this rule exists to give.
  *
  * **Why this and not a status test.** The question asked here is about the
  * ANSWER a read needed, not about the number the client happened to stamp on
@@ -988,11 +1011,13 @@ export function classify(
  *
  * **Which reads it applies to, and which it must NOT.** Row-set reads
  * (`readRows`), count reads (`readCount`) and complete reads (`readComplete`,
- * both legs) — for those three, `null` is not an answer PostgREST can give.
- * `readOne` and `callFunction` are deliberately outside it: a `.maybeSingle()`
- * over no rows really does hand back `data: null`, and a procedure returning
- * void really does answer with no body, so the same test there would turn two
- * true answers into refusals. Widening this to them needs a different
+ * both legs) — for those three, PostgREST always sends the payload: an array
+ * for a row set, a `Content-Range` total for a count. Anything else there is
+ * not an answer it could have given. `readOne` and `callFunction` are
+ * deliberately outside it: a `.maybeSingle()` over no rows really does hand
+ * back `data: null`, and a procedure returning void really does answer with no
+ * body — and neither of them asked for an array, so the row-set test says
+ * nothing about their answers either. Widening this to them needs a different
  * question, not this one.
  *
  * The words are THIS APP's — one `"this app"` segment, like every other
@@ -1014,6 +1039,26 @@ function unreadableAnswer(missing: string): DbResult<never> {
     },
   ];
   return { kind: "error", reading: missing, message: accountText(authored), authored };
+}
+
+/**
+ * Did a ROW SET arrive? The one test both row-set legs ask
+ * (admin-window/BUG-0227), so neither can drift into asking a narrower one.
+ *
+ * PostgREST answers every row-set read with a JSON array — `[]` for a matching
+ * set of zero — so an array is the only answer it can give, and the answer is
+ * either an array or it did not arrive. `null` (a host answering 404 with zero
+ * bytes, rewritten by supabase-js) and an object (a proxy answering 200 with
+ * its own JSON) are two spellings of the same absent row set, which is why
+ * this asks the positive question once rather than listing the shapes that
+ * are not a row set (LESSONS 4).
+ *
+ * It is a type guard because the seam's job is to make `ok` mean what it says:
+ * `data` is typed `Row[]` for every caller, so nothing but a real array may
+ * pass through as one.
+ */
+function isRowSet<Row>(data: Row[] | null | undefined): data is Row[] {
+  return Array.isArray(data);
 }
 
 /**
@@ -1045,11 +1090,15 @@ async function runQuery<T>(
  * no rows, which is a real answer and renders the surface's empty card.
  *
  * NO ARRAY AT ALL is not that answer: PostgREST sends `[]` for a matching set
- * of zero, so a null row set beside a null error is an answer this app cannot
- * grade and refuses through the one rule (`unreadableAnswer`,
- * admin-window/BUG-0224). This used to substitute `[]` for it, which is how a
+ * of zero, so anything that is not an array, beside a null error, is an answer
+ * this app cannot grade and refuses through the one rule (`unreadableAnswer`,
+ * admin-window/BUG-0224, widened to the whole question by
+ * admin-window/BUG-0227). This used to substitute `[]` for it, which is how a
  * host answering 404 with zero bytes put "No claims waiting" on `/claims` over
- * a read that failed.
+ * a read that failed; it then asked only whether the answer was `null`, which
+ * is how a host answering 200 with `{"message":"no upstream"}` reached the
+ * render as a `Row[]` that was not an array and threw `.map is not a function`
+ * — an HTTP 500 on every surface, in place of the refusal above.
  */
 export async function readRows<Row>(
   missing: string,
@@ -1058,7 +1107,7 @@ export async function readRows<Row>(
 ): Promise<DbResult<Row[]>> {
   const result = await runQuery<Row[]>(missing, run, db);
   if (result.kind !== "ok") return result;
-  if (result.data === null) return unreadableAnswer(missing);
+  if (!isRowSet(result.data)) return unreadableAnswer(missing);
   return { kind: "ok", data: result.data };
 }
 
@@ -1104,7 +1153,12 @@ export async function readComplete<Row>(
     // an answer this app cannot grade, and it refuses through the one rule
     // (admin-window/BUG-0224). This arm used to be a sentence about this app's
     // own call arguments, rendered at an operator.
-    if (data === null || count === null || count === undefined) {
+    //
+    // The row leg asks `isRowSet`, the same question `readRows` asks
+    // (admin-window/BUG-0227): a non-array standing where the rows belong is
+    // reachable here the day a host sends both an object and a Content-Range,
+    // and "the rows did not arrive" is one question with one answer.
+    if (!isRowSet(data) || count === null || count === undefined) {
       return unreadableAnswer(missing);
     }
     const rows = data;

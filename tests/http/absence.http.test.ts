@@ -72,7 +72,7 @@ const GRADED_SURFACES = [
 ] as const;
 
 /** Every mode the stub can answer in — the sweep's domain, read off the type. */
-const EVERY_MODE: readonly StubMode[] = ["absent", "denied", "blank", "empty"];
+const EVERY_MODE: readonly StubMode[] = ["absent", "denied", "blank", "empty", "foreign"];
 
 /**
  * The surfaces whose reads include a COUNT leg, and the object each count
@@ -255,7 +255,7 @@ describe("a database that answers but holds none of the ecosystem tables", () =>
     }
   });
 
-  it.fails("refuses every panel against a host answering 200 with something that is not a row set", async () => {
+  it("refuses every panel against a host answering 200 with something that is not a row set", async () => {
     // THE SAME BAR, the third host answer it names (QA attack on
     // admin-window/BUG-0224): "Whatever a host answers — a bodyless 404, a
     // 204, an HTML error page from a proxy, A 200 WITH A BODY THAT IS NOT A
@@ -269,18 +269,24 @@ describe("a database that answers but holds none of the ecosystem tables", () =>
     // read does not, because the rule asks only whether `data` is null and a
     // foreign object is not null.
     //
-    // PIN (QA, admin-window ticket BUG-0227): marked an EXPECTED FAILURE
-    // because this is RED on the
-    // landed tree — every one of these surfaces answers HTTP 500 with Next's
-    // error shell, the render having called `.map` on that object. THE FIX
-    // FLIPS THIS MARKER back to `it`, and then `"foreign"` joins EVERY_MODE
-    // below so the call-site sweep covers it like every other mode.
+    // PIN (QA, admin-window/BUG-0227), watched RED before the fix: every one
+    // of these surfaces answered HTTP 500 with Next's error shell, the render
+    // having called `.map` on that object. The fix is `readRows`/`readComplete`
+    // asking whether a ROW SET arrived (`isRowSet`, `src/lib/db/result.ts`)
+    // rather than whether `data` was null, so the same one rule refuses; and
+    // `"foreign"` is now in EVERY_MODE above, so the call-site-prose sweep
+    // covers this mode like every other.
     stub.setMode("foreign");
 
     // The home page reads row sets too, and it is the first thing an operator
     // lands on: it must answer, not throw. (`pageOf` grades the status and the
-    // error shell, which is the whole assertion for this one.)
-    await pageOf("/?probe=foreign", cookie);
+    // error shell, which is the whole assertion for this one.) /browse and
+    // /cycles are here for the same reason and on the same measurement: QA
+    // read 500s off /, /browse and the three graded surfaces alike, so every
+    // route that renders a row set is asked to ANSWER in this mode.
+    for (const route of ["/", "/browse", "/cycles"]) {
+      await pageOf(`${route}?probe=foreign`, cookie);
+    }
 
     for (const { route, names } of GRADED_SURFACES) {
       const markup = await pageOf(`${route}?probe=foreign`, cookie);
@@ -303,7 +309,8 @@ describe("a database that answers but holds none of the ecosystem tables", () =>
         ).not.toMatch(/\d/);
       }
 
-      // Criterion 2 in this mode, until "foreign" can join EVERY_MODE.
+      // Criterion 2 in this mode. EVERY_MODE's sweep covers it too now; this
+      // stays because a refusal read by an operator is this test's subject.
       for (const fragment of DEVELOPER_PROSE) {
         expect(
           cheerio.load(markup).text(),
