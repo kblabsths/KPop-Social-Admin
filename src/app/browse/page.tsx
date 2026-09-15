@@ -21,7 +21,7 @@ import { PagedWindowLine, PagingProvider } from "@/components/ui/paging";
 import type { BrowseRow } from "@/lib/browse/rows";
 import { EVENTS_OBJECT, readRecentEvents, type DbUnavailable } from "@/lib/db/browse";
 import { PAGE_ROUTES, pageBound } from "@/lib/paging/bounds";
-import { boundOf, initialPage } from "@/lib/paging/machine";
+import { type RowIdKey, boundOf, idAt, initialPage } from "@/lib/paging/machine";
 import {
   COLUMNS_PARAM,
   RECENT_EVENTS,
@@ -116,13 +116,23 @@ const EVENTS_WINDOW = "events";
  * (admin-window/BUG-0222, LESSONS 5).
  *
  * The bound this first screen ends at (`boundOf`), the ids it has already
- * drawn (`initialPage`) and the id a paged row is recognised by (`deps.id`)
+ * drawn (`initialPage`) and the id a paged row is recognised by (`deps.idKey`)
  * are three readings of one fact, and they must be the same field the table
  * keys its rows by (`BrowseTable`) — a set keyed on one field beside React
  * keys drawn from another would compare two screens by something the operator
  * is not looking at.
+ *
+ * It is the field's NAME, because the third of those readings CROSSES A CLIENT
+ * BOUNDARY: `deps` is a prop of `PagingProvider`, a `"use client"` component,
+ * and a function prop is not serializable — this page answered HTTP 500 with
+ * no markup at all while it was one (admin-window/BUG-0226). The reader below
+ * is derived from this same constant and stays here, on the server, where the
+ * two server-side readings need it.
  */
-const eventId = (row: BrowseRow): string => row.event_id;
+const EVENT_ID: RowIdKey<BrowseRow> = "event_id";
+
+/** That name, read — server-side only (`idAt`, admin-window/BUG-0226). */
+const eventId = idAt<BrowseRow>(EVENT_ID);
 
 export default async function BrowsePage({
   searchParams,
@@ -371,7 +381,7 @@ export default async function BrowsePage({
               // AND THE IDS THIS SCREEN HAS ALREADY DRAWN, so a page the
               // route serves at a position rows have moved under cannot put
               // an event on screen twice (admin-window/BUG-0222). Same
-              // spelling as the bound above and as `deps.id` below — one
+              // spelling as the bound above and as `deps.idKey` below — one
               // derivation of "what this row is called", which is also the
               // field `BrowseTable` keys by.
               drawn.map(eventId),
@@ -381,7 +391,11 @@ export default async function BrowsePage({
               route: PAGE_ROUTES.browse,
               params: browseQuery(view, shown),
               size: view.window,
-              id: eventId,
+              // THE NAME, NEVER THE READER (admin-window/BUG-0226): every prop
+              // written on this `"use client"` element is serialized into the
+              // flight payload, and a function is the one shape that is not
+              // data — it took the whole page to HTTP 500.
+              idKey: EVENT_ID,
             }}
           >
             {sectionBody}

@@ -24,6 +24,7 @@ import {
   requestPage,
   type PageDeps,
   type PageState,
+  type RowIdKey,
 } from "@/lib/paging/machine";
 import { ROW_CAP } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
@@ -265,9 +266,10 @@ function countedWindow(counted: number, limit: number): DrawnWindow {
  */
 /**
  * WHAT ONE CLAIM LINE IS CALLED, for a fixture that builds the surface's deps
- * by hand — the same field the page spells (admin-window/BUG-0222).
+ * by hand — the same field the page spells (admin-window/BUG-0222), as the
+ * NAME the page hands across the client boundary (admin-window/BUG-0226).
  */
-const observationId = (claim: ClaimLine): string => claim.observationId;
+const OBSERVATION_ID: RowIdKey<ClaimLine> = "observationId";
 
 const PARKED = "in_" + "window";
 
@@ -6469,7 +6471,11 @@ describe("the affordance that continues the claim list", () => {
     expect(deps.size).toBe(CLAIM_WINDOW);
   });
 
-  // PINNED RED, deliberately — admin-window/BUG-0226, QA off admin-window/BUG-0222.
+  // FIXED, and this is the guard that keeps it fixed — admin-window/BUG-0226,
+  // QA off admin-window/BUG-0222. It was PINNED RED by QA and flipped to `it`
+  // by the fix: the page now hands the driver the NAME of its id field
+  // (`deps.idKey`) and derives its own reader from that same constant,
+  // server-side, so nothing it writes on the client element is a function.
   //
   // `PagingProvider` is a `"use client"` component and this page is a SERVER
   // one, so every prop it writes here is serialized into the flight payload by
@@ -6485,11 +6491,10 @@ describe("the affordance that continues the claim list", () => {
   // `npm run build` compiles it. So the grade is on the VALUE the page handed
   // across, which this file already records.
   //
-  // `it.fails` is this runner's strict xfail: the day the surface hands the
-  // driver its id by data instead of by a function, this case XPASSes, the
-  // suite turns red, and whoever reads it is sent to the ticket — flip the
-  // marker to `it` with the fix.
-  it.fails("hands the client provider DATA only, so the server can serialize it", async () => {
+  // It stays a case rather than a footnote: nothing else in this repo can see
+  // this class — `renderToStaticMarkup` has no client boundary — so this is
+  // the only thing standing between the next function prop and another 500.
+  it("hands the client provider DATA only, so the server can serialize it", async () => {
     await renderClaims(pagedScript(130));
     const { initial, deps } = paging.calls[0];
     expect(functionPaths({ initial, deps })).toEqual([]);
@@ -6708,7 +6713,7 @@ describe("the affordance that continues the claim list", () => {
           {
             initial: initialPage<ClaimLine>(windowSize, true, ""),
             window: countedWindow(windowSize * 3, windowSize),
-            deps: { route: PAGE_ROUTES.claims, params: "", size: windowSize, id: observationId },
+            deps: { route: PAGE_ROUTES.claims, params: "", size: windowSize, idKey: OBSERVATION_ID },
             children: null,
           },
           h(PagedClaimList, { label: "All claims", initial: rows.slice(0, windowSize) }),
@@ -7210,7 +7215,7 @@ describe("the affordance that continues the claim list", () => {
           // where its two reads disagree — which `/claims` never hands over.
           initial: initialPage<ClaimLine>(37, true, ""),
           window: countedWindow(900, CLAIM_WINDOW),
-          deps: { route: PAGE_ROUTES.claims, params: "", size: CLAIM_WINDOW, id: observationId },
+          deps: { route: PAGE_ROUTES.claims, params: "", size: CLAIM_WINDOW, idKey: OBSERVATION_ID },
           children: null,
         },
         h(PagedClaimList, {

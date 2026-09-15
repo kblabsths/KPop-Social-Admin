@@ -25,6 +25,7 @@ import {
   requestPage,
   type PageDeps,
   type PageState,
+  type RowIdKey,
 } from "@/lib/paging/machine";
 import { recordHref } from "@/lib/records/routes";
 import { BrowseTable } from "@/components/browse/browse-table";
@@ -182,9 +183,10 @@ function thisWindow(held: number, limit: number): DrawnWindow {
 
 /**
  * WHAT ONE BROWSE ROW IS CALLED, for a fixture that builds the surface's deps
- * by hand — the same field the page spells (admin-window/BUG-0222).
+ * by hand — the same field the page spells (admin-window/BUG-0222), as the
+ * NAME the page hands across the client boundary (admin-window/BUG-0226).
  */
-const eventId = (row: BrowseRow): string => row.event_id;
+const EVENT_ID: RowIdKey<BrowseRow> = "event_id";
 
 const EVENT_NEW = "01920000-0000-7000-8000-000000000b02";
 const EVENT_OLD = "01920000-0000-7000-8000-000000000b01";
@@ -1265,15 +1267,15 @@ describe("the affordance that continues the recent-events view", () => {
     expect(deps.size).toBe(view.window);
   });
 
-  // PINNED RED, deliberately — admin-window/BUG-0226, QA off admin-window/BUG-0222.
-  // The same 500 `/claims` answers, on this surface's own props: `PagingProvider`
-  // is a `"use client"` component, this page is a SERVER one, and a function
-  // prop cannot be serialized into the flight payload — Next answers the whole
-  // page 500 and the operator gets no page at all. MEASURED on a production
-  // build of this tree, 2026-09-14: GET /browse -> 500, GET /claims -> 500.
-  // Flip the marker to `it` with the fix; see the twin in
-  // `tests/offline/claims/page.test.ts` for why no other tier sees it.
-  it.fails("hands the client provider DATA only, so the server can serialize it", async () => {
+  // FIXED, and this is the guard that keeps it fixed — admin-window/BUG-0226,
+  // QA off admin-window/BUG-0222. The same 500 `/claims` answered, on this
+  // surface's own props: `PagingProvider` is a `"use client"` component, this
+  // page is a SERVER one, and a function prop cannot be serialized into the
+  // flight payload — Next answered the whole page 500 and the operator got no
+  // page at all (MEASURED on a production build, 2026-09-14). The page now
+  // hands the NAME of its id field (`deps.idKey`); see the twin in
+  // `tests/offline/claims/page.test.ts` for why no other tier sees this class.
+  it("hands the client provider DATA only, so the server can serialize it", async () => {
     await renderBrowse(windowScript(view.window));
     const { initial, deps } = paging.calls[0];
     expect(functionPaths({ initial, deps })).toEqual([]);
@@ -1643,7 +1645,7 @@ describe("the affordance that continues the recent-events view", () => {
           {
             initial: initialPage<BrowseRow>(windowSize, true, ""),
             window: thisWindow(windowSize, windowSize),
-            deps: { route: PAGE_ROUTES.browse, params: "", size: windowSize, id: eventId },
+            deps: { route: PAGE_ROUTES.browse, params: "", size: windowSize, idKey: EVENT_ID },
             children: null,
           },
           h(PagedBrowseTable, {
@@ -1692,7 +1694,7 @@ describe("the affordance that continues the recent-events view", () => {
         {
           initial: initialPage<BrowseRow>(short, more, ""),
           window: thisWindow(short, view.window),
-          deps: { route: PAGE_ROUTES.browse, params: "", size: view.window, id: eventId },
+          deps: { route: PAGE_ROUTES.browse, params: "", size: view.window, idKey: EVENT_ID },
           children: null,
         },
         h(PagedBrowseTable, {

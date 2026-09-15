@@ -18,6 +18,7 @@ import {
   boundOf,
   initialPage,
   requestPage,
+  type PageDeps,
   type PageState,
 } from "@/lib/paging/machine";
 import {
@@ -1828,13 +1829,13 @@ describe("paging past the first window, against staging", () => {
   async function walk(
     params: string,
   ): Promise<{ rows: ClaimLine[]; bounds: (string | null)[]; presses: number }> {
-    const deps = {
+    const deps: PageDeps<ClaimLine> = {
       route: PAGE_ROUTES.claims,
       params,
       size: CLAIM_WINDOW,
       // What a row is CALLED — the app's own spelling, so this walk drives the
       // driver's dedupe exactly as `/claims` does (admin-window/BUG-0222).
-      id: (claim: ClaimLine) => claim.observationId,
+      idKey: "observationId",
       fetchJson: viaHandler,
     };
     const bounds: (string | null)[] = [];
@@ -1868,7 +1869,7 @@ describe("paging past the first window, against staging", () => {
       size: CLAIM_WINDOW,
       // What a row is CALLED — the app's own spelling, so this walk drives the
       // driver's dedupe exactly as `/claims` does (admin-window/BUG-0222).
-      id: (claim: ClaimLine) => claim.observationId,
+      idKey: "observationId",
       fetchJson: viaHandler,
     });
     if (state.refusal !== null) {
@@ -2238,7 +2239,7 @@ describe("the same paged order, walked three times, against staging", () => {
         route: PAGE_ROUTES.claims,
         params: "",
         size: CLAIM_WINDOW,
-        id: (claim: ClaimLine) => claim.observationId,
+        idKey: "observationId",
         fetchJson: viaHandler,
       });
       if (state.refusal !== null) {
