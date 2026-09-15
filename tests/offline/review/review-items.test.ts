@@ -108,7 +108,8 @@ function withLegs(
     [T.reviewItems]: [
       { data: legOne, count: legOne.length },
       ...counted.map((shape) => ({
-        // A head count returns no rows at all — only the count.
+        // A `countRead` — `{ count: "exact" }` over `limit 0` — returns no
+        // rows at all, only the count.
         data: null,
         count: table.filter((row) => shapeOf(row) === shape).length,
       })),

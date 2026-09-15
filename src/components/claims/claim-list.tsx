@@ -74,9 +74,11 @@ export type { ClaimLine };
  * **Since admin-window/BUG-0138 it is also the `.limit()` the QUERY carries.**
  * It used to be a slice taken in TypeScript off a complete read of the view,
  * beside a `held` counted from the array that read returned; the read is a
- * window now and `held` is a `head: true` count of its own, so this number is
- * spelled ONCE — here — and the page hands it to the read and to the window
- * line from this one declaration.
+ * window now and `held` is a count read of its own — `readClaimCount`
+ * (`src/lib/db/claims.ts`) through `countRead`, which is `{ count: "exact" }`
+ * over `limit 0` and never a `head` request (`src/lib/db/result.ts`) — so this
+ * number is spelled ONCE — here — and the page hands it to the read and to the
+ * window line from this one declaration.
  */
 export const CLAIM_WINDOW = 50;
 
