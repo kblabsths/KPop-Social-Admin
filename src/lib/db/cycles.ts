@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { newestFirst } from "../order/newest-first";
 import { type ResolutionRunRow } from "./gauges";
-import { ROW_CAP, readRows, type DbResponse, type DbResult } from "./result";
+import { ROW_CAP, readRows, selectList, type DbResponse, type DbResult } from "./result";
 import { objectKindOf, T, type ObjectKind } from "./tables";
 
 /**
@@ -97,7 +97,7 @@ const CYCLE_COLUMNS = [
   "outcome",
   ...CYCLE_COUNTERS,
   "error_summary",
-].join(", ");
+] as const;
 
 /**
  * How many cycles the page's table shows.
@@ -174,10 +174,11 @@ export async function readCycles(
   const size = windowSize(limit);
   const result = await readRows<ResolutionRunRow>(
     T.resolutionRuns,
+    CYCLE_COLUMNS,
     (client) =>
       client
         .from(T.resolutionRuns)
-        .select(CYCLE_COLUMNS)
+        .select(selectList(CYCLE_COLUMNS))
         .order("started_at", { ascending: false })
         .order("run_id", { ascending: false })
         .limit(size) as unknown as PromiseLike<DbResponse<ResolutionRunRow[]>>,

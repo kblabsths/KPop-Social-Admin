@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   readComplete,
   readRows,
+  selectList,
   type DbCountedResponse,
   type DbResponse,
   type DbResult,
@@ -95,12 +96,23 @@ export interface RecentEventsListing extends BrowseLegNotes {
  * A caller asking for a different set would defeat the not-provisioned
  * classification, which names the column the database complained about.
  */
-const EVENT_COLUMNS =
-  "event_id, title, description, poster_url, starts_at, created_at";
-const LISTING_COLUMNS = "event_id, venue_name";
-const PROVENANCE_COLUMNS =
-  "provenance_id, entity_id, field, source_id, applied_at";
-const SOURCE_COLUMNS = "source_id, source";
+const EVENT_COLUMNS = [
+  "event_id",
+  "title",
+  "description",
+  "poster_url",
+  "starts_at",
+  "created_at",
+] as const;
+const LISTING_COLUMNS = ["event_id", "venue_name"] as const;
+const PROVENANCE_COLUMNS = [
+  "provenance_id",
+  "entity_id",
+  "field",
+  "source_id",
+  "applied_at",
+] as const;
+const SOURCE_COLUMNS = ["source_id", "source"] as const;
 
 /**
  * The events window: `created_at` descending, `event_id` descending to break a
@@ -129,7 +141,7 @@ function eventsWindow(
   const ascending = view.sort.direction !== "desc";
   return db
     .from(T.events)
-    .select(EVENT_COLUMNS)
+    .select(selectList(EVENT_COLUMNS))
     .order(view.sort.field, { ascending })
     .order("event_id", { ascending })
     .range(offset, offset + view.window - 1) as unknown as PromiseLike<
@@ -145,7 +157,7 @@ function venuesFor(
 ): PromiseLike<DbCountedResponse<EventVenueRow[]>> {
   return db
     .from(T.eventListings)
-    .select(LISTING_COLUMNS, { count: "exact" })
+    .select(selectList(LISTING_COLUMNS), { count: "exact" })
     .in("event_id", ids)
     .order("event_id", { ascending: true })
     .range(0, cap - 1) as unknown as PromiseLike<
@@ -180,7 +192,7 @@ function provenanceFor(
 ): PromiseLike<DbCountedResponse<EventProvenanceRow[]>> {
   return db
     .from(T.fieldProvenance)
-    .select(PROVENANCE_COLUMNS, { count: "exact" })
+    .select(selectList(PROVENANCE_COLUMNS), { count: "exact" })
     .eq("entity_type", T.events)
     .in("entity_id", ids)
     .order("entity_id", { ascending: true })
@@ -199,7 +211,7 @@ function sourcesFor(
 ): PromiseLike<DbCountedResponse<SourceNameRow[]>> {
   return db
     .from(T.sources)
-    .select(SOURCE_COLUMNS, { count: "exact" })
+    .select(selectList(SOURCE_COLUMNS), { count: "exact" })
     .in("source_id", ids)
     .order("source_id", { ascending: true })
     .range(0, cap - 1) as unknown as PromiseLike<
@@ -254,6 +266,7 @@ export async function readRecentEvents(
 ): Promise<RecentEventsListing> {
   const window = await readRows<EventArrivalRow>(
     T.events,
+    EVENT_COLUMNS,
     (client) => eventsWindow(client, view, offset),
     db,
   );
@@ -268,12 +281,14 @@ export async function readRecentEvents(
 
   const venues = await readComplete<EventVenueRow>(
     T.eventListings,
+    LISTING_COLUMNS,
     (client, cap) => venuesFor(client, ids, cap),
     db,
   );
 
   const provenance = await readComplete<EventProvenanceRow>(
     T.fieldProvenance,
+    PROVENANCE_COLUMNS,
     (client, cap) => provenanceFor(client, ids, cap),
     db,
   );
@@ -291,6 +306,7 @@ export async function readRecentEvents(
   if (sourceIds.length > 0) {
     sources = await readComplete<SourceNameRow>(
       T.sources,
+      SOURCE_COLUMNS,
       (client, cap) => sourcesFor(client, sourceIds, cap),
       db,
     );

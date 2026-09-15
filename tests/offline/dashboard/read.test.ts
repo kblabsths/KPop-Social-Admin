@@ -44,7 +44,15 @@ function scriptedClient(script: Script) {
 
 const HEALTHY: Script = {
   [T.reviewItems]: { data: [reviewItemDataConflict()], count: 1 },
-  [T.resolutionRuns]: { data: [resolutionRunRow()] },
+  // TWO reads land on this table and PostgREST answers them in two shapes: the
+  // cycles WINDOW gets an array of rows, the last-applied seek is a
+  // `.maybeSingle()` and gets ONE row object. Scripting one array for both fed
+  // the single read an array standing where its row belongs, which is not an
+  // answer the database can give (admin-window/BUG-0228).
+  [T.resolutionRuns]: (call) =>
+    call.steps.some((step) => step.method === "maybeSingle")
+      ? { data: resolutionRunRow() }
+      : { data: [resolutionRunRow()] },
   [T.runs]: { data: [runRow()] },
 };
 

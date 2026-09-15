@@ -3,6 +3,7 @@ import {
   readComplete,
   readOne,
   readRowsByIds,
+  selectList,
   type DbCountedResponse,
   type DbResponse,
   type DbResult,
@@ -132,7 +133,7 @@ const OBSERVATION_COLUMNS = [
   "payload_ref",
   "observed_at",
   "status",
-].join(", ");
+] as const;
 
 const PROVENANCE_COLUMNS = [
   "provenance_id",
@@ -143,9 +144,9 @@ const PROVENANCE_COLUMNS = [
   "observation_id",
   "tier_at_apply",
   "applied_at",
-].join(", ");
+] as const;
 
-const SOURCE_COLUMNS = ["source_id", "source", "tier"].join(", ");
+const SOURCE_COLUMNS = ["source_id", "source", "tier"] as const;
 
 /**
  * The statuses that are LIVE (`contracts/data-model.md`: "live means `pending`
@@ -206,10 +207,11 @@ export async function readReviewItem(
 ): Promise<DbResult<ReviewItemRow | null>> {
   return readOne<ReviewItemRow>(
     T.reviewItems,
+    REVIEW_ITEM_COLUMNS,
     (client) =>
       client
         .from(T.reviewItems)
-        .select(REVIEW_ITEM_COLUMNS)
+        .select(selectList(REVIEW_ITEM_COLUMNS))
         .eq("review_item_id", reviewItemId)
         .maybeSingle() as unknown as PromiseLike<DbResponse<ReviewItemRow>>,
     db,
@@ -223,11 +225,12 @@ function readObservations(
 ): Promise<DbResult<ObservationRow[]>> {
   return readRowsByIds<ObservationRow>(
     T.observations,
+    OBSERVATION_COLUMNS,
     ids,
     (client, chunkIds) =>
       client
         .from(T.observations)
-        .select(OBSERVATION_COLUMNS)
+        .select(selectList(OBSERVATION_COLUMNS))
         .in("observation_id", chunkIds)
         // At most one row per id — `observation_id` is the table's key — so
         // the leg can never ask for more rows than the ids it filtered on.
@@ -245,11 +248,12 @@ function readSources(
 ): Promise<DbResult<SourceRow[]>> {
   return readRowsByIds<SourceRow>(
     T.sources,
+    SOURCE_COLUMNS,
     ids,
     (client, chunkIds) =>
       client
         .from(T.sources)
-        .select(SOURCE_COLUMNS)
+        .select(selectList(SOURCE_COLUMNS))
         .in("source_id", chunkIds)
         .limit(chunkIds.length) as unknown as PromiseLike<DbResponse<SourceRow[]>>,
     db,
@@ -272,10 +276,11 @@ function readFactProvenance(
 ): Promise<DbResult<ProvenanceRow[]>> {
   return readComplete<ProvenanceRow>(
     T.fieldProvenance,
+    PROVENANCE_COLUMNS,
     (client, cap) =>
       client
         .from(T.fieldProvenance)
-        .select(PROVENANCE_COLUMNS, { count: "exact" })
+        .select(selectList(PROVENANCE_COLUMNS), { count: "exact" })
         .eq("entity_type", fact.entityType)
         .eq("entity_id", fact.entityId)
         .eq("field", fact.field)

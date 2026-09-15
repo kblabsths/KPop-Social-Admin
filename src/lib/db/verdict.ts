@@ -1,10 +1,12 @@
 import { accountText, type AccountSegment } from "../account/authored";
 import {
+  ANY_COLUMNS,
   ROW_CAP,
   callFunction,
   readComplete,
   readRows,
   readRowsByIds,
+  selectList,
   type DbCountedResponse,
   type DbResponse,
   type DbResult,
@@ -256,6 +258,10 @@ export async function readSettlementReadiness(
 ): Promise<DbResult<"ready">> {
   const result = await readRows<unknown>(
     T.verdicts,
+    // It selects `*` and reads no column at all — only whether the read
+    // succeeded — so there is no list to hold the answer against
+    // (admin-window/BUG-0228). The element test still applies.
+    ANY_COLUMNS,
     (db) => db.from(T.verdicts).select("*").limit(READINESS_ROWS),
     client,
   );
@@ -284,11 +290,18 @@ export const VERDICTS_OBJECT: ObjectKind = objectKindOf(T.verdicts);
  * admin-window/BUG-0024 records: a name this table does not have must come
  * back as a `42703` naming the column, not as a silently wider row.
  */
-const VERDICT_LOG_COLUMNS =
-  "verdict_id, review_item_id, actor, action, observation_id, note, created_at";
+const VERDICT_LOG_COLUMNS = [
+  "verdict_id",
+  "review_item_id",
+  "actor",
+  "action",
+  "observation_id",
+  "note",
+  "created_at",
+] as const;
 
 /** The columns the observation leg needs, and nothing else. */
-const OBSERVATION_FACT_COLUMNS = "observation_id, domain, entity_id";
+const OBSERVATION_FACT_COLUMNS = ["observation_id", "domain", "entity_id"] as const;
 
 /**
  * How many verdicts the log's tab shows.
@@ -403,11 +416,12 @@ function readObservationFacts(
 ): Promise<DbResult<ObservationFact[]>> {
   return readRowsByIds<ObservationFact>(
     T.observations,
+    OBSERVATION_FACT_COLUMNS,
     ids,
     (client, chunkIds) =>
       client
         .from(T.observations)
-        .select(OBSERVATION_FACT_COLUMNS)
+        .select(selectList(OBSERVATION_FACT_COLUMNS))
         .in("observation_id", chunkIds)
         // At most one row per id — `observation_id` is the table's key — so
         // the leg can never ask for more rows than the ids it filtered on.
@@ -448,10 +462,11 @@ export async function readVerdictLog(
   const size = windowSize(limit);
   const result = await readRows<VerdictLogRow>(
     T.verdicts,
+    VERDICT_LOG_COLUMNS,
     (client) =>
       client
         .from(T.verdicts)
-        .select(VERDICT_LOG_COLUMNS)
+        .select(selectList(VERDICT_LOG_COLUMNS))
         .order("created_at", { ascending: false })
         .order("verdict_id", { ascending: false })
         .limit(size) as unknown as PromiseLike<DbResponse<VerdictLogRow[]>>,
@@ -550,10 +565,11 @@ export async function readItemVerdict(
 ): Promise<DbResult<ItemVerdict | null>> {
   const result = await readComplete<VerdictLogRow>(
     T.verdicts,
+    VERDICT_LOG_COLUMNS,
     (client, cap) =>
       client
         .from(T.verdicts)
-        .select(VERDICT_LOG_COLUMNS, { count: "exact" })
+        .select(selectList(VERDICT_LOG_COLUMNS), { count: "exact" })
         .eq("review_item_id", reviewItemId)
         .order("created_at", { ascending: false })
         .order("verdict_id", { ascending: false })

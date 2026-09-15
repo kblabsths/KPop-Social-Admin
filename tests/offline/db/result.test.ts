@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 import {
+  ANY_COLUMNS,
   CHUNK_FANOUT,
   ID_CHUNK,
   ROW_CAP,
@@ -431,7 +432,7 @@ describe("classify", () => {
       ["a schema-cache code with no message", { code: "PGRST204" }],
     ] as ReadonlyArray<[string, unknown]>) {
       expect(
-        await readRows(T.reviewItems, (db) => db.from(T.reviewItems).select("id"), answering(body)),
+        await readRows(T.reviewItems, ["id"], (db) => db.from(T.reviewItems).select("id"), answering(body)),
         shape,
       ).toEqual({ kind: "not_provisioned", missing: T.reviewItems });
     }
@@ -441,6 +442,7 @@ describe("classify", () => {
     expect(
       await readRows(
         T.reviewItems,
+        ["id"],
         (db) => db.from(T.reviewItems).select("id"),
         answering({ code: "42703", message: 'column "severity" does not exist' }),
       ),
@@ -2156,6 +2158,7 @@ describe("an account carries the parts the database authored", () => {
 
     const read = await readRows(
       T.pendingClaims,
+      ["id"],
       (db) => db.from(T.pendingClaims).select("id"),
       client,
     );
@@ -2377,6 +2380,7 @@ describe("an account carries the parts the database authored", () => {
     ] as ReadonlyArray<readonly [string, string, string]>) {
       const result = await readRows(
         T.pendingClaims,
+        ["id"],
         (db) => db.from(T.pendingClaims).select("id"),
         rejecting(transportFailureWithCode(sentence, code, frame)),
       );
@@ -2691,6 +2695,7 @@ describe("reads against a scripted PostgREST response", () => {
 
     const result = await readRows(
       T.reviewItems,
+      ANY_COLUMNS,
       (db) => db.from(T.reviewItems).select("*").eq("status", "open"),
       stub.asSupabaseClient(),
     );
@@ -2712,6 +2717,7 @@ describe("reads against a scripted PostgREST response", () => {
     const stub = stubClient({ [T.pendingClaims]: { data: [] } });
     const result = await readRows(
       T.pendingClaims,
+      ANY_COLUMNS,
       (db) => db.from(T.pendingClaims).select("*"),
       stub.asSupabaseClient(),
     );
@@ -2727,6 +2733,7 @@ describe("reads against a scripted PostgREST response", () => {
     const stub = stubClient({ [T.pendingClaims]: { data: null } });
     const result = await readRows(
       T.pendingClaims,
+      ANY_COLUMNS,
       (db) => db.from(T.pendingClaims).select("*"),
       stub.asSupabaseClient(),
     );
@@ -2759,6 +2766,7 @@ describe("reads against a scripted PostgREST response", () => {
     const foreign = { message: "no upstream" };
     const rows = await readRows(
       T.pendingClaims,
+      ANY_COLUMNS,
       (db) => db.from(T.pendingClaims).select("*"),
       stubClient({ [T.pendingClaims]: { data: foreign } }).asSupabaseClient(),
     );
@@ -2767,6 +2775,7 @@ describe("reads against a scripted PostgREST response", () => {
     // Content-Range — the count leg cannot catch that one.
     const complete = await readComplete(
       T.pendingClaims,
+      ANY_COLUMNS,
       (db, cap) =>
         db
           .from(T.pendingClaims)
@@ -2800,6 +2809,7 @@ describe("reads against a scripted PostgREST response", () => {
     // null case rather than a pinned sentence, so the two cannot drift.
     const nulled = await readRows(
       T.pendingClaims,
+      ANY_COLUMNS,
       (db) => db.from(T.pendingClaims).select("*"),
       stubClient({ [T.pendingClaims]: { data: null } }).asSupabaseClient(),
     );
@@ -2815,12 +2825,14 @@ describe("reads against a scripted PostgREST response", () => {
     const claims = [{ claim_id: "claim-1" }, { claim_id: "claim-2" }];
     const stillRows = await readRows(
       T.pendingClaims,
+      ANY_COLUMNS,
       (db) => db.from(T.pendingClaims).select("*"),
       stubClient({ [T.pendingClaims]: { data: claims } }).asSupabaseClient(),
     );
     expect(stillRows).toEqual({ kind: "ok", data: claims });
     const stillComplete = await readComplete(
       T.pendingClaims,
+      ANY_COLUMNS,
       (db, cap) =>
         db
           .from(T.pendingClaims)
@@ -2834,12 +2846,302 @@ describe("reads against a scripted PostgREST response", () => {
     expect(stillComplete).toEqual({ kind: "ok", data: claims });
   });
 
+  /**
+   * The bodies QA measured an HTTP 500 on (admin-window/BUG-0228), each a JSON
+   * ARRAY that is not this table's rows. They are one question with one
+   * answer, not six shapes to enumerate: none of their elements carries the
+   * columns the read named.
+   */
+  const NOT_THIS_READS_ROWS: ReadonlyArray<readonly [string, unknown]> = [
+    ["a proxy's own JSON list", [{ message: "no upstream" }]],
+    ["an array of arrays", [[{ claim_id: "c1" }]]],
+    ["an array of strings", ["a", "b"]],
+    ["an array of nulls", [null, null]],
+    ["an array of empty objects", [{}]],
+    ["an array of objects with other keys", [{ foo: 1 }]],
+  ];
+
+  /** The columns `pending_claims` reads name, as the query names them. */
+  const CLAIM_COLUMNS = ["observation_id", "bucket"] as const;
+
+  it("refuses a row set whose elements do not carry the columns the read named", async () => {
+    // THE BAR, positively (admin-window/BUG-0228, LESSONS 13): a row set is an
+    // answer whose every element carries every column THIS READ asked for.
+    // BUG-0227 widened the question to `Array.isArray`, and a host answering
+    // `200 [{"message":"no upstream"}]` walked through it as a `Row[]` whose
+    // element had no column the render reads — `TypeError: Cannot read
+    // properties of undefined (reading 'trim')`, an HTTP 500 on /, /claims,
+    // /browse and /cycles; `[null,null]` took all six routes down.
+    //
+    // Asked of both row-carrying legs, over every shape measured, so the
+    // guarantee is the seam's and not one page's.
+    for (const [shape, body] of NOT_THIS_READS_ROWS) {
+      const rows = await readRows(
+        T.pendingClaims,
+        CLAIM_COLUMNS,
+        (db) => db.from(T.pendingClaims).select("observation_id, bucket"),
+        stubClient({ [T.pendingClaims]: { data: body } }).asSupabaseClient(),
+      );
+      const complete = await readComplete(
+        T.pendingClaims,
+        CLAIM_COLUMNS,
+        (db, cap) =>
+          db
+            .from(T.pendingClaims)
+            .select("observation_id, bucket", { count: "exact" })
+            .order("observation_id", { ascending: true })
+            .range(0, cap - 1),
+        stubClient({
+          [T.pendingClaims]: { data: body, count: 2 },
+        }).asSupabaseClient(),
+      );
+      // The id-set leg is `readRows` underneath, so the same question reaches
+      // a two-step join's second leg (ARCHITECTURE.md §4.2).
+      const byIds = await readRowsByIds(
+        T.pendingClaims,
+        CLAIM_COLUMNS,
+        ["observation-1"],
+        (db, chunkIds) =>
+          db
+            .from(T.pendingClaims)
+            .select("observation_id, bucket")
+            .in("observation_id", chunkIds),
+        stubClient({ [T.pendingClaims]: { data: body } }).asSupabaseClient(),
+      );
+
+      for (const [leg, result] of [
+        ["readRows", rows],
+        ["readComplete", complete],
+        ["readRowsByIds", byIds],
+      ] as ReadonlyArray<readonly [string, DbResult<unknown>]>) {
+        const where = `${leg} on ${shape}`;
+        expect(result.kind, where).toBe("error");
+        if (result.kind !== "error") continue;
+        // It names the object it read, never claims the object is absent, and
+        // hands nothing on as rows.
+        expect(result.reading, where).toBe(T.pendingClaims);
+        expect(result, where).not.toHaveProperty("data");
+        expect(result.authored, where).toEqual([
+          { words: result.message, author: "this app" },
+        ]);
+        for (const callSite of CALL_SITE_PROSE) {
+          expect(result.message, where).not.toContain(callSite);
+        }
+      }
+    }
+  });
+
+  it("refuses in the SAME words a missing row set refuses in — one derivation", async () => {
+    // Criterion 4: the widened predicate is the same rule, not a third
+    // sentence for a third shape. Compared against the null case rather than
+    // against a pinned string, so the two cannot drift apart.
+    const alien = await readRows(
+      T.pendingClaims,
+      CLAIM_COLUMNS,
+      (db) => db.from(T.pendingClaims).select("observation_id, bucket"),
+      stubClient({
+        [T.pendingClaims]: { data: [{ message: "no upstream" }] },
+      }).asSupabaseClient(),
+    );
+    const nulled = await readRows(
+      T.pendingClaims,
+      CLAIM_COLUMNS,
+      (db) => db.from(T.pendingClaims).select("observation_id, bucket"),
+      stubClient({ [T.pendingClaims]: { data: null } }).asSupabaseClient(),
+    );
+    expect(alien.kind).toBe("error");
+    expect(nulled.kind).toBe("error");
+    if (alien.kind !== "error" || nulled.kind !== "error") return;
+    expect(alien.message).toBe(nulled.message);
+  });
+
+  it("still admits every answer PostgREST really gives", async () => {
+    // The fixtures the guard must NOT flag (LESSONS 8 — a guard proves itself
+    // on two fixtures, and the passing one must be the shape that OCCURS).
+    const real = [
+      { observation_id: "observation-1", bucket: "agreeing" },
+      // A column PostgREST returned as NULL is a row: nullable columns are
+      // real and `lib/format.ts` renders their absence. Only a MISSING name
+      // is not a row.
+      { observation_id: "observation-2", bucket: null },
+    ];
+    const rows = await readRows(
+      T.pendingClaims,
+      CLAIM_COLUMNS,
+      (db) => db.from(T.pendingClaims).select("observation_id, bucket"),
+      stubClient({ [T.pendingClaims]: { data: real } }).asSupabaseClient(),
+    );
+    expect(rows).toEqual({ kind: "ok", data: real });
+
+    // A row carrying MORE than the read named is still this read's row: the
+    // question is what arrived, not what did not.
+    const wider = [{ observation_id: "observation-1", bucket: "agreeing", extra: 1 }];
+    expect(
+      await readRows(
+        T.pendingClaims,
+        CLAIM_COLUMNS,
+        (db) => db.from(T.pendingClaims).select("observation_id, bucket"),
+        stubClient({ [T.pendingClaims]: { data: wider } }).asSupabaseClient(),
+      ),
+    ).toEqual({ kind: "ok", data: wider });
+
+    // `[]` — the matching set of zero — still empties, on both legs. An empty
+    // card is what an operator whose queue is clear must keep reading
+    // (criterion 3).
+    expect(
+      await readRows(
+        T.pendingClaims,
+        CLAIM_COLUMNS,
+        (db) => db.from(T.pendingClaims).select("observation_id, bucket"),
+        stubClient({ [T.pendingClaims]: { data: [] } }).asSupabaseClient(),
+      ),
+    ).toEqual({ kind: "ok", data: [] });
+    expect(
+      await readComplete(
+        T.pendingClaims,
+        CLAIM_COLUMNS,
+        (db, cap) =>
+          db
+            .from(T.pendingClaims)
+            .select("observation_id, bucket", { count: "exact" })
+            .order("observation_id", { ascending: true })
+            .range(0, cap - 1),
+        stubClient({ [T.pendingClaims]: { data: [], count: 0 } }).asSupabaseClient(),
+      ),
+    ).toEqual({ kind: "ok", data: [] });
+  });
+
+  it("asks the column question of a single-row read too, and still answers ok/null", async () => {
+    // `readOne` cannot be asked whether an ARRAY arrived — a `.maybeSingle()`
+    // over no rows really does answer `data: null` — but a row that DID arrive
+    // is this read's row only if it carries what the read named. The home
+    // page's last-applied leg and the review-item detail read this way, and
+    // both 500'd on the same host (admin-window/BUG-0228).
+    const foreign = await readOne(
+      T.resolutionRuns,
+      ["run_id", "started_at", "applied"],
+      (db) =>
+        db
+          .from(T.resolutionRuns)
+          .select("run_id, started_at, applied")
+          .maybeSingle(),
+      stubClient({
+        [T.resolutionRuns]: { data: { message: "no upstream" } },
+      }).asSupabaseClient(),
+    );
+    expect(foreign.kind).toBe("error");
+    if (foreign.kind !== "error") return;
+    expect(foreign.reading).toBe(T.resolutionRuns);
+    expect(foreign.authored).toEqual([
+      { words: foreign.message, author: "this app" },
+    ]);
+
+    // No row is still `ok: null` — the answer a `.maybeSingle()` over an empty
+    // match really gives, and a different fact from an absent table.
+    expect(
+      await readOne(
+        T.resolutionRuns,
+        ["run_id", "started_at", "applied"],
+        (db) =>
+          db
+            .from(T.resolutionRuns)
+            .select("run_id, started_at, applied")
+            .maybeSingle(),
+        stubClient({ [T.resolutionRuns]: { data: null } }).asSupabaseClient(),
+      ),
+    ).toEqual({ kind: "ok", data: null });
+
+    // And a real row still comes back untouched.
+    const row = { run_id: "run-1", started_at: "2026-09-01T04:00:00Z", applied: 37 };
+    expect(
+      await readOne(
+        T.resolutionRuns,
+        ["run_id", "started_at", "applied"],
+        (db) =>
+          db
+            .from(T.resolutionRuns)
+            .select("run_id, started_at, applied")
+            .maybeSingle(),
+        stubClient({ [T.resolutionRuns]: { data: row } }).asSupabaseClient(),
+      ),
+    ).toEqual({ kind: "ok", data: row });
+  });
+
+  it("holds a read that declared no columns to the element test alone", async () => {
+    // ANY_COLUMNS is the declaration of a read that selects `*` and reads no
+    // column (`readSettlementReadiness`). There is no list to hold elements
+    // against, so the weaker half stands on its own: an element that is not a
+    // plain object is not a row PostgREST sent.
+    for (const body of [["a", "b"], [null], [[{ claim_id: "c1" }]]]) {
+      const result = await readRows(
+        T.verdicts,
+        ANY_COLUMNS,
+        (db) => db.from(T.verdicts).select("*"),
+        stubClient({ [T.verdicts]: { data: body } }).asSupabaseClient(),
+      );
+      expect(result.kind, JSON.stringify(body)).toBe("error");
+    }
+    // And the shape a `select("*")` really answers with still reads as rows.
+    const real = [{ verdict_id: "verdict-1" }];
+    expect(
+      await readRows(
+        T.verdicts,
+        ANY_COLUMNS,
+        (db) => db.from(T.verdicts).select("*"),
+        stubClient({ [T.verdicts]: { data: real } }).asSupabaseClient(),
+      ),
+    ).toEqual({ kind: "ok", data: real });
+  });
+
+  it("refuses a count that is not a whole number of rows, and publishes no NaN", async () => {
+    // The residual QA measured beside this ticket: supabase-js reaches the
+    // count with `parseInt` over whatever follows the slash in
+    // `Content-Range`, so a host answering 206 with a header it made up hands
+    // back `count: NaN` beside `error: null`. `NaN` is neither `null` nor
+    // `undefined`, so the older null test passed it through and a page
+    // published `data-window-held="NaN"`. A count is a whole number of rows or
+    // it did not arrive.
+    for (const count of [Number.NaN, 1.5, Number.POSITIVE_INFINITY]) {
+      const counted = await readCount(
+        T.pendingClaims,
+        (db) => countRead(db, T.pendingClaims),
+        stubClient({ [T.pendingClaims]: { data: [], count } }).asSupabaseClient(),
+      );
+      expect(counted.kind, String(count)).toBe("error");
+      if (counted.kind !== "error") continue;
+      expect(counted.message, String(count)).not.toContain("NaN");
+
+      const complete = await readComplete(
+        T.pendingClaims,
+        CLAIM_COLUMNS,
+        (db, cap) =>
+          db
+            .from(T.pendingClaims)
+            .select("observation_id, bucket", { count: "exact" })
+            .order("observation_id", { ascending: true })
+            .range(0, cap - 1),
+        stubClient({ [T.pendingClaims]: { data: [], count } }).asSupabaseClient(),
+      );
+      expect(complete.kind, String(count)).toBe("error");
+    }
+
+    // A real zero is still a real zero — the control this guard may not eat.
+    expect(
+      await readCount(
+        T.pendingClaims,
+        (db) => countRead(db, T.pendingClaims),
+        stubClient({ [T.pendingClaims]: { data: [], count: 0 } }).asSupabaseClient(),
+      ),
+    ).toEqual({ kind: "ok", data: 0 });
+  });
+
   it("returns not_provisioned when the table is not in the schema cache", async () => {
     const stub = stubClient({
       [T.verdicts]: { error: tableNotInSchemaCache(T.verdicts) },
     });
     const result = await readRows(
       T.verdicts,
+      ANY_COLUMNS,
       (db) => db.from(T.verdicts).select("*"),
       stub.asSupabaseClient(),
     );
@@ -2854,6 +3156,7 @@ describe("reads against a scripted PostgREST response", () => {
     });
     const result = await readRows(
       T.events,
+      ["event_id", "badcol"],
       (db) => db.from(T.events).select("event_id,badcol"),
       stub.asSupabaseClient(),
     );
@@ -2868,6 +3171,7 @@ describe("reads against a scripted PostgREST response", () => {
     const stub = stubClient({ [T.observations]: { error } });
     const result = await readRows(
       T.observations,
+      ANY_COLUMNS,
       (db) => db.from(T.observations).select("*"),
       stub.asSupabaseClient(),
     );
@@ -2890,10 +3194,10 @@ describe("reads against a scripted PostgREST response", () => {
     const client = stub.asSupabaseClient();
 
     await expect(
-      readOne(T.observations, (db) => db.from(T.observations).select("*").maybeSingle(), client),
+      readOne(T.observations, ANY_COLUMNS, (db) => db.from(T.observations).select("*").maybeSingle(), client),
     ).resolves.toEqual({ kind: "ok", data: observation });
     await expect(
-      readOne(T.observations, (db) => db.from(T.observations).select("*").maybeSingle(), client),
+      readOne(T.observations, ANY_COLUMNS, (db) => db.from(T.observations).select("*").maybeSingle(), client),
     ).resolves.toEqual({ kind: "ok", data: null });
   });
 
@@ -2972,6 +3276,7 @@ describe("reads against a scripted PostgREST response", () => {
     const client = stub.asSupabaseClient();
     const search = await readRows(
       T.groups,
+      ["group_id"],
       (db) => db.from(T.groups).select("group_id").filter("created_at", "fts", "x"),
       client,
     );
@@ -2985,7 +3290,7 @@ describe("reads against a scripted PostgREST response", () => {
 
     // And the table really is readable — the refusal was about the QUERY.
     await expect(
-      readRows(T.groups, (db) => db.from(T.groups).select("group_id"), client),
+      readRows(T.groups, ["group_id"], (db) => db.from(T.groups).select("group_id"), client),
     ).resolves.toEqual({ kind: "ok", data: [{ group_id: "g1" }] });
   });
 
@@ -3079,10 +3384,10 @@ describe("reads against a scripted PostgREST response", () => {
       const script = { [SETTLE_FUNCTION]: { error } };
       const rpc = (db: SupabaseClient) => db.rpc(SETTLE_FUNCTION, { p_decision: {} });
       const results: DbResult<unknown>[] = [
-        await readOne(SETTLE_FUNCTION, rpc, stubClient(script).asSupabaseClient()),
-        await readRows(SETTLE_FUNCTION, rpc, stubClient(script).asSupabaseClient()),
+        await readOne(SETTLE_FUNCTION, ANY_COLUMNS, rpc, stubClient(script).asSupabaseClient()),
+        await readRows(SETTLE_FUNCTION, ANY_COLUMNS, rpc, stubClient(script).asSupabaseClient()),
         await readCount(SETTLE_FUNCTION, rpc, stubClient(script).asSupabaseClient()),
-        await readComplete(SETTLE_FUNCTION, rpc, stubClient(script).asSupabaseClient()),
+        await readComplete(SETTLE_FUNCTION, ANY_COLUMNS, rpc, stubClient(script).asSupabaseClient()),
       ];
       for (const result of results) {
         expect(result.kind).toBe("error");
@@ -3095,6 +3400,7 @@ describe("reads against a scripted PostgREST response", () => {
     // stay errors about that table rather than absences of it.
     const onATable = await readRows(
       T.groups,
+      ["group_id"],
       (db) => db.from(T.groups).select("group_id"),
       stubClient({ [T.groups]: { error: undefinedFunction("to_tsvector") } }).asSupabaseClient(),
     );
@@ -3209,6 +3515,7 @@ describe("readComplete", () => {
     });
     const result = await readComplete(
       T.reviewItems,
+      ANY_COLUMNS,
       completeQuery(T.reviewItems),
       stub.asSupabaseClient(),
     );
@@ -3222,6 +3529,7 @@ describe("readComplete", () => {
     const stub = stubClient({ [T.pendingClaims]: { data: [], count: 0 } });
     const result = await readComplete(
       T.pendingClaims,
+      ANY_COLUMNS,
       completeQuery(T.pendingClaims),
       stub.asSupabaseClient(),
     );
@@ -3232,6 +3540,7 @@ describe("readComplete", () => {
     const stub = stubClient({ [T.reviewItems]: { data: [], count: 0 } });
     await readComplete(
       T.reviewItems,
+      ANY_COLUMNS,
       completeQuery(T.reviewItems),
       stub.asSupabaseClient(),
     );
@@ -3244,7 +3553,7 @@ describe("readComplete", () => {
       [T.verdicts]: { error: tableNotInSchemaCache(T.verdicts) },
     });
     expect(
-      await readComplete(T.verdicts, completeQuery(T.verdicts), absent.asSupabaseClient()),
+      await readComplete(T.verdicts, ANY_COLUMNS, completeQuery(T.verdicts), absent.asSupabaseClient()),
     ).toEqual({ kind: "not_provisioned", missing: T.verdicts });
 
     const refused = stubClient({
@@ -3253,6 +3562,7 @@ describe("readComplete", () => {
     expect(
       await readComplete(
         T.observations,
+        ANY_COLUMNS,
         completeQuery(T.observations),
         refused.asSupabaseClient(),
       ),
@@ -3275,6 +3585,7 @@ describe("readComplete", () => {
     const stub = stubClient({ [T.reviewItems]: { data: items, count: null } });
     const result = await readComplete(
       T.reviewItems,
+      ANY_COLUMNS,
       (db) => db.from(T.reviewItems).select("*"),
       stub.asSupabaseClient(),
     );
@@ -3304,6 +3615,7 @@ describe("readComplete", () => {
 
     const result = await readComplete(
       T.reviewItems,
+      ANY_COLUMNS,
       completeQuery(T.reviewItems),
       stub.asSupabaseClient(),
     );
@@ -3326,6 +3638,7 @@ describe("readComplete", () => {
     });
     const result = await readComplete(
       T.reviewItems,
+      ANY_COLUMNS,
       completeQuery(T.reviewItems),
       stub.asSupabaseClient(),
     );
@@ -3362,6 +3675,7 @@ describe("readComplete at the cap boundary", () => {
     });
     const complete = await readComplete(
       T.reviewItems,
+      ANY_COLUMNS,
       completeQuery(T.reviewItems),
       full.asSupabaseClient(),
     );
@@ -3374,6 +3688,7 @@ describe("readComplete at the cap boundary", () => {
     });
     const refused = await readComplete(
       T.reviewItems,
+      ANY_COLUMNS,
       completeQuery(T.reviewItems),
       overflowing.asSupabaseClient(),
     );
@@ -3390,6 +3705,7 @@ describe("readComplete at the cap boundary", () => {
     const stub = stubClient({ [T.reviewItems]: { data: null, count: 12 } });
     const result = await readComplete(
       T.reviewItems,
+      ANY_COLUMNS,
       completeQuery(T.reviewItems),
       stub.asSupabaseClient(),
     );
@@ -3402,6 +3718,7 @@ describe("readComplete at the cap boundary", () => {
     // refusal rather than to a pinned sentence, so the two cannot drift.
     const rowsOnly = await readRows(
       T.reviewItems,
+      ANY_COLUMNS,
       (db) => db.from(T.reviewItems).select("*"),
       stubClient({ [T.reviewItems]: { data: null } }).asSupabaseClient(),
     );
@@ -3419,6 +3736,7 @@ describe("readComplete at the cap boundary", () => {
     const nothing = () => stubClient({ [T.reviewItems]: {} }).asSupabaseClient();
     const rows = await readRows(
       T.reviewItems,
+      ANY_COLUMNS,
       (db) => db.from(T.reviewItems).select("*"),
       nothing(),
     );
@@ -3429,6 +3747,7 @@ describe("readComplete at the cap boundary", () => {
     );
     const complete = await readComplete(
       T.reviewItems,
+      ANY_COLUMNS,
       completeQuery(T.reviewItems),
       nothing(),
     );
@@ -3461,6 +3780,7 @@ describe("readComplete at the cap boundary", () => {
     });
     const result = await readRows(
       T.reviewItems,
+      ANY_COLUMNS,
       (db) => db.from(T.reviewItems).select("*").order("opened_at").limit(3),
       stub.asSupabaseClient(),
     );
@@ -3496,8 +3816,8 @@ describe("no exported read throws", () => {
         (db) => db.rpc(SETTLE_FUNCTION, { p_decision: {} }),
         client,
       ),
-      await readRows(T.reviewItems, (db) => db.from(T.reviewItems).select("*"), client),
-      await readOne(T.reviewItems, (db) => db.from(T.reviewItems).select("*").maybeSingle(), client),
+      await readRows(T.reviewItems, ANY_COLUMNS, (db) => db.from(T.reviewItems).select("*"), client),
+      await readOne(T.reviewItems, ANY_COLUMNS, (db) => db.from(T.reviewItems).select("*").maybeSingle(), client),
       await readCount(
         T.reviewItems,
         (db) => db.from(T.reviewItems).select("*", { count: "exact", head: true }),
@@ -3505,6 +3825,7 @@ describe("no exported read throws", () => {
       ),
       await readComplete(
         T.reviewItems,
+        ANY_COLUMNS,
         (db, cap) =>
           db
             .from(T.reviewItems)
@@ -3533,10 +3854,10 @@ describe("no exported read throws", () => {
       message: boom.message,
       authored: [{ words: boom.message, author: "the machine" }],
     };
-    await expect(readRows(T.sources, thrower, client)).resolves.toEqual(thrown);
-    await expect(readOne(T.sources, thrower, client)).resolves.toEqual(thrown);
+    await expect(readRows(T.sources, ANY_COLUMNS, thrower, client)).resolves.toEqual(thrown);
+    await expect(readOne(T.sources, ANY_COLUMNS, thrower, client)).resolves.toEqual(thrown);
     await expect(readCount(T.sources, thrower, client)).resolves.toEqual(thrown);
-    await expect(readComplete(T.sources, thrower, client)).resolves.toEqual(thrown);
+    await expect(readComplete(T.sources, ANY_COLUMNS, thrower, client)).resolves.toEqual(thrown);
     // A callback that throws on the FUNCTION seam resolves the same way, and
     // the throw carries no code — so nothing about it may be read as the
     // function being absent.
@@ -3550,7 +3871,7 @@ describe("no exported read throws", () => {
     vi.stubEnv("SUPABASE_URL", "");
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "");
     try {
-      const result = await readRows(T.sources, (db) => db.from(T.sources).select("*"));
+      const result = await readRows(T.sources, ANY_COLUMNS, (db) => db.from(T.sources).select("*"));
       expect(result.kind).toBe("error");
       expect(result).toMatchObject({ message: expect.stringContaining("SUPABASE_URL") });
       // The close slot's own seam resolves an unset name the same way. It must
@@ -3622,6 +3943,7 @@ async function acceptsARealQueryBuilder(
 ): Promise<DbResult<{ source_id: string }[]>> {
   return readRows<{ source_id: string }>(
     T.sources,
+    ["source_id"],
     (client) => client.from(T.sources).select("source_id"),
     db,
   );
@@ -3751,6 +4073,7 @@ describe("readRowsByIds fans out over its chunks, bounded", () => {
     const chunks = CHUNK_FANOUT + 2;
     const pending = readRowsByIds<TaggedRow>(
       T.sources,
+      ANY_COLUMNS,
       idsSpanning(chunks),
       seam.run,
       unusedClient(),
@@ -3788,6 +4111,7 @@ describe("readRowsByIds fans out over its chunks, bounded", () => {
     const seam = chunkSeam();
     const pending = readRowsByIds<TaggedRow>(
       T.sources,
+      ANY_COLUMNS,
       idsSpanning(3),
       seam.run,
       unusedClient(),
@@ -3813,6 +4137,7 @@ describe("readRowsByIds fans out over its chunks, bounded", () => {
     const seam = chunkSeam();
     const pending = readRowsByIds<TaggedRow>(
       T.sources,
+      ANY_COLUMNS,
       idsSpanning(3),
       seam.run,
       unusedClient(),
@@ -3838,6 +4163,7 @@ describe("readRowsByIds fans out over its chunks, bounded", () => {
     const chunks = CHUNK_FANOUT + 2;
     const pending = readRowsByIds<TaggedRow>(
       T.sources,
+      ANY_COLUMNS,
       idsSpanning(chunks),
       seam.run,
       unusedClient(),
@@ -3883,6 +4209,7 @@ describe("readRowsByIds keeps its refusal guarantees across a batch boundary", (
     const seam = chunkSeam();
     const pending = readRowsByIds<TaggedRow>(
       T.sources,
+      ANY_COLUMNS,
       idsSpanning(CHUNK_FANOUT + 2),
       seam.run,
       unusedClient(),
@@ -3907,6 +4234,7 @@ describe("readRowsByIds keeps its refusal guarantees across a batch boundary", (
     const seam = chunkSeam();
     const pending = readRowsByIds<TaggedRow>(
       T.sources,
+      ANY_COLUMNS,
       idsSpanning(CHUNK_FANOUT + 2),
       seam.run,
       unusedClient(),
@@ -3927,6 +4255,7 @@ describe("readRowsByIds keeps its refusal guarantees across a batch boundary", (
     const issued: number[] = [];
     const result = await readRowsByIds<TaggedRow>(
       T.sources,
+      ANY_COLUMNS,
       idsSpanning(CHUNK_FANOUT + 2),
       (_db, chunkIds) => {
         const index = chunkIndexOf(chunkIds);
@@ -3951,6 +4280,7 @@ describe("readRowsByIds keeps its refusal guarantees across a batch boundary", (
   it("classifies a chunk whose run THROWS synchronously inside a batch", async () => {
     const result = await readRowsByIds<TaggedRow>(
       T.sources,
+      ANY_COLUMNS,
       idsSpanning(CHUNK_FANOUT + 2),
       (_db, chunkIds) => {
         if (chunkIndexOf(chunkIds) === 1) throw new Error("built a bad query");
@@ -3987,6 +4317,7 @@ describe("an account this app composed about a read it could not grade", () => {
     const stub = stubClient({ [T.reviewItems]: { data: rows, count: ROW_CAP + 732 } });
     return readComplete(
       T.reviewItems,
+      ANY_COLUMNS,
       (db, cap) => db.from(T.reviewItems).select("*", { count: "exact" }).range(0, cap - 1),
       stub.asSupabaseClient(),
     );
@@ -3997,6 +4328,7 @@ describe("an account this app composed about a read it could not grade", () => {
     const stub = stubClient({ [T.reviewItems]: { data: [{ id: "a" }], count: null } });
     return readComplete(
       T.reviewItems,
+      ANY_COLUMNS,
       (db) => db.from(T.reviewItems).select("*"),
       stub.asSupabaseClient(),
     );

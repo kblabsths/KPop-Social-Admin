@@ -1,5 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ROW_CAP, readOne, readRows, type DbResponse, type DbResult } from "./result";
+import {
+  ROW_CAP,
+  readOne,
+  readRows,
+  selectList,
+  type DbResponse,
+  type DbResult,
+} from "./result";
 import { readReviewAttention } from "./review-items";
 import { T } from "./tables";
 import type { ReviewAttention } from "../review/shapes";
@@ -140,7 +147,7 @@ const CYCLE_COLUMNS = [
   "escalated",
   "errors",
   "error_summary",
-].join(", ");
+] as const;
 
 const RUN_COLUMNS = [
   "run_id",
@@ -149,7 +156,7 @@ const RUN_COLUMNS = [
   "ended_at",
   "outcome",
   "error_summary",
-].join(", ");
+] as const;
 
 /**
  * A sane row count for a window read: at least one row, never more than the
@@ -180,10 +187,11 @@ export function readRecentCycles(
   const size = windowSize(limit);
   return readRows<DashboardCycleRow>(
     T.resolutionRuns,
+    CYCLE_COLUMNS,
     (client) =>
       client
         .from(T.resolutionRuns)
-        .select(CYCLE_COLUMNS)
+        .select(selectList(CYCLE_COLUMNS))
         .order("started_at", { ascending: false })
         .order("run_id", { ascending: false })
         .limit(size) as unknown as PromiseLike<DbResponse<DashboardCycleRow[]>>,
@@ -199,10 +207,11 @@ export function readRecentRuns(
   const size = windowSize(limit);
   return readRows<DashboardRunRow>(
     T.runs,
+    RUN_COLUMNS,
     (client) =>
       client
         .from(T.runs)
-        .select(RUN_COLUMNS)
+        .select(selectList(RUN_COLUMNS))
         .order("started_at", { ascending: false })
         .order("run_id", { ascending: false })
         .limit(size) as unknown as PromiseLike<DbResponse<DashboardRunRow[]>>,
@@ -211,7 +220,7 @@ export function readRecentRuns(
 }
 
 /** The columns the last-applied read needs, and no others. */
-const LAST_APPLIED_COLUMNS = ["run_id", "started_at", "applied"].join(", ");
+const LAST_APPLIED_COLUMNS = ["run_id", "started_at", "applied"] as const;
 
 /**
  * The newest cycle that APPLIED something — the read behind the Dashboard's
@@ -246,10 +255,11 @@ export function readLastApplied(
 ): Promise<DbResult<LastAppliedCycle | null>> {
   return readOne<LastAppliedCycle>(
     T.resolutionRuns,
+    LAST_APPLIED_COLUMNS,
     (client) =>
       client
         .from(T.resolutionRuns)
-        .select(LAST_APPLIED_COLUMNS)
+        .select(selectList(LAST_APPLIED_COLUMNS))
         .gt("applied", 0)
         .order("started_at", { ascending: false })
         .order("run_id", { ascending: false })
