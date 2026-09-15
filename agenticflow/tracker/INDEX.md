@@ -1,4 +1,4 @@
-# Tracker index (regenerated 2026-09-15T03:27:16Z — do not edit)
+# Tracker index (regenerated 2026-09-15T03:31:59Z — do not edit)
 
 ## open
 - BUG-0227 [P2][bug][-] A host answering 200 with a body that is not a row set crashes every surface with a 500 instead of refusing  (scope:src/lib/db/result.ts,tests/http/absence.http.test.ts,tests/http/postgrest-stub.ts,tests/offline/db/result.test.ts from:BUG-0224)
@@ -10,7 +10,7 @@
 - DEBT-0022 [P3][debt][M3] Three truth residuals on one class: a comment naming a defect that is fixed, a second spelling of 'unnamed source', and a count of 1 that reads as a plural  (scope:src/components/ui/window-line.tsx,src/lib/gauges/standing-disagreements.ts,src/app/queues/page.tsx,src/app/claims/page.tsx,tests/offline/gauges/standing-disagreements.test.ts,tests/offline/ui/primitives.test.ts,tests/offline/claims/page.test.ts,tests/offline/queues/page.test.ts from:BUG-0204)
 - TASK-0081 [P3][task][M3] docs/build_judgments.md states two things that stopped being true during the M3 endgame  (scope:docs/build_judgments.md from:BUG-0215)
 
-## claimed
+## built
 - BUG-0226 [P1][bug][-] Both paged pages answer HTTP 500: a function prop cannot cross the client boundary  (scope:src/app/claims/page.tsx,src/app/browse/page.tsx,src/lib/paging/machine.ts,src/components/ui/paging.tsx,src/components/claims/paged-claim-list.tsx,src/components/browse/paged-browse-table.tsx,tests/offline/claims/page.test.ts,tests/offline/browse/page.test.ts,tests/offline/paging/machine.test.ts,tests/offline/ui/paging.test.ts,tests/live/claims.live.test.ts,tests/live/browse.live.test.ts,tests/fixtures/client-props.ts @builder-326 from:BUG-0222)
 
 ## blocked
@@ -19,4 +19,4 @@
 ## reopened
 - BUG-0222 [P2][bug][patch] A paged press draws a row the screen above it already holds: the same claim twice, and React's duplicate key  (scope:src/lib/paging/machine.ts,src/components/ui/paging.tsx,src/components/claims/paged-claim-list.tsx,src/components/browse/paged-browse-table.tsx,tests/offline/paging/machine.test.ts,tests/offline/ui/paging.test.ts,tests/offline/claims/page.test.ts,tests/offline/browse/page.test.ts from:BUG-0221)
 
-Totals — blocked:1, claimed:1, done:85, open:8, reopened:1. Archived: 252.
+Totals — blocked:1, built:1, done:85, open:8, reopened:1. Archived: 252.
