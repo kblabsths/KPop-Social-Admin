@@ -1,6 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { chmodSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // The runner config itself, so its budgets can be asserted rather than
@@ -9,6 +18,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // `vitest.config.mts` (admin-window/BUG-0029).
 import config from "../../vitest.config.mjs";
 import {
+  HANDOFF_INCLUDE,
+  HANDOFF_ROOT,
   HTTP_INCLUDE,
   HTTP_ROOT,
   ISOLATED_INCLUDE,
@@ -98,11 +109,13 @@ describe("test project layout", () => {
   let offlineFiles: string[] = [];
   let httpFiles: string[] = [];
   let isolatedFiles: string[] = [];
+  let handoffFiles: string[] = [];
 
   beforeAll(() => {
     offlineFiles = collectedFiles("offline");
     httpFiles = collectedFiles("http");
     isolatedFiles = collectedFiles("isolated");
+    handoffFiles = collectedFiles("handoff");
   });
 
   it("roots every project's include glob at its own directory", () => {
@@ -118,8 +131,11 @@ describe("test project layout", () => {
     for (const glob of ISOLATED_INCLUDE) {
       expect(glob.startsWith(`${ISOLATED_ROOT}/`)).toBe(true);
     }
+    for (const glob of HANDOFF_INCLUDE) {
+      expect(glob.startsWith(`${HANDOFF_ROOT}/`)).toBe(true);
+    }
     // Sibling roots: no root is a prefix of another, so the globs partition.
-    const roots = [OFFLINE_ROOT, LIVE_ROOT, HTTP_ROOT, ISOLATED_ROOT];
+    const roots = [OFFLINE_ROOT, LIVE_ROOT, HTTP_ROOT, ISOLATED_ROOT, HANDOFF_ROOT];
     for (const a of roots) {
       for (const b of roots) {
         if (a === b) continue;
@@ -128,7 +144,7 @@ describe("test project layout", () => {
     }
   });
 
-  it("collects no live or http file into the offline project", () => {
+  it("collects no live, http, isolated or handoff file into the offline project", () => {
     const offline = offlineFiles;
 
     // Non-vacuous: this very file has to be in there.
@@ -142,6 +158,19 @@ describe("test project layout", () => {
       expect(file.startsWith(`${LIVE_ROOT}${path.sep}`)).toBe(false);
       expect(file.startsWith(`${HTTP_ROOT}${path.sep}`)).toBe(false);
       expect(file.startsWith(`${ISOLATED_ROOT}${path.sep}`)).toBe(false);
+      expect(file.startsWith(`${HANDOFF_ROOT}${path.sep}`)).toBe(false);
+    }
+  });
+
+  it("collects the handoff suite into the handoff project only", () => {
+    // The guards that READ the sibling checkout live there and nowhere else
+    // (admin-window/TASK-0080). A typo in the include glob would leave them
+    // collected by NO project, which is the same as deleting them — the
+    // failure BUG-0032 pinned for the isolated suite, one project over.
+    expect(handoffFiles.length).toBeGreaterThan(0);
+    for (const file of handoffFiles) {
+      expect(file.startsWith(`${HANDOFF_ROOT}${path.sep}`)).toBe(true);
+      expect(offlineFiles).not.toContain(file);
     }
   });
 
@@ -428,6 +457,137 @@ describe("the source-tree walk", () => {
     ).toEqual([]);
     // And the other direction — the filter drops files, it never invents one.
     expect(visible.filter((file) => !all.includes(file))).toEqual([]);
+  });
+});
+
+/**
+ * THE EVERY-BUILDER SUITE READS ONLY THIS REPO — admin-window/TASK-0080,
+ * installing ARCHITECTURE.md §10's rule of 2026-09-12.
+ *
+ * The property, stated positively so the next instance is impossible rather
+ * than just this one (LESSONS 13): **`npm test` collects no test whose input is
+ * a file this repo does not own.** A guard whose RED can be produced by a
+ * legitimate event next door is not a bar a builder here must clear before
+ * pushing — four times in one campaign one was, twice at the moment this
+ * campaign's own handoff LANDED in the sibling, and every time `npm test` was
+ * red for every builder in this repo while nothing here was wrong.
+ *
+ * It is asserted here, over the TRACKED tree, rather than trusted to review:
+ * the one case that read the sibling moved to the opt-in `handoff` project, and
+ * nothing may quietly move back. The cut is by INPUT OWNERSHIP, so the guards
+ * over our OWN handoff artifacts stay in the offline project and are untouched
+ * by any of this.
+ */
+describe("the every-builder suite's inputs", () => {
+  /**
+   * A string literal naming an absolute filesystem path that is REAL on this
+   * machine and outside this repo — the shape of the sibling checkout's own
+   * root constant, and the only
+   * way a test here can reach a tree this repo does not own (nothing in this
+   * suite opens a network connection, which the offline/live split already
+   * pins).
+   *
+   * A path that does not exist is not a read of anything: `"/claims"`,
+   * `"/api/admin/records"` and the dozens of other URL paths this suite asserts
+   * over are literals of the same shape and name no file. The filesystem ROOT
+   * is excepted for the same reason — `"/"` and `"//"` are separators and URL
+   * prefixes, never a tree anything walks.
+   */
+  const ABSOLUTE_LITERAL = /(["'`])(\/[^"'`\n]*)\1/g;
+
+  function realPathsOutsideThisRepo(text: string): string[] {
+    return [...text.matchAll(ABSOLUTE_LITERAL)]
+      .map((match) => match[2])
+      .filter((literal) => path.resolve(literal) !== path.parse(literal).root)
+      .filter((literal) => existsSync(literal))
+      .filter((literal) => !path.resolve(literal).startsWith(repoRoot));
+  }
+
+  /**
+   * The sibling checkout's one constant, spelled so that THIS file does not
+   * contain it. The ban below is over the text of every offline file, and this
+   * file is one of them — a literal needle here would flag the guard itself and
+   * there would be no way to state the rule at all.
+   */
+  const SIBLING_CONSTANT = ["SIBLING", "ROOT"].join("_");
+
+  /** Every file git tracks under a directory, relative to the repo root. */
+  function trackedUnder(directory: string): string[] {
+    return runTool("git", ["ls-files", "--", directory], `git ls-files ${directory}`)
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }
+
+  it("names no real path outside this repo, in any file of the offline project", () => {
+    const tracked = trackedUnder(OFFLINE_ROOT);
+    // Non-vacuous: git really answered, and with this file among the answers.
+    expect(tracked.length).toBeGreaterThan(10);
+    expect(tracked).toContain(`${OFFLINE_ROOT}/toolchain.test.ts`);
+
+    const findings: string[] = [];
+    for (const file of tracked) {
+      const text = readFileSync(path.join(repoRoot, file), "utf8");
+      for (const outside of realPathsOutsideThisRepo(text)) {
+        findings.push(`${file} names ${outside}`);
+      }
+      // The one spelling of the sibling checkout's root, banned by name too:
+      // a constant renamed but not moved would otherwise pass the read above
+      // on a machine where the checkout is simply not present.
+      if (text.includes(SIBLING_CONSTANT)) findings.push(`${file} names ${SIBLING_CONSTANT}`);
+    }
+    expect(findings).toEqual([]);
+  });
+
+  it("detects the shape it is looking for, and does not flag a path of ours", () => {
+    // Two fixtures, because a detector that never saw a positive passes
+    // vacuously (LESSONS 8). The positive is a real directory outside this
+    // repo that exists on every machine this can run on: the checkout's own
+    // parent.
+    const outside = path.dirname(repoRoot);
+    expect(realPathsOutsideThisRepo(`const root = "${outside}";`)).toEqual([outside]);
+    // And the negatives: a path inside this repo, a URL path that names no
+    // file, and the separator.
+    expect(realPathsOutsideThisRepo(`const here = "${repoRoot}/tests";`)).toEqual([]);
+    expect(realPathsOutsideThisRepo('const url = "/api/admin/records";')).toEqual([]);
+    expect(realPathsOutsideThisRepo('const slash = "/";')).toEqual([]);
+  });
+
+  it("keeps the sibling-reading guard alive in the handoff project, absolute", () => {
+    // The other half of the move: the cases did not vanish, they changed
+    // project. Asserted over the tracked tree so a deletion next campaign
+    // reddens here rather than passing as "no file names it".
+    const tracked = trackedUnder(HANDOFF_ROOT);
+    expect(tracked.length).toBeGreaterThan(0);
+
+    const naming = tracked.filter((file) =>
+      readFileSync(path.join(repoRoot, file), "utf8").includes(SIBLING_CONSTANT),
+    );
+    expect(naming.length).toBeGreaterThan(0);
+
+    for (const file of naming) {
+      const text = readFileSync(path.join(repoRoot, file), "utf8");
+      // Absolute, per ARCHITECTURE.md §1.2: a relative `../kspace Scraper`
+      // resolves INSIDE a receipt or build worktree, where it names an empty
+      // tree and the guard passes unconditionally.
+      const outside = realPathsOutsideThisRepo(text);
+      expect(outside.length, file).toBeGreaterThan(0);
+      // And the skip survives: a machine without the checkout must skip, never
+      // green.
+      expect(text, file).toContain("runIf(SIBLING_PRESENT)");
+    }
+  });
+
+  it("runs the handoff project under its own script, and never under npm test", () => {
+    const manifest = JSON.parse(sourceText("package.json")) as {
+      scripts: Record<string, string>;
+    };
+    // `npm test` is what `ci_command` runs and what every builder must have
+    // green before pushing; the handoff project is in neither.
+    expect(manifest.scripts.test).not.toContain("handoff");
+    // ...and it is still RUNNABLE, by one named script, or it is a suite that
+    // exists and never runs.
+    expect(manifest.scripts["test:handoff"]).toBe("vitest run --project=handoff");
   });
 });
 

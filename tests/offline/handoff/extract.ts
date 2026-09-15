@@ -589,3 +589,405 @@ export function privilegesHeld(acl: InstalledAcl, role: string): TablePrivilege[
   const viaPublic = acl.held.get(PUBLIC_ROLE) ?? new Set<TablePrivilege>();
   return TABLE_PRIVILEGES.filter((privilege) => own.has(privilege) || viaPublic.has(privilege));
 }
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE CODE→MEANING READER, and who reads it.
+ *
+ * Everything below was one test file's private machinery until
+ * admin-window/TASK-0080 split the handoff guards by INPUT OWNERSHIP
+ * (ARCHITECTURE.md §10, 2026-09-12). It lives here because BOTH sides of that
+ * split ask the same questions of the same grammar and neither may re-type the
+ * reader (LESSONS 5 — a shared spelling is imported, never retyped; drifting
+ * copies of THIS reader is how the same guard failed three times in one day):
+ *
+ *  - `tests/offline/handoff/settle-review-item.test.ts`, in the every-builder
+ *    suite, grades OUR OWN artifact with it — that this campaign declares one
+ *    meaning per code it allocates, in the registry's own grammar, and that the
+ *    comparison tells our installed entries from a stranger's claim. Every
+ *    input of those cases is a file in this repo;
+ *  - `tests/handoff/sibling-codes.test.ts`, the opt-in `handoff` project, asks
+ *    it of the SIBLING CHECKOUT — the one input this repo does not own, and the
+ *    reason that project exists at all.
+ *
+ * Nothing here opens a path outside this repo: the sibling's root is named in
+ * the `handoff` project and nowhere else. `SIBLING_REGISTRY` below is a
+ * RELATIVE path and a message fragment — the file to read inside whatever root
+ * the caller supplies.
+ */
+
+/**
+ * The codes a for-human note DECLARES it allocates, read off §3's citation row
+ * rather than hardcoded anywhere, so a renumber of the artifact moves every
+ * check that asks about allocation with the file itself.
+ *
+ * Takes the note's text, because both projects ask it of the same note:
+ * the offline suite grades what the note allocates, and the `handoff` project
+ * (admin-window/TASK-0080) asks the sibling whether those numbers are free.
+ */
+export function allocatedCodesIn(noteText: string): string[] {
+  const row = /\|([^|]*)\|[^|]*SQLSTATEs this file allocates/.exec(noteText);
+  if (row === null) return [];
+  return [...row[1].matchAll(/KS\d{3}/g)].map((match) => match[0]);
+}
+
+/**
+ * The `KSnnn` codes a piece of SQL RAISES, in the one grammar every KS code
+ * next door is raised in: `using errcode = 'KSnnn'`.
+ *
+ * A raise is a USE of a code, not a declaration of what it means — which is why
+ * it is read as a grammar and compared to nothing. What it answers is narrower
+ * and it is the only thing it answers: which codes this tree puts in service.
+ */
+export const RAISED_CODE = /errcode\s*=\s*'(KS\d{3})'/g;
+
+export function raisedCodes(sql: string): string[] {
+  return [...new Set([...sql.matchAll(RAISED_CODE)].map((match) => match[1]))].sort();
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Whose meaning is `KS029` next door — asked of a DECLARATION on each side
+ * (admin-window/BUG-0213, the architect's ruling of 2026-09-11; ARCHITECTURE.md
+ * §10, DECISIONS.md).
+ *
+ * The question this guard exists to answer is narrow: does a number this
+ * campaign allocates already MEAN something else in the tree Ben installs it
+ * into. Three earlier answers compared the sibling's text against a corpus of
+ * our own — first per line (admin-window/BUG-0207), then per whole paste block
+ * (admin-window/BUG-0212) — and both failed, in opposite directions, because a
+ * similarity oracle answers "does this look like something we wrote" instead:
+ *
+ *  - the LINE corpus carried our artifact's own raise idiom, `using errcode =
+ *    'KS029',` — the grammar all 32 of the sibling's codes use — so a stranger
+ *    raising one of the four for a meaning of its own wrote a line we already
+ *    held, and passed SILENTLY;
+ *  - the BLOCK corpus contained a TWO-LINE block, §1a's pinned-list paste, and
+ *    the sibling's next allocation lands on its second line (that list is
+ *    written six, six, six, five, five, four entries to a line), so the block
+ *    stopped matching and a next-door edit claiming none of our meanings turned
+ *    `npm test` RED for every builder in this repo.
+ *
+ * So no text of the sibling's is recognised here. Both sides spell the same
+ * declaration in the same grammar — `NAME = "KSnnn"`, a code beside the meaning
+ * it is held for. Next door that is `tests/helpers/ks_codes.py`, the registry
+ * the sibling's own admission rule keeps complete ("Every `KSnnn` the
+ * migrations raise is named here", its docstring;
+ * `tests/live_safety/test_codes_named_once.py` enforces it). On our side it is
+ * §1a of the handoff note: the entries Ben pastes INTO that registry. Per
+ * allocated code the answer is one of three, and nothing else is consulted:
+ *
+ *  - the registry declares no meaning for it — not installed yet, no claim;
+ *  - it declares the meaning our note declares — our own artifact, which is the
+ *    campaign's satisfaction condition and must be GREEN;
+ *  - it declares a different meaning — a real collision: RED, naming the code,
+ *    our meaning, theirs, and the file the answer was read from.
+ *
+ * One thing the registry cannot answer is answered too: a code RAISED next door
+ * (`ksRaisesUnder`) that the registry declares nothing for. There the sibling's
+ * own admission rule is broken and this guard has no declaration to read, so
+ * silence would be BUG-0212's miss again — it is a finding of its own.
+ *
+ * The boundary of the design, stated rather than hidden: once the registry
+ * declares one of the four with OUR meaning, a later file next door that raises
+ * that code for something else WITHOUT touching the registry reads as ours.
+ * Telling those two apart needs text similarity, which is the instrument that
+ * failed three times in one day; next door the admission rule is what catches
+ * it, in the repo where the fix would have to land anyway.
+ */
+
+/** The sibling's own code registry, relative to its root — the declaration read. */
+export const SIBLING_REGISTRY = "tests/helpers/ks_codes.py";
+
+/** The `target file` row of a for-human note, when it names a sibling migration. */
+const INSTALLED_TARGET_ROW = /\|\s*target file\s*\|\s*`[^`]*?(supabase\/migrations\/[^`]+)`/;
+
+/**
+ * This campaign's installed handoff artifacts: every note under
+ * `agenticflow/tracker/for-human/` that declares a `target file` inside the
+ * sibling's `supabase/migrations/`. Derived from the notes themselves rather
+ * than listed here, so a fourth handoff is covered the day it is written and
+ * no list can go stale in silence.
+ */
+export function installedHandoffNotes(): { note: string; target: string; text: string }[] {
+  const dir = path.join(repoRoot, HANDOFF_DIR);
+  return fs
+    .readdirSync(dir)
+    .filter((name) => name.endsWith(".md"))
+    .sort()
+    .map((name) => ({ note: name, text: fs.readFileSync(path.join(dir, name), "utf8") }))
+    .map(({ note, text }) => ({ note, text, row: INSTALLED_TARGET_ROW.exec(text) }))
+    .filter((entry) => entry.row !== null)
+    .map(({ note, text, row }) => ({ note, text, target: (row as RegExpExecArray)[1] }));
+}
+
+/**
+ * The declarations of `text`, as code → the names it is held for, read in the
+ * grammar the SIBLING'S OWN PARSER defines — admin-window/BUG-0220.
+ *
+ * One reader for both sides, deliberately: the sibling's registry and §1a's
+ * paste are the same grammar, so "the same meaning" is an equality of what each
+ * side SAYS rather than a resemblance between two pieces of text. A code
+ * mentioned any other way — raised, pinned in a list, quoted in prose — is not
+ * a declaration and does not appear here at all.
+ *
+ * The registry is the sibling's FILE, so what counts as a declaration in it is
+ * the sibling's definition, and that definition is code next door rather than
+ * prose: `_declared_by` / `code_declarations` in
+ * `tests/live_safety/test_codes_named_once.py` blank the comments and take, off
+ * the `ast`, an `Assign` OR an `AnnAssign` whose single target is a Name and
+ * whose value is a string Constant. Every spelling of THAT declares here,
+ * because every one of them declares there — this reader asking for a narrower
+ * spelling (one line, bare `=`, double quotes, nothing after the closing quote)
+ * is what turned `npm test` red for every builder over a typing pass next door
+ * that changed no meaning, and what let a claim in the other quote through
+ * silently. So: either quote and either triple quote, an `r`/`u` prefix, an
+ * annotation, any indentation, a parenthesised or line-wrapped or
+ * implicitly-concatenated value, a name in any case (an `ast.Name` has no case
+ * rule), a trailing comment, a trailing semicolon or a second statement after
+ * one.
+ *
+ * And what declares NOTHING there declares nothing here: a declaration parked
+ * inside a comment or inside a string ("a declaration parked inside a comment
+ * is invisible, one WEARING a comment is not", `code_declarations`' docstring),
+ * a `==` comparison, a chained, tuple, attribute or subscript target, an
+ * augmented assignment, an annotation with no value, a `b"…"` bytes literal or
+ * an f-string — neither is a `str` Constant — and a code standing in a list, a
+ * dict, a call, an expression or a name.
+ *
+ * Every form above, and every form below it in the grammar test, was put
+ * through the sibling's own `code_declarations` before it was written down
+ * (2026-09-11: 45 fixtures, 0 disagreements), and so was the registry as it
+ * stands — 32 codes, same names, same reader.
+ *
+ * Two narrowings this reader keeps, both stated rather than hidden, because
+ * neither can hide a claim on any code the comparison asks about:
+ *
+ *  - only a `KSnnn` value is collected, where the sibling's `names_a_code` also
+ *    admits any five-character SQLSTATE. Every code `codeClaims` looks up is a
+ *    `KSnnn`, so a wider value set would add no answer — and asking it of a
+ *    markdown note would invent declarations out of prose;
+ *  - an escape sequence is not decoded, so `"KS\x30\x32\x39"` declares nothing
+ *    here and `KS029` there. The registry's 32 entries are plain literals, and
+ *    a five-character code has nothing to escape.
+ *
+ * It reads markdown as readily as python, because §1a's paste is markdown until
+ * Ben pastes it: the blanking below is the sibling's `blank_comments` done as a
+ * scan rather than as a tokenizer, so it is the text's own quotes — not a
+ * python tokenizer — that decide where a `#` stops being a comment. A markdown
+ * note is not a module, so a bracket left open in prose joins the lines after it
+ * rather than failing the whole text the way `ast.parse` would; the join is
+ * dropped at a blank line, which keeps that local to its own paragraph. A join
+ * can only take a declaration away, never invent one, because a declaration is
+ * read from the START of what it stands on.
+ */
+function pythonCode(text: string): string {
+  const blanked: string[] = [];
+  let index = 0;
+  // The delimiter of the triple-quoted string being skipped, if any: its body
+  // is data, so a declaration written inside it declares nothing.
+  let triple: string | null = null;
+  // The quote of the one-line string literal being kept verbatim, if any. A
+  // python string literal cannot cross a line break, so the line ends it.
+  let quote: string | null = null;
+  // Open brackets, so a value wrapped across lines is read as the one logical
+  // line it is next door.
+  let depth = 0;
+  let blankLine = true;
+  while (index < text.length) {
+    const character = text[index];
+    if (triple !== null) {
+      if (text.startsWith(triple, index)) {
+        blanked.push("   ");
+        triple = null;
+        index += 3;
+        continue;
+      }
+      // Blank, never delete: the body's own line breaks stay (blank_comments'
+      // reason), so what follows a docstring still stands at a line's start.
+      blanked.push(character === "\n" ? "\n" : " ");
+      index += 1;
+      continue;
+    }
+    if (quote !== null) {
+      if (character === "\\" && index + 1 < text.length) {
+        blanked.push(text.slice(index, index + 2));
+        index += 2;
+        continue;
+      }
+      if (character === quote || character === "\n") quote = null;
+      blanked.push(character);
+      index += 1;
+      continue;
+    }
+    if (character === "\n") {
+      // A line break inside brackets, or one a backslash continues, is not a
+      // statement boundary; a blank line ends any bracket a prose paragraph
+      // left open, since this text may be a markdown note and not a module.
+      const joins = depth > 0 || blanked[blanked.length - 1] === "\\";
+      if (blanked[blanked.length - 1] === "\\") blanked.pop();
+      if (blankLine) depth = 0;
+      blanked.push(joins && !blankLine ? " " : "\n");
+      blankLine = true;
+      index += 1;
+      continue;
+    }
+    if (character !== " " && character !== "\t" && character !== "\r") blankLine = false;
+    if (text.startsWith('"""', index) || text.startsWith("'''", index)) {
+      const delimiter = text.slice(index, index + 3);
+      const closes = text.indexOf(delimiter, index + 3);
+      const ends = text.indexOf("\n", index);
+      // A triple-quoted literal opened and closed on one line is a value a
+      // declaration can carry, so it is kept; one that runs on is a body.
+      if (closes !== -1 && (ends === -1 || closes < ends)) {
+        blanked.push(text.slice(index, closes + 3));
+        index = closes + 3;
+        continue;
+      }
+      triple = delimiter;
+      blanked.push("   ");
+      index += 3;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      blanked.push(character);
+      index += 1;
+      continue;
+    }
+    if (character === "#") {
+      const ends = text.indexOf("\n", index);
+      const stops = ends === -1 ? text.length : ends;
+      blanked.push(" ".repeat(stops - index));
+      index = stops;
+      continue;
+    }
+    if ("([{".includes(character)) depth += 1;
+    if (")]}".includes(character)) depth = Math.max(0, depth - 1);
+    blanked.push(character);
+    index += 1;
+  }
+  return blanked.join("");
+}
+
+/** One python string literal at the head of `value`: the prefix, and its text. */
+const STRING_LITERAL =
+  /^[rRuU]?(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"([^"]*)"|'([^']*)')/;
+
+/**
+ * The `str` Constant a value expression is, or null when it is not one.
+ *
+ * Parentheses come off and adjacent literals join, because both are a single
+ * `ast.Constant` next door; a `b"…"` prefix, an f-string, a name, a call and an
+ * operator all leave something this cannot read, which is the same answer the
+ * `isinstance(value, ast.Constant)` test gives them.
+ */
+function stringConstant(value: string): string | null {
+  let rest = value.trim();
+  while (rest.startsWith("(") && rest.endsWith(")")) {
+    const inner = rest.slice(1, -1).trim();
+    if (inner.length === 0) return null;
+    rest = inner;
+  }
+  if (rest.length === 0) return null;
+  let joined = "";
+  while (rest.length > 0) {
+    const literal = STRING_LITERAL.exec(rest);
+    if (literal === null) return null;
+    joined += literal[1] ?? literal[2] ?? literal[3] ?? literal[4] ?? "";
+    rest = rest.slice(literal[0].length).trim();
+  }
+  return joined;
+}
+
+/**
+ * One assignment statement: a single Name target, an optional annotation that
+ * carries something (so a bare `NAME := …` walrus, which is no assignment
+ * statement at all, is not read as one), and a value.
+ */
+const CODE_DECLARATION = /^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*(?::[ \t]*[^\s=][^=]*)?=(?!=)(.+)$/;
+
+/** A refusal code of this campaign's own shape, the only value read here. */
+const CODE_VALUE = /^KS\d{3}$/;
+
+export function declaredCodeNames(text: string): Map<string, string[]> {
+  const declared = new Map<string, string[]>();
+  // A statement ends at a line break or a semicolon, as it does next door.
+  for (const statement of pythonCode(text).split(/[\n;]/)) {
+    const assignment = CODE_DECLARATION.exec(statement);
+    if (assignment === null) continue;
+    const code = stringConstant(assignment[2]);
+    if (code === null || !CODE_VALUE.test(code)) continue;
+    const names = declared.get(code) ?? [];
+    if (!names.includes(assignment[1])) names.push(assignment[1]);
+    declared.set(code, names);
+  }
+  return declared;
+}
+
+/** One side's declarations: code → the meanings that side holds it for. */
+export type CodeDeclarations = ReadonlyMap<string, readonly string[]>;
+
+/**
+ * What THIS CAMPAIGN declares its codes to mean — read off the notes that
+ * install a file next door, so the answer moves with the notes and no list here
+ * can go stale.
+ */
+export function declaredByThisCampaign(): Map<string, string[]> {
+  const declared = new Map<string, string[]>();
+  for (const handoff of installedHandoffNotes()) {
+    for (const [code, names] of declaredCodeNames(handoff.text)) {
+      const held = declared.get(code) ?? [];
+      for (const name of names) if (!held.includes(name)) held.push(name);
+      declared.set(code, held);
+    }
+  }
+  return declared;
+}
+
+/**
+ * Every claim on one of `allocated` that the OTHER side's declarations carry —
+ * EMPTY when nothing next door holds one of our numbers for anything but the
+ * meaning our own notes declare for it.
+ *
+ * Findings are sentences rather than a bare `false`, and each one names the
+ * declaration it was read from, because "KS029 is taken" without both meanings
+ * beside it is not something a reader can act on.
+ */
+export function codeClaims(args: {
+  readonly allocated: readonly string[];
+  readonly ours: CodeDeclarations;
+  readonly theirs: CodeDeclarations;
+  /** Code → the sibling files that RAISE it, when the tree was read. */
+  readonly raisedIn?: ReadonlyMap<string, readonly string[]>;
+  /** The registry the `theirs` declarations were read from, for the message. */
+  readonly registry?: string;
+}): string[] {
+  const registry = args.registry ?? SIBLING_REGISTRY;
+  const findings: string[] = [];
+  for (const code of [...args.allocated].sort()) {
+    const ours = args.ours.get(code) ?? [];
+    // Our own half is never assumed: a code this campaign allocates and names
+    // nowhere would otherwise make every comparison vacuously clean.
+    if (ours.length === 0) {
+      findings.push(`${code}: no handoff note of this campaign declares a meaning for it`);
+      continue;
+    }
+    const theirs = args.theirs.get(code) ?? [];
+    if (theirs.length === 0) {
+      const raised = [...(args.raisedIn?.get(code) ?? [])].sort();
+      if (raised.length > 0) {
+        findings.push(
+          `${code}: raised next door in ${raised.join(", ")}, and ${registry} declares no meaning ` +
+            `for it (we declare ${ours.join(", ")})`,
+        );
+      }
+      continue;
+    }
+    if ([...theirs].sort().join(",") === [...ours].sort().join(",")) continue;
+    findings.push(
+      `${code}: we declare ${ours.join(", ")}, ${registry} declares ${theirs.join(", ")}`,
+    );
+  }
+  return findings;
+}
