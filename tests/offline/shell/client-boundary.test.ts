@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { functionPaths } from "../../fixtures/client-props";
 import { sourceFiles, sourceText } from "../source-tree";
 
 /**
@@ -1100,5 +1101,90 @@ describe("the client-boundary guard itself", () => {
         '// import { hintSide } from "./cell";\nimport { EditableCell } from "./cell";\n',
       ).map((binding) => binding.imported),
     ).toEqual(["EditableCell"]);
+  });
+});
+
+/* ── the PROP half of the same boundary, proved on fixtures ───────────────── */
+
+/**
+ * `functionPaths` — the guard the two paged pages are pinned by — proved on an
+ * input it MUST flag and one it must NOT (LESSONS 8; QA off
+ * admin-window/BUG-0226).
+ *
+ * The import half above is one way to answer a client boundary with a 500; the
+ * PROP half is the other, and admin-window/BUG-0226 is what it cost: a server
+ * page wrote `deps.id`, a function, on `PagingProvider`, and `/claims` and
+ * `/browse` both answered **HTTP 500 with no markup at all** until the id
+ * crossed as a NAME. `tests/offline/{claims,browse}/page.test.ts` each assert
+ * `functionPaths(...)` is `[]` over the props their page actually handed
+ * across — and that assertion is only worth the line it is written on while
+ * this helper really FLAGS a function. A helper that answered `[]` for
+ * everything would pass both pins over the very defect they were written for,
+ * and no other tier in this repo can see that class (an offline render has no
+ * client boundary, `tsc` sees a well-typed property, the http tier has no rows
+ * so the provider never renders). So the positive fixtures live here, beside
+ * the import half's own.
+ */
+describe("the client-boundary PROP guard itself", () => {
+  it("flags the exact prop that took both paged pages to 500", () => {
+    // The props `/claims` handed across on the landed commit that answered
+    // 500, spelled as the page spelled them.
+    const deps = {
+      route: "/api/admin/claims/rows",
+      params: "",
+      size: 50,
+      id: (row: { observationId: string }): string => row.observationId,
+    };
+    expect(functionPaths({ initial: { rows: [], held: 50 }, deps })).toEqual(["deps.id"]);
+  });
+
+  it("does not flag the props those pages hand across today", () => {
+    // The passing fixture: the same shape with the id carried as a NAME, plus
+    // the window line's own object and a seeded id set — every value React
+    // really does serialize.
+    const handed = {
+      initial: {
+        rows: [] as unknown[],
+        held: 50,
+        status: "idle",
+        refusal: null,
+        notes: null,
+        after: "01a058f1-0090-7629-9233-c74f92437dfa",
+        drawnIds: new Set(["01a058f1-0090-7629-9233-c74f92437dfa"]),
+        overlapped: false,
+      },
+      deps: { route: "/api/admin/claims/rows", params: "tab=open", size: 50, idKey: "observationId" },
+      window: { holds: "claims", limit: 50, held: 689, truncated: true },
+    };
+    expect(functionPaths(handed)).toEqual([]);
+  });
+
+  it("names a function wherever it hides, through every shape flight carries", () => {
+    // Paths, not a boolean: the failure must send a reader to the prop. A
+    // function nested in a row, in a `Set` and in a `Map` value is the same
+    // 500 as one written at the top level.
+    expect(functionPaths({ initial: { rows: [{ onPick: () => "" }] } })).toEqual([
+      "initial.rows.0.onPick",
+    ]);
+    expect(functionPaths({ deps: { ids: new Set([() => ""]) } })).toEqual(["deps.ids.0"]);
+    expect(functionPaths({ deps: { by: new Map([["claim", () => ""]]) } })).toEqual([
+      "deps.by.claim",
+    ]);
+    expect(functionPaths(() => "")).toEqual(["<root>"]);
+  });
+
+  it("reads a React element's PROPS and never its type", () => {
+    // `children` is an element, and an element's `type` is the component
+    // itself — a function that is never a prop. A guard that flagged it would
+    // redden on every page in the app and be turned off; one that skipped the
+    // element entirely would miss a callback handed down inside it.
+    const element = {
+      $$typeof: Symbol.for("react.element"),
+      type: function Row() {
+        return null;
+      },
+      props: { onPick: () => "", label: "Pending" },
+    };
+    expect(functionPaths({ children: element })).toEqual(["children.props.onPick"]);
   });
 });

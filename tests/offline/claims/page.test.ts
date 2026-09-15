@@ -191,6 +191,14 @@ const paging = vi.hoisted(() => ({
   calls: [] as {
     initial: { rows: readonly unknown[]; held: number; status: string; refusal: unknown };
     deps: { route: string; params: string; size: number };
+    /**
+     * AND THE WINDOW — the third prop this page writes on the client
+     * element, graded by the same rule as the other two (QA off
+     * admin-window/BUG-0226): every prop crossing this boundary is data, so
+     * the pin below reads all three and not the two the 500 happened to be
+     * in.
+     */
+    window: unknown;
   }[],
   press: null as null | (() => void),
   override: null as unknown,
@@ -206,7 +214,7 @@ vi.mock("@/components/ui/paging", async (importActual) => {
       window: unknown;
       children: unknown;
     }) => {
-      paging.calls.push({ initial: props.initial, deps: props.deps });
+      paging.calls.push({ initial: props.initial, deps: props.deps, window: props.window });
       // The REAL provider, started from the state under test, with a probe
       // added beside the page's own children to hand the press back out. The
       // WINDOW is the page's own, passed straight through: this file overrides
@@ -6496,8 +6504,8 @@ describe("the affordance that continues the claim list", () => {
   // the only thing standing between the next function prop and another 500.
   it("hands the client provider DATA only, so the server can serialize it", async () => {
     await renderClaims(pagedScript(130));
-    const { initial, deps } = paging.calls[0];
-    expect(functionPaths({ initial, deps })).toEqual([]);
+    const { initial, deps, window } = paging.calls[0];
+    expect(functionPaths({ initial, deps, window })).toEqual([]);
   });
 
   it("names the claim its first screen ENDS at, so pages cannot outlive the screen they continue", async () => {
