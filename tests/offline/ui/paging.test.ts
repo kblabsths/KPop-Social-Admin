@@ -586,21 +586,119 @@ describe("a page answer for an object this database does not have", () => {
     }
   });
 
-  it("changes nothing else about the line or the control", () => {
+  it("changes nothing else about the line: the marker, the role, and not the card", () => {
     const html = absent();
-    // Same marker, same role, still above the control — and the control is
-    // still there, because a refusal removes none (M3 EC5).
+    // Same marker and same role as every other refusal this line draws. What
+    // is NO LONGER asserted here is the control under it: this arm withdraws
+    // it (admin-window/BUG-0211, the block below), and the two arms that keep
+    // it are pinned there as this one's must-NOT-flag twin.
     expect(html).toContain("data-paging-refusal");
     expect(html).toContain('role="alert"');
-    expect(html.indexOf("data-paging-refusal")).toBeLessThan(html.indexOf("<button"));
-    expect(controls(html)).toBe(1);
-    expect(html).toContain('data-paging="more"');
     // It is not the card: a refusal about ONE further window is not a surface
     // whose read failed, and a live oracle grades those two by their hooks
     // (admin-window/TASK-0032).
     expect(html).not.toContain('data-state="not_provisioned"');
     // And no zero that reads like data.
     expect(html).not.toContain(">0<");
+  });
+
+  /**
+   * A PAGING AFFORDANCE IS DRAWN ONLY WHERE A PRESS COULD BE HONOURED —
+   * admin-window/BUG-0211, the property stated positively (LESSONS 13, M3 EC5,
+   * SPEC F14: "a control that cannot be honoured is never drawn").
+   *
+   * MEASURED on a production build against staging (2026-09-11, /claims at
+   * 1440x900, walk cookie): the rows route was made to answer
+   * `{"kind":"not_provisioned","missing":"pending_claims"}` and the press drew
+   * the gray clause with `[data-paging="more"]` still under it, `disabled`
+   * false, its label unchanged. The clause deliberately offers no fix — no
+   * press provisions a table — so the sentence and the widget disagreed about
+   * whether there was anything left to ask for.
+   *
+   * The scope of the withdrawal is exactly this ONE condition. A refused bound
+   * and a failed read are retryable at the same bound, so they keep their
+   * control and their "Press it again" sentence; every case below carries that
+   * must-NOT-flag twin, so the fix cannot spread to them (LESSONS 8).
+   */
+  describe("the control is withdrawn, because no press provisions a table", () => {
+    /** The arm that IS retryable, at the same bound, for every case below. */
+    const retryable = (): string =>
+      more({ refusal: brokenArm("canceling statement due to statement timeout", "the machine", MISSING) });
+
+    it("draws no control at all — absent from the markup, not merely disabled", () => {
+      const html = absent();
+      expect(controls(html)).toBe(0);
+      expect(html).not.toContain('data-paging="more"');
+      expect(html).not.toContain('data-paging="loading"');
+      // Not a disabled control either: there is no button in the markup for an
+      // attribute to sit on.
+      expect(html).not.toContain("disabled");
+      // MUST-NOT-FLAG: a read that failed is retryable at the same bound, so
+      // its control and its fix are exactly what they were.
+      expect(controls(retryable())).toBe(1);
+      expect(retryable()).toContain('data-paging="more"');
+      expect(retryable()).toMatch(/[Pp]ress it again/);
+    });
+
+    it("puts no other sentence in its place: the clause is the whole of the area", () => {
+      const html = absent();
+      // No terminal sentence takes the control's slot — neither the one that
+      // claims the set is complete nor the one that says this app stopped at
+      // its own ceiling. The clause above already says what happened.
+      expect(cheerio.load(html)("[data-paging]")).toHaveLength(0);
+      // …and the clause still names its object exactly once, in its own box.
+      const drawn = line(html);
+      expect(drawn.text().split(MISSING)).toHaveLength(2);
+      expect(drawn.text()).toContain(ARRIVES_WITH);
+      // MUST-NOT-FLAG: the retryable arm still draws its arm and its control.
+      expect(cheerio.load(retryable())("[data-paging]")).toHaveLength(1);
+    });
+
+    it("stays withdrawn wherever the absence is standing: at the ceiling, and beside an overlap", () => {
+      // The absence outranks both of the other no-control arms: a surface that
+      // has just learned the backing object is gone may not be told this app
+      // stopped at its own bound ceiling instead.
+      const ceiling = absent({ held: MAX_PAGE_OFFSET + SIZE });
+      expect(controls(ceiling)).toBe(0);
+      expect(ceiling).not.toContain('data-paging="limit"');
+      expect(line(ceiling).text()).toContain(ARRIVES_WITH);
+      // A list that moved under the operator still says so — that fact is
+      // orthogonal and this ticket does not touch it (admin-window/BUG-0222).
+      const moved = absent({ overlapped: true });
+      expect(cheerio.load(moved)("[data-paging-overlap]")).toHaveLength(1);
+      expect(controls(moved)).toBe(0);
+    });
+
+    it("is what a PRESS ends in, driven through the real driver, and it moves no row and no bound", async () => {
+      // The arm as a surface really reaches it: the object disappears between
+      // the first screen and a press. The rows on screen, the bound the next
+      // press would carry and the drawn set all stand (M3 EC5).
+      const held = state({ rows: [{ id: "a" }, { id: "b" }], held: SIZE * 2 });
+      const next = await requestPage<Row>(held, {
+        route: PAGE_ROUTES.claims,
+        params: "",
+        size: SIZE,
+        idKey: ROW_ID,
+        fetchJson: async () => ({ kind: "not_provisioned", missing: MISSING }),
+      });
+      expect(next.rows).toEqual(held.rows);
+      expect(next.held).toBe(held.held);
+      expect(next.refusal).toEqual({ condition: "not provisioned", missing: MISSING });
+
+      const html = render(
+        h(PageMore, {
+          state: next,
+          holds: HOLDS,
+          size: SIZE,
+          readsAgree: true,
+          nextStep: NEXT_STEP,
+          onPress: () => {},
+        }),
+      );
+      expect(controls(html)).toBe(0);
+      expect(cheerio.load(html)("[data-paging]")).toHaveLength(0);
+      expect(line(html).text()).toContain(MISSING);
+    });
   });
 
   it("an alert that names no failure never reaches the operator", async () => {
@@ -1775,6 +1873,42 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     // the sentence it draws is the completeness one, byte for byte.
     expect(hook(single, "data-window-held")).toBe(String(SIZE * 3));
     expect(sentence(single)).toBe(sentence(agreeing));
+  });
+
+  it("a press that answers not_provisioned withdraws the control and leaves the window line to the byte [admin-window/BUG-0211]", async () => {
+    // The whole surface, before and after the one press: the line above the
+    // rows and the control below them, from one provider. A not-provisioned
+    // answer moves no bound and ends no set, so the LINE is byte-identical —
+    // and the control, which nothing could honour now, is gone from under it.
+    const start = initialPage<Row>(SIZE, true, "");
+    const before = surface(start, WINDOW);
+    const next = await requestPage<Row>(start, {
+      route: PAGE_ROUTES.claims,
+      params: "",
+      size: SIZE,
+      idKey: ROW_ID,
+      fetchJson: async () => ({ kind: "not_provisioned", missing: "pending_claims" }),
+    });
+    const after = surface(next, WINDOW);
+
+    const drawnLine = (html: string): string => cheerio.load(html)("[data-window]").toString();
+    expect(drawnLine(after)).toBe(drawnLine(before));
+    // Non-vacuity: the surface really did draw a control before the press.
+    expect(controls(before)).toBe(1);
+    expect(controls(after)).toBe(0);
+    expect(cheerio.load(after)("[data-paging-refusal]")).toHaveLength(1);
+    // MUST-NOT-FLAG (LESSONS 8): the same press answered with a REFUSED BOUND
+    // keeps its control, and its line is byte-identical too.
+    const bounced = await requestPage<Row>(start, {
+      route: PAGE_ROUTES.claims,
+      params: "",
+      size: SIZE,
+      idKey: ROW_ID,
+      fetchJson: async () => ({ kind: "refused", reason: "that bound is not one this view serves", bound: "50" }),
+    });
+    const retried = surface(bounced, WINDOW);
+    expect(drawnLine(retried)).toBe(drawnLine(before));
+    expect(controls(retried)).toBe(1);
   });
 
   it("the bound ceiling does not claim the data ran out: it names this app as what stopped, and one thing to do next [admin-window/BUG-0178]", () => {

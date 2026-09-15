@@ -585,16 +585,26 @@ function stoppedAtTheCeiling(holds: string, nextStep: string | null): string {
  * The affordance itself: the control, the refusal, and the two sentences that
  * replace a control nothing could honour.
  *
- * Five states, drawn from props alone, in this order:
+ * Five states, drawn from props alone, in this order — plus the one arm that
+ * draws nothing at all (0), which is read ahead of every other:
  *
+ *  0. **the backing object is not in this database** — no control and no
+ *     sentence of this element's own: the refusal clause above it is the
+ *     whole account (admin-window/BUG-0211). It is read FIRST because it is
+ *     the one condition under which neither sentence below is true — the set
+ *     did not run out and this app did not stop at its own ceiling; the
+ *     object the surface pages is simply not there, and no press provisions
+ *     one. **The affordance is drawn only where a press could be honoured**,
+ *     which is M3 EC5's heading and SPEC F14's rule, applied to the one arm
+ *     whose text already offers no press.
  *  1. **exhausted** — no control, and one sentence: the read that continues
- *     this view came back with nothing more. **This arm is FIRST and the order
- *     is load-bearing** (admin-window/BUG-0168): a legitimate final page is
- *     short, so an exhausted state's `held` may sit off the grid `pageBound`
- *     enforces (80 against a window of 50) — honestly so, because there is no
- *     next bound to honour. Read in the other order it would draw arm 2 and
- *     tell the operator that this app stopped at its own ceiling, about a set
- *     the read established IS complete.
+ *     this view came back with nothing more. **This arm is read BEFORE arm 2
+ *     and the order is load-bearing** (admin-window/BUG-0168): a legitimate
+ *     final page is short, so an exhausted state's `held` may sit off the grid
+ *     `pageBound` enforces (80 against a window of 50) — honestly so, because
+ *     there is no next bound to honour. Read in the other order it would draw
+ *     arm 2 and tell the operator that this app stopped at its own ceiling,
+ *     about a set the read established IS complete.
  *
  *     **WHICH terminal sentence is the WINDOW's verdict, handed in already
  *     decided** (admin-window/BUG-0180). Where the surface's two reads agree,
@@ -619,9 +629,13 @@ function stoppedAtTheCeiling(holds: string, nextStep: string | null): string {
  *     the markup, and cannot happen from the driver either.
  *  4. **idle** — the control.
  *
- * A **refusal** is orthogonal to all four and renders beside them: it never
- * removes rows, never changes the bound, and never removes the control, since
- * a refused page is retryable at the same bound. It is drawn here, and not
+ * A **refusal** is orthogonal to the four arms below it and renders beside
+ * them: it never removes rows and never changes the bound. It leaves the
+ * control alone in every condition but one — a refused bound and a failed
+ * read are retryable at the same bound, so their control and their "Press it
+ * again" sentence stand; a backing object that is not in this database is not
+ * retryable by anything, and arm 0 above withdraws the control for that one
+ * condition alone (admin-window/BUG-0211). It is drawn here, and not
  * with `ErrorLine`, because `ErrorLine` carries `data-state="error"` — the
  * marker a live oracle grades as a FAILED PAGE READ (admin-window/TASK-0032) —
  * and a page that refused ONE further window is not a page whose read failed.
@@ -678,7 +692,15 @@ export function PageMore({
 }): ReactNode {
   const exhausted = state.status === "exhausted";
   const nextBound = pageBound(String(state.held), size);
-  const drawsControl = !exhausted && nextBound.kind === "ok";
+  // THE BACKING OBJECT IS NOT IN THIS DATABASE — admin-window/BUG-0211.
+  //
+  // The state's own published fact, read and never re-derived: a press asked
+  // for the next window and the answer said the object it reads is not here.
+  // No bound, no retry and no press of any kind provisions a table, so there
+  // is nothing this control could ask for — which is why the clause beside it
+  // deliberately offers no fix (`Refusal` below).
+  const unprovisioned = state.refusal !== null && state.refusal.condition === "not provisioned";
+  const drawsControl = !exhausted && !unprovisioned && nextBound.kind === "ok";
   const label = askFor(size, holds);
 
   return (
@@ -700,7 +722,23 @@ export function PageMore({
           {movedUnderYou(holds)}
         </p>
       ) : null}
-      {exhausted ? (
+      {unprovisioned ? (
+        // A PAGING AFFORDANCE IS NEVER DRAWN WHERE IT CANNOT BE HONOURED
+        // (M3 EC5, SPEC F14's "a control that cannot be honoured is never
+        // drawn") — and here nothing replaces it either. The clause above IS
+        // the account: it names the object that is missing and what creates
+        // it, and a second sentence under it could only claim something that
+        // did not happen — that the set ran out, or that this app stopped at
+        // its own ceiling. So this arm draws NOTHING.
+        //
+        // It is read FIRST, ahead of both of those arms, for exactly that
+        // reason: whatever else this state holds, the surface has just learned
+        // the object it pages is not in this database, and that is the fact
+        // the operator is owed. (The driver leaves every refusal `idle`, so
+        // this never displaces a real exhaustion; the ordering is what keeps
+        // the rule total rather than a race between two arms.)
+        null
+      ) : exhausted ? (
         agree ? (
           // One read established that every row the surface counted is on
           // screen, so the set IS complete and the sentence says so — the
@@ -772,9 +810,16 @@ export function PageMore({
  * `<Identifier>` box that clause carries and NO instruction at all: the half
  * of copy bar 3 that says what to do is the clause naming what creates it,
  * because there is nothing here for the operator to press. Everything else
- * about the line is unchanged — the marker, the role, the placement above the
- * control, and the rule that a refusal appends no row, moves no bound and
- * removes no control.
+ * about the line is unchanged — the marker, the role, and the rule that a
+ * refusal appends no row and moves no bound.
+ *
+ * **And since admin-window/BUG-0211 there is no control under it either.**
+ * This arm said there was nothing to press while the widget beneath it still
+ * offered one, enabled, with its label unmoved (measured on a production build
+ * against staging, 2026-09-11): the sentence and the affordance disagreed
+ * about whether anything was left to ask for. `PageMore`'s arm 0 is where that
+ * is answered — the fact is the state's, so the element that draws controls
+ * reads it rather than this line growing a second rule.
  *
  * ## The face says who is talking (admin-window/BUG-0175)
  *

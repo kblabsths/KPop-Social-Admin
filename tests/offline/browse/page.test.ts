@@ -1383,8 +1383,25 @@ describe("the affordance that continues the recent-events view", () => {
     // the live oracle grades as the events read.
     expect($("table").find("[data-paging-refusal]")).toHaveLength(0);
     expect($(EVENTS_HOOK).find("[data-paging-refusal]")).toHaveLength(0);
-    // …and the control is still there, because the same bound is retryable.
-    expect(pagingArms(afterRefusal)).toContain("more");
+    // …and the control is GONE, because nothing a press can do provisions a
+    // table (admin-window/BUG-0211). The clause is the whole of the area: no
+    // control, and no terminal sentence in its place either.
+    expect(pagingArms(afterRefusal)).toEqual([]);
+    expect(cheerio.load(afterRefusal)("button[data-paging]")).toHaveLength(0);
+
+    // A′. THE MUST-NOT-FLAG TWIN of the arm above (LESSONS 8): a READ that
+    // failed is refused at a bound that is still servable, so this surface
+    // keeps its control and its press-again sentence. The withdrawal above is
+    // about the absent object alone and may not spread to the retryable arms.
+    paging.override = await pressedWith({
+      kind: "error",
+      reading: T.events,
+      message: "canceling statement due to statement timeout",
+    });
+    const afterReadFailure = await renderBrowse(script);
+    expect(eventIds(afterReadFailure)).toEqual(first);
+    expect(cheerio.load(afterReadFailure)("[data-paging-refusal]")).toHaveLength(1);
+    expect(pagingArms(afterReadFailure)).toContain("more");
 
     // B. the page that must NOT refuse — a full window, appended in order.
     paging.calls = [];
