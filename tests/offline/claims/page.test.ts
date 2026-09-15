@@ -381,6 +381,57 @@ async function renderWithStub(
 
 /* ── reading the markup, structurally ────────────────────────────────────── */
 
+/** Every figure a sentence states, in the order it states them. */
+function figuresIn(sentence: string): string[] {
+  return sentence.match(/\d[\d,]*/g) ?? [];
+}
+
+/** The standing tab's per-source splits, by the id each row is keyed on. */
+function standingSplits(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("[data-split-source]")
+    .toArray()
+    .map((element) => $(element).attr("data-split-source") ?? "")
+    .sort();
+}
+
+/**
+ * The standing splits WEARING AN ID — the ones whose label is the source's own
+ * id, which is what the app renders when the registry named nothing for it
+ * (`sourceLabel`, `src/lib/sources/names.ts`).
+ *
+ * Read off the rendered anchor, so a case can compare what the rows say with
+ * what the sentence under them counts without retyping either.
+ */
+function standingSplitsWearingAnId(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("[data-split-source]")
+    .toArray()
+    .flatMap((element) => {
+      const id = $(element).attr("data-split-source") ?? "";
+      return $(element).text().startsWith(id) ? [id] : [];
+    })
+    .sort();
+}
+
+/**
+ * The sentence the standing gauge ends on — the last paragraph of the section
+ * the standing window line stands in, with the line itself removed so the case
+ * is never reading the window's own sentence.
+ */
+function standingClosingSentence(markup: string): string {
+  const $ = cheerio.load(markup);
+  const section = $('[data-window="standing"]').closest("section");
+  expect(section.length, "the standing gauge did not render").toBe(1);
+  section.find("[data-window]").remove();
+  const paragraph = section.find("p").last();
+  expect(paragraph.length, "the standing gauge said nothing at all").toBe(1);
+  // A table's empty state is a paragraph too; reading one would grade the
+  // wrong sentence.
+  expect(paragraph.closest("table").length, "read a paragraph inside the table").toBe(0);
+  return paragraph.text().replace(/\s+/g, " ").trim();
+}
+
 /**
  * The bucket rows: the bucket and its count, in order.
  *
@@ -4560,6 +4611,55 @@ describe("a source is named", () => {
       expect(named.text()).not.toContain(SOURCE.second);
     });
   }
+
+  /**
+   * **THE SENTENCE COUNTS WHAT THE ROWS ABOVE IT SHOW** (campaign
+   * admin-window/DEBT-0022, the class site admin-window/TASK-0060 fixed on
+   * `/sources`).
+   *
+   * The standing gauge labels its splits with `sourceLabel`, which puts an id
+   * on screen for BOTH ways the registry names nothing — no row, and a row
+   * with no ink in its name. The closing sentence's number came from the
+   * gauge's own `=== undefined` test, which sees only the first, so a
+   * blank-named source wore its uuid in the table while the sentence under it
+   * said nothing had happened: one page, two answers about one row
+   * (LESSONS 11).
+   *
+   * Read off the rendering rather than typed here: the rows wearing an id and
+   * the figure in the sentence are both harvested from the markup, so this
+   * cannot pass by agreeing with a copy this case spelled out.
+   */
+  it("states the number of standing splits it named by id, on a row the registry left blank", async () => {
+    const blanked = REGISTRY.map((row) =>
+      row.source_id === SOURCE.first ? { ...row, source: "   " } : row,
+    );
+    const withBlank = await renderClaims(
+      healthyScript({ [T.sources]: { data: blanked } }),
+      { tab: "standing" },
+    );
+    const allNamed = await renderClaims(healthyScript(), { tab: "standing" });
+
+    // Both renders really drew the same splits, or the counts below are over
+    // different tables.
+    expect(standingSplits(withBlank)).toEqual(standingSplits(allNamed));
+    expect(standingSplits(withBlank).length).toBeGreaterThan(1);
+
+    // SOURCE.first now wears its id; it did not before (LESSONS 8 — one input
+    // the count MUST take, one it must not).
+    const worn = standingSplitsWearingAnId(withBlank);
+    expect(worn).toContain(SOURCE.first);
+    expect(standingSplitsWearingAnId(allNamed)).not.toContain(SOURCE.first);
+
+    // …and the sentence states THAT number.
+    expect(figuresIn(standingClosingSentence(withBlank))).toEqual([String(worn.length)]);
+
+    // The other direction over the same population: with every registry row
+    // named, no split wears an id and the sentence states no figure at all —
+    // so the agreement above is not a sentence that always says "1".
+    expect(standingSplitsWearingAnId(allNamed)).toEqual([]);
+    expect(figuresIn(standingClosingSentence(allNamed))).toEqual([]);
+    expect(standingClosingSentence(withBlank)).not.toBe(standingClosingSentence(allNamed));
+  });
 
   it("leaves a standing split's registry name exactly as the registry wrote it", async () => {
     // The other direction: a name with ink travels byte-identical — the pads
