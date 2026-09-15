@@ -1,0 +1,24 @@
+{
+ "id": "TASK-0081",
+ "created": "2026-09-15T06:40:24Z",
+ "green": true,
+ "git_head": "53ad9ec3074be5263ba9c153cb98064c68b4b3fc",
+ "scope": [
+  "docs/build_judgments.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "d8893e1bb653e36f2b35e3b80c7c0aa0458166478205c5f2ff2fe5f400335854",
+ "commands": [
+  {
+   "cmd": "grep -q '2026-09-12' docs/build_judgments.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep '^## ' docs/build_judgments.md | wc -l)\" -eq 8",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
