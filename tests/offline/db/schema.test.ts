@@ -173,6 +173,60 @@ describe("reading whether a function is installed", () => {
     }
   });
 
+  it("a description whose paths is not an object is unreadable, not an absence", async () => {
+    // The schema-description leg of the one admission rule (ARCHITECTURE.md
+    // §4.1, admin-window/BUG-0234). PostgREST is specified to answer this read
+    // with a document whose `paths` is a JSON OBJECT keying every route it
+    // exposes; the question asked was `typeof paths === "object"`, which a
+    // JSON ARRAY also satisfies — and `Object.keys` of an array is its
+    // indices, so an array `paths` yielded an EMPTY function set and this app
+    // reported `not_provisioned`: a false absence about the database, out of a
+    // document it could not read.
+    const bodies: ReadonlyArray<readonly [string, string]> = [
+      ["paths as a JSON array", JSON.stringify({ swagger: "2.0", paths: ["/rpc/x"] })],
+      ["paths as an EMPTY array", JSON.stringify({ swagger: "2.0", paths: [] })],
+      ["paths as a string", JSON.stringify({ swagger: "2.0", paths: "/rpc/x" })],
+      ["paths as null", JSON.stringify({ swagger: "2.0", paths: null })],
+      ["a body that is an array", JSON.stringify([{ paths: {} }])],
+    ];
+
+    // MUST FLAG: every one of them is a read that did not answer, so the
+    // answer names the function and refuses — never `not_provisioned`, which
+    // would be a claim about the DATABASE made from a document this app could
+    // not read, and never `ok`, which would offer a control whose save cannot
+    // land.
+    for (const [index, [shape, body]] of bodies.entries()) {
+      const { client } = clientAnswering(
+        `https://paths-${index}.invalid`,
+        () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "application/openapi+json" },
+          }),
+      );
+      const result = await readFunctionInstalled(FN.settleReviewItem, client);
+      expect(result.kind, shape).toBe("error");
+      if (result.kind !== "error") continue;
+      expect(result.reading, shape).toBe(FN.settleReviewItem);
+      expect(result.message.length, shape).toBeGreaterThan(0);
+    }
+
+    // MUST NOT FLAG (LESSONS 8): the document PostgREST really sends. Its
+    // `paths` is an object, and both of the answers it can carry survive —
+    // the function listed, and a REAL absence that is still an absence.
+    const installed = databaseExposing("https://paths-object.invalid", [
+      FN.settleReviewItem,
+    ]);
+    await expect(
+      readFunctionInstalled(FN.settleReviewItem, installed.client),
+    ).resolves.toEqual({ kind: "ok", data: "installed" });
+
+    const absent = databaseExposing("https://paths-object-absent.invalid", []);
+    await expect(
+      readFunctionInstalled(FN.settleReviewItem, absent.client),
+    ).resolves.toEqual({ kind: "not_provisioned", missing: FN.settleReviewItem });
+  });
+
   it("settles an INSTALLED answer for the process, and re-asks every other", async () => {
     // The document is 387 KB and took 1048 / 415 / 319 ms to read on the
     // declared staging target (measured read-only 2026-09-14), so a page

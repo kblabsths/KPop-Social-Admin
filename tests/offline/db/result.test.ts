@@ -3104,6 +3104,84 @@ describe("reads against a scripted PostgREST response", () => {
     ).toEqual({ kind: "ok", data: row });
   });
 
+  it("a single-row read admits no row only from an answer that carried one", async () => {
+    // §4.1 clause 3 (admin-window/BUG-0234). `data: null` is what BOTH a real
+    // empty `.maybeSingle()` and supabase-js's rewrite of a bodyless 404 hand
+    // back, so the null alone decides nothing: the status line is where the
+    // two differ, and it is asked there. Every fixture below goes through a
+    // REAL client over a scripted transport, so the rewrite is the library's
+    // own and not this test's belief about it.
+    const ROW = { review_item_id: "ri-1", severity: "high" };
+    const COLUMNS = ["review_item_id", "severity"];
+    const hostAnswering = (answer: () => Response): SupabaseClient =>
+      createClient("https://one-row.invalid", "stub-key", {
+        auth: { persistSession: false },
+        global: { fetch: async () => answer() },
+      }) as unknown as SupabaseClient;
+    const seek = (db: SupabaseClient) =>
+      db.from(T.reviewItems).select(COLUMNS.join(", ")).maybeSingle();
+
+    // The fixture, established rather than assumed: a host answering 404 with
+    // zero bytes reaches this app as a 204 carrying neither rows nor failure.
+    const blank = hostAnswering(() => new Response("", { status: 404 }));
+    const rewritten = (await blank
+      .from(T.reviewItems)
+      .select(COLUMNS.join(", "))
+      .maybeSingle()) as unknown as DbResponse<unknown> & { status?: number };
+    expect(rewritten.status).toBe(204);
+    expect(rewritten.data).toBeNull();
+    expect(rewritten.error).toBeNull();
+
+    // MUST FLAG: that response is not an absence and not a row. It refuses in
+    // the one sentence every ungradeable answer refuses in — compared to its
+    // twin, never pinned as a literal (LESSONS 11).
+    const overBlank = await readOne(T.reviewItems, COLUMNS, seek, blank);
+    expect(overBlank.kind).toBe("error");
+    if (overBlank.kind !== "error") return;
+    expect(overBlank.reading).toBe(T.reviewItems);
+    expect(overBlank).not.toHaveProperty("data");
+    expect(overBlank.authored).toEqual([
+      { words: overBlank.message, author: "this app" },
+    ]);
+    const ungradeable = await readRows(
+      T.reviewItems,
+      COLUMNS,
+      (db) => db.from(T.reviewItems).select(COLUMNS.join(", ")),
+      stubClient({ [T.reviewItems]: { data: null } }).asSupabaseClient(),
+    );
+    expect(ungradeable.kind).toBe("error");
+    if (ungradeable.kind !== "error") return;
+    expect(overBlank.message).toBe(ungradeable.message);
+
+    // MUST NOT FLAG: a real empty `.maybeSingle()` — PostgREST answers 200
+    // carrying `[]`, which supabase-js hands over as `data: null`. That is an
+    // emptiness the host really sent, and it stays `ok: null`.
+    const empty = hostAnswering(
+      () =>
+        new Response("[]", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    expect(await readOne(T.reviewItems, COLUMNS, seek, empty)).toEqual({
+      kind: "ok",
+      data: null,
+    });
+
+    // …and a row that really arrived is still handed over untouched.
+    const found = hostAnswering(
+      () =>
+        new Response(JSON.stringify([ROW]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    expect(await readOne(T.reviewItems, COLUMNS, seek, found)).toEqual({
+      kind: "ok",
+      data: ROW,
+    });
+  });
+
   it("holds a read that declared no columns to the element test alone", async () => {
     // ANY_COLUMNS is the declaration of a read that selects `*` and reads no
     // column (`readSettlementReadiness`). There is no list to hold elements
@@ -3719,6 +3797,78 @@ describe("readComplete", () => {
     expect(result.message).toContain(String(ROW_CAP));
     // Never a partial array: the whole point of the branch.
     expect(result).not.toHaveProperty("data");
+  });
+
+  it("a total smaller than the rows it came with is not a total of this set", async () => {
+    // Two legs about ONE set, so they agree or the answer is refused, in
+    // EITHER direction (ARCHITECTURE.md §4.1 clause 2, admin-window/BUG-0234).
+    // The truncation arm asked only `count > rows.length`, so a host
+    // publishing a total SMALLER than the rows it sent reached a surface as an
+    // ok read whose head figure contradicted its own list.
+    const items = reviewItemShapes();
+    expect(items.length).toBeGreaterThan(1);
+
+    // MUST FLAG: three rows arrived, the total says one.
+    const short = await readComplete(
+      T.reviewItems,
+      ANY_COLUMNS,
+      completeQuery(T.reviewItems),
+      stubClient({ [T.reviewItems]: { data: items, count: 1 } }).asSupabaseClient(),
+    );
+    expect(short.kind).toBe("error");
+    if (short.kind !== "error") return;
+    expect(short.reading).toBe(T.reviewItems);
+    // Never a partial array, and never the rows either: nothing downstream
+    // gets to publish a figure or a list out of this answer.
+    expect(short).not.toHaveProperty("data");
+    expect(short.authored).toEqual([{ words: short.message, author: "this app" }]);
+
+    // It refuses as an answer this app CANNOT GRADE — the same one sentence
+    // every other ungradeable answer refuses in, compared to its twin rather
+    // than pinned as a literal so the two cannot drift (LESSONS 11).
+    const ungradeable = await readRows(
+      T.reviewItems,
+      ANY_COLUMNS,
+      (db) => db.from(T.reviewItems).select("*"),
+      stubClient({ [T.reviewItems]: { data: null } }).asSupabaseClient(),
+    );
+    expect(ungradeable.kind).toBe("error");
+    if (ungradeable.kind !== "error") return;
+    expect(short.message).toBe(ungradeable.message);
+    // …and NOT as a truncation: no cap was reached, so a sentence naming the
+    // cap would be a false account of what arrived.
+    expect(short.message).not.toContain(String(ROW_CAP));
+    for (const callSite of CALL_SITE_PROSE) {
+      expect(short.message).not.toContain(callSite);
+    }
+
+    // MUST NOT FLAG: what a real PostgREST complete read answers — the exact
+    // count of the rows it sent.
+    expect(
+      await readComplete(
+        T.reviewItems,
+        ANY_COLUMNS,
+        completeQuery(T.reviewItems),
+        stubClient({
+          [T.reviewItems]: { data: items, count: items.length },
+        }).asSupabaseClient(),
+      ),
+    ).toEqual({ kind: "ok", data: items });
+
+    // And the OTHER direction keeps the account that is true only there: a
+    // truncated set still names the count and the cap.
+    const truncated = await readComplete(
+      T.reviewItems,
+      ANY_COLUMNS,
+      completeQuery(T.reviewItems),
+      stubClient({
+        [T.reviewItems]: { data: items, count: items.length + 9 },
+      }).asSupabaseClient(),
+    );
+    expect(truncated.kind).toBe("error");
+    if (truncated.kind !== "error") return;
+    expect(truncated.message).toContain(String(items.length + 9));
+    expect(truncated.message).toContain(String(ROW_CAP));
   });
 
   it("refuses truncation regardless of where the cap bit, cap or server", async () => {
