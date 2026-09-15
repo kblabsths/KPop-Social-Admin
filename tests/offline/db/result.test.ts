@@ -2532,6 +2532,43 @@ describe("an account carries the parts the database authored", () => {
       for (const run of runs) expect(run.words).not.toContain(jwtShaped);
       expect(message).toContain("[redacted]");
     });
+
+    it("cannot spell an error arm whose account does not say who wrote it", () => {
+      // admin-window/DEBT-0021. Every arm asserted above carries its runs, and
+      // until now the only thing that kept the NEXT one from omitting them was
+      // a regex sweep stored in a closed ticket's checks — which nothing runs
+      // again, and which sees one spelling of the literal. The property is
+      // stated here instead, where it runs on every ticket forever: `authored`
+      // is REQUIRED on the error member of `DbResult`, so every construction
+      // site is refused by `tsc --noEmit` (acceptance test 1) whatever its
+      // spelling — an object literal, a spread of a base, or a helper
+      // returning the union member.
+      //
+      // A pin in both directions by construction: an unused `@ts-expect-error`
+      // is itself an error (TS2578), so the day the `?` comes back this line
+      // reddens instead of quietly permitting an unauthored account.
+      const arm = (result: DbResult<never>): DbResult<never> => result;
+      // @ts-expect-error an account that does not say which words the DATABASE
+      // wrote and which this app wrote is unwritable.
+      arm({ kind: "error", reading: T.pendingClaims, message: "connection refused" });
+
+      // ...and the same arm WITH its runs compiles, so the directive above is
+      // refusing the omission and not the shape. `authored` is read with no
+      // `?? []` on purpose: the type carries the guarantee.
+      const runs: readonly AccountSegment[] = [
+        { words: "connection refused", author: "the machine" },
+      ];
+      const written = arm({
+        kind: "error",
+        reading: T.pendingClaims,
+        message: runs.map((run) => run.words).join(" "),
+        authored: runs,
+      });
+      expect(written.kind).toBe("error");
+      if (written.kind !== "error") throw new Error("unreachable");
+      expect(written.authored.map((run) => run.author)).toEqual(["the machine"]);
+      expect(written.authored.map((run) => run.words).join(" ")).toBe(written.message);
+    });
   });
 });
 
