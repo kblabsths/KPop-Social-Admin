@@ -42,8 +42,9 @@
  *
  * **Fact 2 is a read the page almost always already has** — an unnarrowed
  * count, or the unnarrowed rows themselves — so this costs a comparison, not a
- * query; where it does cost a query, that query is a bounded `head: true`
- * count and never a row read (admin-window/BUG-0135).
+ * query; where it does cost a query, that query is a bounded count read —
+ * `countRead`'s `{ count: "exact" }` over `limit 0` — and never a row read
+ * (admin-window/BUG-0135).
  *
  * A PURE DOMAIN LEAF (ARCHITECTURE.md §4 rule 7): it imports nothing at all,
  * reaches no database and renders nothing, so no cycle can be written through

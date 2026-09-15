@@ -45,10 +45,13 @@ export interface BucketStat {
    * refusal (admin-window/BUG-0138).
    *
    * A refusal is rendered as a refusal, in this bucket's own row: a count that
-   * could not be read is not a zero, and a database that gave no count at all
-   * is exactly the response a query written without `{ head: true, count:
-   * "exact" }` returns (ARCHITECTURE.md §4.3, common violations row 2). The
-   * other four buckets' rows are untouched by it — each is its own read.
+   * could not be read is not a zero. The read is `countRead` — `{ count:
+   * "exact" }` over `limit 0` — and a count that came back absent is an answer
+   * this app cannot grade, whatever produced it (`unreadableAnswer`, the
+   * no-count arm of `readCount` in `src/lib/db/result.ts`), never the
+   * signature of one way of spelling the query (ARCHITECTURE.md §4.3, common
+   * violations row 2; admin-window/BUG-0224). The other four buckets' rows are
+   * untouched by it — each is its own read.
    */
   claims: number | UnavailableRead;
   /**

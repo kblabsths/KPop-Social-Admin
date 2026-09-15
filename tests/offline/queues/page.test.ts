@@ -206,7 +206,8 @@ function tableHolding(
     { data: rows, count: rows.length },
     { data: rows, count: rows.length },
     ...counted.map((shape) => ({
-      // A head count returns no rows at all.
+      // A `countRead` — `{ count: "exact" }` over `limit 0` — returns no
+      // rows at all, only the count.
       data: null,
       count: rows.filter((row) => shapeName(row) === shape).length,
     })),
