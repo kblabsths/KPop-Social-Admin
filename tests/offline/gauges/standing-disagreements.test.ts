@@ -11,6 +11,7 @@ import type { PendingClaimRow, PendingObservationRow } from "@/lib/gauges/pendin
 import { T } from "@/lib/db/tables";
 import type { WindowInfo } from "@/lib/gauges/gauge";
 import { ID, observationRow, pendingClaimRow, sourceRow } from "../../fixtures/rows";
+import { isSourceNamed, sourceLabel, sourceNamesOf } from "@/lib/sources/names";
 import {
   permissionDenied,
   stubClient,
@@ -271,6 +272,79 @@ describe("aggregateStandingDisagreements", () => {
     expect(unknown.source).toBeNull();
     expect(unknown.tier).toBeNull();
     expect(standing.unnamedSources).toBe(1);
+  });
+
+  /**
+   * **ONE question, asked of its owner** (campaign admin-window/DEBT-0022,
+   * the class site admin-window/TASK-0060 fixed on `/sources`).
+   *
+   * "Is this source nameable?" was spelled twice about one gauge: this module
+   * counted `sourceById.get(id) === undefined`, while every ROW it produces is
+   * labelled by `sourceLabel` (`lib/sources/names.ts`), which also puts an id
+   * on screen for a registry row that came back with NO INK in its name. So a
+   * blank-named source wore its uuid in the table and was left out of the
+   * number under it — the blank-source-name class
+   * (admin-window/BUG-0152/54/56/58/59) reaching the gauge, and LESSONS 11's
+   * shape exactly.
+   *
+   * Graded against the owner rather than against a number typed here: the
+   * splits this gauge leaves for a surface to label by id, counted with
+   * `isSourceNamed` over the gauge's own registry rows, ARE `unnamedSources`.
+   * Both directions in one case (LESSONS 8): three of the four spellings of
+   * "no ink" must be counted, and a name with ink must not.
+   */
+  for (const blank of ["", "   ", "\u200b"]) {
+    it(`counts a source the registry names ${JSON.stringify(blank)} exactly as one with no row at all`, () => {
+      const blanked = sources().map((row) =>
+        row.source_id === SOURCE_A ? { ...row, source: blank } : row,
+      );
+      const gauge = aggregateStandingDisagreements(rows({ sources: blanked }));
+
+      // The population is unchanged — same three splits, same order — so the
+      // count below is over the same rows the baseline case counted.
+      expect(gauge.bySource.map((entry) => entry.sourceId)).toEqual(
+        standing.bySource.map((entry) => entry.sourceId),
+      );
+
+      // SOURCE_A's row came back and SOURCE_UNKNOWN's did not; both name
+      // nothing a person can read, so both are shown by their id…
+      const names = sourceNamesOf(blanked);
+      const wearingAnId = gauge.bySource.filter(
+        (split) => sourceLabel(names, split.sourceId) === split.sourceId,
+      );
+      expect(wearingAnId.map((split) => split.sourceId).sort()).toEqual(
+        [SOURCE_A, SOURCE_UNKNOWN].sort(),
+      );
+      expect(
+        gauge.bySource.every(
+          (split) => (split.source === null) === !isSourceNamed(names, split.sourceId),
+        ),
+      ).toBe(true);
+
+      // …and the gauge's number is that set's size, not the 1 a
+      // `=== undefined` test could see.
+      expect(gauge.unnamedSources).toBe(wearingAnId.length);
+
+      // The other direction, same fixture with the ink back: the named source
+      // keeps its registry name byte-identical and is not counted.
+      expect(standing.bySource[1].source).toBe("ticketmaster");
+      expect(standing.unnamedSources).toBe(1);
+    });
+  }
+
+  it("leaves a name with ink exactly as the registry wrote it, pads included", () => {
+    // A name this app finds odd is still a name: it travels byte-identical and
+    // is never trimmed, rewritten or swapped for the id (`lib/sources/names.ts`).
+    const padded = "  ticketmaster  ";
+    const gauge = aggregateStandingDisagreements(
+      rows({
+        sources: sources().map((row) =>
+          row.source_id === SOURCE_A ? { ...row, source: padded } : row,
+        ),
+      }),
+    );
+    expect(gauge.bySource[1].source).toBe(padded);
+    expect(gauge.unnamedSources).toBe(1);
   });
 
   it("ages contradictions from observed_at and names the oldest per source", () => {

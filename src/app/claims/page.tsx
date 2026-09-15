@@ -50,7 +50,7 @@ import {
 } from "@/lib/db/claims";
 import type { DbResult } from "@/lib/db/result";
 import { readSources } from "@/lib/db/sources";
-import { count, counted, duration } from "@/lib/format";
+import { count, counted, duration, pluralise } from "@/lib/format";
 import {
   claimsHref,
   claimsNarrowed,
@@ -130,7 +130,7 @@ import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
  *  - the LIST — ONE window read of the longest-waiting `CLAIM_WINDOW` claims,
  *    ordered in the DATABASE (`observed_at asc`, the instant the scraper
  *    handoff carries through the view), narrowed by `.eq()` at the query;
- *  - every COUNT — `head: true` requests `ROW_CAP` cannot reach: the total
+ *  - every COUNT — `countRead` requests `ROW_CAP` cannot reach: the total
  *    under this tab's narrowing, one per renderable bucket, and, where a facet
  *    is set, the unnarrowed population that tells "nothing here yet" from
  *    "nothing matched" (§4.3, admin-window/DEBT-0008, the shape `/queues`
@@ -678,10 +678,10 @@ const GAUGE_POPULATION_EYEBROW = "Window population";
  * admin-window/TASK-0071).
  *
  * The page prints per-bucket claim counts TWICE and reads them two different
- * ways. The bucket table's are `head: true, count: "exact"` counts of the
- * whole narrowing, one read per bucket; the gauge's come out of a scan capped
- * at `GAUGE_ROW_CAP` rows, which the window line above it states. Below
- * that cap the two agree; above it they diverge, with nothing on screen
+ * ways. The bucket table's are `countRead` counts — `{ count: "exact" }` over
+ * `limit 0` — of the whole narrowing, one read per bucket; the gauge's come
+ * out of a scan capped at `GAUGE_ROW_CAP` rows, which the window line above it
+ * states. Below that cap the two agree; above it they diverge, with nothing on screen
  * saying which is which. Staging held 877 claims on 2026-09-11, so this is
  * live within months rather than theoretical.
  *
@@ -777,7 +777,7 @@ const LIST_WINDOW = "claims";
  * it, refusal included (admin-window/BUG-0138).
  *
  * Nothing is computed from rows here, because the page holds none: `counts[i]`
- * is bucket `i`'s own `head: true` count under the current source/domain
+ * is bucket `i`'s own `countRead` count under the current source/domain
  * narrowing and `oldest[i]` is its own `limit 1` window read. A count that
  * refused travels as the refusal it is — never as a zero, which is the one
  * substitution §4.3 names (common violations row 2) — and the table renders it
@@ -1133,8 +1133,23 @@ function StandingGauge({
       <p className="type-body text-ink-secondary">
         Tier is the source&rsquo;s CURRENT tier, which drifts — not the tier the
         applied value won under.
+        {/* WHAT the gauge counted, said in the words that cover it. The
+            registry names no source in two ways an operator cannot tell apart
+            — no row, or a row with nothing readable in it — and
+            `unnamedSources` counts both, through the one owner of that
+            question (campaign admin-window/DEBT-0022). "Had no registry row"
+            named only the first, so over a blank-named row it would claim more
+            than the read established (LESSONS 2). These are the words
+            `/sources` already says about the same fact, not new ones
+            (admin-window/TASK-0060, LESSONS 5). */}
         {gauge.unnamedSources > 0
-          ? ` ${count(gauge.unnamedSources)} of these sources had no registry row in this read, so they are named by id.`
+          ? ` The registry gave ${count(
+              gauge.unnamedSources,
+            )} of these sources no name in this read, so ${pluralise(
+              gauge.unnamedSources,
+              "it is",
+              "they are",
+            )} named by id.`
           : ""}
       </p>
     </>
@@ -1377,12 +1392,12 @@ export default async function ClaimsPage({
       // Issued only where a facet of this URL can narrow the gauge at all, on
       // the same reasoning `population` is (admin-window/DEBT-0012): where
       // fact 1 is false no count could change a word this section renders. It
-      // is a bounded `head: true` count and never a row read — the shape
+      // is a bounded `countRead` count and never a row read — the shape
       // `lib/url/narrowing.ts` prescribes where fact 2 costs a query.
       gaugeStructural ? readClaimCountIn(gaugeBounds, populationFilter) : null,
       // THE ATTRIBUTION FACT, for the list, the bucket caption and the empty
       // card at once (admin-window/BUG-0192): the same read with the chip
-      // facets the URL carried dropped. A bounded `head: true` count, joined
+      // facets the URL carried dropped. A bounded `countRead` count, joined
       // to this same composition as a conditional leg — exactly as
       // `population` above is — so the page's read DEPTH is still one and
       // nothing is issued in a state where it could not change a word
@@ -1785,9 +1800,10 @@ export default async function ClaimsPage({
             <StateOf result={total} />
           ) : (
             <>
-              {/* These counts are one `head: true, count: "exact"` read per
-                  bucket over the WHOLE narrowing, and the gauge below prints
-                  the same five buckets out of a capped window. The eyebrow is
+              {/* These counts are one `countRead` read per bucket — `{ count:
+                  "exact" }` over `limit 0` — over the WHOLE narrowing, and the
+                  gauge below prints the same five buckets out of a capped
+                  window. The eyebrow is
                   what keeps the two from being read as the same kind of fact
                   once they diverge (admin-window/TASK-0071). It stands on the
                   refusal states too: it labels the TABLE, and claims nothing

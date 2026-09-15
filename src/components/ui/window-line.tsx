@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { absoluteUtc, count } from "@/lib/format";
+import { absoluteUtc, count, pluralise } from "@/lib/format";
 
 /**
  * What kind of database object a window ran over — the word a sentence that
@@ -510,6 +510,54 @@ function population(rows: string, scope: readonly string[] | null): string {
 }
 
 /**
+ * The SINGULAR of a plural noun a caller handed this file — the inverse of the
+ * one rule `counted` (`lib/format.ts`) already relies on in the other
+ * direction.
+ *
+ * `counted(n, "source")` spells its plural `source + "s"` "because every noun
+ * this app counts is regular"; read backwards, that is this. A plural that is
+ * not the regular `-s` form of anything — `"ss"`, `"us"`, `"is"`, `"ies"`, or
+ * a word with no `s` at all — is handed BACK UNCHANGED, because guessing
+ * "entitie" out of "entities" is the same bug `counted`'s doc refuses to write
+ * forwards. No noun that reaches the phrases below is irregular today
+ * (`"claims"`, `"events"`), and an irregular one arriving here reads as it
+ * always has rather than as a word this file invented.
+ *
+ * It is a spelling rule and not an agreement rule: WHICH form a quantity takes
+ * is `pluralise`'s, the app's one answer to that question.
+ */
+function singularNoun(plural: string): string {
+  if (!plural.endsWith("s")) return plural;
+  if (/(?:ss|us|is|ies)$/.test(plural)) return plural;
+  return plural.slice(0, -1);
+}
+
+/**
+ * A COUNT WEARING THE POPULATION IT COUNTED, agreeing with it — composed here,
+ * once, and never by the call sites that pass the noun
+ * (campaign admin-window/DEBT-0022, admin-window/BUG-0197 residual).
+ *
+ * The callers of this file hand it ONE noun, in the plural (`rows: "claims"`),
+ * and the clauses below put a count in front of it. Over a window holding one
+ * row that read "1 claims in all" — the defect `counted` removed from the
+ * app's gauge cards (admin-window/BUG-0046) reaching the window line through a
+ * noun that arrives from outside. The agreement belongs where the phrase is
+ * composed, so a seventh call site cannot get it wrong, and the WORDS stay the
+ * surface's: nothing here rewrites a noun, and a count of 0 or of 2 renders
+ * exactly the plural the caller wrote.
+ *
+ * The narrowing rides OUTSIDE the noun, as it does everywhere in this file:
+ * "1 claim in the events domain", never "1 claims in the events domain".
+ */
+function countedPopulation(
+  held: number,
+  rows: string,
+  scope: readonly string[] | null,
+): string {
+  return `${count(held)} ${population(pluralise(held, singularNoun(rows), rows), scope)}`;
+}
+
+/**
  * What a DRAWN window says about its own bottom when it did NOT fill its cap —
  * the other half of quality bar 13 (admin-window/BUG-0109).
  *
@@ -798,13 +846,18 @@ export function WindowLine(
          * OPTIONAL**, and that is a fact about this arm's other call sites
          * rather than a licence to default it. Every DRAWN call site was
          * converted when `scope` landed, so that one is required; the scan arm
-         * has six others (`/queues`, `/cycles` x2, `/review`, `/sources` x2)
-         * that admin-window/BUG-0163 may not touch — its criterion 4 pins
-         * every other page's window line as admin-window/BUG-0160 left it. Two
-         * of those six — `/sources`' trend and rejection lines, whose reads
-         * carry `readAwaitingRowTrend({ filter })` — are the same defect one
-         * page over, unfixed here and reported in this ticket's handoff rather
-         * than silently changed.
+         * was converted surface by surface, as each surface's read was given a
+         * narrowing to declare. `/claims`' two lines pass `narrowing.scope`;
+         * `/sources`' two — the awaiting-row trend and the settled-values
+         * gauge — pass `scopeOf(<the read's own options>)`, read off the SAME
+         * object their read was handed, so the filter a read carried and the
+         * words its line says cannot come to disagree
+         * (admin-window/BUG-0194, admin-window/TASK-0073).
+         *
+         * So an omission HERE says one thing only: that read carried no
+         * narrowing. It is never a call site's licence to keep a narrowing to
+         * itself — a scan narrowed at the query is a different population from
+         * the object its sentence names, whichever page it is on.
          */
         scope?: readonly string[] | null;
         /**
@@ -933,12 +986,19 @@ export function WindowLine(
     // ("no screen claims a mark it did not draw"). An unfiltered window states
     // the same count over the population the window itself names: the whole
     // object where nothing narrowed it, the tab's bucket where the tab did.
+    //
+    // AGREEMENT is `countedPopulation`'s, in both spellings and in the verb
+    // that follows one of them: over a window holding a single row this said
+    // "1 claims in all" and "1 claims match these filters"
+    // (admin-window/BUG-0197 residual, campaign admin-window/DEBT-0022). The
+    // words are unchanged at every other count.
     const counted = narrows(info.scope, NARROWED_BY_FILTERS)
-      ? `${count(info.held)} ${population(
+      ? `${countedPopulation(
+          info.held,
           shows.rows,
           besides(info.scope, NARROWED_BY_FILTERS),
-        )} match these filters`
-      : `${count(info.held)} ${of} in all`;
+        )} ${pluralise(info.held, "matches", "match")} these filters`
+      : `${countedPopulation(info.held, shows.rows, info.scope)} in all`;
     // The rows that are below, from the rows this window DREW and never from
     // the cap (admin-window/BUG-0183). A window that states none names none:
     // there is no number here a read established, so the clause that would
@@ -1078,9 +1138,22 @@ export function WindowLine(
   return (
     <WindowParagraph gauge={props.gauge} window={info}>
       The newest {catalogOf} by arrival, newest first.
+      {/* The same agreement rule the matched arm follows, for the same reason:
+          the noun arrives from the caller and the count is put in front of it
+          here, so a catalog window holding one row said "1 events are on
+          screen" (campaign admin-window/DEBT-0022). The second mention of the
+          population is not counted and stays the plural the caller wrote. */}
       {info.truncated
-        ? ` ${count(drawnNow)} ${catalogOf} are on screen, and ${catalogOf} that arrived before them are not shown.`
-        : ` ${count(drawnNow)} ${catalogOf} are on screen, and ${THE_READ_FOUND_NO_MORE}`}
+        ? ` ${countedPopulation(drawnNow, shows.rows, info.scope)} ${pluralise(
+            drawnNow,
+            "is",
+            "are",
+          )} on screen, and ${catalogOf} that arrived before them are not shown.`
+        : ` ${countedPopulation(drawnNow, shows.rows, info.scope)} ${pluralise(
+            drawnNow,
+            "is",
+            "are",
+          )} on screen, and ${THE_READ_FOUND_NO_MORE}`}
     </WindowParagraph>
   );
 }

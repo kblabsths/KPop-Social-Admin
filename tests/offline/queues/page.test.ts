@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { T } from "@/lib/db/tables";
-import { EM_DASH, absoluteUtc } from "@/lib/format";
+import { EM_DASH, absoluteUtc, counted } from "@/lib/format";
 import { disagreeingCounts, render, uppercasedIdentifiers } from "../ui/markup";
 import { readNumber, stateOf as surfaceStateOf } from "../../live/parity";
 import {
@@ -768,6 +768,39 @@ describe("the queue-health gauge", () => {
       );
     }
   });
+
+  /**
+   * **A COUNT OF ONE READS AS A SINGULAR in the fold sub-line**
+   * (campaign admin-window/DEBT-0022, the /queues half of the phrase the
+   * window-line primitive composes one page over).
+   *
+   * Both figures of that sub-line wear their noun through `counted`
+   * (`lib/format.ts`), which is this app's ONE answer to which form a quantity
+   * takes — the rule admin-window/BUG-0046 put there after two pages said
+   * "1 sources holding one" and "of 1 items read here". This grades the PAGE
+   * rather than the helper: a sub-line composed with `count(n) + " folds"`
+   * would pass every `counted` case in `tests/offline/format.test.ts` and
+   * still say "1 folds in all" here.
+   *
+   * The fixture is ONE item in one queue, so `items` is 1 and `folds` is
+   * whatever that row was folded — which is how 0, 1 and 2 are reachable over
+   * the same population.
+   */
+  for (const folds of [0, 1, 2]) {
+    it(`says ${counted(folds, "fold")} in all over an item folded ${folds} times`, async () => {
+      const one = { ...matching({ queue: "data_conflict" })[0], folded_count: folds };
+      const markup = await renderQueues({ [T.reviewItems]: tableHolding([one]) });
+      const block = cheerio.load(markup)(`[data-gauge-queue="${one.queue}"]`);
+      expect(block.length, "the queue block did not render").toBe(1);
+      const text = block.text().replace(/\s+/g, " ").trim();
+
+      // Non-vacuity: this really is the sub-line under test, said once.
+      expect(text.split("in all").length - 1, text).toBe(1);
+      expect(text, text).toContain(`${counted(folds, "fold")} in all`);
+      // Its sibling figure obeys the same rule on the same line: one item read.
+      expect(text, text).toContain(`of ${counted(1, "item")} read here`);
+    });
+  }
 
   it("renders the age distribution and the weekly series", async () => {
     const markup = await renderQueues(healthyScript());

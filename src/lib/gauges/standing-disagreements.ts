@@ -22,6 +22,7 @@ import {
   selectPendingClaims,
   type PendingClaimsRows,
 } from "./pending-claims";
+import { isSourceNamed, sourceLabel, sourceNamesOf } from "../sources/names";
 
 /**
  * Gauge 5 of 6 — **standing disagreements**, on `/claims` (standing tab).
@@ -55,8 +56,17 @@ export interface StandingDisagreementsRows {
 export interface SourceSplit {
   sourceId: string;
   /**
-   * The source's name, or `null` when the `sources` read returned no row for
-   * it — an id without a name is reported as an id, never as a guessed name.
+   * The source's name as the registry wrote it, or `null` where the registry
+   * NAMED NOTHING — an id without a name is reported as an id, never as a
+   * guessed name.
+   *
+   * There are two ways for the registry to name nothing and they are one fact
+   * here (campaign admin-window/DEBT-0022): the `sources` read returned no row
+   * for this id, or it returned one whose name has no ink in it. Which of the
+   * two happened is invisible to an operator — both put a uuid where a name
+   * goes — so this field answers neither on its own: it carries
+   * `lib/sources/names.ts`' reading, the same one `sourceLabel` renders these
+   * rows by and the same one `unnamedSources` counts.
    */
   source: string | null;
   /** `sources.tier` — the source's CURRENT tier, which drifts (trap 5). */
@@ -81,7 +91,17 @@ export interface StandingDisagreements {
   age: Spread;
   /** Per source, most contradictions first. */
   bySource: SourceSplit[];
-  /** Sources whose `sources` row did not come back — their names are null above. */
+  /**
+   * Sources the registry named nothing for, so they are shown by their id —
+   * their `source` is `null` above.
+   *
+   * Counted through `isSourceNamed`, which is `sourceLabel`'s own reading of
+   * the registry's answer (`lib/sources/names.ts`), so this number and the
+   * rows a surface labels by id are ONE question answered once
+   * (campaign admin-window/DEBT-0022, admin-window/TASK-0060, LESSONS 11).
+   * A gauge that spelled its own `=== undefined` test saw only one of the two
+   * ways the registry names nothing.
+   */
   unnamedSources: number;
 }
 
@@ -119,6 +139,12 @@ export function aggregateStandingDisagreements(
   const standing = selectStanding(input.claims);
   const observed = indexBy(observations, (row) => row.observation_id);
   const sourceById = indexBy(input.sources, (row) => row.source_id);
+  // WHAT THE REGISTRY CALLS EACH SOURCE, read through the one owner of that
+  // question (`lib/sources/names.ts`). The splits below are labelled by
+  // `sourceLabel` on every surface that draws them, so the gauge asks the same
+  // map rather than spelling a second test of nameability beside it
+  // (campaign admin-window/DEBT-0022).
+  const names = sourceNamesOf(input.sources);
 
   const ageOf = (claim: PendingClaimRow): number | null => {
     const observation = observed.get(claim.observation_id);
@@ -131,7 +157,14 @@ export function aggregateStandingDisagreements(
   const bySource = [...groupBy(standing, (claim) => claim.source_id).entries()]
     .map(([sourceId, group]) => {
       const source = sourceById.get(sourceId);
-      if (source === undefined) unnamedSources += 1;
+      // "Did the registry name this source?" — asked of `isSourceNamed` and
+      // not of `source === undefined`, because a row that came back with no
+      // ink in its name is the same fact to an operator as no row at all, and
+      // is labelled by its id either way. Spelling the test here counted only
+      // one of the two, which is the blank-source-name class
+      // (admin-window/BUG-0152/54/56/58/59) reaching this gauge.
+      const named = isSourceNamed(names, sourceId);
+      if (!named) unnamedSources += 1;
 
       let oldestObservedAt: string | null = null;
       let oldest = Infinity;
@@ -147,7 +180,9 @@ export function aggregateStandingDisagreements(
 
       return {
         sourceId,
-        source: source?.source ?? null,
+        // The registry's name, byte-identical, where there is one to give;
+        // `null` where there is not, which is what puts the id on screen.
+        source: named ? sourceLabel(names, sourceId) : null,
         tier: source?.tier ?? null,
         lifecycle: source?.lifecycle ?? null,
         claims: group.length,

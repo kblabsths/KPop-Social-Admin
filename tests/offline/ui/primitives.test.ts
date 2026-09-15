@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/window-line";
 import { DroppedParamsLine } from "@/components/ui/dropped-params";
 import type { AccountSegment } from "@/lib/account/authored";
-import { EM_DASH, absoluteUtc, count, relativeAge } from "@/lib/format";
+import { EM_DASH, absoluteUtc, count, counted, relativeAge } from "@/lib/format";
 import { droppedParams } from "@/lib/url/dropped-params";
 import { codeLinesIn, sourceFiles, sourceText } from "../source-tree";
 
@@ -1273,6 +1273,93 @@ describe("WindowLine", () => {
     ).toBe(
       filtersOnly.replace(`${matched.rows} match`, `${matched.rows} ${NARROWED} match`),
     );
+  });
+
+  /**
+   * **A COUNT OF ONE WEARS A SINGULAR NOUN, wherever this file puts a count in
+   * front of the population it counted** (campaign admin-window/DEBT-0022, the
+   * residual admin-window/BUG-0197 left).
+   *
+   * The noun arrives from the caller — one word, in the plural — and the
+   * clauses here put a figure in front of it, so a window holding a single row
+   * read "1 claims in all", "1 claims match these filters" and "1 events are
+   * on screen". That is admin-window/BUG-0046's defect ("1 sources holding
+   * one") reaching the window line through a noun composed outside `counted`,
+   * and the agreement belongs where the phrase is composed rather than with
+   * the six call sites passing a noun.
+   *
+   * Graded against `counted` itself — the app's ONE answer to which form a
+   * quantity takes (`lib/format.ts`) — so no copy is pinned here and a case
+   * cannot pass by agreeing with a spelling this test typed out. Three counts
+   * each way: 0 and 2 must read exactly as they read before, and 1 is the one
+   * that moved.
+   */
+  describe("a count and the population it counted agree", () => {
+    /** A window whose two reads agree and whose set has ENDED — the arm that
+     *  states the count and the rows together, at any size. */
+    const held = (n: number, rest: Partial<DrawnWindow> = {}): DrawnWindow => ({
+      ...DRAWN,
+      held: n,
+      drawn: n,
+      truncated: false,
+      continues: true,
+      ...rest,
+    });
+
+    for (const n of [0, 1, 2]) {
+      it(`says ${counted(n, "claim")} in all, never a plural over one`, () => {
+        const text = textOf(
+          drawn({ of: "matched", lede: "Oldest first.", rows: "claims" }, held(n)),
+        );
+        // Non-vacuity: this really is the arm that states the count.
+        expect(text, String(n)).toContain(" in all");
+        expect(text, String(n)).toContain(`${counted(n, "claim")} in all`);
+      });
+
+      it(`says ${counted(n, "claim")} under the filters, with a verb that agrees`, () => {
+        const text = textOf(
+          drawn({ of: "matched", lede: "Oldest first.", rows: "claims" }, held(n, {
+            scope: [NARROWED_BY_FILTERS],
+          })),
+        );
+        expect(text, String(n)).toContain(
+          `${counted(n, "claim")} ${n === 1 ? "matches" : "match"} these filters`,
+        );
+      });
+
+      it(`says ${counted(n, "event")} on screen, with a verb that agrees`, () => {
+        const text = textOf(drawn({ of: "catalog", rows: "events" }, held(n)));
+        expect(text, String(n)).toContain(
+          `${counted(n, "event")} ${n === 1 ? "is" : "are"} on screen`,
+        );
+      });
+    }
+
+    it("puts the narrowing OUTSIDE the noun, so the noun still agrees", () => {
+      // The scope words ride after the population everywhere in this file, so
+      // a singular must not be made plural by the phrase that follows it.
+      const text = textOf(
+        drawn(
+          { of: "matched", lede: "Oldest first.", rows: "claims" },
+          held(1, { scope: [NARROWED] }),
+        ),
+      );
+      expect(text).toContain(`${counted(1, "claim")} ${NARROWED} in all`);
+    });
+
+    it("rewrites no noun it cannot singularise regularly", () => {
+      // The inverse of `counted`'s own default (`singular + "s"`) and nothing
+      // more: a plural that is not the regular form is handed back as the
+      // caller wrote it, because inventing "entitie" out of "entities" is the
+      // bug `counted`'s doc refuses to write forwards. Both directions in one
+      // case (LESSONS 8).
+      const irregular = textOf(
+        drawn({ of: "catalog", rows: "entities" }, held(1)),
+      );
+      expect(irregular).toContain("1 entities is on screen");
+      const regular = textOf(drawn({ of: "catalog", rows: "events" }, held(1)));
+      expect(regular).toContain("1 event is on screen");
+    });
   });
 
   it("asserts the filters only when the filters are what narrowed the read (admin-window/BUG-0123)", () => {
