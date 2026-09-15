@@ -78,7 +78,26 @@ export type StubMode =
    * that is not a PostgREST answer"), and the bar is the same for it: a
    * refusal naming the object, never a zero, never an empty card.
    */
-  | "foreign";
+  | "foreign"
+  /**
+   * The host answers **200 with a JSON ARRAY whose elements are not rows of
+   * this table** (QA, admin-window/BUG-0227 attack): a gateway or proxy
+   * answering its own JSON *list*, or a `SUPABASE_URL` whose path lands on
+   * something that answers arrays.
+   *
+   * The sibling of `foreign`, and the shape its fix does NOT cover: the answer
+   * IS an array, so `isRowSet` (`src/lib/db/result.ts`) passes it through as
+   * `Row[]`, and the first property access in the render throws on an element
+   * that has no such property. Measured over real HTTP against a production
+   * build 2026-09-15 with this body and with `[[{"claim_id":"c1"}]]`,
+   * `["a","b"]`, `[null,null]` and `[{}]` alike: HTTP 500 and Next's error
+   * shell on `/`, `/claims`, `/browse` and `/cycles`, the server logging
+   * `TypeError: Cannot read properties of undefined (reading 'trim')`.
+   *
+   * The bar is the same one `foreign` is held to: whatever a host answers,
+   * every surface ANSWERS — a refusal naming the object, never a 500.
+   */
+  | "alien";
 
 export interface PostgrestStub {
   /** `http://127.0.0.1:<port>` — what `SUPABASE_URL` is set to. */
@@ -108,6 +127,11 @@ function bodyFor(
   mode: StubMode,
   table: string,
 ): { status: number; body: string; headers?: Record<string, string> } {
+  if (mode === "alien") {
+    // An array, so the row-set guard passes it — of things that are not rows
+    // of this table, so the render throws on the first column it reads.
+    return { status: 200, body: JSON.stringify([{ message: "no upstream" }]) };
+  }
   if (mode === "foreign") {
     // Not a row set, not an error document: something else's JSON, answered
     // with a success status. The table name is not read — nothing here is

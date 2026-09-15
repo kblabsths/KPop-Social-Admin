@@ -320,6 +320,54 @@ describe("a database that answers but holds none of the ecosystem tables", () =>
     }
   });
 
+  it.fails("refuses every panel against a host answering 200 with an ARRAY that is not this table's rows", async () => {
+    // THE SAME BAR ONE SHAPE FURTHER (QA attack on admin-window/BUG-0227):
+    // "Whatever a host answers ... the operator reads the app's refusal naming
+    // pending_claims (or review_items, or sources)". BUG-0227 made a row-set
+    // read ask whether an ARRAY arrived; this mode answers WITH an array — of
+    // things that are not rows of this table — so `isRowSet` passes it through
+    // as `Row[]` and the first column the render reads throws.
+    //
+    // Measured over real HTTP against a production build 2026-09-15, with
+    // `[{"message":"no upstream"}]` and with `[[{"claim_id":"c1"}]]`,
+    // `["a","b"]`, `[null,null]`, `[{}]` and `[{"foo":1}]` alike: HTTP 500 and
+    // Next's error shell on `/`, `/claims`, `/browse` and `/cycles`, the
+    // server logging `TypeError: Cannot read properties of undefined (reading
+    // 'trim')`; `[null,null]` took all six routes down.
+    //
+    // PIN (QA, admin-window ticket BUG-0228): marked an EXPECTED FAILURE
+    // because it is RED on the landed tree. THE FIX FLIPS THIS MARKER back to
+    // `it`, and then `"alien"` joins EVERY_MODE above so the call-site sweep
+    // covers it like every other mode.
+    stub.setMode("alien");
+
+    for (const route of ["/", "/browse", "/cycles"]) {
+      await pageOf(`${route}?probe=alien`, cookie);
+    }
+
+    for (const { route, names } of GRADED_SURFACES) {
+      const markup = await pageOf(`${route}?probe=alien`, cookie);
+      const $ = cheerio.load(markup);
+      const states = statesOf(markup);
+
+      expect(states.length, `${route} rendered no state at all`).toBeGreaterThan(0);
+      expect(
+        [...new Set(states.map((card) => card.state))].sort(),
+        `${route} rendered a state other than a refusal`,
+      ).toEqual(["error"]);
+      expect(
+        states.some((card) => card.text.includes(names)),
+        `${route} named no "${names}"`,
+      ).toBe(true);
+      for (const block of $("[data-figures]").toArray()) {
+        expect(
+          $(block).text(),
+          `${route} published a figure over a read that failed`,
+        ).not.toMatch(/\d/);
+      }
+    }
+  });
+
   it("still draws the empty card for a table that is really there and really empty", async () => {
     // The control arm (criterion 3), and the one that proves the fix did not
     // turn "no rows" into "refused": the same wire, a real 200 carrying `[]`
