@@ -259,9 +259,10 @@ export function claimsInBucket(bucket: string): PendingClaimRow[] {
  * admin-window/BUG-0138).
  *
  * The Claims page issues up to twelve reads of this one view in a single
- * `Promise.all` — one window, six `head: true` counts and five `limit 1`
- * seeks. A fixed scripted response answers all twelve with one answer, so
- * every count on the page would read the same number and a test asserting on
+ * `Promise.all` — one window, six `countRead` counts — `{ count: "exact" }`
+ * over `limit 0` — and five `limit 1` seeks. A fixed scripted response answers
+ * all twelve with one answer, so every count on the page would read the same
+ * number and a test asserting on
  * them would be asserting on the script; a queue would pin the suite to the
  * order the promises happen to be built in, which is not a property of the
  * product. So this reads the chain the query built — `.select()`, `.eq()`,

@@ -171,8 +171,9 @@ function idsOf(items: ReviewItemRow[]): string[] {
  * (campaign admin-window/BUG-0135).
  *
  * A faceted URL makes up to FIVE reads of that one table: the queue lists' own
- * row read, the health gauge's window, then one HEAD count per COUNTED shape in
- * spec §6's order — the counts each block's population is summed from. The stub
+ * row read, the health gauge's window, then one `countRead` count —
+ * `{ count: "exact" }` over `limit 0` — per COUNTED shape in spec §6's order,
+ * the counts each block's population is summed from. The stub
  * answers every read of a table from one script entry unless the entry is a
  * QUEUE, so a single response would hand the same count to all five and a block
  * whose queue is empty would read a population it does not have.
@@ -206,8 +207,10 @@ function tableHolding(
     { data: rows, count: rows.length },
     { data: rows, count: rows.length },
     ...counted.map((shape) => ({
-      // A `countRead` — `{ count: "exact" }` over `limit 0` — returns no
-      // rows at all, only the count.
+      // A `countRead` — `{ count: "exact" }` over `limit 0` — brings back no
+      // rows; on the wire that is an empty array, with the count on
+      // `Content-Range`. `readCount` reads only `count` and `error`, so
+      // `data: null` stands in for that empty answer here.
       data: null,
       count: rows.filter((row) => shapeName(row) === shape).length,
     })),
@@ -1521,8 +1524,8 @@ describe("a zero that a filter produced", () => {
 describe("when only the POPULATION leg refuses", () => {
   /**
    * Leg 1 — the URL's own read — is COMPLETE, the gauge's window is complete,
-   * and every per-shape HEAD count refuses. The last scripted response answers
-   * every read past it, so all three count legs refuse together.
+   * and every per-shape `countRead` count refuses. The last scripted response
+   * answers every read past it, so all three count legs refuse together.
    *
    * The defect this describes: that refusal used to be returned as the whole
    * read's, so every faceted URL rendered the error state and no rows at all —
@@ -2183,8 +2186,9 @@ describe("each tab reads only what it renders", () => {
     // What the fix COSTS, pinned as a number (admin-window/BUG-0135). The bare
     // `/queues` is unchanged: the queue lists' complete read IS its own
     // population, and the health gauge's window is the second read. A faceted
-    // URL adds one HEAD count per shape — reads that return no rows, which is
-    // why no row cap can refuse them.
+    // URL adds one `countRead` count per shape — `{ count: "exact" }` over
+    // `limit 0`, reads that bring back no rows, which is why no row cap can
+    // refuse them.
     //
     // And WHICH counts, not merely how many (campaign admin-window/DEBT-0012):
     // the read skips the count of a kind the URL does not structurally narrow,

@@ -32,8 +32,9 @@ import { codeText, sourceFiles } from "../source-tree";
  * admin-window/TASK-0012, rebuilt by admin-window/BUG-0138).
  *
  * What is asserted here rather than through the page: the reads are a WINDOW
- * and a set of head COUNTS (ARCHITECTURE.md §4.3) rather than a transport of
- * the population; the parked bucket is excluded in every query AND in the
+ * and a set of `countRead` COUNTS (ARCHITECTURE.md §4.3) rather than a
+ * transport of the population; the parked bucket is excluded in every query
+ * AND in the
  * predicate, so the returned set is decided by one rule whether or not the
  * server narrowed (§6 trap 4); the order is the DATABASE's; and every failure
  * arrives as a `DbResult` naming the object it was reading.
@@ -380,8 +381,13 @@ describe("the claim count read", () => {
   });
 
   it("treats a count the database did not give as a REFUSAL, never as a zero", async () => {
-    // Exactly what a select written without `{ head: true, count: "exact" }`
-    // comes back with (ARCHITECTURE.md §4.3, common violations row 2).
+    // An answer this app cannot grade: no error beside no count, whatever
+    // produced it — the one rule `readCount` refuses through
+    // (`unreadableAnswer`, src/lib/db/result.ts). Not only a select that forgot
+    // `{ count: "exact" }`, which `countRead` makes unspellable: a HOST
+    // answering 404 with zero bytes lands here too, because supabase-js
+    // rewrites that answer to `error: null, count: null`
+    // (admin-window/BUG-0224, ARCHITECTURE.md §4.3).
     const result = await readClaimCount(
       {},
       scripted({
