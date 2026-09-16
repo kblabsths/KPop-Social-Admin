@@ -10,3 +10,5 @@ When /sources is narrowed to one source, the summary line ("<source> | N claims 
 
 ## 8 — the two data facts stay (Ben: "lets live with it")
 The test-harness NOTE paragraph on /sources and the two 2027-dated resolver fixtures on /browse stay as they are on staging. No ticket; record as accepted.
+
+**Update, 2026-09-16 (Ben): the number is CONFIRMED as proposed** — stale = no cycle finished in the last 1 hour (four missed 15-minute runs), stated in words, one named constant. Ben: "let's go with your proposal and if I need to change it later i will."
