@@ -12,30 +12,16 @@ import {
 } from "@/components/ui";
 import { EM_DASH } from "@/lib/format";
 import {
-  statementTimeout,
-  stubClient,
-  unparseableFailure,
-} from "../fixtures/stub-client";
-import {
   MarkupReadError,
-  ParityCountError,
-  ParityError,
-  STAGING_MOVED,
   StateMismatchError,
-  assertParity,
   assertState,
-  countOrAbsent,
-  countRows,
-  exactCount,
-  gradeSurface,
   oneEach,
   pageStates,
   readNumber,
   stateOf,
   surfaceHooks,
-  whileStill,
-} from "../live/parity";
-import { codeLines, repoRoot } from "./source-tree";
+} from "../fixtures/surface-state";
+import { codeLinesIn, repoRoot } from "./source-tree";
 import {
   LiveGuardError,
   declaredStagingTarget,
@@ -43,22 +29,31 @@ import {
   resolveStagingTarget,
 } from "../live/staging-target";
 import { RESET_CALLER_NAME } from "../walk/reset-sandbox.mjs";
-import { SweepError, createSweep, withSweep } from "../live/sweep";
 import { h, render } from "./ui/markup";
 
 /**
- * The live harness, proved OFFLINE (campaign admin-window, TASK-0003).
+ * The live harness, proved OFFLINE (campaign admin-window, TASK-0003), and
+ * the rules the live tier lives under (Ben's testing rules of 2026-09-16,
+ * installed 2026-10-16 — README "Testing", ARCHITECTURE.md §10).
  *
  * Everything here runs in the default suite, with no database and no
  * `STAGING_*` name in the environment — which is the point: the refusal path
- * is the behavior that matters most and it must not need staging to be
- * testable. `tests/live/staging-target.ts`, `parity.ts` and `sweep.ts` are
- * pure or client-injected for exactly that reason; `tests/live/setup.ts` is
- * the one module with side effects, and the last case here runs the real
- * `npm run test:live` in a child process to prove the wiring.
+ * is the behaviour that matters most and it must not need staging to be
+ * testable. `tests/live/staging-target.ts` is pure for exactly that reason;
+ * `tests/live/setup.ts` is the one module with side effects, and the
+ * `npm run test:live` case runs the real thing in a child process to prove
+ * the wiring.
+ *
+ * The markup readers the page twins grade a render with (`stateOf`,
+ * `surfaceHooks`, `readNumber` — `tests/fixtures/surface-state.ts`) are
+ * pinned here too, against markup rendered from the real primitives.
+ *
+ * The last section is the guard over `tests/live/` itself: one read-only
+ * contract smoke, no write-shaped call, every case saying why it is live.
  *
  * No value of any credential appears in this file. The names are the subject.
  */
+
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -435,7 +430,7 @@ describe("whose refusal is it", () => {
   });
 });
 
-describe("the parity mechanism", () => {
+describe("readNumber, the figure a label stands over", () => {
   const card = (label: string, value: number | string | null) =>
     render(h(StatCard, { label, value }));
 
@@ -470,216 +465,6 @@ describe("the parity mechanism", () => {
     const markup =
       card("Open decisions", 7) + card("Open decisions", 9);
     expect(() => readNumber(markup, "Open decisions")).toThrow(MarkupReadError);
-  });
-
-  it("passes when the rendered number equals the independent count", async () => {
-    await expect(
-      assertParity({
-        markup: card("Open decisions", 7),
-        label: "Open decisions",
-        expected: () => 7,
-      }),
-    ).resolves.toBe(7);
-  });
-
-  it("fails naming both numbers when they disagree", async () => {
-    const failure = await assertParity({
-      markup: card("Open decisions", 7),
-      label: "Open decisions",
-      expected: async () => 8,
-    }).catch((error: unknown) => error);
-
-    expect(failure).toBeInstanceOf(ParityError);
-    expect((failure as ParityError).rendered).toBe(7);
-    expect((failure as ParityError).expected).toBe(8);
-  });
-
-  it("throws rather than counting zero when the test's own query errors", async () => {
-    const db = stubClient({
-      review_items: { error: { code: "42501", message: "permission denied" } },
-    }).asSupabaseClient();
-
-    await expect(
-      countRows(() =>
-        db.from("review_items").select("*", { head: true, count: "exact" }),
-      ),
-    ).rejects.toThrow(/permission denied/);
-  });
-
-  it("refuses to build its own client when the setup did not run", async () => {
-    vi.resetModules();
-    vi.stubEnv("SUPABASE_URL", "");
-    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "");
-    const fresh = await import("../live/parity");
-    expect(() => fresh.independentClient()).toThrow(/SUPABASE_URL/);
-  });
-
-  it("returns zero only when the database actually counted zero", async () => {
-    // "Only" is the whole property: a counted zero resolves, and an answer
-    // that carried no count at all does NOT resolve to the same zero.
-    const counted = stubClient({ review_items: { count: 0 } }).asSupabaseClient();
-    await expect(
-      countRows(() =>
-        counted.from("review_items").select("*", { head: true, count: "exact" }),
-      ),
-    ).resolves.toBe(0);
-
-    const uncounted = stubClient({ review_items: {} }).asSupabaseClient();
-    await expect(
-      countRows(() =>
-        uncounted.from("review_items").select("*", { head: true, count: "exact" }),
-      ),
-    ).rejects.toThrow(ParityCountError);
-  });
-
-  // Regression guard for admin-window/BUG-0007.
-  it("refuses a count the database never returned, instead of fabricating zero", async () => {
-    // The query a page ticket writes when it forgets `count: "exact"`:
-    // PostgREST answers with no error AND no count. `countRows` promises the
-    // opposite of this ("a parity test must never quietly compare against 0
-    // because its own query broke", tests/live/parity.ts) — and the whole
-    // mechanism is worthless if the second path can be a fabricated zero.
-    const db = stubClient({ review_items: {} }).asSupabaseClient();
-
-    await expect(
-      countRows(() => db.from("review_items").select("*")),
-    ).rejects.toThrow();
-  });
-
-  // The same defect seen from the mechanism (admin-window/BUG-0007).
-  it("does not pass parity by comparing a page's zero against a count it never got", async () => {
-    const db = stubClient({ review_items: {} }).asSupabaseClient();
-
-    const outcome = await assertParity({
-      markup: card("Open decisions", 0),
-      label: "Open decisions",
-      expected: () => countRows(() => db.from("review_items").select("*")),
-    }).then(
-      () => "parity passed",
-      () => "refused",
-    );
-
-    expect(outcome).toBe("refused");
-  });
-});
-
-describe("the sweep", () => {
-  it("puts back the values it recorded", async () => {
-    const stub = stubClient({ events: { data: { title: "before" } } });
-    const db = stub.asSupabaseClient();
-
-    await withSweep(db, async (sweep) => {
-      await sweep.restore("events", { id: 1 }, ["title"]);
-      expect(sweep.pending).toBe(1);
-    });
-
-    const update = stub.calls.find((call) =>
-      call.steps.some((step) => step.method === "update"),
-    );
-    expect(update?.table).toBe("events");
-    expect(
-      update?.steps.find((step) => step.method === "update")?.args[0],
-    ).toEqual({ title: "before" });
-    expect(
-      update?.steps.find((step) => step.method === "match")?.args[0],
-    ).toEqual({ id: 1 });
-  });
-
-  it("sweeps even when the body fails, and still reports the body's failure", async () => {
-    const stub = stubClient({ events: { data: { title: "before" } } });
-    const db = stub.asSupabaseClient();
-    const boom = new Error("assertion failed mid-test");
-
-    await expect(
-      withSweep(db, async (sweep) => {
-        await sweep.restore("events", { id: 1 }, ["title"]);
-        throw boom;
-      }),
-    ).rejects.toBe(boom);
-
-    expect(
-      stub.calls.some((call) =>
-        call.steps.some((step) => step.method === "update"),
-      ),
-    ).toBe(true);
-  });
-
-  it("deletes a row that did not exist when it was recorded", async () => {
-    const stub = stubClient({ verdicts: { data: null } });
-    const db = stub.asSupabaseClient();
-
-    await withSweep(db, async (sweep) => {
-      await sweep.restore("verdicts", { id: 9 }, ["kind"]);
-    });
-
-    expect(
-      stub.calls.some((call) =>
-        call.steps.some((step) => step.method === "delete"),
-      ),
-    ).toBe(true);
-  });
-
-  it("deletes what `remove` recorded", async () => {
-    const stub = stubClient({ verdicts: { data: null } });
-    const db = stub.asSupabaseClient();
-
-    await withSweep(db, async (sweep) => {
-      sweep.remove("verdicts", { id: 9 });
-      expect(sweep.pending).toBe(1);
-    });
-
-    const deletion = stub.calls.find((call) =>
-      call.steps.some((step) => step.method === "delete"),
-    );
-    expect(deletion?.table).toBe("verdicts");
-  });
-
-  it("undoes newest first", async () => {
-    const stub = stubClient({ verdicts: { data: null } });
-    const sweep = createSweep(stub.asSupabaseClient());
-    sweep.remove("verdicts", { id: 1 });
-    sweep.remove("verdicts", { id: 2 });
-    await sweep.run();
-
-    const ids = stub.calls
-      .filter((call) => call.steps.some((step) => step.method === "delete"))
-      .map(
-        (call) =>
-          (call.steps.find((step) => step.method === "match")?.args[0] as {
-            id: number;
-          }).id,
-      );
-    expect(ids).toEqual([2, 1]);
-    expect(sweep.pending).toBe(0);
-  });
-
-  it("makes a failed restore loud, because residue is a failure", async () => {
-    const stub = stubClient({
-      events: [{ data: { title: "before" } }, { error: { message: "no write" } }],
-    });
-
-    await expect(
-      withSweep(stub.asSupabaseClient(), async (sweep) => {
-        await sweep.restore("events", { id: 1 }, ["title"]);
-      }),
-    ).rejects.toThrow(SweepError);
-  });
-
-  it("reports the body failure and the sweep failure together", async () => {
-    const stub = stubClient({
-      events: [{ data: { title: "before" } }, { error: { message: "no write" } }],
-    });
-    const boom = new Error("assertion failed mid-test");
-
-    const failure = await withSweep(stub.asSupabaseClient(), async (sweep) => {
-      await sweep.restore("events", { id: 1 }, ["title"]);
-      throw boom;
-    }).catch((error: unknown) => error);
-
-    expect(failure).toBeInstanceOf(AggregateError);
-    const errors = (failure as AggregateError).errors;
-    expect(errors[0]).toBe(boom);
-    expect(errors[1]).toBeInstanceOf(SweepError);
   });
 });
 
@@ -981,246 +766,6 @@ describe("the state classifier", () => {
   });
 });
 
-describe("grading a surface against the test's own count", () => {
-  const card = (label: string, value: number) => render(h(StatCard, { label, value }));
-  const wrap = (body: string) => `<div data-surface="q">${body}</div>`;
-  const SURFACE = "[data-surface]";
-  const emptyCard = render(
-    h(Empty, { holds: "open decisions", filledBy: "the resolver files one" }),
-  );
-  const errorCard = render(
-    h(ErrorLine, { reading: "review_items", failed: "57014", retry: "Reload." }),
-  );
-  const absentCard = render(
-    h(NotProvisioned, { missing: "review_items", arrivesWith: "a migration" }),
-  );
-  const table = render(
-    h(DataTable<StateRow>, {
-      label: "items",
-      columns: [{ key: "id", label: "id", cell: (row: StateRow) => row.id }],
-      rows: [{ id: "one" }],
-      rowKey: (row: StateRow) => row.id,
-    }),
-  );
-
-  const grade = (markup: string, counted: number | "absent", figure?: string) =>
-    gradeSurface({
-      markup,
-      within: SURFACE,
-      object: "review_items",
-      counted,
-      figure,
-    });
-
-  it("passes an EMPTY surface with a counted zero, and its figure reading 0", async () => {
-    await expect(
-      grade(wrap(card("Open decisions", 0) + emptyCard), 0, "Open decisions"),
-    ).resolves.toBe("empty");
-  });
-
-  it("fails an EMPTY surface whose figure is not the zero it counted", async () => {
-    // A figure that disappears at zero, or shows something else, is the half of
-    // rule 2 that makes an emptiness a NUMBER rather than an absence.
-    await expect(
-      grade(wrap(card("Open decisions", 3) + emptyCard), 0, "Open decisions"),
-    ).rejects.toThrow(ParityError);
-    await expect(grade(wrap(emptyCard), 0, "Open decisions")).rejects.toThrow(
-      MarkupReadError,
-    );
-  });
-
-  it("fails an EMPTY surface the database says holds rows, and the reverse", async () => {
-    await expect(grade(wrap(emptyCard), 4)).rejects.toThrow(StateMismatchError);
-    await expect(grade(wrap(table), 0)).rejects.toThrow(StateMismatchError);
-  });
-
-  it("fails an ERROR surface whatever the count says", async () => {
-    for (const counted of [0, 7, "absent"] as const) {
-      await expect(grade(wrap(errorCard), counted)).rejects.toThrow(StateMismatchError);
-    }
-    // …and the refusal names the read and what the database said.
-    await expect(grade(wrap(errorCard), 0)).rejects.toThrow(/review_items/);
-  });
-
-  it("passes NOT_PROVISIONED only on the test's own absence code", async () => {
-    await expect(grade(wrap(absentCard), "absent")).resolves.toBe("not_provisioned");
-    // Counted rows against a not-provisioned card is the inference rule 5
-    // forbids — and the check would need a live client, which offline has none
-    // of, so it refuses rather than passing.
-    await expect(grade(wrap(absentCard), 0)).rejects.toThrow();
-  });
-
-  it("fails a surface that rendered anything at all when the object is absent", async () => {
-    await expect(grade(wrap(table), "absent")).rejects.toThrow(StateMismatchError);
-    await expect(grade(wrap(emptyCard), "absent")).rejects.toThrow(StateMismatchError);
-  });
-
-  it("counts a zero as OK where the surface states its figure at zero", async () => {
-    // The Dashboard's attention cards: two figures in fixed positions, whatever
-    // the morning holds (LOOK_AND_FEEL bar 1). Their zero is `ok`, not `empty`.
-    await expect(
-      gradeSurface({
-        markup: wrap(card("Open decisions", 0)),
-        within: SURFACE,
-        object: "review_items",
-        counted: 0,
-        emptyAtZero: false,
-        figure: "Open decisions",
-      }),
-    ).resolves.toBe("ok");
-  });
-});
-
-describe("parity, once the kind is named", () => {
-  const wrap = (body: string) => `<div data-surface="q">${body}</div>`;
-  const SURFACE = "[data-surface]";
-
-  it("names the state kind before it reads the number", async () => {
-    // The failure a page in its error state must produce is a STATE failure,
-    // never the MarkupReadError of a number that was never rendered — that is
-    // how a test used to discover the page was broken, and it read as a
-    // parsing problem.
-    const broken = wrap(
-      render(
-        h(ErrorLine, { reading: "review_items", failed: "57014", retry: "Reload." }),
-      ),
-    );
-    const failure = await assertParity({
-      markup: broken,
-      within: SURFACE,
-      label: "Open decisions",
-      expected: () => 3,
-    }).catch((thrown: unknown) => thrown);
-
-    expect(failure).toBeInstanceOf(StateMismatchError);
-    expect(failure).not.toBeInstanceOf(MarkupReadError);
-  });
-
-  it("refuses a page carrying an error anywhere when no surface is named", async () => {
-    const page =
-      render(h(StatCard, { label: "Open decisions", value: 3 })) +
-      render(h(ErrorLine, { reading: "runs", failed: "57014", retry: "Reload." }));
-    await expect(
-      assertParity({ markup: page, label: "Open decisions", expected: () => 3 }),
-    ).rejects.toThrow(StateMismatchError);
-  });
-
-  it("still compares the number once the kind is the expected one", async () => {
-    const page = wrap(render(h(StatCard, { label: "Open decisions", value: 3 })));
-    await expect(
-      assertParity({
-        markup: page,
-        within: SURFACE,
-        label: "Open decisions",
-        expected: () => 3,
-      }),
-    ).resolves.toBe(3);
-    await expect(
-      assertParity({
-        markup: page,
-        within: SURFACE,
-        label: "Open decisions",
-        expected: () => 4,
-      }),
-    ).rejects.toThrow(ParityError);
-  });
-});
-
-describe("the count a live test issues", () => {
-  const HEAD_SHAPED = new RegExp("head:\\s*true");
-
-  it("is GET-shaped, so a failure comes back with a body", async () => {
-    const db = stubClient({ review_items: { count: 2 } });
-    await countRows(() => exactCount("review_items", db.asSupabaseClient()));
-
-    const steps = db.calls[0].steps;
-    const select = steps.find((step) => step.method === "select");
-    expect(select?.args[1]).toEqual({ count: "exact" });
-    // `head` is what emptied the error, and it is gone from the shape.
-    expect(JSON.stringify(select?.args)).not.toContain("head");
-    // A range keeps the body to one row: enough to carry an error, not a scan.
-    expect(steps.map((step) => step.method)).toContain("range");
-  });
-
-  it("reports the database's own code for a failed count", async () => {
-    // The measured failure: `pending_claims` times out at ~8.1s on staging
-    // (57014, admin-window/TASK-0031). Through a GET-shaped count the code and
-    // the message both arrive.
-    const db = stubClient({ pending_claims: { error: statementTimeout() } });
-    const failure = await countRows(() =>
-      exactCount("pending_claims", db.asSupabaseClient()),
-    ).then(
-      (counted) => new Error(`the count resolved to ${counted}`),
-      (thrown: unknown) => thrown as Error,
-    );
-
-    expect(failure.message).toContain("57014");
-    expect(failure.message).toContain("statement timeout");
-  });
-
-  it("says it could not tell, rather than reporting a blank", async () => {
-    // The SAME failure as a head-shaped count received it: no body, so no code
-    // and an empty message. A timeout reported as "" is the defect.
-    const db = stubClient({ pending_claims: { error: unparseableFailure() } });
-    const failure = await countRows(() =>
-      exactCount("pending_claims", db.asSupabaseClient()),
-    ).then(
-      (counted) => new Error(`the count resolved to ${counted}`),
-      (thrown: unknown) => thrown as Error,
-    );
-
-    expect(failure.message).toMatch(/no parseable error/);
-    expect(failure.message.trim()).not.toMatch(/failed:$/);
-  });
-
-  it("answers 'absent' for the absence code, and rethrows anything else", async () => {
-    const absent = stubClient({
-      review_items: { error: { code: "PGRST205", message: "not in schema cache" } },
-    });
-    await expect(
-      countOrAbsent(() => exactCount("review_items", absent.asSupabaseClient())),
-    ).resolves.toBe("absent");
-
-    const timedOut = stubClient({ review_items: { error: statementTimeout() } });
-    await expect(
-      countOrAbsent(() => exactCount("review_items", timedOut.asSupabaseClient())),
-    ).rejects.toThrow(/57014/);
-  });
-
-  it("leaves no head-shaped count on any query a live TEST issues", () => {
-    // The rule, stated where it can be checked: a count the test writes —
-    // anything built from `independentClient()` — is never head-shaped, because
-    // a HEAD response carries no body and its failures arrive blank.
-    //
-    // That is the guard's whole SCOPE: the count queries LIVE TESTS write. The
-    // app's own count path is not scanned here, and does not need to be — its
-    // count legs are `countRead`s, `{ count: "exact" }` over `limit 0`
-    // (src/lib/db/result.ts), and no query `lib/db` writes is head-shaped at
-    // all: the three `readCount` call sites build through `countRead`, and
-    // every other counted read there is a COMPLETE row read. What
-    // `harness.live.test.ts` exercises is a head-shaped query it writes itself
-    // and hands to `readCount`, to see what that shape does to a live answer.
-    //
-    // Statement-level and over CODE lines only, so a comment explaining why the
-    // head-shaped count is gone does not redden it (ARCHITECTURE §10, common
-    // violation 4).
-    const dir = "tests/live";
-    const offenders = fs
-      .readdirSync(path.join(repoRoot, dir))
-      .filter((name) => name.endsWith(".ts"))
-      .filter((name) =>
-        codeLines(`${dir}/${name}`)
-          .join("\n")
-          .split(";")
-          .some(
-            (statement) =>
-              HEAD_SHAPED.test(statement) && statement.includes("independentClient("),
-          ),
-      );
-    expect(offenders).toEqual([]);
-  });
-});
-
 /* ── QA attack on the classifier seam (admin-window/TASK-0032) ───────────── */
 
 describe("QA: the classifier, attacked", () => {
@@ -1320,164 +865,6 @@ describe("QA: the classifier, attacked", () => {
   });
 });
 
-/**
- * `whileStill` had no test of any kind, and three live files pin their row
- * comparisons with it (dashboard, cycles, runs). What it must never do is hand
- * back a pair the database moved under — a retry-until-green would turn a
- * dropped row into a pass.
- */
-describe("QA: whileStill, attacked", () => {
-  it("hands back a pair only when the read did not move around the make", async () => {
-    const order: string[] = [];
-    const outcome = await whileStill(
-      async () => {
-        order.push("read");
-        return { rows: 38 };
-      },
-      async () => {
-        order.push("make");
-        return "markup";
-      },
-    );
-    expect(outcome).toEqual({ made: "markup", held: { rows: 38 } });
-    // The make happens BETWEEN the two reads, or the pair proves nothing.
-    expect(order).toEqual(["read", "make", "read"]);
-  });
-
-  it("refuses rather than comparing across a move, and re-makes every attempt", async () => {
-    let tick = 0;
-    let makes = 0;
-    const attempt = whileStill(
-      async () => ({ rows: 38 + tick++ }),
-      async () => {
-        makes += 1;
-        return "markup";
-      },
-      3,
-    );
-    await expect(attempt).rejects.toThrow(/changed under this comparison/);
-    // Every attempt makes the SAME comparison afresh — never a stale render
-    // compared against a newer read.
-    expect(makes).toBe(3);
-  });
-
-  it("settles once the database does, without lowering what it compares", async () => {
-    let tick = 0;
-    const outcome = await whileStill(
-      async () => {
-        tick += 1;
-        return { rows: tick <= 2 ? tick : 9 };
-      },
-      async () => "markup",
-      4,
-    );
-    expect(outcome.held).toEqual({ rows: 9 });
-  });
-
-  /**
-   * The exhaustion message must name WHAT moved (admin-window/TASK-0075
-   * criterion 6). It used to report the two shapes' BYTE LENGTHS, and for a
-   * count moving 877 -> 878 those are identical: the only thing a red live run
-   * left behind was `117 then 117 bytes`, which named nothing and cost a QA
-   * round to decode. A diagnostic that says nothing regresses silently, so it
-   * is pinned here rather than only in the live file that made it necessary.
-   *
-   * Each shape below is one this file's live callers really hold still: a
-   * record of counts (`bucketCensus`), a list of claims whose LENGTH moved
-   * (`claimsFromDatabase`), and a list of the same length in which one claim
-   * was resolved while another was filed — the case byte lengths provably
-   * cannot describe.
-   */
-  it("says what moved and what it moved to, never a byte count", async () => {
-    const exhaust = async (read: () => Promise<unknown>): Promise<string> => {
-      try {
-        await whileStill(read, async () => "markup");
-      } catch (error) {
-        return (error as Error).message;
-      }
-      throw new Error("whileStill handed back a pair the read moved under");
-    };
-
-    // A record of counts: the first differing KEY and its two values.
-    let whole = 877;
-    const counts = await exhaust(async () => ({
-      whole: (whole += 1),
-      buckets: { agreeing: whole, standing: 0 },
-    }));
-    expect(counts).not.toContain("bytes");
-    expect(counts).toMatch(/whole \d+ → \d+/);
-
-    // A list that GREW: the length, and which length it became.
-    let extra = 0;
-    const grew = await exhaust(async () =>
-      Array.from({ length: 877 + extra++ }, (_, index) => ({ id: `id-${index}` })),
-    );
-    expect(grew).not.toContain("bytes");
-    expect(grew).toMatch(/length \d+ → \d+/);
-
-    // One claim resolved, one filed: same length, same byte width, different
-    // set. The message names the index and the two ids.
-    let swap = 0;
-    const swapped = await exhaust(async () => {
-      swap += 1;
-      return Array.from({ length: 877 }, (_, index) =>
-        index === 400 ? { id: `filed-${swap}` } : { id: `id-${index}` },
-      );
-    });
-    expect(swapped).not.toContain("bytes");
-    expect(swapped).toContain("[400].id");
-    expect(swapped).toContain("filed-");
-  });
-
-  /**
-   * EXHAUSTION AND A DEFECT STOP SHARING ONE VOICE (admin-window/TASK-0077
-   * criterion 5; QA's TASK-0075 residual).
-   *
-   * They still share the runner's exit code — that is the runner's — but the
-   * message now opens with a fixed marker before the what-moved report, so a
-   * builder meeting a red in a downstream lane's stored check can tell in one
-   * glance that the database would not hold still rather than reading it as a
-   * verdict on the page. Pinned here, in the offline suite, because the live
-   * files that raise it cannot be relied on to be RUN.
-   */
-  it("opens an exhaustion with the marker that says the database moved", async () => {
-    let tick = 0;
-    const failure = await whileStill(async () => ({ whole: 877 + tick++ }), async () => "markup").then(
-      () => new Error("whileStill handed back a pair the read moved under"),
-      (thrown: unknown) => thrown as Error,
-    );
-
-    // The marker is the FIRST thing in the message, before anything else.
-    expect(failure.message.startsWith(STAGING_MOVED)).toBe(true);
-    // …and it is the agreed marker, not any prefix that happens to be there.
-    expect(STAGING_MOVED).toMatch(/^STAGING MOVED:/);
-    // The what-moved report it already carried still follows it, so the marker
-    // added a glance and took nothing away.
-    expect(failure.message).toMatch(/whole \d+ → \d+/);
-    expect(failure.message).toContain("3 attempts");
-  });
-
-  it("marks nothing but an exhaustion, so the marker means one thing", async () => {
-    // A pair that held still carries no marker anywhere, and neither does a
-    // refusal raised by the read itself — the marker names the database
-    // moving, never a failure the make or the read threw.
-    const settled = await whileStill(async () => ({ whole: 877 }), async () => "markup");
-    expect(JSON.stringify(settled)).not.toContain(STAGING_MOVED);
-
-    const thrown = await whileStill(
-      async () => {
-        throw new Error("the bucket census failed: 57014");
-      },
-      async () => "markup",
-    ).then(
-      () => new Error("whileStill swallowed the read's own refusal"),
-      (error: unknown) => error as Error,
-    );
-    expect(thrown.message).not.toContain(STAGING_MOVED);
-    expect(thrown.message).toContain("57014");
-  });
-});
-
 describe("QA: surfaceHooks, attacked", () => {
   /**
    * The helper ten files lean on, pinned HERE rather than only through them
@@ -1546,56 +933,190 @@ describe("QA: surfaceHooks, attacked", () => {
   });
 });
 
-describe("QA: no live oracle addresses a surface by position", () => {
-  /**
-   * The ratchet, resident in the SUITE (campaign admin-window, DEBT-0002).
-   *
-   * DEBT-0002 replaced twelve positional selectors across five live oracles
-   * with `data-surface` names, and proved it with a grep run once, as that
-   * ticket's own check. A check written in a ticket stops running the day the
-   * ticket closes — and this class has already shipped twice on this branch
-   * (admin-window/BUG-0056 on `/cycles`, DEBT-0002 on five more files). The
-   * page twins pin that each page's hooks EXIST and are unique; nothing until
-   * this case stopped the next oracle from addressing a surface by position
-   * all over again.
-   *
-   * Broader than that ticket's grep on purpose: it looked for `nth-of-type`
-   * alone, so `[data-surface="evidence"] > :nth-child(2)` — half of the exact
-   * spelling DEBT-0002 removed from `review-item.live.test.ts` — would have
-   * walked straight past it.
-   *
-   * What is banned is a selector that moves when the page is REARRANGED: the
-   * positional pseudo-classes. Structural descent (`[data-pair] > div > div`)
-   * and negation (`section:not([data-queue] section)`) are not positions and
-   * are not this rule's business.
-   */
-  const POSITIONAL =
-    /:(?:nth-of-type|nth-last-of-type|nth-child|nth-last-child|first-of-type|last-of-type|first-child|last-child|only-of-type|only-child)\b/;
+/* ── the live tier is one read-only contract smoke (Ben, 2026-09-16) ─────── */
 
+/**
+ * The rules, stated where they can be checked (README "Testing", rules 2–4;
+ * installed 2026-10-16 by the external live-tier ticket):
+ *
+ *  1. No file under `tests/live/` carries a write-shaped call — `.insert(`,
+ *     `.upsert(`, `.update(`, `.delete(` — or a request issued with a writing
+ *     method, or a procedure call other than the ONE allowlisted refusal: the
+ *     empty decision sent to `settle_review_item`, which raises KS029 before
+ *     it touches a row (the contract file's header says where that is read).
+ *  2. No file under `tests/live/` imports from `tests/walk/` — the walk tools
+ *     write `walk_sandbox` by design, and a live test reaching them is a
+ *     writer by another name.
+ *  3. Every `it(` in a live test file is preceded by a `// LIVE BECAUSE:`
+ *     line — one line saying why the question cannot be answered offline.
+ *  4. The live tier is `tests/live/contract.live.test.ts` ALONE, of at most
+ *     ten cases: a second live file, or an eleventh case, is the oracle suite
+ *     growing back (BUG-0215, BUG-0219, BUG-0208 — the incident record).
+ *
+ * Each rule is a pure function over a file's TEXT, so it is proved red here on
+ * a planted string — never on a probe file written into the tree other
+ * tree-walking tests are reading (admin-window/BUG-0029's hazard) — and then
+ * run over the real directory. Code lines only, so a comment explaining why a
+ * write is absent does not redden it (ARCHITECTURE §10, common violation 4);
+ * the `LIVE BECAUSE:` rule reads raw lines, because the thing it looks for IS
+ * a comment.
+ */
+describe("the live tier: one read-only contract smoke", () => {
   const LIVE_DIR = "tests/live";
+  const CONTRACT_FILE = "contract.live.test.ts";
+  const LIVE_TEST_FILE = /\.live\.test\.ts$/;
+  const CASE_BUDGET = 10;
 
-  const liveFiles = fs
-    .readdirSync(path.join(repoRoot, LIVE_DIR))
-    .filter((name) => name.endsWith(".ts"))
-    .sort()
-    .map((name) => `${LIVE_DIR}/${name}`);
+  const WRITE_SHAPED = /\.(insert|upsert|update|delete)\(/;
+  const PROCEDURE_CALL = /\.rpc\(/;
+  const WRITING_METHOD = /method:\s*["'](POST|PATCH|PUT|DELETE)["']/i;
+  const WALK_IMPORT = /from\s+["'][^"']*\/walk\//;
+  /** The one procedure call a live file may carry: the empty decision, refused. */
+  const ALLOWED_REFUSAL =
+    /\.rpc\(\s*FN\.settleReviewItem\s*,\s*\{\s*\[SETTLE_ARGUMENT\]:\s*\{\}\s*\}\s*\)/;
+  const CASE = /^\s*it(?:\.(?:each|only|skip|todo|concurrent))?\s*\(/;
+  const LIVE_BECAUSE = /^\s*\/\/\s*LIVE BECAUSE:\s*\S/;
+  const COMMENT_OR_BLANK = /^\s*(?:$|\/\/|\*|\/\*)/;
 
-  it("reads a live directory that actually holds the oracles", () => {
-    // Guards the rule below against a silent vacuous pass if the directory
-    // moves: a rule that scans nothing reports nothing wrong.
-    expect(liveFiles.length).toBeGreaterThan(5);
-    expect(liveFiles).toContain(`${LIVE_DIR}/parity.ts`);
+  /** Rules 1 and 2 over one file's text: every offending code line, named. */
+  function writeShapedOffences(name: string, text: string): string[] {
+    const offences: string[] = [];
+    for (const line of codeLinesIn(text)) {
+      if (WRITE_SHAPED.test(line)) offences.push(`${name}: write-shaped: ${line.trim()}`);
+      if (WRITING_METHOD.test(line)) offences.push(`${name}: writing method: ${line.trim()}`);
+      if (WALK_IMPORT.test(line)) offences.push(`${name}: imports a walk tool: ${line.trim()}`);
+      if (PROCEDURE_CALL.test(line) && !ALLOWED_REFUSAL.test(line)) {
+        offences.push(`${name}: procedure call outside the allowlisted refusal: ${line.trim()}`);
+      }
+    }
+    return offences;
+  }
+
+  /** Rule 3 over one file's text: every `it(` with no `LIVE BECAUSE:` above it. */
+  function unexplainedCases(name: string, text: string): string[] {
+    const lines = text.split("\n");
+    const offences: string[] = [];
+    lines.forEach((line, index) => {
+      if (!CASE.test(line)) return;
+      // Walk up through the comment block (and blank lines) directly above
+      // the case; the first code line ends it. The reason has to be IN that
+      // block — a reason two cases up explains a different case.
+      let explained = false;
+      for (let above = index - 1; above >= 0; above -= 1) {
+        if (!COMMENT_OR_BLANK.test(lines[above])) break;
+        if (LIVE_BECAUSE.test(lines[above])) {
+          explained = true;
+          break;
+        }
+      }
+      if (!explained) offences.push(`${name}:${index + 1}: ${line.trim()}`);
+    });
+    return offences;
+  }
+
+  const liveFiles = () =>
+    fs
+      .readdirSync(path.join(repoRoot, LIVE_DIR))
+      .filter((name) => name.endsWith(".ts"))
+      .sort();
+  const textOf = (name: string) =>
+    fs.readFileSync(path.join(repoRoot, LIVE_DIR, name), "utf8");
+
+  /* ── the rules, proved red on planted text ─────────────────────────────── */
+
+  it("flags each write shape, a writing method, a walk import and a stray procedure call", () => {
+    const planted = [
+      'import { resetSandbox } from "../walk/reset-sandbox.mjs";',
+      "const a = await db.from(t).insert(row);",
+      "const b = await db.from(t).upsert(row);",
+      "const c = await db.from(t).update(row).eq(k, v);",
+      "const d = await db.from(t).delete().eq(k, v);",
+      'const e = await fetch(url, { method: "PATCH", body });',
+      "const f = await db.rpc(FN.settleReviewItem, { [SETTLE_ARGUMENT]: decision });",
+      'const g = await db.rpc("apply_resolution", {});',
+    ].join("\n");
+    const offences = writeShapedOffences("planted.live.test.ts", planted);
+    expect(offences).toHaveLength(8);
+    expect(offences.filter((line) => line.includes("write-shaped"))).toHaveLength(4);
+    expect(offences.filter((line) => line.includes("writing method"))).toHaveLength(1);
+    expect(offences.filter((line) => line.includes("walk tool"))).toHaveLength(1);
+    expect(offences.filter((line) => line.includes("procedure call"))).toHaveLength(2);
   });
 
-  it("carries no positional selector in any live file's code", () => {
-    const offences: string[] = [];
-    for (const file of liveFiles) {
-      codeLines(file).forEach((line) => {
-        if (POSITIONAL.test(line)) offences.push(`${file}: ${line.trim()}`);
-      });
-    }
-    // Comment lines are excluded by `codeLines`, so the JSDoc in each oracle
-    // may keep naming the spelling it replaced.
+  it("lets the allowlisted refusal through, and nothing else that calls a procedure", () => {
+    const refusal =
+      "const { error } = await getDbClient().rpc(FN.settleReviewItem, { [SETTLE_ARGUMENT]: {} });";
+    expect(writeShapedOffences("planted.live.test.ts", refusal)).toEqual([]);
+    // One key, one value, one character: a decision that says anything is a
+    // settlement attempt, and the allowlist does not stretch to it.
+    const filled =
+      'const { error } = await getDbClient().rpc(FN.settleReviewItem, { [SETTLE_ARGUMENT]: { action: "settle" } });';
+    expect(writeShapedOffences("planted.live.test.ts", filled)).toHaveLength(1);
+  });
+
+  it("reads code lines only, so a comment may name the write it explains away", () => {
+    const commented = [
+      "// There is no .insert( here, and no .rpc( either — this says why.",
+      " * nor an .update( in a docblock, nor `method: \"POST\"`.",
+      "const rows = await db.from(t).select(c).limit(0);",
+    ].join("\n");
+    expect(writeShapedOffences("planted.live.test.ts", commented)).toEqual([]);
+  });
+
+  it("flags a case with no LIVE BECAUSE above it, and clears one that has it", () => {
+    const explained = [
+      "describe('x', () => {",
+      "  // LIVE BECAUSE: the stub cannot answer this.",
+      "  it('asks the service', async () => {});",
+      "",
+      "  // a different remark",
+      "  // LIVE BECAUSE: nor this.",
+      "",
+      "  it('asks again', async () => {});",
+      "});",
+    ].join("\n");
+    expect(unexplainedCases("planted.live.test.ts", explained)).toEqual([]);
+
+    const unexplained = [
+      "describe('x', () => {",
+      "  // LIVE BECAUSE: explains the FIRST case only.",
+      "  it('asks the service', async () => {});",
+      "  it('asks with no reason', async () => {});",
+      "  // LIVE BECAUSE: with no colon-and-reason this is",
+      "  it.each([1])('asks with a bare marker %s', async () => {});",
+      "});",
+    ].join("\n");
+    const offences = unexplainedCases("planted.live.test.ts", unexplained);
+    expect(offences).toHaveLength(1);
+    expect(offences[0]).toContain(":4:");
+    // A reason that stops at the colon is not a reason.
+    expect(unexplainedCases("p.ts", "// LIVE BECAUSE:\nit('bare', () => {});")).toHaveLength(1);
+  });
+
+  /* ── the rules, run over the real directory ────────────────────────────── */
+
+  it("is one test file beside the setup and the guard, and nothing else", () => {
+    expect(liveFiles()).toEqual([CONTRACT_FILE, "setup.ts", "staging-target.ts"]);
+    expect(liveFiles().filter((name) => LIVE_TEST_FILE.test(name))).toEqual([CONTRACT_FILE]);
+  });
+
+  it("carries no write-shaped call, no writing method, no walk import and no stray procedure call", () => {
+    const offences = liveFiles().flatMap((name) => writeShapedOffences(name, textOf(name)));
     expect(offences).toEqual([]);
+  });
+
+  it("explains every case with a LIVE BECAUSE line", () => {
+    const offences = liveFiles()
+      .filter((name) => LIVE_TEST_FILE.test(name))
+      .flatMap((name) => unexplainedCases(name, textOf(name)));
+    expect(offences).toEqual([]);
+  });
+
+  it("stays within its budget of ten cases", () => {
+    const cases = textOf(CONTRACT_FILE)
+      .split("\n")
+      .filter((line) => CASE.test(line)).length;
+    expect(cases).toBeGreaterThan(0);
+    expect(cases).toBeLessThanOrEqual(CASE_BUDGET);
   });
 });

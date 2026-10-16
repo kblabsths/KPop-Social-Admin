@@ -39,7 +39,7 @@ import {
   rerejects,
   runsResponse,
 } from "./population";
-import { oneEach, readNumber, surfaceHooks } from "../../live/parity";
+import { oneEach, readNumber, surfaceHooks } from "../../fixtures/surface-state";
 import { observationRow, pendingClaimRow, runRow } from "../../fixtures/rows";
 import {
   permissionDenied,
@@ -402,7 +402,7 @@ const REJECTED_BY_WEEK = "Re-rejected values by week";
 /**
  * The settled-values headline CARD, addressed by the label it is drawn with —
  * `readNumber`'s hook, the same one the live parity oracle uses
- * (`tests/live/parity.ts`). One spelling in this file, so a case reads a card
+ * (`tests/fixtures/surface-state.ts`). One spelling in this file, so a case reads a card
  * rather than re-deciding which one it meant.
  */
 const REJECTED_FIGURE = "Re-rejected claims in this window";
@@ -2061,7 +2061,7 @@ const HOOKS = Object.values(SURFACE_HOOKS);
 describe("the surface hooks the live parity oracle addresses", () => {
   /**
    * The live oracle grades ONE surface at a time and `stateOf`
-   * (`tests/live/parity.ts`) refuses any selector matching other than exactly
+   * (`tests/fixtures/surface-state.ts`) refuses any selector matching other than exactly
    * one element. Until admin-window/DEBT-0002 it addressed these three
    * POSITIONALLY — `section:nth-of-type(n)` — so one added section, or one
    * `<div>` wrapped around an existing one, either duplicates a match or

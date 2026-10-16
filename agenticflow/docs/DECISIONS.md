@@ -2184,3 +2184,47 @@ Scraper-side in origin and in fix, carried on this campaign's for-human list
 since the M2 retro for want of anywhere better. A closing campaign is not a
 backlog; it belongs in the root `backlog/` with the other cross-campaign debt.
 Nothing is lost and nothing is decided — only the owner changes.
+
+## 2026-10-16 — Testing rules: no test asserts a value it did not write, none writes anywhere shared, live tests are few and read-only, every test earns its place (Ben's ruling of 2026-09-16, installed 2026-10-16)
+
+The ruling, in Ben's words and ours
+(`agenticflow/tracker/proposals/2026-09-16-testing-rules.md`), now contract in
+ARCHITECTURE §10 and the README's "Testing" section:
+
+1. **No test asserts a value it did not write.** A count, an id, a title or a
+   population read from a shared database is not a fixture.
+2. **No test writes anywhere shared.** Not production, not staging, not a
+   sandbox table on staging. If a proof seems to need a shared write, the
+   proof is in the wrong place — redesign it, never grant an exception.
+3. **Live tests are expensive.** Few, read-only, each with a one-line reason it
+   must be live. Their only job is to prove the offline stubs are honest about
+   how the real service answers.
+4. **A test earns its place** by naming a bug it would catch that no other test
+   catches. A pin that restates an existing rule, or grades how a thing happened
+   to be written, is deleted.
+
+**Proof versus test.** "Proven end to end" in an acceptance list means a person
+or an agent walks the real thing ONCE, watches it, and leaves a dated note. It
+never means a re-runnable test that does it on every run. The M2/M3 acceptance
+items 6, 7 and 8 were read the second way, became a live settle test and three
+tasks that had to write staging (TASK-0084/0085/0086), and produced BUG-0215's
+residue; Ben walked them instead on 2026-09-16. Acceptance items say "walked
+and recorded" wherever they used to say "proven", and the verifier's close walk
+is the mechanism.
+
+The door this closes: **the live tier is `tests/live/contract.live.test.ts`
+alone** — at most ~10 read-only cases asserting SHAPES of PostgREST's answers,
+each with a `LIVE BECAUSE:` line — and `tests/offline/live-guard.test.ts` pins
+it structurally (one live file, no write-shaped call, no walk import, a reason
+above every case). The eleven per-page oracles (117 cases), their parity and
+sweep machinery, and the residue sweep are deleted; every value they asserted
+is pinned offline against a fixture the test owns. The incident record that
+earned this: BUG-0215 (a live test wrote real overrides on staging on every run
+once the settle function existed), BUG-0219 (live cases graded a population read
+minutes earlier on a project another campaign writes), BUG-0208 (a live case
+timed out under its own parallelism and the fix was a bigger budget).
+
+**Deferred, on the record so it is not reinvented as a staging test:** a
+release-time live suite against a **disposable** database — never staging,
+never production — is the one legitimate re-runnable end-to-end run. Not worth
+building until there is a production release to protect.

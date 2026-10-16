@@ -4,7 +4,7 @@ import { CYCLE_COUNTERS, CYCLE_WINDOW, type ResolutionRunRow } from "@/lib/db/cy
 import { T } from "@/lib/db/tables";
 import { CLAMP_LIMIT, ELLIPSIS, EM_DASH, absoluteUtc, duration } from "@/lib/format";
 import { RESOLVER_CADENCE_SECONDS } from "@/lib/gauges/gauge";
-import { readNumber, stateOf } from "../../live/parity";
+import { readNumber, stateOf } from "../../fixtures/surface-state";
 import {
   codeText,
   implicitInterElementSpaces,
@@ -3256,7 +3256,7 @@ const SURFACE_HOOKS = {
 describe("the surface hooks the live parity oracle addresses", () => {
   /**
    * `tests/live/cycles.live.test.ts` grades ONE surface at a time, and
-   * `stateOf` (`tests/live/parity.ts`) refuses any selector matching other
+   * `stateOf` (`tests/fixtures/surface-state.ts`) refuses any selector matching other
    * than exactly one element. Until admin-window/BUG-0056 that oracle
    * addressed the surfaces POSITIONALLY — `section:nth-of-type(n)` — so
    * admin-window/BUG-0040's lead section and its `<div>` wrapper around the

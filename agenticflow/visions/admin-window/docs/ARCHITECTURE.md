@@ -1690,10 +1690,40 @@ already ships.
 
 ## 10. Tests
 
+**The testing rules — contract, binding on every tier below** (Ben's ruling
+of 2026-09-16, `agenticflow/tracker/proposals/2026-09-16-testing-rules.md`;
+installed 2026-10-16, DECISIONS.md same date). They supersede every earlier
+bullet of this section that describes a live oracle — per-page parity, the
+state kind a live test names, the independent count, `whileStill`, the sweep
+— which are kept below as history of why the rules exist, not as practice:
+
+1. **No test asserts a value it did not write.** A count, an id, a title or a
+   population read from a shared database is not a fixture.
+2. **No test writes anywhere shared.** Not production, not staging, not a
+   sandbox table on staging. If a proof seems to need a shared write, the
+   proof is in the wrong place — redesign it, never grant an exception.
+3. **Live tests are expensive.** Few, read-only, each with a one-line reason it
+   must be live. Their only job is to prove the offline stubs are honest about
+   how the real service answers. (All tests should be clear; live ones must
+   also justify their cost.)
+4. **A test earns its place** by naming a bug it would catch that no other test
+   catches. A pin that restates an existing rule, or grades how a thing happened
+   to be written, is deleted.
+
+**The live tier is `tests/live/contract.live.test.ts` alone**: at most ~10
+read-only cases, each opening with a `// LIVE BECAUSE:` line, asserting SHAPES
+of PostgREST's answers and never values. `tests/offline/live-guard.test.ts`
+pins that structurally — one live test file, no write-shaped call under
+`tests/live/`, no import from `tests/walk/`, a reason above every case. "Proven
+end to end" in an acceptance list means a person or an agent walks the real
+thing once and leaves a dated note — never a re-runnable test (README
+"Testing").
+
 - `tests/offline/**` — the default suite (`npm test`). Pure functions, page
   functions rendered against **stub clients** built from captured PostgREST
   response shapes in `tests/fixtures/`. **No network.**
-- `tests/live/**` (`*.live.test.ts`, `npm run test:live`) — staging only. The
+- `tests/live/**` (`*.live.test.ts`, `npm run test:live`) — staging only, and
+  since 2026-10-16 the one contract smoke above. The
   live setup file is the **one** place `STAGING_SUPABASE_URL` /
   `STAGING_SUPABASE_SERVICE_ROLE_KEY` are read; it **refuses** (non-zero, no
   fallback) when either is unset, and it refuses when the staging host does not

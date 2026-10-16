@@ -19,7 +19,7 @@ import {
   type Script,
 } from "../../fixtures/stub-client";
 import { classesOf, expectDrawnAsLinkAtRest } from "../../fixtures/link-spelling";
-import { oneEach, stateOf, surfaceHooks } from "../../live/parity";
+import { oneEach, stateOf, surfaceHooks } from "../../fixtures/surface-state";
 
 /**
  * **A settled review item's detail carries its own verdict inline** — campaign

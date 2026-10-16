@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { T } from "@/lib/db/tables";
 import { EM_DASH, absoluteUtc, counted } from "@/lib/format";
 import { disagreeingCounts, render, uppercasedIdentifiers } from "../ui/markup";
-import { readNumber, stateOf as surfaceStateOf } from "../../live/parity";
+import { readNumber, stateOf as surfaceStateOf } from "../../fixtures/surface-state";
 import {
   ID,
   reviewItemEdgePopulation,

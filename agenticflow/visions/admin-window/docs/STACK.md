@@ -132,11 +132,10 @@ space — quote it).
 | type check | `./node_modules/.bin/tsc --noEmit` | — |
 | lint | `npm run lint` | — |
 | offline suite | `npm test` | — |
-| live suite (staging) | `npm run test:live` | — |
+| live suite (staging) — a read-only contract smoke, ~10 cases in `tests/live/contract.live.test.ts`, proving the offline stubs' assumptions about PostgREST on the declared target; needs the `STAGING_*` names (Ben's testing rules, 2026-09-16) | `npm run test:live` | — |
 | http suite | `npm run test:http` | 8772 (its own server) |
 | **handoff suite** (opt-in; reads the sibling `kspace Scraper` read-only, outside `npm test` and outside `ci_command`) | `npm run test:handoff` | — |
 | **reset the walk sandbox** | `node tests/walk/reset-sandbox.mts` (walk prep: step 3's block — it needs the same mapping) | — |
-| **residue sweep** (read-only leftover check; since the amendment of 2026-09-08 no walk writes a catalog row, so it should never fire) | `npm run test:live -- tests/live/residue.live.test.ts` | — |
 
 - **8770 is the factory's attention UI** (`run.yaml` `ui_port`). Never bind it.
 - **Five tiers, and the fifth is opt-in** (added 2026-09-15, architect): `tests/handoff/**` holds the guards that READ `../kspace Scraper`, so a legitimate event next door cannot redden every builder's `npm test` (ARCHITECTURE §10, admin-window/TASK-0080). Nothing runs it for you: the VERIFIER runs it at every milestone close and records its file and test counts, and whoever prepares or re-checks a handoff runs it then. Measured green 2026-09-15 at `e8bb9518`: 1 file, 12 tests, 0.4 s, against a sibling that has raised KS033 since its 2026-09-13 migrations.

@@ -548,8 +548,8 @@ describe("the four worlds the handoff can leave a database in", () => {
     // different facts. Only one of them is about the object, so an unreadable
     // description is an ERROR naming what was asked about — never the
     // not-provisioned card, which would tell an operator to install something
-    // that may be right there (`functionsOnStaging`, tests/live/parity.ts,
-    // says the same of the same read).
+    // that may be right there (the deleted live oracles' `functionsOnStaging`
+    // said the same of the same read).
     const { run } = readinessWith(TABLE_THERE, { functions: "unreadable" });
     const result = await run();
     expect(result.kind).toBe("error");

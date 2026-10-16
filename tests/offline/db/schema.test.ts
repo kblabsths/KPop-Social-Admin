@@ -147,7 +147,7 @@ describe("reading whether a function is installed", () => {
     // host answering for something else, and a transport that threw. Each is
     // an error NAMING the function, because "the object is not there" and "the
     // question was not answered" are different facts and only one of them is
-    // about the object (`functionsOnStaging`, tests/live/parity.ts).
+    // about the object (the deleted live oracles read it the same way).
     const refused = clientAnswering(
       "https://refuses.invalid",
       () => new Response("no", { status: 500 }),
